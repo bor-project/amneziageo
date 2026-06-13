@@ -22,3 +22,6 @@ csharp_using_directive_placement = outside_namespace:warning
 
 [*.{xml,csproj,props,targets,slnx,json}]
 indent_size = 2
+
+[amneziageo-core/**/*.cs]
+dotnet_diagnostic.CA2007.severity = warning

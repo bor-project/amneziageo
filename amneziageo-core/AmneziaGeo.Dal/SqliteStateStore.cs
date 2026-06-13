@@ -31,15 +31,18 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     CREATE TABLE IF NOT EXISTS profiles (
-                        name        TEXT PRIMARY KEY,
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name        TEXT NOT NULL UNIQUE,
                         private_key TEXT NOT NULL,
                         public_key  TEXT NOT NULL,
                         endpoint    TEXT NOT NULL,
-                        rules_json  TEXT NOT NULL
+                        rules_json  TEXT NOT NULL,
+                        updated_at  TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS geo_files (
-                        name           TEXT PRIMARY KEY,
+                        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name           TEXT NOT NULL UNIQUE,
                         source_url     TEXT NOT NULL,
                         updated_at     TEXT NOT NULL,
                         sha256         TEXT NOT NULL,
@@ -47,25 +50,48 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     );
 
                     CREATE TABLE IF NOT EXISTS tunnel_geo (
-                        name         TEXT PRIMARY KEY,
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name         TEXT NOT NULL UNIQUE,
                         geo_split    INTEGER NOT NULL,
                         rules_json   TEXT NOT NULL,
                         routes_json  TEXT NOT NULL,
-                        domains_json TEXT NOT NULL
+                        domains_json TEXT NOT NULL,
+                        updated_at   TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS domain_ips (
-                        tunnel   TEXT NOT NULL,
-                        domain   TEXT NOT NULL,
-                        ips_json TEXT NOT NULL,
-                        PRIMARY KEY (tunnel, domain)
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tunnel     TEXT NOT NULL,
+                        domain     TEXT NOT NULL,
+                        ip         TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE (tunnel, domain, ip)
                     );
 
                     CREATE TABLE IF NOT EXISTS geo_sources (
-                        name     TEXT PRIMARY KEY,
-                        kind     TEXT NOT NULL,
-                        url      TEXT NOT NULL,
-                        position INTEGER NOT NULL
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name       TEXT NOT NULL UNIQUE,
+                        kind       TEXT NOT NULL,
+                        url        TEXT NOT NULL,
+                        position   INTEGER NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS balancers (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name            TEXT NOT NULL,
+                        position        INTEGER NOT NULL,
+                        member          TEXT NOT NULL,
+                        recheck_seconds INTEGER NOT NULL,
+                        updated_at      TEXT NOT NULL,
+                        UNIQUE (name, position)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS settings (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        key        TEXT NOT NULL UNIQUE,
+                        value      TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
                     );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -86,19 +112,21 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO profiles (name, private_key, public_key, endpoint, rules_json)
-                    VALUES ($name, $priv, $pub, $endpoint, $rules)
+                    INSERT INTO profiles (name, private_key, public_key, endpoint, rules_json, updated_at)
+                    VALUES ($name, $priv, $pub, $endpoint, $rules, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         private_key = excluded.private_key,
                         public_key  = excluded.public_key,
                         endpoint    = excluded.endpoint,
-                        rules_json  = excluded.rules_json;
+                        rules_json  = excluded.rules_json,
+                        updated_at  = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", profile.Name);
                 command.Parameters.AddWithValue("$priv", profile.PrivateKey);
                 command.Parameters.AddWithValue("$pub", profile.PublicKey);
                 command.Parameters.AddWithValue("$endpoint", profile.Endpoint);
                 command.Parameters.AddWithValue("$rules", JsonSerializer.Serialize(profile.Rules));
+                command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
@@ -180,19 +208,21 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json)
-                    VALUES ($name, $split, $rules, $routes, $domains)
+                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, updated_at)
+                    VALUES ($name, $split, $rules, $routes, $domains, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         geo_split    = excluded.geo_split,
                         rules_json   = excluded.rules_json,
                         routes_json  = excluded.routes_json,
-                        domains_json = excluded.domains_json;
+                        domains_json = excluded.domains_json,
+                        updated_at   = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", geo.Name);
                 command.Parameters.AddWithValue("$split", geo.GeoSplit ? 1 : 0);
                 command.Parameters.AddWithValue("$rules", JsonSerializer.Serialize(geo.Rules));
                 command.Parameters.AddWithValue("$routes", JsonSerializer.Serialize(geo.Routes));
                 command.Parameters.AddWithValue("$domains", JsonSerializer.Serialize(geo.Domains));
+                command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
@@ -264,6 +294,24 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task RemoveTunnelGeoAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM tunnel_geo WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -276,17 +324,19 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO geo_sources (name, kind, url, position)
-                    VALUES ($name, $kind, $url, $position)
+                    INSERT INTO geo_sources (name, kind, url, position, updated_at)
+                    VALUES ($name, $kind, $url, $position, $updated)
                     ON CONFLICT(name) DO UPDATE SET
-                        kind     = excluded.kind,
-                        url      = excluded.url,
-                        position = excluded.position;
+                        kind       = excluded.kind,
+                        url        = excluded.url,
+                        position   = excluded.position,
+                        updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", source.Name);
                 command.Parameters.AddWithValue("$kind", source.Kind);
                 command.Parameters.AddWithValue("$url", source.Url);
                 command.Parameters.AddWithValue("$position", source.Position);
+                command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
@@ -342,25 +392,45 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, CancellationToken ct = default)
     {
+        var timestamp = Timestamp();
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
         {
             await connection.OpenAsync(ct).ConfigureAwait(false);
 
-            var command = connection.CreateCommand();
-            await using (command.ConfigureAwait(false))
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
             {
-                command.CommandText =
-                    """
-                    INSERT INTO domain_ips (tunnel, domain, ips_json)
-                    VALUES ($tunnel, $domain, $ips)
-                    ON CONFLICT(tunnel, domain) DO UPDATE SET
-                        ips_json = excluded.ips_json;
-                    """;
-                command.Parameters.AddWithValue("$tunnel", tunnel);
-                command.Parameters.AddWithValue("$domain", resolution.Domain);
-                command.Parameters.AddWithValue("$ips", JsonSerializer.Serialize(resolution.Ips));
-                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                var delete = connection.CreateCommand();
+                await using (delete.ConfigureAwait(false))
+                {
+                    delete.Transaction = transaction;
+                    delete.CommandText = "DELETE FROM domain_ips WHERE tunnel = $tunnel AND domain = $domain;";
+                    delete.Parameters.AddWithValue("$tunnel", tunnel);
+                    delete.Parameters.AddWithValue("$domain", resolution.Domain);
+                    await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                foreach (var ip in resolution.Ips)
+                {
+                    var insert = connection.CreateCommand();
+                    await using (insert.ConfigureAwait(false))
+                    {
+                        insert.Transaction = transaction;
+                        insert.CommandText =
+                            """
+                            INSERT INTO domain_ips (tunnel, domain, ip, updated_at)
+                            VALUES ($tunnel, $domain, $ip, $updated);
+                            """;
+                        insert.Parameters.AddWithValue("$tunnel", tunnel);
+                        insert.Parameters.AddWithValue("$domain", resolution.Domain);
+                        insert.Parameters.AddWithValue("$ip", ip);
+                        insert.Parameters.AddWithValue("$updated", timestamp);
+                        await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
             }
         }
     }
@@ -378,22 +448,191 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT domain, ips_json FROM domain_ips WHERE tunnel = $tunnel ORDER BY domain;";
+                command.CommandText = "SELECT domain, ip FROM domain_ips WHERE tunnel = $tunnel ORDER BY domain, ip;";
                 command.Parameters.AddWithValue("$tunnel", tunnel);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
                 {
+                    string? currentDomain = null;
+                    var currentIps = new List<string>();
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        var ips = JsonSerializer.Deserialize<List<string>>(reader.GetString(1)) ?? [];
-                        resolutions.Add(new DomainResolution(reader.GetString(0), ips));
+                        var domain = reader.GetString(0);
+                        if (domain != currentDomain)
+                        {
+                            if (currentDomain is not null)
+                            {
+                                resolutions.Add(new DomainResolution(currentDomain, currentIps));
+                            }
+
+                            currentDomain = domain;
+                            currentIps = [];
+                        }
+
+                        currentIps.Add(reader.GetString(1));
+                    }
+
+                    if (currentDomain is not null)
+                    {
+                        resolutions.Add(new DomainResolution(currentDomain, currentIps));
                     }
                 }
             }
         }
 
         return resolutions;
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveDomainResolutionsAsync(string tunnel, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM domain_ips WHERE tunnel = $tunnel;";
+                command.Parameters.AddWithValue("$tunnel", tunnel);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveBalancerAsync(BalancerGroup balancer, CancellationToken ct = default)
+    {
+        var timestamp = Timestamp();
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                var delete = connection.CreateCommand();
+                await using (delete.ConfigureAwait(false))
+                {
+                    delete.Transaction = transaction;
+                    delete.CommandText = "DELETE FROM balancers WHERE name = $name;";
+                    delete.Parameters.AddWithValue("$name", balancer.Name);
+                    await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                for (var position = 0; position < balancer.Members.Count; position++)
+                {
+                    var insert = connection.CreateCommand();
+                    await using (insert.ConfigureAwait(false))
+                    {
+                        insert.Transaction = transaction;
+                        insert.CommandText =
+                            """
+                            INSERT INTO balancers (name, position, member, recheck_seconds, updated_at)
+                            VALUES ($name, $position, $member, $recheck, $updated);
+                            """;
+                        insert.Parameters.AddWithValue("$name", balancer.Name);
+                        insert.Parameters.AddWithValue("$position", position);
+                        insert.Parameters.AddWithValue("$member", balancer.Members[position]);
+                        insert.Parameters.AddWithValue("$recheck", balancer.RecheckSeconds);
+                        insert.Parameters.AddWithValue("$updated", timestamp);
+                        await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<BalancerGroup?> GetBalancerAsync(string name, CancellationToken ct = default)
+    {
+        var members = new List<string>();
+        var recheckSeconds = 0;
+        var found = false;
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT member, recheck_seconds
+                    FROM balancers
+                    WHERE name = $name
+                    ORDER BY position;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        members.Add(reader.GetString(0));
+                        recheckSeconds = reader.GetInt32(1);
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        return found ? new BalancerGroup(name, recheckSeconds, members) : null;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<string>> ListBalancerNamesAsync(CancellationToken ct = default)
+    {
+        var names = new List<string>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT DISTINCT name FROM balancers ORDER BY name;";
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        names.Add(reader.GetString(0));
+                    }
+                }
+            }
+        }
+
+        return names;
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveBalancerAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM balancers WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -492,6 +731,58 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
 
         return files;
+    }
+
+    /// <inheritdoc/>
+    public async Task<string?> GetSettingAsync(string key, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT value FROM settings WHERE key = $key;";
+                command.Parameters.AddWithValue("$key", key);
+
+                var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                return result as string;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetSettingAsync(string key, string value, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO settings (key, value, updated_at)
+                    VALUES ($key, $value, $updated)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value      = excluded.value,
+                        updated_at = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$key", key);
+                command.Parameters.AddWithValue("$value", value);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static string Timestamp()
+    {
+        return DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
     }
 
     private static GeoFileMetadata ReadGeoFile(string name, SqliteDataReader reader, int offset = 0)

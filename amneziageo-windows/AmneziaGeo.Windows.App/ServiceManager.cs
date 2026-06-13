@@ -15,6 +15,18 @@ internal static class ServiceManager
         var stored = TunnelPaths.ConfigFile(name);
         Directory.CreateDirectory(Path.GetDirectoryName(stored)!);
         File.Copy(configPath, stored, overwrite: true);
+        return CreateService(name);
+    }
+
+    /// <summary>
+    /// Creates the tunnel service for an already-stored config, doing nothing if it already exists.
+    /// </summary>
+    public static int CreateService(string name)
+    {
+        if (Exists(name))
+        {
+            return 0;
+        }
 
         var serviceName = TunnelPaths.ServiceName(name);
         var binPath = $"\"{Environment.ProcessPath}\" --service {name}";
@@ -37,6 +49,43 @@ internal static class ServiceManager
         }
 
         return Sc("sidtype", serviceName, "unrestricted");
+    }
+
+    /// <summary>
+    /// Returns whether the tunnel service exists.
+    /// </summary>
+    public static bool Exists(string name)
+    {
+        return QueryState(name) != "ABSENT";
+    }
+
+    /// <summary>
+    /// Returns the service state as RUNNING, STOPPED, PENDING, or ABSENT.
+    /// </summary>
+    public static string QueryState(string name)
+    {
+        var (code, output, _) = Run("query", TunnelPaths.ServiceName(name));
+        if (code == 1060)
+        {
+            return "ABSENT";
+        }
+
+        if (output.Contains("RUNNING", StringComparison.Ordinal))
+        {
+            return "RUNNING";
+        }
+
+        if (output.Contains("STOPPED", StringComparison.Ordinal))
+        {
+            return "STOPPED";
+        }
+
+        if (output.Contains("PENDING", StringComparison.Ordinal))
+        {
+            return "PENDING";
+        }
+
+        return "ABSENT";
     }
 
     /// <summary>
@@ -65,6 +114,22 @@ internal static class ServiceManager
     }
 
     /// <summary>
+    /// Starts a tunnel service without printing the service-control output.
+    /// </summary>
+    public static int StartQuiet(string name)
+    {
+        return Run("start", TunnelPaths.ServiceName(name)).Code;
+    }
+
+    /// <summary>
+    /// Stops a tunnel service without printing the service-control output.
+    /// </summary>
+    public static int StopQuiet(string name)
+    {
+        return Run("stop", TunnelPaths.ServiceName(name)).Code;
+    }
+
+    /// <summary>
     /// Prints the status of a tunnel service.
     /// </summary>
     public static int Status(string name)
@@ -73,6 +138,18 @@ internal static class ServiceManager
     }
 
     private static int Sc(params string[] arguments)
+    {
+        var (code, output, error) = Run(arguments);
+        Console.Write(output);
+        if (error.Length > 0)
+        {
+            Console.Error.Write(error);
+        }
+
+        return code;
+    }
+
+    private static (int Code, string Output, string Error) Run(params string[] arguments)
     {
         var startInfo = new ProcessStartInfo("sc.exe")
         {
@@ -90,14 +167,7 @@ internal static class ServiceManager
             var output = process.StandardOutput.ReadToEnd();
             var error = process.StandardError.ReadToEnd();
             process.WaitForExit();
-
-            Console.Write(output);
-            if (error.Length > 0)
-            {
-                Console.Error.Write(error);
-            }
-
-            return process.ExitCode;
+            return (process.ExitCode, output, error);
         }
     }
 }

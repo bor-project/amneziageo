@@ -1,34 +1,13 @@
-# Build output
-**/bin/
-**/obj/
-**/.deps/
-**/x64/
-**/x86/
-**/build/
-**/Debug/
-**/Release/
-
-# Native build artifacts
-*.dll
-*.so
-*.dylib
-*.a
-*.exe
-*.pdb
-*.lib
-*.exp
-*.h
-
-# IDE
-.vs/
-.idea/
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-*.user
-*.suo
-
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Editors / IDE (global)
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local agent instruction folders — not committed
+.claude/

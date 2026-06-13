@@ -1,0 +1,26 @@
+# .NET / C#
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+project.lock.json
+.packages/
+
+# Build / IDE cruft
+*.cache
+*.user
+*.tmp
+[Tt]est[Rr]esult*/
+*.coverage
+
+# Local agent instruction folder
+.claude/

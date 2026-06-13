@@ -1,0 +1,27 @@
+# .NET / C#
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+project.lock.json
+.packages/
+
+# .NET for Android
+*.apk
+*.aab
+*.keystore
+*.jks
+Resources/Resource.designer.cs
+
+# Build / IDE cruft
+*.cache
+*.user
+[Tt]est[Rr]esult*/
+
+# Local agent instruction folder
+.claude/

@@ -18,10 +18,22 @@ internal static class TunnelPaths
     /// </summary>
     public static string ConfigFile(string name)
     {
-        var directory = Path.Combine(
+        return Path.Combine(ConfigDirectory(), $"{name}.conf");
+    }
+
+    /// <summary>
+    /// Path to the geo settings sidecar for a tunnel.
+    /// </summary>
+    public static string GeoFile(string name)
+    {
+        return Path.Combine(ConfigDirectory(), $"{name}.geo.json");
+    }
+
+    private static string ConfigDirectory()
+    {
+        return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "AmneziaGeo",
             "Configurations");
-        return Path.Combine(directory, $"{name}.conf");
     }
 }

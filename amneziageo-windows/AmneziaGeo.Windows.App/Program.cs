@@ -1,6 +1,8 @@
+using System.Net;
 using AmneziaGeo.Config;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using AmneziaGeo.Windows.Engine;
 
 namespace AmneziaGeo.Windows.App;
@@ -27,10 +29,32 @@ internal static class Program
                 return ServiceManager.Stop(name);
             case ["status", var name]:
                 return ServiceManager.Status(name);
+            case ["uapi-get", var name]:
+                Console.WriteLine(UapiClient.Get(name));
+                return 0;
+            case ["tunnel-ip", var name, var ip]:
+                return DebugTunnelIp(name, ip);
             default:
                 await RunDemoAsync();
                 return 0;
         }
+    }
+
+    private static int DebugTunnelIp(string name, string ip)
+    {
+        var config = File.ReadAllText(TunnelPaths.ConfigFile(name));
+        var peer = WgConfigEditor.GetPeerPublicKey(config);
+        var index = RouteManager.FindInterfaceIndex(name);
+        if (peer is null || index is null)
+        {
+            Console.WriteLine($"missing peer key or adapter: peer={peer is not null}, adapter={index is not null}");
+            return 1;
+        }
+
+        var activator = new GeoActivator(name, peer, index.Value);
+        var success = activator.TunnelIp(IPAddress.Parse(ip));
+        Console.WriteLine($"tunnel-ip {ip} via {name} (if {index}): {success}");
+        return success ? 0 : 1;
     }
 
     private static async Task RunDemoAsync()

@@ -1,6 +1,7 @@
 using AmneziaGeo.Config;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Windows.Engine;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -17,10 +18,12 @@ internal static class Program
         var store = new SqliteStateStore(config.DatabasePath);
         await store.InitializeAsync();
 
+        var (publicKey, privateKey) = WireGuardEngine.GenerateKeypair();
+
         var profile = new TunnelProfile(
             Name: "default",
-            PrivateKey: string.Empty,
-            PublicKey: string.Empty,
+            PrivateKey: privateKey,
+            PublicKey: publicKey,
             Endpoint: string.Empty,
             Rules: [new GeoRule(GeoRuleKind.GeoSite, "geosite:openai")]);
 
@@ -30,5 +33,6 @@ internal static class Program
         Console.WriteLine("AmneziaGeo Windows host - hello");
         Console.WriteLine($"State DB: {config.DatabasePath}");
         Console.WriteLine($"Profiles: {string.Join(", ", profiles)}");
+        Console.WriteLine($"Generated public key: {publicKey}");
     }
 }

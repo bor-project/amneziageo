@@ -45,6 +45,35 @@ internal static class UapiClient
         return Exchange(tunnelName, "get=1\n\n");
     }
 
+    /// <summary>
+    /// Returns the most recent peer handshake as unix seconds, or null when the device is unreachable.
+    /// </summary>
+    public static long? TryGetLastHandshake(string tunnelName)
+    {
+        string state;
+        try
+        {
+            state = Get(tunnelName);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        long latest = 0;
+        foreach (var line in state.Split('\n'))
+        {
+            if (line.StartsWith("last_handshake_time_sec=", StringComparison.Ordinal)
+                && long.TryParse(line["last_handshake_time_sec=".Length..].Trim(), out var seconds)
+                && seconds > latest)
+            {
+                latest = seconds;
+            }
+        }
+
+        return latest;
+    }
+
     private static string Exchange(string tunnelName, string request)
     {
         var pipeName = $@"ProtectedPrefix\Administrators\AmneziaWG\{tunnelName}";

@@ -1,5 +1,4 @@
 using System.Net;
-using AmneziaGeo.Config;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -32,9 +31,9 @@ internal static class TunnelRunner
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), routes);
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
 
-        var appConfig = await new ConfigStore(TunnelPaths.AppConfigFile()).LoadAsync();
+        var settings = await SettingsStore.LoadAsync(store);
         DnsRedirector? redirector = null;
-        if (geoSplit && domains.Count > 0 && StartGeo(name, config, domains, routes, appConfig.RefreshSeconds, store))
+        if (geoSplit && domains.Count > 0 && StartGeo(name, config, domains, routes, settings.RefreshSeconds, store))
         {
             redirector = new DnsRedirector();
             redirector.Apply();

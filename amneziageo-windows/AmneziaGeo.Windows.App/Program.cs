@@ -1,5 +1,4 @@
 using System.Net;
-using AmneziaGeo.Config;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -48,12 +47,36 @@ internal static class Program
                 return await GeoQueryAsync(kind, key);
             case ["set-geo", var name, var toggle, .. var rules]:
                 return await SetGeoAsync(name, toggle, rules);
-            case ["set-refresh", var seconds]:
-                return await SetRefreshAsync(seconds);
+            case ["settings"]:
+                return await ShowSettingsAsync();
+            case ["set-option", var key, var value]:
+                return await SetOptionAsync(key, value);
             case ["seed-domain", var name, var domain, var ip]:
                 return await SeedDomainAsync(name, domain, ip);
             case ["domains", var name]:
                 return await ListDomainsAsync(name);
+            case ["config-add", var name, var path]:
+                return ConfigAdd(name, path);
+            case ["config-list"]:
+                return ConfigList();
+            case ["config-show", var name]:
+                return await ConfigShowAsync(name);
+            case ["config-copy", var source, var destination]:
+                return await ConfigCopyAsync(source, destination);
+            case ["config-edit", var name, var path]:
+                return ConfigEdit(name, path);
+            case ["config-remove", var name]:
+                return await ConfigRemoveAsync(name);
+            case ["balancer-add", var name, var recheck, .. var members]:
+                return await BalancerAddAsync(name, recheck, members);
+            case ["balancer-list"]:
+                return await BalancerListAsync();
+            case ["balancer-show", var name]:
+                return await BalancerShowAsync(name);
+            case ["balancer-remove", var name]:
+                return await BalancerRemoveAsync(name);
+            case ["balancer-run", var name]:
+                return await BalancerRunAsync(name);
             default:
                 await RunDemoAsync();
                 return 0;
@@ -180,20 +203,26 @@ internal static class Program
         return 0;
     }
 
-    private static async Task<int> SetRefreshAsync(string seconds)
+    private static async Task<int> ShowSettingsAsync()
     {
-        if (!int.TryParse(seconds, out var value) || value <= 0)
+        var store = await OpenStoreAsync();
+        var settings = await SettingsStore.LoadAsync(store);
+        Console.WriteLine($"refresh-seconds\t{settings.RefreshSeconds}");
+        Console.WriteLine($"connect-timeout-seconds\t{settings.ConnectTimeoutSeconds}");
+        Console.WriteLine($"dead-threshold-seconds\t{settings.DeadThresholdSeconds}");
+        return 0;
+    }
+
+    private static async Task<int> SetOptionAsync(string key, string value)
+    {
+        var store = await OpenStoreAsync();
+        if (!await SettingsStore.SetAsync(store, key, value))
         {
-            Console.WriteLine("invalid seconds");
+            Console.WriteLine($"invalid option or value; keys: {string.Join(", ", SettingsStore.Keys())}");
             return 1;
         }
 
-        var path = TunnelPaths.AppConfigFile();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var configStore = new ConfigStore(path);
-        var config = await configStore.LoadAsync();
-        await configStore.SaveAsync(config with { RefreshSeconds = value });
-        Console.WriteLine($"refresh interval set to {value}s");
+        Console.WriteLine($"set {key} = {value}");
         return 0;
     }
 
@@ -214,6 +243,207 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static int ConfigAdd(string name, string path)
+    {
+        try
+        {
+            ConfigRepository.Add(name, path);
+            Console.WriteLine($"added config {name}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int ConfigList()
+    {
+        foreach (var name in ConfigRepository.List())
+        {
+            var endpoint = EndpointLabel(File.ReadAllText(TunnelPaths.ConfigFile(name)));
+            Console.WriteLine($"{name}\t{endpoint}\t{ServiceManager.QueryState(name)}");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> ConfigShowAsync(string name)
+    {
+        if (!ConfigRepository.Exists(name))
+        {
+            Console.WriteLine($"unknown config: {name}");
+            return 1;
+        }
+
+        var config = await File.ReadAllTextAsync(TunnelPaths.ConfigFile(name));
+        Console.WriteLine($"config {name}");
+        Console.WriteLine($"  endpoint: {EndpointLabel(config)}");
+        Console.WriteLine($"  allowed:  {string.Join(", ", WgConfigEditor.GetAllowedIps(config))}");
+        Console.WriteLine($"  service:  {ServiceManager.QueryState(name)}");
+
+        var store = await OpenStoreAsync();
+        var geo = await store.GetTunnelGeoAsync(name);
+        if (geo is not null)
+        {
+            Console.WriteLine($"  geo:      split={(geo.GeoSplit ? "on" : "off")}, {geo.Routes.Count} routes, {geo.Domains.Count} domains");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> ConfigCopyAsync(string source, string destination)
+    {
+        try
+        {
+            var store = await OpenStoreAsync();
+            await ConfigRepository.CopyAsync(source, destination, store);
+            Console.WriteLine($"copied config {source} -> {destination}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static int ConfigEdit(string name, string path)
+    {
+        try
+        {
+            ConfigRepository.Edit(name, path);
+            Console.WriteLine($"updated config {name} (restart its tunnel to apply)");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    private static async Task<int> ConfigRemoveAsync(string name)
+    {
+        var store = await OpenStoreAsync();
+        await ConfigRepository.RemoveAsync(name, store);
+        Console.WriteLine($"removed config {name}");
+        return 0;
+    }
+
+    private static async Task<int> BalancerAddAsync(string name, string recheck, string[] members)
+    {
+        if (!int.TryParse(recheck, out var seconds) || seconds <= 0)
+        {
+            Console.WriteLine("invalid recheck seconds");
+            return 1;
+        }
+
+        if (members.Length == 0)
+        {
+            Console.WriteLine("at least one member required");
+            return 1;
+        }
+
+        foreach (var member in members)
+        {
+            if (!ConfigRepository.Exists(member))
+            {
+                Console.WriteLine($"unknown config: {member}");
+                return 1;
+            }
+        }
+
+        var store = await OpenStoreAsync();
+        await store.SaveBalancerAsync(new BalancerGroup(name, seconds, members));
+        Console.WriteLine($"saved balancer {name}: recheck={seconds}s, members={string.Join(" > ", members)}");
+        return 0;
+    }
+
+    private static async Task<int> BalancerListAsync()
+    {
+        var store = await OpenStoreAsync();
+        foreach (var name in await store.ListBalancerNamesAsync())
+        {
+            var balancer = await store.GetBalancerAsync(name);
+            if (balancer is not null)
+            {
+                Console.WriteLine($"{name}\t{balancer.RecheckSeconds}s\t{string.Join(" > ", balancer.Members)}");
+            }
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> BalancerShowAsync(string name)
+    {
+        var store = await OpenStoreAsync();
+        var balancer = await store.GetBalancerAsync(name);
+        if (balancer is null)
+        {
+            Console.WriteLine($"unknown balancer: {name}");
+            return 1;
+        }
+
+        Console.WriteLine($"balancer {name} (recheck {balancer.RecheckSeconds}s)");
+        for (var i = 0; i < balancer.Members.Count; i++)
+        {
+            var member = balancer.Members[i];
+            var state = ConfigRepository.Exists(member) ? ServiceManager.QueryState(member) : "MISSING";
+            Console.WriteLine($"  {i}. {member}\t{state}");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> BalancerRemoveAsync(string name)
+    {
+        var store = await OpenStoreAsync();
+        await store.RemoveBalancerAsync(name);
+        Console.WriteLine($"removed balancer {name}");
+        return 0;
+    }
+
+    private static async Task<int> BalancerRunAsync(string name)
+    {
+        var store = await OpenStoreAsync();
+        var balancer = await store.GetBalancerAsync(name);
+        if (balancer is null)
+        {
+            Console.WriteLine($"unknown balancer: {name}");
+            return 1;
+        }
+
+        var settings = await SettingsStore.LoadAsync(store);
+        using (var cts = new CancellationTokenSource())
+        {
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+            };
+            var runner = new BalancerRunner(balancer, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds);
+            await runner.RunAsync(cts.Token);
+        }
+
+        return 0;
+    }
+
+    private static string EndpointLabel(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("Endpoint", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed[(trimmed.IndexOf('=') + 1)..].Trim();
+            }
+        }
+
+        return "(none)";
     }
 
     private static async Task RematerializeAllAsync(IStateStore store)
@@ -280,11 +510,7 @@ internal static class Program
 
     private static async Task RunDemoAsync()
     {
-        var configStore = new ConfigStore("amneziageo.json");
-        var config = await configStore.LoadAsync();
-
-        var store = new SqliteStateStore(config.DatabasePath);
-        await store.InitializeAsync();
+        var store = await OpenStoreAsync();
 
         var (publicKey, privateKey) = WireGuardEngine.GenerateKeypair();
 
@@ -299,7 +525,7 @@ internal static class Program
         var profiles = await store.ListProfileNamesAsync();
 
         Console.WriteLine("AmneziaGeo Windows host - hello");
-        Console.WriteLine($"State DB: {config.DatabasePath}");
+        Console.WriteLine($"State DB: {TunnelPaths.StateDbFile()}");
         Console.WriteLine($"Profiles: {string.Join(", ", profiles)}");
         Console.WriteLine($"Generated public key: {publicKey}");
     }

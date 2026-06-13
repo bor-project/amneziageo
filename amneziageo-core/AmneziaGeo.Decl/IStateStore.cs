@@ -41,6 +41,11 @@ public interface IStateStore
     Task<IReadOnlyList<string>> ListTunnelGeoNamesAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Removes the geo settings for a tunnel.
+    /// </summary>
+    Task RemoveTunnelGeoAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates a geo download source.
     /// </summary>
     Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default);
@@ -66,6 +71,31 @@ public interface IStateStore
     Task<IReadOnlyList<DomainResolution>> ListDomainResolutionsAsync(string tunnel, CancellationToken ct = default);
 
     /// <summary>
+    /// Removes all saved domain resolutions for a tunnel.
+    /// </summary>
+    Task RemoveDomainResolutionsAsync(string tunnel, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a failover balancer group.
+    /// </summary>
+    Task SaveBalancerAsync(BalancerGroup balancer, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the named balancer group, or null if absent.
+    /// </summary>
+    Task<BalancerGroup?> GetBalancerAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all stored balancer names.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListBalancerNamesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a balancer group by name.
+    /// </summary>
+    Task RemoveBalancerAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns metadata for a geo file, or null if absent.
     /// </summary>
     Task<GeoFileMetadata?> GetGeoFileAsync(string name, CancellationToken ct = default);
@@ -79,4 +109,14 @@ public interface IStateStore
     /// Returns metadata for all stored geo files.
     /// </summary>
     Task<IReadOnlyList<GeoFileMetadata>> ListGeoFilesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a stored application setting value, or null if absent.
+    /// </summary>
+    Task<string?> GetSettingAsync(string key, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates an application setting value.
+    /// </summary>
+    Task SetSettingAsync(string key, string value, CancellationToken ct = default);
 }

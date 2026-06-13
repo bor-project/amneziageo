@@ -7,22 +7,21 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Resolves tunneled domains to IPs, persists them, and keeps them fresh by re-resolving.
 /// </summary>
-internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IStateStore store)
+internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IReadOnlyList<string> staticRoutes, int refreshSeconds, IStateStore store)
 {
-    private const int RefreshSeconds = 15;
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
-    private GeoActivator? _activator;
+    private uint? _interfaceIndex;
 
     /// <summary>
-    /// Applies a domain's resolved IPs: routes new ones, drops stale ones, and persists the change.
+    /// Applies a domain's resolved IPs: routes new ones, drops stale ones, replaces allowed IPs, and persists.
     /// </summary>
     public void Update(string domain, IReadOnlyList<string> ips)
     {
         lock (_lock)
         {
-            var activator = EnsureActivator();
-            if (activator is null)
+            var index = EnsureIndex();
+            if (index is null)
             {
                 return;
             }
@@ -40,7 +39,7 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, ISt
             {
                 if (!old.Contains(ip))
                 {
-                    activator.TunnelIp(IPAddress.Parse(ip));
+                    RouteManager.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
                 }
             }
 
@@ -48,11 +47,12 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, ISt
             {
                 if (!fresh.Contains(ip))
                 {
-                    RouteManager.RemoveTunnelRoute(IPAddress.Parse(ip));
+                    RouteManager.RemoveTunnelRoute(IPAddress.Parse(ip), index.Value);
                 }
             }
 
             _current[key] = fresh;
+            UapiClient.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
             store.SaveDomainResolutionAsync(tunnelName, new DomainResolution(key, [.. fresh])).GetAwaiter().GetResult();
         }
     }
@@ -76,13 +76,28 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, ISt
 
             while (true)
             {
-                await Task.Delay(TimeSpan.FromSeconds(RefreshSeconds));
+                await Task.Delay(TimeSpan.FromSeconds(refreshSeconds));
                 await RefreshAsync();
             }
         }
         catch (Exception)
         {
         }
+    }
+
+    private List<string> BuildAllowedIps()
+    {
+        var all = new List<string>(staticRoutes);
+        foreach (var set in _current.Values)
+        {
+            foreach (var ip in set)
+            {
+                var prefix = IPAddress.Parse(ip).AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
+                all.Add($"{ip}/{prefix}");
+            }
+        }
+
+        return all;
     }
 
     private async Task RefreshAsync()
@@ -99,7 +114,7 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, ISt
             {
                 var addresses = await Dns.GetHostAddressesAsync(domain);
                 var ips = addresses
-                    .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+                    .Where(a => a.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6)
                     .Select(a => a.ToString())
                     .ToList();
                 if (ips.Count > 0)
@@ -113,20 +128,9 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, ISt
         }
     }
 
-    private GeoActivator? EnsureActivator()
+    private uint? EnsureIndex()
     {
-        if (_activator is not null)
-        {
-            return _activator;
-        }
-
-        var index = RouteManager.FindInterfaceIndex(tunnelName);
-        if (index is null)
-        {
-            return null;
-        }
-
-        _activator = new GeoActivator(tunnelName, peerPublicKey, index.Value);
-        return _activator;
+        _interfaceIndex ??= RouteManager.FindInterfaceIndex(tunnelName);
+        return _interfaceIndex;
     }
 }

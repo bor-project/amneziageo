@@ -1,7 +1,7 @@
 namespace AmneziaGeo.Geo;
 
 /// <summary>
-/// Reads and rewrites the AllowedIPs of a wg-quick config.
+/// Reads and rewrites the AllowedIPs and DNS of a wg-quick config.
 /// </summary>
 public static class WgConfigEditor
 {
@@ -61,6 +61,23 @@ public static class WgConfigEditor
             }
 
             kept.Add(line);
+        }
+
+        return string.Join('\n', kept);
+    }
+
+    /// <summary>
+    /// Returns the config with its DNS lines removed.
+    /// </summary>
+    public static string RemoveDns(string config)
+    {
+        var kept = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            if (!line.Trim().StartsWith("DNS", StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add(line);
+            }
         }
 
         return string.Join('\n', kept);

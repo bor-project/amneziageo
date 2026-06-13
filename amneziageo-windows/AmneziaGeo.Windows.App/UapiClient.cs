@@ -19,6 +19,25 @@ internal static class UapiClient
     }
 
     /// <summary>
+    /// Replaces the peer's allowed IPs with exactly the given set.
+    /// </summary>
+    public static bool SetAllowedIps(string tunnelName, string peerPublicKeyBase64, IReadOnlyList<string> cidrs)
+    {
+        var peerHex = Convert.ToHexStringLower(Convert.FromBase64String(peerPublicKeyBase64));
+        var request = new StringBuilder();
+        request.Append("set=1\n");
+        request.Append($"public_key={peerHex}\n");
+        request.Append("replace_allowed_ips=true\n");
+        foreach (var cidr in cidrs)
+        {
+            request.Append($"allowed_ip={cidr}\n");
+        }
+
+        request.Append('\n');
+        return Exchange(tunnelName, request.ToString()).Contains("errno=0", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Returns the raw device state from a get request.
     /// </summary>
     public static string Get(string tunnelName)

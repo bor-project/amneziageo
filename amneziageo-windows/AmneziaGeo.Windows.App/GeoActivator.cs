@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -12,9 +13,18 @@ internal sealed class GeoActivator(string tunnelName, string peerPublicKey, uint
     /// </summary>
     public bool TunnelIp(IPAddress ip)
     {
-        var cidr = $"{ip}/32";
+        var prefix = ip.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
+        var cidr = $"{ip}/{prefix}";
         var allowed = UapiClient.AddAllowedIp(tunnelName, peerPublicKey, cidr);
         var routed = RouteManager.AddTunnelRoute(ip, interfaceIndex);
         return allowed && routed;
+    }
+
+    /// <summary>
+    /// Removes the tunnel route for an IP that is no longer current.
+    /// </summary>
+    public void UntunnelIp(IPAddress ip)
+    {
+        RouteManager.RemoveTunnelRoute(ip, interfaceIndex);
     }
 }

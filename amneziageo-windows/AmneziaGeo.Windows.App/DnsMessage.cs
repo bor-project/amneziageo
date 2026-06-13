@@ -23,9 +23,9 @@ internal static class DnsMessage
     }
 
     /// <summary>
-    /// Returns the IPv4 addresses from the answer section.
+    /// Returns the IPv4 (A) and IPv6 (AAAA) addresses from the answer section.
     /// </summary>
-    public static IReadOnlyList<IPAddress> ARecords(byte[] message)
+    public static IReadOnlyList<IPAddress> Addresses(byte[] message)
     {
         var result = new List<IPAddress>();
         if (message.Length < 12)
@@ -48,9 +48,9 @@ internal static class DnsMessage
             var type = (message[offset] << 8) | message[offset + 1];
             var dataLength = (message[offset + 8] << 8) | message[offset + 9];
             offset += 10;
-            if (type == 1 && dataLength == 4 && offset + 4 <= message.Length)
+            if (offset + dataLength <= message.Length && ((type == 1 && dataLength == 4) || (type == 28 && dataLength == 16)))
             {
-                result.Add(new IPAddress(message[offset..(offset + 4)]));
+                result.Add(new IPAddress(message[offset..(offset + dataLength)]));
             }
 
             offset += dataLength;

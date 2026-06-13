@@ -48,6 +48,8 @@ internal static class Program
                 return await GeoQueryAsync(kind, key);
             case ["set-geo", var name, var toggle, .. var rules]:
                 return await SetGeoAsync(name, toggle, rules);
+            case ["set-refresh", var seconds]:
+                return await SetRefreshAsync(seconds);
             case ["seed-domain", var name, var domain, var ip]:
                 return await SeedDomainAsync(name, domain, ip);
             case ["domains", var name]:
@@ -170,6 +172,28 @@ internal static class Program
         var (routes, domains) = GeoMaterializer.Materialize(rules, index);
         await store.SaveTunnelGeoAsync(new TunnelGeo(name, split, rules, routes, domains));
         Console.WriteLine($"set-geo {name}: split={split}, {rules.Count} rules -> {routes.Count} routes, {domains.Count} domains");
+        if (routes.Count > 10000)
+        {
+            Console.WriteLine($"warning: {routes.Count} routes is large (e.g. full-country geoip) and may strain the OS route table");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> SetRefreshAsync(string seconds)
+    {
+        if (!int.TryParse(seconds, out var value) || value <= 0)
+        {
+            Console.WriteLine("invalid seconds");
+            return 1;
+        }
+
+        var path = TunnelPaths.AppConfigFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var configStore = new ConfigStore(path);
+        var config = await configStore.LoadAsync();
+        await configStore.SaveAsync(config with { RefreshSeconds = value });
+        Console.WriteLine($"refresh interval set to {value}s");
         return 0;
     }
 

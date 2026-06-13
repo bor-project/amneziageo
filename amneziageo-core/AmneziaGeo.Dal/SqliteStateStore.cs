@@ -6,6 +6,9 @@ using Microsoft.Data.Sqlite;
 
 namespace AmneziaGeo.Dal;
 
+/// <summary>
+/// SQLite-backed <see cref="IStateStore"/>.
+/// </summary>
 public sealed class SqliteStateStore(string databasePath) : IStateStore
 {
     private readonly string _connectionString = new SqliteConnectionStringBuilder
@@ -13,6 +16,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         DataSource = databasePath,
     }.ToString();
 
+    /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -38,6 +42,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
     }
 
+    /// <inheritdoc/>
     public async Task SaveProfileAsync(TunnelProfile profile, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -68,6 +73,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
     }
 
+    /// <inheritdoc/>
     public async Task<TunnelProfile?> GetProfileAsync(string name, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -101,6 +107,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
     }
 
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default)
     {
         var names = new List<string>();

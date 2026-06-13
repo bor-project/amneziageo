@@ -4,6 +4,9 @@ using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Windows.App;
 
+/// <summary>
+/// Windows host entry point.
+/// </summary>
 internal static class Program
 {
     private static async Task Main()

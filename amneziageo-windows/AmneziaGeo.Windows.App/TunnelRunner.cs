@@ -1,4 +1,5 @@
 using System.Net;
+using AmneziaGeo.Config;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -31,9 +32,13 @@ internal static class TunnelRunner
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), routes);
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
 
-        if (geoSplit && domains.Count > 0)
+        var appConfig = await new ConfigStore(TunnelPaths.AppConfigFile()).LoadAsync();
+        DnsRedirector? redirector = null;
+        if (geoSplit && domains.Count > 0 && StartGeo(name, config, domains, routes, appConfig.RefreshSeconds, store))
         {
-            StartGeo(name, config, domains, store);
+            redirector = new DnsRedirector();
+            redirector.Apply();
+            config = WgConfigEditor.RemoveDns(config);
         }
 
         var endpoint = TunnelEndpoint.Resolve(config);
@@ -44,6 +49,7 @@ internal static class TunnelRunner
         }
         finally
         {
+            redirector?.Restore();
             if (excluded)
             {
                 RouteManager.RemoveEndpointExclusion(endpoint!);
@@ -51,22 +57,30 @@ internal static class TunnelRunner
         }
     }
 
-    private static void StartGeo(string name, string config, IReadOnlyList<GeoDomain> domains, IStateStore store)
+    private static bool StartGeo(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> routes, int refreshSeconds, IStateStore store)
     {
         var peer = WgConfigEditor.GetPeerPublicKey(config);
         if (peer is null)
         {
-            return;
+            return false;
         }
 
-        var tracker = new DomainTracker(name, peer, store);
+        var tracker = new DomainTracker(name, peer, routes, refreshSeconds, store);
         _ = Task.Run(tracker.RunAsync);
 
-        var proxy = new DnsProxy(domains, IPAddress.Parse("1.1.1.1"), tracker);
-        var thread = new Thread(proxy.Serve)
+        try
         {
-            IsBackground = true,
-        };
-        thread.Start();
+            var proxy = new DnsProxy(domains, IPAddress.Parse("1.1.1.1"), tracker);
+            var thread = new Thread(proxy.Serve)
+            {
+                IsBackground = true,
+            };
+            thread.Start();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 }

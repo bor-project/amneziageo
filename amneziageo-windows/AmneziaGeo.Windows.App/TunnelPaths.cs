@@ -37,6 +37,14 @@ internal static class TunnelPaths
         return Path.Combine(RootDirectory(), "state.db");
     }
 
+    /// <summary>
+    /// Path to the shared application config file.
+    /// </summary>
+    public static string AppConfigFile()
+    {
+        return Path.Combine(RootDirectory(), "config.json");
+    }
+
     private static string RootDirectory()
     {
         return Path.Combine(

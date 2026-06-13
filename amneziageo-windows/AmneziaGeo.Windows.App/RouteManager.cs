@@ -48,6 +48,11 @@ internal static partial class RouteManager
     /// </summary>
     public static bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            return Netsh("interface", "ipv6", "add", "route", $"{ip}/128", $"interface={tunnelInterfaceIndex}") == 0;
+        }
+
         var result = Route(
             "add",
             ip.ToString(),
@@ -62,10 +67,16 @@ internal static partial class RouteManager
     }
 
     /// <summary>
-    /// Removes a host route for an IP.
+    /// Removes a host route for an IP from the tunnel interface.
     /// </summary>
-    public static void RemoveTunnelRoute(IPAddress ip)
+    public static void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            Netsh("interface", "ipv6", "delete", "route", $"{ip}/128", $"interface={tunnelInterfaceIndex}");
+            return;
+        }
+
         Route("delete", ip.ToString());
     }
 
@@ -81,14 +92,26 @@ internal static partial class RouteManager
                 continue;
             }
 
-            var properties = nic.GetIPProperties().GetIPv4Properties();
-            if (properties is not null)
+            var index = Ipv4Index(nic);
+            if (index is not null)
             {
-                return (uint)properties.Index;
+                return (uint)index.Value;
             }
         }
 
         return null;
+    }
+
+    private static int? Ipv4Index(NetworkInterface nic)
+    {
+        try
+        {
+            return nic.GetIPProperties().GetIPv4Properties()?.Index;
+        }
+        catch (NetworkInformationException)
+        {
+            return null;
+        }
     }
 
     private static (IPAddress? Gateway, uint InterfaceIndex) FindPhysicalGateway(IPAddress endpoint)
@@ -101,12 +124,12 @@ internal static partial class RouteManager
 
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
-            var properties = nic.GetIPProperties();
-            if (properties.GetIPv4Properties()?.Index != interfaceIndex)
+            if (Ipv4Index(nic) != interfaceIndex)
             {
                 continue;
             }
 
+            var properties = nic.GetIPProperties();
             foreach (var gateway in properties.GatewayAddresses)
             {
                 if (gateway.Address.AddressFamily == AddressFamily.InterNetwork)
@@ -121,7 +144,17 @@ internal static partial class RouteManager
 
     private static int Route(params string[] arguments)
     {
-        var startInfo = new ProcessStartInfo("route.exe")
+        return Run("route.exe", arguments);
+    }
+
+    private static int Netsh(params string[] arguments)
+    {
+        return Run("netsh", arguments);
+    }
+
+    private static int Run(string fileName, string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo(fileName)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,

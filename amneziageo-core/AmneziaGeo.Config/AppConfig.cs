@@ -19,4 +19,9 @@ public sealed record AppConfig
     /// Whether geo split tunneling is enabled.
     /// </summary>
     public bool GeoSplitTunnel { get; init; }
+
+    /// <summary>
+    /// How often tunneled domains are re-resolved, in seconds.
+    /// </summary>
+    public int RefreshSeconds { get; init; } = 60;
 }

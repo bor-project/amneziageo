@@ -43,6 +43,46 @@ internal static partial class RouteManager
         Route("delete", endpoint.ToString());
     }
 
+    /// <summary>
+    /// Adds an on-link host route for an IP through the tunnel interface.
+    /// </summary>
+    public static bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
+    {
+        var result = Route(
+            "add",
+            ip.ToString(),
+            "mask",
+            "255.255.255.255",
+            "0.0.0.0",
+            "if",
+            tunnelInterfaceIndex.ToString(),
+            "metric",
+            "1");
+        return result == 0;
+    }
+
+    /// <summary>
+    /// Returns the IPv4 interface index of a network adapter by name.
+    /// </summary>
+    public static uint? FindInterfaceIndex(string adapterName)
+    {
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.Name != adapterName)
+            {
+                continue;
+            }
+
+            var properties = nic.GetIPProperties().GetIPv4Properties();
+            if (properties is not null)
+            {
+                return (uint)properties.Index;
+            }
+        }
+
+        return null;
+    }
+
     private static (IPAddress? Gateway, uint InterfaceIndex) FindPhysicalGateway(IPAddress endpoint)
     {
         var destination = BitConverter.ToUInt32(endpoint.GetAddressBytes(), 0);

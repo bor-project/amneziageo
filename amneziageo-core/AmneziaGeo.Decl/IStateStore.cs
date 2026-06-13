@@ -1,7 +1,7 @@
 namespace AmneziaGeo.Decl;
 
 /// <summary>
-/// Persistent store for tunnel profiles.
+/// Persistent store for tunnel profiles, geo settings, and geo file metadata.
 /// </summary>
 public interface IStateStore
 {
@@ -24,4 +24,34 @@ public interface IStateStore
     /// Returns all stored profile names.
     /// </summary>
     Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the geo settings and active set for a tunnel, or null if absent.
+    /// </summary>
+    Task<TunnelGeo?> GetTunnelGeoAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates the geo settings and active set for a tunnel.
+    /// </summary>
+    Task SaveTunnelGeoAsync(TunnelGeo geo, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all tunnel names that have geo settings.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListTunnelGeoNamesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns metadata for a geo file, or null if absent.
+    /// </summary>
+    Task<GeoFileMetadata?> GetGeoFileAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates geo file metadata.
+    /// </summary>
+    Task SaveGeoFileAsync(GeoFileMetadata metadata, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns metadata for all stored geo files.
+    /// </summary>
+    Task<IReadOnlyList<GeoFileMetadata>> ListGeoFilesAsync(CancellationToken ct = default);
 }

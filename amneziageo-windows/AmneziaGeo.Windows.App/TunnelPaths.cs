@@ -18,22 +18,29 @@ internal static class TunnelPaths
     /// </summary>
     public static string ConfigFile(string name)
     {
-        return Path.Combine(ConfigDirectory(), $"{name}.conf");
+        return Path.Combine(RootDirectory(), "Configurations", $"{name}.conf");
     }
 
     /// <summary>
-    /// Path to the geo settings sidecar for a tunnel.
+    /// Path to a downloaded geo database file (geosite/geoip).
     /// </summary>
-    public static string GeoFile(string name)
+    public static string GeoDataFile(string kind)
     {
-        return Path.Combine(ConfigDirectory(), $"{name}.geo.json");
+        return Path.Combine(RootDirectory(), "geo", $"{kind}.dat");
     }
 
-    private static string ConfigDirectory()
+    /// <summary>
+    /// Path to the shared SQLite state database.
+    /// </summary>
+    public static string StateDbFile()
+    {
+        return Path.Combine(RootDirectory(), "state.db");
+    }
+
+    private static string RootDirectory()
     {
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "AmneziaGeo",
-            "Configurations");
+            "AmneziaGeo");
     }
 }

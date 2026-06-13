@@ -8,7 +8,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Loopback DNS proxy that routes resolved tunneled domains through the tunnel.
 /// </summary>
-internal sealed class DnsProxy(string tunnelName, string peerPublicKey, GeoSettings settings, IPAddress upstream)
+internal sealed class DnsProxy(string tunnelName, string peerPublicKey, IReadOnlyList<GeoDomain> domains, IPAddress upstream)
 {
     private GeoActivator? _activator;
 
@@ -68,7 +68,7 @@ internal sealed class DnsProxy(string tunnelName, string peerPublicKey, GeoSetti
     private void ActivateIfMatched(byte[] query, byte[] response)
     {
         var name = DnsMessage.QuestionName(query);
-        if (name is null || !DomainMatcher.IsTunneled(name, settings))
+        if (name is null || !DomainMatcher.IsTunneled(name, domains))
         {
             return;
         }

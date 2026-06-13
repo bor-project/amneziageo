@@ -1,0 +1,22 @@
+root = true
+
+[*]
+indent_style = space
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_size = 4
+
+csharp_prefer_braces = true:error
+dotnet_diagnostic.IDE0011.severity = error
+
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_diagnostic.IDE0161.severity = warning
+
+dotnet_sort_system_directives_first = true
+csharp_using_directive_placement = outside_namespace:warning
+
+[*.{xml,csproj,props,targets,slnx,json}]
+indent_size = 2

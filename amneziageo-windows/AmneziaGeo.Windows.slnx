@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../amneziageo-core/AmneziaGeo.Config/AmneziaGeo.Config.csproj" />
+  <Project Path="../amneziageo-core/AmneziaGeo.Dal/AmneziaGeo.Dal.csproj" />
+  <Project Path="../amneziageo-core/AmneziaGeo.Decl/AmneziaGeo.Decl.csproj" />
+  <Project Path="AmneziaGeo.Windows.App/AmneziaGeo.Windows.App.csproj" />
+</Solution>

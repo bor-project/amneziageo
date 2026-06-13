@@ -9,5 +9,10 @@ desktop.ini
 *.user
 *.suo
 
+# SQLite runtime
+*.db
+*.db-shm
+*.db-wal
+
 # Local agent instruction folders — not committed
 .claude/

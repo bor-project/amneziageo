@@ -41,6 +41,16 @@ public interface IStateStore
     Task<IReadOnlyList<string>> ListTunnelGeoNamesAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Inserts or updates the resolved IPs for a tunnel's domain.
+    /// </summary>
+    Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all saved domain resolutions for a tunnel.
+    /// </summary>
+    Task<IReadOnlyList<DomainResolution>> ListDomainResolutionsAsync(string tunnel, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns metadata for a geo file, or null if absent.
     /// </summary>
     Task<GeoFileMetadata?> GetGeoFileAsync(string name, CancellationToken ct = default);

@@ -53,6 +53,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         routes_json  TEXT NOT NULL,
                         domains_json TEXT NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS domain_ips (
+                        tunnel   TEXT NOT NULL,
+                        domain   TEXT NOT NULL,
+                        ips_json TEXT NOT NULL,
+                        PRIMARY KEY (tunnel, domain)
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -247,6 +254,63 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
 
         return names;
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO domain_ips (tunnel, domain, ips_json)
+                    VALUES ($tunnel, $domain, $ips)
+                    ON CONFLICT(tunnel, domain) DO UPDATE SET
+                        ips_json = excluded.ips_json;
+                    """;
+                command.Parameters.AddWithValue("$tunnel", tunnel);
+                command.Parameters.AddWithValue("$domain", resolution.Domain);
+                command.Parameters.AddWithValue("$ips", JsonSerializer.Serialize(resolution.Ips));
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<DomainResolution>> ListDomainResolutionsAsync(string tunnel, CancellationToken ct = default)
+    {
+        var resolutions = new List<DomainResolution>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT domain, ips_json FROM domain_ips WHERE tunnel = $tunnel ORDER BY domain;";
+                command.Parameters.AddWithValue("$tunnel", tunnel);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        var ips = JsonSerializer.Deserialize<List<string>>(reader.GetString(1)) ?? [];
+                        resolutions.Add(new DomainResolution(reader.GetString(0), ips));
+                    }
+                }
+            }
+        }
+
+        return resolutions;
     }
 
     /// <inheritdoc/>

@@ -44,6 +44,10 @@ internal static class Program
                 return GeoList(kind);
             case ["set-geo", var name, var toggle, .. var rules]:
                 return await SetGeoAsync(name, toggle, rules);
+            case ["seed-domain", var name, var domain, var ip]:
+                return await SeedDomainAsync(name, domain, ip);
+            case ["domains", var name]:
+                return await ListDomainsAsync(name);
             default:
                 await RunDemoAsync();
                 return 0;
@@ -77,6 +81,25 @@ internal static class Program
         var store = await OpenStoreAsync();
         await store.SaveTunnelGeoAsync(new TunnelGeo(name, split, rules, routes, domains));
         Console.WriteLine($"set-geo {name}: split={split}, {rules.Count} rules -> {routes.Count} routes, {domains.Count} domains");
+        return 0;
+    }
+
+    private static async Task<int> SeedDomainAsync(string name, string domain, string ip)
+    {
+        var store = await OpenStoreAsync();
+        await store.SaveDomainResolutionAsync(name, new DomainResolution(domain.ToLowerInvariant(), [ip]));
+        Console.WriteLine($"seeded {name} {domain} -> {ip}");
+        return 0;
+    }
+
+    private static async Task<int> ListDomainsAsync(string name)
+    {
+        var store = await OpenStoreAsync();
+        foreach (var resolution in await store.ListDomainResolutionsAsync(name))
+        {
+            Console.WriteLine($"{resolution.Domain} -> {string.Join(", ", resolution.Ips)}");
+        }
+
         return 0;
     }
 

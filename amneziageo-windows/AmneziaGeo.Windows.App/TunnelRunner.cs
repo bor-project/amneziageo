@@ -33,7 +33,7 @@ internal static class TunnelRunner
 
         if (geoSplit && domains.Count > 0)
         {
-            StartDnsProxy(name, config, domains);
+            StartGeo(name, config, domains, store);
         }
 
         var endpoint = TunnelEndpoint.Resolve(config);
@@ -51,7 +51,7 @@ internal static class TunnelRunner
         }
     }
 
-    private static void StartDnsProxy(string name, string config, IReadOnlyList<GeoDomain> domains)
+    private static void StartGeo(string name, string config, IReadOnlyList<GeoDomain> domains, IStateStore store)
     {
         var peer = WgConfigEditor.GetPeerPublicKey(config);
         if (peer is null)
@@ -59,7 +59,10 @@ internal static class TunnelRunner
             return;
         }
 
-        var proxy = new DnsProxy(name, peer, domains, IPAddress.Parse("1.1.1.1"));
+        var tracker = new DomainTracker(name, peer, store);
+        _ = Task.Run(tracker.RunAsync);
+
+        var proxy = new DnsProxy(domains, IPAddress.Parse("1.1.1.1"), tracker);
         var thread = new Thread(proxy.Serve)
         {
             IsBackground = true,

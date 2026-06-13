@@ -62,6 +62,14 @@ internal static partial class RouteManager
     }
 
     /// <summary>
+    /// Removes a host route for an IP.
+    /// </summary>
+    public static void RemoveTunnelRoute(IPAddress ip)
+    {
+        Route("delete", ip.ToString());
+    }
+
+    /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
     public static uint? FindInterfaceIndex(string adapterName)

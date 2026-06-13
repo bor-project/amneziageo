@@ -6,12 +6,10 @@ using AmneziaGeo.Geo;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Loopback DNS proxy that routes resolved tunneled domains through the tunnel.
+/// Loopback DNS proxy that feeds resolved tunneled domains to the domain tracker.
 /// </summary>
-internal sealed class DnsProxy(string tunnelName, string peerPublicKey, IReadOnlyList<GeoDomain> domains, IPAddress upstream)
+internal sealed class DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress upstream, DomainTracker tracker)
 {
-    private GeoActivator? _activator;
-
     /// <summary>
     /// Serves DNS on the loopback address until the process exits.
     /// </summary>
@@ -40,7 +38,7 @@ internal sealed class DnsProxy(string tunnelName, string peerPublicKey, IReadOnl
                     {
                         try
                         {
-                            ActivateIfMatched(query, response);
+                            TrackIfMatched(query, response);
                         }
                         catch (Exception)
                         {
@@ -65,7 +63,7 @@ internal sealed class DnsProxy(string tunnelName, string peerPublicKey, IReadOnl
         }
     }
 
-    private void ActivateIfMatched(byte[] query, byte[] response)
+    private void TrackIfMatched(byte[] query, byte[] response)
     {
         var name = DnsMessage.QuestionName(query);
         if (name is null || !DomainMatcher.IsTunneled(name, domains))
@@ -73,32 +71,15 @@ internal sealed class DnsProxy(string tunnelName, string peerPublicKey, IReadOnl
             return;
         }
 
-        var activator = ResolveActivator();
-        if (activator is null)
-        {
-            return;
-        }
-
+        var ips = new List<string>();
         foreach (var ip in DnsMessage.ARecords(response))
         {
-            activator.TunnelIp(ip);
+            ips.Add(ip.ToString());
         }
-    }
 
-    private GeoActivator? ResolveActivator()
-    {
-        if (_activator is not null)
+        if (ips.Count > 0)
         {
-            return _activator;
+            tracker.Update(name, ips);
         }
-
-        var index = RouteManager.FindInterfaceIndex(tunnelName);
-        if (index is null)
-        {
-            return null;
-        }
-
-        _activator = new GeoActivator(tunnelName, peerPublicKey, index.Value);
-        return _activator;
     }
 }

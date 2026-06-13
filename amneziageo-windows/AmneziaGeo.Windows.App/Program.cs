@@ -17,7 +17,7 @@ internal static class Program
         switch (args)
         {
             case ["--service", var name]:
-                TunnelRunner.Run(name);
+                await TunnelRunner.RunAsync(name);
                 return 0;
             case ["install", var name, var configPath]:
                 return ServiceManager.Install(name, configPath);
@@ -34,10 +34,143 @@ internal static class Program
                 return 0;
             case ["tunnel-ip", var name, var ip]:
                 return DebugTunnelIp(name, ip);
+            case ["update-geo", var kind, var url]:
+                return await UpdateGeoAsync(kind, url);
+            case ["geo-files"]:
+                return await ListGeoFilesAsync();
+            case ["geo-query", var kind, var key]:
+                return GeoQuery(kind, key);
+            case ["geo-list", var kind]:
+                return GeoList(kind);
+            case ["set-geo", var name, var toggle, .. var rules]:
+                return await SetGeoAsync(name, toggle, rules);
             default:
                 await RunDemoAsync();
                 return 0;
         }
+    }
+
+    private static async Task<int> UpdateGeoAsync(string kind, string url)
+    {
+        var store = await OpenStoreAsync();
+        var updater = new GeoFileUpdater(store);
+        var metadata = await updater.UpdateAsync(kind, url);
+        await RematerializeAllAsync(store);
+        Console.WriteLine($"Updated {metadata.Name}: {metadata.CategoryCount} categories, sha {metadata.Sha256[..12]}, {metadata.UpdatedAt:u}");
+        return 0;
+    }
+
+    private static async Task<int> SetGeoAsync(string name, string toggle, string[] ruleArgs)
+    {
+        var split = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
+        var rules = new List<GeoRule>();
+        foreach (var arg in ruleArgs)
+        {
+            var rule = ParseRule(arg);
+            if (rule is not null)
+            {
+                rules.Add(rule);
+            }
+        }
+
+        var (routes, domains) = GeoMaterializer.Materialize(rules);
+        var store = await OpenStoreAsync();
+        await store.SaveTunnelGeoAsync(new TunnelGeo(name, split, rules, routes, domains));
+        Console.WriteLine($"set-geo {name}: split={split}, {rules.Count} rules -> {routes.Count} routes, {domains.Count} domains");
+        return 0;
+    }
+
+    private static async Task RematerializeAllAsync(IStateStore store)
+    {
+        foreach (var name in await store.ListTunnelGeoNamesAsync())
+        {
+            var geo = await store.GetTunnelGeoAsync(name);
+            if (geo is null)
+            {
+                continue;
+            }
+
+            var (routes, domains) = GeoMaterializer.Materialize(geo.Rules);
+            await store.SaveTunnelGeoAsync(geo with { Routes = routes, Domains = domains });
+        }
+    }
+
+    private static GeoRule? ParseRule(string text)
+    {
+        var colon = text.IndexOf(':');
+        if (colon < 0)
+        {
+            return null;
+        }
+
+        var value = text[(colon + 1)..];
+        var kind = text[..colon].ToLowerInvariant() switch
+        {
+            "geosite" => GeoRuleKind.GeoSite,
+            "geoip" => GeoRuleKind.GeoIp,
+            "domain" => GeoRuleKind.Domain,
+            "cidr" => GeoRuleKind.Cidr,
+            _ => (GeoRuleKind?)null,
+        };
+        return kind is null ? null : new GeoRule(kind.Value, value);
+    }
+
+    private static async Task<int> ListGeoFilesAsync()
+    {
+        var store = await OpenStoreAsync();
+        foreach (var metadata in await store.ListGeoFilesAsync())
+        {
+            Console.WriteLine($"{metadata.Name}\t{metadata.CategoryCount}\t{metadata.UpdatedAt:u}\t{metadata.SourceUrl}");
+        }
+
+        return 0;
+    }
+
+    private static int GeoQuery(string kind, string key)
+    {
+        if (kind.Equals("ip", StringComparison.OrdinalIgnoreCase))
+        {
+            var cidrs = GeoIpDatabase.Cidrs(File.ReadAllBytes(TunnelPaths.GeoDataFile("geoip")), key);
+            Console.WriteLine($"{key}: {cidrs.Count} cidrs");
+            foreach (var cidr in cidrs.Take(5))
+            {
+                Console.WriteLine(cidr);
+            }
+
+            return 0;
+        }
+
+        var domains = GeoSiteDatabase.Domains(File.ReadAllBytes(TunnelPaths.GeoDataFile("geosite")), key);
+        Console.WriteLine($"{key}: {domains.Count} domains");
+        foreach (var domain in domains.Take(5))
+        {
+            Console.WriteLine($"{domain.Kind} {domain.Value}");
+        }
+
+        return 0;
+    }
+
+    private static int GeoList(string kind)
+    {
+        if (kind.Equals("ip", StringComparison.OrdinalIgnoreCase))
+        {
+            var countries = GeoIpDatabase.Countries(File.ReadAllBytes(TunnelPaths.GeoDataFile("geoip")));
+            Console.WriteLine($"{countries.Count} countries: {string.Join(", ", countries.Take(50))}");
+            return 0;
+        }
+
+        var categories = GeoSiteDatabase.Categories(File.ReadAllBytes(TunnelPaths.GeoDataFile("geosite")));
+        Console.WriteLine($"{categories.Count} categories: {string.Join(", ", categories.Take(50))}");
+        return 0;
+    }
+
+    private static async Task<IStateStore> OpenStoreAsync()
+    {
+        var path = TunnelPaths.StateDbFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var store = new SqliteStateStore(path);
+        await store.InitializeAsync();
+        return store;
     }
 
     private static int DebugTunnelIp(string name, string ip)

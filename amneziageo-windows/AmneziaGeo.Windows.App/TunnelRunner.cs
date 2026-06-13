@@ -1,4 +1,5 @@
 using System.Net;
+using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Windows.Engine;
@@ -11,18 +12,28 @@ namespace AmneziaGeo.Windows.App;
 internal static class TunnelRunner
 {
     /// <summary>
-    /// Loads the tunnel config, applies geo settings, and hands control to the native service loop.
+    /// Loads the tunnel config and materialized geo set, then hands control to the native service loop.
     /// </summary>
-    public static void Run(string name)
+    public static async Task RunAsync(string name)
     {
-        var config = File.ReadAllText(TunnelPaths.ConfigFile(name));
-        var settings = GeoStore.Load(TunnelPaths.GeoFile(name));
-        var allowedIps = AllowedIpsResolver.Build(settings, WgConfigEditor.GetAllowedIps(config));
+        var config = await File.ReadAllTextAsync(TunnelPaths.ConfigFile(name));
+
+        var dbPath = TunnelPaths.StateDbFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+        var store = new SqliteStateStore(dbPath);
+        await store.InitializeAsync();
+        var geo = await store.GetTunnelGeoAsync(name);
+
+        var geoSplit = geo?.GeoSplit ?? false;
+        var routes = geo?.Routes ?? [];
+        var domains = geo?.Domains ?? [];
+
+        var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), routes);
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
 
-        if (settings.GeoSplit)
+        if (geoSplit && domains.Count > 0)
         {
-            StartDnsProxy(name, config, settings);
+            StartDnsProxy(name, config, domains);
         }
 
         var endpoint = TunnelEndpoint.Resolve(config);
@@ -40,7 +51,7 @@ internal static class TunnelRunner
         }
     }
 
-    private static void StartDnsProxy(string name, string config, GeoSettings settings)
+    private static void StartDnsProxy(string name, string config, IReadOnlyList<GeoDomain> domains)
     {
         var peer = WgConfigEditor.GetPeerPublicKey(config);
         if (peer is null)
@@ -48,7 +59,7 @@ internal static class TunnelRunner
             return;
         }
 
-        var proxy = new DnsProxy(name, peer, settings, IPAddress.Parse("1.1.1.1"));
+        var proxy = new DnsProxy(name, peer, domains, IPAddress.Parse("1.1.1.1"));
         var thread = new Thread(proxy.Serve)
         {
             IsBackground = true,

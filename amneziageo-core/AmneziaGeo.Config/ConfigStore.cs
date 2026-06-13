@@ -3,6 +3,9 @@ using System.Text.Json.Serialization;
 
 namespace AmneziaGeo.Config;
 
+/// <summary>
+/// Loads and saves <see cref="AppConfig"/> as JSON.
+/// </summary>
 public sealed class ConfigStore(string path)
 {
     private static readonly JsonSerializerOptions _options = new()
@@ -11,6 +14,9 @@ public sealed class ConfigStore(string path)
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
+    /// <summary>
+    /// Loads the config, or returns defaults when the file is absent.
+    /// </summary>
     public async Task<AppConfig> LoadAsync(CancellationToken ct = default)
     {
         if (!File.Exists(path))
@@ -26,6 +32,9 @@ public sealed class ConfigStore(string path)
         }
     }
 
+    /// <summary>
+    /// Writes the config to disk.
+    /// </summary>
     public async Task SaveAsync(AppConfig config, CancellationToken ct = default)
     {
         var stream = File.Create(path);

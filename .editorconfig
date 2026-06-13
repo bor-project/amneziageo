@@ -12,6 +12,8 @@ indent_size = 4
 csharp_prefer_braces = true:error
 dotnet_diagnostic.IDE0011.severity = error
 
+csharp_prefer_simple_using_statement = false:silent
+
 csharp_style_namespace_declarations = file_scoped:warning
 dotnet_diagnostic.IDE0161.severity = warning
 

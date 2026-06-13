@@ -10,7 +10,30 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal static class Program
 {
-    private static async Task Main()
+    private static async Task<int> Main(string[] args)
+    {
+        switch (args)
+        {
+            case ["--service", var name]:
+                TunnelRunner.Run(name);
+                return 0;
+            case ["install", var name, var configPath]:
+                return ServiceManager.Install(name, configPath);
+            case ["uninstall", var name]:
+                return ServiceManager.Uninstall(name);
+            case ["start", var name]:
+                return ServiceManager.Start(name);
+            case ["stop", var name]:
+                return ServiceManager.Stop(name);
+            case ["status", var name]:
+                return ServiceManager.Status(name);
+            default:
+                await RunDemoAsync();
+                return 0;
+        }
+    }
+
+    private static async Task RunDemoAsync()
     {
         var configStore = new ConfigStore("amneziageo.json");
         var config = await configStore.LoadAsync();

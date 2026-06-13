@@ -18,18 +18,20 @@ public sealed class ConfigStore(string path)
             return new AppConfig();
         }
 
-        await using (var stream = File.OpenRead(path))
+        var stream = File.OpenRead(path);
+        await using (stream.ConfigureAwait(false))
         {
-            var config = await JsonSerializer.DeserializeAsync<AppConfig>(stream, Options, ct);
+            var config = await JsonSerializer.DeserializeAsync<AppConfig>(stream, Options, ct).ConfigureAwait(false);
             return config ?? new AppConfig();
         }
     }
 
     public async Task SaveAsync(AppConfig config, CancellationToken ct = default)
     {
-        await using (var stream = File.Create(path))
+        var stream = File.Create(path);
+        await using (stream.ConfigureAwait(false))
         {
-            await JsonSerializer.SerializeAsync(stream, config, Options, ct);
+            await JsonSerializer.SerializeAsync(stream, config, Options, ct).ConfigureAwait(false);
         }
     }
 }

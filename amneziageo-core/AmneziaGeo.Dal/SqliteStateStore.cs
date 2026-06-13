@@ -15,11 +15,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        await using (var connection = new SqliteConnection(_connectionString))
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
 
-            await using (var command = connection.CreateCommand())
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
             {
                 command.CommandText =
                     """
@@ -31,18 +33,20 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         rules_json  TEXT NOT NULL
                     );
                     """;
-                await command.ExecuteNonQueryAsync(ct);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
     }
 
     public async Task SaveProfileAsync(TunnelProfile profile, CancellationToken ct = default)
     {
-        await using (var connection = new SqliteConnection(_connectionString))
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
 
-            await using (var command = connection.CreateCommand())
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
             {
                 command.CommandText =
                     """
@@ -59,18 +63,20 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$pub", profile.PublicKey);
                 command.Parameters.AddWithValue("$endpoint", profile.Endpoint);
                 command.Parameters.AddWithValue("$rules", JsonSerializer.Serialize(profile.Rules));
-                await command.ExecuteNonQueryAsync(ct);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
     }
 
     public async Task<TunnelProfile?> GetProfileAsync(string name, CancellationToken ct = default)
     {
-        await using (var connection = new SqliteConnection(_connectionString))
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
 
-            await using (var command = connection.CreateCommand())
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
             {
                 command.CommandText =
                     """
@@ -80,9 +86,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     """;
                 command.Parameters.AddWithValue("$name", name);
 
-                await using (var reader = await command.ExecuteReaderAsync(ct))
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
                 {
-                    if (!await reader.ReadAsync(ct))
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         return null;
                     }
@@ -98,17 +105,20 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var names = new List<string>();
 
-        await using (var connection = new SqliteConnection(_connectionString))
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
         {
-            await connection.OpenAsync(ct);
+            await connection.OpenAsync(ct).ConfigureAwait(false);
 
-            await using (var command = connection.CreateCommand())
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
             {
                 command.CommandText = "SELECT name FROM profiles ORDER BY name;";
 
-                await using (var reader = await command.ExecuteReaderAsync(ct))
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
                 {
-                    while (await reader.ReadAsync(ct))
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         names.Add(reader.GetString(0));
                     }

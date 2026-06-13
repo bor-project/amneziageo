@@ -1,22 +1,19 @@
 using AmneziaGeo.Decl;
-using AmneziaGeo.Geo;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Expands geo rules into concrete routes and domains using the downloaded databases.
+/// Expands geo rules into concrete routes and domains using the merged geo index.
 /// </summary>
 internal static class GeoMaterializer
 {
     /// <summary>
     /// Returns the materialized routes and domains for a set of rules.
     /// </summary>
-    public static (IReadOnlyList<string> Routes, IReadOnlyList<GeoDomain> Domains) Materialize(IReadOnlyList<GeoRule> rules)
+    public static (IReadOnlyList<string> Routes, IReadOnlyList<GeoDomain> Domains) Materialize(IReadOnlyList<GeoRule> rules, GeoIndex index)
     {
         var routes = new List<string>();
         var domains = new List<GeoDomain>();
-        byte[]? geoip = null;
-        byte[]? geosite = null;
 
         foreach (var rule in rules)
         {
@@ -29,31 +26,15 @@ internal static class GeoMaterializer
                     domains.Add(new GeoDomain(GeoDomainKind.Domain, rule.Value));
                     break;
                 case GeoRuleKind.GeoIp:
-                    geoip ??= ReadData("geoip");
-                    if (geoip is not null)
-                    {
-                        routes.AddRange(GeoIpDatabase.Cidrs(geoip, StripPrefix(rule.Value)));
-                    }
-
+                    routes.AddRange(index.Cidrs(StripPrefix(rule.Value)));
                     break;
                 case GeoRuleKind.GeoSite:
-                    geosite ??= ReadData("geosite");
-                    if (geosite is not null)
-                    {
-                        domains.AddRange(GeoSiteDatabase.Domains(geosite, StripPrefix(rule.Value)));
-                    }
-
+                    domains.AddRange(index.Domains(StripPrefix(rule.Value)));
                     break;
             }
         }
 
         return (routes, domains);
-    }
-
-    private static byte[]? ReadData(string kind)
-    {
-        var path = TunnelPaths.GeoDataFile(kind);
-        return File.Exists(path) ? File.ReadAllBytes(path) : null;
     }
 
     private static string StripPrefix(string value)

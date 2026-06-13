@@ -60,6 +60,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         ips_json TEXT NOT NULL,
                         PRIMARY KEY (tunnel, domain)
                     );
+
+                    CREATE TABLE IF NOT EXISTS geo_sources (
+                        name     TEXT PRIMARY KEY,
+                        kind     TEXT NOT NULL,
+                        url      TEXT NOT NULL,
+                        position INTEGER NOT NULL
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -254,6 +261,82 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
 
         return names;
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO geo_sources (name, kind, url, position)
+                    VALUES ($name, $kind, $url, $position)
+                    ON CONFLICT(name) DO UPDATE SET
+                        kind     = excluded.kind,
+                        url      = excluded.url,
+                        position = excluded.position;
+                    """;
+                command.Parameters.AddWithValue("$name", source.Name);
+                command.Parameters.AddWithValue("$kind", source.Kind);
+                command.Parameters.AddWithValue("$url", source.Url);
+                command.Parameters.AddWithValue("$position", source.Position);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<GeoSource>> ListGeoSourcesAsync(CancellationToken ct = default)
+    {
+        var sources = new List<GeoSource>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT name, kind, url, position FROM geo_sources ORDER BY position;";
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        sources.Add(new GeoSource(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3)));
+                    }
+                }
+            }
+        }
+
+        return sources;
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveGeoSourceAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM geo_sources WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <inheritdoc/>

@@ -3,15 +3,6 @@ using System.Text.Json.Serialization;
 
 namespace AmneziaGeo.Config;
 
-public sealed record AppConfig
-{
-    public string DatabasePath { get; init; } = "amneziageo.db";
-
-    public string? ActiveProfile { get; init; }
-
-    public bool GeoSplitTunnel { get; init; }
-}
-
 public sealed class ConfigStore(string path)
 {
     private static readonly JsonSerializerOptions Options = new()

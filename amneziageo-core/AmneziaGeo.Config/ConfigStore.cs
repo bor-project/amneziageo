@@ -5,7 +5,7 @@ namespace AmneziaGeo.Config;
 
 public sealed class ConfigStore(string path)
 {
-    private static readonly JsonSerializerOptions Options = new()
+    private static readonly JsonSerializerOptions _options = new()
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -21,7 +21,7 @@ public sealed class ConfigStore(string path)
         var stream = File.OpenRead(path);
         await using (stream.ConfigureAwait(false))
         {
-            var config = await JsonSerializer.DeserializeAsync<AppConfig>(stream, Options, ct).ConfigureAwait(false);
+            var config = await JsonSerializer.DeserializeAsync<AppConfig>(stream, _options, ct).ConfigureAwait(false);
             return config ?? new AppConfig();
         }
     }
@@ -31,7 +31,7 @@ public sealed class ConfigStore(string path)
         var stream = File.Create(path);
         await using (stream.ConfigureAwait(false))
         {
-            await JsonSerializer.SerializeAsync(stream, config, Options, ct).ConfigureAwait(false);
+            await JsonSerializer.SerializeAsync(stream, config, _options, ct).ConfigureAwait(false);
         }
     }
 }

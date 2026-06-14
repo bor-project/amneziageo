@@ -16,6 +16,8 @@ internal static class TunnelRunner
     /// </summary>
     public static async Task RunAsync(string name)
     {
+        DnsRedirector.RestoreSaved();
+
         var config = await File.ReadAllTextAsync(TunnelPaths.ConfigFile(name));
 
         var dbPath = TunnelPaths.StateDbFile();

@@ -148,6 +148,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
         ServiceManager.StopQuiet(member);
         WaitStopped(member);
         ServiceManager.DeleteService(member);
+        DnsRedirector.RestoreSaved();
     }
 
     private void StopAll(IReadOnlyList<string> members)

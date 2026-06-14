@@ -7,13 +7,14 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Points every active interface's DNS at the given servers and restores the originals on stop.
+/// The applied baseline is persisted so a controlling process can revert it even if the tunnel process dies.
 /// </summary>
 internal sealed class DnsRedirector(IReadOnlyList<string> servers)
 {
     private readonly Dictionary<uint, List<string>> _saved = [];
 
     /// <summary>
-    /// Saves current DNS servers per interface and sets them to the loopback proxy.
+    /// Saves current DNS servers per interface and sets them to the redirect servers.
     /// </summary>
     public void Apply()
     {
@@ -36,6 +37,8 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
                 _saved[(uint)index.Value] = current;
             }
         }
+
+        WriteState(_saved);
     }
 
     /// <summary>
@@ -43,33 +46,64 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
     /// </summary>
     public void Restore()
     {
-        foreach (var (index, servers) in _saved)
+        foreach (var (index, saved) in _saved)
         {
-            if (servers.Count > 0)
-            {
-                RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index} -ServerAddresses {string.Join(",", servers)}");
-            }
-            else
-            {
-                RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index} -ResetServerAddresses");
-            }
+            RestoreOne(index, saved);
         }
 
         _saved.Clear();
+        ClearState();
     }
 
-    private static List<string> CurrentServers(NetworkInterface nic)
+    /// <summary>
+    /// Restores a redirect persisted by a previous run, even from another process; no-op if none is active.
+    /// </summary>
+    public static void RestoreSaved()
     {
-        var servers = new List<string>();
+        var state = ReadState();
+        if (state.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (index, saved) in state)
+        {
+            RestoreOne(index, saved);
+        }
+
+        ClearState();
+    }
+
+    private static void RestoreOne(uint index, List<string> saved)
+    {
+        if (saved.Count > 0)
+        {
+            RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index} -ServerAddresses {string.Join(",", saved)}");
+        }
+        else
+        {
+            RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index} -ResetServerAddresses");
+        }
+    }
+
+    private List<string> CurrentServers(NetworkInterface nic)
+    {
+        var current = new List<string>();
         foreach (var dns in nic.GetIPProperties().DnsAddresses)
         {
-            if (dns.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(dns))
+            if (dns.AddressFamily != AddressFamily.InterNetwork || IPAddress.IsLoopback(dns))
             {
-                servers.Add(dns.ToString());
+                continue;
+            }
+
+            var text = dns.ToString();
+            if (!servers.Contains(text))
+            {
+                current.Add(text);
             }
         }
 
-        return servers;
+        return current;
     }
 
     private static int? Ipv4Index(NetworkInterface nic)
@@ -81,6 +115,58 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
         catch (NetworkInformationException)
         {
             return null;
+        }
+    }
+
+    private static void WriteState(Dictionary<uint, List<string>> state)
+    {
+        var path = TunnelPaths.DnsStateFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var lines = new List<string>();
+        foreach (var (index, saved) in state)
+        {
+            lines.Add($"{index}={string.Join(",", saved)}");
+        }
+
+        File.WriteAllLines(path, lines);
+    }
+
+    private static Dictionary<uint, List<string>> ReadState()
+    {
+        var path = TunnelPaths.DnsStateFile();
+        var state = new Dictionary<uint, List<string>>();
+        if (!File.Exists(path))
+        {
+            return state;
+        }
+
+        foreach (var line in File.ReadAllLines(path))
+        {
+            var separator = line.IndexOf('=');
+            if (separator < 0 || !uint.TryParse(line[..separator], out var index))
+            {
+                continue;
+            }
+
+            var saved = new List<string>();
+            var value = line[(separator + 1)..];
+            if (value.Length > 0)
+            {
+                saved.AddRange(value.Split(',', StringSplitOptions.RemoveEmptyEntries));
+            }
+
+            state[index] = saved;
+        }
+
+        return state;
+    }
+
+    private static void ClearState()
+    {
+        var path = TunnelPaths.DnsStateFile();
+        if (File.Exists(path))
+        {
+            File.Delete(path);
         }
     }
 

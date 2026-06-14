@@ -30,7 +30,7 @@ internal static class Program
             case ["start", var name]:
                 return ServiceManager.Start(name);
             case ["stop", var name]:
-                return ServiceManager.Stop(name);
+                return StopTunnel(name);
             case ["status", var name]:
                 return ServiceManager.Status(name);
             case ["agent-install", var target]:
@@ -445,6 +445,13 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static int StopTunnel(string name)
+    {
+        var code = ServiceManager.Stop(name);
+        DnsRedirector.RestoreSaved();
+        return code;
     }
 
     private static async Task<int> RunAgentAsync(string target)

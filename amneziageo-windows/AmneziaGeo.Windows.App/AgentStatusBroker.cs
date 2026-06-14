@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Text;
 using System.Text.Json;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
@@ -36,7 +37,24 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         {
             var json = await BuildJsonAsync(ct);
             await connection.SendAsync(json, ct);
-            await DrainAsync(stream, ct);
+            using (var reader = new StreamReader(stream, new UTF8Encoding(false), false, 1024, leaveOpen: true))
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    var line = await reader.ReadLineAsync(ct);
+                    if (line is null)
+                    {
+                        break;
+                    }
+
+                    if (line.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    await HandleLineAsync(connection, line, ct);
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
         {
@@ -95,17 +113,78 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    private static async Task DrainAsync(NamedPipeServerStream stream, CancellationToken ct)
+    private async Task HandleLineAsync(PipeConnection connection, string line, CancellationToken ct)
     {
-        var buffer = new byte[256];
-        while (!ct.IsCancellationRequested)
+        var envelope = JsonSerializer.Deserialize<IpcEnvelope>(line, IpcJson.Options);
+        if (envelope is not { Type: IpcContract.CommandType, Command: not null })
         {
-            var read = await stream.ReadAsync(buffer, ct);
-            if (read == 0)
+            return;
+        }
+
+        var ack = await ExecuteCommandAsync(envelope.Command, ct);
+        var ackLine = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.AckType, Ack: ack), IpcJson.Options);
+        await connection.SendAsync(ackLine, ct);
+        if (ack.Ok)
+        {
+            await BroadcastIfChangedAsync(ct);
+        }
+    }
+
+    private async Task<IpcAck> ExecuteCommandAsync(IpcCommand command, CancellationToken ct)
+    {
+        try
+        {
+            return command.Op switch
             {
-                return;
+                IpcContract.OpAddConfig => AddConfig(command.Args),
+                IpcContract.OpAddBalancer => await AddBalancerAsync(command.Args, ct),
+                _ => new IpcAck(false, $"unknown command: {command.Op}"),
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "command {Op} failed", command.Op);
+            return new IpcAck(false, ex.Message);
+        }
+    }
+
+    private IpcAck AddConfig(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2)
+        {
+            return new IpcAck(false, "add-config requires a name and a file path");
+        }
+
+        configRepo.Add(args[0], args[1]);
+        logger.LogInformation("added config {Name}", args[0]);
+        return new IpcAck(true, $"added config {args[0]}");
+    }
+
+    private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 4)
+        {
+            return new IpcAck(false, "add-balancer requires a name, recheck, mode, and at least one member");
+        }
+
+        if (!int.TryParse(args[1], out var recheck) || recheck <= 0)
+        {
+            return new IpcAck(false, "invalid recheck seconds");
+        }
+
+        var mode = args[2].Equals("latency", StringComparison.OrdinalIgnoreCase) ? "latency" : "priority";
+        var members = args.Skip(3).ToList();
+        foreach (var member in members)
+        {
+            if (!configRepo.Exists(member))
+            {
+                return new IpcAck(false, $"unknown config: {member}");
             }
         }
+
+        await store.SaveBalancerAsync(new BalancerGroup(args[0], recheck, members, mode), ct);
+        logger.LogInformation("saved balancer {Name} ({Count} members)", args[0], members.Count);
+        return new IpcAck(true, $"saved balancer {args[0]}");
     }
 
     private async Task<string> BuildJsonAsync(CancellationToken ct)

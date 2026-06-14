@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AmneziaGeo.Windows.Ui.AddDialog"
+        Title="Добавить"
+        Width="440" Height="540"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+  <DockPanel Margin="16">
+
+    <StackPanel DockPanel.Dock="Bottom" Spacing="10" Margin="0,12,0,0">
+      <TextBlock Text="{Binding StatusMessage}" Foreground="#C0392B" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="Отмена" Click="OnCancel" MinWidth="90" />
+        <Button Content="OK" Click="OnOk" IsDefault="True" MinWidth="90"
+                IsEnabled="{Binding !IsBusy}" />
+      </StackPanel>
+    </StackPanel>
+
+    <TabControl SelectedIndex="{Binding SelectedTabIndex}">
+
+      <TabItem Header="Конфигурация">
+        <StackPanel Spacing="8" Margin="0,14">
+          <TextBlock Text="Файл конфигурации (.conf):" />
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBox Grid.Column="0" IsReadOnly="True" Text="{Binding ConfigPath}" Watermark="файл не выбран" />
+            <Button Grid.Column="1" Content="Обзор..." Click="OnBrowseConfig" Margin="6,0,0,0" />
+          </Grid>
+          <TextBlock Text="Имя:" />
+          <TextBox Text="{Binding ConfigName}" Watermark="по умолчанию — имя файла" />
+        </StackPanel>
+      </TabItem>
+
+      <TabItem Header="Балансировщик">
+        <StackPanel Spacing="8" Margin="0,14">
+          <TextBlock Text="Имя:" />
+          <TextBox Text="{Binding BalancerName}" />
+          <TextBlock Text="Интервал проверки (сек):" />
+          <TextBox Text="{Binding RecheckSeconds}" />
+          <TextBlock Text="Режим:" />
+          <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding BalancerMode}" HorizontalAlignment="Stretch" />
+          <TextBlock Text="Серверы (в порядке приоритета):" />
+          <Border BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                  CornerRadius="4" Padding="8" MaxHeight="170">
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding Members}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
+        </StackPanel>
+      </TabItem>
+
+      <TabItem Header="Восстановление">
+        <StackPanel Spacing="8" Margin="0,14">
+          <TextBlock Text="Файл бэкапа:" />
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBox Grid.Column="0" IsReadOnly="True" Text="{Binding RestorePath}" Watermark="файл не выбран" />
+            <Button Grid.Column="1" Content="Обзор..." Click="OnBrowseRestore" Margin="6,0,0,0" />
+          </Grid>
+          <TextBlock Text="Восстановление заменит текущие конфигурации и запросит права администратора."
+                     TextWrapping="Wrap" Opacity="0.7" />
+        </StackPanel>
+      </TabItem>
+
+    </TabControl>
+  </DockPanel>
+</Window>

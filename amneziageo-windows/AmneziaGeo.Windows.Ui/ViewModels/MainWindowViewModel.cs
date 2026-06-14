@@ -4,7 +4,6 @@ using Avalonia.Threading;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -18,7 +17,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(AgentStatusBrush))]
-    [NotifyPropertyChangedFor(nameof(CanAdd))]
     private bool _isConnected;
 
     [ObservableProperty]
@@ -43,6 +41,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _connection.Disconnected += OnDisconnected;
         _connection.SnapshotReceived += OnSnapshot;
     }
+
+    /// <summary>
+    /// The connection used to talk to the agent.
+    /// </summary>
+    public AgentConnection Connection => _connection;
 
     /// <summary>
     /// The configuration rows.
@@ -76,11 +79,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public IBrush AgentStatusBrush => StatusLabels.Brush(IsConnected ? ConnectionStatus.Connected : ConnectionStatus.Disconnected);
 
     /// <summary>
-    /// Whether the Add command is available.
-    /// </summary>
-    public bool CanAdd => IsConnected;
-
-    /// <summary>
     /// Whether nothing is configured yet.
     /// </summary>
     public bool IsEmpty => !HasConfigs && !HasBalancers;
@@ -98,10 +96,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _connection.Start();
     }
 
-    [RelayCommand]
-    private void Add()
+    /// <summary>
+    /// Returns the names of the configurations currently known.
+    /// </summary>
+    public IReadOnlyList<string> ConfigNames()
     {
-        // The add dialog (config / balancer / restore) arrives in task #13.
+        return [.. Configs.Select(config => config.Name)];
     }
 
     private void OnConnected()

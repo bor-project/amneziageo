@@ -37,6 +37,14 @@ internal sealed class AgentConnection : IDisposable
         _loop = _client.RunAsync(_cts.Token);
     }
 
+    /// <summary>
+    /// Sends a command to the agent and returns its acknowledgement.
+    /// </summary>
+    public Task<IpcAck> SendCommandAsync(IpcCommand command)
+    {
+        return _client.SendCommandAsync(command, _cts.Token);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

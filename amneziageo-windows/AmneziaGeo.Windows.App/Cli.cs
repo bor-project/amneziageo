@@ -106,6 +106,8 @@ internal sealed class Cli(
                 return await BalancerRunAsync(name);
             case ["ipc-probe"]:
                 return await IpcProbeAsync();
+            case ["ipc-cmd", var op, .. var cmdArgs]:
+                return await IpcCmdAsync(op, cmdArgs);
             case ["balancer-state"]:
                 return await BalancerStateAsync(null);
             case ["balancer-state", var name]:
@@ -535,6 +537,32 @@ internal sealed class Cli(
             }
 
             return 0;
+        }
+    }
+
+    private static async Task<int> IpcCmdAsync(string op, string[] args)
+    {
+        var client = new StatusPipeClient();
+        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.Connected += () => connected.TrySetResult();
+
+        using (var cts = new CancellationTokenSource())
+        {
+            var loop = client.RunAsync(cts.Token);
+            var ready = await Task.WhenAny(connected.Task, Task.Delay(TimeSpan.FromSeconds(8)));
+            if (ready != connected.Task)
+            {
+                cts.Cancel();
+                await loop;
+                Console.WriteLine("ipc-cmd: could not connect (is the agent running?)");
+                return 1;
+            }
+
+            var ack = await client.SendCommandAsync(new IpcCommand(op, args), cts.Token);
+            Console.WriteLine($"ack: ok={ack.Ok} {ack.Message}");
+            cts.Cancel();
+            await loop;
+            return ack.Ok ? 0 : 1;
         }
     }
 

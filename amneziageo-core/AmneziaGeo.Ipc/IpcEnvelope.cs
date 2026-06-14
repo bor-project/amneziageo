@@ -5,4 +5,6 @@ namespace AmneziaGeo.Ipc;
 /// </summary>
 public sealed record IpcEnvelope(
     string Type,
-    StatusSnapshot? Snapshot);
+    StatusSnapshot? Snapshot = null,
+    IpcCommand? Command = null,
+    IpcAck? Ack = null);

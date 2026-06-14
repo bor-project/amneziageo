@@ -18,6 +18,8 @@ internal static class SettingsStore
             RefreshSeconds = await ReadIntAsync(store, "refresh-seconds", defaults.RefreshSeconds, ct),
             ConnectTimeoutSeconds = await ReadIntAsync(store, "connect-timeout-seconds", defaults.ConnectTimeoutSeconds, ct),
             DeadThresholdSeconds = await ReadIntAsync(store, "dead-threshold-seconds", defaults.DeadThresholdSeconds, ct),
+            FailbackProbes = await ReadIntAsync(store, "failback-probes", defaults.FailbackProbes, ct),
+            ProbeTimeoutSeconds = await ReadIntAsync(store, "probe-timeout-seconds", defaults.ProbeTimeoutSeconds, ct),
         };
     }
 
@@ -40,7 +42,7 @@ internal static class SettingsStore
     /// </summary>
     public static IReadOnlyList<string> Keys()
     {
-        return ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds"];
+        return ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds"];
     }
 
     private static async Task<int> ReadIntAsync(IStateStore store, string key, int fallback, CancellationToken ct)

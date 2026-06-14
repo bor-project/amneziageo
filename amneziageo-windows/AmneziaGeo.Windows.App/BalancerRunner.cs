@@ -4,11 +4,13 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Runs a balancer group: connects members in priority order, fails over when one becomes unreachable,
-/// and periodically rechecks higher-priority members to fail back to them.
+/// and fails back to a higher-priority member once an out-of-band probe confirms it is reachable.
 /// </summary>
-internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeconds, int deadThresholdSeconds, IStateStore store, Action<string> log)
+internal sealed class BalancerRunner(BalancerGroup group, AppSettings settings, IStateStore store, Action<string> log)
 {
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
+
+    private int[] _failbackStreak = [];
 
     /// <summary>
     /// Drives the failover loop until cancellation.
@@ -32,6 +34,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
         }
 
         StopAll(members);
+        _failbackStreak = new int[members.Count];
 
         await SetStateAsync("connecting", members, -1);
         var current = await ConnectBestAsync(members, -1, ct);
@@ -47,6 +50,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
                     log("no member reachable; retrying");
                     await DelayAsync(_livenessPoll, ct);
                     current = await ConnectBestAsync(members, -1, ct);
+                    Array.Clear(_failbackStreak);
                     await SetStateAsync(StatusFor(current), members, current);
                     lastRecheck = DateTimeOffset.UtcNow;
                     continue;
@@ -64,6 +68,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
                     await SetStateAsync("failover", members, current);
                     Stop(members[current]);
                     current = await ConnectBestAsync(members, current, ct);
+                    Array.Clear(_failbackStreak);
                     await SetStateAsync(StatusFor(current), members, current);
                     lastRecheck = DateTimeOffset.UtcNow;
                     continue;
@@ -72,16 +77,20 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
                 if (current > 0 && (DateTimeOffset.UtcNow - lastRecheck).TotalSeconds >= group.RecheckSeconds)
                 {
                     lastRecheck = DateTimeOffset.UtcNow;
-                    log($"rechecking higher-priority members (active: {members[current]})");
-                    Stop(members[current]);
-                    var next = await ConnectBestAsync(members, -1, ct);
-                    if (next >= 0 && next != current)
+                    if (await ShouldFailBackAsync(members, current, ct))
                     {
-                        log($"switched to {members[next]}");
-                    }
+                        log($"higher-priority member reachable; failing back from {members[current]}");
+                        Stop(members[current]);
+                        var next = await ConnectBestAsync(members, -1, ct);
+                        if (next >= 0 && next != current)
+                        {
+                            log($"switched to {members[next]}");
+                        }
 
-                    current = next;
-                    await SetStateAsync(StatusFor(current), members, current);
+                        current = next;
+                        Array.Clear(_failbackStreak);
+                        await SetStateAsync(StatusFor(current), members, current);
+                    }
                 }
             }
         }
@@ -119,6 +128,35 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
         }
     }
 
+    private async Task<bool> ShouldFailBackAsync(IReadOnlyList<string> members, int current, CancellationToken ct)
+    {
+        var trigger = false;
+        var timeoutMs = settings.ProbeTimeoutSeconds * 1000;
+        for (var i = 0; i < current; i++)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            if (await EndpointProbe.IsReachableAsync(members[i], timeoutMs))
+            {
+                _failbackStreak[i]++;
+                if (_failbackStreak[i] >= settings.FailbackProbes)
+                {
+                    log($"member {members[i]} reachable for {_failbackStreak[i]} probe(s)");
+                    trigger = true;
+                }
+            }
+            else
+            {
+                _failbackStreak[i] = 0;
+            }
+        }
+
+        return trigger;
+    }
+
     private async Task<int> ConnectBestAsync(IReadOnlyList<string> members, int skip, CancellationToken ct)
     {
         for (var i = 0; i < members.Count; i++)
@@ -142,7 +180,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
     {
         ServiceManager.CreateService(member);
         ServiceManager.StartQuiet(member);
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(connectTimeoutSeconds);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(settings.ConnectTimeoutSeconds);
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (ct.IsCancellationRequested)
@@ -171,7 +209,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
         }
 
         var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - handshake.Value;
-        return age < deadThresholdSeconds;
+        return age < settings.DeadThresholdSeconds;
     }
 
     private void Stop(string member)

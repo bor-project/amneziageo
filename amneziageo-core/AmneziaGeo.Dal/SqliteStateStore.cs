@@ -93,6 +93,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         value      TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS balancer_state (
+                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        group_name    TEXT NOT NULL UNIQUE,
+                        status        TEXT NOT NULL,
+                        active_member TEXT,
+                        updated_at    TEXT NOT NULL
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -780,6 +788,102 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
     }
 
+    /// <inheritdoc/>
+    public async Task SaveBalancerStateAsync(BalancerState state, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO balancer_state (group_name, status, active_member, updated_at)
+                    VALUES ($group, $status, $member, $updated)
+                    ON CONFLICT(group_name) DO UPDATE SET
+                        status        = excluded.status,
+                        active_member = excluded.active_member,
+                        updated_at    = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$group", state.Group);
+                command.Parameters.AddWithValue("$status", state.Status);
+                command.Parameters.AddWithValue("$member", (object?)state.ActiveMember ?? DBNull.Value);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<BalancerState?> GetBalancerStateAsync(string group, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT status, active_member, updated_at
+                    FROM balancer_state
+                    WHERE group_name = $group;
+                    """;
+                command.Parameters.AddWithValue("$group", group);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    return ReadBalancerState(group, reader);
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<BalancerState>> ListBalancerStatesAsync(CancellationToken ct = default)
+    {
+        var states = new List<BalancerState>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT group_name, status, active_member, updated_at
+                    FROM balancer_state
+                    ORDER BY group_name;
+                    """;
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        states.Add(ReadBalancerState(reader.GetString(0), reader, 1));
+                    }
+                }
+            }
+        }
+
+        return states;
+    }
+
     private static string Timestamp()
     {
         return DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
@@ -789,5 +893,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var updatedAt = DateTimeOffset.Parse(reader.GetString(offset + 1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
         return new GeoFileMetadata(name, reader.GetString(offset), updatedAt, reader.GetString(offset + 2), reader.GetInt32(offset + 3));
+    }
+
+    private static BalancerState ReadBalancerState(string group, SqliteDataReader reader, int offset = 0)
+    {
+        var member = reader.IsDBNull(offset + 1) ? null : reader.GetString(offset + 1);
+        var updatedAt = DateTimeOffset.Parse(reader.GetString(offset + 2), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+        return new BalancerState(group, reader.GetString(offset), member, updatedAt);
     }
 }

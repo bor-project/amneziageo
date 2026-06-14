@@ -11,6 +11,7 @@ internal sealed class AgentService : ServiceBase
     private readonly BalancerGroup _group;
     private readonly int _connectTimeoutSeconds;
     private readonly int _deadThresholdSeconds;
+    private readonly IStateStore _store;
     private readonly FileLogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
@@ -18,11 +19,12 @@ internal sealed class AgentService : ServiceBase
     /// <summary>
     /// ctor
     /// </summary>
-    public AgentService(BalancerGroup group, int connectTimeoutSeconds, int deadThresholdSeconds, FileLogger logger)
+    public AgentService(BalancerGroup group, int connectTimeoutSeconds, int deadThresholdSeconds, IStateStore store, FileLogger logger)
     {
         _group = group;
         _connectTimeoutSeconds = connectTimeoutSeconds;
         _deadThresholdSeconds = deadThresholdSeconds;
+        _store = store;
         _logger = logger;
         ServiceName = TunnelPaths.AgentServiceName();
     }
@@ -31,7 +33,7 @@ internal sealed class AgentService : ServiceBase
     protected override void OnStart(string[] args)
     {
         _logger.Log($"agent starting: group {_group.Name} ({_group.Members.Count} member(s))");
-        var runner = new BalancerRunner(_group, _connectTimeoutSeconds, _deadThresholdSeconds, _logger.Log);
+        var runner = new BalancerRunner(_group, _connectTimeoutSeconds, _deadThresholdSeconds, _store, _logger.Log);
         _loop = Task.Run(() => runner.RunAsync(_cts.Token));
     }
 

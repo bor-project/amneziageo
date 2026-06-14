@@ -119,4 +119,19 @@ public interface IStateStore
     /// Inserts or updates an application setting value.
     /// </summary>
     Task SetSettingAsync(string key, string value, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates the live runtime state for a balancer group.
+    /// </summary>
+    Task SaveBalancerStateAsync(BalancerState state, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the live runtime state for a balancer group, or null if absent.
+    /// </summary>
+    Task<BalancerState?> GetBalancerStateAsync(string group, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the live runtime state for every balancer group.
+    /// </summary>
+    Task<IReadOnlyList<BalancerState>> ListBalancerStatesAsync(CancellationToken ct = default);
 }

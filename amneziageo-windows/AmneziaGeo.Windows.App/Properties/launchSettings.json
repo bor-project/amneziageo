@@ -1,0 +1,24 @@
+{
+  "profiles": {
+    "settings": {
+      "commandName": "Project",
+      "commandLineArgs": "settings"
+    },
+    "config-list": {
+      "commandName": "Project",
+      "commandLineArgs": "config-list"
+    },
+    "geo-query cn": {
+      "commandName": "Project",
+      "commandLineArgs": "geo-query ip cn"
+    },
+    "update-sources": {
+      "commandName": "Project",
+      "commandLineArgs": "update-sources"
+    },
+    "balancer-run": {
+      "commandName": "Project",
+      "commandLineArgs": "balancer-run test"
+    }
+  }
+}

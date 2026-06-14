@@ -5,12 +5,12 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Manages stored tunnel configurations and their associated geo and resolution state.
 /// </summary>
-internal static class ConfigRepository
+internal sealed class ConfigRepository(IStateStore store, ServiceManager serviceManager)
 {
     /// <summary>
     /// Returns whether a configuration with the given name is stored.
     /// </summary>
-    public static bool Exists(string name)
+    public bool Exists(string name)
     {
         return File.Exists(TunnelPaths.ConfigFile(name));
     }
@@ -18,7 +18,7 @@ internal static class ConfigRepository
     /// <summary>
     /// Returns the names of all stored configurations.
     /// </summary>
-    public static IReadOnlyList<string> List()
+    public IReadOnlyList<string> List()
     {
         var directory = TunnelPaths.ConfigurationsDirectory();
         if (!Directory.Exists(directory))
@@ -39,7 +39,7 @@ internal static class ConfigRepository
     /// <summary>
     /// Imports a new configuration from a wg-quick file.
     /// </summary>
-    public static void Add(string name, string sourcePath)
+    public void Add(string name, string sourcePath)
     {
         EnsureValidName(name);
         if (Exists(name))
@@ -55,7 +55,7 @@ internal static class ConfigRepository
     /// <summary>
     /// Replaces the wg-quick text of an existing configuration.
     /// </summary>
-    public static void Edit(string name, string sourcePath)
+    public void Edit(string name, string sourcePath)
     {
         if (!Exists(name))
         {
@@ -68,7 +68,7 @@ internal static class ConfigRepository
     /// <summary>
     /// Duplicates a configuration together with its geo settings and saved resolutions.
     /// </summary>
-    public static async Task CopyAsync(string source, string destination, IStateStore store, CancellationToken ct = default)
+    public async Task CopyAsync(string source, string destination, CancellationToken ct = default)
     {
         EnsureValidName(destination);
         if (!Exists(source))
@@ -98,11 +98,11 @@ internal static class ConfigRepository
     /// <summary>
     /// Deletes a configuration, its service, geo settings, resolutions, and balancer memberships.
     /// </summary>
-    public static async Task RemoveAsync(string name, IStateStore store, CancellationToken ct = default)
+    public async Task RemoveAsync(string name, CancellationToken ct = default)
     {
-        if (ServiceManager.Exists(name))
+        if (serviceManager.Exists(name))
         {
-            ServiceManager.Uninstall(name);
+            serviceManager.Uninstall(name);
         }
 
         var stored = TunnelPaths.ConfigFile(name);

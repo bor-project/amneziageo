@@ -6,12 +6,12 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Talks to the AmneziaWG device over its UAPI named pipe.
 /// </summary>
-internal static class UapiClient
+internal sealed class UapiClient
 {
     /// <summary>
     /// Adds an allowed IP to the peer identified by its base64 public key.
     /// </summary>
-    public static bool AddAllowedIp(string tunnelName, string peerPublicKeyBase64, string cidr)
+    public bool AddAllowedIp(string tunnelName, string peerPublicKeyBase64, string cidr)
     {
         var peerHex = Convert.ToHexStringLower(Convert.FromBase64String(peerPublicKeyBase64));
         var request = $"set=1\npublic_key={peerHex}\nallowed_ip={cidr}\n\n";
@@ -21,7 +21,7 @@ internal static class UapiClient
     /// <summary>
     /// Replaces the peer's allowed IPs with exactly the given set.
     /// </summary>
-    public static bool SetAllowedIps(string tunnelName, string peerPublicKeyBase64, IReadOnlyList<string> cidrs)
+    public bool SetAllowedIps(string tunnelName, string peerPublicKeyBase64, IReadOnlyList<string> cidrs)
     {
         var peerHex = Convert.ToHexStringLower(Convert.FromBase64String(peerPublicKeyBase64));
         var request = new StringBuilder();
@@ -40,7 +40,7 @@ internal static class UapiClient
     /// <summary>
     /// Returns the raw device state from a get request.
     /// </summary>
-    public static string Get(string tunnelName)
+    public string Get(string tunnelName)
     {
         return Exchange(tunnelName, "get=1\n\n");
     }
@@ -48,7 +48,7 @@ internal static class UapiClient
     /// <summary>
     /// Returns the most recent peer handshake as unix seconds, or null when the device is unreachable.
     /// </summary>
-    public static long? TryGetLastHandshake(string tunnelName)
+    public long? TryGetLastHandshake(string tunnelName)
     {
         string state;
         try

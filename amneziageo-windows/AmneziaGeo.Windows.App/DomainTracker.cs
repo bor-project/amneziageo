@@ -1,13 +1,22 @@
 using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Decl;
+using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Resolves tunneled domains to IPs, persists them, and keeps them fresh by re-resolving.
 /// </summary>
-internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IReadOnlyList<string> staticRoutes, int refreshSeconds, IStateStore store)
+internal sealed class DomainTracker(
+    IStateStore store,
+    RouteManager routes,
+    UapiClient uapi,
+    ILogger<DomainTracker> logger,
+    string tunnelName,
+    string peerPublicKey,
+    IReadOnlyList<string> staticRoutes,
+    int refreshSeconds)
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
@@ -39,7 +48,7 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IRe
             {
                 if (!old.Contains(ip))
                 {
-                    RouteManager.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
+                    routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
                 }
             }
 
@@ -47,12 +56,12 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IRe
             {
                 if (!fresh.Contains(ip))
                 {
-                    RouteManager.RemoveTunnelRoute(IPAddress.Parse(ip), index.Value);
+                    routes.RemoveTunnelRoute(IPAddress.Parse(ip), index.Value);
                 }
             }
 
             _current[key] = fresh;
-            UapiClient.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
+            uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
             store.SaveDomainResolutionAsync(tunnelName, new DomainResolution(key, [.. fresh])).GetAwaiter().GetResult();
         }
     }
@@ -64,7 +73,7 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IRe
     {
         try
         {
-            while (RouteManager.FindInterfaceIndex(tunnelName) is null)
+            while (routes.FindInterfaceIndex(tunnelName) is null)
             {
                 await Task.Delay(500);
             }
@@ -80,8 +89,9 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IRe
                 await RefreshAsync();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger.LogError(ex, "domain tracker for {Tunnel} stopped", tunnelName);
         }
     }
 
@@ -130,7 +140,7 @@ internal sealed class DomainTracker(string tunnelName, string peerPublicKey, IRe
 
     private uint? EnsureIndex()
     {
-        _interfaceIndex ??= RouteManager.FindInterfaceIndex(tunnelName);
+        _interfaceIndex ??= routes.FindInterfaceIndex(tunnelName);
         return _interfaceIndex;
     }
 }

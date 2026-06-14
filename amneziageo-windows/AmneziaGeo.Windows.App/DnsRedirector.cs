@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -9,14 +10,14 @@ namespace AmneziaGeo.Windows.App;
 /// Points every active interface's DNS at the given servers and restores the originals on stop.
 /// The applied baseline is persisted so a controlling process can revert it even if the tunnel process dies.
 /// </summary>
-internal sealed class DnsRedirector(IReadOnlyList<string> servers)
+internal sealed class DnsRedirector(ILogger<DnsRedirector> logger)
 {
     private readonly Dictionary<uint, List<string>> _saved = [];
 
     /// <summary>
     /// Saves current DNS servers per interface and sets them to the redirect servers.
     /// </summary>
-    public void Apply()
+    public void Apply(IReadOnlyList<string> servers)
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
@@ -31,7 +32,7 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
                 continue;
             }
 
-            var current = CurrentServers(nic);
+            var current = CurrentServers(nic, servers);
             if (RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index.Value} -ServerAddresses {string.Join(",", servers)}"))
             {
                 _saved[(uint)index.Value] = current;
@@ -39,6 +40,7 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
         }
 
         WriteState(_saved);
+        logger.LogDebug("dns redirect applied -> {Servers}", string.Join(",", servers));
     }
 
     /// <summary>
@@ -58,7 +60,7 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
     /// <summary>
     /// Restores a redirect persisted by a previous run, even from another process; no-op if none is active.
     /// </summary>
-    public static void RestoreSaved()
+    public void RestoreSaved()
     {
         var state = ReadState();
         if (state.Count == 0)
@@ -72,6 +74,7 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
         }
 
         ClearState();
+        logger.LogDebug("dns redirect restored from persisted state");
     }
 
     private static void RestoreOne(uint index, List<string> saved)
@@ -86,7 +89,7 @@ internal sealed class DnsRedirector(IReadOnlyList<string> servers)
         }
     }
 
-    private List<string> CurrentServers(NetworkInterface nic)
+    private static List<string> CurrentServers(NetworkInterface nic, IReadOnlyList<string> servers)
     {
         var current = new List<string>();
         foreach (var dns in nic.GetIPProperties().DnsAddresses)

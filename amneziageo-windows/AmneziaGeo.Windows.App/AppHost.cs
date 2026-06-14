@@ -38,6 +38,7 @@ internal static class AppHost
             builder.Services.AddWindowsService(options => options.ServiceName = TunnelPaths.AgentServiceName());
             builder.Services.AddSingleton(new AgentTarget(agentTarget));
             builder.Services.AddHostedService<AgentBackgroundService>();
+            builder.Services.AddHostedService<StatusPipeServer>();
         }
 
         return builder.Build();
@@ -59,6 +60,7 @@ internal static class AppHost
         services.AddSingleton<TunnelRunner>();
         services.AddSingleton<BalancerRunner>();
         services.AddSingleton<BackupService>();
+        services.AddSingleton<AgentStatusBroker>();
         services.AddSingleton<Cli>();
     }
 }

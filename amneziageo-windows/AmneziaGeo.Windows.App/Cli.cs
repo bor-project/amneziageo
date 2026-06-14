@@ -1,6 +1,7 @@
 using System.Net;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Engine;
 
 namespace AmneziaGeo.Windows.App;
@@ -103,6 +104,8 @@ internal sealed class Cli(
                 return await BalancerModeAsync(name, mode);
             case ["balancer-run", var name]:
                 return await BalancerRunAsync(name);
+            case ["ipc-probe"]:
+                return await IpcProbeAsync();
             case ["balancer-state"]:
                 return await BalancerStateAsync(null);
             case ["balancer-state", var name]:
@@ -496,6 +499,43 @@ internal sealed class Cli(
         var code = serviceManager.Stop(name);
         dns.RestoreSaved();
         return code;
+    }
+
+    private static async Task<int> IpcProbeAsync()
+    {
+        var client = new StatusPipeClient();
+        var received = new TaskCompletionSource<StatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.Connected += () => Console.WriteLine("[probe] connected to pipe");
+        client.Disconnected += () => Console.WriteLine("[probe] disconnected from pipe");
+        client.SnapshotReceived += snapshot => received.TrySetResult(snapshot);
+
+        using (var cts = new CancellationTokenSource())
+        {
+            var loop = client.RunAsync(cts.Token);
+            var first = await Task.WhenAny(received.Task, Task.Delay(TimeSpan.FromSeconds(8)));
+            cts.Cancel();
+            await loop;
+
+            if (first != received.Task)
+            {
+                Console.WriteLine("ipc-probe: no snapshot (is the agent running?)");
+                return 1;
+            }
+
+            var snapshot = await received.Task;
+            Console.WriteLine($"agent v{snapshot.AgentVersion} target={snapshot.BoundTarget ?? "(none)"}");
+            foreach (var config in snapshot.Configs)
+            {
+                Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\t{config.Status}");
+            }
+
+            foreach (var balancer in snapshot.Balancers)
+            {
+                Console.WriteLine($"balancer\t{balancer.Name}\t{balancer.Mode}\t{balancer.Status}\tactive={balancer.ActiveMember ?? "(none)"}");
+            }
+
+            return 0;
+        }
     }
 
     private int DebugTunnelIp(string name, string ip)

@@ -46,7 +46,7 @@ internal sealed class Launcher(ILogger<Launcher> logger)
             var uiExe = LocateUi();
             if (uiExe is null)
             {
-                logger.LogWarning("UI is not implemented yet (tasks #12/#13); skipping UI");
+                logger.LogWarning("could not locate AmneziaGeo.Windows.Ui.exe (build it first); skipping UI");
             }
             else
             {
@@ -145,6 +145,21 @@ internal sealed class Launcher(ILogger<Launcher> logger)
 
     private static string? LocateUi()
     {
-        return null;
+        var baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var config = new DirectoryInfo(baseDir).Parent?.Name ?? "Debug";
+
+        var dir = new DirectoryInfo(baseDir);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "AmneziaGeo.Windows.Ui")))
+        {
+            dir = dir.Parent;
+        }
+
+        if (dir is null)
+        {
+            return null;
+        }
+
+        var candidate = Path.Combine(dir.FullName, "AmneziaGeo.Windows.Ui", "bin", config, "net10.0", "AmneziaGeo.Windows.Ui.exe");
+        return File.Exists(candidate) ? candidate : null;
     }
 }

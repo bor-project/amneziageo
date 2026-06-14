@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AmneziaGeo.Windows.Ui.MainWindow"
+        Title="AmneziaGeo"
+        Width="520" Height="640"
+        MinWidth="420" MinHeight="420">
+
+  <Window.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Opacity" Value="0.6" />
+      <Setter Property="Margin" Value="2,14,0,4" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12" />
+      <Setter Property="Margin" Value="0,3" />
+      <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+    </Style>
+    <Style Selector="Border.badge">
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="7,2" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="16">
+
+    <Border DockPanel.Dock="Top" Classes="card">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Ellipse Grid.Column="0" Width="11" Height="11" VerticalAlignment="Center"
+                 Fill="{Binding AgentStatusBrush}" />
+        <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+          <TextBlock Text="Агент" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding AgentStatusText}" Opacity="0.7" FontSize="12" />
+        </StackPanel>
+        <Button Grid.Column="2" Content="Добавить" VerticalAlignment="Center"
+                IsEnabled="{Binding CanAdd}" Command="{Binding AddCommand}" />
+      </Grid>
+    </Border>
+
+    <ScrollViewer>
+      <StackPanel>
+
+        <TextBlock Classes="section" Text="КОНФИГУРАЦИИ" />
+        <ItemsControl ItemsSource="{Binding Configs}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="card">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                  <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Endpoint}" Opacity="0.6" FontSize="12" />
+                  </StackPanel>
+                  <Border Grid.Column="1" Classes="badge" Margin="0,0,6,0"
+                          Background="#2563EB" IsVisible="{Binding GeoSplit}">
+                    <TextBlock Text="geo" FontSize="11" Foreground="White" />
+                  </Border>
+                  <Border Grid.Column="2" Classes="badge" Background="{Binding StatusBrush}">
+                    <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="White" />
+                  </Border>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="section" Text="БАЛАНСИРОВЩИКИ" IsVisible="{Binding HasBalancers}" />
+        <ItemsControl ItemsSource="{Binding Balancers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="card">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="12" />
+                  </StackPanel>
+                  <Border Grid.Column="1" Classes="badge" Background="{Binding StatusBrush}">
+                    <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="White" />
+                  </Border>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="{Binding EmptyHint}" IsVisible="{Binding IsEmpty}"
+                   Opacity="0.6" Margin="0,24" HorizontalAlignment="Center"
+                   TextWrapping="Wrap" TextAlignment="Center" />
+
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

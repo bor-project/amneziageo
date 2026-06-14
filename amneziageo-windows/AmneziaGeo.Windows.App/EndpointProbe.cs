@@ -8,20 +8,20 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class EndpointProbe
 {
     /// <summary>
-    /// Returns whether the member's resolved endpoint answers an ICMP echo within the timeout.
+    /// Returns the ICMP round-trip time to the member's resolved endpoint in milliseconds, or null when unreachable.
     /// </summary>
-    public async Task<bool> IsReachableAsync(string member, int timeoutMs)
+    public async Task<long?> PingAsync(string member, int timeoutMs)
     {
         var configPath = TunnelPaths.ConfigFile(member);
         if (!File.Exists(configPath))
         {
-            return false;
+            return null;
         }
 
         var endpoint = TunnelEndpoint.Resolve(await File.ReadAllTextAsync(configPath));
         if (endpoint is null)
         {
-            return false;
+            return null;
         }
 
         try
@@ -29,12 +29,20 @@ internal sealed class EndpointProbe
             using (var ping = new Ping())
             {
                 var reply = await ping.SendPingAsync(endpoint, timeoutMs);
-                return reply.Status == IPStatus.Success;
+                return reply.Status == IPStatus.Success ? reply.RoundtripTime : null;
             }
         }
         catch (Exception)
         {
-            return false;
+            return null;
         }
+    }
+
+    /// <summary>
+    /// Returns whether the member's resolved endpoint answers an ICMP echo within the timeout.
+    /// </summary>
+    public async Task<bool> IsReachableAsync(string member, int timeoutMs)
+    {
+        return await PingAsync(member, timeoutMs) is not null;
     }
 }

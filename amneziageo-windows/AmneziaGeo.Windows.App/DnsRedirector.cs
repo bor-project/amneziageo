@@ -6,9 +6,9 @@ using System.Net.Sockets;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Points every active interface's DNS at the local proxy and restores the originals on stop.
+/// Points every active interface's DNS at the given servers and restores the originals on stop.
 /// </summary>
-internal sealed class DnsRedirector
+internal sealed class DnsRedirector(IReadOnlyList<string> servers)
 {
     private readonly Dictionary<uint, List<string>> _saved = [];
 
@@ -30,10 +30,10 @@ internal sealed class DnsRedirector
                 continue;
             }
 
-            var servers = CurrentServers(nic);
-            if (RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index.Value} -ServerAddresses 127.0.0.1"))
+            var current = CurrentServers(nic);
+            if (RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index.Value} -ServerAddresses {string.Join(",", servers)}"))
             {
-                _saved[(uint)index.Value] = servers;
+                _saved[(uint)index.Value] = current;
             }
         }
     }

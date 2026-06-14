@@ -35,9 +35,19 @@ internal static class TunnelRunner
         DnsRedirector? redirector = null;
         if (geoSplit && domains.Count > 0 && StartGeo(name, config, domains, routes, settings.RefreshSeconds, store))
         {
-            redirector = new DnsRedirector();
+            redirector = new DnsRedirector(["127.0.0.1"]);
             redirector.Apply();
             config = WgConfigEditor.RemoveDns(config);
+        }
+        else
+        {
+            var dnsServers = WgConfigEditor.GetDns(config);
+            if (dnsServers.Count > 0)
+            {
+                redirector = new DnsRedirector(dnsServers);
+                redirector.Apply();
+                config = WgConfigEditor.RemoveDns(config);
+            }
         }
 
         var endpoint = TunnelEndpoint.Resolve(config);

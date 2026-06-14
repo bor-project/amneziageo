@@ -24,6 +24,24 @@ public static class WgConfigEditor
     }
 
     /// <summary>
+    /// Returns the DNS servers declared in the config.
+    /// </summary>
+    public static IReadOnlyList<string> GetDns(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("DNS", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = trimmed[(trimmed.IndexOf('=') + 1)..];
+                return [.. value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)];
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
     /// Returns the peer public key declared in the config.
     /// </summary>
     public static string? GetPeerPublicKey(string config)

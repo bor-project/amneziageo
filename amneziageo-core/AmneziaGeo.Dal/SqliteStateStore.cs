@@ -83,6 +83,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         position        INTEGER NOT NULL,
                         member          TEXT NOT NULL,
                         recheck_seconds INTEGER NOT NULL,
+                        mode            TEXT NOT NULL DEFAULT 'priority',
                         updated_at      TEXT NOT NULL,
                         UNIQUE (name, position)
                     );
@@ -103,6 +104,19 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
+            var alter = connection.CreateCommand();
+            await using (alter.ConfigureAwait(false))
+            {
+                alter.CommandText = "ALTER TABLE balancers ADD COLUMN mode TEXT NOT NULL DEFAULT 'priority';";
+                try
+                {
+                    await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+                catch (SqliteException)
+                {
+                }
             }
         }
     }
@@ -539,13 +553,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         insert.Transaction = transaction;
                         insert.CommandText =
                             """
-                            INSERT INTO balancers (name, position, member, recheck_seconds, updated_at)
-                            VALUES ($name, $position, $member, $recheck, $updated);
+                            INSERT INTO balancers (name, position, member, recheck_seconds, mode, updated_at)
+                            VALUES ($name, $position, $member, $recheck, $mode, $updated);
                             """;
                         insert.Parameters.AddWithValue("$name", balancer.Name);
                         insert.Parameters.AddWithValue("$position", position);
                         insert.Parameters.AddWithValue("$member", balancer.Members[position]);
                         insert.Parameters.AddWithValue("$recheck", balancer.RecheckSeconds);
+                        insert.Parameters.AddWithValue("$mode", balancer.Mode);
                         insert.Parameters.AddWithValue("$updated", timestamp);
                         await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                     }
@@ -561,6 +576,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     {
         var members = new List<string>();
         var recheckSeconds = 0;
+        var mode = "priority";
         var found = false;
 
         var connection = new SqliteConnection(_connectionString);
@@ -573,7 +589,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT member, recheck_seconds
+                    SELECT member, recheck_seconds, mode
                     FROM balancers
                     WHERE name = $name
                     ORDER BY position;
@@ -587,13 +603,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     {
                         members.Add(reader.GetString(0));
                         recheckSeconds = reader.GetInt32(1);
+                        mode = reader.GetString(2);
                         found = true;
                     }
                 }
             }
         }
 
-        return found ? new BalancerGroup(name, recheckSeconds, members) : null;
+        return found ? new BalancerGroup(name, recheckSeconds, members, mode) : null;
     }
 
     /// <inheritdoc/>

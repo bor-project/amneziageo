@@ -4,8 +4,8 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Runs a balancer group: connects members in priority order, fails over when one becomes unreachable,
-/// and fails back to a higher-priority member once an out-of-band probe confirms it is reachable.
+/// Runs a balancer group: connects members (by priority order or lowest probe latency), fails over when
+/// the active member dies, and switches to a consistently better member confirmed by out-of-band probes.
 /// </summary>
 internal sealed class BalancerRunner(
     ServiceManager serviceManager,
@@ -47,6 +47,7 @@ internal sealed class BalancerRunner(
             }
         }
 
+        logger.LogInformation("balancer {Group} mode={Mode}", group.Name, group.Mode);
         StopAll(members);
         _failbackStreak = new int[members.Count];
 
@@ -88,20 +89,22 @@ internal sealed class BalancerRunner(
                     continue;
                 }
 
-                if (current > 0 && (DateTimeOffset.UtcNow - lastRecheck).TotalSeconds >= group.RecheckSeconds)
+                if ((DateTimeOffset.UtcNow - lastRecheck).TotalSeconds >= group.RecheckSeconds)
                 {
                     lastRecheck = DateTimeOffset.UtcNow;
-                    if (await ShouldFailBackAsync(members, current, ct))
+                    var challenger = await FindChallengerAsync(members, current, ct);
+                    if (challenger < 0)
                     {
-                        logger.LogInformation("higher-priority member reachable; failing back from {Member}", members[current]);
-                        Stop(members[current]);
-                        var next = await ConnectBestAsync(members, -1, ct);
-                        if (next >= 0 && next != current)
-                        {
-                            logger.LogInformation("switched to {Member}", members[next]);
-                        }
+                        Array.Clear(_failbackStreak);
+                        continue;
+                    }
 
-                        current = next;
+                    BumpStreak(challenger);
+                    if (_failbackStreak[challenger] >= _settings.FailbackProbes)
+                    {
+                        logger.LogInformation("switching to {Member} (better by {Mode})", members[challenger], group.Mode);
+                        Stop(members[current]);
+                        current = await ConnectBestAsync(members, -1, ct);
                         Array.Clear(_failbackStreak);
                         await SetStateAsync(StatusFor(current), members, current);
                     }
@@ -119,14 +122,37 @@ internal sealed class BalancerRunner(
         }
     }
 
-    private static string StatusFor(int current)
+    private bool IsLatencyMode()
+    {
+        return _group.Mode.Equals("latency", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string StatusFor(int current)
     {
         if (current < 0)
         {
             return "disconnected";
         }
 
+        if (IsLatencyMode())
+        {
+            return "connected";
+        }
+
         return current == 0 ? "connected" : "degraded";
+    }
+
+    private void BumpStreak(int challenger)
+    {
+        for (var i = 0; i < _failbackStreak.Length; i++)
+        {
+            if (i != challenger)
+            {
+                _failbackStreak[i] = 0;
+            }
+        }
+
+        _failbackStreak[challenger]++;
     }
 
     private async Task SetStateAsync(string status, IReadOnlyList<string> members, int current)
@@ -142,38 +168,61 @@ internal sealed class BalancerRunner(
         }
     }
 
-    private async Task<bool> ShouldFailBackAsync(IReadOnlyList<string> members, int current, CancellationToken ct)
+    private async Task<int> FindChallengerAsync(IReadOnlyList<string> members, int current, CancellationToken ct)
     {
-        var trigger = false;
         var timeoutMs = _settings.ProbeTimeoutSeconds * 1000;
+        if (IsLatencyMode())
+        {
+            long? bestRtt = null;
+            long? currentRtt = null;
+            var best = -1;
+            for (var i = 0; i < members.Count; i++)
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    return -1;
+                }
+
+                var rtt = await probe.PingAsync(members[i], timeoutMs);
+                if (i == current)
+                {
+                    currentRtt = rtt;
+                }
+
+                if (rtt is not null && (bestRtt is null || rtt < bestRtt))
+                {
+                    bestRtt = rtt;
+                    best = i;
+                }
+            }
+
+            if (best < 0 || best == current)
+            {
+                return -1;
+            }
+
+            return currentRtt is null || bestRtt < currentRtt ? best : -1;
+        }
+
         for (var i = 0; i < current; i++)
         {
             if (ct.IsCancellationRequested)
             {
-                return false;
+                return -1;
             }
 
             if (await probe.IsReachableAsync(members[i], timeoutMs))
             {
-                _failbackStreak[i]++;
-                if (_failbackStreak[i] >= _settings.FailbackProbes)
-                {
-                    logger.LogInformation("member {Member} reachable for {Count} probe(s)", members[i], _failbackStreak[i]);
-                    trigger = true;
-                }
-            }
-            else
-            {
-                _failbackStreak[i] = 0;
+                return i;
             }
         }
 
-        return trigger;
+        return -1;
     }
 
     private async Task<int> ConnectBestAsync(IReadOnlyList<string> members, int skip, CancellationToken ct)
     {
-        for (var i = 0; i < members.Count; i++)
+        foreach (var i in await SelectionOrderAsync(members, ct))
         {
             if (i == skip || ct.IsCancellationRequested)
             {
@@ -188,6 +237,28 @@ internal sealed class BalancerRunner(
         }
 
         return -1;
+    }
+
+    private async Task<IReadOnlyList<int>> SelectionOrderAsync(IReadOnlyList<string> members, CancellationToken ct)
+    {
+        if (!IsLatencyMode())
+        {
+            return [.. Enumerable.Range(0, members.Count)];
+        }
+
+        var timeoutMs = _settings.ProbeTimeoutSeconds * 1000;
+        var rtts = new long?[members.Count];
+        for (var i = 0; i < members.Count; i++)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                break;
+            }
+
+            rtts[i] = await probe.PingAsync(members[i], timeoutMs);
+        }
+
+        return [.. Enumerable.Range(0, members.Count).Where(i => rtts[i] is not null).OrderBy(i => rtts[i]!.Value)];
     }
 
     private async Task<bool> TryConnectAsync(string member, CancellationToken ct)

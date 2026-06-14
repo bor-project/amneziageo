@@ -98,6 +98,8 @@ internal sealed class Cli(
                 return await BalancerShowAsync(name);
             case ["balancer-remove", var name]:
                 return await BalancerRemoveAsync(name);
+            case ["balancer-mode", var name, var mode]:
+                return await BalancerModeAsync(name, mode);
             case ["balancer-run", var name]:
                 return await BalancerRunAsync(name);
             case ["balancer-state"]:
@@ -383,7 +385,7 @@ internal sealed class Cli(
             var balancer = await store.GetBalancerAsync(name);
             if (balancer is not null)
             {
-                Console.WriteLine($"{name}\t{balancer.RecheckSeconds}s\t{string.Join(" > ", balancer.Members)}");
+                Console.WriteLine($"{name}\t{balancer.Mode}\t{balancer.RecheckSeconds}s\t{string.Join(" > ", balancer.Members)}");
             }
         }
 
@@ -399,7 +401,7 @@ internal sealed class Cli(
             return 1;
         }
 
-        Console.WriteLine($"balancer {name} (recheck {balancer.RecheckSeconds}s)");
+        Console.WriteLine($"balancer {name} (mode {balancer.Mode}, recheck {balancer.RecheckSeconds}s)");
         for (var i = 0; i < balancer.Members.Count; i++)
         {
             var member = balancer.Members[i];
@@ -414,6 +416,26 @@ internal sealed class Cli(
     {
         await store.RemoveBalancerAsync(name);
         Console.WriteLine($"removed balancer {name}");
+        return 0;
+    }
+
+    private async Task<int> BalancerModeAsync(string name, string mode)
+    {
+        if (mode is not ("priority" or "latency"))
+        {
+            Console.WriteLine("mode must be priority or latency");
+            return 1;
+        }
+
+        var balancer = await store.GetBalancerAsync(name);
+        if (balancer is null)
+        {
+            Console.WriteLine($"unknown balancer: {name}");
+            return 1;
+        }
+
+        await store.SaveBalancerAsync(balancer with { Mode = mode });
+        Console.WriteLine($"balancer {name} mode = {mode}");
         return 0;
     }
 

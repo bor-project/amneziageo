@@ -5,12 +5,12 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Out-of-band reachability check for a member's endpoint, without bringing up its tunnel.
 /// </summary>
-internal static class EndpointProbe
+internal sealed class EndpointProbe
 {
     /// <summary>
     /// Returns whether the member's resolved endpoint answers an ICMP echo within the timeout.
     /// </summary>
-    public static async Task<bool> IsReachableAsync(string member, int timeoutMs)
+    public async Task<bool> IsReachableAsync(string member, int timeoutMs)
     {
         var configPath = TunnelPaths.ConfigFile(member);
         if (!File.Exists(configPath))

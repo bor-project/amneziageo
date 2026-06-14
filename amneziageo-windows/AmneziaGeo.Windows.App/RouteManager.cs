@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -9,12 +8,12 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Manages the endpoint-exclusion host route that keeps tunnel underlay packets off the tunnel.
 /// </summary>
-internal static partial class RouteManager
+internal sealed partial class RouteManager
 {
     /// <summary>
     /// Adds a host route for the endpoint via the current physical gateway.
     /// </summary>
-    public static bool AddEndpointExclusion(IPAddress endpoint)
+    public bool AddEndpointExclusion(IPAddress endpoint)
     {
         var (gateway, interfaceIndex) = FindPhysicalGateway(endpoint);
         if (gateway is null)
@@ -38,7 +37,7 @@ internal static partial class RouteManager
     /// <summary>
     /// Removes the endpoint host route.
     /// </summary>
-    public static void RemoveEndpointExclusion(IPAddress endpoint)
+    public void RemoveEndpointExclusion(IPAddress endpoint)
     {
         Route("delete", endpoint.ToString());
     }
@@ -46,7 +45,7 @@ internal static partial class RouteManager
     /// <summary>
     /// Adds an on-link host route for an IP through the tunnel interface.
     /// </summary>
-    public static bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
+    public bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
@@ -69,7 +68,7 @@ internal static partial class RouteManager
     /// <summary>
     /// Removes a host route for an IP from the tunnel interface.
     /// </summary>
-    public static void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
+    public void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
@@ -83,7 +82,7 @@ internal static partial class RouteManager
     /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
-    public static uint? FindInterfaceIndex(string adapterName)
+    public uint? FindInterfaceIndex(string adapterName)
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
@@ -154,7 +153,7 @@ internal static partial class RouteManager
 
     private static int Run(string fileName, string[] arguments)
     {
-        var startInfo = new ProcessStartInfo(fileName)
+        var startInfo = new System.Diagnostics.ProcessStartInfo(fileName)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -165,7 +164,7 @@ internal static partial class RouteManager
             startInfo.ArgumentList.Add(argument);
         }
 
-        using (var process = Process.Start(startInfo)!)
+        using (var process = System.Diagnostics.Process.Start(startInfo)!)
         {
             process.StandardOutput.ReadToEnd();
             process.StandardError.ReadToEnd();

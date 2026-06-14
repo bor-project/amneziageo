@@ -8,16 +8,14 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Downloads geo source files and records their update metadata.
 /// </summary>
-internal sealed class GeoFileUpdater(IStateStore store)
+internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
 {
-    private static readonly HttpClient _http = new();
-
     /// <summary>
     /// Downloads a source's file under its unique name and records its metadata.
     /// </summary>
     public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, CancellationToken ct = default)
     {
-        var data = await _http.GetByteArrayAsync(source.Url, ct);
+        var data = await http.GetByteArrayAsync(source.Url, ct);
 
         var path = TunnelPaths.GeoDataFile(source.Name);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

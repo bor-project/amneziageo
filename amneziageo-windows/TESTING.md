@@ -7,8 +7,8 @@
 
 - .NET 10 SDK, собранный проект (Debug).
 - **Запуск от администратора** для команд, создающих службы/туннели/маршруты
-  (`install` / `start` / `stop` / `uninstall` / `balancer-run`). Команды настроек, конфигов и гео
-  админа не требуют.
+  (`install` / `start` / `stop` / `uninstall` / `balancer-run` / `agent-*`). Команды настроек,
+  конфигов и гео админа не требуют.
 - Состояние пишется в `C:\ProgramData\AmneziaGeo\state.db` (SYSTEM/админ-контекст).
   Неэлевированный процесс упрётся в `SQLite Error 8: attempt to write a readonly database` —
   это не баг кода, а права на файл.
@@ -47,7 +47,11 @@ function ageo { & "C:\dev\tools\amnezia\amneziageo\amneziageo-windows\AmneziaGeo
 - `vpn-off.ps1` — останавливает и удаляет `proba`; DNS откатывается автоматически.
 - `vpn-geo.ps1 [-Site 2ip.ru]` — geo-split: через VPN идёт только указанный сайт (в браузере
   отключи Secure DNS/DoH, иначе перехват DNS обходится).
-- `cleanup.ps1` — убирает тестовые конфиги/службы, дубли гео-источников, сбрасывает DNS.
+- `agent-test.ps1 [-Stop]` — ставит и запускает агент-службу для одиночного конфига `proba`
+  (full-tunnel, группа из 1), печатает статус/лог/egress; `-Stop` гасит и удаляет агент. Тоже
+  **только за консолью**.
+- `cleanup.ps1` — убирает агент, тестовые конфиги/службы, балансировщики, дубли гео-источников,
+  сбрасывает DNS.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File amneziageo-windows\scripts\vpn-on.ps1
@@ -125,7 +129,7 @@ ageo uninstall proba
   станет серверным. DNS в full-tunnel приложение выставляет само (из строки `DNS=` конфига,
   через `DnsRedirector`), ручных команд не нужно. Проще всего: `scripts/vpn-on.ps1`.
 
-## Ступень 5 — балансировщик (АДМИН; узкие маршруты)
+## Ступень 5 — балансировщик в foreground (АДМИН; узкие маршруты)
 
 ```powershell
 ageo config-add m1 "C:\путь\conf-1.conf"
@@ -140,6 +144,45 @@ ageo balancer-run test                   # foreground-цикл; Ctrl+C для о
 Останавливай **Ctrl+C** — тогда отработает `finally` и погасит активного члена. Если закрыть
 окно крестиком / убить процесс — активная служба-туннель **останется поднятой**.
 
+`balancer-run` — отладочный foreground. Боевой always-on режим — агент-служба (ступень 6).
+
+## Ступень 6 — агент-служба (АДМИН; всегда-онлайн)
+
+`balancer-run` живёт только пока открыто окно и не переживает выход/перезагрузку. Боевой режим —
+**агент-служба**: одна always-on служба `AmneziaGeoAgent` (LocalSystem, автозапуск), ставится один
+раз с элевацией и переживает закрытие UI, разлогин и ребут. Агент гоняет одну активную «группу»
+(балансировщик **или** одиночный конфиг = группа из одного), а член-туннели создаёт/удаляет
+**эфемерно** (служба члена заводится на connect и сносится на disconnect/стопе). Лог —
+`C:\ProgramData\AmneziaGeo\logs\agent.log` (в службе нет консоли).
+
+Команды: `agent-install <target>` (target = имя балансировщика или конфига), `agent-start`,
+`agent-stop`, `agent-status`, `agent-uninstall`.
+
+Одиночный конфиг (группа из 1), full-tunnel — **только за консолью**:
+
+```powershell
+ageo config-add proba "C:\dev\tools\amnezia\amneziageo\.claude\tunnel-template.conf"
+ageo set-geo proba off                    # full tunnel
+ageo agent-install proba                  # служба AmneziaGeoAgent "--agent proba", start=auto
+ageo agent-start
+ageo agent-status                         # STATE ... RUNNING
+ageo config-list                          # proba RUNNING — туннель подняла служба-член
+Get-Content C:\ProgramData\AmneziaGeo\logs\agent.log -Tail 15
+ageo agent-stop                           # гасит активного члена и удаляет его службу
+ageo agent-uninstall
+```
+
+Балансировщик (несколько членов) — то же самое, только `agent-install <имя-балансировщика>`:
+
+```powershell
+ageo balancer-add bal 30 m1 m2
+ageo agent-install bal
+ageo agent-start
+```
+
+Быстрый прогон одиночного конфига — `scripts/agent-test.ps1` (полный туннель, **только за
+физической/Hyper-V консолью**); снятие — тот же скрипт с `-Stop`.
+
 ## Уборка
 
 ```powershell
@@ -147,12 +190,14 @@ ageo stop <name>
 ageo uninstall <name>
 ```
 
-Службы туннелей не удаляются автоматически при выходе из приложения — подчищай вручную.
+Службы туннелей не удаляются автоматически при выходе из приложения — подчищай вручную
+(или `scripts/cleanup.ps1`). Под агентом член-службы эфемерны: агент сам их сносит на стопе.
 
 ## Заметки
 
 - Состояние и имена: одна БД `C:\ProgramData\AmneziaGeo\state.db`, конфиги — в
-  `C:\ProgramData\AmneziaGeo\Configurations\<name>.conf`, гео-файлы — в `...\geo\<name>.dat`.
+  `C:\ProgramData\AmneziaGeo\Configurations\<name>.conf`, гео-файлы — в `...\geo\<name>.dat`,
+  лог агента — в `...\logs\agent.log`.
 - `config-list` показывает состояние службы: `ABSENT` (службы нет), `STOPPED`, `RUNNING`.
 - При несовместимом изменении схемы БД `state.db` пересоздаётся пустым (миграций пока нет) —
   гео-источники придётся добавить заново.

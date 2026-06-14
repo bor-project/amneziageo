@@ -17,5 +17,5 @@ Start-Sleep -Seconds 2
 
 Write-Host ("egress AFTER (through VPN): " + (& curl.exe -s ifconfig.me/ip)) -ForegroundColor Green
 Write-Host ""
-Write-Host "VPN UP (full tunnel). DNS set by the app — open ANY site in the browser." -ForegroundColor Yellow
+Write-Host "VPN UP (full tunnel). DNS set by the app - open ANY site in the browser." -ForegroundColor Yellow
 Write-Host ("stop: powershell -NoProfile -ExecutionPolicy Bypass -File " + (Join-Path $PSScriptRoot 'vpn-off.ps1')) -ForegroundColor Yellow

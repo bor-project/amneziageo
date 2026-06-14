@@ -6,7 +6,7 @@ namespace AmneziaGeo.Windows.App;
 /// Runs a balancer group: connects members in priority order, fails over when one becomes unreachable,
 /// and periodically rechecks higher-priority members to fail back to them.
 /// </summary>
-internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeconds, int deadThresholdSeconds)
+internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeconds, int deadThresholdSeconds, Action<string> log)
 {
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
@@ -18,7 +18,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
         var members = group.Members;
         if (members.Count == 0)
         {
-            Console.WriteLine("balancer has no members");
+            log("balancer has no members");
             return;
         }
 
@@ -26,11 +26,9 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
         {
             if (!ConfigRepository.Exists(member))
             {
-                Console.WriteLine($"missing config: {member}");
+                log($"missing config: {member}");
                 return;
             }
-
-            ServiceManager.CreateService(member);
         }
 
         StopAll(members);
@@ -44,7 +42,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
             {
                 if (current < 0)
                 {
-                    Console.WriteLine("no member reachable; retrying");
+                    log("no member reachable; retrying");
                     await DelayAsync(_livenessPoll, ct);
                     current = await ConnectBestAsync(members, -1, ct);
                     lastRecheck = DateTimeOffset.UtcNow;
@@ -59,7 +57,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
 
                 if (!IsAlive(members[current]))
                 {
-                    Console.WriteLine($"member {members[current]} unreachable; failing over");
+                    log($"member {members[current]} unreachable; failing over");
                     Stop(members[current]);
                     current = await ConnectBestAsync(members, current, ct);
                     lastRecheck = DateTimeOffset.UtcNow;
@@ -69,12 +67,12 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
                 if (current > 0 && (DateTimeOffset.UtcNow - lastRecheck).TotalSeconds >= group.RecheckSeconds)
                 {
                     lastRecheck = DateTimeOffset.UtcNow;
-                    Console.WriteLine($"rechecking higher-priority members (active: {members[current]})");
+                    log($"rechecking higher-priority members (active: {members[current]})");
                     Stop(members[current]);
                     var next = await ConnectBestAsync(members, -1, ct);
                     if (next >= 0 && next != current)
                     {
-                        Console.WriteLine($"switched to {members[next]}");
+                        log($"switched to {members[next]}");
                     }
 
                     current = next;
@@ -101,7 +99,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
 
             if (await TryConnectAsync(members[i], ct))
             {
-                Console.WriteLine($"connected: {members[i]} (priority {i})");
+                log($"connected: {members[i]} (priority {i})");
                 return i;
             }
         }
@@ -111,6 +109,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
 
     private async Task<bool> TryConnectAsync(string member, CancellationToken ct)
     {
+        ServiceManager.CreateService(member);
         ServiceManager.StartQuiet(member);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(connectTimeoutSeconds);
         while (DateTimeOffset.UtcNow < deadline)
@@ -148,6 +147,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
     {
         ServiceManager.StopQuiet(member);
         WaitStopped(member);
+        ServiceManager.DeleteService(member);
     }
 
     private void StopAll(IReadOnlyList<string> members)

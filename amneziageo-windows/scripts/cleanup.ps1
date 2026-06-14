@@ -2,12 +2,19 @@ $ErrorActionPreference = 'Continue'
 $exe = Join-Path $PSScriptRoot '..\AmneziaGeo.Windows.App\bin\Debug\net10.0\AmneziaGeo.Windows.App.exe'
 function ageo { & $exe @args }
 
+Write-Host "removing agent service ..." -ForegroundColor Cyan
+ageo agent-stop 2>$null | Out-Null
+ageo agent-uninstall 2>$null | Out-Null
+
 Write-Host "removing test tunnels/configs ..." -ForegroundColor Cyan
 foreach ($c in 'proba', 'proba2', 'm1', 'm2', 'test', 'test2') {
     ageo stop $c 2>$null | Out-Null
     ageo uninstall $c 2>$null | Out-Null
     ageo config-remove $c 2>$null | Out-Null
 }
+
+Write-Host "removing test balancers ..." -ForegroundColor Cyan
+foreach ($b in 'test', 'bal') { ageo balancer-remove $b 2>$null | Out-Null }
 
 Write-Host "removing duplicate geo sources added during testing ..." -ForegroundColor Cyan
 foreach ($s in 'geoip-4', 'geosite-5') { ageo remove-source $s 2>$null | Out-Null }

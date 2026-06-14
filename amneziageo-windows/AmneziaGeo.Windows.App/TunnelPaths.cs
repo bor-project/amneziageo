@@ -14,6 +14,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Windows service name for the always-on agent.
+    /// </summary>
+    public static string AgentServiceName()
+    {
+        return "AmneziaGeoAgent";
+    }
+
+    /// <summary>
     /// Directory holding the stored wg-quick configs.
     /// </summary>
     public static string ConfigurationsDirectory()
@@ -43,6 +51,22 @@ internal static class TunnelPaths
     public static string StateDbFile()
     {
         return Path.Combine(RootDirectory(), "state.db");
+    }
+
+    /// <summary>
+    /// Directory holding service log files.
+    /// </summary>
+    public static string LogDirectory()
+    {
+        return Path.Combine(RootDirectory(), "logs");
+    }
+
+    /// <summary>
+    /// Path to the agent service log file.
+    /// </summary>
+    public static string AgentLogFile()
+    {
+        return Path.Combine(LogDirectory(), "agent.log");
     }
 
     private static string RootDirectory()

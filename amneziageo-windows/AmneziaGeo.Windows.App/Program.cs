@@ -229,6 +229,8 @@ internal static class Program
         Console.WriteLine($"refresh-seconds\t{settings.RefreshSeconds}");
         Console.WriteLine($"connect-timeout-seconds\t{settings.ConnectTimeoutSeconds}");
         Console.WriteLine($"dead-threshold-seconds\t{settings.DeadThresholdSeconds}");
+        Console.WriteLine($"failback-probes\t{settings.FailbackProbes}");
+        Console.WriteLine($"probe-timeout-seconds\t{settings.ProbeTimeoutSeconds}");
         return 0;
     }
 
@@ -444,7 +446,7 @@ internal static class Program
                 e.Cancel = true;
                 cts.Cancel();
             };
-            var runner = new BalancerRunner(balancer, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, store, Console.WriteLine);
+            var runner = new BalancerRunner(balancer, settings, store, Console.WriteLine);
             await runner.RunAsync(cts.Token);
         }
 
@@ -501,7 +503,7 @@ internal static class Program
             }
 
             var settings = await SettingsStore.LoadAsync(store);
-            ServiceBase.Run(new AgentService(group, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, store, logger));
+            ServiceBase.Run(new AgentService(group, settings, store, logger));
             return 0;
         }
         catch (Exception ex)

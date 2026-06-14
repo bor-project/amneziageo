@@ -19,4 +19,14 @@ internal sealed record AppSettings
     /// Handshake age beyond which a balancer treats an active member as dead, in seconds.
     /// </summary>
     public int DeadThresholdSeconds { get; init; } = 180;
+
+    /// <summary>
+    /// Consecutive successful out-of-band probes of a higher-priority member required before failing back to it.
+    /// </summary>
+    public int FailbackProbes { get; init; } = 3;
+
+    /// <summary>
+    /// Timeout for an out-of-band endpoint reachability probe, in seconds.
+    /// </summary>
+    public int ProbeTimeoutSeconds { get; init; } = 2;
 }

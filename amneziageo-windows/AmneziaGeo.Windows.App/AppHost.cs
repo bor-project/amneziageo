@@ -58,6 +58,7 @@ internal static class AppHost
         services.AddSingleton<GeoFileUpdater>();
         services.AddSingleton<TunnelRunner>();
         services.AddSingleton<BalancerRunner>();
+        services.AddSingleton<BackupService>();
         services.AddSingleton<Cli>();
     }
 }

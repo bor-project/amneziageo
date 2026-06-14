@@ -1,4 +1,5 @@
 using System.Net;
+using System.ServiceProcess;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -11,6 +12,8 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal static class Program
 {
+    private const int _singleMemberRecheckSeconds = 60;
+
     private static async Task<int> Main(string[] args)
     {
         switch (args)
@@ -18,6 +21,8 @@ internal static class Program
             case ["--service", var name]:
                 await TunnelRunner.RunAsync(name);
                 return 0;
+            case ["--agent", var target]:
+                return await RunAgentAsync(target);
             case ["install", var name, var configPath]:
                 return ServiceManager.Install(name, configPath);
             case ["uninstall", var name]:
@@ -28,6 +33,16 @@ internal static class Program
                 return ServiceManager.Stop(name);
             case ["status", var name]:
                 return ServiceManager.Status(name);
+            case ["agent-install", var target]:
+                return ServiceManager.InstallAgent(target);
+            case ["agent-uninstall"]:
+                return ServiceManager.UninstallAgent();
+            case ["agent-start"]:
+                return ServiceManager.StartAgent();
+            case ["agent-stop"]:
+                return ServiceManager.StopAgent();
+            case ["agent-status"]:
+                return ServiceManager.AgentStatus();
             case ["uapi-get", var name]:
                 Console.WriteLine(UapiClient.Get(name));
                 return 0;
@@ -425,11 +440,51 @@ internal static class Program
                 e.Cancel = true;
                 cts.Cancel();
             };
-            var runner = new BalancerRunner(balancer, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds);
+            var runner = new BalancerRunner(balancer, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, Console.WriteLine);
             await runner.RunAsync(cts.Token);
         }
 
         return 0;
+    }
+
+    private static async Task<int> RunAgentAsync(string target)
+    {
+        var logger = new FileLogger(TunnelPaths.AgentLogFile());
+        try
+        {
+            var store = await OpenStoreAsync();
+            var group = await ResolveAgentGroupAsync(store, target);
+            if (group is null)
+            {
+                logger.Log($"agent: unknown target {target}");
+                return 1;
+            }
+
+            var settings = await SettingsStore.LoadAsync(store);
+            ServiceBase.Run(new AgentService(group, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, logger));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.Log($"agent fatal: {ex}");
+            return 1;
+        }
+    }
+
+    private static async Task<BalancerGroup?> ResolveAgentGroupAsync(IStateStore store, string target)
+    {
+        var balancer = await store.GetBalancerAsync(target);
+        if (balancer is not null)
+        {
+            return balancer;
+        }
+
+        if (ConfigRepository.Exists(target))
+        {
+            return new BalancerGroup(target, _singleMemberRecheckSeconds, [target]);
+        }
+
+        return null;
     }
 
     private static string EndpointLabel(string config)

@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Installs and controls per-tunnel Windows services.
+/// Installs and controls the AmneziaGeo Windows services (per-tunnel and the agent).
 /// </summary>
 internal static class ServiceManager
 {
@@ -98,6 +98,14 @@ internal static class ServiceManager
     }
 
     /// <summary>
+    /// Removes a tunnel service without printing the service-control output.
+    /// </summary>
+    public static int DeleteService(string name)
+    {
+        return Run("delete", TunnelPaths.ServiceName(name)).Code;
+    }
+
+    /// <summary>
     /// Starts a tunnel service.
     /// </summary>
     public static int Start(string name)
@@ -135,6 +143,61 @@ internal static class ServiceManager
     public static int Status(string name)
     {
         return Sc("query", TunnelPaths.ServiceName(name));
+    }
+
+    /// <summary>
+    /// Installs the always-on agent service bound to a balancer or single-config target.
+    /// </summary>
+    public static int InstallAgent(string target)
+    {
+        var serviceName = TunnelPaths.AgentServiceName();
+        var binPath = $"\"{Environment.ProcessPath}\" --agent {target}";
+        return Sc(
+            "create",
+            serviceName,
+            "binPath=",
+            binPath,
+            "type=",
+            "own",
+            "start=",
+            "auto",
+            "obj=",
+            "LocalSystem",
+            "DisplayName=",
+            "AmneziaGeo Agent");
+    }
+
+    /// <summary>
+    /// Stops and removes the agent service.
+    /// </summary>
+    public static int UninstallAgent()
+    {
+        Sc("stop", TunnelPaths.AgentServiceName());
+        return Sc("delete", TunnelPaths.AgentServiceName());
+    }
+
+    /// <summary>
+    /// Starts the agent service.
+    /// </summary>
+    public static int StartAgent()
+    {
+        return Sc("start", TunnelPaths.AgentServiceName());
+    }
+
+    /// <summary>
+    /// Stops the agent service.
+    /// </summary>
+    public static int StopAgent()
+    {
+        return Sc("stop", TunnelPaths.AgentServiceName());
+    }
+
+    /// <summary>
+    /// Prints the status of the agent service.
+    /// </summary>
+    public static int AgentStatus()
+    {
+        return Sc("query", TunnelPaths.AgentServiceName());
     }
 
     private static int Sc(params string[] arguments)

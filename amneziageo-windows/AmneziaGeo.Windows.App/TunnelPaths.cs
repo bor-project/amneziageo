@@ -54,6 +54,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the persisted DNS-redirect state used to revert system DNS after a stop.
+    /// </summary>
+    public static string DnsStateFile()
+    {
+        return Path.Combine(RootDirectory(), "dns-state.txt");
+    }
+
+    /// <summary>
     /// Directory holding service log files.
     /// </summary>
     public static string LogDirectory()

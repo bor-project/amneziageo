@@ -36,7 +36,7 @@
           <TextBlock Text="{Binding AgentStatusText}" Opacity="0.7" FontSize="12" />
         </StackPanel>
         <Button Grid.Column="2" Content="Добавить" VerticalAlignment="Center"
-                IsEnabled="{Binding CanAdd}" Command="{Binding AddCommand}" />
+                Click="OnAddClick" />
       </Grid>
     </Border>
 

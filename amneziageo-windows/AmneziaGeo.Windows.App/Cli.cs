@@ -19,7 +19,8 @@ internal sealed class Cli(
     UapiClient uapi,
     DnsRedirector dns,
     TunnelRunner tunnelRunner,
-    BalancerRunner balancerRunner)
+    BalancerRunner balancerRunner,
+    BackupService backupService)
 {
     /// <summary>
     /// Runs the subcommand matching the given arguments.
@@ -106,6 +107,12 @@ internal sealed class Cli(
                 return await BalancerStateAsync(null);
             case ["balancer-state", var name]:
                 return await BalancerStateAsync(name);
+            case ["backup", var path]:
+                return await backupService.BackupAsync(path);
+            case ["restore", var path]:
+                return await backupService.RestoreAsync(path, false);
+            case ["restore", var path, "--force"]:
+                return await backupService.RestoreAsync(path, true);
             default:
                 await RunDemoAsync();
                 return 0;

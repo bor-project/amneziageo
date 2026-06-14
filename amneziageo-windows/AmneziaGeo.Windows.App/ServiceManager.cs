@@ -64,7 +64,20 @@ internal sealed class ServiceManager
     /// </summary>
     public string QueryState(string name)
     {
-        var (code, output, _) = Run("query", TunnelPaths.ServiceName(name));
+        return StateOf(TunnelPaths.ServiceName(name));
+    }
+
+    /// <summary>
+    /// Returns the agent service state as RUNNING, STOPPED, PENDING, or ABSENT.
+    /// </summary>
+    public string AgentState()
+    {
+        return StateOf(TunnelPaths.AgentServiceName());
+    }
+
+    private static string StateOf(string serviceName)
+    {
+        var (code, output, _) = Run("query", serviceName);
         if (code == 1060)
         {
             return "ABSENT";

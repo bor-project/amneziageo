@@ -901,6 +901,41 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         return states;
     }
 
+    /// <inheritdoc/>
+    public async Task BackupToAsync(string destinationPath, CancellationToken ct = default)
+    {
+        var source = new SqliteConnection(_connectionString);
+        await using (source.ConfigureAwait(false))
+        {
+            await source.OpenAsync(ct).ConfigureAwait(false);
+
+            var checkpoint = source.CreateCommand();
+            await using (checkpoint.ConfigureAwait(false))
+            {
+                checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                await checkpoint.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
+            var destinationConnectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = destinationPath,
+                Pooling = false,
+            }.ToString();
+            var destination = new SqliteConnection(destinationConnectionString);
+            await using (destination.ConfigureAwait(false))
+            {
+                await destination.OpenAsync(ct).ConfigureAwait(false);
+                source.BackupDatabase(destination);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public void ClearPool()
+    {
+        SqliteConnection.ClearAllPools();
+    }
+
     private static string Timestamp()
     {
         return DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);

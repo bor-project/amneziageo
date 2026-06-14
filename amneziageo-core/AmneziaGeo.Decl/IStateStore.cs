@@ -134,4 +134,14 @@ public interface IStateStore
     /// Returns the live runtime state for every balancer group.
     /// </summary>
     Task<IReadOnlyList<BalancerState>> ListBalancerStatesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Writes a consistent snapshot of the database to the given destination path.
+    /// </summary>
+    Task BackupToAsync(string destinationPath, CancellationToken ct = default);
+
+    /// <summary>
+    /// Releases pooled database connections so the database file can be replaced.
+    /// </summary>
+    void ClearPool();
 }

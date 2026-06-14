@@ -6,7 +6,7 @@ namespace AmneziaGeo.Windows.App;
 /// Runs a balancer group: connects members in priority order, fails over when one becomes unreachable,
 /// and periodically rechecks higher-priority members to fail back to them.
 /// </summary>
-internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeconds, int deadThresholdSeconds, Action<string> log)
+internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeconds, int deadThresholdSeconds, IStateStore store, Action<string> log)
 {
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
@@ -33,7 +33,9 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
 
         StopAll(members);
 
+        await SetStateAsync("connecting", members, -1);
         var current = await ConnectBestAsync(members, -1, ct);
+        await SetStateAsync(StatusFor(current), members, current);
         var lastRecheck = DateTimeOffset.UtcNow;
 
         try
@@ -45,6 +47,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
                     log("no member reachable; retrying");
                     await DelayAsync(_livenessPoll, ct);
                     current = await ConnectBestAsync(members, -1, ct);
+                    await SetStateAsync(StatusFor(current), members, current);
                     lastRecheck = DateTimeOffset.UtcNow;
                     continue;
                 }
@@ -58,8 +61,10 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
                 if (!IsAlive(members[current]))
                 {
                     log($"member {members[current]} unreachable; failing over");
+                    await SetStateAsync("failover", members, current);
                     Stop(members[current]);
                     current = await ConnectBestAsync(members, current, ct);
+                    await SetStateAsync(StatusFor(current), members, current);
                     lastRecheck = DateTimeOffset.UtcNow;
                     continue;
                 }
@@ -76,6 +81,7 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
                     }
 
                     current = next;
+                    await SetStateAsync(StatusFor(current), members, current);
                 }
             }
         }
@@ -85,6 +91,31 @@ internal sealed class BalancerRunner(BalancerGroup group, int connectTimeoutSeco
             {
                 Stop(members[current]);
             }
+
+            await SetStateAsync("disconnected", members, -1);
+        }
+    }
+
+    private static string StatusFor(int current)
+    {
+        if (current < 0)
+        {
+            return "disconnected";
+        }
+
+        return current == 0 ? "connected" : "degraded";
+    }
+
+    private async Task SetStateAsync(string status, IReadOnlyList<string> members, int current)
+    {
+        try
+        {
+            var member = current >= 0 ? members[current] : null;
+            await store.SaveBalancerStateAsync(new BalancerState(group.Name, status, member, DateTimeOffset.UtcNow));
+        }
+        catch (Exception ex)
+        {
+            log($"state write failed: {ex.Message}");
         }
     }
 

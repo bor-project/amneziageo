@@ -92,6 +92,10 @@ internal static class Program
                 return await BalancerRemoveAsync(name);
             case ["balancer-run", var name]:
                 return await BalancerRunAsync(name);
+            case ["balancer-state"]:
+                return await BalancerStateAsync(null);
+            case ["balancer-state", var name]:
+                return await BalancerStateAsync(name);
             default:
                 await RunDemoAsync();
                 return 0;
@@ -440,11 +444,40 @@ internal static class Program
                 e.Cancel = true;
                 cts.Cancel();
             };
-            var runner = new BalancerRunner(balancer, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, Console.WriteLine);
+            var runner = new BalancerRunner(balancer, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, store, Console.WriteLine);
             await runner.RunAsync(cts.Token);
         }
 
         return 0;
+    }
+
+    private static async Task<int> BalancerStateAsync(string? name)
+    {
+        var store = await OpenStoreAsync();
+        if (name is null)
+        {
+            foreach (var state in await store.ListBalancerStatesAsync())
+            {
+                PrintState(state);
+            }
+
+            return 0;
+        }
+
+        var single = await store.GetBalancerStateAsync(name);
+        if (single is null)
+        {
+            Console.WriteLine($"no live state for {name}");
+            return 1;
+        }
+
+        PrintState(single);
+        return 0;
+    }
+
+    private static void PrintState(BalancerState state)
+    {
+        Console.WriteLine($"{state.Group}\t{state.Status}\t{state.ActiveMember ?? "(none)"}\t{state.UpdatedAt:u}");
     }
 
     private static int StopTunnel(string name)
@@ -468,7 +501,7 @@ internal static class Program
             }
 
             var settings = await SettingsStore.LoadAsync(store);
-            ServiceBase.Run(new AgentService(group, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, logger));
+            ServiceBase.Run(new AgentService(group, settings.ConnectTimeoutSeconds, settings.DeadThresholdSeconds, store, logger));
             return 0;
         }
         catch (Exception ex)

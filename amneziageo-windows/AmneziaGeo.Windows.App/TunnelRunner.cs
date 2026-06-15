@@ -36,8 +36,9 @@ internal sealed class TunnelRunner(
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
 
         var appSettings = await settings.LoadAsync();
+        var stripV6 = !HasIpv6Address(config);
         var applied = false;
-        if (geoSplit && domains.Count > 0 && StartGeo(name, config, domains, geoRoutes, appSettings.RefreshSeconds))
+        if (geoSplit && domains.Count > 0 && StartGeo(name, config, domains, geoRoutes, appSettings.RefreshSeconds, stripV6))
         {
             dns.Apply(["127.0.0.1"]);
             config = WgConfigEditor.RemoveDns(config);
@@ -74,7 +75,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private bool StartGeo(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> geoRoutes, int refreshSeconds)
+    private bool StartGeo(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> geoRoutes, int refreshSeconds, bool stripV6)
     {
         var peer = WgConfigEditor.GetPeerPublicKey(config);
         if (peer is null)
@@ -82,12 +83,12 @@ internal sealed class TunnelRunner(
             return false;
         }
 
-        var tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, refreshSeconds);
+        var tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, refreshSeconds, stripV6);
         _ = Task.Run(tracker.RunAsync);
 
         try
         {
-            var proxy = new DnsProxy(domains, IPAddress.Parse("1.1.1.1"), tracker, loggerFactory.CreateLogger<DnsProxy>());
+            var proxy = new DnsProxy(domains, IPAddress.Parse("1.1.1.1"), tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6);
             var thread = new Thread(proxy.Serve)
             {
                 IsBackground = true,
@@ -100,5 +101,18 @@ internal sealed class TunnelRunner(
             logger.LogError(ex, "failed to start dns proxy");
             return false;
         }
+    }
+
+    private static bool HasIpv6Address(string config)
+    {
+        foreach (var address in WgConfigEditor.GetAddresses(config))
+        {
+            if (address.Contains(':'))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

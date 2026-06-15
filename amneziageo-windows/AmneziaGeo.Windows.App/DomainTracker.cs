@@ -16,7 +16,8 @@ internal sealed class DomainTracker(
     string tunnelName,
     string peerPublicKey,
     IReadOnlyList<string> staticRoutes,
-    int refreshSeconds)
+    int refreshSeconds,
+    bool stripV6)
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
@@ -36,7 +37,10 @@ internal sealed class DomainTracker(
             }
 
             var key = domain.TrimEnd('.').ToLowerInvariant();
-            var fresh = new HashSet<string>(ips);
+            // On an IPv4-only tunnel, never route IPv6: those addresses have no transit and only
+            // make clients stall before falling back to IPv4.
+            var effective = stripV6 ? ips.Where(ip => !ip.Contains(':')).ToList() : ips;
+            var fresh = new HashSet<string>(effective);
             _current.TryGetValue(key, out var old);
             old ??= [];
             if (fresh.SetEquals(old))

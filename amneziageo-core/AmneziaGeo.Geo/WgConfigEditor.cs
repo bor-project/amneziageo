@@ -24,6 +24,24 @@ public static class WgConfigEditor
     }
 
     /// <summary>
+    /// Returns the interface Address entries declared in the config (e.g. 10.0.0.2/32).
+    /// </summary>
+    public static IReadOnlyList<string> GetAddresses(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("Address", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = trimmed[(trimmed.IndexOf('=') + 1)..];
+                return [.. value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)];
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
     /// Returns the DNS servers declared in the config.
     /// </summary>
     public static IReadOnlyList<string> GetDns(string config)

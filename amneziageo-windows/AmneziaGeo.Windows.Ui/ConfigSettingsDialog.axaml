@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AmneziaGeo.Windows.Ui.ConfigSettingsDialog"
+        Title="Настройки конфигурации"
+        Width="460" Height="540"
+        MinWidth="380" MinHeight="360"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="16">
+
+    <TextBlock DockPanel.Dock="Top" Text="{Binding ConfigName}" FontWeight="SemiBold" FontSize="16" />
+
+    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,12,0,8">
+      <RadioButton GroupName="mode" Content="Настройки сервера — весь трафик в туннель"
+                   IsChecked="{Binding !UseCustom}" />
+      <RadioButton GroupName="mode" Content="Свои настройки — в туннель только выбранное (split)"
+                   IsChecked="{Binding UseCustom}" />
+    </StackPanel>
+
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+      <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Opacity="0.7"
+                 VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+      <Button Grid.Column="1" Content="Отмена" Click="OnCancel" Margin="0,0,8,0" />
+      <Button Grid.Column="2" Content="Сохранить" Click="OnSave" IsEnabled="{Binding !IsBusy}" />
+    </Grid>
+
+    <StackPanel IsVisible="{Binding UseCustom}" Spacing="8" Margin="0,4,0,0">
+      <TextBlock Text="Что направлять в туннель (гео-категория или свой домен/CIDR)"
+                 Opacity="0.6" FontSize="12" TextWrapping="Wrap" />
+      <Grid ColumnDefinitions="*,Auto">
+        <AutoCompleteBox Grid.Column="0" Watermark="напр. geosite:openai, geoip:de, example.com"
+                         Text="{Binding RuleInput}" ItemsSource="{Binding GeoSuggestions}"
+                         FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
+        <Button Grid.Column="1" Content="Добавить" Command="{Binding AddRuleCommand}" Margin="6,0,0,0" />
+      </Grid>
+      <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6"
+              Padding="6" Height="260">
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Rules}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,Auto" Margin="2">
+                  <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Content="✕" Padding="8,0" FontSize="11"
+                          Command="{Binding $parent[ItemsControl].DataContext.RemoveRuleCommand}"
+                          CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </StackPanel>
+
+  </DockPanel>
+</Window>

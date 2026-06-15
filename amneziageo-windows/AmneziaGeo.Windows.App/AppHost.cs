@@ -47,6 +47,7 @@ internal static class AppHost
     private static void RegisterServices(IServiceCollection services)
     {
         services.AddSingleton<IStateStore>(_ => new SqliteStateStore(TunnelPaths.StateDbFile()));
+        services.AddSingleton<AgentControl>();
         services.AddSingleton<HttpClient>();
         services.AddSingleton<ServiceManager>();
         services.AddSingleton<RouteManager>();
@@ -56,6 +57,7 @@ internal static class AppHost
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ConfigRepository>();
         services.AddSingleton<GeoActivator>();
+        services.AddSingleton<GeoConfigurator>();
         services.AddSingleton<GeoFileUpdater>();
         services.AddSingleton<TunnelRunner>();
         services.AddSingleton<BalancerRunner>();

@@ -1,27 +1,43 @@
 using System.Collections.ObjectModel;
+using Avalonia;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// Top-level view model: agent status, the configuration list, and the balancer list.
+/// Top-level view model: connection card, nav state, profile list, routing-list catalogue, and theme.
 /// </summary>
 internal sealed partial class MainWindowViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
+    private IReadOnlyList<string> _configNames = [];
+    private bool _toggleInFlight;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(AgentStatusBrush))]
+    [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     private bool _isConnected;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ConnectButtonText))]
+    [NotifyPropertyChangedFor(nameof(ConnectButtonBrush))]
+    private bool _isTunnelActive = true;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
+    [NotifyPropertyChangedFor(nameof(ActiveProfileName))]
     private string? _boundTarget;
+
+    [ObservableProperty]
+    private string? _activeMember;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
@@ -30,6 +46,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private bool _hasBalancers;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEmpty))]
+    private bool _hasRoutingLists;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsHome))]
+    [NotifyPropertyChangedFor(nameof(IsRouting))]
+    [NotifyPropertyChangedFor(nameof(IsSettings))]
+    private string _nav = "home";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ThemeLabel))]
+    private bool _isDark;
 
     /// <summary>
     /// ctor
@@ -48,17 +78,22 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public AgentConnection Connection => _connection;
 
     /// <summary>
-    /// The configuration rows.
+    /// Configuration rows.
     /// </summary>
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
 
     /// <summary>
-    /// The balancer rows.
+    /// Profile rows.
     /// </summary>
     public ObservableCollection<BalancerItemViewModel> Balancers { get; } = [];
 
     /// <summary>
-    /// The agent status banner text.
+    /// Routing-list catalogue.
+    /// </summary>
+    public ObservableCollection<RoutingListSummaryViewModel> RoutingLists { get; } = [];
+
+    /// <summary>
+    /// Banner status text in the connection card.
     /// </summary>
     public string AgentStatusText
     {
@@ -66,27 +101,67 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             if (!IsConnected)
             {
-                return "Агент не запущен";
+                return "Отключено";
             }
 
-            return BoundTarget is null ? "Подключено к агенту" : $"Активное подключение: {BoundTarget}";
+            return BoundTarget is null ? "Подключено к агенту" : "Подключено";
         }
     }
 
     /// <summary>
-    /// The agent status indicator color.
+    /// Connection-card status indicator color.
     /// </summary>
     public IBrush AgentStatusBrush => StatusLabels.Brush(IsConnected ? ConnectionStatus.Connected : ConnectionStatus.Disconnected);
 
     /// <summary>
+    /// Name shown under the status banner in the connection card.
+    /// </summary>
+    public string ActiveProfileName => BoundTarget ?? "—";
+
+    /// <summary>
     /// Whether nothing is configured yet.
     /// </summary>
-    public bool IsEmpty => !HasConfigs && !HasBalancers;
+    public bool IsEmpty => !HasConfigs && !HasBalancers && !HasRoutingLists;
 
     /// <summary>
     /// The hint shown when nothing is configured.
     /// </summary>
-    public string EmptyHint => "Нет конфигураций. Нажмите «Добавить».";
+    public string EmptyHint => "Нет конфигураций. Нажмите «+ Профиль» или «Добавить».";
+
+    /// <summary>
+    /// Big connect / disconnect button label, reflecting the agent's desired tunnel state.
+    /// </summary>
+    public string ConnectButtonText => IsTunnelActive ? "Остановить" : "Запустить";
+
+    /// <summary>
+    /// Big connect / disconnect button color.
+    /// </summary>
+    public IBrush ConnectButtonBrush => StatusLabels.Brush(IsTunnelActive ? ConnectionStatus.Disconnected : ConnectionStatus.Connected);
+
+    /// <summary>
+    /// Whether the connect / disconnect button is actionable (the agent pipe is up).
+    /// </summary>
+    public bool CanToggleConnection => IsConnected;
+
+    /// <summary>
+    /// Whether the Home tab is shown.
+    /// </summary>
+    public bool IsHome => Nav == "home";
+
+    /// <summary>
+    /// Whether the Routing tab is shown.
+    /// </summary>
+    public bool IsRouting => Nav == "routing";
+
+    /// <summary>
+    /// Whether the Settings tab is shown.
+    /// </summary>
+    public bool IsSettings => Nav == "settings";
+
+    /// <summary>
+    /// Current theme label shown on the toggle button.
+    /// </summary>
+    public string ThemeLabel => IsDark ? "Тёмная" : "Светлая";
 
     /// <summary>
     /// Starts the agent connection.
@@ -101,7 +176,56 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public IReadOnlyList<string> ConfigNames()
     {
-        return [.. Configs.Select(config => config.Name)];
+        return _configNames;
+    }
+
+    [RelayCommand]
+    private void NavHome()
+    {
+        Nav = "home";
+    }
+
+    [RelayCommand]
+    private void NavRouting()
+    {
+        Nav = "routing";
+    }
+
+    [RelayCommand]
+    private void NavSettings()
+    {
+        Nav = "settings";
+    }
+
+    [RelayCommand]
+    private void ToggleTheme()
+    {
+        IsDark = !IsDark;
+        if (Application.Current is not null)
+        {
+            Application.Current.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanToggleConnection))]
+    private async Task ToggleConnection()
+    {
+        var connect = !IsTunnelActive;
+        IsTunnelActive = connect;
+        _toggleInFlight = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(
+                new IpcCommand(IpcContract.OpSetConnection, [connect ? "connect" : "disconnect"]));
+            if (!ack.Ok)
+            {
+                IsTunnelActive = !connect;
+            }
+        }
+        finally
+        {
+            _toggleInFlight = false;
+        }
     }
 
     private void OnConnected()
@@ -116,8 +240,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             IsConnected = false;
             Configs.Clear();
             Balancers.Clear();
+            RoutingLists.Clear();
             HasConfigs = false;
             HasBalancers = false;
+            HasRoutingLists = false;
+            _configNames = [];
+            ActiveMember = null;
         });
     }
 
@@ -129,10 +257,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void Apply(StatusSnapshot snapshot)
     {
         BoundTarget = snapshot.BoundTarget;
+        if (!_toggleInFlight)
+        {
+            IsTunnelActive = snapshot.Active;
+        }
+
         SyncConfigs(snapshot.Configs);
-        SyncBalancers(snapshot.Balancers);
+        SyncRoutingLists(snapshot.RoutingLists ?? []);
+        SyncBalancers(snapshot.Balancers, snapshot.RoutingLists ?? []);
         HasConfigs = Configs.Count > 0;
         HasBalancers = Balancers.Count > 0;
+        HasRoutingLists = RoutingLists.Count > 0;
+
+        var bound = snapshot.Balancers.FirstOrDefault(b => b.Name == snapshot.BoundTarget);
+        ActiveMember = bound?.ActiveMember;
     }
 
     private void SyncConfigs(IReadOnlyList<ConfigEntry> entries)
@@ -145,29 +283,92 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 Name = entry.Name,
                 Endpoint = entry.Endpoint,
                 GeoSplit = entry.GeoSplit,
+                Rules = entry.Rules,
                 Status = entry.Status,
             });
         }
+
+        _configNames = [.. entries.Select(e => e.Name)];
     }
 
-    private void SyncBalancers(IReadOnlyList<BalancerEntry> entries)
+    private void SyncRoutingLists(IReadOnlyList<RoutingListEntry> entries)
     {
-        Balancers.Clear();
+        RoutingLists.Clear();
         foreach (var entry in entries)
         {
-            Balancers.Add(new BalancerItemViewModel
+            RoutingLists.Add(new RoutingListSummaryViewModel
             {
+                Id = entry.Id,
                 Name = entry.Name,
-                Detail = BalancerDetail(entry),
-                Status = entry.Status,
+                RuleCount = entry.RuleCount,
+                RouteCount = entry.RouteCount,
+                DomainCount = entry.DomainCount,
             });
         }
     }
 
-    private static string BalancerDetail(BalancerEntry entry)
+    private void SyncBalancers(IReadOnlyList<BalancerEntry> entries, IReadOnlyList<RoutingListEntry> routingLists)
     {
-        var mode = entry.Mode == "latency" ? "по задержке" : "по приоритету";
-        var active = entry.ActiveMember ?? "—";
-        return $"{mode} · активен: {active} · серверов: {entry.Members.Count}";
+        var options = BuildRoutingOptions(routingLists);
+
+        // Reconcile in place, matching rows by name, so transient view state (the expanded
+        // editor, combo selection) survives the snapshot pushes that follow every edit.
+        var present = entries.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+        for (var i = Balancers.Count - 1; i >= 0; i--)
+        {
+            if (!present.Contains(Balancers[i].Name))
+            {
+                Balancers.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync);
+                existing.ApplyFromEntry(entry, options, _configNames);
+                Balancers.Insert(Math.Min(i, Balancers.Count), existing);
+                continue;
+            }
+
+            existing.ApplyFromEntry(entry, options, _configNames);
+            var index = Balancers.IndexOf(existing);
+            if (index != i)
+            {
+                Balancers.Move(index, i);
+            }
+        }
+    }
+
+    private static IReadOnlyList<RoutingListChoice> BuildRoutingOptions(IReadOnlyList<RoutingListEntry> entries)
+    {
+        var options = new List<RoutingListChoice> { RoutingListChoice.None };
+        foreach (var entry in entries)
+        {
+            options.Add(new RoutingListChoice(entry.Id, entry.Name));
+        }
+
+        return options;
+    }
+
+    private async Task SaveBalancerAsync(string name, int recheck, string mode, IReadOnlyList<string> members)
+    {
+        var args = new List<string> { name, recheck.ToString(System.Globalization.CultureInfo.InvariantCulture), mode };
+        args.AddRange(members);
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, args));
+    }
+
+    private async Task AssignRoutingAsync(string profile, long? listId, bool useRouting)
+    {
+        var args = new[]
+        {
+            profile,
+            listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none",
+            useRouting ? "on" : "off",
+        };
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, args));
     }
 }

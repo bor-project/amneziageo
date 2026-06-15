@@ -81,4 +81,38 @@ internal sealed class GeoIndex
 
         return result;
     }
+
+    /// <summary>
+    /// Returns the union of geosite category codes across all sources.
+    /// </summary>
+    public IReadOnlyList<string> Categories()
+    {
+        var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var bytes in _geosite)
+        {
+            foreach (var category in GeoSiteDatabase.Categories(bytes))
+            {
+                set.Add(category);
+            }
+        }
+
+        return [.. set];
+    }
+
+    /// <summary>
+    /// Returns the union of geoip country codes across all sources.
+    /// </summary>
+    public IReadOnlyList<string> Countries()
+    {
+        var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var bytes in _geoip)
+        {
+            foreach (var country in GeoIpDatabase.Countries(bytes))
+            {
+                set.Add(country);
+            }
+        }
+
+        return [.. set];
+    }
 }

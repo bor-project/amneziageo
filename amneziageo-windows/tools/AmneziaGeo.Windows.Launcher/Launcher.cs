@@ -1,61 +1,28 @@
-using System.Diagnostics;
+using AmneziaGeo.Windows.App;
+using Avalonia;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using UiProgram = AmneziaGeo.Windows.Ui.Program;
 
 namespace AmneziaGeo.Windows.Launcher;
 
 /// <summary>
-/// Starts the configured backend (agent, foreground) and desktop UI for debugging, replacing the scripts.
+/// Hosts the backend agent and the desktop UI in-process for debugging, replacing the scripts.
 /// </summary>
-internal sealed class Launcher(ILogger<Launcher> logger)
+internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOptions> options)
 {
     /// <summary>
-    /// Launches the selected processes and waits until they exit or Ctrl+C.
+    /// Launches the configured components in-process and blocks until they exit.
     /// </summary>
-    public async Task<int> RunAsync(string[] args)
+    public int Run(string[] args)
     {
-        var options = LaunchOptions.Parse(args);
-        var processes = new List<Process>();
+        var launch = LaunchOptions.Resolve(options.Value, args);
 
-        if (options.RunService)
-        {
-            if (options.Target is null)
-            {
-                logger.LogError("specify --target <balancer-or-config> or --config <path>");
-                return 1;
-            }
+        RegisterConfigs(launch.ConfigPaths);
+        ApplyRoutingLists(options.Value.RoutingLists);
+        ApplyProfiles(options.Value.Profiles);
 
-            var appExe = options.AppPath ?? LocateApp();
-            if (appExe is null)
-            {
-                logger.LogError("could not locate AmneziaGeo.Windows.App.exe; pass --app <path>");
-                return 1;
-            }
-
-            if (options.ConfigPath is not null)
-            {
-                logger.LogInformation("registering config '{Target}' from {Path}", options.Target, options.ConfigPath);
-                RegisterConfig(appExe, options.Target, options.ConfigPath);
-            }
-
-            logger.LogInformation("starting backend (agent, foreground) for '{Target}'", options.Target);
-            processes.Add(Start(appExe, $"--agent {options.Target}"));
-        }
-
-        if (options.RunUi)
-        {
-            var uiExe = LocateUi();
-            if (uiExe is null)
-            {
-                logger.LogWarning("could not locate AmneziaGeo.Windows.Ui.exe (build it first); skipping UI");
-            }
-            else
-            {
-                logger.LogInformation("starting UI");
-                processes.Add(Start(uiExe, string.Empty));
-            }
-        }
-
-        if (processes.Count == 0)
+        if (!launch.RunService && !launch.RunUi)
         {
             logger.LogWarning("nothing to launch");
             return 0;
@@ -63,103 +30,142 @@ internal sealed class Launcher(ILogger<Launcher> logger)
 
         using (var cts = new CancellationTokenSource())
         {
-            Console.CancelKeyPress += (_, e) =>
+            Task<int>? agentTask = null;
+
+            if (launch.RunService)
             {
-                e.Cancel = true;
+                if (launch.Target is null)
+                {
+                    logger.LogError("specify --target <balancer-or-config> or --config <path>");
+                    return 1;
+                }
+
+                if (launch.ConfigPath is not null)
+                {
+                    logger.LogInformation("registering config '{Target}' from {Path}", launch.Target, launch.ConfigPath);
+                    AppEntry.RunAsync(["config-add", launch.Target, launch.ConfigPath]).GetAwaiter().GetResult();
+                }
+
+                logger.LogInformation("starting backend (agent, in-process) for '{Target}'", launch.Target);
+                var target = launch.Target;
+                agentTask = Task.Run(() => AppEntry.RunAsync(["--agent", target], cts.Token));
+            }
+
+            if (launch.RunUi)
+            {
+                logger.LogInformation("starting UI");
+                UiProgram.BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
                 cts.Cancel();
-            };
+            }
 
-            await WaitAllAsync(processes, cts.Token);
-        }
-
-        foreach (var process in processes)
-        {
-            TryStop(process);
+            if (agentTask is not null)
+            {
+                try
+                {
+                    agentTask.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
         }
 
         return 0;
     }
 
-    private void RegisterConfig(string appExe, string target, string configPath)
+    private void ApplyRoutingLists(IReadOnlyList<RoutingListSpec> lists)
     {
-        using (var process = Start(appExe, $"config-add {target} \"{configPath}\""))
+        foreach (var list in lists)
         {
-            process.WaitForExit();
-        }
-    }
-
-    private static async Task WaitAllAsync(IReadOnlyList<Process> processes, CancellationToken ct)
-    {
-        try
-        {
-            await Task.WhenAll(processes.Select(process => process.WaitForExitAsync(ct)));
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private void TryStop(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
+            if (string.IsNullOrWhiteSpace(list.Name))
             {
-                process.Kill(entireProcessTree: true);
+                continue;
+            }
+
+            logger.LogInformation("ensuring routing list '{Name}' ({Count} rule(s))", list.Name, list.Rules.Length);
+            try
+            {
+                var args = new List<string> { "routing-list-add", list.Name };
+                args.AddRange(list.Rules);
+                AppEntry.RunAsync([.. args]).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "failed to apply routing list '{Name}'", list.Name);
             }
         }
-        catch (Exception ex)
+    }
+
+    private void ApplyProfiles(IReadOnlyList<ProfileSpec> profiles)
+    {
+        foreach (var profile in profiles)
         {
-            logger.LogDebug(ex, "failed to stop process {Id}", process.Id);
+            if (string.IsNullOrWhiteSpace(profile.Name) || profile.Members.Length == 0)
+            {
+                continue;
+            }
+
+            logger.LogInformation("ensuring profile '{Name}' ({Count} member(s))", profile.Name, profile.Members.Length);
+            try
+            {
+                var addArgs = new List<string>
+                {
+                    "balancer-add",
+                    profile.Name,
+                    profile.RecheckSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                };
+                addArgs.AddRange(profile.Members);
+                AppEntry.RunAsync([.. addArgs]).GetAwaiter().GetResult();
+
+                if (!string.IsNullOrWhiteSpace(profile.Mode))
+                {
+                    AppEntry.RunAsync(["balancer-mode", profile.Name, profile.Mode]).GetAwaiter().GetResult();
+                }
+
+                var listName = string.IsNullOrWhiteSpace(profile.RoutingList) ? "none" : profile.RoutingList;
+                AppEntry.RunAsync(["assign-routing", profile.Name, listName, profile.UseRouting ? "on" : "off"]).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "failed to apply profile '{Name}'", profile.Name);
+            }
         }
     }
 
-    private static Process Start(string exe, string arguments)
+    private void RegisterConfigs(IReadOnlyList<string> paths)
     {
-        var startInfo = new ProcessStartInfo(exe, arguments)
+        foreach (var raw in paths)
         {
-            UseShellExecute = false,
-        };
-        return Process.Start(startInfo)!;
-    }
+            var expanded = Environment.ExpandEnvironmentVariables(raw);
 
-    private static string? LocateApp()
-    {
-        var baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var config = new DirectoryInfo(baseDir).Parent?.Name ?? "Debug";
+            string[] files;
+            if (Directory.Exists(expanded))
+            {
+                files = Directory.GetFiles(expanded, "*.conf");
+            }
+            else if (File.Exists(expanded))
+            {
+                files = [expanded];
+            }
+            else
+            {
+                logger.LogWarning("config path not found, skipping: {Path}", expanded);
+                continue;
+            }
 
-        var dir = new DirectoryInfo(baseDir);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "AmneziaGeo.Windows.App")))
-        {
-            dir = dir.Parent;
+            foreach (var file in files)
+            {
+                var name = Path.GetFileNameWithoutExtension(file);
+                logger.LogInformation("registering config '{Name}' from {Path}", name, file);
+                try
+                {
+                    AppEntry.RunAsync(["config-add", name, file]).GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "failed to register config '{Name}'", name);
+                }
+            }
         }
-
-        if (dir is null)
-        {
-            return null;
-        }
-
-        var candidate = Path.Combine(dir.FullName, "AmneziaGeo.Windows.App", "bin", config, "net10.0", "AmneziaGeo.Windows.App.exe");
-        return File.Exists(candidate) ? candidate : null;
-    }
-
-    private static string? LocateUi()
-    {
-        var baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var config = new DirectoryInfo(baseDir).Parent?.Name ?? "Debug";
-
-        var dir = new DirectoryInfo(baseDir);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "AmneziaGeo.Windows.Ui")))
-        {
-            dir = dir.Parent;
-        }
-
-        if (dir is null)
-        {
-            return null;
-        }
-
-        var candidate = Path.Combine(dir.FullName, "AmneziaGeo.Windows.Ui", "bin", config, "net10.0", "AmneziaGeo.Windows.Ui.exe");
-        return File.Exists(candidate) ? candidate : null;
     }
 }

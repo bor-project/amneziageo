@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds status snapshots and pushes them to connected UI clients over the status pipe.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, AgentControl control, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -138,6 +138,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             {
                 IpcContract.OpAddConfig => AddConfig(command.Args),
                 IpcContract.OpAddBalancer => await AddBalancerAsync(command.Args, ct),
+                IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
+                IpcContract.OpListGeo => await ListGeoAsync(ct),
+                IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
+                IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
+                IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
+                IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
+                IpcContract.OpSetConnection => SetConnection(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -182,9 +189,155 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        await store.SaveBalancerAsync(new BalancerGroup(args[0], recheck, members, mode), ct);
+        var existing = await store.GetBalancerAsync(args[0], ct);
+        var updated = new BalancerGroup(args[0], recheck, members, mode);
+        await store.SaveBalancerAsync(updated, ct);
+        if (existing is null
+            || existing.RecheckSeconds != updated.RecheckSeconds
+            || !string.Equals(existing.Mode, updated.Mode, StringComparison.Ordinal)
+            || !existing.Members.SequenceEqual(updated.Members, StringComparer.Ordinal))
+        {
+            control.Invalidate();
+        }
+
         logger.LogInformation("saved balancer {Name} ({Count} members)", args[0], members.Count);
         return new IpcAck(true, $"saved balancer {args[0]}");
+    }
+
+    private async Task<IpcAck> SetGeoAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2)
+        {
+            return new IpcAck(false, "set-geo requires a config name and on/off");
+        }
+
+        if (!configRepo.Exists(args[0]))
+        {
+            return new IpcAck(false, $"unknown config: {args[0]}");
+        }
+
+        var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
+        var (rules, routes, domains) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
+        logger.LogInformation("set-geo {Name}: split={On}, {Rules} rules -> {Routes} routes, {Domains} domains", args[0], on, rules, routes, domains);
+        return new IpcAck(true, $"saved: {rules} rules, {routes} routes, {domains} domains (applies on reconnect)");
+    }
+
+    private async Task<IpcAck> ListGeoAsync(CancellationToken ct)
+    {
+        var tokens = await geo.CategoriesAsync(ct);
+        return new IpcAck(true, string.Join('\n', tokens));
+    }
+
+    private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2)
+        {
+            return new IpcAck(false, "save-routing-list requires id and name");
+        }
+
+        if (!long.TryParse(args[0], out var id) || id < 0)
+        {
+            return new IpcAck(false, "invalid routing list id");
+        }
+
+        var name = args[1].Trim();
+        if (name.Length == 0)
+        {
+            return new IpcAck(false, "name is required");
+        }
+
+        var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
+        logger.LogInformation("saved routing list {Id} '{Name}' ({Rules} rules)", resultId, name, args.Count - 2);
+        return new IpcAck(true, resultId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || !long.TryParse(args[0], out var id) || id <= 0)
+        {
+            return new IpcAck(false, "remove-routing-list requires a positive id");
+        }
+
+        await store.RemoveRoutingListAsync(id, ct);
+        logger.LogInformation("removed routing list {Id}", id);
+        return new IpcAck(true, $"removed routing list {id}");
+    }
+
+    private async Task<IpcAck> GetRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || !long.TryParse(args[0], out var id) || id <= 0)
+        {
+            return new IpcAck(false, "get-routing-list requires a positive id");
+        }
+
+        var list = await store.GetRoutingListAsync(id, ct);
+        if (list is null)
+        {
+            return new IpcAck(false, $"unknown routing list: {id}");
+        }
+
+        var tokens = list.Rules.Select(GeoConfigurator.Format);
+        return new IpcAck(true, string.Join('\n', tokens));
+    }
+
+    private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 3)
+        {
+            return new IpcAck(false, "assign-routing requires profile, list id (or 'none'), and on/off");
+        }
+
+        var profile = args[0];
+        var balancer = await store.GetBalancerAsync(profile, ct);
+        if (balancer is null)
+        {
+            return new IpcAck(false, $"unknown profile: {profile}");
+        }
+
+        long? listId = null;
+        if (!args[1].Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!long.TryParse(args[1], out var id) || id <= 0)
+            {
+                return new IpcAck(false, "invalid routing list id");
+            }
+
+            if (await store.GetRoutingListAsync(id, ct) is null)
+            {
+                return new IpcAck(false, $"unknown routing list: {id}");
+            }
+
+            listId = id;
+        }
+
+        var useRouting = args[2].Equals("on", StringComparison.OrdinalIgnoreCase);
+        var (currentList, currentUse) = await store.GetProfileRoutingAsync(profile, ct);
+        await store.SetProfileRoutingAsync(profile, listId, useRouting, ct);
+        if (currentList != listId || currentUse != useRouting)
+        {
+            control.Invalidate();
+        }
+
+        logger.LogInformation("assigned profile {Profile}: list={List} use={Use}", profile, listId, useRouting);
+        return new IpcAck(true, $"assigned {profile}: list={listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} use={(useRouting ? "on" : "off")}");
+    }
+
+    private IpcAck SetConnection(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1)
+        {
+            return new IpcAck(false, "set-connection requires connect or disconnect");
+        }
+
+        var connect = args[0].Equals("connect", StringComparison.OrdinalIgnoreCase);
+        if (!connect && !args[0].Equals("disconnect", StringComparison.OrdinalIgnoreCase))
+        {
+            return new IpcAck(false, $"unknown connection state: {args[0]}");
+        }
+
+        control.SetRunning(connect);
+        logger.LogInformation("set connection: {State}", connect ? "connect" : "disconnect");
+        return new IpcAck(true, connect ? "connecting" : "disconnecting");
     }
 
     private async Task<string> BuildJsonAsync(CancellationToken ct)
@@ -208,9 +361,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var configs = new List<ConfigEntry>();
         foreach (var name in configRepo.List())
         {
-            var geo = await store.GetTunnelGeoAsync(name, ct);
+            var geoSettings = await store.GetTunnelGeoAsync(name, ct);
             var status = activeMembers.TryGetValue(name, out var groupStatus) ? MemberStatus(groupStatus) : ConnectionStatus.Idle;
-            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geo?.GeoSplit ?? false, status));
+            var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
+            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules));
         }
 
         var balancers = new List<BalancerEntry>();
@@ -223,15 +377,25 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
 
             var state = states.FirstOrDefault(item => item.Group == name);
+            var (routingListId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
             balancers.Add(new BalancerEntry(
                 name,
                 balancer.Mode,
                 state?.Status ?? ConnectionStatus.Disconnected,
                 state?.ActiveMember,
-                balancer.Members));
+                balancer.Members,
+                balancer.RecheckSeconds,
+                routingListId,
+                useRouting));
         }
 
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers);
+        var routingLists = new List<RoutingListEntry>();
+        foreach (var list in await store.ListRoutingListsAsync(ct))
+        {
+            routingLists.Add(new RoutingListEntry(list.Id, list.Name, list.Rules.Count, list.Routes.Count, list.Domains.Count));
+        }
+
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running);
     }
 
     private static string MemberStatus(string groupStatus)

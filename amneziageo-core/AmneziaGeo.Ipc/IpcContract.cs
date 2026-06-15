@@ -39,4 +39,42 @@ public static class IpcContract
     /// Command to save a balancer: args are name, recheck seconds, mode, then member names.
     /// </summary>
     public const string OpAddBalancer = "add-balancer";
+
+    /// <summary>
+    /// Command to set a config's geo split-tunnel settings: args are name, on/off, then rule tokens.
+    /// </summary>
+    public const string OpSetGeo = "set-geo";
+
+    /// <summary>
+    /// Command to list available geo categories; the ack message holds newline-separated rule tokens.
+    /// </summary>
+    public const string OpListGeo = "list-geo";
+
+    /// <summary>
+    /// Command to add or update a routing list. Args: id (0 to insert), name, then rule tokens.
+    /// The ack message holds the resulting id.
+    /// </summary>
+    public const string OpSaveRoutingList = "save-routing-list";
+
+    /// <summary>
+    /// Command to remove a routing list by id. Args: id.
+    /// </summary>
+    public const string OpRemoveRoutingList = "remove-routing-list";
+
+    /// <summary>
+    /// Command to fetch a routing list's full rules. Args: id. The ack message holds
+    /// newline-separated rule tokens (geosite:openai etc).
+    /// </summary>
+    public const string OpGetRoutingList = "get-routing-list";
+
+    /// <summary>
+    /// Command to assign or unassign a routing list to a profile and toggle its use.
+    /// Args: profile name, list id (or "none"), "on" / "off".
+    /// </summary>
+    public const string OpAssignRouting = "assign-routing";
+
+    /// <summary>
+    /// Command to set the agent's desired connection state. Args: "connect" or "disconnect".
+    /// </summary>
+    public const string OpSetConnection = "set-connection";
 }

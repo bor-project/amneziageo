@@ -102,21 +102,46 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         active_member TEXT,
                         updated_at    TEXT NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS routing_lists (
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name         TEXT NOT NULL UNIQUE,
+                        routes_json  TEXT NOT NULL,
+                        domains_json TEXT NOT NULL,
+                        updated_at   TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS routing_list_rules (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        list_id    INTEGER NOT NULL REFERENCES routing_lists(id) ON DELETE CASCADE,
+                        kind       TEXT NOT NULL,
+                        value      TEXT NOT NULL,
+                        position   INTEGER NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE (list_id, position)
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
-            var alter = connection.CreateCommand();
-            await using (alter.ConfigureAwait(false))
+            await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN mode TEXT NOT NULL DEFAULT 'priority';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN routing_list_id INTEGER;", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN use_routing INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task TryAlterAsync(SqliteConnection connection, string sql, CancellationToken ct)
+    {
+        var alter = connection.CreateCommand();
+        await using (alter.ConfigureAwait(false))
+        {
+            alter.CommandText = sql;
+            try
             {
-                alter.CommandText = "ALTER TABLE balancers ADD COLUMN mode TEXT NOT NULL DEFAULT 'priority';";
-                try
-                {
-                    await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
-                catch (SqliteException)
-                {
-                }
+                await alter.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+            catch (SqliteException)
+            {
             }
         }
     }
@@ -536,6 +561,35 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
             {
+                // The routing assignment (routing_list_id / use_routing) lives on these same rows.
+                // Re-saving a balancer must not silently drop it — losing use_routing would make the
+                // next projection clear the members' split and bring the tunnel up full (kill-switch).
+                long? routingListId = null;
+                var useRouting = false;
+                var read = connection.CreateCommand();
+                await using (read.ConfigureAwait(false))
+                {
+                    read.Transaction = transaction;
+                    read.CommandText =
+                        """
+                        SELECT routing_list_id, use_routing
+                        FROM balancers
+                        WHERE name = $name
+                        ORDER BY position
+                        LIMIT 1;
+                        """;
+                    read.Parameters.AddWithValue("$name", balancer.Name);
+                    var reader = await read.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                    await using (reader.ConfigureAwait(false))
+                    {
+                        if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                        {
+                            routingListId = reader.IsDBNull(0) ? null : reader.GetInt64(0);
+                            useRouting = reader.GetInt32(1) != 0;
+                        }
+                    }
+                }
+
                 var delete = connection.CreateCommand();
                 await using (delete.ConfigureAwait(false))
                 {
@@ -553,14 +607,16 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         insert.Transaction = transaction;
                         insert.CommandText =
                             """
-                            INSERT INTO balancers (name, position, member, recheck_seconds, mode, updated_at)
-                            VALUES ($name, $position, $member, $recheck, $mode, $updated);
+                            INSERT INTO balancers (name, position, member, recheck_seconds, mode, routing_list_id, use_routing, updated_at)
+                            VALUES ($name, $position, $member, $recheck, $mode, $list, $use, $updated);
                             """;
                         insert.Parameters.AddWithValue("$name", balancer.Name);
                         insert.Parameters.AddWithValue("$position", position);
                         insert.Parameters.AddWithValue("$member", balancer.Members[position]);
                         insert.Parameters.AddWithValue("$recheck", balancer.RecheckSeconds);
                         insert.Parameters.AddWithValue("$mode", balancer.Mode);
+                        insert.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
+                        insert.Parameters.AddWithValue("$use", useRouting ? 1 : 0);
                         insert.Parameters.AddWithValue("$updated", timestamp);
                         await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                     }
@@ -934,6 +990,326 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     public void ClearPool()
     {
         SqliteConnection.ClearAllPools();
+    }
+
+    /// <inheritdoc/>
+    public async Task<long> SaveRoutingListAsync(RoutingList list, CancellationToken ct = default)
+    {
+        var timestamp = Timestamp();
+        var routesJson = JsonSerializer.Serialize(list.Routes);
+        var domainsJson = JsonSerializer.Serialize(list.Domains);
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                long id = list.Id;
+                if (id == 0)
+                {
+                    var insert = connection.CreateCommand();
+                    await using (insert.ConfigureAwait(false))
+                    {
+                        insert.Transaction = transaction;
+                        insert.CommandText =
+                            """
+                            INSERT INTO routing_lists (name, routes_json, domains_json, updated_at)
+                            VALUES ($name, $routes, $domains, $updated)
+                            RETURNING id;
+                            """;
+                        insert.Parameters.AddWithValue("$name", list.Name);
+                        insert.Parameters.AddWithValue("$routes", routesJson);
+                        insert.Parameters.AddWithValue("$domains", domainsJson);
+                        insert.Parameters.AddWithValue("$updated", timestamp);
+                        var scalar = await insert.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                        id = Convert.ToInt64(scalar, CultureInfo.InvariantCulture);
+                    }
+                }
+                else
+                {
+                    var update = connection.CreateCommand();
+                    await using (update.ConfigureAwait(false))
+                    {
+                        update.Transaction = transaction;
+                        update.CommandText =
+                            """
+                            UPDATE routing_lists
+                            SET name = $name, routes_json = $routes, domains_json = $domains, updated_at = $updated
+                            WHERE id = $id;
+                            """;
+                        update.Parameters.AddWithValue("$id", id);
+                        update.Parameters.AddWithValue("$name", list.Name);
+                        update.Parameters.AddWithValue("$routes", routesJson);
+                        update.Parameters.AddWithValue("$domains", domainsJson);
+                        update.Parameters.AddWithValue("$updated", timestamp);
+                        await update.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                var deleteRules = connection.CreateCommand();
+                await using (deleteRules.ConfigureAwait(false))
+                {
+                    deleteRules.Transaction = transaction;
+                    deleteRules.CommandText = "DELETE FROM routing_list_rules WHERE list_id = $id;";
+                    deleteRules.Parameters.AddWithValue("$id", id);
+                    await deleteRules.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                for (var position = 0; position < list.Rules.Count; position++)
+                {
+                    var rule = list.Rules[position];
+                    var insertRule = connection.CreateCommand();
+                    await using (insertRule.ConfigureAwait(false))
+                    {
+                        insertRule.Transaction = transaction;
+                        insertRule.CommandText =
+                            """
+                            INSERT INTO routing_list_rules (list_id, kind, value, position, updated_at)
+                            VALUES ($list, $kind, $value, $position, $updated);
+                            """;
+                        insertRule.Parameters.AddWithValue("$list", id);
+                        insertRule.Parameters.AddWithValue("$kind", rule.Kind.ToString());
+                        insertRule.Parameters.AddWithValue("$value", rule.Value);
+                        insertRule.Parameters.AddWithValue("$position", position);
+                        insertRule.Parameters.AddWithValue("$updated", timestamp);
+                        await insertRule.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                return id;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoutingList?> GetRoutingListAsync(long id, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            return await ReadRoutingListAsync(connection, "id = $key", "$key", id, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            return await ReadRoutingListAsync(connection, "name = $key", "$key", name, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default)
+    {
+        var lists = new List<(long Id, string Name, string Routes, string Domains)>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT id, name, routes_json, domains_json FROM routing_lists ORDER BY name;";
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        lists.Add((reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)));
+                    }
+                }
+            }
+
+            var result = new List<RoutingList>(lists.Count);
+            foreach (var row in lists)
+            {
+                var rules = await ReadRoutingListRulesAsync(connection, row.Id, ct).ConfigureAwait(false);
+                var routes = JsonSerializer.Deserialize<List<string>>(row.Routes) ?? [];
+                var domains = JsonSerializer.Deserialize<List<GeoDomain>>(row.Domains) ?? [];
+                result.Add(new RoutingList(row.Id, row.Name, rules, routes, domains));
+            }
+
+            return result;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveRoutingListAsync(long id, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                var clearAssignments = connection.CreateCommand();
+                await using (clearAssignments.ConfigureAwait(false))
+                {
+                    clearAssignments.Transaction = transaction;
+                    clearAssignments.CommandText = "UPDATE balancers SET routing_list_id = NULL, use_routing = 0 WHERE routing_list_id = $id;";
+                    clearAssignments.Parameters.AddWithValue("$id", id);
+                    await clearAssignments.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                var deleteRules = connection.CreateCommand();
+                await using (deleteRules.ConfigureAwait(false))
+                {
+                    deleteRules.Transaction = transaction;
+                    deleteRules.CommandText = "DELETE FROM routing_list_rules WHERE list_id = $id;";
+                    deleteRules.Parameters.AddWithValue("$id", id);
+                    await deleteRules.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                var deleteList = connection.CreateCommand();
+                await using (deleteList.ConfigureAwait(false))
+                {
+                    deleteList.Transaction = transaction;
+                    deleteList.CommandText = "DELETE FROM routing_lists WHERE id = $id;";
+                    deleteList.Parameters.AddWithValue("$id", id);
+                    await deleteList.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<(long? RoutingListId, bool UseRouting)> GetProfileRoutingAsync(string profile, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT routing_list_id, use_routing
+                    FROM balancers
+                    WHERE name = $name
+                    ORDER BY position
+                    LIMIT 1;
+                    """;
+                command.Parameters.AddWithValue("$name", profile);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return (null, false);
+                    }
+
+                    long? listId = reader.IsDBNull(0) ? null : reader.GetInt64(0);
+                    var useRouting = reader.GetInt32(1) != 0;
+                    return (listId, useRouting);
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetProfileRoutingAsync(string profile, long? routingListId, bool useRouting, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    UPDATE balancers
+                    SET routing_list_id = $list, use_routing = $use, updated_at = $updated
+                    WHERE name = $name;
+                    """;
+                command.Parameters.AddWithValue("$name", profile);
+                command.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
+                command.Parameters.AddWithValue("$use", useRouting ? 1 : 0);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static async Task<RoutingList?> ReadRoutingListAsync(SqliteConnection connection, string whereClause, string keyParam, object keyValue, CancellationToken ct)
+    {
+        long id;
+        string name;
+        string routesJson;
+        string domainsJson;
+
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = $"SELECT id, name, routes_json, domains_json FROM routing_lists WHERE {whereClause};";
+            command.Parameters.AddWithValue(keyParam, keyValue);
+            var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                id = reader.GetInt64(0);
+                name = reader.GetString(1);
+                routesJson = reader.GetString(2);
+                domainsJson = reader.GetString(3);
+            }
+        }
+
+        var rules = await ReadRoutingListRulesAsync(connection, id, ct).ConfigureAwait(false);
+        var routes = JsonSerializer.Deserialize<List<string>>(routesJson) ?? [];
+        var domains = JsonSerializer.Deserialize<List<GeoDomain>>(domainsJson) ?? [];
+        return new RoutingList(id, name, rules, routes, domains);
+    }
+
+    private static async Task<IReadOnlyList<GeoRule>> ReadRoutingListRulesAsync(SqliteConnection connection, long listId, CancellationToken ct)
+    {
+        var rules = new List<GeoRule>();
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText =
+                """
+                SELECT kind, value
+                FROM routing_list_rules
+                WHERE list_id = $id
+                ORDER BY position;
+                """;
+            command.Parameters.AddWithValue("$id", listId);
+
+            var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var kind = Enum.Parse<GeoRuleKind>(reader.GetString(0));
+                    rules.Add(new GeoRule(kind, reader.GetString(1)));
+                }
+            }
+        }
+
+        return rules;
     }
 
     private static string Timestamp()

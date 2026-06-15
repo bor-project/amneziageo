@@ -26,5 +26,8 @@ project.lock.json
 tunnel.dll
 wintun.dll
 
+# Local dev overrides (not committed)
+appsettings.Development.json
+
 # Local agent instruction folder
 .claude/

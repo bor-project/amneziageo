@@ -23,6 +23,88 @@ internal static class DnsMessage
     }
 
     /// <summary>
+    /// Returns the QTYPE of the first question (1 = A, 28 = AAAA), or 0 when malformed.
+    /// </summary>
+    public static int QuestionType(byte[] message)
+    {
+        if (message.Length < 13)
+        {
+            return 0;
+        }
+
+        var offset = 12;
+        SkipName(message, ref offset);
+        return offset + 2 <= message.Length ? (message[offset] << 8) | message[offset + 1] : 0;
+    }
+
+    /// <summary>
+    /// Builds an empty NOERROR/NODATA response for a query (header + question only, no answers).
+    /// Used to deny AAAA on an IPv4-only tunnel so clients never attempt dead IPv6 addresses.
+    /// </summary>
+    public static byte[] BuildNoData(byte[] query)
+    {
+        var end = 12;
+        SkipName(query, ref end);
+        end += 4;
+        if (end < 12 || end > query.Length)
+        {
+            return query;
+        }
+
+        var response = new byte[end];
+        Array.Copy(query, response, end);
+        response[2] = (byte)(query[2] | 0x80); // QR = 1 (response), preserve opcode / RD
+        response[3] = 0x80;                     // RA = 1, RCODE = 0 (NOERROR)
+        response[6] = 0;
+        response[7] = 0; // ANCOUNT = 0
+        response[8] = 0;
+        response[9] = 0; // NSCOUNT = 0
+        response[10] = 0;
+        response[11] = 0; // ARCOUNT = 0 (drop any EDNS OPT)
+        return response;
+    }
+
+    /// <summary>
+    /// Returns the smallest record TTL in the answer section, or 0 when there are none.
+    /// </summary>
+    public static int MinTtl(byte[] message)
+    {
+        if (message.Length < 12)
+        {
+            return 0;
+        }
+
+        var questionCount = (message[4] << 8) | message[5];
+        var answerCount = (message[6] << 8) | message[7];
+        var offset = 12;
+        for (var i = 0; i < questionCount; i++)
+        {
+            SkipName(message, ref offset);
+            offset += 4;
+        }
+
+        var min = int.MaxValue;
+        for (var i = 0; i < answerCount && offset + 10 <= message.Length; i++)
+        {
+            SkipName(message, ref offset);
+            if (offset + 10 > message.Length)
+            {
+                break;
+            }
+
+            var ttl = (message[offset + 4] << 24) | (message[offset + 5] << 16) | (message[offset + 6] << 8) | message[offset + 7];
+            var dataLength = (message[offset + 8] << 8) | message[offset + 9];
+            offset += 10 + dataLength;
+            if (ttl >= 0 && ttl < min)
+            {
+                min = ttl;
+            }
+        }
+
+        return min == int.MaxValue ? 0 : min;
+    }
+
+    /// <summary>
     /// Returns the IPv4 (A) and IPv6 (AAAA) addresses from the answer section.
     /// </summary>
     public static IReadOnlyList<IPAddress> Addresses(byte[] message)

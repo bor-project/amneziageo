@@ -50,13 +50,17 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     );
 
                     CREATE TABLE IF NOT EXISTS tunnel_geo (
-                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name         TEXT NOT NULL UNIQUE,
-                        geo_split    INTEGER NOT NULL,
-                        rules_json   TEXT NOT NULL,
-                        routes_json  TEXT NOT NULL,
-                        domains_json TEXT NOT NULL,
-                        updated_at   TEXT NOT NULL
+                        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name              TEXT NOT NULL UNIQUE,
+                        geo_split         INTEGER NOT NULL,
+                        rules_json        TEXT NOT NULL,
+                        routes_json       TEXT NOT NULL,
+                        domains_json      TEXT NOT NULL,
+                        projected         INTEGER NOT NULL DEFAULT 0,
+                        proj_split        INTEGER NOT NULL DEFAULT 0,
+                        proj_routes_json  TEXT NOT NULL DEFAULT '[]',
+                        proj_domains_json TEXT NOT NULL DEFAULT '[]',
+                        updated_at        TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS domain_ips (
@@ -127,6 +131,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN mode TEXT NOT NULL DEFAULT 'priority';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN routing_list_id INTEGER;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN use_routing INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+
+            // Balancer routing projection lives in its own columns so it never clobbers a config's
+            // own set-geo split: the user columns (geo_split/rules/routes/domains) hold user intent,
+            // the proj_* columns hold the active projection, and `projected` selects which is live.
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN projected INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_split INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
         }
     }
 
@@ -307,6 +319,117 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(3)) ?? [];
                     return new TunnelGeo(name, reader.GetInt32(0) != 0, rules, routes, domains);
                 }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<TunnelGeo?> GetActiveTunnelGeoAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT projected, geo_split, rules_json, routes_json, domains_json,
+                           proj_split, proj_routes_json, proj_domains_json
+                    FROM tunnel_geo
+                    WHERE name = $name;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    // An active balancer projection wins; otherwise fall back to the config's own
+                    // set-geo split. The projection carries no rules — the live service only needs
+                    // the split flag, routes, and domains.
+                    if (reader.GetInt32(0) != 0)
+                    {
+                        var projRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [];
+                        var projDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(7)) ?? [];
+                        return new TunnelGeo(name, reader.GetInt32(5) != 0, [], projRoutes, projDomains);
+                    }
+
+                    var rules = JsonSerializer.Deserialize<List<GeoRule>>(reader.GetString(2)) ?? [];
+                    var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(3)) ?? [];
+                    var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(4)) ?? [];
+                    return new TunnelGeo(name, reader.GetInt32(1) != 0, rules, routes, domains);
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                // Insert leaves the user columns at safe defaults (no own split); the conflict path
+                // never lists them, so a config's own set-geo split is preserved untouched.
+                command.CommandText =
+                    """
+                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, updated_at)
+                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $updated)
+                    ON CONFLICT(name) DO UPDATE SET
+                        projected         = 1,
+                        proj_split        = excluded.proj_split,
+                        proj_routes_json  = excluded.proj_routes_json,
+                        proj_domains_json = excluded.proj_domains_json,
+                        updated_at        = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$split", split ? 1 : 0);
+                command.Parameters.AddWithValue("$routes", JsonSerializer.Serialize(routes));
+                command.Parameters.AddWithValue("$domains", JsonSerializer.Serialize(domains));
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task ClearTunnelProjectionAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                // Only the projection is dropped; the user columns are left intact, so the config
+                // reverts to its own set-geo split (or no split). A no-op when no row exists.
+                command.CommandText =
+                    """
+                    UPDATE tunnel_geo
+                    SET projected         = 0,
+                        proj_split        = 0,
+                        proj_routes_json  = '[]',
+                        proj_domains_json = '[]',
+                        updated_at        = $updated
+                    WHERE name = $name;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
     }

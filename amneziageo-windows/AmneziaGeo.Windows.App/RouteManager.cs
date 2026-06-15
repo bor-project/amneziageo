@@ -31,6 +31,13 @@ internal sealed partial class RouteManager
             interfaceIndex.ToString(),
             "metric",
             "1");
+        if (result == 0)
+        {
+            // Persist so the route can be reverted even if this process exits without teardown.
+            // The endpoint route sits on the physical adapter and does not vanish with the tunnel.
+            UpdateState(endpoint.ToString(), add: true);
+        }
+
         return result == 0;
     }
 
@@ -40,6 +47,27 @@ internal sealed partial class RouteManager
     public void RemoveEndpointExclusion(IPAddress endpoint)
     {
         Route("delete", endpoint.ToString());
+        UpdateState(endpoint.ToString(), add: false);
+    }
+
+    /// <summary>
+    /// Removes any endpoint-exclusion routes persisted by a previous run, even from another process;
+    /// no-op if none are recorded. Used to revert leftovers from a tunnel that was killed.
+    /// </summary>
+    public void RestoreSavedExclusions()
+    {
+        var saved = ReadState();
+        if (saved.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var endpoint in saved)
+        {
+            Route("delete", endpoint);
+        }
+
+        ClearState();
     }
 
     /// <summary>
@@ -99,6 +127,18 @@ internal sealed partial class RouteManager
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Disables IPv6 on the tunnel adapter. AmneziaWG tunnels here are IPv4-only, yet Windows still
+    /// hands a v4-only adapter the dead site-local fec0:0:0:ffff:: IPv6 DNS servers; because the tunnel
+    /// is the lowest-metric interface the system resolver tries those first and stalls roughly a second
+    /// per lookup. Turning the adapter's IPv6 binding off removes the bogus resolvers outright. The
+    /// adapter is recreated on every tunnel start, so this is reapplied per run and needs no restore.
+    /// </summary>
+    public void DisableIpv6(string adapterName)
+    {
+        Run("powershell.exe", ["-NoProfile", "-Command", $"Disable-NetAdapterBinding -Name '{adapterName}' -ComponentID ms_tcpip6"]);
     }
 
     private static int? Ipv4Index(NetworkInterface nic)
@@ -170,6 +210,62 @@ internal sealed partial class RouteManager
             process.StandardError.ReadToEnd();
             process.WaitForExit();
             return process.ExitCode;
+        }
+    }
+
+    private static void UpdateState(string endpoint, bool add)
+    {
+        var saved = ReadState();
+        if (add)
+        {
+            if (!saved.Contains(endpoint))
+            {
+                saved.Add(endpoint);
+            }
+        }
+        else
+        {
+            saved.Remove(endpoint);
+        }
+
+        if (saved.Count == 0)
+        {
+            ClearState();
+            return;
+        }
+
+        var path = TunnelPaths.RouteStateFile();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllLines(path, saved);
+    }
+
+    private static List<string> ReadState()
+    {
+        var path = TunnelPaths.RouteStateFile();
+        if (!File.Exists(path))
+        {
+            return [];
+        }
+
+        var saved = new List<string>();
+        foreach (var line in File.ReadAllLines(path))
+        {
+            var endpoint = line.Trim();
+            if (endpoint.Length > 0 && !saved.Contains(endpoint))
+            {
+                saved.Add(endpoint);
+            }
+        }
+
+        return saved;
+    }
+
+    private static void ClearState()
+    {
+        var path = TunnelPaths.RouteStateFile();
+        if (File.Exists(path))
+        {
+            File.Delete(path);
         }
     }
 

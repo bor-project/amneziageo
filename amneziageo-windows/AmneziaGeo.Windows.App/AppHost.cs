@@ -54,6 +54,7 @@ internal static class AppHost
         services.AddSingleton<UapiClient>();
         services.AddSingleton<EndpointProbe>();
         services.AddSingleton<DnsRedirector>();
+        services.AddSingleton<NetworkReconciler>();
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ConfigRepository>();
         services.AddSingleton<GeoActivator>();

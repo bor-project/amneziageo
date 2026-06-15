@@ -11,7 +11,7 @@ internal sealed class BalancerRunner(
     ServiceManager serviceManager,
     UapiClient uapi,
     ConfigRepository configRepo,
-    DnsRedirector dns,
+    NetworkReconciler reconciler,
     EndpointProbe probe,
     SettingsStore settingsStore,
     IStateStore store,
@@ -226,7 +226,10 @@ internal sealed class BalancerRunner(
         var (listId, useRouting) = await store.GetProfileRoutingAsync(profile, ct);
         if (!useRouting || listId is null)
         {
-            await ClearMemberProjectionsAsync(members, ct);
+            // Routing off (or no list selected): full tunnel via the config's own AllowedIPs
+            // (0.0.0.0/0, ::/0). Project an explicit non-split state so the toggle is authoritative
+            // and overrides any member set-geo split. This is a kill-switch full tunnel by design.
+            await ProjectFullTunnelAsync(members, ct);
             return;
         }
 
@@ -234,7 +237,7 @@ internal sealed class BalancerRunner(
         if (list is null)
         {
             logger.LogWarning("profile {Profile} references missing routing list {Id}", profile, listId.Value);
-            await ClearMemberProjectionsAsync(members, ct);
+            await ProjectFullTunnelAsync(members, ct);
             return;
         }
 
@@ -245,14 +248,18 @@ internal sealed class BalancerRunner(
                 return;
             }
 
-            await store.SaveTunnelGeoAsync(new TunnelGeo(member, true, list.Rules, list.Routes, list.Domains), ct);
+            await store.SaveTunnelProjectionAsync(member, true, list.Routes, list.Domains, ct);
         }
 
         logger.LogInformation("projected routing list '{List}' to {Count} member(s)", list.Name, members.Count);
     }
 
-    private async Task ClearMemberProjectionsAsync(IReadOnlyList<string> members, CancellationToken ct)
+    private async Task ProjectFullTunnelAsync(IReadOnlyList<string> members, CancellationToken ct)
     {
+        // Projects an explicit non-split state: GetActiveTunnelGeoAsync then returns geoSplit=false, so
+        // AllowedIpsResolver falls back to the config's own AllowedIPs (0.0.0.0/0, ::/0) = full tunnel.
+        // Making the projection authoritative means the routing toggle overrides any member set-geo,
+        // so turning routing off reliably switches to full tunnel instead of a leftover member split.
         foreach (var member in members)
         {
             if (ct.IsCancellationRequested)
@@ -260,12 +267,10 @@ internal sealed class BalancerRunner(
                 return;
             }
 
-            var existing = await store.GetTunnelGeoAsync(member, ct);
-            if (existing is not null && existing.GeoSplit)
-            {
-                await store.SaveTunnelGeoAsync(existing with { GeoSplit = false }, ct);
-            }
+            await store.SaveTunnelProjectionAsync(member, false, [], [], ct);
         }
+
+        logger.LogInformation("projected full tunnel to {Count} member(s) (routing off)", members.Count);
     }
 
     private bool IsLatencyMode()
@@ -448,7 +453,7 @@ internal sealed class BalancerRunner(
         serviceManager.StopQuiet(member);
         WaitStopped(member);
         serviceManager.DeleteService(member);
-        dns.RestoreSaved();
+        reconciler.Reconcile();
     }
 
     private void StopAll(IReadOnlyList<string> members)

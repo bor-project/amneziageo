@@ -62,6 +62,15 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the persisted endpoint-exclusion routes used to revert them after a stop, even from
+    /// another process when the tunnel exited without running its teardown.
+    /// </summary>
+    public static string RouteStateFile()
+    {
+        return Path.Combine(RootDirectory(), "route-state.txt");
+    }
+
+    /// <summary>
     /// Directory holding service log files.
     /// </summary>
     public static string LogDirectory()

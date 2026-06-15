@@ -15,6 +15,7 @@ internal sealed class TunnelRunner(
     RouteManager routes,
     UapiClient uapi,
     DnsRedirector dns,
+    NetworkReconciler reconciler,
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
@@ -23,10 +24,12 @@ internal sealed class TunnelRunner(
     /// </summary>
     public async Task RunAsync(string name)
     {
-        dns.RestoreSaved();
+        // Start from a clean slate: revert any DNS/route leftovers from a previous tunnel.
+        reconciler.Reconcile();
 
         var config = await File.ReadAllTextAsync(TunnelPaths.ConfigFile(name));
-        var geo = await store.GetTunnelGeoAsync(name);
+        // Prefer the live balancer routing projection; fall back to the config's own set-geo split.
+        var geo = await store.GetActiveTunnelGeoAsync(name);
 
         var geoSplit = geo?.GeoSplit ?? false;
         var geoRoutes = geo?.Routes ?? [];
@@ -37,6 +40,14 @@ internal sealed class TunnelRunner(
 
         var appSettings = await settings.LoadAsync();
         var stripV6 = !HasIpv6Address(config);
+        if (stripV6)
+        {
+            // The native service loop below brings up an IPv4-only tunnel adapter; disable its IPv6 so
+            // Windows stops handing it dead fec0:: DNS servers that stall the system resolver. Runs in
+            // both split and full-tunnel modes and is reapplied on every (re)connect.
+            _ = Task.Run(() => SuppressTunnelIpv6Async(name));
+        }
+
         var applied = false;
         if (geoSplit && domains.Count > 0 && StartGeo(name, config, domains, geoRoutes, appSettings.RefreshSeconds, stripV6))
         {
@@ -114,5 +125,20 @@ internal sealed class TunnelRunner(
         }
 
         return false;
+    }
+
+    private async Task SuppressTunnelIpv6Async(string name)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (routes.FindInterfaceIndex(name) is not null)
+            {
+                routes.DisableIpv6(name);
+                return;
+            }
+
+            await Task.Delay(500);
+        }
     }
 }

@@ -12,12 +12,16 @@ internal sealed class AgentBackgroundService(
     IStateStore store,
     ConfigRepository configRepo,
     BalancerRunner runner,
+    NetworkReconciler reconciler,
     IHostApplicationLifetime lifetime,
     ILogger<AgentBackgroundService> logger) : BackgroundService
 {
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Heal any DNS/route state a crashed or severed predecessor left behind before doing anything.
+        reconciler.Reconcile();
+
         var group = await ResolveGroupAsync(target.Name, stoppingToken);
         if (group is null)
         {

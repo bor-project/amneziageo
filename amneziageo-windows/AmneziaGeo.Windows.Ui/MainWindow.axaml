@@ -2,94 +2,599 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="AmneziaGeo.Windows.Ui.MainWindow"
         Title="AmneziaGeo"
-        Width="520" Height="640"
-        MinWidth="420" MinHeight="420">
+        Width="1180" Height="760"
+        MinWidth="900" MinHeight="560"
+        Background="{DynamicResource AgBgBrush}"
+        FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
+        Foreground="{DynamicResource AgFgBrush}">
 
   <Window.Styles>
-    <Style Selector="TextBlock.section">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Opacity" Value="0.6" />
-      <Setter Property="Margin" Value="2,14,0,4" />
-    </Style>
+
     <Style Selector="Border.card">
-      <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="Padding" Value="12" />
-      <Setter Property="Margin" Value="0,3" />
-      <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="BoxShadow" Value="0 1 3 0 #14000000" />
     </Style>
-    <Style Selector="Border.badge">
-      <Setter Property="CornerRadius" Value="4" />
-      <Setter Property="Padding" Value="7,2" />
-      <Setter Property="VerticalAlignment" Value="Center" />
+
+    <Style Selector="Border.subcard">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+    </Style>
+
+    <Style Selector="Border.inset">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="CornerRadius" Value="9" />
+    </Style>
+
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="LetterSpacing" Value="0.7" />
+    </Style>
+
+    <Style Selector="TextBlock.label">
+      <Setter Property="FontSize" Value="10.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="LetterSpacing" Value="0.5" />
+    </Style>
+
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+    </Style>
+
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
+    </Style>
+
+    <Style Selector="Button.seg">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="9,6" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.seg.active">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style Selector="Button.chip">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="Button.chip.active">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style Selector="Button.nav">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="8,8" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style Selector="Button.softbtn">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+
+    <Style Selector="Button.accent">
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="CornerRadius" Value="9" />
+    </Style>
+
+    <Style Selector="Button.icon">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+
+    <Style Selector="TextBox.field">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style Selector="ComboBox.field">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
   </Window.Styles>
 
-  <DockPanel Margin="16">
+  <DockPanel LastChildFill="True">
 
-    <Border DockPanel.Dock="Top" Classes="card">
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <Ellipse Grid.Column="0" Width="11" Height="11" VerticalAlignment="Center"
-                 Fill="{Binding AgentStatusBrush}" />
-        <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-          <TextBlock Text="Агент" FontWeight="SemiBold" />
-          <TextBlock Text="{Binding AgentStatusText}" Opacity="0.7" FontSize="12" />
+    <!-- HEADER -->
+    <Border DockPanel.Dock="Top" Height="46"
+            Background="{DynamicResource AgSidebarBrush}"
+            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto,Auto" Margin="14,0">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="9">
+          <Border Width="19" Height="19" CornerRadius="6"
+                  Background="{DynamicResource AgAccentBrush}">
+            <Ellipse Width="7" Height="7" Fill="White" />
+          </Border>
+          <TextBlock Text="AmneziaGeo" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+          <TextBlock Text="Менеджер профилей" FontSize="12" Classes="muted" VerticalAlignment="Center" />
         </StackPanel>
-        <Button Grid.Column="2" Content="Добавить" VerticalAlignment="Center"
-                Click="OnAddClick" />
+
+        <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}"
+                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                CornerRadius="8" Padding="2" Margin="0,0,8,0">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="seg active" Content="RU" IsEnabled="False" />
+            <Button Classes="seg" Content="EN" IsEnabled="False" />
+          </StackPanel>
+        </Border>
+
+        <Button Grid.Column="2" Classes="softbtn" Command="{Binding ToggleThemeCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <Ellipse Width="12" Height="12" Stroke="{DynamicResource AgFgBrush}" StrokeThickness="2" />
+            <TextBlock Text="{Binding ThemeLabel}" />
+          </StackPanel>
+        </Button>
       </Grid>
     </Border>
 
-    <ScrollViewer>
-      <StackPanel>
+    <!-- BODY -->
+    <Grid ColumnDefinitions="400,*">
 
-        <TextBlock Classes="section" Text="КОНФИГУРАЦИИ" />
-        <ItemsControl ItemsSource="{Binding Configs}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Border Classes="card">
-                <Grid ColumnDefinitions="*,Auto,Auto">
-                  <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding Endpoint}" Opacity="0.6" FontSize="12" />
-                  </StackPanel>
-                  <Border Grid.Column="1" Classes="badge" Margin="0,0,6,0"
-                          Background="#2563EB" IsVisible="{Binding GeoSplit}">
-                    <TextBlock Text="geo" FontSize="11" Foreground="White" />
-                  </Border>
-                  <Border Grid.Column="2" Classes="badge" Background="{Binding StatusBrush}">
-                    <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="White" />
-                  </Border>
-                </Grid>
+      <!-- LEFT SIDEBAR -->
+      <DockPanel Grid.Column="0" Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
+        <DockPanel.Styles>
+          <Style Selector="Border.card">
+            <Setter Property="Padding" Value="15" />
+          </Style>
+        </DockPanel.Styles>
+
+        <!-- Connection card -->
+        <Border DockPanel.Dock="Top" Classes="card" Margin="16,16,16,0">
+          <StackPanel Spacing="13">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+              <Ellipse Grid.Column="0" Width="11" Height="11" Fill="{Binding AgentStatusBrush}" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding AgentStatusText}" FontWeight="SemiBold" FontSize="15" />
+                <TextBlock Text="{Binding ActiveProfileName}" FontSize="12" Classes="muted" />
+              </StackPanel>
+              <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                <TextBlock Text="—" Classes="mono" FontSize="14" FontWeight="SemiBold" TextAlignment="Right" />
+                <TextBlock Text="в сети" FontSize="10" Classes="muted" TextAlignment="Right" />
+              </StackPanel>
+            </Grid>
+
+            <Grid ColumnDefinitions="*,7,*" Margin="0,0,0,0">
+              <Border Grid.Column="0" Classes="inset" Padding="10,7">
+                <StackPanel>
+                  <TextBlock Text="{Binding ActiveMember, FallbackValue=—, TargetNullValue=—}" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
+                  <TextBlock Text="сервер" FontSize="9.5" Classes="muted" />
+                </StackPanel>
               </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <TextBlock Classes="section" Text="БАЛАНСИРОВЩИКИ" IsVisible="{Binding HasBalancers}" />
-        <ItemsControl ItemsSource="{Binding Balancers}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Border Classes="card">
-                <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding Detail}" Opacity="0.6" FontSize="12" />
-                  </StackPanel>
-                  <Border Grid.Column="1" Classes="badge" Background="{Binding StatusBrush}">
-                    <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="White" />
-                  </Border>
-                </Grid>
+              <Border Grid.Column="2" Classes="inset" Padding="10,7">
+                <StackPanel>
+                  <TextBlock Text="—" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
+                  <TextBlock Text="задержка" FontSize="9.5" Classes="muted" />
+                </StackPanel>
               </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+            </Grid>
 
-        <TextBlock Text="{Binding EmptyHint}" IsVisible="{Binding IsEmpty}"
-                   Opacity="0.6" Margin="0,24" HorizontalAlignment="Center"
-                   TextWrapping="Wrap" TextAlignment="Center" />
+            <Grid ColumnDefinitions="*,7,*">
+              <Border Grid.Column="0" Classes="inset" Padding="10,7">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                  <TextBlock Text="↑" FontSize="12" Classes="muted" VerticalAlignment="Center" />
+                  <StackPanel>
+                    <TextBlock Text="—" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
+                    <TextBlock Text="отправлено" FontSize="9.5" Classes="muted" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="2" Classes="inset" Padding="10,7">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                  <TextBlock Text="↓" FontSize="12" Classes="muted" VerticalAlignment="Center" />
+                  <StackPanel>
+                    <TextBlock Text="—" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
+                    <TextBlock Text="получено" FontSize="9.5" Classes="muted" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </Grid>
 
-      </StackPanel>
-    </ScrollViewer>
+            <Button Background="{Binding ConnectButtonBrush}" Foreground="White"
+                    Content="{Binding ConnectButtonText}"
+                    Command="{Binding ToggleConnectionCommand}"
+                    IsEnabled="{Binding CanToggleConnection}"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    BorderThickness="0" Padding="0,11" CornerRadius="10"
+                    FontSize="13.5" FontWeight="SemiBold" />
+          </StackPanel>
+        </Border>
+
+        <!-- Nav card -->
+        <Border DockPanel.Dock="Top" Classes="card" Margin="16,12,16,0" Padding="6">
+          <Grid ColumnDefinitions="*,*,*">
+            <Button Grid.Column="0" Classes="nav" Classes.active="{Binding IsHome}"
+                    Command="{Binding NavHomeCommand}"
+                    Content="Главная" HorizontalAlignment="Stretch" />
+            <Button Grid.Column="1" Classes="nav" Classes.active="{Binding IsRouting}"
+                    Command="{Binding NavRoutingCommand}"
+                    Content="Маршрутизация" HorizontalAlignment="Stretch" Margin="5,0" />
+            <Button Grid.Column="2" Classes="nav" Classes.active="{Binding IsSettings}"
+                    Command="{Binding NavSettingsCommand}"
+                    Content="Настройки" HorizontalAlignment="Stretch" />
+          </Grid>
+        </Border>
+
+        <!-- Profiles card -->
+        <Border Classes="card" Margin="16,12,16,16" Padding="0">
+          <DockPanel LastChildFill="True">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
+              <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
+              <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                      Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Balancers.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+              </Border>
+              <Button Grid.Column="3" Classes="softbtn" Click="OnAddClick">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Text="+" />
+                  <TextBlock Text="Профиль" />
+                </StackPanel>
+              </Button>
+            </Grid>
+
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding Balancers}" Margin="12,2,12,12">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Classes="subcard" Margin="0,4">
+                      <StackPanel>
+
+                        <!-- Header (always visible) -->
+                        <Button Background="Transparent" BorderThickness="0" Padding="0"
+                                HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch"
+                                Cursor="Hand" Command="{Binding ToggleExpandCommand}">
+                          <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,11">
+                            <Ellipse Grid.Column="0" Width="16" Height="16"
+                                     Stroke="{DynamicResource AgBorder2Brush}" StrokeThickness="2"
+                                     Fill="Transparent" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
+                              <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
+                                         TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="▼" IsVisible="{Binding IsExpanded}"
+                                       Classes="muted" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="▶" IsVisible="{Binding !IsExpanded}"
+                                       Classes="muted" VerticalAlignment="Center" />
+                          </Grid>
+                        </Button>
+
+                        <!-- Expanded body -->
+                        <Border IsVisible="{Binding IsExpanded}"
+                                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0"
+                                Padding="13,14">
+                          <StackPanel Spacing="15">
+
+                            <!-- Name -->
+                            <StackPanel Spacing="6">
+                              <TextBlock Classes="label" Text="НАЗВАНИЕ" />
+                              <TextBox Classes="field" Text="{Binding Name}" IsReadOnly="True" />
+                            </StackPanel>
+
+                            <!-- Balancer + interval -->
+                            <StackPanel Spacing="9">
+                              <TextBlock Classes="label" Text="БАЛАНСИРОВЩИК" />
+                              <Border Background="{DynamicResource AgInsetBrush}"
+                                      BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                                      CornerRadius="9" Padding="3">
+                                <Grid ColumnDefinitions="*,3,*">
+                                  <Button Grid.Column="0" Classes="seg"
+                                          Classes.active="{Binding IsPriorityMode}"
+                                          Command="{Binding SetPriorityModeCommand}"
+                                          Content="По приоритету" HorizontalAlignment="Stretch" />
+                                  <Button Grid.Column="2" Classes="seg"
+                                          Classes.active="{Binding IsLatencyMode}"
+                                          Command="{Binding SetLatencyModeCommand}"
+                                          Content="По доступности" HorizontalAlignment="Stretch" />
+                                </Grid>
+                              </Border>
+                              <Grid ColumnDefinitions="*,Auto,4,Auto,4,Auto">
+                                <TextBlock Grid.Column="0" Classes="muted" FontSize="11.5"
+                                           Text="Интервал проверки" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Classes="chip"
+                                        Classes.active="{Binding IsInterval10}"
+                                        Command="{Binding SetInterval10Command}" Content="10с" />
+                                <Button Grid.Column="3" Classes="chip"
+                                        Classes.active="{Binding IsInterval30}"
+                                        Command="{Binding SetInterval30Command}" Content="30с" />
+                                <Button Grid.Column="5" Classes="chip"
+                                        Classes.active="{Binding IsInterval60}"
+                                        Command="{Binding SetInterval60Command}" Content="60с" />
+                              </Grid>
+                            </StackPanel>
+
+                            <!-- Routing -->
+                            <StackPanel Spacing="6">
+                              <TextBlock Classes="label" Text="СПИСОК МАРШРУТИЗАЦИИ" />
+                              <ComboBox Classes="field" ItemsSource="{Binding RoutingListOptions}"
+                                        SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                  <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" />
+                                  </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                              </ComboBox>
+                              <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding CanToggleRouting}" Margin="0,5,0,0">
+                                <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
+                                              OnContent="" OffContent=""
+                                              MinWidth="0" />
+                                <TextBlock Grid.Column="1" Margin="11,0,0,0"
+                                           Text="Использовать маршрутизацию" FontSize="12.5" FontWeight="Medium"
+                                           VerticalAlignment="Center" />
+                              </Grid>
+                            </StackPanel>
+
+                            <!-- Configs -->
+                            <StackPanel Spacing="8">
+                              <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                                <TextBlock Grid.Column="0" Classes="label" Text="КОНФИГУРАЦИИ" VerticalAlignment="Center" />
+                                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                                        Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                  <TextBlock Text="{Binding Members.Count}" FontSize="10.5" Classes="muted" FontWeight="SemiBold" />
+                                </Border>
+                                <Grid Grid.Column="2" ColumnDefinitions="*,Auto" HorizontalAlignment="Right">
+                                  <ComboBox Grid.Column="0" Classes="field" Width="160"
+                                            ItemsSource="{Binding AvailableConfigs}"
+                                            SelectedItem="{Binding AddMemberSelection, Mode=TwoWay}"
+                                            PlaceholderText="конфиг..." Margin="0,0,6,0" />
+                                  <Button Grid.Column="1" Classes="softbtn"
+                                          Command="{Binding AddMemberCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                      <TextBlock Text="+" />
+                                      <TextBlock Text="Добавить" />
+                                    </StackPanel>
+                                  </Button>
+                                </Grid>
+                              </Grid>
+
+                              <ItemsControl ItemsSource="{Binding Members}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Border Background="{DynamicResource AgPanelBrush}"
+                                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                                            CornerRadius="9" Padding="9,8" Margin="0,3">
+                                      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                        <Ellipse Grid.Column="0" Width="9" Height="9"
+                                                 Fill="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Margin="9,0,0,0" Text="{Binding}"
+                                                   FontSize="12.5" FontWeight="Medium"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Grid.Column="2" Orientation="Vertical" Spacing="0">
+                                          <Button Classes="icon" Content="▲"
+                                                  Command="{Binding $parent[ItemsControl].DataContext.MoveUpCommand}"
+                                                  CommandParameter="{Binding}"
+                                                  FontSize="8" Padding="3,0" />
+                                          <Button Classes="icon" Content="▼"
+                                                  Command="{Binding $parent[ItemsControl].DataContext.MoveDownCommand}"
+                                                  CommandParameter="{Binding}"
+                                                  FontSize="8" Padding="3,0" />
+                                        </StackPanel>
+                                        <Button Grid.Column="3" Classes="icon" Content="✕" Margin="4,0,0,0"
+                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveMemberCommand}"
+                                                CommandParameter="{Binding}" />
+                                      </Grid>
+                                    </Border>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                            </StackPanel>
+
+                          </StackPanel>
+                        </Border>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </DockPanel>
+
+      <!-- RIGHT CONTENT -->
+      <Border Grid.Column="1" Classes="card" Margin="0,16,16,16" Padding="0">
+        <Grid>
+
+          <!-- HOME -->
+          <DockPanel IsVisible="{Binding IsHome}" LastChildFill="True">
+            <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="24,20,24,16">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <Ellipse Grid.Column="0" Width="16" Height="16" Fill="{Binding AgentStatusBrush}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Margin="15,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding AgentStatusText}" FontSize="19" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding ActiveProfileName}" FontSize="13" Classes="muted" />
+                </StackPanel>
+                <Border Grid.Column="2" Classes="inset" Padding="14,9" MinWidth="96">
+                  <StackPanel>
+                    <TextBlock Text="—" Classes="mono" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="в сети" FontSize="10" Classes="muted" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </Border>
+
+            <StackPanel DockPanel.Dock="Top" Margin="24,16">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Classes="section" Text="СОСТОЯНИЕ БАЛАНСИРОВЩИКА" VerticalAlignment="Center" />
+                <Border Grid.Column="2" Classes="inset"
+                        BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                        Padding="10,3">
+                  <TextBlock Text="—" FontSize="11.5" Classes="muted" />
+                </Border>
+              </Grid>
+              <TextBlock Text="Активный профиль и латентности будут отображаться здесь, когда агент будет подключён."
+                         Classes="muted" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0"
+                    Background="{DynamicResource AgInsetBrush}" Margin="24,8,24,18" CornerRadius="12">
+              <ScrollViewer>
+                <StackPanel Margin="16,13" Spacing="6">
+                  <TextBlock Text="Логи появятся когда агент будет подключён и доступен через IPC."
+                             Classes="muted mono" FontSize="12" />
+                </StackPanel>
+              </ScrollViewer>
+            </Border>
+          </DockPanel>
+
+          <!-- ROUTING -->
+          <ScrollViewer IsVisible="{Binding IsRouting}">
+            <StackPanel Margin="24,22">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,16">
+                <TextBlock Grid.Column="0" Text="Списки маршрутизации" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Border Grid.Column="1" Classes="inset"
+                        BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                        Padding="9,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding RoutingLists.Count}" FontSize="12" FontWeight="SemiBold" Classes="muted" />
+                </Border>
+                <Button Grid.Column="3" Classes="accent" Click="OnAddRoutingListClick">
+                  <StackPanel Orientation="Horizontal" Spacing="5">
+                    <TextBlock Text="+" />
+                    <TextBlock Text="Список" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+
+              <ItemsControl ItemsSource="{Binding RoutingLists}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Classes="subcard" Padding="16,15" Margin="0,0,13,13" Width="320"
+                            Tapped="OnRoutingListTapped" Cursor="Hand">
+                      <StackPanel Spacing="13">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                          <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
+                                  Background="{DynamicResource AgAccentSoftBrush}"
+                                  HorizontalAlignment="Left" VerticalAlignment="Top">
+                            <TextBlock Text="◉" Foreground="{DynamicResource AgAccentBrush}"
+                                       FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Border>
+                          <StackPanel Grid.Column="1" Margin="11,0,0,0">
+                            <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted" />
+                          </StackPanel>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Bottom">
+                          <TextBlock Text="{Binding RuleCount}" Classes="mono" FontSize="22" FontWeight="SemiBold" />
+                          <TextBlock Text="правил" FontSize="11.5" Classes="muted" VerticalAlignment="Bottom" Margin="0,0,0,4" />
+                        </StackPanel>
+                        <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,11,0,0">
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="общий" FontSize="11.5" Classes="muted" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="softbtn" Content="Открыть" Tag="{Binding}" Click="OnOpenRoutingClick" />
+                          </Grid>
+                        </Border>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <TextBlock IsVisible="{Binding !HasRoutingLists}"
+                         Text="Нет списков маршрутизации. Нажмите «+ Список»."
+                         Classes="muted" Margin="0,24" HorizontalAlignment="Center" />
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- SETTINGS -->
+          <ScrollViewer IsVisible="{Binding IsSettings}">
+            <StackPanel Margin="24,22" MaxWidth="640" HorizontalAlignment="Left">
+              <TextBlock Text="Настройки" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,18" />
+
+              <Border Classes="subcard" Margin="0,0,0,16">
+                <StackPanel>
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
+                    <TextBlock Text="ОБЩИЕ" Classes="section" />
+                  </Border>
+                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                    <TextBlock Text="Тема оформления" FontSize="13.5" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="softbtn" Content="{Binding ThemeLabel}" Command="{Binding ToggleThemeCommand}" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <Border Classes="subcard" Margin="0,0,0,16">
+                <StackPanel>
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
+                    <TextBlock Text="О ПРИЛОЖЕНИИ" Classes="section" />
+                  </Border>
+                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                    <TextBlock Text="Версия" FontSize="13.5" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="AmneziaGeo 1.0.0" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+        </Grid>
+      </Border>
+
+    </Grid>
+
   </DockPanel>
 </Window>

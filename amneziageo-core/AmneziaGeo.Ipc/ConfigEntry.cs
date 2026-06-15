@@ -7,4 +7,5 @@ public sealed record ConfigEntry(
     string Name,
     string Endpoint,
     bool GeoSplit,
-    string Status);
+    string Status,
+    IReadOnlyList<string> Rules);

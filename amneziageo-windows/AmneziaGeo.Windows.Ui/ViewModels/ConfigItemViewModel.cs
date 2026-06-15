@@ -19,6 +19,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private bool _geoSplit;
 
     [ObservableProperty]
+    private IReadOnlyList<string> _rules = [];
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private string _status = ConnectionStatus.Idle;

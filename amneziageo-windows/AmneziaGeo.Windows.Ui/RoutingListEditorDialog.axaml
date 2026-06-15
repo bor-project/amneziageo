@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AmneziaGeo.Windows.Ui.RoutingListEditorDialog"
+        Title="{Binding DialogTitle}"
+        Width="500" Height="600"
+        MinWidth="380" MinHeight="400"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="16">
+
+    <StackPanel DockPanel.Dock="Top" Spacing="6">
+      <TextBlock Text="Имя списка" Opacity="0.7" FontSize="12" />
+      <TextBox Text="{Binding Name, Mode=TwoWay}" Watermark="напр. openai-routes" />
+    </StackPanel>
+
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,12,0,0">
+      <Button Grid.Column="0" Content="Удалить" Click="OnDelete"
+              IsVisible="{Binding !IsNew}" IsEnabled="{Binding !IsBusy}" Margin="0,0,8,0" />
+      <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" Opacity="0.7"
+                 VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12" />
+      <Button Grid.Column="2" Content="Отмена" Click="OnCancel" Margin="0,0,8,0" />
+      <Button Grid.Column="3" Content="Сохранить" Click="OnSave" IsEnabled="{Binding !IsBusy}" />
+    </Grid>
+
+    <StackPanel Spacing="8" Margin="0,12,0,0">
+      <TextBlock Text="Правила маршрутизации (гео-категория или свой домен / CIDR)"
+                 Opacity="0.6" FontSize="12" TextWrapping="Wrap" />
+      <Grid ColumnDefinitions="*,Auto">
+        <AutoCompleteBox Grid.Column="0" Watermark="напр. geosite:openai, geoip:de, example.com, 1.2.3.0/24"
+                         Text="{Binding RuleInput}" ItemsSource="{Binding GeoSuggestions}"
+                         FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
+        <Button Grid.Column="1" Content="Добавить" Command="{Binding AddRuleCommand}" Margin="6,0,0,0" />
+      </Grid>
+      <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6"
+              Padding="6" Height="320">
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding Rules}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,Auto" Margin="2">
+                  <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Content="✕" Padding="8,0" FontSize="11"
+                          Command="{Binding $parent[ItemsControl].DataContext.RemoveRuleCommand}"
+                          CommandParameter="{Binding}" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Border>
+    </StackPanel>
+
+  </DockPanel>
+</Window>

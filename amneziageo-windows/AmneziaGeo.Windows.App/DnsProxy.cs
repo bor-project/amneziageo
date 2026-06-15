@@ -7,11 +7,17 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Loopback DNS proxy that feeds resolved tunneled domains to the domain tracker.
+/// Loopback DNS proxy that forwards queries through the tunnel and feeds resolved tunneled
+/// domains to the domain tracker. Binds both IPv4 (127.0.0.1) and IPv6 (::1) loopback so the
+/// system resolver — which is pointed at both by <see cref="DnsRedirector"/> — is always answered,
+/// and serves each query on the thread pool so a slow upstream reply never stalls other queries.
 /// </summary>
 internal sealed class DnsProxy
 {
-    private readonly UdpClient _server;
+    private const int UpstreamTimeoutMs = 5000;
+    private const int SioUdpConnReset = unchecked((int)0x9800000C);
+
+    private readonly List<UdpClient> _servers = [];
     private readonly IReadOnlyList<GeoDomain> _domains;
     private readonly IPAddress _upstream;
     private readonly DomainTracker _tracker;
@@ -26,59 +32,95 @@ internal sealed class DnsProxy
         _upstream = upstream;
         _tracker = tracker;
         _logger = logger;
-        _server = new UdpClient(new IPEndPoint(IPAddress.Loopback, 53));
-        _server.Client.IOControl(unchecked((int)0x9800000C), new byte[4], null);
+        Bind(IPAddress.Loopback);
+        Bind(IPAddress.IPv6Loopback);
+        if (_servers.Count == 0)
+        {
+            throw new InvalidOperationException("dns proxy could not bind any loopback address on :53");
+        }
     }
 
     /// <summary>
-    /// Serves DNS until the process exits.
+    /// Serves DNS on every bound loopback address until the sockets close (process exit).
     /// </summary>
     public void Serve()
     {
+        var threads = new List<Thread>();
+        foreach (var server in _servers)
+        {
+            var thread = new Thread(() => ServeOne(server))
+            {
+                IsBackground = true,
+            };
+            thread.Start();
+            threads.Add(thread);
+        }
+
+        foreach (var thread in threads)
+        {
+            thread.Join();
+        }
+    }
+
+    private void Bind(IPAddress address)
+    {
         try
         {
-            using (_server)
+            var server = new UdpClient(new IPEndPoint(address, 53));
+            server.Client.IOControl(SioUdpConnReset, new byte[4], null);
+            _servers.Add(server);
+        }
+        catch (SocketException ex)
+        {
+            _logger.LogWarning(ex, "dns proxy could not bind {Address}:53", address);
+        }
+    }
+
+    private void ServeOne(UdpClient server)
+    {
+        var anyEndpoint = server.Client.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any;
+        try
+        {
+            using (server)
             {
                 while (true)
                 {
-                    var remote = new IPEndPoint(IPAddress.Any, 0);
+                    var remote = new IPEndPoint(anyEndpoint, 0);
                     byte[] query;
                     try
                     {
-                        query = _server.Receive(ref remote);
+                        query = server.Receive(ref remote);
                     }
-                    catch (Exception)
+                    catch (SocketException)
                     {
                         continue;
                     }
 
-                    byte[] response;
-                    try
-                    {
-                        response = Forward(query);
-                    }
-                    catch (Exception)
-                    {
-                        continue;
-                    }
-
-                    _server.Send(response, response.Length, remote);
-                    ThreadPool.QueueUserWorkItem(_ =>
-                    {
-                        try
-                        {
-                            TrackIfMatched(query, response);
-                        }
-                        catch (Exception)
-                        {
-                        }
-                    });
+                    var client = remote;
+                    ThreadPool.QueueUserWorkItem(_ => Handle(server, query, client));
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "dns proxy stopped");
+            _logger.LogError(ex, "dns proxy stopped on {Address}", anyEndpoint);
+        }
+    }
+
+    private void Handle(UdpClient server, byte[] query, IPEndPoint client)
+    {
+        try
+        {
+            var response = Forward(query);
+            lock (server)
+            {
+                server.Send(response, response.Length, client);
+            }
+
+            TrackIfMatched(query, response);
+        }
+        catch (Exception)
+        {
         }
     }
 
@@ -86,7 +128,7 @@ internal sealed class DnsProxy
     {
         using (var client = new UdpClient())
         {
-            client.Client.ReceiveTimeout = 5000;
+            client.Client.ReceiveTimeout = UpstreamTimeoutMs;
             client.Send(query, query.Length, new IPEndPoint(_upstream, 53));
             var remote = new IPEndPoint(IPAddress.Any, 0);
             return client.Receive(ref remote);

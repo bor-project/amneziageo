@@ -40,8 +40,17 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentTarget tar
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "failed to create status pipe");
-                return;
+                logger.LogError(ex, "failed to create status pipe; retrying");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(1), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                continue;
             }
 
             try
@@ -93,6 +102,10 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentTarget tar
             AccessControlType.Allow));
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
             PipeAccessRights.FullControl,
             AccessControlType.Allow));
 

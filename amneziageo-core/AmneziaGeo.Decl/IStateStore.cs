@@ -96,6 +96,42 @@ public interface IStateStore
     Task RemoveBalancerAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Inserts or updates a routing list. If Id is 0 a new row is inserted; otherwise the
+    /// row with that id is updated. Returns the row id after the call.
+    /// </summary>
+    Task<long> SaveRoutingListAsync(RoutingList list, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the routing list by id, or null if absent.
+    /// </summary>
+    Task<RoutingList?> GetRoutingListAsync(long id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the routing list by name, or null if absent.
+    /// </summary>
+    Task<RoutingList?> GetRoutingListByNameAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all stored routing lists ordered by name.
+    /// </summary>
+    Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a routing list by id. Profiles referencing it have their assignment cleared.
+    /// </summary>
+    Task RemoveRoutingListAsync(long id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the assigned routing list id (or null) and the use-routing flag for a profile.
+    /// </summary>
+    Task<(long? RoutingListId, bool UseRouting)> GetProfileRoutingAsync(string profile, CancellationToken ct = default);
+
+    /// <summary>
+    /// Sets the assigned routing list id (or null to clear) and the use-routing flag for a profile.
+    /// </summary>
+    Task SetProfileRoutingAsync(string profile, long? routingListId, bool useRouting, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns metadata for a geo file, or null if absent.
     /// </summary>
     Task<GeoFileMetadata?> GetGeoFileAsync(string name, CancellationToken ct = default);

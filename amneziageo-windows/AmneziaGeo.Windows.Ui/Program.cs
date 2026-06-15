@@ -5,7 +5,7 @@ namespace AmneziaGeo.Windows.Ui;
 /// <summary>
 /// Desktop UI entry point.
 /// </summary>
-internal static class Program
+public static class Program
 {
     [STAThread]
     private static void Main(string[] args)

@@ -1,10 +1,70 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="AmneziaGeo.Windows.Ui.App"
-             RequestedThemeVariant="Default">
+             RequestedThemeVariant="Light">
 
   <Application.Styles>
     <FluentTheme />
   </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <Color x:Key="AgBg">#eceef1</Color>
+          <Color x:Key="AgPanel">#ffffff</Color>
+          <Color x:Key="AgPanel2">#f7f8fa</Color>
+          <Color x:Key="AgSidebar">#e7e9ec</Color>
+          <Color x:Key="AgBorder">#e4e6ea</Color>
+          <Color x:Key="AgBorder2">#d2d6dd</Color>
+          <Color x:Key="AgFg">#181b20</Color>
+          <Color x:Key="AgMuted">#646c78</Color>
+          <Color x:Key="AgMuted2">#9aa1ab</Color>
+          <Color x:Key="AgAccent">#2a6fdb</Color>
+          <Color x:Key="AgAccentSoft">#1A2a6fdb</Color>
+          <Color x:Key="AgInset">#f0f2f5</Color>
+          <Color x:Key="AgHover">#eef0f3</Color>
+          <Color x:Key="AgUp">#1f9d57</Color>
+          <Color x:Key="AgDown">#e0533d</Color>
+          <Color x:Key="AgWarn">#cf9a17</Color>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <Color x:Key="AgBg">#0d1014</Color>
+          <Color x:Key="AgPanel">#171a1f</Color>
+          <Color x:Key="AgPanel2">#1d212a</Color>
+          <Color x:Key="AgSidebar">#101317</Color>
+          <Color x:Key="AgBorder">#262b33</Color>
+          <Color x:Key="AgBorder2">#343a45</Color>
+          <Color x:Key="AgFg">#e8ebf0</Color>
+          <Color x:Key="AgMuted">#98a0ac</Color>
+          <Color x:Key="AgMuted2">#5f6772</Color>
+          <Color x:Key="AgAccent">#4d8df0</Color>
+          <Color x:Key="AgAccentSoft">#294d8df0</Color>
+          <Color x:Key="AgInset">#22272f</Color>
+          <Color x:Key="AgHover">#1e232b</Color>
+          <Color x:Key="AgUp">#34c77b</Color>
+          <Color x:Key="AgDown">#f1664c</Color>
+          <Color x:Key="AgWarn">#e6b23a</Color>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+
+      <SolidColorBrush x:Key="AgBgBrush" Color="{DynamicResource AgBg}" />
+      <SolidColorBrush x:Key="AgPanelBrush" Color="{DynamicResource AgPanel}" />
+      <SolidColorBrush x:Key="AgPanel2Brush" Color="{DynamicResource AgPanel2}" />
+      <SolidColorBrush x:Key="AgSidebarBrush" Color="{DynamicResource AgSidebar}" />
+      <SolidColorBrush x:Key="AgBorderBrush" Color="{DynamicResource AgBorder}" />
+      <SolidColorBrush x:Key="AgBorder2Brush" Color="{DynamicResource AgBorder2}" />
+      <SolidColorBrush x:Key="AgFgBrush" Color="{DynamicResource AgFg}" />
+      <SolidColorBrush x:Key="AgMutedBrush" Color="{DynamicResource AgMuted}" />
+      <SolidColorBrush x:Key="AgMuted2Brush" Color="{DynamicResource AgMuted2}" />
+      <SolidColorBrush x:Key="AgAccentBrush" Color="{DynamicResource AgAccent}" />
+      <SolidColorBrush x:Key="AgAccentSoftBrush" Color="{DynamicResource AgAccentSoft}" />
+      <SolidColorBrush x:Key="AgInsetBrush" Color="{DynamicResource AgInset}" />
+      <SolidColorBrush x:Key="AgHoverBrush" Color="{DynamicResource AgHover}" />
+      <SolidColorBrush x:Key="AgUpBrush" Color="{DynamicResource AgUp}" />
+      <SolidColorBrush x:Key="AgDownBrush" Color="{DynamicResource AgDown}" />
+      <SolidColorBrush x:Key="AgWarnBrush" Color="{DynamicResource AgWarn}" />
+    </ResourceDictionary>
+  </Application.Resources>
 
 </Application>

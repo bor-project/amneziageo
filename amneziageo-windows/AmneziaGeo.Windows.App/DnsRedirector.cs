@@ -37,6 +37,8 @@ internal sealed class DnsRedirector(ILogger<DnsRedirector> logger)
             {
                 _saved[(uint)index.Value] = current;
             }
+
+            RunDns($"Set-DnsClientServerAddress -InterfaceIndex {index.Value} -ServerAddresses ::1");
         }
 
         WriteState(_saved);

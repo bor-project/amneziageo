@@ -21,7 +21,8 @@ internal sealed class Cli(
     DnsRedirector dns,
     TunnelRunner tunnelRunner,
     BalancerRunner balancerRunner,
-    BackupService backupService)
+    BackupService backupService,
+    GeoConfigurator geoConfigurator)
 {
     /// <summary>
     /// Runs the subcommand matching the given arguments.
@@ -102,6 +103,14 @@ internal sealed class Cli(
                 return await BalancerRemoveAsync(name);
             case ["balancer-mode", var name, var mode]:
                 return await BalancerModeAsync(name, mode);
+            case ["routing-list-add", var listName, .. var listRules]:
+                return await RoutingListAddAsync(listName, listRules);
+            case ["assign-routing", var profile, var list, var toggle]:
+                return await AssignRoutingAsync(profile, list, toggle);
+            case ["connect"]:
+                return await IpcCmdAsync(IpcContract.OpSetConnection, ["connect"]);
+            case ["disconnect"]:
+                return await IpcCmdAsync(IpcContract.OpSetConnection, ["disconnect"]);
             case ["balancer-run", var name]:
                 return await BalancerRunAsync(name);
             case ["ipc-probe"]:
@@ -160,6 +169,7 @@ internal sealed class Cli(
         }
 
         await RematerializeAllAsync();
+        await geoConfigurator.RematerializeAllRoutingListsAsync();
         return 0;
     }
 
@@ -580,6 +590,41 @@ internal sealed class Cli(
         var success = geoActivator.TunnelIp(name, peer, index.Value, IPAddress.Parse(ip));
         Console.WriteLine($"tunnel-ip {ip} via {name} (if {index}): {success}");
         return success ? 0 : 1;
+    }
+
+    private async Task<int> RoutingListAddAsync(string name, IReadOnlyList<string> rules)
+    {
+        var existing = await store.GetRoutingListByNameAsync(name);
+        var id = await geoConfigurator.ApplyToRoutingListAsync(existing?.Id ?? 0, name, rules);
+        Console.WriteLine($"routing-list {name}: id={id}, {rules.Count} rule(s)");
+        return 0;
+    }
+
+    private async Task<int> AssignRoutingAsync(string profile, string list, string toggle)
+    {
+        if (await store.GetBalancerAsync(profile) is null)
+        {
+            Console.WriteLine($"unknown profile: {profile}");
+            return 1;
+        }
+
+        long? listId = null;
+        if (!list.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            var routingList = await store.GetRoutingListByNameAsync(list);
+            if (routingList is null)
+            {
+                Console.WriteLine($"unknown routing list: {list}");
+                return 1;
+            }
+
+            listId = routingList.Id;
+        }
+
+        var useRouting = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
+        await store.SetProfileRoutingAsync(profile, listId, useRouting);
+        Console.WriteLine($"assigned {profile}: list={list} use={(useRouting ? "on" : "off")}");
+        return 0;
     }
 
     private async Task RematerializeAllAsync()

@@ -1,10 +1,16 @@
 <Solution>
-  <Project Path="../amneziageo-core/AmneziaGeo.Dal/AmneziaGeo.Dal.csproj" />
-  <Project Path="../amneziageo-core/AmneziaGeo.Decl/AmneziaGeo.Decl.csproj" />
-  <Project Path="../amneziageo-core/AmneziaGeo.Geo/AmneziaGeo.Geo.csproj" />
-  <Project Path="../amneziageo-core/AmneziaGeo.Ipc/AmneziaGeo.Ipc.csproj" />
-  <Project Path="AmneziaGeo.Windows.Engine/AmneziaGeo.Windows.Engine.csproj" />
+  <Folder Name="/core/">
+    <Project Path="../amneziageo-core/AmneziaGeo.Dal/AmneziaGeo.Dal.csproj" />
+    <Project Path="../amneziageo-core/AmneziaGeo.Decl/AmneziaGeo.Decl.csproj" />
+    <Project Path="../amneziageo-core/AmneziaGeo.Geo/AmneziaGeo.Geo.csproj" />
+    <Project Path="../amneziageo-core/AmneziaGeo.Ipc/AmneziaGeo.Ipc.csproj" />
+  </Folder>
+  <Folder Name="/lib/">
+    <Project Path="AmneziaGeo.Windows.Engine/AmneziaGeo.Windows.Engine.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/AmneziaGeo.Windows.Launcher/AmneziaGeo.Windows.Launcher.csproj" />
+  </Folder>
   <Project Path="AmneziaGeo.Windows.App/AmneziaGeo.Windows.App.csproj" />
   <Project Path="AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj" />
-  <Project Path="tools/AmneziaGeo.Windows.Launcher/AmneziaGeo.Windows.Launcher.csproj" />
 </Solution>

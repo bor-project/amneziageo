@@ -26,14 +26,35 @@ public interface IStateStore
     Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the geo settings and active set for a tunnel, or null if absent.
+    /// Returns the config's own (user-configured) geo settings and active set, or null if absent.
+    /// Ignores any live balancer routing projection — use <see cref="GetActiveTunnelGeoAsync"/>
+    /// for what the running tunnel should apply.
     /// </summary>
     Task<TunnelGeo?> GetTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates the geo settings and active set for a tunnel.
+    /// Returns the geo set the running tunnel should apply: the active balancer routing projection
+    /// when one is present, otherwise the config's own set-geo split. Null if neither exists.
+    /// </summary>
+    Task<TunnelGeo?> GetActiveTunnelGeoAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates the config's own (user-configured) geo settings and active set. Leaves
+    /// any live balancer routing projection untouched.
     /// </summary>
     Task SaveTunnelGeoAsync(TunnelGeo geo, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores a balancer routing projection for a tunnel and marks it live. Written only by the
+    /// balancer; never touches the config's own set-geo columns.
+    /// </summary>
+    Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, CancellationToken ct = default);
+
+    /// <summary>
+    /// Drops the live balancer routing projection for a tunnel, reverting it to its own set-geo
+    /// split (or no split). A no-op when no row exists. Never touches the config's own columns.
+    /// </summary>
+    Task ClearTunnelProjectionAsync(string name, CancellationToken ct = default);
 
     /// <summary>
     /// Returns all tunnel names that have geo settings.

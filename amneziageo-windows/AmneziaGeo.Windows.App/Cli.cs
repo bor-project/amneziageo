@@ -18,7 +18,7 @@ internal sealed class Cli(
     GeoActivator geoActivator,
     RouteManager routes,
     UapiClient uapi,
-    DnsRedirector dns,
+    NetworkReconciler reconciler,
     TunnelRunner tunnelRunner,
     BalancerRunner balancerRunner,
     BackupService backupService,
@@ -509,7 +509,7 @@ internal sealed class Cli(
     private int StopTunnel(string name)
     {
         var code = serviceManager.Stop(name);
-        dns.RestoreSaved();
+        reconciler.Reconcile();
         return code;
     }
 

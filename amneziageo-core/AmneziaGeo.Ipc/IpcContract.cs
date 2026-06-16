@@ -88,4 +88,24 @@ public static class IpcContract
     /// If connected, the agent switches to it; otherwise it becomes the target the next connect uses.
     /// </summary>
     public const string OpSelectProfile = "set-profile";
+
+    /// <summary>
+    /// Command to add a geo data source and download it immediately. Args: kind (geosite/geoip), url.
+    /// </summary>
+    public const string OpAddSource = "add-source";
+
+    /// <summary>
+    /// Command to remove a geo data source (and its downloaded file) by name. Args: name.
+    /// </summary>
+    public const string OpRemoveSource = "remove-source";
+
+    /// <summary>
+    /// Command to re-download every geo data source and re-materialize the routing lists. No args.
+    /// </summary>
+    public const string OpUpdateSources = "update-sources";
+
+    /// <summary>
+    /// Command to re-download a single geo data source by name and re-materialize the routing lists. Args: name.
+    /// </summary>
+    public const string OpUpdateSource = "update-source";
 }

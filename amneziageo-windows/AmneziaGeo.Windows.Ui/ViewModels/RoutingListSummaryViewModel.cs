@@ -22,6 +22,9 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     [ObservableProperty]
     private int _domainCount;
 
+    [ObservableProperty]
+    private bool _isSelected;
+
     /// <summary>
     /// A short human label like "openai · 1 правило · 12 доменов".
     /// </summary>

@@ -10,11 +10,17 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds status snapshots and pushes them to connected UI clients over the status pipe.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, AgentControl control, SettingsStore settingsStore, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, AgentControl control, SettingsStore settingsStore, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
     private string? _lastJson;
+
+    // Per-source download/apply progress while an update is in flight, keyed by source name. The value
+    // is the download percent (0-100), or -1 while the routing lists re-materialize (indeterminate).
+    // Presence in the map means "updating"; the snapshot overlays it onto each SourceEntry so the UI can
+    // spin the refresh icon and show a percentage.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _updating = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The profile whose live status the connection card reflects: the running target while connected,
@@ -148,6 +154,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpSetConnection => SetConnection(command.Args),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
                 IpcContract.OpSelectProfile => await SelectProfileAsync(command.Args, ct),
+                IpcContract.OpAddSource => await AddSourceAsync(command.Args, ct),
+                IpcContract.OpRemoveSource => await RemoveSourceAsync(command.Args, ct),
+                IpcContract.OpUpdateSources => await UpdateSourcesAsync(ct),
+                IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -376,6 +386,191 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, control.Running ? $"selected {name} (reconnect to apply)" : $"selected {name}");
     }
 
+    private async Task<IpcAck> AddSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2)
+        {
+            return new IpcAck(false, "add-source requires a kind (geosite/geoip) and a url");
+        }
+
+        var kind = args[0].Equals("geoip", StringComparison.OrdinalIgnoreCase) ? "geoip" : "geosite";
+        var url = args[1].Trim();
+        if (url.Length == 0)
+        {
+            return new IpcAck(false, "url is required");
+        }
+
+        var existing = await store.ListGeoSourcesAsync(ct);
+        var position = existing.Count == 0 ? 1 : existing.Max(s => s.Position) + 1;
+        var name = $"{kind}-{position}";
+        var source = new GeoSource(name, kind, url, position);
+        await store.SaveGeoSourceAsync(source, ct);
+        logger.LogInformation("added geo source {Name} ({Kind}) {Url}", name, kind, url);
+
+        // Download + re-materialize off the command path so the ack returns immediately: a large file
+        // over a slow link must not block the pipe or overrun the client's command timeout. The result
+        // (categories / updated time) lands in the next status snapshot.
+        DownloadAndRematerialize([source]);
+        return new IpcAck(true, $"добавлен {name}, загрузка…");
+    }
+
+    private async Task<IpcAck> RemoveSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "remove-source requires a name");
+        }
+
+        var name = args[0];
+        await store.RemoveGeoSourceAsync(name, ct);
+        try
+        {
+            var path = TunnelPaths.GeoDataFile(name);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
+
+        await geo.RematerializeAllRoutingListsAsync(ct);
+        logger.LogInformation("removed geo source {Name}", name);
+        return new IpcAck(true, $"удалён {name}");
+    }
+
+    private async Task<IpcAck> UpdateSourcesAsync(CancellationToken ct)
+    {
+        var sources = await store.ListGeoSourcesAsync(ct);
+        DownloadAndRematerialize(sources);
+        return new IpcAck(true, $"обновление запущено ({sources.Count})");
+    }
+
+    private async Task<IpcAck> UpdateSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "update-source requires a name");
+        }
+
+        var sources = await store.ListGeoSourcesAsync(ct);
+        var source = sources.FirstOrDefault(s => string.Equals(s.Name, args[0], StringComparison.Ordinal));
+        if (source is null)
+        {
+            return new IpcAck(false, $"unknown source: {args[0]}");
+        }
+
+        DownloadAndRematerialize([source]);
+        return new IpcAck(true, $"обновление {source.Name} запущено");
+    }
+
+    /// <summary>
+    /// Re-downloads the given sources and re-materializes the routing lists on a background task, then
+    /// pushes a fresh snapshot. Kept off the IPC command path so a slow download never blocks the pipe
+    /// or overruns the client's command timeout. A lightweight ticker broadcasts in-flight progress so
+    /// the UI can spin the refresh icon and show a live percentage.
+    /// </summary>
+    private void DownloadAndRematerialize(IReadOnlyList<GeoSource> sources)
+    {
+        // Claim only the sources not already in flight (TryAdd is atomic), so a repeated update of the
+        // same source doesn't start a duplicate download / re-materialize.
+        var pending = sources.Where(source => _updating.TryAdd(source.Name, 0)).ToList();
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            var pump = new CancellationTokenSource();
+            var ticker = ProgressPumpAsync(pump.Token);
+            try
+            {
+                foreach (var source in pending)
+                {
+                    try
+                    {
+                        await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
+                        // Downloaded: switch to indeterminate while the re-materialize runs below.
+                        _updating[source.Name] = -1;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "geo source download failed: {Name}", source.Name);
+                        _updating.TryRemove(source.Name, out _);
+                    }
+                }
+
+                // Stop the percentage broadcaster before re-materializing: there is no percent to show
+                // while applying, and the spinner keeps running client-side from the broadcast "applying"
+                // state — so the ticker's reads need not contend with the re-materialize writes.
+                pump.Cancel();
+                await ticker;
+                await BroadcastIfChangedAsync(CancellationToken.None);
+
+                try
+                {
+                    await geo.RematerializeAllRoutingListsAsync();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "geo source re-materialize failed");
+                }
+            }
+            finally
+            {
+                foreach (var source in pending)
+                {
+                    _updating.TryRemove(source.Name, out _);
+                }
+
+                pump.Cancel();
+                await ticker;
+                pump.Dispose();
+                await BroadcastIfChangedAsync(CancellationToken.None);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Broadcasts the snapshot on a steady cadence while a download is in flight, so the spinner and
+    /// percentage advance smoothly. A single pump (rather than a broadcast per progress callback) keeps
+    /// snapshot rebuilds bounded; the change-dedup in <see cref="BroadcastIfChangedAsync"/> drops ticks
+    /// that did not move the visible percent. Never throws — a store hiccup must not down the update.
+    /// </summary>
+    private async Task ProgressPumpAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await BroadcastIfChangedAsync(CancellationToken.None);
+                await Task.Delay(TimeSpan.FromMilliseconds(700), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "progress broadcast failed");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records a source's download percent into the in-flight map. Cheap and synchronous; the progress
+    /// pump turns it into broadcasts.
+    /// </summary>
+    private sealed class SourceProgress(System.Collections.Concurrent.ConcurrentDictionary<string, int> map, string name) : IProgress<int>
+    {
+        public void Report(int value)
+        {
+            map[name] = value;
+        }
+    }
+
     private async Task<IpcAck> SetSettingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 2)
@@ -459,7 +654,20 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var settings = await settingsStore.LoadAsync(ct);
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target);
+
+        var geoFiles = (await store.ListGeoFilesAsync(ct)).ToDictionary(f => f.Name, StringComparer.Ordinal);
+        var sources = new List<SourceEntry>();
+        foreach (var source in await store.ListGeoSourcesAsync(ct))
+        {
+            geoFiles.TryGetValue(source.Name, out var meta);
+            var updated = meta is null
+                ? null
+                : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+            var updating = _updating.TryGetValue(source.Name, out var percent);
+            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0));
+        }
+
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target, sources);
     }
 
     /// <summary>

@@ -54,9 +54,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     public bool IsNew { get; }
 
     /// <summary>
-    /// The window title shown to the user.
+    /// The persisted list id (0 until a new list is first saved).
     /// </summary>
-    public string DialogTitle => IsNew ? "Новый список маршрутизации" : "Список маршрутизации";
+    public long Id => _id;
 
     /// <summary>
     /// The rules of this list as rule tokens (geosite:openai etc).

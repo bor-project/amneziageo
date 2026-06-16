@@ -51,55 +51,29 @@ public sealed partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
-    private async void OnRoutingListTapped(object? sender, TappedEventArgs e)
+    /// <summary>
+    /// Opens the per-source context menu (delete) on a source row. The menu is built here, with the
+    /// command assigned directly from the row's view model, because a MenuItem hosted in a flyout popup
+    /// does not reliably inherit the row's DataContext for a {Binding}-based command in Avalonia 11.
+    /// </summary>
+    private void OnSourceRowClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: RoutingListSummaryViewModel list })
+        if (sender is not Control { DataContext: SourceItemViewModel source } target)
         {
             return;
         }
 
-        if (DataContext is not MainWindowViewModel vm)
+        var delete = new MenuItem
         {
-            return;
-        }
-
-        var dialog = new RoutingListEditorDialog
-        {
-            DataContext = new RoutingListEditorViewModel(vm.Connection, list.Id, list.Name),
+            Header = "Удалить источник",
+            Command = source.RemoveCommand,
         };
-        await dialog.ShowDialog(this);
+        var flyout = new MenuFlyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+        };
+        flyout.Items.Add(delete);
+        flyout.ShowAt(target);
     }
 
-    private async void OnAddRoutingListClick(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var dialog = new RoutingListEditorDialog
-        {
-            DataContext = new RoutingListEditorViewModel(vm.Connection),
-        };
-        await dialog.ShowDialog(this);
-    }
-
-    private async void OnOpenRoutingClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: RoutingListSummaryViewModel list })
-        {
-            return;
-        }
-
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var dialog = new RoutingListEditorDialog
-        {
-            DataContext = new RoutingListEditorViewModel(vm.Connection, list.Id, list.Name),
-        };
-        await dialog.ShowDialog(this);
-    }
 }

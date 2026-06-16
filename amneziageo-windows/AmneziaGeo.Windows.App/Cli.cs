@@ -254,6 +254,8 @@ internal sealed class Cli(
         Console.WriteLine($"dead-threshold-seconds\t{settings.DeadThresholdSeconds}");
         Console.WriteLine($"failback-probes\t{settings.FailbackProbes}");
         Console.WriteLine($"probe-timeout-seconds\t{settings.ProbeTimeoutSeconds}");
+        Console.WriteLine($"killswitch\t{settings.KillSwitchEnabled}");
+        Console.WriteLine($"allow-lan\t{settings.AllowLan}");
         return 0;
     }
 

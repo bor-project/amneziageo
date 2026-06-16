@@ -16,6 +16,7 @@ internal sealed class TunnelRunner(
     UapiClient uapi,
     DnsConfigurator dns,
     NetworkReconciler reconciler,
+    WindowsFirewall firewall,
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
@@ -45,6 +46,14 @@ internal sealed class TunnelRunner(
             // would route IPv6 into a tunnel with no transit while clients still try IPv6 first.
             allowedIps = [.. allowedIps.Where(a => !a.Contains(':'))];
         }
+
+        // Split any default route (0.0.0.0/0 or ::/0) into its two halves before handing AllowedIPs to
+        // the engine. A peer with a /0 AllowedIP makes the engine arm its own blanket kill-switch
+        // firewall (amneziawg-windows tunnel/addressconfig.go: doNotRestrict=false), which blocks the LAN
+        // and severs host/Hyper-V SSH and has no LAN bypass. The two /1 halves cover the same address
+        // space for routing but are not /0, so the engine routes the full tunnel WITHOUT arming that
+        // firewall. Our own WindowsFirewall provides the kill-switch (with a LAN bypass) instead.
+        allowedIps = SplitDefaultRoutes(allowedIps);
 
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
 
@@ -104,12 +113,26 @@ internal sealed class TunnelRunner(
 
         var endpoint = TunnelEndpoint.Resolve(config);
         var excluded = endpoint is not null && routes.AddEndpointExclusion(name, endpoint);
+
+        // The engine no longer arms its own kill-switch (we split the default route above), so when the
+        // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
+        // token lets teardown cancel a still-pending arm and guarantees the filters come down with the
+        // tunnel.
+        using var sessionCts = new CancellationTokenSource();
+        if (appSettings.KillSwitchEnabled)
+        {
+            _ = Task.Run(() => ArmKillSwitchAsync(name, appSettings.AllowLan, sessionCts.Token));
+        }
+
         try
         {
             WireGuardEngine.RunTunnelService(config, name);
         }
         finally
         {
+            sessionCts.Cancel();
+            firewall.Disable();
+
             if (applied)
             {
                 dns.Restore();
@@ -168,6 +191,44 @@ internal sealed class TunnelRunner(
         return false;
     }
 
+    /// <summary>
+    /// Replaces a default route (0.0.0.0/0 or ::/0) with its two /1 halves, which together cover the
+    /// same address space for routing but are not /0 — so the engine routes the full tunnel without
+    /// arming its own kill-switch. Other prefixes pass through unchanged; the result is de-duplicated.
+    /// </summary>
+    private static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps)
+    {
+        var result = new List<string>();
+
+        static void AddUnique(List<string> list, string value)
+        {
+            if (!list.Contains(value))
+            {
+                list.Add(value);
+            }
+        }
+
+        foreach (var cidr in allowedIps)
+        {
+            switch (cidr.Trim())
+            {
+                case "0.0.0.0/0":
+                    AddUnique(result, "0.0.0.0/1");
+                    AddUnique(result, "128.0.0.0/1");
+                    break;
+                case "::/0":
+                    AddUnique(result, "::/1");
+                    AddUnique(result, "8000::/1");
+                    break;
+                default:
+                    AddUnique(result, cidr);
+                    break;
+            }
+        }
+
+        return result;
+    }
+
     private async Task ConfigureTunnelAdapterDnsAsync(string name, IReadOnlyList<string> servers)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
@@ -180,6 +241,41 @@ internal sealed class TunnelRunner(
             }
 
             await Task.Delay(500);
+        }
+    }
+
+    /// <summary>
+    /// Waits for the tunnel adapter to appear, then arms the WFP kill-switch on it. If the tunnel is
+    /// torn down before or while arming (the session token is cancelled), the kill-switch is not left
+    /// armed: the post-arm re-check disables it, and teardown's own Disable() is idempotent.
+    /// </summary>
+    private async Task ArmKillSwitchAsync(string name, bool allowLan, CancellationToken ct)
+    {
+        try
+        {
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (routes.FindInterfaceIndex(name) is { } index)
+                {
+                    firewall.Enable(index, allowLan);
+                    if (ct.IsCancellationRequested)
+                    {
+                        firewall.Disable();
+                    }
+
+                    return;
+                }
+
+                await Task.Delay(500, ct);
+            }
+
+            logger.LogWarning("kill-switch: tunnel adapter {Name} did not appear; not armed", name);
+        }
+        catch (OperationCanceledException)
+        {
+            // Tunnel went down before the adapter came up; nothing to arm.
         }
     }
 }

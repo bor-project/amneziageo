@@ -29,4 +29,17 @@ internal sealed record AppSettings
     /// Timeout for an out-of-band endpoint reachability probe, in seconds.
     /// </summary>
     public int ProbeTimeoutSeconds { get; init; } = 2;
+
+    /// <summary>
+    /// When set, a WFP kill-switch is armed while a tunnel is up: all traffic is blocked except the
+    /// tunnel, loopback, this process, DHCP, Hyper-V, and (per <see cref="AllowLan"/>) the LAN.
+    /// Defaults off so enabling it is an explicit choice.
+    /// </summary>
+    public bool KillSwitchEnabled { get; init; }
+
+    /// <summary>
+    /// When the kill-switch is armed, also permit private LAN ranges (RFC1918, link-local, multicast)
+    /// so host/Hyper-V SSH and local devices keep working. Defaults on.
+    /// </summary>
+    public bool AllowLan { get; init; } = true;
 }

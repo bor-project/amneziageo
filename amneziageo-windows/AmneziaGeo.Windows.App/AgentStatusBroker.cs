@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds status snapshots and pushes them to connected UI clients over the status pipe.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, AgentControl control, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, AgentControl control, SettingsStore settingsStore, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -145,6 +145,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
                 IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
                 IpcContract.OpSetConnection => SetConnection(command.Args),
+                IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -346,6 +347,30 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, connect ? "connecting" : "disconnecting");
     }
 
+    private async Task<IpcAck> SetSettingAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2)
+        {
+            return new IpcAck(false, "set-setting requires a key and a value");
+        }
+
+        var key = args[0];
+        if (!await settingsStore.SetAsync(key, args[1], ct))
+        {
+            return new IpcAck(false, $"invalid setting or value; keys: {string.Join(", ", SettingsStore.Keys())}");
+        }
+
+        // The kill-switch is armed at connect time, so a change while a tunnel is up applies on the next
+        // reconnect — flag it so the UI shows the same reconnect prompt as a routing change.
+        if (control.Running && (key is "killswitch" or "allow-lan"))
+        {
+            control.SetRestartRequired();
+        }
+
+        logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
+        return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
+    }
+
     private async Task<string> BuildJsonAsync(CancellationToken ct)
     {
         var snapshot = await BuildSnapshotAsync(ct);
@@ -404,7 +429,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             routingLists.Add(new RoutingListEntry(list.Id, list.Name, list.Rules.Count, list.Routes.Count, list.Domains.Count));
         }
 
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember);
+        var settings = await settingsStore.LoadAsync(ct);
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan);
     }
 
     /// <summary>

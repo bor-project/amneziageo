@@ -176,17 +176,17 @@
       <Setter Property="MinWidth" Value="104" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
-    <Style Selector="Button.connectpill /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
+    <!-- Keep the bound ConnectButtonBrush fill in every state (the text is white, so the fill must stay
+         opaque); resting comes from TemplateBinding Background, and these stop the theme's hover /
+         pressed / disabled overlay from blanking it. -->
     <Style Selector="Button.connectpill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Background" Value="{Binding ConnectButtonBrush}" />
     </Style>
     <Style Selector="Button.connectpill:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Background" Value="{Binding ConnectButtonBrush}" />
     </Style>
     <Style Selector="Button.connectpill:disabled /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Background" Value="{Binding ConnectButtonBrush}" />
     </Style>
     <Style Selector="Button.connectpill:disabled">
       <Setter Property="Opacity" Value="0.5" />
@@ -400,13 +400,8 @@
                         VerticalAlignment="Center" Margin="9,0,11,0">
               <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}"
                        VerticalAlignment="Center" />
-              <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding AgentStatusText}"
-                           FontSize="12.5" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding ActiveProfileName}"
-                           FontSize="10.5" Classes="muted"
-                           TextTrimming="CharacterEllipsis" MaxWidth="170" />
-              </StackPanel>
+              <TextBlock Text="{Binding AgentStatusText}"
+                         FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
 
             <!-- 1px vertical divider -->

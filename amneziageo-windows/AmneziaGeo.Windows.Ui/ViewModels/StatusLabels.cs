@@ -24,6 +24,7 @@ internal static class StatusLabels
             ConnectionStatus.Connecting => "Подключается",
             ConnectionStatus.Degraded => "Деградация",
             ConnectionStatus.Failover => "Переключение",
+            ConnectionStatus.Disconnecting => "Отключается",
             ConnectionStatus.Disconnected => "Отключено",
             ConnectionStatus.Preempted => "Вытеснено",
             ConnectionStatus.Failed => "Сбой",
@@ -39,7 +40,7 @@ internal static class StatusLabels
         return status switch
         {
             ConnectionStatus.Connected => _green,
-            ConnectionStatus.Connecting or ConnectionStatus.Failover or ConnectionStatus.Degraded => _amber,
+            ConnectionStatus.Connecting or ConnectionStatus.Failover or ConnectionStatus.Degraded or ConnectionStatus.Disconnecting => _amber,
             ConnectionStatus.Failed => _red,
             _ => _gray,
         };

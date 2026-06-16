@@ -118,4 +118,35 @@ public static class WgConfigEditor
 
         return string.Join('\n', kept);
     }
+
+    /// <summary>
+    /// Returns the config with its DNS set to the given servers (any existing DNS lines are dropped
+    /// and a single line is inserted into the [Interface] section). The engine then configures the
+    /// tunnel adapter's resolver natively from this line — no out-of-process DNS calls. A no-op when
+    /// no servers are given.
+    /// </summary>
+    public static string SetDns(string config, IReadOnlyList<string> servers)
+    {
+        if (servers.Count == 0)
+        {
+            return config;
+        }
+
+        var kept = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            if (line.Trim().StartsWith("DNS", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            kept.Add(line);
+            if (line.Trim().Equals("[Interface]", StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add($"DNS = {string.Join(", ", servers)}");
+            }
+        }
+
+        return string.Join('\n', kept);
+    }
 }

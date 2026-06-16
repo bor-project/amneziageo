@@ -29,12 +29,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ConnectButtonText))]
     [NotifyPropertyChangedFor(nameof(ConnectButtonBrush))]
-    private bool _isTunnelActive = true;
+    private bool _isTunnelActive;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(ActiveProfileName))]
     private string? _boundTarget;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AgentStatusText))]
+    [NotifyPropertyChangedFor(nameof(AgentStatusBrush))]
+    private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
     private string? _activeMember;
@@ -60,6 +65,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ThemeLabel))]
     private bool _isDark;
+
+    [ObservableProperty]
+    private bool _noticeVisible;
+
+    [ObservableProperty]
+    private string? _noticeText;
 
     /// <summary>
     /// ctor
@@ -95,23 +106,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Banner status text in the connection card.
     /// </summary>
-    public string AgentStatusText
-    {
-        get
-        {
-            if (!IsConnected)
-            {
-                return "Отключено";
-            }
-
-            return BoundTarget is null ? "Подключено к агенту" : "Подключено";
-        }
-    }
+    public string AgentStatusText => IsConnected ? StatusLabels.Text(BoundStatus) : "Нет связи с агентом";
 
     /// <summary>
     /// Connection-card status indicator color.
     /// </summary>
-    public IBrush AgentStatusBrush => StatusLabels.Brush(IsConnected ? ConnectionStatus.Connected : ConnectionStatus.Disconnected);
+    public IBrush AgentStatusBrush => StatusLabels.Brush(IsConnected ? BoundStatus : ConnectionStatus.Disconnected);
 
     /// <summary>
     /// Name shown under the status banner in the connection card.
@@ -212,6 +212,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         var connect = !IsTunnelActive;
         IsTunnelActive = connect;
+        BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
         _toggleInFlight = true;
         try
         {
@@ -238,6 +239,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Dispatcher.UIThread.Post(() =>
         {
             IsConnected = false;
+            BoundStatus = ConnectionStatus.Disconnected;
             Configs.Clear();
             Balancers.Clear();
             RoutingLists.Clear();
@@ -246,6 +248,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             HasRoutingLists = false;
             _configNames = [];
             ActiveMember = null;
+            NoticeVisible = false;
+            NoticeText = null;
         });
     }
 
@@ -257,6 +261,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void Apply(StatusSnapshot snapshot)
     {
         BoundTarget = snapshot.BoundTarget;
+        BoundStatus = snapshot.BoundStatus;
         if (!_toggleInFlight)
         {
             IsTunnelActive = snapshot.Active;
@@ -271,6 +276,22 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         var bound = snapshot.Balancers.FirstOrDefault(b => b.Name == snapshot.BoundTarget);
         ActiveMember = bound?.ActiveMember;
+
+        // Top-center notice: settings changed on a live tunnel (reconnect to apply), or a better
+        // member is available while on a backup (notify-only; the user reconnects to return). The
+        // banner stays while the condition holds and clears once it resolves (e.g. after reconnect).
+        string? notice = null;
+        if (snapshot.RestartRequired)
+        {
+            notice = "Настройки изменены. Переподключитесь, чтобы применить.";
+        }
+        else if (snapshot.BetterMember is not null)
+        {
+            notice = $"Доступно приоритетное подключение: {snapshot.BetterMember}. Переподключитесь, чтобы вернуться.";
+        }
+
+        NoticeText = notice;
+        NoticeVisible = notice is not null;
     }
 
     private void SyncConfigs(IReadOnlyList<ConfigEntry> entries)

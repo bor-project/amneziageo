@@ -6,14 +6,26 @@ using System.Runtime.InteropServices;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Manages the endpoint-exclusion host route that keeps tunnel underlay packets off the tunnel.
+/// Manages tunnel route-table entries and the tunnel adapter's IPv6 resolvers entirely through the
+/// IP Helper API (iphlpapi) — no process spawns. IPv4 routes (endpoint-exclusion host route and the
+/// per-domain /32 routes injected for geo split tunneling) go through CreateIpForwardEntry2 /
+/// DeleteIpForwardEntry2 / GetIpForwardTable2, the same modern API the reference daemon uses. These
+/// tunnels are IPv4-only (AAAA is denied at the proxy), so IPv6 routes are vestigial and are a no-op.
+/// Routes are persisted per tunnel so they can be reverted even after a crash, from another process.
 /// </summary>
 internal sealed partial class RouteManager
 {
+    private const ushort AfInet = 2;
+    private const uint NoError = 0;
+    private const uint ErrorObjectAlreadyExists = 5010;
+    private const uint MibIpProtoNetMgmt = 3; // NL_ROUTE_PROTOCOL RouteProtocolNetMgmt — tags our routes
+
     /// <summary>
-    /// Adds a host route for the endpoint via the current physical gateway.
+    /// Adds a host route for the endpoint via the current physical gateway, so the tunnel's underlay
+    /// packets to the server are not themselves routed into the tunnel. Persisted (keyed by tunnel
+    /// name) so it can be reverted even if this process exits without teardown.
     /// </summary>
-    public bool AddEndpointExclusion(IPAddress endpoint)
+    public bool AddEndpointExclusion(string name, IPAddress endpoint)
     {
         var (gateway, interfaceIndex) = FindPhysicalGateway(endpoint);
         if (gateway is null)
@@ -21,90 +33,74 @@ internal sealed partial class RouteManager
             return false;
         }
 
-        var result = Route(
-            "add",
-            endpoint.ToString(),
-            "mask",
-            "255.255.255.255",
-            gateway.ToString(),
-            "if",
-            interfaceIndex.ToString(),
-            "metric",
-            "1");
-        if (result == 0)
+        var row = NewRow(endpoint, 32, interfaceIndex, gateway);
+        var result = CreateIpForwardEntry2(ref row);
+        if (result is NoError or ErrorObjectAlreadyExists)
         {
-            // Persist so the route can be reverted even if this process exits without teardown.
             // The endpoint route sits on the physical adapter and does not vanish with the tunnel.
-            UpdateState(endpoint.ToString(), add: true);
+            UpdateState(name, endpoint.ToString(), add: true);
+            return true;
         }
 
-        return result == 0;
+        return false;
     }
 
     /// <summary>
     /// Removes the endpoint host route.
     /// </summary>
-    public void RemoveEndpointExclusion(IPAddress endpoint)
+    public void RemoveEndpointExclusion(string name, IPAddress endpoint)
     {
-        Route("delete", endpoint.ToString());
-        UpdateState(endpoint.ToString(), add: false);
+        DeleteManagedRoutes(endpoint, ifIndex: null);
+        UpdateState(name, endpoint.ToString(), add: false);
     }
 
     /// <summary>
-    /// Removes any endpoint-exclusion routes persisted by a previous run, even from another process;
-    /// no-op if none are recorded. Used to revert leftovers from a tunnel that was killed.
+    /// Removes any endpoint-exclusion routes persisted by a previous run (any tunnel), even from
+    /// another process; no-op if none are recorded. Used to revert leftovers from a killed tunnel.
     /// </summary>
     public void RestoreSavedExclusions()
     {
-        var saved = ReadState();
-        if (saved.Count == 0)
+        foreach (var file in TunnelPaths.RouteStateFiles())
         {
-            return;
-        }
+            foreach (var endpoint in ReadStateFile(file))
+            {
+                if (IPAddress.TryParse(endpoint, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    DeleteManagedRoutes(ip, ifIndex: null);
+                }
+            }
 
-        foreach (var endpoint in saved)
-        {
-            Route("delete", endpoint);
+            TryDelete(file);
         }
-
-        ClearState();
     }
 
     /// <summary>
-    /// Adds an on-link host route for an IP through the tunnel interface.
+    /// Adds an on-link host route for an IP through the tunnel interface. IPv6 is a no-op: these
+    /// tunnels are IPv4-only and never carry IPv6 traffic.
     /// </summary>
     public bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
-            return Netsh("interface", "ipv6", "add", "route", $"{ip}/128", $"interface={tunnelInterfaceIndex}") == 0;
+            return false;
         }
 
-        var result = Route(
-            "add",
-            ip.ToString(),
-            "mask",
-            "255.255.255.255",
-            "0.0.0.0",
-            "if",
-            tunnelInterfaceIndex.ToString(),
-            "metric",
-            "1");
-        return result == 0;
+        var row = NewRow(ip, 32, tunnelInterfaceIndex, nextHop: null); // on-link (no gateway)
+        var result = CreateIpForwardEntry2(ref row);
+        return result is NoError or ErrorObjectAlreadyExists;
     }
 
     /// <summary>
-    /// Removes a host route for an IP from the tunnel interface.
+    /// Removes a host route for an IP from the tunnel interface. IPv6 is a no-op.
     /// </summary>
     public void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
-            Netsh("interface", "ipv6", "delete", "route", $"{ip}/128", $"interface={tunnelInterfaceIndex}");
             return;
         }
 
-        Route("delete", ip.ToString());
+        DeleteManagedRoutes(ip, tunnelInterfaceIndex);
     }
 
     /// <summary>
@@ -130,15 +126,84 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
-    /// Disables IPv6 on the tunnel adapter. AmneziaWG tunnels here are IPv4-only, yet Windows still
-    /// hands a v4-only adapter the dead site-local fec0:0:0:ffff:: IPv6 DNS servers; because the tunnel
-    /// is the lowest-metric interface the system resolver tries those first and stalls roughly a second
-    /// per lookup. Turning the adapter's IPv6 binding off removes the bogus resolvers outright. The
-    /// adapter is recreated on every tunnel start, so this is reapplied per run and needs no restore.
+    /// Builds an IPv4 MIB_IPFORWARD_ROW2 for a host/prefix route, initialized to safe static-route
+    /// defaults. A null next hop yields an on-link route; otherwise the route is via that gateway.
     /// </summary>
-    public void DisableIpv6(string adapterName)
+    private static MIB_IPFORWARD_ROW2 NewRow(IPAddress destination, byte prefixLength, uint interfaceIndex, IPAddress? nextHop)
     {
-        Run("powershell.exe", ["-NoProfile", "-Command", $"Disable-NetAdapterBinding -Name '{adapterName}' -ComponentID ms_tcpip6"]);
+        var row = new MIB_IPFORWARD_ROW2();
+        InitializeIpForwardEntry(ref row);
+        row.InterfaceIndex = interfaceIndex;
+        row.DestinationPrefix.Prefix.si_family = AfInet;
+        row.DestinationPrefix.Prefix.sin_addr = ToRouteAddress(destination);
+        row.DestinationPrefix.PrefixLength = prefixLength;
+        row.NextHop.si_family = AfInet;
+        row.NextHop.sin_addr = nextHop is null ? 0 : ToRouteAddress(nextHop);
+        row.Protocol = MibIpProtoNetMgmt;
+        row.Metric = 1;
+        return row;
+    }
+
+    /// <summary>
+    /// Reinterprets an IPv4 address as the network-order DWORD the forwarding table stores; the
+    /// IPAddress bytes are already in network order, matching in_addr.S_addr.
+    /// </summary>
+    private static uint ToRouteAddress(IPAddress ip)
+    {
+        return BitConverter.ToUInt32(ip.GetAddressBytes(), 0);
+    }
+
+    /// <summary>
+    /// Deletes our own management routes to an IPv4 destination (optionally restricted to one
+    /// interface) by matching the live routing table, so the exact entry is removed regardless of how
+    /// the next hop changed.
+    /// </summary>
+    private static void DeleteManagedRoutes(IPAddress destination, uint? ifIndex)
+    {
+        var dest = ToRouteAddress(destination);
+        foreach (var row in ReadForwardTable())
+        {
+            if (row.DestinationPrefix.Prefix.si_family != AfInet
+                || row.DestinationPrefix.Prefix.sin_addr != dest
+                || row.Protocol != MibIpProtoNetMgmt)
+            {
+                continue;
+            }
+
+            if (ifIndex is not null && row.InterfaceIndex != ifIndex.Value)
+            {
+                continue;
+            }
+
+            var copy = row;
+            DeleteIpForwardEntry2(ref copy);
+        }
+    }
+
+    private static List<MIB_IPFORWARD_ROW2> ReadForwardTable()
+    {
+        var rows = new List<MIB_IPFORWARD_ROW2>();
+        if (GetIpForwardTable2(AfInet, out var table) != NoError || table == IntPtr.Zero)
+        {
+            return rows;
+        }
+
+        try
+        {
+            // MIB_IPFORWARD_TABLE2: ULONG NumEntries; then (8-aligned) the MIB_IPFORWARD_ROW2 array.
+            var count = Marshal.ReadInt32(table);
+            var stride = Marshal.SizeOf<MIB_IPFORWARD_ROW2>();
+            for (var i = 0; i < count; i++)
+            {
+                rows.Add(Marshal.PtrToStructure<MIB_IPFORWARD_ROW2>(table + 8 + (i * stride)));
+            }
+        }
+        finally
+        {
+            FreeMibTable(table);
+        }
+
+        return rows;
     }
 
     private static int? Ipv4Index(NetworkInterface nic)
@@ -155,7 +220,7 @@ internal sealed partial class RouteManager
 
     private static (IPAddress? Gateway, uint InterfaceIndex) FindPhysicalGateway(IPAddress endpoint)
     {
-        var destination = BitConverter.ToUInt32(endpoint.GetAddressBytes(), 0);
+        var destination = ToRouteAddress(endpoint);
         if (GetBestInterface(destination, out var interfaceIndex) != 0)
         {
             return (null, 0);
@@ -181,41 +246,10 @@ internal sealed partial class RouteManager
         return (null, 0);
     }
 
-    private static int Route(params string[] arguments)
+    private static void UpdateState(string name, string endpoint, bool add)
     {
-        return Run("route.exe", arguments);
-    }
-
-    private static int Netsh(params string[] arguments)
-    {
-        return Run("netsh", arguments);
-    }
-
-    private static int Run(string fileName, string[] arguments)
-    {
-        var startInfo = new System.Diagnostics.ProcessStartInfo(fileName)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        using (var process = System.Diagnostics.Process.Start(startInfo)!)
-        {
-            process.StandardOutput.ReadToEnd();
-            process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            return process.ExitCode;
-        }
-    }
-
-    private static void UpdateState(string endpoint, bool add)
-    {
-        var saved = ReadState();
+        var path = TunnelPaths.RouteStateFile(name);
+        var saved = ReadStateFile(path);
         if (add)
         {
             if (!saved.Contains(endpoint))
@@ -230,18 +264,16 @@ internal sealed partial class RouteManager
 
         if (saved.Count == 0)
         {
-            ClearState();
+            TryDelete(path);
             return;
         }
 
-        var path = TunnelPaths.RouteStateFile();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllLines(path, saved);
     }
 
-    private static List<string> ReadState()
+    private static List<string> ReadStateFile(string path)
     {
-        var path = TunnelPaths.RouteStateFile();
         if (!File.Exists(path))
         {
             return [];
@@ -260,15 +292,64 @@ internal sealed partial class RouteManager
         return saved;
     }
 
-    private static void ClearState()
+    private static void TryDelete(string path)
     {
-        var path = TunnelPaths.RouteStateFile();
         if (File.Exists(path))
         {
             File.Delete(path);
         }
     }
 
+    [StructLayout(LayoutKind.Sequential, Size = 28)]
+    private struct SOCKADDR_INET
+    {
+        public ushort si_family;
+        public ushort sin_port;
+        public uint sin_addr;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IP_ADDRESS_PREFIX
+    {
+        public SOCKADDR_INET Prefix;
+        public byte PrefixLength;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MIB_IPFORWARD_ROW2
+    {
+        public ulong InterfaceLuid;
+        public uint InterfaceIndex;
+        public IP_ADDRESS_PREFIX DestinationPrefix;
+        public SOCKADDR_INET NextHop;
+        public byte SitePrefixLength;
+        public uint ValidLifetime;
+        public uint PreferredLifetime;
+        public uint Metric;
+        public uint Protocol;
+        public byte Loopback;
+        public byte AutoconfigureAddress;
+        public byte Publish;
+        public byte Immortal;
+        public uint Age;
+        public uint Origin;
+    }
+
     [LibraryImport("iphlpapi.dll")]
     private static partial uint GetBestInterface(uint destAddr, out uint bestIfIndex);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial void InitializeIpForwardEntry(ref MIB_IPFORWARD_ROW2 row);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint CreateIpForwardEntry2(ref MIB_IPFORWARD_ROW2 row);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint DeleteIpForwardEntry2(ref MIB_IPFORWARD_ROW2 row);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint GetIpForwardTable2(ushort family, out IntPtr table);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial void FreeMibTable(IntPtr table);
 }

@@ -10,4 +10,7 @@ public sealed record StatusSnapshot(
     IReadOnlyList<ConfigEntry> Configs,
     IReadOnlyList<BalancerEntry> Balancers,
     IReadOnlyList<RoutingListEntry>? RoutingLists = null,
-    bool Active = true);
+    bool Active = true,
+    string BoundStatus = ConnectionStatus.Disconnected,
+    bool RestartRequired = false,
+    string? BetterMember = null);

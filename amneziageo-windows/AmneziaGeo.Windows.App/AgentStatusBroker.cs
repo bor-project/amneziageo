@@ -313,13 +313,19 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var useRouting = args[2].Equals("on", StringComparison.OrdinalIgnoreCase);
         var (currentList, currentUse) = await store.GetProfileRoutingAsync(profile, ct);
         await store.SetProfileRoutingAsync(profile, listId, useRouting, ct);
-        if (currentList != listId || currentUse != useRouting)
+        if ((currentList != listId || currentUse != useRouting)
+            && control.Running
+            && string.Equals(profile, BoundTarget, StringComparison.Ordinal))
         {
-            control.Invalidate();
+            // Routing changes alter AllowedIPs/DNS and only apply cleanly on a fresh tunnel. Applying
+            // them in place left a half-applied split/full state, so we do NOT re-apply live; we flag a
+            // restart and let the UI prompt the user. The new setting is persisted and takes effect on
+            // the next connect (when the balancer re-projects routing).
+            control.SetRestartRequired();
         }
 
         logger.LogInformation("assigned profile {Profile}: list={List} use={Use}", profile, listId, useRouting);
-        return new IpcAck(true, $"assigned {profile}: list={listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} use={(useRouting ? "on" : "off")}");
+        return new IpcAck(true, $"assigned {profile}: list={listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} use={(useRouting ? "on" : "off")} (applies on reconnect)");
     }
 
     private IpcAck SetConnection(IReadOnlyList<string> args)
@@ -349,20 +355,23 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private async Task<StatusSnapshot> BuildSnapshotAsync(CancellationToken ct)
     {
         var states = await store.ListBalancerStatesAsync(ct);
-        var activeMembers = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var state in states)
-        {
-            if (state.ActiveMember is not null)
-            {
-                activeMembers[state.ActiveMember] = state.Status;
-            }
-        }
+
+        // The agent manages exactly one target. Derive each config's live status from that bound
+        // group's state alone, so a transient connecting / disconnecting state shows on its member
+        // cards and stale rows from other groups don't leak in.
+        var boundState = BoundTarget is not null ? states.FirstOrDefault(s => s.Group == BoundTarget) : null;
+        IReadOnlyList<string> boundMembers = boundState is null
+            ? []
+            : (await store.GetBalancerAsync(boundState.Group, ct))?.Members ?? [boundState.Group];
+        var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
 
         var configs = new List<ConfigEntry>();
         foreach (var name in configRepo.List())
         {
             var geoSettings = await store.GetTunnelGeoAsync(name, ct);
-            var status = activeMembers.TryGetValue(name, out var groupStatus) ? MemberStatus(groupStatus) : ConnectionStatus.Idle;
+            var status = boundState is not null && boundMembers.Contains(name, StringComparer.Ordinal)
+                ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
+                : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
             configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules));
         }
@@ -395,15 +404,20 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             routingLists.Add(new RoutingListEntry(list.Id, list.Name, list.Rules.Count, list.Routes.Count, list.Domains.Count));
         }
 
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running);
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember);
     }
 
-    private static string MemberStatus(string groupStatus)
+    /// <summary>
+    /// Maps a balancer group's status to the connection status shown on a member config card.
+    /// Non-active members read Connecting while the group brings a member up, otherwise Idle.
+    /// </summary>
+    private static string MemberDisplayStatus(string groupStatus, bool isActive)
     {
         return groupStatus switch
         {
-            "connected" or "degraded" => ConnectionStatus.Connected,
+            "connected" or "degraded" => isActive ? ConnectionStatus.Connected : ConnectionStatus.Idle,
             "connecting" or "failover" => ConnectionStatus.Connecting,
+            "disconnecting" => isActive ? ConnectionStatus.Disconnecting : ConnectionStatus.Idle,
             _ => ConnectionStatus.Idle,
         };
     }

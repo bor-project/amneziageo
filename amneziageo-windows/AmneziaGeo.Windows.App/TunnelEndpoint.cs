@@ -24,7 +24,19 @@ internal static class TunnelEndpoint
             var value = trimmed[(trimmed.IndexOf('=') + 1)..].Trim();
             var colon = value.LastIndexOf(':');
             var host = colon >= 0 ? value[..colon].Trim() : value;
-            foreach (var address in Dns.GetHostAddresses(host))
+            IPAddress[] addresses;
+            try
+            {
+                addresses = Dns.GetHostAddresses(host);
+            }
+            catch (SocketException)
+            {
+                // Endpoint resolution is best-effort: the exclusion route is skipped and the engine
+                // resolves the endpoint itself. A throw here would crash the whole tunnel service.
+                return null;
+            }
+
+            foreach (var address in addresses)
             {
                 if (address.AddressFamily == AddressFamily.InterNetwork)
                 {

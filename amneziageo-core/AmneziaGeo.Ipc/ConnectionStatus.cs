@@ -31,6 +31,11 @@ public static class ConnectionStatus
     public const string Failover = "failover";
 
     /// <summary>
+    /// Tearing the connection down.
+    /// </summary>
+    public const string Disconnecting = "disconnecting";
+
+    /// <summary>
     /// Disconnected.
     /// </summary>
     public const string Disconnected = "disconnected";

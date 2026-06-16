@@ -144,6 +144,7 @@ internal sealed class BalancerRunner(
         await ProjectRoutingAsync(group.Name, members, ct);
         StopAll(members);
         _failbackStreak = new int[members.Count];
+        control.SetBetterMember(null);
 
         await SetStateAsync("connecting", members, -1);
         var current = await ConnectBestAsync(members, -1, ct);
@@ -160,6 +161,7 @@ internal sealed class BalancerRunner(
                     await DelayAsync(_livenessPoll, ct);
                     current = await ConnectBestAsync(members, -1, ct);
                     Array.Clear(_failbackStreak);
+                    control.SetBetterMember(null);
                     await SetStateAsync(StatusFor(current), members, current);
                     lastRecheck = DateTimeOffset.UtcNow;
                     continue;
@@ -178,6 +180,7 @@ internal sealed class BalancerRunner(
                     Stop(members[current]);
                     current = await ConnectBestAsync(members, current, ct);
                     Array.Clear(_failbackStreak);
+                    control.SetBetterMember(null);
                     await SetStateAsync(StatusFor(current), members, current);
                     lastRecheck = DateTimeOffset.UtcNow;
                     continue;
@@ -190,17 +193,17 @@ internal sealed class BalancerRunner(
                     if (challenger < 0)
                     {
                         Array.Clear(_failbackStreak);
+                        control.SetBetterMember(null);
                         continue;
                     }
 
                     BumpStreak(challenger);
                     if (_failbackStreak[challenger] >= _settings.FailbackProbes)
                     {
-                        logger.LogInformation("switching to {Member} (better by {Mode})", members[challenger], group.Mode);
-                        Stop(members[current]);
-                        current = await ConnectBestAsync(members, -1, ct);
-                        Array.Clear(_failbackStreak);
-                        await SetStateAsync(StatusFor(current), members, current);
+                        // Notify only — do NOT switch. Silently dropping a working backup to return to a
+                        // higher-priority / lower-latency member is disruptive; the UI tells the user a
+                        // better connection is available and they reconnect to take it.
+                        control.SetBetterMember(members[challenger]);
                     }
                 }
             }
@@ -209,6 +212,13 @@ internal sealed class BalancerRunner(
         {
             if (current >= 0)
             {
+                // Surface a transient "disconnecting" only on a genuine user disconnect (running off),
+                // not on a config-change re-run, where the session immediately reconnects.
+                if (!control.Running)
+                {
+                    await SetStateAsync("disconnecting", members, current);
+                }
+
                 Stop(members[current]);
             }
 

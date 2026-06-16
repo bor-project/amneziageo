@@ -10,14 +10,13 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Hosts the agent's status pipe: accepts UI clients and periodically pushes status snapshots.
 /// </summary>
-internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentTarget target, ILogger<StatusPipeServer> logger) : BackgroundService
+internal sealed class StatusPipeServer(AgentStatusBroker broker, ILogger<StatusPipeServer> logger) : BackgroundService
 {
     private static readonly TimeSpan _pushInterval = TimeSpan.FromSeconds(2);
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        broker.BoundTarget = target.Name;
         var pushLoop = PushLoopAsync(stoppingToken);
         try
         {

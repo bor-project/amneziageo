@@ -11,6 +11,8 @@ internal sealed class AgentControl
     private volatile bool _running;
     private volatile bool _restartRequired;
     private volatile string? _betterMember;
+    private volatile string? _target;
+    private volatile string? _runningTarget;
     private CancellationTokenSource _change = new();
 
     /// <summary>
@@ -36,6 +38,19 @@ internal sealed class AgentControl
     public string? BetterMember => _betterMember;
 
     /// <summary>
+    /// The profile the user has selected (the radio). The next connect binds to it; selecting it does
+    /// NOT switch a live tunnel.
+    /// </summary>
+    public string? Target => _target;
+
+    /// <summary>
+    /// The profile the running tunnel is actually bound to — latched from <see cref="Target"/> on each
+    /// connect. Differs from <see cref="Target"/> when the user has selected another profile but not yet
+    /// reconnected: the connection status reflects this one, the radio reflects <see cref="Target"/>.
+    /// </summary>
+    public string? RunningTarget => _runningTarget;
+
+    /// <summary>
     /// A token that fires once when the desired state or persisted configuration changes.
     /// Capture it before reading <see cref="Running"/>, then link it into the session's
     /// cancellation so in-flight waits abort promptly and the supervisor re-evaluates.
@@ -59,9 +74,31 @@ internal sealed class AgentControl
     public void SetRunning(bool value)
     {
         _running = value;
+        // Latch the selected target as the running target on connect: the runner brings up the
+        // currently-selected profile and then stays on it (live edits re-apply; a later selection does
+        // not switch the tunnel until the next connect).
+        if (value)
+        {
+            _runningTarget = _target;
+        }
+
         _restartRequired = false;
         _betterMember = null;
         Signal();
+    }
+
+    /// <summary>
+    /// Selects the active target profile and signals the runner to switch to it. Does not change the
+    /// running / stopped state: switching while connected reconnects to the new target; while stopped it
+    /// just becomes the target the next connect uses.
+    /// </summary>
+    public void SetTarget(string name)
+    {
+        // No auto-switch: selecting a profile only records the desired target. A connected tunnel keeps
+        // running its latched target until the user reconnects (the UI shows a "reconnect to apply"
+        // notice); a stopped agent uses this target on the next connect. So we deliberately do NOT
+        // signal the runner here.
+        _target = name;
     }
 
     /// <summary>

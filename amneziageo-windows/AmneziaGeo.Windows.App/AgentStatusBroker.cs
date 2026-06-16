@@ -17,9 +17,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private string? _lastJson;
 
     /// <summary>
-    /// The balancer or single-config name the agent is bound to.
+    /// The profile whose live status the connection card reflects: the running target while connected,
+    /// otherwise the selected target. The radio uses the selected target (snapshot SelectedTarget).
     /// </summary>
-    public string? BoundTarget { get; set; }
+    public string? BoundTarget => control.Running ? (control.RunningTarget ?? control.Target) : control.Target;
 
     /// <summary>
     /// Handles a connected client: sends the current snapshot, then reads until the client disconnects.
@@ -146,6 +147,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
                 IpcContract.OpSetConnection => SetConnection(command.Args),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
+                IpcContract.OpSelectProfile => await SelectProfileAsync(command.Args, ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -347,6 +349,33 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, connect ? "connecting" : "disconnecting");
     }
 
+    private async Task<IpcAck> SelectProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "set-profile requires a profile name");
+        }
+
+        var name = args[0];
+        if (await store.GetBalancerAsync(name, ct) is null && !configRepo.Exists(name))
+        {
+            return new IpcAck(false, $"unknown profile: {name}");
+        }
+
+        if (string.Equals(name, control.Target, StringComparison.Ordinal))
+        {
+            return new IpcAck(true, $"already active: {name}");
+        }
+
+        control.SetTarget(name);
+        logger.LogInformation("selected profile {Profile}", name);
+
+        // No auto-switch: a connected tunnel keeps running its current target; the UI shows a
+        // "reconnect to apply" notice (selected != running). The selection takes effect on the next
+        // connect. The snapshot rebroadcast carries the new SelectedTarget so the radio updates.
+        return new IpcAck(true, control.Running ? $"selected {name} (reconnect to apply)" : $"selected {name}");
+    }
+
     private async Task<IpcAck> SetSettingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 2)
@@ -430,7 +459,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var settings = await settingsStore.LoadAsync(ct);
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan);
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target);
     }
 
     /// <summary>

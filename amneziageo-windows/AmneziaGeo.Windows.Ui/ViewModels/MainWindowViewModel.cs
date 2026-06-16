@@ -16,8 +16,10 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 internal sealed partial class MainWindowViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
+    private readonly DispatcherTimer _noticeTimer;
     private IReadOnlyList<string> _configNames = [];
     private bool _toggleInFlight;
+    private string? _lastNotice;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -91,6 +93,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
         _connection.SnapshotReceived += OnSnapshot;
+        _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _noticeTimer.Tick += (_, _) =>
+        {
+            _noticeTimer.Stop();
+            NoticeVisible = false;
+        };
     }
 
     /// <summary>
@@ -258,6 +266,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             HasRoutingLists = false;
             _configNames = [];
             ActiveMember = null;
+            _noticeTimer.Stop();
+            _lastNotice = null;
             NoticeVisible = false;
             NoticeText = null;
         });
@@ -287,11 +297,22 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var bound = snapshot.Balancers.FirstOrDefault(b => b.Name == snapshot.BoundTarget);
         ActiveMember = bound?.ActiveMember;
 
-        // Top-center notice: settings changed on a live tunnel (reconnect to apply), or a better
-        // member is available while on a backup (notify-only; the user reconnects to return). The
-        // banner stays while the condition holds and clears once it resolves (e.g. after reconnect).
+        foreach (var item in Balancers)
+        {
+            item.IsActive = string.Equals(item.Name, snapshot.SelectedTarget ?? snapshot.BoundTarget, StringComparison.Ordinal);
+        }
+
+        // Top-center notice (auto-hides after 5s, dismissable): a different profile is selected while a
+        // tunnel is up (reconnect to apply — no auto-switch), settings changed on a live tunnel, or a
+        // better member is available on a backup. Shown once per distinct notice, not re-armed while
+        // the same one holds.
         string? notice = null;
-        if (snapshot.RestartRequired)
+        if (snapshot.Active && snapshot.SelectedTarget is not null
+            && !string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal))
+        {
+            notice = $"Выбран профиль «{snapshot.SelectedTarget}». Переподключитесь, чтобы применить.";
+        }
+        else if (snapshot.RestartRequired)
         {
             notice = "Настройки изменены. Переподключитесь, чтобы применить.";
         }
@@ -300,13 +321,45 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             notice = $"Доступно приоритетное подключение: {snapshot.BetterMember}. Переподключитесь, чтобы вернуться.";
         }
 
-        NoticeText = notice;
-        NoticeVisible = notice is not null;
+        ShowNotice(notice);
 
         _suppressSettingPush = true;
         KillSwitchEnabled = snapshot.KillSwitchEnabled;
         AllowLan = snapshot.AllowLan;
         _suppressSettingPush = false;
+    }
+
+    /// <summary>
+    /// Shows a transient notice banner that auto-hides after 5 seconds. Re-arms only when the notice
+    /// text changes, so a persistent condition is not re-shown on every snapshot (and a dismissed
+    /// banner stays dismissed until a different notice arrives).
+    /// </summary>
+    private void ShowNotice(string? notice)
+    {
+        if (string.Equals(notice, _lastNotice, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastNotice = notice;
+        NoticeText = notice;
+        _noticeTimer.Stop();
+        if (notice is not null)
+        {
+            NoticeVisible = true;
+            _noticeTimer.Start();
+        }
+        else
+        {
+            NoticeVisible = false;
+        }
+    }
+
+    [RelayCommand]
+    private void DismissNotice()
+    {
+        _noticeTimer.Stop();
+        NoticeVisible = false;
     }
 
     partial void OnKillSwitchEnabledChanged(bool value)
@@ -385,7 +438,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync);
                 existing.ApplyFromEntry(entry, options, _configNames);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
@@ -427,5 +480,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             useRouting ? "on" : "off",
         };
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, args));
+    }
+
+    private async Task SelectProfileAsync(string profile)
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [profile]));
     }
 }

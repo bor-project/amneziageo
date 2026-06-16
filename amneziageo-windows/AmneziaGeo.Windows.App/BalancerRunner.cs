@@ -83,18 +83,22 @@ internal sealed class BalancerRunner(
     /// </summary>
     private async Task<BalancerGroup?> ResolveAsync(BalancerGroup initial, CancellationToken ct)
     {
-        var balancer = await store.GetBalancerAsync(initial.Name, ct);
+        // While running, stay on the latched running target so live edits re-apply but a newly-selected
+        // profile does NOT switch the tunnel (the user reconnects to apply). While stopped, track the
+        // selected target so the idle view reflects the user's choice. Fall back to the launch target.
+        var name = (control.Running ? control.RunningTarget : control.Target) ?? control.Target ?? initial.Name;
+        var balancer = await store.GetBalancerAsync(name, ct);
         if (balancer is not null)
         {
             return balancer;
         }
 
-        if (configRepo.Exists(initial.Name))
+        if (configRepo.Exists(name))
         {
-            return initial;
+            return new BalancerGroup(name, 60, [name]);
         }
 
-        logger.LogError("balancer {Group} no longer resolvable", initial.Name);
+        logger.LogError("balancer {Group} no longer resolvable", name);
         return null;
     }
 

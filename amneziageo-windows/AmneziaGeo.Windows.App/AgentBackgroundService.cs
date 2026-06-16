@@ -12,6 +12,7 @@ internal sealed class AgentBackgroundService(
     IStateStore store,
     ConfigRepository configRepo,
     BalancerRunner runner,
+    AgentControl control,
     NetworkReconciler reconciler,
     IHostApplicationLifetime lifetime,
     ILogger<AgentBackgroundService> logger) : BackgroundService
@@ -31,6 +32,7 @@ internal sealed class AgentBackgroundService(
         }
 
         logger.LogInformation("agent starting: group {Group} ({Count} member(s))", group.Name, group.Members.Count);
+        control.SetTarget(group.Name);
         await runner.RunAsync(group, stoppingToken);
         logger.LogInformation("agent stopped");
     }

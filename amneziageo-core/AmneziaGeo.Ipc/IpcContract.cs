@@ -82,4 +82,10 @@ public static class IpcContract
     /// Command to set a named agent setting. Args: key, value. Used for the kill-switch and LAN toggles.
     /// </summary>
     public const string OpSetSetting = "set-setting";
+
+    /// <summary>
+    /// Command to choose the active profile (balancer or single config) the agent binds to. Args: name.
+    /// If connected, the agent switches to it; otherwise it becomes the target the next connect uses.
+    /// </summary>
+    public const string OpSelectProfile = "set-profile";
 }

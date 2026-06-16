@@ -153,6 +153,7 @@
     </Style>
   </Window.Styles>
 
+  <Grid>
   <DockPanel LastChildFill="True">
 
     <!-- HEADER -->
@@ -597,4 +598,21 @@
     </Grid>
 
   </DockPanel>
+
+    <!-- TOP-CENTER NOTICE BANNER (settings changed / better connection available) -->
+    <Border IsVisible="{Binding NoticeVisible}"
+            VerticalAlignment="Top" HorizontalAlignment="Center"
+            Margin="0,58,0,0" MaxWidth="560"
+            Background="{DynamicResource AgAccentBrush}"
+            CornerRadius="10" Padding="16,10"
+            BoxShadow="0 6 20 0 #33000000">
+      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <Ellipse Width="9" Height="9" Fill="White" VerticalAlignment="Center" />
+        <TextBlock Text="{Binding NoticeText}" Foreground="White"
+                   FontSize="12.5" FontWeight="SemiBold"
+                   TextWrapping="Wrap" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+
+  </Grid>
 </Window>

@@ -53,7 +53,7 @@ internal static class AppHost
         services.AddSingleton<RouteManager>();
         services.AddSingleton<UapiClient>();
         services.AddSingleton<EndpointProbe>();
-        services.AddSingleton<DnsRedirector>();
+        services.AddSingleton<DnsConfigurator>();
         services.AddSingleton<NetworkReconciler>();
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ConfigRepository>();

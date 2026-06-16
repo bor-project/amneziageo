@@ -54,20 +54,36 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Path to the persisted DNS-redirect state used to revert system DNS after a stop.
+    /// Path to a tunnel's persisted DNS-redirect state used to revert NIC DNS after a stop.
     /// </summary>
-    public static string DnsStateFile()
+    public static string DnsStateFile(string name)
     {
-        return Path.Combine(RootDirectory(), "dns-state.txt");
+        return Path.Combine(RootDirectory(), $"dns-state-{Sanitize(name)}.txt");
     }
 
     /// <summary>
-    /// Path to the persisted endpoint-exclusion routes used to revert them after a stop, even from
-    /// another process when the tunnel exited without running its teardown.
+    /// All persisted DNS-redirect state files (any tunnel), so a reconciler can revert leftovers.
     /// </summary>
-    public static string RouteStateFile()
+    public static IEnumerable<string> DnsStateFiles()
     {
-        return Path.Combine(RootDirectory(), "route-state.txt");
+        return EnumerateState("dns-state*.txt");
+    }
+
+    /// <summary>
+    /// Path to a tunnel's persisted endpoint-exclusion routes used to revert them after a stop, even
+    /// from another process when the tunnel exited without running its teardown.
+    /// </summary>
+    public static string RouteStateFile(string name)
+    {
+        return Path.Combine(RootDirectory(), $"route-state-{Sanitize(name)}.txt");
+    }
+
+    /// <summary>
+    /// All persisted endpoint-exclusion state files (any tunnel), including a pre-rename global one.
+    /// </summary>
+    public static IEnumerable<string> RouteStateFiles()
+    {
+        return EnumerateState("route-state*.txt");
     }
 
     /// <summary>
@@ -84,6 +100,17 @@ internal static class TunnelPaths
     public static string AgentLogFile()
     {
         return Path.Combine(LogDirectory(), "agent.log");
+    }
+
+    private static IEnumerable<string> EnumerateState(string pattern)
+    {
+        var dir = RootDirectory();
+        return Directory.Exists(dir) ? Directory.EnumerateFiles(dir, pattern) : [];
+    }
+
+    private static string Sanitize(string name)
+    {
+        return string.Concat(name.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_'));
     }
 
     private static string RootDirectory()

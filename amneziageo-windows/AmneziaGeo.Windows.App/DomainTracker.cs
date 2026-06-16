@@ -66,7 +66,25 @@ internal sealed class DomainTracker(
 
             _current[key] = fresh;
             uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
-            store.SaveDomainResolutionAsync(tunnelName, new DomainResolution(key, [.. fresh])).GetAwaiter().GetResult();
+
+            // Persistence is only a warm-start cache; it must not block the caller, which on the live
+            // DNS path now runs before the answer is sent (route-before-answer). A synchronous SQLite
+            // write here would add disk latency to every freshly resolved domain and serialize route
+            // installs under the lock. Fire-and-forget; a refresh self-heals any out-of-order write.
+            var snapshot = new DomainResolution(key, [.. fresh]);
+            _ = Task.Run(() => PersistAsync(snapshot));
+        }
+    }
+
+    private async Task PersistAsync(DomainResolution resolution)
+    {
+        try
+        {
+            await store.SaveDomainResolutionAsync(tunnelName, resolution);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "persist of {Domain} resolution failed", resolution.Domain);
         }
     }
 

@@ -11,6 +11,8 @@
   <Window.Resources>
     <!-- "sync" glyph (two circular arrows): the per-source refresh / update icon. -->
     <StreamGeometry x:Key="AgRefreshGeometry">M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z</StreamGeometry>
+    <!-- stacked-disks "database" glyph: the geo-data bases nav button. -->
+    <StreamGeometry x:Key="AgDbGeometry">M12 3C7.58 3 4 4.48 4 6.5S7.58 10 12 10s8-1.48 8-3.5S16.42 3 12 3zM4 8.5v3C4 13.52 7.58 15 12 15s8-1.48 8-3.5v-3c0 2.02-3.58 3.5-8 3.5s-8-1.48-8-3.5zm0 5v3C4 18.52 7.58 20 12 20s8-1.48 8-3.5v-3c0 2.02-3.58 3.5-8 3.5s-8-1.48-8-3.5z</StreamGeometry>
   </Window.Resources>
 
   <Window.Styles>
@@ -359,7 +361,9 @@
 
     <!-- PathIcon.spin : continuous rotation while a source download / re-materialize is in flight -->
     <Style Selector="PathIcon.spin">
-      <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+      <!-- 50%,50% = RelativePoint center. A plain "0.5,0.5" parses as ABSOLUTE 0.5px (≈ top-left),
+           which makes the icon orbit a corner instead of spinning about its own centre. -->
+      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
       <Setter Property="RenderTransform" Value="rotate(0)" />
     </Style>
     <Style Selector="PathIcon.spin">
@@ -672,8 +676,19 @@
         <!-- Routing lists (Routing tab) -->
         <Border Classes="card" Margin="16,16,16,16" Padding="0" IsVisible="{Binding IsRouting}">
           <DockPanel LastChildFill="True">
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
-              <TextBlock Grid.Column="0" Classes="section" Text="СПИСКИ" VerticalAlignment="Center" />
+            <!-- bases nav: opens the geo-data bases panel on the right (active when no rule is open) -->
+            <Button DockPanel.Dock="Top" Classes="rowselect" Classes.active="{Binding !HasRoutingEditor}"
+                    Margin="12,12,12,0" Command="{Binding CloseRoutingEditorCommand}">
+              <Grid ColumnDefinitions="Auto,*" Margin="12,9">
+                <PathIcon Grid.Column="0" Data="{DynamicResource AgDbGeometry}" Width="16" Height="16" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Базы гео-данных" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+
+            <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="12,12,12,2" />
+
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,8,15,10">
+              <TextBlock Grid.Column="0" Classes="section" Text="ПРАВИЛА" VerticalAlignment="Center" />
               <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                       Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                 <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
@@ -681,7 +696,7 @@
               <Button Grid.Column="3" Classes="softbtn" Command="{Binding NewRoutingListCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="+" />
-                  <TextBlock Text="Список" />
+                  <TextBlock Text="Правило" />
                 </StackPanel>
               </Button>
             </Grid>
@@ -714,7 +729,7 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
                 <TextBlock IsVisible="{Binding !HasRoutingLists}"
-                           Text="Нет списков. Нажмите «+ Список»."
+                           Text="Нет правил. Нажмите «+ Правило»."
                            Classes="muted" FontSize="12" Margin="6,12" TextWrapping="Wrap" />
               </StackPanel>
             </ScrollViewer>
@@ -754,15 +769,17 @@
             <DockPanel IsVisible="{Binding !HasRoutingEditor}" LastChildFill="True" Margin="24,22">
 
               <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
-                <TextBlock Grid.Column="0" Text="Источники гео-данных" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Grid.ColumnSpan="2" Text="Базы гео-данных" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 <Button Grid.Column="1" Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="Обновить все" />
               </Grid>
 
               <StackPanel DockPanel.Dock="Top" Spacing="6">
-                <TextBlock Classes="label" Text="ДОБАВИТЬ ИСТОЧНИК" />
+                <TextBlock Classes="label" Text="ДОБАВИТЬ БАЗУ" />
                 <Grid ColumnDefinitions="Auto,*,Auto">
                   <ComboBox Grid.Column="0" Classes="field" Width="118" Margin="0,0,8,0"
-                            ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}" />
+                            ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
+                            IsEnabled="{Binding !SourceKindLocked}"
+                            ToolTip.Tip="Тип определён по имени файла в URL" />
                   <TextBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
                            Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
                   <Button Grid.Column="2" Classes="accent" Command="{Binding AddSourceCommand}">
@@ -773,7 +790,7 @@
                   </Button>
                 </Grid>
                 <TextBlock Classes="muted" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"
-                           Text="geosite — категории доменов, geoip — страны. Файл скачивается сразу. Значок ⟳ обновляет источник, «Обновить все» — все сразу; нажмите на источник, чтобы удалить." />
+                           Text="geosite — категории доменов, geoip — страны. Файл скачивается сразу. Значок ⟳ обновляет базу, «Обновить все» — все сразу; нажмите на базу, чтобы удалить." />
                 <TextBlock Classes="label" Text="ИСТОЧНИКИ" Margin="0,10,0,0" />
               </StackPanel>
 
@@ -800,7 +817,7 @@
                               <!-- refresh: spins + shows download % while an update is in flight -->
                               <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center" Margin="8,0,0,0"
                                       Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
-                                      ToolTip.Tip="Обновить источник">
+                                      ToolTip.Tip="Обновить базу">
                                 <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                                   <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
                                              FontSize="11.5" VerticalAlignment="Center" />
@@ -814,7 +831,7 @@
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock IsVisible="{Binding !HasSources}"
-                               Text="Пока нет источников. Добавьте geosite/geoip выше."
+                               Text="Пока нет баз. Добавьте geosite/geoip выше."
                                Classes="muted" FontSize="12" Margin="2,8" TextWrapping="Wrap" />
                   </StackPanel>
                 </ScrollViewer>
@@ -823,17 +840,15 @@
 
             <DockPanel IsVisible="{Binding HasRoutingEditor}" LastChildFill="True" Margin="24,22">
 
-              <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,16">
-                <Button Grid.Column="0" Classes="softbtn" Margin="0,0,12,0"
-                        Command="{Binding CloseRoutingEditorCommand}" Content="← Источники" />
-                <TextBlock Grid.Column="1" Text="Список маршрутизации" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <Button Grid.Column="2" Classes="softbtn" IsVisible="{Binding !RoutingEditor.IsNew}"
-                        Command="{Binding DeleteRoutingListEditCommand}" Content="Удалить список" />
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                <TextBlock Grid.Column="0" Grid.ColumnSpan="2" Text="Правила маршрутизации" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="softbtn" IsVisible="{Binding !RoutingEditor.IsNew}"
+                        Command="{Binding DeleteRoutingListEditCommand}" Content="Удалить правило" />
               </Grid>
 
               <StackPanel DockPanel.Dock="Top" Spacing="14">
                 <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="ИМЯ СПИСКА" />
+                  <TextBlock Classes="label" Text="ИМЯ ПРАВИЛА" />
                   <TextBox Classes="field" Text="{Binding RoutingEditor.Name, Mode=TwoWay}" Watermark="напр. openai-route" />
                 </StackPanel>
 
@@ -854,12 +869,8 @@
                   </Grid>
                 </StackPanel>
 
-                <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Grid.Column="0" Text="{Binding RoutingEditor.StatusMessage}" Classes="muted"
-                             FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
-                  <Button Grid.Column="1" Classes="accent" Command="{Binding SaveRoutingListEditCommand}"
-                          IsEnabled="{Binding !RoutingEditor.IsBusy}" Content="Сохранить" />
-                </Grid>
+                <TextBlock Text="{Binding RoutingEditor.StatusMessage}" Classes="muted"
+                           FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
 
                 <TextBlock Classes="label" Text="ЗАПИСИ" />
               </StackPanel>

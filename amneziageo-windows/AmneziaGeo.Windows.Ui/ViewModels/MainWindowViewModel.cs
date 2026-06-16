@@ -91,6 +91,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _newSourceUrl = string.Empty;
 
+    // True when the kind was inferred from the URL's file name (geosite*/geoip*), so the kind combo is
+    // locked to the detected value.
+    [ObservableProperty]
+    private bool _sourceKindLocked;
+
     [ObservableProperty]
     private bool _hasSources;
 
@@ -569,7 +574,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void SelectRoutingList(RoutingListSummaryViewModel list)
     {
         _selectedRoutingListId = list.Id;
-        var editor = new RoutingListEditorViewModel(_connection, list.Id, list.Name);
+        var editor = new RoutingListEditorViewModel(_connection, list.Id, list.Name, OnRoutingEditorSaved);
         RoutingEditor = editor;
         UpdateRoutingSelection();
         _ = editor.LoadAsync();
@@ -579,25 +584,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void NewRoutingList()
     {
         _selectedRoutingListId = -1;
-        var editor = new RoutingListEditorViewModel(_connection);
+        var editor = new RoutingListEditorViewModel(_connection, OnRoutingEditorSaved);
         RoutingEditor = editor;
         UpdateRoutingSelection();
         _ = editor.LoadAsync();
     }
 
-    [RelayCommand]
-    private async Task SaveRoutingListEdit()
+    // The editor auto-saves on change; track the (possibly newly-created) list id so the left-rail
+    // selection stays on the row being edited.
+    private void OnRoutingEditorSaved(long id)
     {
-        if (RoutingEditor is null)
-        {
-            return;
-        }
+        _selectedRoutingListId = id;
+        UpdateRoutingSelection();
+    }
 
-        if (await RoutingEditor.SaveAsync())
-        {
-            _selectedRoutingListId = RoutingEditor.Id;
-            UpdateRoutingSelection();
-        }
+    // Stop a queued auto-save on the editor being replaced/closed so it can't fire after the fact.
+    partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
+    {
+        oldValue?.CancelPendingSave();
     }
 
     [RelayCommand]
@@ -630,6 +634,43 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RoutingEditor = null;
         _selectedRoutingListId = -1;
         UpdateRoutingSelection();
+    }
+
+    // Infer the source kind from the URL's file name: a name containing "geosite" or "geoip" (any
+    // extension) fixes the kind and locks the combo; otherwise the user picks it.
+    partial void OnNewSourceUrlChanged(string value)
+    {
+        var detected = DetectSourceKind(value);
+        if (detected is null)
+        {
+            SourceKindLocked = false;
+            return;
+        }
+
+        SourceKindLocked = true;
+        if (!string.Equals(NewSourceKind, detected, StringComparison.Ordinal))
+        {
+            NewSourceKind = detected;
+        }
+    }
+
+    private static string? DetectSourceKind(string url)
+    {
+        var text = url.Trim().ToLowerInvariant();
+        var cut = text.IndexOfAny(['?', '#']);
+        if (cut >= 0)
+        {
+            text = text[..cut];
+        }
+
+        var slash = text.LastIndexOf('/');
+        var name = slash >= 0 ? text[(slash + 1)..] : text;
+        if (name.Contains("geosite", StringComparison.Ordinal))
+        {
+            return "geosite";
+        }
+
+        return name.Contains("geoip", StringComparison.Ordinal) ? "geoip" : null;
     }
 
     [RelayCommand]

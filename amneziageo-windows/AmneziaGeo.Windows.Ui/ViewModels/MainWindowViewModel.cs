@@ -20,6 +20,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private IReadOnlyList<string> _configNames = [];
     private bool _toggleInFlight;
     private string? _lastNotice;
+    private long _selectedRoutingListId = -1;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -75,10 +76,23 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string? _noticeText;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRoutingEditor))]
+    private RoutingListEditorViewModel? _routingEditor;
+
+    [ObservableProperty]
     private bool _killSwitchEnabled;
 
     [ObservableProperty]
     private bool _allowLan = true;
+
+    [ObservableProperty]
+    private string _newSourceKind = "geosite";
+
+    [ObservableProperty]
+    private string _newSourceUrl = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasSources;
 
     // Set while applying a snapshot so echoing the agent's current settings into the toggles does not
     // bounce straight back as a set-setting command.
@@ -120,6 +134,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Routing-list catalogue.
     /// </summary>
     public ObservableCollection<RoutingListSummaryViewModel> RoutingLists { get; } = [];
+
+    /// <summary>
+    /// Geo data sources shown on the routing page.
+    /// </summary>
+    public ObservableCollection<SourceItemViewModel> Sources { get; } = [];
+
+    /// <summary>
+    /// The source kinds offered in the add-source form.
+    /// </summary>
+    public IReadOnlyList<string> SourceKinds { get; } = ["geosite", "geoip"];
 
     /// <summary>
     /// Banner status text in the connection card.
@@ -175,6 +199,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Whether the Settings tab is shown.
     /// </summary>
     public bool IsSettings => Nav == "settings";
+
+    /// <summary>
+    /// Whether a routing list is open in the inline editor (drives the routing page master/detail).
+    /// </summary>
+    public bool HasRoutingEditor => RoutingEditor is not null;
 
     /// <summary>
     /// Current theme label shown on the toggle button.
@@ -261,9 +290,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Configs.Clear();
             Balancers.Clear();
             RoutingLists.Clear();
+            Sources.Clear();
             HasConfigs = false;
             HasBalancers = false;
             HasRoutingLists = false;
+            HasSources = false;
+            RoutingEditor = null;
+            _selectedRoutingListId = -1;
             _configNames = [];
             ActiveMember = null;
             _noticeTimer.Stop();
@@ -289,10 +322,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         SyncConfigs(snapshot.Configs);
         SyncRoutingLists(snapshot.RoutingLists ?? []);
+        SyncSources(snapshot.Sources ?? []);
         SyncBalancers(snapshot.Balancers, snapshot.RoutingLists ?? []);
         HasConfigs = Configs.Count > 0;
         HasBalancers = Balancers.Count > 0;
         HasRoutingLists = RoutingLists.Count > 0;
+        UpdateRoutingSelection();
 
         var bound = snapshot.Balancers.FirstOrDefault(b => b.Name == snapshot.BoundTarget);
         ActiveMember = bound?.ActiveMember;
@@ -417,6 +452,49 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private void SyncSources(IReadOnlyList<SourceEntry> entries)
+    {
+        // Reconcile in place (match by name) rather than Clear()+Add(): rebuilding the collection on
+        // every snapshot push would regenerate the row controls and restart the refresh-icon spin
+        // animation each tick, making it stutter. Updating fields on the existing rows keeps it smooth.
+        var present = entries.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+        for (var i = Sources.Count - 1; i >= 0; i--)
+        {
+            if (!present.Contains(Sources[i].Name))
+            {
+                Sources.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var existing = Sources.FirstOrDefault(s => string.Equals(s.Name, entry.Name, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                existing = new SourceItemViewModel(SendUpdateSourceAsync, SendRemoveSourceAsync) { Name = entry.Name };
+                Sources.Insert(Math.Min(i, Sources.Count), existing);
+            }
+            else
+            {
+                var from = Sources.IndexOf(existing);
+                if (from != i)
+                {
+                    Sources.Move(from, i);
+                }
+            }
+
+            existing.Kind = entry.Kind;
+            existing.Url = entry.Url;
+            existing.Updated = entry.Updated;
+            existing.CategoryCount = entry.CategoryCount;
+            existing.Updating = entry.Updating;
+            existing.Progress = entry.Progress;
+        }
+
+        HasSources = Sources.Count > 0;
+    }
+
     private void SyncBalancers(IReadOnlyList<BalancerEntry> entries, IReadOnlyList<RoutingListEntry> routingLists)
     {
         var options = BuildRoutingOptions(routingLists);
@@ -485,5 +563,103 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task SelectProfileAsync(string profile)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [profile]));
+    }
+
+    [RelayCommand]
+    private void SelectRoutingList(RoutingListSummaryViewModel list)
+    {
+        _selectedRoutingListId = list.Id;
+        var editor = new RoutingListEditorViewModel(_connection, list.Id, list.Name);
+        RoutingEditor = editor;
+        UpdateRoutingSelection();
+        _ = editor.LoadAsync();
+    }
+
+    [RelayCommand]
+    private void NewRoutingList()
+    {
+        _selectedRoutingListId = -1;
+        var editor = new RoutingListEditorViewModel(_connection);
+        RoutingEditor = editor;
+        UpdateRoutingSelection();
+        _ = editor.LoadAsync();
+    }
+
+    [RelayCommand]
+    private async Task SaveRoutingListEdit()
+    {
+        if (RoutingEditor is null)
+        {
+            return;
+        }
+
+        if (await RoutingEditor.SaveAsync())
+        {
+            _selectedRoutingListId = RoutingEditor.Id;
+            UpdateRoutingSelection();
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteRoutingListEdit()
+    {
+        if (RoutingEditor is null)
+        {
+            return;
+        }
+
+        if (await RoutingEditor.DeleteAsync())
+        {
+            RoutingEditor = null;
+            _selectedRoutingListId = -1;
+            UpdateRoutingSelection();
+        }
+    }
+
+    private void UpdateRoutingSelection()
+    {
+        foreach (var list in RoutingLists)
+        {
+            list.IsSelected = list.Id == _selectedRoutingListId;
+        }
+    }
+
+    [RelayCommand]
+    private void CloseRoutingEditor()
+    {
+        RoutingEditor = null;
+        _selectedRoutingListId = -1;
+        UpdateRoutingSelection();
+    }
+
+    [RelayCommand]
+    private async Task AddSource()
+    {
+        var url = NewSourceUrl.Trim();
+        if (url.Length == 0)
+        {
+            return;
+        }
+
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddSource, [NewSourceKind, url]));
+        NewSourceUrl = string.Empty;
+    }
+
+    // Per-row update / delete, passed as delegates to each SourceItemViewModel (the delete flyout's
+    // popup can't resolve a parent-relative binding back to this view model).
+    private Task SendUpdateSourceAsync(SourceItemViewModel source)
+    {
+        return _connection.SendCommandAsync(new IpcCommand(IpcContract.OpUpdateSource, [source.Name]));
+    }
+
+    private Task SendRemoveSourceAsync(SourceItemViewModel source)
+    {
+        return _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveSource, [source.Name]));
+    }
+
+    [RelayCommand]
+    private async Task UpdateSources()
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpUpdateSources, []));
     }
 }

@@ -16,4 +16,5 @@ public sealed record StatusSnapshot(
     string? BetterMember = null,
     bool KillSwitchEnabled = false,
     bool AllowLan = true,
-    string? SelectedTarget = null);
+    string? SelectedTarget = null,
+    IReadOnlyList<SourceEntry>? Sources = null);

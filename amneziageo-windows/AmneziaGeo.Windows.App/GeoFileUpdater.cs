@@ -11,11 +11,13 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
 {
     /// <summary>
-    /// Downloads a source's file under its unique name and records its metadata.
+    /// Downloads a source's file under its unique name and records its metadata. When
+    /// <paramref name="progress"/> is supplied it reports the download percent (0-100), or -1 when the
+    /// server gives no content length (indeterminate).
     /// </summary>
-    public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, CancellationToken ct = default)
+    public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, IProgress<int>? progress = null, CancellationToken ct = default)
     {
-        var data = await http.GetByteArrayAsync(source.Url, ct);
+        var data = await DownloadAsync(source.Url, progress, ct);
 
         var path = TunnelPaths.GeoDataFile(source.Name);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -29,5 +31,44 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
         var metadata = new GeoFileMetadata(source.Name, source.Url, DateTimeOffset.UtcNow, sha, count);
         await store.SaveGeoFileAsync(metadata, ct);
         return metadata;
+    }
+
+    /// <summary>
+    /// Streams the URL into memory, reporting download progress as integer percent (or -1 when the
+    /// server sends no Content-Length). Streaming — rather than GetByteArrayAsync — is what lets the UI
+    /// show a live percentage for the multi-megabyte geo files.
+    /// </summary>
+    private async Task<byte[]> DownloadAsync(string url, IProgress<int>? progress, CancellationToken ct)
+    {
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+        var total = response.Content.Headers.ContentLength;
+
+        using var source = await response.Content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream(total is > 0 and < int.MaxValue ? (int)total : 0);
+        var chunk = new byte[81920];
+        long read = 0;
+        var lastPercent = -1;
+        int n;
+        while ((n = await source.ReadAsync(chunk, ct)) > 0)
+        {
+            await buffer.WriteAsync(chunk.AsMemory(0, n), ct);
+            read += n;
+            if (total is > 0)
+            {
+                var percent = (int)(read * 100 / total.Value);
+                if (percent != lastPercent)
+                {
+                    lastPercent = percent;
+                    progress?.Report(percent);
+                }
+            }
+            else
+            {
+                progress?.Report(-1);
+            }
+        }
+
+        return buffer.ToArray();
     }
 }

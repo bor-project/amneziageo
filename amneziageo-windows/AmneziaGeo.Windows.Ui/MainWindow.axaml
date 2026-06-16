@@ -8,6 +8,11 @@
         FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
         Foreground="{DynamicResource AgFgBrush}">
 
+  <Window.Resources>
+    <!-- "sync" glyph (two circular arrows): the per-source refresh / update icon. -->
+    <StreamGeometry x:Key="AgRefreshGeometry">M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z</StreamGeometry>
+  </Window.Resources>
+
   <Window.Styles>
 
     <Style Selector="Border.card">
@@ -254,6 +259,37 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
+    <!-- Button.rowselect : a flat, full-width selectable list row (routing lists) with a radio -->
+    <Style Selector="Button.rowselect">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.rowselect.active">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <Style Selector="Button.rowselect:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+    </Style>
+    <Style Selector="Button.rowselect.active:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+    </Style>
+    <Style Selector="Button.rowselect /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.rowselect:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.rowselect:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
     <!-- Strict: instant button state changes (no fade) and no press-scale jiggle. The Fluent button's
          only declared animation is a 75ms scale(0.98) on press; null the root Transitions and flatten
          the transform so hover/press feedback is immediate, like the rest of the UI. -->
@@ -319,6 +355,49 @@
     </Style>
     <Style Selector="ComboBox.field:disabled /template/ ContentControl#ContentPresenter">
       <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
+    </Style>
+
+    <!-- PathIcon.spin : continuous rotation while a source download / re-materialize is in flight -->
+    <Style Selector="PathIcon.spin">
+      <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+      <Setter Property="RenderTransform" Value="rotate(0)" />
+    </Style>
+    <Style Selector="PathIcon.spin">
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="INFINITE">
+          <KeyFrame Cue="0%">
+            <Setter Property="RotateTransform.Angle" Value="0" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="RotateTransform.Angle" Value="360" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <!-- Button.sourcerow : the clickable source body; a left-click opens its delete menu (flyout) -->
+    <Style Selector="Button.sourcerow">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.sourcerow /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.sourcerow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.sourcerow:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- subtle hover cue on the row body so it reads as clickable -->
+    <Style Selector="Button.sourcerow:pointerover TextBlock.srctitle">
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
     </Style>
   </Window.Styles>
 
@@ -396,8 +475,10 @@
           </Style>
         </DockPanel.Styles>
 
-        <!-- Profiles card -->
-        <Border Classes="card" Margin="16,16,16,16" Padding="0">
+        <Grid>
+
+        <!-- Profiles list (Home / Settings tabs) -->
+        <Border Classes="card" Margin="16,16,16,16" Padding="0" IsVisible="{Binding !IsRouting}">
           <DockPanel LastChildFill="True">
             <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
               <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
@@ -587,6 +668,60 @@
             </ScrollViewer>
           </DockPanel>
         </Border>
+
+        <!-- Routing lists (Routing tab) -->
+        <Border Classes="card" Margin="16,16,16,16" Padding="0" IsVisible="{Binding IsRouting}">
+          <DockPanel LastChildFill="True">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
+              <TextBlock Grid.Column="0" Classes="section" Text="СПИСКИ" VerticalAlignment="Center" />
+              <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                      Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+              </Border>
+              <Button Grid.Column="3" Classes="softbtn" Command="{Binding NewRoutingListCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Text="+" />
+                  <TextBlock Text="Список" />
+                </StackPanel>
+              </Button>
+            </Grid>
+
+            <ScrollViewer>
+              <StackPanel Margin="12,2,12,12">
+                <ItemsControl ItemsSource="{Binding RoutingLists}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Classes="rowselect" Classes.active="{Binding IsSelected}" Margin="0,3"
+                              Command="{Binding $parent[ItemsControl].DataContext.SelectRoutingListCommand}"
+                              CommandParameter="{Binding}">
+                        <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                          <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                            <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                     Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                                     IsVisible="{Binding IsSelected}"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Grid>
+                          <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
+                            <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
+                                       TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock IsVisible="{Binding !HasRoutingLists}"
+                           Text="Нет списков. Нажмите «+ Список»."
+                           Classes="muted" FontSize="12" Margin="6,12" TextWrapping="Wrap" />
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        </Grid>
       </DockPanel>
 
       <!-- RIGHT CONTENT -->
@@ -612,68 +747,148 @@
             </Border>
           </DockPanel>
 
-          <!-- ROUTING -->
-          <ScrollViewer IsVisible="{Binding IsRouting}">
-            <StackPanel Margin="24,22">
-              <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,16">
-                <TextBlock Grid.Column="0" Text="Списки маршрутизации" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <Border Grid.Column="1" Classes="inset"
-                        BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                        Padding="9,2" Margin="10,0,0,0" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding RoutingLists.Count}" FontSize="12" FontWeight="SemiBold" Classes="muted" />
-                </Border>
-                <Button Grid.Column="3" Classes="accent" Click="OnAddRoutingListClick">
-                  <StackPanel Orientation="Horizontal" Spacing="5">
-                    <TextBlock Text="+" />
-                    <TextBlock Text="Список" />
-                  </StackPanel>
-                </Button>
+          <!-- ROUTING : selected list editor (inline, replaces the dialog) -->
+          <Panel IsVisible="{Binding IsRouting}">
+
+            <!-- empty state: geo-source management (and a hint to pick a list) -->
+            <DockPanel IsVisible="{Binding !HasRoutingEditor}" LastChildFill="True" Margin="24,22">
+
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                <TextBlock Grid.Column="0" Text="Источники гео-данных" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="Обновить все" />
               </Grid>
 
-              <ItemsControl ItemsSource="{Binding RoutingLists}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <WrapPanel Orientation="Horizontal" />
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Classes="subcard" Padding="16,15" Margin="0,0,13,13" Width="320"
-                            Tapped="OnRoutingListTapped" Cursor="Hand">
-                      <StackPanel Spacing="13">
-                        <Grid ColumnDefinitions="Auto,*,Auto">
-                          <Border Grid.Column="0" Width="34" Height="34" CornerRadius="9"
-                                  Background="{DynamicResource AgAccentSoftBrush}"
-                                  HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <TextBlock Text="◉" Foreground="{DynamicResource AgAccentBrush}"
-                                       FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <StackPanel DockPanel.Dock="Top" Spacing="6">
+                <TextBlock Classes="label" Text="ДОБАВИТЬ ИСТОЧНИК" />
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <ComboBox Grid.Column="0" Classes="field" Width="118" Margin="0,0,8,0"
+                            ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}" />
+                  <TextBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
+                           Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
+                  <Button Grid.Column="2" Classes="accent" Command="{Binding AddSourceCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Text="+" />
+                      <TextBlock Text="Добавить" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+                <TextBlock Classes="muted" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"
+                           Text="geosite — категории доменов, geoip — страны. Файл скачивается сразу. Значок ⟳ обновляет источник, «Обновить все» — все сразу; нажмите на источник, чтобы удалить." />
+                <TextBlock Classes="label" Text="ИСТОЧНИКИ" Margin="0,10,0,0" />
+              </StackPanel>
+
+              <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                      Background="{DynamicResource AgInsetBrush}" CornerRadius="12" Margin="0,8,0,0">
+                <ScrollViewer>
+                  <StackPanel Margin="10,10">
+                    <ItemsControl ItemsSource="{Binding Sources}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Background="{DynamicResource AgPanelBrush}"
+                                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                                  CornerRadius="9" Padding="11,9" Margin="0,3">
+                            <Grid ColumnDefinitions="*,Auto">
+                              <!-- row body: click opens the delete menu (built in code-behind) -->
+                              <Button Grid.Column="0" Classes="sourcerow" Click="OnSourceRowClick"
+                                      ToolTip.Tip="Нажмите, чтобы удалить">
+                                <StackPanel VerticalAlignment="Center">
+                                  <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
+                                  <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
+                                             TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                              </Button>
+                              <!-- refresh: spins + shows download % while an update is in flight -->
+                              <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center" Margin="8,0,0,0"
+                                      Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
+                                      ToolTip.Tip="Обновить источник">
+                                <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                  <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
+                                             FontSize="11.5" VerticalAlignment="Center" />
+                                  <PathIcon Classes.spin="{Binding Updating}" Data="{DynamicResource AgRefreshGeometry}"
+                                            Width="14" Height="14" />
+                                </StackPanel>
+                              </Button>
+                            </Grid>
                           </Border>
-                          <StackPanel Grid.Column="1" Margin="11,0,0,0">
-                            <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted" />
-                          </StackPanel>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Bottom">
-                          <TextBlock Text="{Binding RuleCount}" Classes="mono" FontSize="22" FontWeight="SemiBold" />
-                          <TextBlock Text="правил" FontSize="11.5" Classes="muted" VerticalAlignment="Bottom" Margin="0,0,0,4" />
-                        </StackPanel>
-                        <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,11,0,0">
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock IsVisible="{Binding !HasSources}"
+                               Text="Пока нет источников. Добавьте geosite/geoip выше."
+                               Classes="muted" FontSize="12" Margin="2,8" TextWrapping="Wrap" />
+                  </StackPanel>
+                </ScrollViewer>
+              </Border>
+            </DockPanel>
+
+            <DockPanel IsVisible="{Binding HasRoutingEditor}" LastChildFill="True" Margin="24,22">
+
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,16">
+                <Button Grid.Column="0" Classes="softbtn" Margin="0,0,12,0"
+                        Command="{Binding CloseRoutingEditorCommand}" Content="← Источники" />
+                <TextBlock Grid.Column="1" Text="Список маршрутизации" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Classes="softbtn" IsVisible="{Binding !RoutingEditor.IsNew}"
+                        Command="{Binding DeleteRoutingListEditCommand}" Content="Удалить список" />
+              </Grid>
+
+              <StackPanel DockPanel.Dock="Top" Spacing="14">
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="label" Text="ИМЯ СПИСКА" />
+                  <TextBox Classes="field" Text="{Binding RoutingEditor.Name, Mode=TwoWay}" Watermark="напр. openai-route" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="label" Text="ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)" />
+                  <Grid ColumnDefinitions="*,Auto">
+                    <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
+                                     Watermark="напр. geosite:openai, geoip:de, example.com, 1.2.3.0/24"
+                                     Text="{Binding RoutingEditor.RuleInput, Mode=TwoWay}"
+                                     ItemsSource="{Binding RoutingEditor.GeoSuggestions}"
+                                     FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
+                    <Button Grid.Column="1" Classes="accent" Command="{Binding RoutingEditor.AddRuleCommand}">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="+" />
+                        <TextBlock Text="Добавить" />
+                      </StackPanel>
+                    </Button>
+                  </Grid>
+                </StackPanel>
+
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0" Text="{Binding RoutingEditor.StatusMessage}" Classes="muted"
+                             FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  <Button Grid.Column="1" Classes="accent" Command="{Binding SaveRoutingListEditCommand}"
+                          IsEnabled="{Binding !RoutingEditor.IsBusy}" Content="Сохранить" />
+                </Grid>
+
+                <TextBlock Classes="label" Text="ЗАПИСИ" />
+              </StackPanel>
+
+              <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                      Background="{DynamicResource AgInsetBrush}" CornerRadius="12" Margin="0,8,0,0">
+                <ScrollViewer>
+                  <ItemsControl ItemsSource="{Binding RoutingEditor.Rules}" Margin="10,10">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border Background="{DynamicResource AgPanelBrush}"
+                                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                                CornerRadius="9" Padding="10,7" Margin="0,3">
                           <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Text="общий" FontSize="11.5" Classes="muted" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Classes="softbtn" Content="Открыть" Tag="{Binding}" Click="OnOpenRoutingClick" />
+                            <TextBlock Grid.Column="0" Text="{Binding}" Classes="mono" FontSize="12.5"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            <Button Grid.Column="1" Classes="icon" Content="✕"
+                                    Command="{Binding $parent[ItemsControl].DataContext.RoutingEditor.RemoveRuleCommand}"
+                                    CommandParameter="{Binding}" />
                           </Grid>
                         </Border>
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </Border>
 
-              <TextBlock IsVisible="{Binding !HasRoutingLists}"
-                         Text="Нет списков маршрутизации. Нажмите «+ Список»."
-                         Classes="muted" Margin="0,24" HorizontalAlignment="Center" />
-            </StackPanel>
-          </ScrollViewer>
+            </DockPanel>
+          </Panel>
 
           <!-- SETTINGS -->
           <ScrollViewer IsVisible="{Binding IsSettings}">

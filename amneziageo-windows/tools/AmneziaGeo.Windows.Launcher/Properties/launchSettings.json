@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Launcher (backend + UI)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

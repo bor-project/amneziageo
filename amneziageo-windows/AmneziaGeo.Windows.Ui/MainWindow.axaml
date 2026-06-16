@@ -11,8 +11,6 @@
   <Window.Resources>
     <!-- "sync" glyph (two circular arrows): the per-source refresh / update icon. -->
     <StreamGeometry x:Key="AgRefreshGeometry">M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z</StreamGeometry>
-    <!-- stacked-disks "database" glyph: the geo-data bases nav button. -->
-    <StreamGeometry x:Key="AgDbGeometry">M12 3C7.58 3 4 4.48 4 6.5S7.58 10 12 10s8-1.48 8-3.5S16.42 3 12 3zM4 8.5v3C4 13.52 7.58 15 12 15s8-1.48 8-3.5v-3c0 2.02-3.58 3.5-8 3.5s-8-1.48-8-3.5zm0 5v3C4 18.52 7.58 20 12 20s8-1.48 8-3.5v-3c0 2.02-3.58 3.5-8 3.5s-8-1.48-8-3.5z</StreamGeometry>
   </Window.Resources>
 
   <Window.Styles>
@@ -124,17 +122,9 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
-    <!-- Button.seg : hover / press -->
-    <Style Selector="Button.seg:pointerover">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-    <Style Selector="Button.seg.active:pointerover">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-    </Style>
-    <Style Selector="Button.seg:pressed">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-    </Style>
+    <!-- Button.seg / chip / softbtn / icon : suppress the Fluent theme's own hover / press background;
+         the hover & press feedback itself is the global Opacity fade (see below). Selection state stays
+         on the .active background rules above. -->
     <Style Selector="Button.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -146,19 +136,6 @@
       <Setter Property="Opacity" Value="0.5" />
     </Style>
 
-    <!-- Button.chip : hover / press -->
-    <Style Selector="Button.chip:pointerover">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-    <Style Selector="Button.chip.active:pointerover">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
-    </Style>
-    <Style Selector="Button.chip:pressed">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-    </Style>
     <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -166,14 +143,6 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
-    <!-- Button.softbtn : hover / press -->
-    <Style Selector="Button.softbtn:pointerover">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-    </Style>
-    <Style Selector="Button.softbtn:pressed">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
-    </Style>
     <Style Selector="Button.softbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -181,14 +150,6 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
-    <!-- Button.icon : hover / press -->
-    <Style Selector="Button.icon:pointerover">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-    <Style Selector="Button.icon:pressed">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-    </Style>
     <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -196,13 +157,7 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
-    <!-- Button.accent : keep accent fill, feedback via Opacity (instant) -->
-    <Style Selector="Button.accent:pointerover">
-      <Setter Property="Opacity" Value="0.92" />
-    </Style>
-    <Style Selector="Button.accent:pressed">
-      <Setter Property="Opacity" Value="0.84" />
-    </Style>
+    <!-- Button.accent : keep the accent fill on hover / press; feedback is the global Opacity fade. -->
     <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
     </Style>
@@ -233,12 +188,6 @@
     <Style Selector="Button.connectpill:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
-    <Style Selector="Button.connectpill:pointerover">
-      <Setter Property="Opacity" Value="0.92" />
-    </Style>
-    <Style Selector="Button.connectpill:pressed">
-      <Setter Property="Opacity" Value="0.84" />
-    </Style>
     <Style Selector="Button.connectpill:disabled">
       <Setter Property="Opacity" Value="0.5" />
     </Style>
@@ -248,9 +197,7 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="2" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Cursor" Value="Hand" />
-    </Style>
+      <Setter Property="MinWidth" Value="0" />    </Style>
     <Style Selector="Button.radiopick /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -264,22 +211,12 @@
     <!-- Button.rowselect : a flat, full-width selectable list row (routing lists) with a radio -->
     <Style Selector="Button.rowselect">
       <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="12" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="Cursor" Value="Hand" />
-    </Style>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />    </Style>
     <Style Selector="Button.rowselect.active">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
-    </Style>
-    <Style Selector="Button.rowselect:pointerover">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-    </Style>
-    <Style Selector="Button.rowselect.active:pointerover">
       <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
     </Style>
     <Style Selector="Button.rowselect /template/ ContentPresenter#PART_ContentPresenter">
@@ -298,8 +235,11 @@
     <Style Selector="Button">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
+    <!-- No hover animation at all: hovering changes nothing (no background, border, colour, or opacity).
+         Only a brief press feedback remains. Selection uses the .active background rules above. -->
     <Style Selector="Button:pressed">
       <Setter Property="RenderTransform" Value="none" />
+      <Setter Property="Opacity" Value="0.6" />
     </Style>
 
     <Style Selector="TextBox.field">
@@ -309,6 +249,26 @@
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,7" />
       <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- Neutral, status-independent border for every text input: the same secondary border in all
+         states — no pointer-over / focus colour change and no accent focus underline, so the Fluent
+         theme's animated border can't flicker between primary / secondary / none. -->
+    <Style Selector="TextBox">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox:pointerover">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox:focus">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox:focus-within">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
     </Style>
 
     <Style Selector="ComboBox.field">
@@ -329,17 +289,22 @@
     <Style Selector="ComboBox.field /template/ Border#Background">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
+    <!-- hover / press: no colour change — hold the resting fill / border; feedback is an Opacity fade. -->
     <Style Selector="ComboBox.field:pointerover /template/ Border#Background">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
     </Style>
     <Style Selector="ComboBox.field:pressed /template/ Border#Background">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
     </Style>
+    <Style Selector="ComboBox.field:pressed">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <!-- focus: keep the neutral border too (no accent) so the box is status-independent. -->
     <Style Selector="ComboBox.field:focus-visible /template/ Border#HighlightBackground">
       <Setter Property="IsVisible" Value="True" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
     <Style Selector="ComboBox.field /template/ ContentControl#ContentPresenter">
@@ -347,9 +312,6 @@
     </Style>
     <Style Selector="ComboBox.field /template/ PathIcon#DropDownGlyph">
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-    </Style>
-    <Style Selector="ComboBox.field:pointerover /template/ PathIcon#DropDownGlyph">
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
     </Style>
     <Style Selector="ComboBox.field:disabled /template/ Border#Background">
       <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
@@ -387,9 +349,7 @@
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="Cursor" Value="Hand" />
-    </Style>
+      <Setter Property="VerticalContentAlignment" Value="Center" />    </Style>
     <Style Selector="Button.sourcerow /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -398,10 +358,6 @@
     </Style>
     <Style Selector="Button.sourcerow:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <!-- subtle hover cue on the row body so it reads as clickable -->
-    <Style Selector="Button.sourcerow:pointerover TextBlock.srctitle">
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
     </Style>
   </Window.Styles>
 
@@ -679,9 +635,17 @@
             <!-- bases nav: opens the geo-data bases panel on the right (active when no rule is open) -->
             <Button DockPanel.Dock="Top" Classes="rowselect" Classes.active="{Binding !HasRoutingEditor}"
                     Margin="12,12,12,0" Command="{Binding CloseRoutingEditorCommand}">
-              <Grid ColumnDefinitions="Auto,*" Margin="12,9">
-                <PathIcon Grid.Column="0" Data="{DynamicResource AgDbGeometry}" Width="16" Height="16" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Базы гео-данных" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+              <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                  <Ellipse Width="16" Height="16" StrokeThickness="2"
+                           Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                           IsVisible="{Binding !HasRoutingEditor}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Grid>
+                <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Базы гео-данных"
+                           FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
               </Grid>
             </Button>
 

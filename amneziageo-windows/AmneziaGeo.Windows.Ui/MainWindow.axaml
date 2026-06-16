@@ -176,6 +176,11 @@
       <Setter Property="MinWidth" Value="104" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
+    <!-- Null the content-presenter's own transition so hover doesn't fade / flicker / jitter the fill
+         (the global Button transition-null above doesn't reach this template part). -->
+    <Style Selector="Button.connectpill /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
     <!-- Keep the bound ConnectButtonBrush fill in every state (the text is white, so the fill must stay
          opaque); resting comes from TemplateBinding Background, and these stop the theme's hover /
          pressed / disabled overlay from blanking it. -->

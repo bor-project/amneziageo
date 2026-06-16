@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Ui.Services;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -9,11 +10,18 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
 /// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs).
+/// Changes auto-save (debounced) through the agent — there is no explicit save button.
 /// </summary>
 internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
+    private readonly Action<long>? _onSaved;
+    private readonly DispatcherTimer _saveTimer;
     private long _id;
+
+    // Suppresses auto-save while the editor is being populated (ctor + LoadAsync), so loading a list
+    // doesn't immediately re-save it.
+    private bool _suppressAutoSave = true;
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -30,22 +38,37 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// <summary>
     /// ctor used when creating a fresh routing list.
     /// </summary>
-    public RoutingListEditorViewModel(AgentConnection connection)
+    public RoutingListEditorViewModel(AgentConnection connection, Action<long>? onSaved = null)
     {
         _connection = connection;
+        _onSaved = onSaved;
         _id = 0;
         IsNew = true;
+        _saveTimer = CreateSaveTimer();
     }
 
     /// <summary>
     /// ctor used when editing an existing routing list (rules loaded via LoadAsync).
     /// </summary>
-    public RoutingListEditorViewModel(AgentConnection connection, long id, string name)
+    public RoutingListEditorViewModel(AgentConnection connection, long id, string name, Action<long>? onSaved = null)
     {
         _connection = connection;
+        _onSaved = onSaved;
         _id = id;
+        _saveTimer = CreateSaveTimer();
         Name = name;
         IsNew = false;
+    }
+
+    private DispatcherTimer CreateSaveTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            _ = AutoSaveAsync();
+        };
+        return timer;
     }
 
     /// <summary>
@@ -82,21 +105,20 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             }
         }
 
-        if (_id == 0)
+        if (_id != 0)
         {
-            return;
+            var detail = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRoutingList, [_id.ToString(CultureInfo.InvariantCulture)]));
+            if (detail.Ok)
+            {
+                foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    Rules.Add(token);
+                }
+            }
         }
 
-        var detail = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRoutingList, [_id.ToString(CultureInfo.InvariantCulture)]));
-        if (!detail.Ok)
-        {
-            return;
-        }
-
-        foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            Rules.Add(token);
-        }
+        // Loading is complete: let subsequent edits auto-save.
+        _suppressAutoSave = false;
     }
 
     /// <summary>
@@ -107,7 +129,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         var trimmed = Name.Trim();
         if (trimmed.Length == 0)
         {
-            StatusMessage = "Введите имя списка";
+            StatusMessage = "Введите имя правила";
             return false;
         }
 
@@ -117,12 +139,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             var args = new List<string> { _id.ToString(CultureInfo.InvariantCulture), trimmed };
             args.AddRange(Rules);
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSaveRoutingList, args));
-            StatusMessage = ack.Message;
             if (ack.Ok && long.TryParse(ack.Message, NumberStyles.Integer, CultureInfo.InvariantCulture, out var resultId))
             {
                 _id = resultId;
             }
 
+            StatusMessage = ack.Ok ? "Сохранено" : ack.Message;
             return ack.Ok;
         }
         finally
@@ -154,6 +176,15 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Stops a pending auto-save; called when this editor is discarded so a queued save does not fire
+    /// against a closed editor.
+    /// </summary>
+    public void CancelPendingSave()
+    {
+        _saveTimer.Stop();
+    }
+
     [RelayCommand]
     private void AddRule()
     {
@@ -167,6 +198,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         if (!Rules.Contains(rule))
         {
             Rules.Add(rule);
+            ScheduleSave();
         }
 
         RuleInput = string.Empty;
@@ -175,7 +207,43 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     [RelayCommand]
     private void RemoveRule(string rule)
     {
-        Rules.Remove(rule);
+        if (Rules.Remove(rule))
+        {
+            ScheduleSave();
+        }
+    }
+
+    partial void OnNameChanged(string value)
+    {
+        ScheduleSave();
+    }
+
+    // Debounce edits into a single save: each change restarts the timer, so rapid typing / multiple
+    // rule edits collapse into one persist + re-materialize once the user pauses.
+    private void ScheduleSave()
+    {
+        if (_suppressAutoSave)
+        {
+            return;
+        }
+
+        _saveTimer.Stop();
+        _saveTimer.Start();
+    }
+
+    private async Task AutoSaveAsync()
+    {
+        if (IsBusy)
+        {
+            // A save is already in flight; try again after it settles.
+            ScheduleSave();
+            return;
+        }
+
+        if (await SaveAsync())
+        {
+            _onSaved?.Invoke(_id);
+        }
     }
 
     private static string Normalize(string text)

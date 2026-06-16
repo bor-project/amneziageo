@@ -65,7 +65,7 @@ public sealed partial class MainWindow : Window
 
         var delete = new MenuItem
         {
-            Header = "Удалить источник",
+            Header = "Удалить базу",
             Command = source.RemoveCommand,
         };
         var flyout = new MenuFlyout

@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug UI (AmneziaGeo)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/AmneziaGeo.Windows.Ui/bin/Debug/net10.0/AmneziaGeo.Windows.Ui.dll",
+      "cwd": "${workspaceFolder}/AmneziaGeo.Windows.Ui",
+      "console": "internalConsole",
+      "stopAtEntry": false
+    },
+    {
+      "name": "Attach to agent",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": "${command:pickProcess}"
+    }
+  ]
+}

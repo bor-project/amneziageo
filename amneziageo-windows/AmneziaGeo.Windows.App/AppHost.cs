@@ -55,6 +55,7 @@ internal static class AppHost
         services.AddSingleton<EndpointProbe>();
         services.AddSingleton<DnsConfigurator>();
         services.AddSingleton<NetworkReconciler>();
+        services.AddSingleton<WindowsFirewall>();
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ConfigRepository>();
         services.AddSingleton<GeoActivator>();

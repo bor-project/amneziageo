@@ -72,6 +72,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _noticeText;
 
+    [ObservableProperty]
+    private bool _killSwitchEnabled;
+
+    [ObservableProperty]
+    private bool _allowLan = true;
+
+    // Set while applying a snapshot so echoing the agent's current settings into the toggles does not
+    // bounce straight back as a set-setting command.
+    private bool _suppressSettingPush;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -292,6 +302,32 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         NoticeText = notice;
         NoticeVisible = notice is not null;
+
+        _suppressSettingPush = true;
+        KillSwitchEnabled = snapshot.KillSwitchEnabled;
+        AllowLan = snapshot.AllowLan;
+        _suppressSettingPush = false;
+    }
+
+    partial void OnKillSwitchEnabledChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("killswitch", value);
+        }
+    }
+
+    partial void OnAllowLanChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("allow-lan", value);
+        }
+    }
+
+    private async Task SetSettingAsync(string key, bool value)
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value ? "on" : "off"]));
     }
 
     private void SyncConfigs(IReadOnlyList<ConfigEntry> entries)

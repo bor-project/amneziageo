@@ -77,4 +77,9 @@ public static class IpcContract
     /// Command to set the agent's desired connection state. Args: "connect" or "disconnect".
     /// </summary>
     public const string OpSetConnection = "set-connection";
+
+    /// <summary>
+    /// Command to set a named agent setting. Args: key, value. Used for the kill-switch and LAN toggles.
+    /// </summary>
+    public const string OpSetSetting = "set-setting";
 }

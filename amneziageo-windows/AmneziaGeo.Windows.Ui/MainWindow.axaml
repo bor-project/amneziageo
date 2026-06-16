@@ -86,22 +86,6 @@
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
-    <Style Selector="Button.nav">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="8,8" />
-      <Setter Property="CornerRadius" Value="9" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.nav.active">
-      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
     <Style Selector="Button.softbtn">
       <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
@@ -133,6 +117,153 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
+    <!-- Button.seg : hover / press -->
+    <Style Selector="Button.seg:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="Button.seg.active:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+    </Style>
+    <Style Selector="Button.seg:pressed">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+    </Style>
+    <Style Selector="Button.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.seg:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- disabled placeholder (e.g. the RU/EN language toggle) reads as inactive -->
+    <Style Selector="Button.seg:disabled">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
+    <!-- Button.chip : hover / press -->
+    <Style Selector="Button.chip:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="Button.chip.active:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <Style Selector="Button.chip:pressed">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+    </Style>
+    <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.chip:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Button.softbtn : hover / press -->
+    <Style Selector="Button.softbtn:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+    </Style>
+    <Style Selector="Button.softbtn:pressed">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+    </Style>
+    <Style Selector="Button.softbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.softbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Button.icon : hover / press -->
+    <Style Selector="Button.icon:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="Button.icon:pressed">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.icon:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Button.accent : keep accent fill, feedback via Opacity (instant) -->
+    <Style Selector="Button.accent:pointerover">
+      <Setter Property="Opacity" Value="0.92" />
+    </Style>
+    <Style Selector="Button.accent:pressed">
+      <Setter Property="Opacity" Value="0.84" />
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+
+    <!-- Button.connectpill : the flicker-critical connect / stop button -->
+    <Style Selector="Button.connectpill">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="16,7" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="MinWidth" Value="104" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.connectpill /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.connectpill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.connectpill:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.connectpill:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.connectpill:pointerover">
+      <Setter Property="Opacity" Value="0.92" />
+    </Style>
+    <Style Selector="Button.connectpill:pressed">
+      <Setter Property="Opacity" Value="0.84" />
+    </Style>
+    <Style Selector="Button.connectpill:disabled">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
+    <!-- Button.radiopick : the active-profile radio in the list header (crisp, no hover fill) -->
+    <Style Selector="Button.radiopick">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.radiopick /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.radiopick:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.radiopick:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Strict: instant button state changes (no fade) and no press-scale jiggle. The Fluent button's
+         only declared animation is a 75ms scale(0.98) on press; null the root Transitions and flatten
+         the transform so hover/press feedback is immediate, like the rest of the UI. -->
+    <Style Selector="Button">
+      <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button:pressed">
+      <Setter Property="RenderTransform" Value="none" />
+    </Style>
+
     <Style Selector="TextBox.field">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
@@ -150,41 +281,107 @@
       <Setter Property="Padding" Value="10,6" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+
+    <!-- Strict, flicker-free ComboBox.field (closed box): null the inherited Background fade on the
+         FluentTheme parts (Avalonia 11.3.x) and repoint each state to opaque Ag* brushes, so hover /
+         press / focus are instant with no interpolated wrong-colour frame. Dropdown rows are styled
+         app-wide in App.axaml (the popup is outside this window's template scope). -->
+    <Style Selector="ComboBox.field /template/ Border#Background">
+      <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
+    <Style Selector="ComboBox.field:pointerover /template/ Border#Background">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+    </Style>
+    <Style Selector="ComboBox.field:pressed /template/ Border#Background">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <Style Selector="ComboBox.field:focus-visible /template/ Border#HighlightBackground">
+      <Setter Property="IsVisible" Value="True" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
+    <Style Selector="ComboBox.field /template/ ContentControl#ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="ComboBox.field /template/ PathIcon#DropDownGlyph">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+    </Style>
+    <Style Selector="ComboBox.field:pointerover /template/ PathIcon#DropDownGlyph">
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="ComboBox.field:disabled /template/ Border#Background">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+    </Style>
+    <Style Selector="ComboBox.field:disabled /template/ ContentControl#ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
     </Style>
   </Window.Styles>
 
   <Grid>
   <DockPanel LastChildFill="True">
 
-    <!-- HEADER -->
-    <Border DockPanel.Dock="Top" Height="46"
+    <!-- HEADER : unified connection-control command bar -->
+    <Border DockPanel.Dock="Top" Height="54"
             Background="{DynamicResource AgSidebarBrush}"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="*,Auto,Auto" Margin="14,0">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="9">
-          <Border Width="19" Height="19" CornerRadius="6"
-                  Background="{DynamicResource AgAccentBrush}">
-            <Ellipse Width="7" Height="7" Fill="White" />
-          </Border>
-          <TextBlock Text="AmneziaGeo" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
-          <TextBlock Text="Менеджер профилей" FontSize="12" Classes="muted" VerticalAlignment="Center" />
-        </StackPanel>
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,0">
 
-        <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}"
+        <!-- LEFT: segmented nav pill -->
+        <Border Grid.Column="0" VerticalAlignment="Center"
+                Background="{DynamicResource AgInsetBrush}"
                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="8" Padding="2" Margin="0,0,8,0">
+                CornerRadius="10" Padding="3">
           <StackPanel Orientation="Horizontal" Spacing="2">
-            <Button Classes="seg active" Content="RU" IsEnabled="False" />
-            <Button Classes="seg" Content="EN" IsEnabled="False" />
+            <Button Classes="seg" Classes.active="{Binding IsHome}"
+                    Command="{Binding NavHomeCommand}"
+                    Content="Главная" MinWidth="84" />
+            <Button Classes="seg" Classes.active="{Binding IsRouting}"
+                    Command="{Binding NavRoutingCommand}"
+                    Content="Маршрутизация" MinWidth="116" />
+            <Button Classes="seg" Classes.active="{Binding IsSettings}"
+                    Command="{Binding NavSettingsCommand}"
+                    Content="Настройки" MinWidth="92" />
           </StackPanel>
         </Border>
 
-        <Button Grid.Column="2" Classes="softbtn" Command="{Binding ToggleThemeCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="7">
-            <Ellipse Width="12" Height="12" Stroke="{DynamicResource AgFgBrush}" StrokeThickness="2" />
-            <TextBlock Text="{Binding ThemeLabel}" />
+        <!-- RIGHT: unified connection control (status + connect as one pill) -->
+        <Border Grid.Column="2" VerticalAlignment="Center"
+                Background="{DynamicResource AgInsetBrush}"
+                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                CornerRadius="11" Padding="4">
+          <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+
+            <!-- live status segment -->
+            <StackPanel Orientation="Horizontal" Spacing="9"
+                        VerticalAlignment="Center" Margin="9,0,11,0">
+              <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}"
+                       VerticalAlignment="Center" />
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding AgentStatusText}"
+                           FontSize="12.5" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding ActiveProfileName}"
+                           FontSize="10.5" Classes="muted"
+                           TextTrimming="CharacterEllipsis" MaxWidth="170" />
+              </StackPanel>
+            </StackPanel>
+
+            <!-- 1px vertical divider -->
+            <Border Width="1" Margin="0,5" Background="{DynamicResource AgBorder2Brush}" />
+
+            <!-- connect / stop action (EXISTING bindings, verbatim) -->
+            <Button Classes="connectpill" Margin="6,0,0,0"
+                    Background="{Binding ConnectButtonBrush}"
+                    Content="{Binding ConnectButtonText}"
+                    Command="{Binding ToggleConnectionCommand}"
+                    IsEnabled="{Binding CanToggleConnection}" />
           </StackPanel>
-        </Button>
+        </Border>
+
       </Grid>
     </Border>
 
@@ -199,84 +396,8 @@
           </Style>
         </DockPanel.Styles>
 
-        <!-- Connection card -->
-        <Border DockPanel.Dock="Top" Classes="card" Margin="16,16,16,0">
-          <StackPanel Spacing="13">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-              <Ellipse Grid.Column="0" Width="11" Height="11" Fill="{Binding AgentStatusBrush}" VerticalAlignment="Center" />
-              <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="{Binding AgentStatusText}" FontWeight="SemiBold" FontSize="15" />
-                <TextBlock Text="{Binding ActiveProfileName}" FontSize="12" Classes="muted" />
-              </StackPanel>
-              <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                <TextBlock Text="—" Classes="mono" FontSize="14" FontWeight="SemiBold" TextAlignment="Right" />
-                <TextBlock Text="в сети" FontSize="10" Classes="muted" TextAlignment="Right" />
-              </StackPanel>
-            </Grid>
-
-            <Grid ColumnDefinitions="*,7,*" Margin="0,0,0,0">
-              <Border Grid.Column="0" Classes="inset" Padding="10,7">
-                <StackPanel>
-                  <TextBlock Text="{Binding ActiveMember, FallbackValue=—, TargetNullValue=—}" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
-                  <TextBlock Text="сервер" FontSize="9.5" Classes="muted" />
-                </StackPanel>
-              </Border>
-              <Border Grid.Column="2" Classes="inset" Padding="10,7">
-                <StackPanel>
-                  <TextBlock Text="—" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
-                  <TextBlock Text="задержка" FontSize="9.5" Classes="muted" />
-                </StackPanel>
-              </Border>
-            </Grid>
-
-            <Grid ColumnDefinitions="*,7,*">
-              <Border Grid.Column="0" Classes="inset" Padding="10,7">
-                <StackPanel Orientation="Horizontal" Spacing="7">
-                  <TextBlock Text="↑" FontSize="12" Classes="muted" VerticalAlignment="Center" />
-                  <StackPanel>
-                    <TextBlock Text="—" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
-                    <TextBlock Text="отправлено" FontSize="9.5" Classes="muted" />
-                  </StackPanel>
-                </StackPanel>
-              </Border>
-              <Border Grid.Column="2" Classes="inset" Padding="10,7">
-                <StackPanel Orientation="Horizontal" Spacing="7">
-                  <TextBlock Text="↓" FontSize="12" Classes="muted" VerticalAlignment="Center" />
-                  <StackPanel>
-                    <TextBlock Text="—" Classes="mono" FontSize="12.5" FontWeight="SemiBold" />
-                    <TextBlock Text="получено" FontSize="9.5" Classes="muted" />
-                  </StackPanel>
-                </StackPanel>
-              </Border>
-            </Grid>
-
-            <Button Background="{Binding ConnectButtonBrush}" Foreground="White"
-                    Content="{Binding ConnectButtonText}"
-                    Command="{Binding ToggleConnectionCommand}"
-                    IsEnabled="{Binding CanToggleConnection}"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                    BorderThickness="0" Padding="0,11" CornerRadius="10"
-                    FontSize="13.5" FontWeight="SemiBold" />
-          </StackPanel>
-        </Border>
-
-        <!-- Nav card -->
-        <Border DockPanel.Dock="Top" Classes="card" Margin="16,12,16,0" Padding="6">
-          <Grid ColumnDefinitions="*,*,*">
-            <Button Grid.Column="0" Classes="nav" Classes.active="{Binding IsHome}"
-                    Command="{Binding NavHomeCommand}"
-                    Content="Главная" HorizontalAlignment="Stretch" />
-            <Button Grid.Column="1" Classes="nav" Classes.active="{Binding IsRouting}"
-                    Command="{Binding NavRoutingCommand}"
-                    Content="Маршрутизация" HorizontalAlignment="Stretch" Margin="5,0" />
-            <Button Grid.Column="2" Classes="nav" Classes.active="{Binding IsSettings}"
-                    Command="{Binding NavSettingsCommand}"
-                    Content="Настройки" HorizontalAlignment="Stretch" />
-          </Grid>
-        </Border>
-
         <!-- Profiles card -->
-        <Border Classes="card" Margin="16,12,16,16" Padding="0">
+        <Border Classes="card" Margin="16,16,16,16" Padding="0">
           <DockPanel LastChildFill="True">
             <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
               <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
@@ -299,25 +420,41 @@
                     <Border Classes="subcard" Margin="0,4">
                       <StackPanel>
 
-                        <!-- Header (always visible) -->
-                        <Button Background="Transparent" BorderThickness="0" Padding="0"
-                                HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch"
-                                Cursor="Hand" Command="{Binding ToggleExpandCommand}">
-                          <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,11">
-                            <Ellipse Grid.Column="0" Width="16" Height="16"
-                                     Stroke="{DynamicResource AgBorder2Brush}" StrokeThickness="2"
-                                     Fill="Transparent" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
-                              <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
-                                         TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                            <TextBlock Grid.Column="2" Text="▼" IsVisible="{Binding IsExpanded}"
-                                       Classes="muted" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="2" Text="▶" IsVisible="{Binding !IsExpanded}"
-                                       Classes="muted" VerticalAlignment="Center" />
-                          </Grid>
-                        </Button>
+                        <!-- Header (always visible): a plain panel. The left circle selects the
+                             active profile; only the chevron expands / collapses. -->
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,9">
+                          <Button Grid.Column="0" Classes="radiopick" VerticalAlignment="Center"
+                                  Command="{Binding SelectCommand}"
+                                  ToolTip.Tip="Сделать активным профилем">
+                            <Grid Width="18" Height="18">
+                              <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                       Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                       Stroke="{DynamicResource AgAccentBrush}" Fill="Transparent"
+                                       IsVisible="{Binding IsActive}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                                       IsVisible="{Binding IsActive}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                          </Button>
+                          <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
+                            <!-- one-line summary only while collapsed; the expanded editor shows the details -->
+                            <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
+                                       TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding !IsExpanded}" />
+                          </StackPanel>
+                          <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center" Padding="8,6"
+                                  Command="{Binding ToggleExpandCommand}"
+                                  ToolTip.Tip="Развернуть / свернуть">
+                            <Panel>
+                              <TextBlock Text="▼" IsVisible="{Binding IsExpanded}" Classes="muted" />
+                              <TextBlock Text="▶" IsVisible="{Binding !IsExpanded}" Classes="muted" />
+                            </Panel>
+                          </Button>
+                        </Grid>
 
                         <!-- Expanded body -->
                         <Border IsVisible="{Binding IsExpanded}"
@@ -386,25 +523,25 @@
 
                             <!-- Configs -->
                             <StackPanel Spacing="8">
-                              <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                              <Grid ColumnDefinitions="Auto,Auto">
                                 <TextBlock Grid.Column="0" Classes="label" Text="КОНФИГУРАЦИИ" VerticalAlignment="Center" />
                                 <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                                         Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
                                   <TextBlock Text="{Binding Members.Count}" FontSize="10.5" Classes="muted" FontWeight="SemiBold" />
                                 </Border>
-                                <Grid Grid.Column="2" ColumnDefinitions="*,Auto" HorizontalAlignment="Right">
-                                  <ComboBox Grid.Column="0" Classes="field" Width="160"
-                                            ItemsSource="{Binding AvailableConfigs}"
-                                            SelectedItem="{Binding AddMemberSelection, Mode=TwoWay}"
-                                            PlaceholderText="конфиг..." Margin="0,0,6,0" />
-                                  <Button Grid.Column="1" Classes="softbtn"
-                                          Command="{Binding AddMemberCommand}">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                      <TextBlock Text="+" />
-                                      <TextBlock Text="Добавить" />
-                                    </StackPanel>
-                                  </Button>
-                                </Grid>
+                              </Grid>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <ComboBox Grid.Column="0" Classes="field"
+                                          ItemsSource="{Binding AvailableConfigs}"
+                                          SelectedItem="{Binding AddMemberSelection, Mode=TwoWay}"
+                                          PlaceholderText="Выбрать..." Margin="0,0,8,0" />
+                                <Button Grid.Column="1" Classes="accent"
+                                        Command="{Binding AddMemberCommand}">
+                                  <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="+" />
+                                    <TextBlock Text="Добавить" />
+                                  </StackPanel>
+                                </Button>
                               </Grid>
 
                               <ItemsControl ItemsSource="{Binding Members}">
@@ -458,31 +595,8 @@
 
           <!-- HOME -->
           <DockPanel IsVisible="{Binding IsHome}" LastChildFill="True">
-            <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="24,20,24,16">
-              <Grid ColumnDefinitions="Auto,*,Auto">
-                <Ellipse Grid.Column="0" Width="16" Height="16" Fill="{Binding AgentStatusBrush}" VerticalAlignment="Center" />
-                <StackPanel Grid.Column="1" Margin="15,0,0,0" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding AgentStatusText}" FontSize="19" FontWeight="SemiBold" />
-                  <TextBlock Text="{Binding ActiveProfileName}" FontSize="13" Classes="muted" />
-                </StackPanel>
-                <Border Grid.Column="2" Classes="inset" Padding="14,9" MinWidth="96">
-                  <StackPanel>
-                    <TextBlock Text="—" Classes="mono" FontSize="16" FontWeight="SemiBold" />
-                    <TextBlock Text="в сети" FontSize="10" Classes="muted" />
-                  </StackPanel>
-                </Border>
-              </Grid>
-            </Border>
-
-            <StackPanel DockPanel.Dock="Top" Margin="24,16">
-              <Grid ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="section" Text="СОСТОЯНИЕ БАЛАНСИРОВЩИКА" VerticalAlignment="Center" />
-                <Border Grid.Column="2" Classes="inset"
-                        BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                        Padding="10,3">
-                  <TextBlock Text="—" FontSize="11.5" Classes="muted" />
-                </Border>
-              </Grid>
+            <StackPanel DockPanel.Dock="Top" Margin="24,20,24,16">
+              <TextBlock Classes="section" Text="СОСТОЯНИЕ БАЛАНСИРОВЩИКА" />
               <TextBlock Text="Активный профиль и латентности будут отображаться здесь, когда агент будет подключён."
                          Classes="muted" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
             </StackPanel>
@@ -571,9 +685,27 @@
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
                     <TextBlock Text="ОБЩИЕ" Classes="section" />
                   </Border>
+
+                  <!-- Theme (existing, unchanged) -->
                   <Grid ColumnDefinitions="*,Auto" Margin="17,14">
                     <TextBlock Text="Тема оформления" FontSize="13.5" VerticalAlignment="Center" />
                     <Button Grid.Column="1" Classes="softbtn" Content="{Binding ThemeLabel}" Command="{Binding ToggleThemeCommand}" />
+                  </Grid>
+
+                  <!-- divider -->
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
+                  <!-- Language (relocated from header; placeholder, disabled) -->
+                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                    <TextBlock Text="Язык интерфейса" FontSize="13.5" VerticalAlignment="Center" />
+                    <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}"
+                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="2" VerticalAlignment="Center">
+                      <StackPanel Orientation="Horizontal" Spacing="2">
+                        <Button Classes="seg active" Content="RU" IsEnabled="False" />
+                        <Button Classes="seg" Content="EN" IsEnabled="False" />
+                      </StackPanel>
+                    </Border>
                   </Grid>
                 </StackPanel>
               </Border>
@@ -633,12 +765,15 @@
             Background="{DynamicResource AgAccentBrush}"
             CornerRadius="10" Padding="16,10"
             BoxShadow="0 6 20 0 #33000000">
-      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <Ellipse Width="9" Height="9" Fill="White" VerticalAlignment="Center" />
-        <TextBlock Text="{Binding NoticeText}" Foreground="White"
+      <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+        <Ellipse Grid.Column="0" Width="9" Height="9" Fill="White" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
                    FontSize="12.5" FontWeight="SemiBold"
                    TextWrapping="Wrap" VerticalAlignment="Center" />
-      </StackPanel>
+        <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
+                Content="✕" Foreground="White" FontSize="13" Margin="10,0,0,0"
+                VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
+      </Grid>
     </Border>
 
   </Grid>

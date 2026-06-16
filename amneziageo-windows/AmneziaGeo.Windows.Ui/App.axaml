@@ -5,6 +5,33 @@
 
   <Application.Styles>
     <FluentTheme />
+
+    <!-- Strict, flicker-free ComboBox dropdown rows. The popup lives outside any window's template
+         scope, so these must be app-level. Null the inherited highlight fade and use opaque states so
+         hover / selected are instant with no interpolated wrong-colour frame (Avalonia 11.3.x). -->
+    <Style Selector="ComboBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Transitions" Value="{x:Null}" />
+    </Style>
+    <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="ComboBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="ComboBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="ComboBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
   </Application.Styles>
 
   <Application.Resources>

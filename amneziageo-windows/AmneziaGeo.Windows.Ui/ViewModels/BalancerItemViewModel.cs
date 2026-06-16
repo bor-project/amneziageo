@@ -14,6 +14,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 {
     private readonly Func<string, int, string, IReadOnlyList<string>, Task> _saveBalancer;
     private readonly Func<string, long?, bool, Task> _assignRouting;
+    private readonly Func<string, Task> _selectProfile;
     private bool _suppress;
 
     [ObservableProperty]
@@ -45,6 +46,9 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private bool _isExpanded;
 
     [ObservableProperty]
+    private bool _isActive;
+
+    [ObservableProperty]
     private RoutingListChoice _selectedRoutingList = RoutingListChoice.None;
 
     [ObservableProperty]
@@ -59,10 +63,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// </summary>
     public BalancerItemViewModel(
         Func<string, int, string, IReadOnlyList<string>, Task> saveBalancer,
-        Func<string, long?, bool, Task> assignRouting)
+        Func<string, long?, bool, Task> assignRouting,
+        Func<string, Task> selectProfile)
     {
         _saveBalancer = saveBalancer;
         _assignRouting = assignRouting;
+        _selectProfile = selectProfile;
     }
 
     /// <summary>
@@ -124,6 +130,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private void ToggleExpand()
     {
         IsExpanded = !IsExpanded;
+    }
+
+    [RelayCommand]
+    private Task Select()
+    {
+        return _selectProfile(Name);
     }
 
     [RelayCommand]

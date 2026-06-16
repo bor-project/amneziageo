@@ -15,4 +15,5 @@ public sealed record StatusSnapshot(
     bool RestartRequired = false,
     string? BetterMember = null,
     bool KillSwitchEnabled = false,
-    bool AllowLan = true);
+    bool AllowLan = true,
+    string? SelectedTarget = null);

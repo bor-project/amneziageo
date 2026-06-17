@@ -65,6 +65,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSettings))]
     private string _nav = "home";
 
+    // Which settings section the left rail has selected while on the Settings tab.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsSecurity))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsAbout))]
+    private string _settingsSection = "general";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ThemeLabel))]
     private bool _isDark;
@@ -213,6 +220,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool IsSettings => Nav == "settings";
 
+    /// <summary>Whether the General settings section is selected.</summary>
+    public bool IsSettingsGeneral => SettingsSection == "general";
+
+    /// <summary>Whether the Security settings section is selected.</summary>
+    public bool IsSettingsSecurity => SettingsSection == "security";
+
+    /// <summary>Whether the About settings section is selected.</summary>
+    public bool IsSettingsAbout => SettingsSection == "about";
+
     /// <summary>
     /// Whether a routing list is open in the inline editor (drives the routing page master/detail).
     /// </summary>
@@ -255,6 +271,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void NavSettings()
     {
         Nav = "settings";
+    }
+
+    [RelayCommand]
+    private void SelectSettings(string section)
+    {
+        SettingsSection = section;
     }
 
     [RelayCommand]

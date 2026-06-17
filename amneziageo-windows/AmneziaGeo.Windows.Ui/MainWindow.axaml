@@ -483,17 +483,16 @@
                         <DataTemplate>
                           <Border Background="{DynamicResource AgPanelBrush}"
                                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                  CornerRadius="9" Padding="11,9" Margin="0,3">
+                                  CornerRadius="9" Padding="11,9" Margin="0,3"
+                                  ContextRequested="OnSourceRowContext"
+                                  ToolTip.Tip="Правый клик — удалить базу">
                             <Grid ColumnDefinitions="*,Auto">
-                              <!-- row body: click opens the delete menu (built in code-behind) -->
-                              <Button Grid.Column="0" Classes="sourcerow" Click="OnSourceRowClick"
-                                      ToolTip.Tip="Нажмите, чтобы удалить">
-                                <StackPanel VerticalAlignment="Center">
-                                  <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
-                                  <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
-                                             TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                              </Button>
+                              <!-- row body; right-click opens the delete menu (built in code-behind) -->
+                              <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
+                                           TextTrimming="CharacterEllipsis" />
+                              </StackPanel>
                               <!-- refresh: spins + shows download % while an update is in flight -->
                               <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center" Margin="8,0,0,0"
                                       Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
@@ -581,9 +580,9 @@
             </DockPanel>
           </Panel>
 
-          <!-- SETTINGS : the section chosen in the left rail -->
+          <!-- SETTINGS : the section chosen in the left rail (cards span the full pane width) -->
           <ScrollViewer IsVisible="{Binding IsSettings}">
-            <StackPanel Margin="24,22" MaxWidth="640" HorizontalAlignment="Left">
+            <StackPanel Margin="24,22">
 
               <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsGeneral}">
                 <StackPanel>

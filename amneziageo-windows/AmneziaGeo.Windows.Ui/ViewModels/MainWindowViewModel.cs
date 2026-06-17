@@ -90,6 +90,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSettingsAbout))]
     private string _settingsSection = "general";
 
+    // Which routing sub-tab is active: the rule-lists ("rules") or the geo-data sources ("sources").
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRoutingRules))]
+    [NotifyPropertyChangedFor(nameof(IsRoutingSources))]
+    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
+    [NotifyPropertyChangedFor(nameof(ShowRoutingRulesEmpty))]
+    private string _routingTab = "rules";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ThemeLabel))]
     private bool _isDark;
@@ -102,6 +110,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRoutingEditor))]
+    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
+    [NotifyPropertyChangedFor(nameof(ShowRoutingRulesEmpty))]
     private RoutingListEditorViewModel? _routingEditor;
 
     [ObservableProperty]
@@ -316,6 +326,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Whether the About settings section is selected.</summary>
     public bool IsSettingsAbout => SettingsSection == "about";
+
+    /// <summary>Whether the routing "rules" sub-tab is active (the rule-lists).</summary>
+    public bool IsRoutingRules => RoutingTab != "sources";
+
+    /// <summary>Whether the routing "sources" sub-tab is active (the geo-data bases).</summary>
+    public bool IsRoutingSources => RoutingTab == "sources";
+
+    /// <summary>Right pane shows the rule editor: rules sub-tab with a list open.</summary>
+    public bool ShowRoutingEditor => IsRoutingRules && HasRoutingEditor;
+
+    /// <summary>Right pane shows the "pick a rule" hint: rules sub-tab, nothing open.</summary>
+    public bool ShowRoutingRulesEmpty => IsRoutingRules && !HasRoutingEditor;
 
     /// <summary>
     /// Whether a routing list is open in the inline editor (drives the routing page master/detail).
@@ -850,6 +872,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RoutingEditor = null;
         _selectedRoutingListId = -1;
         UpdateRoutingSelection();
+    }
+
+    [RelayCommand]
+    private void SelectRoutingTab(string tab)
+    {
+        RoutingTab = tab == "sources" ? "sources" : "rules";
     }
 
     // Infer the source kind from the URL's file name: a name containing "geosite" or "geoip" (any

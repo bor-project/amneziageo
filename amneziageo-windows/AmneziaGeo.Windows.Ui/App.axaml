@@ -119,8 +119,10 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
-    <!-- powerctl : the round on/off connection control (tinted stage bound to a VM brush per state) -->
+    <!-- powerctl : the round on/off connection control. Static control chrome (like every other control);
+         only the round circle reflects connection state, not the whole plaque. -->
     <Style Selector="Button.powerctl">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="10" />
@@ -301,6 +303,24 @@
           </KeyFrame>
           <KeyFrame Cue="100%">
             <Setter Property="RotateTransform.Angle" Value="360" />
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
+    <!-- Control.pulse : opacity breathing — a robust "busy" indicator (pure opacity, no transform so it
+         cannot silently fail on a transform-origin/RenderTransform quirk the way a rotation can). -->
+    <Style Selector="Control.pulse">
+      <Style.Animations>
+        <Animation Duration="0:0:1" IterationCount="INFINITE">
+          <KeyFrame Cue="0%">
+            <Setter Property="Opacity" Value="1" />
+          </KeyFrame>
+          <KeyFrame Cue="50%">
+            <Setter Property="Opacity" Value="0.25" />
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Opacity" Value="1" />
           </KeyFrame>
         </Animation>
       </Style.Animations>

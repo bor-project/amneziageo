@@ -18,13 +18,12 @@
   <DockPanel LastChildFill="True">
 
     <!-- HEADER : the round power-button connection control, on the LEFT -->
-    <Border DockPanel.Dock="Top" Height="48"
+    <Border DockPanel.Dock="Top" Height="42"
             Background="{DynamicResource AgSidebarBrush}"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
 
       <!-- click the circle to toggle the tunnel; tint and glyph reflect the state -->
-      <Button Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0"
-              Background="{Binding ConnectStageBrush}"
+      <Button Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,3,12,0"
               Command="{Binding ToggleConnectionCommand}"
               IsEnabled="{Binding CanToggleConnection}">
         <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
@@ -35,14 +34,14 @@
               <TextBlock Text="{Binding ConnectGlyph}" Foreground="{Binding ConnectCircleForeground}"
                          FontSize="11" IsVisible="{Binding !IsConnecting}"
                          HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Ellipse Classes="spin" Width="14" Height="14" IsVisible="{Binding IsConnecting}"
-                       Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
-                       StrokeDashArray="5,14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Ellipse Classes.pulse="{Binding IsConnecting}" Width="11" Height="11"
+                       IsVisible="{Binding IsConnecting}" Fill="{Binding ConnectCircleForeground}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Panel>
           </Border>
           <StackPanel VerticalAlignment="Center">
             <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
-                       Foreground="{Binding ConnectStatusBrush}" />
+                       Foreground="{DynamicResource AgFgBrush}" />
             <TextBlock Text="{Binding ConnectHint}" FontSize="10"
                        Foreground="{Binding ConnectHintBrush}" />
           </StackPanel>
@@ -58,7 +57,7 @@
                  Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
 
         <!-- nav: compact, full sidebar width, three equal segments (right edge flush to the gutter) -->
-        <Border DockPanel.Dock="Top" Margin="12,12,0,0"
+        <Border DockPanel.Dock="Top" Margin="12,6,0,0"
                 Background="{DynamicResource AgInsetBrush}"
                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                 CornerRadius="10" Padding="3">
@@ -75,7 +74,7 @@
         <Grid>
 
         <!-- Profiles list (Home tab) -->
-        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsHome}">
+        <Border Classes="card" Margin="12,6,0,12" Padding="0" IsVisible="{Binding IsHome}">
           <DockPanel LastChildFill="True">
             <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,11,14,8">
               <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
@@ -306,79 +305,92 @@
           </DockPanel>
         </Border>
 
-        <!-- Routing lists (Routing tab) -->
-        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsRouting}">
+        <!-- Routing (Routing tab): Правила | Источники sub-tabs -->
+        <Border Classes="card" Margin="12,6,0,12" Padding="0" IsVisible="{Binding IsRouting}">
           <DockPanel LastChildFill="True">
-            <!-- bases nav: opens the geo-data bases panel on the right (active when no rule is open) -->
-            <Button DockPanel.Dock="Top" Classes="rowselect" Classes.active="{Binding !HasRoutingEditor}"
-                    Margin="12,12,12,0" Command="{Binding CloseRoutingEditorCommand}">
-              <Grid ColumnDefinitions="Auto,*" Margin="12,10">
-                <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
-                  <Ellipse Width="16" Height="16" StrokeThickness="2"
-                           Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                           IsVisible="{Binding !HasRoutingEditor}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+            <!-- sub-tab toggle -->
+            <Border DockPanel.Dock="Top" Margin="12,12,12,0"
+                    Background="{DynamicResource AgInsetBrush}"
+                    BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="3">
+              <UniformGrid Columns="2">
+                <Button Classes="seg" Classes.active="{Binding IsRoutingRules}"
+                        Command="{Binding SelectRoutingTabCommand}" CommandParameter="rules" Content="Правила" />
+                <Button Classes="seg" Classes.active="{Binding IsRoutingSources}"
+                        Command="{Binding SelectRoutingTabCommand}" CommandParameter="sources" Content="Источники" />
+              </UniformGrid>
+            </Border>
+
+            <Grid>
+              <!-- Правила : the rule-lists -->
+              <DockPanel IsVisible="{Binding IsRoutingRules}" LastChildFill="True">
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="12,8,12,2">
+                  <Button Grid.Column="1" Classes="softbtn" Command="{Binding NewRoutingListCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Text="+" />
+                      <TextBlock Text="Добавить" />
+                    </StackPanel>
+                  </Button>
                 </Grid>
-                <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Базы гео-данных"
-                           FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
-              </Grid>
-            </Button>
 
-            <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="12,12,12,2" />
+                <ScrollViewer>
+                  <StackPanel Margin="12,2,12,12">
+                    <ItemsControl ItemsSource="{Binding RoutingLists}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Button Classes="rowselect" Classes.active="{Binding IsSelected}" Margin="0,3"
+                                  Command="{Binding $parent[ItemsControl].DataContext.SelectRoutingListCommand}"
+                                  CommandParameter="{Binding}">
+                            <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                              <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                                <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                         Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                                         IsVisible="{Binding IsSelected}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              </Grid>
+                              <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
+                                <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
+                                           TextTrimming="CharacterEllipsis" />
+                              </StackPanel>
+                            </Grid>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock IsVisible="{Binding !HasRoutingLists}"
+                               Text="Нет правил. Нажмите «+ Правило»."
+                               Classes="muted" FontSize="12" Margin="6,12" TextWrapping="Wrap" />
+                  </StackPanel>
+                </ScrollViewer>
+              </DockPanel>
 
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,8,14,8">
-              <TextBlock Grid.Column="0" Classes="section" Text="ПРАВИЛА" VerticalAlignment="Center" />
-              <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                      Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-              </Border>
-              <Button Grid.Column="3" Classes="softbtn" Command="{Binding NewRoutingListCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock Text="+" />
-                  <TextBlock Text="Правило" />
-                </StackPanel>
-              </Button>
-            </Grid>
-
-            <ScrollViewer>
-              <StackPanel Margin="12,2,12,12">
-                <ItemsControl ItemsSource="{Binding RoutingLists}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Button Classes="rowselect" Classes.active="{Binding IsSelected}" Margin="0,3"
-                              Command="{Binding $parent[ItemsControl].DataContext.SelectRoutingListCommand}"
-                              CommandParameter="{Binding}">
-                        <Grid ColumnDefinitions="Auto,*" Margin="12,10">
-                          <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
-                            <Ellipse Width="16" Height="16" StrokeThickness="2"
-                                     Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                                     IsVisible="{Binding IsSelected}"
-                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
-                          </Grid>
-                          <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
-                            <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
-                                       TextTrimming="CharacterEllipsis" />
-                          </StackPanel>
-                        </Grid>
-                      </Button>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock IsVisible="{Binding !HasRoutingLists}"
-                           Text="Нет правил. Нажмите «+ Правило»."
-                           Classes="muted" FontSize="12" Margin="6,12" TextWrapping="Wrap" />
+              <!-- Источники : the geo-data bases (opens the sources panel on the right) -->
+              <StackPanel IsVisible="{Binding IsRoutingSources}" Margin="12,10,12,12">
+                <TextBlock Classes="section" Text="ИСТОЧНИКИ ДАННЫХ" Margin="2,0,2,8" />
+                <Button Classes="rowselect active" Command="{Binding CloseRoutingEditorCommand}">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Базы гео-данных"
+                               FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
               </StackPanel>
-            </ScrollViewer>
+            </Grid>
           </DockPanel>
         </Border>
 
         <!-- Settings sections (Settings tab): a radio list mirroring the routing rail -->
-        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsSettings}">
+        <Border Classes="card" Margin="12,6,0,12" Padding="0" IsVisible="{Binding IsSettings}">
           <DockPanel LastChildFill="True">
             <TextBlock DockPanel.Dock="Top" Classes="section" Text="НАСТРОЙКИ" Margin="14,11,14,8" />
             <StackPanel Margin="12,2,12,12">
@@ -437,7 +449,7 @@
       </DockPanel>
 
       <!-- RIGHT CONTENT (12px gutter on its left → consistent in both docked and full-width modes) -->
-      <Border Grid.Column="1" Classes="card" Margin="12,12,12,12" Padding="0">
+      <Border Grid.Column="1" Classes="card" Margin="12,6,12,12" Padding="0">
         <Grid>
 
           <!-- HOME : current state summary + live agent journal -->
@@ -473,8 +485,8 @@
           <!-- ROUTING : selected list editor (inline, replaces the dialog) -->
           <Panel IsVisible="{Binding IsRouting}">
 
-            <!-- empty state: geo-source management (and a hint to pick a list) -->
-            <DockPanel IsVisible="{Binding !HasRoutingEditor}" LastChildFill="True" Margin="18,16">
+            <!-- Источники sub-tab: geo-source (geo-data bases) management -->
+            <DockPanel IsVisible="{Binding IsRoutingSources}" LastChildFill="True" Margin="18,16">
 
               <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
                 <TextBlock Grid.Column="0" Grid.ColumnSpan="2" Text="Базы гео-данных" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -545,7 +557,13 @@
               </Border>
             </DockPanel>
 
-            <DockPanel IsVisible="{Binding HasRoutingEditor}" LastChildFill="True" Margin="18,16">
+            <!-- rules sub-tab, nothing selected: hint to pick or create a rule -->
+            <TextBlock IsVisible="{Binding ShowRoutingRulesEmpty}"
+                       Text="Выберите правило слева или создайте новое («+ Правило»)."
+                       Classes="muted" FontSize="13" Margin="18"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" />
+
+            <DockPanel IsVisible="{Binding ShowRoutingEditor}" LastChildFill="True" Margin="18,16">
 
               <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
                 <TextBlock Grid.Column="0" Grid.ColumnSpan="2" Text="Правила маршрутизации" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />

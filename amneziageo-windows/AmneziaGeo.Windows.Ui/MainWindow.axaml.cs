@@ -178,13 +178,28 @@ public sealed partial class MainWindow : Window
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 
-    private async void OnExportMemberClick(object? sender, RoutedEventArgs e)
+    /// <summary>
+    /// Opens the per-config context menu (export) on a right-click of a member row. The menu is built here,
+    /// with its command wired from the captured config name, because a MenuItem hosted in a flyout popup does
+    /// not reliably inherit the row's DataContext for a {Binding}-based command in Avalonia 11.
+    /// </summary>
+    private void OnMemberRowContext(object? sender, ContextRequestedEventArgs e)
     {
-        if (sender is not Control { DataContext: string configName })
+        if (sender is not Control { DataContext: string configName } target)
         {
             return;
         }
 
+        var export = new MenuItem { Header = "Экспорт конфига" };
+        export.Click += (_, _) => _ = ExportConfigAsync(configName);
+        var flyout = new MenuFlyout();
+        flyout.Items.Add(export);
+        flyout.ShowAt(target, showAtPointer: true);
+        e.Handled = true;
+    }
+
+    private async System.Threading.Tasks.Task ExportConfigAsync(string configName)
+    {
         if (DataContext is not MainWindowViewModel vm)
         {
             return;

@@ -17,38 +17,37 @@
   <Grid>
   <DockPanel LastChildFill="True">
 
-    <!-- HEADER : unified connection-control command bar (left-aligned, compact) -->
-    <Border DockPanel.Dock="Top" Height="46"
+    <!-- HEADER : the round power-button connection control, on the LEFT -->
+    <Border DockPanel.Dock="Top" Height="48"
             Background="{DynamicResource AgSidebarBrush}"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
 
-      <!-- connection control (status + connect as one pill), on the LEFT -->
-      <Border HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0"
-              Background="{DynamicResource AgInsetBrush}"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="10" Padding="3">
-        <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
-
-          <!-- live status segment -->
-          <StackPanel Orientation="Horizontal" Spacing="9"
-                      VerticalAlignment="Center" Margin="9,0,11,0">
-            <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}"
-                     VerticalAlignment="Center" />
-            <TextBlock Text="{Binding AgentStatusText}"
-                       FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <!-- click the circle to toggle the tunnel; tint and glyph reflect the state -->
+      <Button Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0"
+              Background="{Binding ConnectStageBrush}"
+              Command="{Binding ToggleConnectionCommand}"
+              IsEnabled="{Binding CanToggleConnection}">
+        <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
+          <Border Width="28" Height="28" CornerRadius="14"
+                  Background="{Binding ConnectCircleBrush}"
+                  BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="1">
+            <Panel>
+              <TextBlock Text="{Binding ConnectGlyph}" Foreground="{Binding ConnectCircleForeground}"
+                         FontSize="11" IsVisible="{Binding !IsConnecting}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Ellipse Classes="spin" Width="14" Height="14" IsVisible="{Binding IsConnecting}"
+                       Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
+                       StrokeDashArray="5,14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
+          </Border>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
+                       Foreground="{Binding ConnectStatusBrush}" />
+            <TextBlock Text="{Binding ConnectHint}" FontSize="10"
+                       Foreground="{Binding ConnectHintBrush}" />
           </StackPanel>
-
-          <!-- 1px vertical divider -->
-          <Border Width="1" Margin="0,4" Background="{DynamicResource AgBorder2Brush}" />
-
-          <!-- connect / stop action (EXISTING bindings, verbatim) -->
-          <Button Classes="connectpill" Margin="6,0,0,0"
-                  Background="{Binding ConnectButtonBrush}"
-                  Content="{Binding ConnectButtonText}"
-                  Command="{Binding ToggleConnectionCommand}"
-                  IsEnabled="{Binding CanToggleConnection}" />
         </StackPanel>
-      </Border>
+      </Button>
     </Border>
 
     <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
@@ -78,7 +77,7 @@
         <!-- Profiles list (Home tab) -->
         <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsHome}">
           <DockPanel LastChildFill="True">
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,11,14,8">
               <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
               <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                       Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
@@ -138,8 +137,8 @@
                         <!-- Expanded body -->
                         <Border IsVisible="{Binding IsExpanded}"
                                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0"
-                                Padding="13,14">
-                          <StackPanel Spacing="15">
+                                Padding="12,10">
+                          <StackPanel Spacing="12">
 
                             <!-- Configs -->
                             <StackPanel Spacing="8">
@@ -199,8 +198,9 @@
                                   <DataTemplate>
                                     <Border Background="{DynamicResource AgPanelBrush}"
                                             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                            CornerRadius="9" Padding="9,8" Margin="0,3">
-                                      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                            CornerRadius="9" Padding="9,8" Margin="0,3"
+                                            ContextRequested="OnMemberRowContext">
+                                      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                                         <Ellipse Grid.Column="0" Width="9" Height="9"
                                                  Fill="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" Margin="9,0,0,0" Text="{Binding}"
@@ -217,10 +217,7 @@
                                                   CommandParameter="{Binding}"
                                                   FontSize="8" Padding="3,0" />
                                         </StackPanel>
-                                        <Button Grid.Column="3" Classes="icon" Content="↗" Margin="4,0,0,0"
-                                                Click="OnExportMemberClick"
-                                                ToolTip.Tip="Экспорт конфига (файл / ссылка / QR)" />
-                                        <Button Grid.Column="4" Classes="icon" Content="✕" Margin="4,0,0,0"
+                                        <Button Grid.Column="3" Classes="icon" Content="✕" Margin="4,0,0,0"
                                                 Command="{Binding $parent[ItemsControl].DataContext.RemoveMemberCommand}"
                                                 CommandParameter="{Binding}" />
                                       </Grid>
@@ -331,7 +328,7 @@
 
             <Border DockPanel.Dock="Top" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="12,12,12,2" />
 
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,8,15,10">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,8,14,8">
               <TextBlock Grid.Column="0" Classes="section" Text="ПРАВИЛА" VerticalAlignment="Center" />
               <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                       Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
@@ -383,7 +380,7 @@
         <!-- Settings sections (Settings tab): a radio list mirroring the routing rail -->
         <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsSettings}">
           <DockPanel LastChildFill="True">
-            <TextBlock DockPanel.Dock="Top" Classes="section" Text="НАСТРОЙКИ" Margin="15,14,15,10" />
+            <TextBlock DockPanel.Dock="Top" Classes="section" Text="НАСТРОЙКИ" Margin="14,11,14,8" />
             <StackPanel Margin="12,2,12,12">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsGeneral}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="general">
@@ -445,7 +442,7 @@
 
           <!-- HOME : current state summary + live agent journal -->
           <DockPanel IsVisible="{Binding IsHome}" LastChildFill="True">
-            <StackPanel DockPanel.Dock="Top" Margin="24,20,24,12">
+            <StackPanel DockPanel.Dock="Top" Margin="18,14,18,10">
               <TextBlock Classes="section" Text="СОСТОЯНИЕ" />
               <StackPanel Orientation="Horizontal" Spacing="9" Margin="0,9,0,0" VerticalAlignment="Center">
                 <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}" VerticalAlignment="Center" />
@@ -454,10 +451,10 @@
               </StackPanel>
             </StackPanel>
 
-            <TextBlock DockPanel.Dock="Top" Classes="section" Text="ЖУРНАЛ АГЕНТА" Margin="24,4,24,8" />
+            <TextBlock DockPanel.Dock="Top" Classes="section" Text="ЖУРНАЛ АГЕНТА" Margin="18,4,18,8" />
 
             <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                    Background="{DynamicResource AgInsetBrush}" Margin="24,0,24,18" CornerRadius="12">
+                    Background="{DynamicResource AgInsetBrush}" Margin="18,0,18,14" CornerRadius="12">
               <Panel>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                   <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
@@ -477,7 +474,7 @@
           <Panel IsVisible="{Binding IsRouting}">
 
             <!-- empty state: geo-source management (and a hint to pick a list) -->
-            <DockPanel IsVisible="{Binding !HasRoutingEditor}" LastChildFill="True" Margin="24,22">
+            <DockPanel IsVisible="{Binding !HasRoutingEditor}" LastChildFill="True" Margin="18,16">
 
               <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
                 <TextBlock Grid.Column="0" Grid.ColumnSpan="2" Text="Базы гео-данных" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -548,7 +545,7 @@
               </Border>
             </DockPanel>
 
-            <DockPanel IsVisible="{Binding HasRoutingEditor}" LastChildFill="True" Margin="24,22">
+            <DockPanel IsVisible="{Binding HasRoutingEditor}" LastChildFill="True" Margin="18,16">
 
               <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
                 <TextBlock Grid.Column="0" Grid.ColumnSpan="2" Text="Правила маршрутизации" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -613,16 +610,16 @@
 
           <!-- SETTINGS : the section chosen in the left rail (cards span the full pane width) -->
           <ScrollViewer IsVisible="{Binding IsSettings}">
-            <StackPanel Margin="24,22">
+            <StackPanel Margin="18,16">
 
               <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsGeneral}">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <TextBlock Text="ОБЩИЕ" Classes="section" />
                   </Border>
 
                   <!-- Theme (existing, unchanged) -->
-                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
                     <TextBlock Text="Тема оформления" FontSize="13.5" VerticalAlignment="Center" />
                     <Button Grid.Column="1" Classes="softbtn" Content="{Binding ThemeLabel}" Command="{Binding ToggleThemeCommand}" />
                   </Grid>
@@ -631,7 +628,7 @@
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
                   <!-- Language (relocated from header; placeholder, disabled) -->
-                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
                     <TextBlock Text="Язык интерфейса" FontSize="13.5" VerticalAlignment="Center" />
                     <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}"
                             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
@@ -647,10 +644,10 @@
 
               <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsSecurity}">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <TextBlock Text="БЕЗОПАСНОСТЬ" Classes="section" />
                   </Border>
-                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
                       <TextBlock Text="Kill-switch" FontSize="13.5" />
                       <TextBlock Text="Блокировать весь трафик вне туннеля. Применяется при переподключении."
@@ -660,7 +657,7 @@
                                   IsChecked="{Binding KillSwitchEnabled, Mode=TwoWay}" />
                   </Grid>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
-                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
                       <TextBlock Text="Доступ к локальной сети" FontSize="13.5" />
                       <TextBlock Text="Разрешить локальную сеть при kill-switch (SSH, принтеры, NAS)."
@@ -674,10 +671,10 @@
 
               <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsAbout}">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <TextBlock Text="О ПРИЛОЖЕНИИ" Classes="section" />
                   </Border>
-                  <Grid ColumnDefinitions="*,Auto" Margin="17,14">
+                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
                     <TextBlock Text="Версия" FontSize="13.5" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="AmneziaGeo 1.0.0" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
                   </Grid>

@@ -21,12 +21,17 @@
 
       <TabItem Header="Конфигурация">
         <StackPanel Spacing="8" Margin="0,14">
-          <TextBlock Text="Файл (.conf) или QR-картинка:" />
-          <Grid ColumnDefinitions="*,Auto,Auto">
+          <TextBlock Text="Файл конфигурации (.conf):" />
+          <Grid ColumnDefinitions="*,Auto">
             <TextBox Grid.Column="0" IsReadOnly="True" Text="{Binding ConfigPath}" Watermark="файл не выбран" />
             <Button Grid.Column="1" Content="Обзор..." Click="OnBrowseConfig" Margin="6,0,0,0" />
-            <Button Grid.Column="2" Content="QR из файла" Click="OnImportQrImage" Margin="6,0,0,0" />
           </Grid>
+          <TextBlock Text="QR-код:" />
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Button Content="Из файла" Click="OnImportQrImage" />
+            <Button Content="С камеры" Click="OnScanCamera" />
+            <Button Content="Из буфера" Click="OnImportQrClipboard" />
+          </StackPanel>
           <TextBlock Text="или вставьте vpn:// ссылку либо текст .conf:" />
           <TextBox Text="{Binding ImportText}" AcceptsReturn="True" Height="90" TextWrapping="Wrap"
                    Watermark="vpn://...   или   [Interface]..." />

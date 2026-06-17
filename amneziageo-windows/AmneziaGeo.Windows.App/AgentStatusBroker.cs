@@ -298,6 +298,19 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
+
+        // If the running profile routes through this list, its rules just changed under a live tunnel.
+        // Routing changes only apply cleanly on a fresh tunnel (same rationale as assign-routing), so flag
+        // a reconnect and let the UI show the "reconnect to apply" banner.
+        if (control.Running && BoundTarget is not null)
+        {
+            var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
+            if (useRouting && listId == resultId)
+            {
+                control.SetRestartRequired();
+            }
+        }
+
         logger.LogInformation("saved routing list {Id} '{Name}' ({Rules} rules)", resultId, name, args.Count - 2);
         return new IpcAck(true, resultId.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }

@@ -108,4 +108,15 @@ public static class IpcContract
     /// Command to re-download a single geo data source by name and re-materialize the routing lists. Args: name.
     /// </summary>
     public const string OpUpdateSource = "update-source";
+
+    /// <summary>
+    /// Command to read a stored config's wg-quick text for export. Args: name. The ack message holds the
+    /// raw .conf text.
+    /// </summary>
+    public const string OpGetConfig = "get-config";
+
+    /// <summary>
+    /// Command to import a config from raw wg-quick text (file/QR/link parsed UI-side). Args: name, text.
+    /// </summary>
+    public const string OpImportConfig = "import-config";
 }

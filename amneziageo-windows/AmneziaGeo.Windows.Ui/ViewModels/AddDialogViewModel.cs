@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -21,6 +22,10 @@ internal sealed partial class AddDialogViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _configName = string.Empty;
+
+    // Pasted vpn:// link or .conf text, or text decoded from a scanned QR. Takes priority over the file.
+    [ObservableProperty]
+    private string _importText = string.Empty;
 
     [ObservableProperty]
     private string _balancerName = string.Empty;
@@ -111,15 +116,43 @@ internal sealed partial class AddDialogViewModel : ViewModelBase
 
     private async Task<bool> AddConfigAsync()
     {
-        var path = ConfigPath;
-        if (string.IsNullOrWhiteSpace(path))
+        string? raw = null;
+        if (!string.IsNullOrWhiteSpace(ImportText))
         {
-            StatusMessage = "Выберите файл конфигурации";
+            raw = ImportText;
+        }
+        else if (!string.IsNullOrWhiteSpace(ConfigPath))
+        {
+            try
+            {
+                raw = File.ReadAllText(ConfigPath);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = ex.Message;
+                return false;
+            }
+        }
+
+        if (raw is null)
+        {
+            StatusMessage = "Выберите файл, вставьте ссылку/текст или отсканируйте QR";
             return false;
         }
 
-        var name = string.IsNullOrWhiteSpace(ConfigName) ? Path.GetFileNameWithoutExtension(path) : ConfigName.Trim();
-        return await SendAsync(new IpcCommand(IpcContract.OpAddConfig, [name, path]));
+        var imported = VpnLinkCodec.TryDecode(raw);
+        if (imported is null)
+        {
+            StatusMessage = "Не удалось распознать конфиг (.conf или vpn://)";
+            return false;
+        }
+
+        var name = !string.IsNullOrWhiteSpace(ConfigName) ? ConfigName.Trim()
+            : !string.IsNullOrWhiteSpace(imported.Name) ? imported.Name!.Trim()
+            : !string.IsNullOrWhiteSpace(ConfigPath) ? Path.GetFileNameWithoutExtension(ConfigPath!)
+            : "config";
+
+        return await SendAsync(new IpcCommand(IpcContract.OpImportConfig, [name, imported.ConfText]));
     }
 
     private async Task<bool> AddBalancerAsync()

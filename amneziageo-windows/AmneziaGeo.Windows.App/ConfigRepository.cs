@@ -53,6 +53,42 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
+    /// Returns the stored wg-quick text of a configuration (for export).
+    /// </summary>
+    public string ReadText(string name)
+    {
+        if (!Exists(name))
+        {
+            throw new InvalidOperationException($"configuration {name} does not exist");
+        }
+
+        return File.ReadAllText(TunnelPaths.ConfigFile(name));
+    }
+
+    /// <summary>
+    /// Imports a new configuration from raw wg-quick text (parsed UI-side from a file, link, or QR).
+    /// </summary>
+    public void AddFromText(string name, string text)
+    {
+        EnsureValidName(name);
+        if (Exists(name))
+        {
+            throw new InvalidOperationException($"configuration {name} already exists");
+        }
+
+        if (string.IsNullOrWhiteSpace(text)
+            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
+            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("not a valid WireGuard/AmneziaWG configuration");
+        }
+
+        var stored = TunnelPaths.ConfigFile(name);
+        Directory.CreateDirectory(Path.GetDirectoryName(stored)!);
+        File.WriteAllText(stored, text);
+    }
+
+    /// <summary>
     /// Replaces the wg-quick text of an existing configuration.
     /// </summary>
     public void Edit(string name, string sourcePath)

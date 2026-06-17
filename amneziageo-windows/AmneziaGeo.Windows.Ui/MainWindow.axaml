@@ -13,432 +13,72 @@
     <StreamGeometry x:Key="AgRefreshGeometry">M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z</StreamGeometry>
   </Window.Resources>
 
-  <Window.Styles>
-
-    <Style Selector="Border.card">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="14" />
-      <Setter Property="BoxShadow" Value="0 1 3 0 #14000000" />
-    </Style>
-
-    <Style Selector="Border.subcard">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="12" />
-    </Style>
-
-    <Style Selector="Border.inset">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="CornerRadius" Value="9" />
-    </Style>
-
-    <Style Selector="TextBlock.section">
-      <Setter Property="FontSize" Value="11" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="LetterSpacing" Value="0.7" />
-    </Style>
-
-    <Style Selector="TextBlock.label">
-      <Setter Property="FontSize" Value="10.5" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="LetterSpacing" Value="0.5" />
-    </Style>
-
-    <Style Selector="TextBlock.muted">
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-    </Style>
-
-    <Style Selector="TextBlock.mono">
-      <Setter Property="FontFamily" Value="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
-    </Style>
-
-    <Style Selector="Button.seg">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="9,6" />
-      <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.seg.active">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <Style Selector="Button.chip">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="10,4" />
-      <Setter Property="CornerRadius" Value="7" />
-      <Setter Property="MinWidth" Value="0" />
-    </Style>
-    <Style Selector="Button.chip.active">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <Style Selector="Button.softbtn">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="10,4" />
-      <Setter Property="CornerRadius" Value="7" />
-      <Setter Property="MinWidth" Value="0" />
-    </Style>
-
-    <Style Selector="Button.accent">
-      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Padding" Value="14,8" />
-      <Setter Property="CornerRadius" Value="9" />
-    </Style>
-
-    <Style Selector="Button.icon">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="11" />
-      <Setter Property="Padding" Value="4,2" />
-      <Setter Property="MinWidth" Value="0" />
-    </Style>
-
-    <!-- Button.seg / chip / softbtn / icon : suppress the Fluent theme's own hover / press background;
-         the hover & press feedback itself is the global Opacity fade (see below). Selection state stays
-         on the .active background rules above. -->
-    <Style Selector="Button.seg:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.seg:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <!-- disabled placeholder (e.g. the RU/EN language toggle) reads as inactive -->
-    <Style Selector="Button.seg:disabled">
-      <Setter Property="Opacity" Value="0.5" />
-    </Style>
-
-    <Style Selector="Button.chip:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.chip:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-
-    <Style Selector="Button.softbtn:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.softbtn:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-
-    <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.icon:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-
-    <!-- Button.accent : keep the accent fill on hover / press; feedback is the global Opacity fade. -->
-    <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
-    </Style>
-    <Style Selector="Button.accent:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
-    </Style>
-
-    <!-- Button.connectpill : the flicker-critical connect / stop button -->
-    <Style Selector="Button.connectpill">
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="16,7" />
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="MinWidth" Value="104" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
-    <!-- Null the content-presenter's own transition so hover doesn't fade / flicker / jitter the fill
-         (the global Button transition-null above doesn't reach this template part). -->
-    <Style Selector="Button.connectpill /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Transitions" Value="{x:Null}" />
-    </Style>
-    <!-- Keep the bound ConnectButtonBrush fill in every state (the text is white, so the fill must stay
-         opaque); resting comes from TemplateBinding Background, and these stop the theme's hover /
-         pressed / disabled overlay from blanking it. -->
-    <Style Selector="Button.connectpill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{Binding ConnectButtonBrush}" />
-    </Style>
-    <Style Selector="Button.connectpill:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{Binding ConnectButtonBrush}" />
-    </Style>
-    <Style Selector="Button.connectpill:disabled /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{Binding ConnectButtonBrush}" />
-    </Style>
-    <Style Selector="Button.connectpill:disabled">
-      <Setter Property="Opacity" Value="0.5" />
-    </Style>
-
-    <!-- Button.radiopick : the active-profile radio in the list header (crisp, no hover fill) -->
-    <Style Selector="Button.radiopick">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="2" />
-      <Setter Property="MinWidth" Value="0" />    </Style>
-    <Style Selector="Button.radiopick /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.radiopick:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.radiopick:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-
-    <!-- Button.rowselect : a flat, full-width selectable list row (routing lists) with a radio -->
-    <Style Selector="Button.rowselect">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="12" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />    </Style>
-    <Style Selector="Button.rowselect.active">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-    </Style>
-    <Style Selector="Button.rowselect /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.rowselect:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.rowselect:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-
-    <!-- Strict: instant button state changes (no fade) and no press-scale jiggle. The Fluent button's
-         only declared animation is a 75ms scale(0.98) on press; null the root Transitions and flatten
-         the transform so hover/press feedback is immediate, like the rest of the UI. -->
-    <Style Selector="Button">
-      <Setter Property="Transitions" Value="{x:Null}" />
-    </Style>
-    <!-- No hover animation at all: hovering changes nothing (no background, border, colour, or opacity).
-         Only a brief press feedback remains. Selection uses the .active background rules above. -->
-    <Style Selector="Button:pressed">
-      <Setter Property="RenderTransform" Value="none" />
-      <Setter Property="Opacity" Value="0.6" />
-    </Style>
-
-    <Style Selector="TextBox.field">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="10,7" />
-      <Setter Property="FontSize" Value="13" />
-    </Style>
-
-    <!-- Neutral, status-independent border for every text input: the same secondary border in all
-         states — no pointer-over / focus colour change and no accent focus underline, so the Fluent
-         theme's animated border can't flicker between primary / secondary / none. -->
-    <Style Selector="TextBox">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
-    <Style Selector="TextBox:pointerover">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
-    <Style Selector="TextBox:focus">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
-    <Style Selector="TextBox:focus-within">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-    </Style>
-
-    <Style Selector="ComboBox.field">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="10,6" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-
-    <!-- Strict, flicker-free ComboBox.field (closed box): null the inherited Background fade on the
-         FluentTheme parts (Avalonia 11.3.x) and repoint each state to opaque Ag* brushes, so hover /
-         press / focus are instant with no interpolated wrong-colour frame. Dropdown rows are styled
-         app-wide in App.axaml (the popup is outside this window's template scope). -->
-    <Style Selector="ComboBox.field /template/ Border#Background">
-      <Setter Property="Transitions" Value="{x:Null}" />
-    </Style>
-    <!-- hover / press: no colour change — hold the resting fill / border; feedback is an Opacity fade. -->
-    <Style Selector="ComboBox.field:pointerover /template/ Border#Background">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-    </Style>
-    <Style Selector="ComboBox.field:pressed /template/ Border#Background">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-    </Style>
-    <Style Selector="ComboBox.field:pressed">
-      <Setter Property="Opacity" Value="0.6" />
-    </Style>
-    <!-- focus: keep the neutral border too (no accent) so the box is status-independent. -->
-    <Style Selector="ComboBox.field:focus-visible /template/ Border#HighlightBackground">
-      <Setter Property="IsVisible" Value="True" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="Transitions" Value="{x:Null}" />
-    </Style>
-    <Style Selector="ComboBox.field /template/ ContentControl#ContentPresenter">
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-    <Style Selector="ComboBox.field /template/ PathIcon#DropDownGlyph">
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-    </Style>
-    <Style Selector="ComboBox.field:disabled /template/ Border#Background">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-    </Style>
-    <Style Selector="ComboBox.field:disabled /template/ ContentControl#ContentPresenter">
-      <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
-    </Style>
-
-    <!-- PathIcon.spin : continuous rotation while a source download / re-materialize is in flight -->
-    <Style Selector="PathIcon.spin">
-      <!-- 50%,50% = RelativePoint center. A plain "0.5,0.5" parses as ABSOLUTE 0.5px (≈ top-left),
-           which makes the icon orbit a corner instead of spinning about its own centre. -->
-      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
-      <Setter Property="RenderTransform" Value="rotate(0)" />
-    </Style>
-    <Style Selector="PathIcon.spin">
-      <Style.Animations>
-        <Animation Duration="0:0:0.9" IterationCount="INFINITE">
-          <KeyFrame Cue="0%">
-            <Setter Property="RotateTransform.Angle" Value="0" />
-          </KeyFrame>
-          <KeyFrame Cue="100%">
-            <Setter Property="RotateTransform.Angle" Value="360" />
-          </KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
-
-    <!-- Button.sourcerow : the clickable source body; a left-click opens its delete menu (flyout) -->
-    <Style Selector="Button.sourcerow">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />    </Style>
-    <Style Selector="Button.sourcerow /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.sourcerow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.sourcerow:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-  </Window.Styles>
 
   <Grid>
   <DockPanel LastChildFill="True">
 
-    <!-- HEADER : unified connection-control command bar -->
-    <Border DockPanel.Dock="Top" Height="54"
+    <!-- HEADER : unified connection-control command bar (left-aligned, compact) -->
+    <Border DockPanel.Dock="Top" Height="46"
             Background="{DynamicResource AgSidebarBrush}"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,0">
 
-        <!-- LEFT: segmented nav pill -->
-        <Border Grid.Column="0" VerticalAlignment="Center"
+      <!-- connection control (status + connect as one pill), on the LEFT -->
+      <Border HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0"
+              Background="{DynamicResource AgInsetBrush}"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="10" Padding="3">
+        <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+
+          <!-- live status segment -->
+          <StackPanel Orientation="Horizontal" Spacing="9"
+                      VerticalAlignment="Center" Margin="9,0,11,0">
+            <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}"
+                     VerticalAlignment="Center" />
+            <TextBlock Text="{Binding AgentStatusText}"
+                       FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <!-- 1px vertical divider -->
+          <Border Width="1" Margin="0,4" Background="{DynamicResource AgBorder2Brush}" />
+
+          <!-- connect / stop action (EXISTING bindings, verbatim) -->
+          <Button Classes="connectpill" Margin="6,0,0,0"
+                  Background="{Binding ConnectButtonBrush}"
+                  Content="{Binding ConnectButtonText}"
+                  Command="{Binding ToggleConnectionCommand}"
+                  IsEnabled="{Binding CanToggleConnection}" />
+        </StackPanel>
+      </Border>
+    </Border>
+
+    <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card);
+         the left column auto-collapses to 0 when the sidebar is hidden, so the right content spans
+         the full width on Settings. -->
+    <Grid ColumnDefinitions="Auto,*" Background="{DynamicResource AgSidebarBrush}">
+
+      <!-- LEFT SIDEBAR (hidden on Settings → right content goes full-width) -->
+      <DockPanel Grid.Column="0" Width="400" IsVisible="{Binding !IsSettings}"
+                 Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
+
+        <!-- nav: compact, full sidebar width, three equal segments (right edge flush to the gutter) -->
+        <Border DockPanel.Dock="Top" Margin="12,12,0,0"
                 Background="{DynamicResource AgInsetBrush}"
                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                 CornerRadius="10" Padding="3">
-          <StackPanel Orientation="Horizontal" Spacing="2">
+          <UniformGrid Columns="3">
             <Button Classes="seg" Classes.active="{Binding IsHome}"
-                    Command="{Binding NavHomeCommand}"
-                    Content="Главная" MinWidth="84" />
+                    Command="{Binding NavHomeCommand}" Content="Главная" />
             <Button Classes="seg" Classes.active="{Binding IsRouting}"
-                    Command="{Binding NavRoutingCommand}"
-                    Content="Маршрутизация" MinWidth="116" />
+                    Command="{Binding NavRoutingCommand}" Content="Маршрутизация" />
             <Button Classes="seg" Classes.active="{Binding IsSettings}"
-                    Command="{Binding NavSettingsCommand}"
-                    Content="Настройки" MinWidth="92" />
-          </StackPanel>
+                    Command="{Binding NavSettingsCommand}" Content="Настройки" />
+          </UniformGrid>
         </Border>
-
-        <!-- RIGHT: unified connection control (status + connect as one pill) -->
-        <Border Grid.Column="2" VerticalAlignment="Center"
-                Background="{DynamicResource AgInsetBrush}"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="11" Padding="4">
-          <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
-
-            <!-- live status segment -->
-            <StackPanel Orientation="Horizontal" Spacing="9"
-                        VerticalAlignment="Center" Margin="9,0,11,0">
-              <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}"
-                       VerticalAlignment="Center" />
-              <TextBlock Text="{Binding AgentStatusText}"
-                         FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-            </StackPanel>
-
-            <!-- 1px vertical divider -->
-            <Border Width="1" Margin="0,5" Background="{DynamicResource AgBorder2Brush}" />
-
-            <!-- connect / stop action (EXISTING bindings, verbatim) -->
-            <Button Classes="connectpill" Margin="6,0,0,0"
-                    Background="{Binding ConnectButtonBrush}"
-                    Content="{Binding ConnectButtonText}"
-                    Command="{Binding ToggleConnectionCommand}"
-                    IsEnabled="{Binding CanToggleConnection}" />
-          </StackPanel>
-        </Border>
-
-      </Grid>
-    </Border>
-
-    <!-- BODY -->
-    <Grid ColumnDefinitions="400,*">
-
-      <!-- LEFT SIDEBAR -->
-      <DockPanel Grid.Column="0" Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
-        <DockPanel.Styles>
-          <Style Selector="Border.card">
-            <Setter Property="Padding" Value="15" />
-          </Style>
-        </DockPanel.Styles>
 
         <Grid>
 
         <!-- Profiles list (Home / Settings tabs) -->
-        <Border Classes="card" Margin="16,16,16,16" Padding="0" IsVisible="{Binding !IsRouting}">
+        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding !IsRouting}">
           <DockPanel LastChildFill="True">
             <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
               <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
@@ -630,7 +270,7 @@
         </Border>
 
         <!-- Routing lists (Routing tab) -->
-        <Border Classes="card" Margin="16,16,16,16" Padding="0" IsVisible="{Binding IsRouting}">
+        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsRouting}">
           <DockPanel LastChildFill="True">
             <!-- bases nav: opens the geo-data bases panel on the right (active when no rule is open) -->
             <Button DockPanel.Dock="Top" Classes="rowselect" Classes.active="{Binding !HasRoutingEditor}"
@@ -703,8 +343,8 @@
         </Grid>
       </DockPanel>
 
-      <!-- RIGHT CONTENT -->
-      <Border Grid.Column="1" Classes="card" Margin="0,16,16,16" Padding="0">
+      <!-- RIGHT CONTENT (12px gutter on its left → consistent in both docked and full-width modes) -->
+      <Border Grid.Column="1" Classes="card" Margin="12,12,12,12" Padding="0">
         <Grid>
 
           <!-- HOME -->

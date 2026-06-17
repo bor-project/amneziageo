@@ -101,6 +101,10 @@ internal sealed class TunnelRunner(
         if (redirectServers.Count > 0)
         {
             dns.Apply(name, redirectServers);
+            // Drop entries resolved before the redirect so already-cached domains (e.g. a popular
+            // youtube.com) are re-queried through the proxy and can be matched and routed, instead of
+            // being served stale from the OS cache and silently bypassing split routing.
+            dns.FlushCache();
             applied = true;
         }
 
@@ -119,7 +123,14 @@ internal sealed class TunnelRunner(
         // token lets teardown cancel a still-pending arm and guarantees the filters come down with the
         // tunnel.
         using var sessionCts = new CancellationTokenSource();
-        if (appSettings.KillSwitchEnabled)
+
+        // The kill-switch blocks everything that does not egress the tunnel interface — a FULL-tunnel
+        // concept. In split / routing mode the whole point is that non-routed traffic goes direct, so
+        // arming it there severs the entire direct internet and leaves only the handful of tunnel-routed
+        // domains reachable (the browser shows ERR_NETWORK_ACCESS_DENIED for everything else). Arm it
+        // only in full tunnel; in split mode the routing list — not a blanket firewall — decides what
+        // goes through the tunnel, and direct traffic must keep flowing.
+        if (appSettings.KillSwitchEnabled && !geoSplit)
         {
             _ = Task.Run(() => ArmKillSwitchAsync(name, appSettings.AllowLan, sessionCts.Token));
         }
@@ -136,6 +147,9 @@ internal sealed class TunnelRunner(
             if (applied)
             {
                 dns.Restore();
+                // Flush again so cached answers that resolved to tunnel-routed IPs do not survive the
+                // tunnel and point at addresses no longer reachable off it.
+                dns.FlushCache();
             }
 
             if (excluded)

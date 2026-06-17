@@ -70,11 +70,12 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Opens the per-source context menu (delete) on a source row. The menu is built here, with the
-    /// command assigned directly from the row's view model, because a MenuItem hosted in a flyout popup
-    /// does not reliably inherit the row's DataContext for a {Binding}-based command in Avalonia 11.
+    /// Opens the per-source context menu (delete) on a right-click of a source row. The menu is built
+    /// here, with the command assigned directly from the row's view model, because a MenuItem hosted in a
+    /// flyout popup does not reliably inherit the row's DataContext for a {Binding}-based command in
+    /// Avalonia 11.
     /// </summary>
-    private void OnSourceRowClick(object? sender, RoutedEventArgs e)
+    private void OnSourceRowContext(object? sender, ContextRequestedEventArgs e)
     {
         if (sender is not Control { DataContext: SourceItemViewModel source } target)
         {
@@ -86,12 +87,10 @@ public sealed partial class MainWindow : Window
             Header = "Удалить базу",
             Command = source.RemoveCommand,
         };
-        var flyout = new MenuFlyout
-        {
-            Placement = PlacementMode.BottomEdgeAlignedLeft,
-        };
+        var flyout = new MenuFlyout();
         flyout.Items.Add(delete);
-        flyout.ShowAt(target);
+        flyout.ShowAt(target, showAtPointer: true);
+        e.Handled = true;
     }
 
 }

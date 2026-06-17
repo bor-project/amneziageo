@@ -17,58 +17,6 @@
   <Grid>
   <DockPanel LastChildFill="True">
 
-    <!-- HEADER : the round power-button connection control (LEFT) + the reconnect/notice banner (RIGHT) -->
-    <Border DockPanel.Dock="Top" Height="42"
-            Background="{DynamicResource AgSidebarBrush}"
-            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,*">
-
-      <!-- click the circle to toggle the tunnel; tint and glyph reflect the state -->
-      <Button Grid.Column="0" Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,3,12,0"
-              Command="{Binding ToggleConnectionCommand}"
-              IsEnabled="{Binding CanToggleConnection}">
-        <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
-          <Border Width="28" Height="28" CornerRadius="14"
-                  Background="{Binding ConnectCircleBrush}"
-                  BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="1">
-            <Panel>
-              <TextBlock Text="{Binding ConnectGlyph}" Foreground="{Binding ConnectCircleForeground}"
-                         FontSize="11" IsVisible="{Binding !IsConnecting}"
-                         HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Ellipse Classes.pulse="{Binding IsConnecting}" Width="11" Height="11"
-                       IsVisible="{Binding IsConnecting}" Fill="{Binding ConnectCircleForeground}"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Panel>
-          </Border>
-          <StackPanel VerticalAlignment="Center">
-            <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
-                       Foreground="{DynamicResource AgFgBrush}" />
-            <TextBlock Text="{Binding ConnectHint}" FontSize="10"
-                       Foreground="{Binding ConnectHintBrush}" />
-          </StackPanel>
-        </StackPanel>
-      </Button>
-
-      <!-- reconnect / better-connection notice, shown at the header level beside the power button -->
-      <Border Grid.Column="1" IsVisible="{Binding NoticeVisible}"
-              VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
-              Margin="12,0,12,0"
-              Background="{DynamicResource AgAccentBrush}"
-              CornerRadius="8" Padding="12,5">
-        <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-          <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
-          <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
-                     FontSize="12" FontWeight="SemiBold"
-                     TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-          <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
-                  Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
-                  VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
-        </Grid>
-      </Border>
-
-      </Grid>
-    </Border>
-
     <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
     <Grid ColumnDefinitions="Auto,*" Background="{DynamicResource AgSidebarBrush}">
 
@@ -76,258 +24,178 @@
       <DockPanel Grid.Column="0" Width="400"
                  Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
 
-        <!-- nav: compact, full sidebar width, three equal segments (right edge flush to the gutter) -->
-        <Border DockPanel.Dock="Top" Margin="12,6,0,0"
-                Background="{DynamicResource AgInsetBrush}"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="10" Padding="3">
-          <UniformGrid Columns="3">
-            <Button Classes="seg" Classes.active="{Binding IsHome}"
-                    Command="{Binding NavHomeCommand}" Content="Главная" />
-            <Button Classes="seg" Classes.active="{Binding IsRouting}"
-                    Command="{Binding NavRoutingCommand}" Content="Маршрутизация" />
-            <Button Classes="seg" Classes.active="{Binding IsSettings}"
-                    Command="{Binding NavSettingsCommand}" Content="Настройки" />
-          </UniformGrid>
-        </Border>
+        <!-- one left card mirroring the right one: the nav is its header bar (white + bottom divider),
+             and the per-tab content fills below -->
+        <Border Classes="card" Margin="12,12,0,12" Padding="0">
+        <DockPanel LastChildFill="True">
+
+          <Border DockPanel.Dock="Top" Height="52" Padding="12,0"
+                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
+            <Border VerticalAlignment="Center"
+                    Background="{DynamicResource AgInsetBrush}"
+                    BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="3">
+              <UniformGrid Columns="3">
+                <Button Classes="seg" Classes.active="{Binding IsHome}" FontSize="11"
+                        Command="{Binding NavHomeCommand}" Content="Главная" />
+                <Button Classes="seg" Classes.active="{Binding IsRouting}" FontSize="11"
+                        Command="{Binding NavRoutingCommand}" Content="Маршрутизация" />
+                <Button Classes="seg" Classes.active="{Binding IsSettings}" FontSize="11"
+                        Command="{Binding NavSettingsCommand}" Content="Настройки" />
+              </UniformGrid>
+            </Border>
+          </Border>
 
         <Grid>
 
-        <!-- Profiles list (Home tab) -->
-        <Border Classes="card" Margin="12,6,0,12" Padding="0" IsVisible="{Binding IsHome}">
-          <DockPanel LastChildFill="True">
-            <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,11,14,8">
-              <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
-              <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                      Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="{Binding Balancers.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-              </Border>
-              <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateProfileCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock Text="+" />
-                  <TextBlock Text="Профиль" />
+        <!-- Profiles (Home tab): master-detail — the profiles list, or the open profile's aspect rail -->
+        <Panel IsVisible="{Binding IsHome}">
+
+            <!-- profiles list (nothing open): click a row to open it; the filled circle marks the active one -->
+            <DockPanel IsVisible="{Binding IsProfileList}" LastChildFill="True">
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="14,11,14,8">
+                <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
+                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                        Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Balancers.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+                </Border>
+                <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateProfileCommand}">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="+" />
+                    <TextBlock Text="Профиль" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+
+              <ScrollViewer>
+                <StackPanel Margin="12,2,12,12">
+                  <ItemsControl ItemsSource="{Binding Balancers}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <!-- the whole row opens the profile; the filled dot shows the active one -->
+                        <Button Classes="rowselect" Classes.active="{Binding IsActive}" Margin="0,3"
+                                Command="{Binding $parent[ItemsControl].DataContext.OpenProfileDetailCommand}"
+                                CommandParameter="{Binding}">
+                          <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,6,12,6">
+                            <!-- the dot activates the profile (one click); the rest of the row opens it.
+                                 A nested button: Avalonia marks its press handled, so the row's
+                                 OpenProfileDetail does not also fire. -->
+                            <Button Grid.Column="0" Classes="radiopick" VerticalAlignment="Center"
+                                    Command="{Binding SelectCommand}"
+                                    ToolTip.Tip="Сделать активным профилем">
+                              <Grid Width="18" Height="18">
+                                <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                         Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                         Stroke="{DynamicResource AgAccentBrush}" Fill="Transparent"
+                                         IsVisible="{Binding IsActive}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                                         IsVisible="{Binding IsActive}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              </Grid>
+                            </Button>
+                            <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
+                              <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
+                                         TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="▶" Classes="muted" FontSize="11"
+                                       VerticalAlignment="Center" Margin="6,0,0,0" />
+                          </Grid>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <TextBlock IsVisible="{Binding !HasBalancers}"
+                             Text="Нет профилей. Нажмите «+ Профиль»."
+                             Classes="muted" FontSize="12" Margin="6,12" TextWrapping="Wrap" />
                 </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
+
+            <!-- open profile: its aspect rail (Конфигурация / Маршрутизация / Балансировщик / Название) -->
+            <DockPanel IsVisible="{Binding IsProfileDetail}" LastChildFill="True">
+              <!-- the whole header row returns to the profiles list -->
+              <Button DockPanel.Dock="Top" Classes="sourcerow" Command="{Binding BackToProfilesCommand}"
+                      ToolTip.Tip="К списку профилей">
+                <Grid ColumnDefinitions="Auto,*" Margin="10,9,12,8">
+                  <TextBlock Grid.Column="0" Text="←" FontSize="15" Classes="muted" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding OpenProfileName}"
+                             FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" />
+                </Grid>
               </Button>
-            </Grid>
 
-            <ScrollViewer>
-              <ItemsControl ItemsSource="{Binding Balancers}" Margin="12,2,12,12">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Border Classes="subcard" Margin="0,4">
-                      <StackPanel>
+              <StackPanel Margin="12,2,12,12">
+                <Button Classes="rowselect" Classes.active="{Binding IsAspectConfig}" Margin="0,3"
+                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="config">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               IsVisible="{Binding IsAspectConfig}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Конфигурация"
+                               FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
+                <Button Classes="rowselect" Classes.active="{Binding IsAspectRouting}" Margin="0,3"
+                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="routing">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               IsVisible="{Binding IsAspectRouting}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Маршрутизация"
+                               FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
+                <Button Classes="rowselect" Classes.active="{Binding IsAspectBalancer}" Margin="0,3"
+                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="balancer">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               IsVisible="{Binding IsAspectBalancer}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Балансировщик"
+                               FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
+                <Button Classes="rowselect" Classes.active="{Binding IsAspectName}" Margin="0,3"
+                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="name">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               IsVisible="{Binding IsAspectName}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Название"
+                               FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                  </Grid>
+                </Button>
+              </StackPanel>
+            </DockPanel>
 
-                        <!-- Header (always visible): a plain panel. The left circle selects the
-                             active profile; only the chevron expands / collapses. -->
-                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,9">
-                          <Button Grid.Column="0" Classes="radiopick" VerticalAlignment="Center"
-                                  Command="{Binding SelectCommand}"
-                                  ToolTip.Tip="Сделать активным профилем">
-                            <Grid Width="18" Height="18">
-                              <Ellipse Width="16" Height="16" StrokeThickness="2"
-                                       Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                              <Ellipse Width="16" Height="16" StrokeThickness="2"
-                                       Stroke="{DynamicResource AgAccentBrush}" Fill="Transparent"
-                                       IsVisible="{Binding IsActive}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                              <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                                       IsVisible="{Binding IsActive}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Grid>
-                          </Button>
-                          <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
-                            <!-- one-line summary only while collapsed; the expanded editor shows the details -->
-                            <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
-                                       TextTrimming="CharacterEllipsis"
-                                       IsVisible="{Binding !IsExpanded}" />
-                          </StackPanel>
-                          <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center" Padding="8,6"
-                                  Command="{Binding ToggleExpandCommand}"
-                                  ToolTip.Tip="Развернуть / свернуть">
-                            <Panel>
-                              <TextBlock Text="▼" IsVisible="{Binding IsExpanded}" Classes="muted" />
-                              <TextBlock Text="▶" IsVisible="{Binding !IsExpanded}" Classes="muted" />
-                            </Panel>
-                          </Button>
-                        </Grid>
-
-                        <!-- Expanded body -->
-                        <Border IsVisible="{Binding IsExpanded}"
-                                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0"
-                                Padding="12,10">
-                          <StackPanel Spacing="12">
-
-                            <!-- Configs -->
-                            <StackPanel Spacing="8">
-                              <Grid ColumnDefinitions="Auto,Auto">
-                                <TextBlock Grid.Column="0" Classes="label" Text="КОНФИГУРАЦИИ" VerticalAlignment="Center" />
-                                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                                        Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                                  <TextBlock Text="{Binding Members.Count}" FontSize="10.5" Classes="muted" FontWeight="SemiBold" />
-                                </Border>
-                              </Grid>
-                              <Grid ColumnDefinitions="*,Auto">
-                                <ComboBox Grid.Column="0" Classes="field"
-                                          ItemsSource="{Binding AvailableConfigs}"
-                                          SelectedItem="{Binding AddMemberSelection, Mode=TwoWay}"
-                                          PlaceholderText="Выбрать..." Margin="0,0,8,0" />
-                                <Button Grid.Column="1" Classes="accent"
-                                        Command="{Binding AddMemberCommand}"
-                                        IsEnabled="{Binding CanAddMember}">
-                                  <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <TextBlock Text="+" />
-                                    <TextBlock Text="Добавить" />
-                                  </StackPanel>
-                                </Button>
-                              </Grid>
-
-                              <!-- inline "new config" form: shown when the combo's "+ Новая конфигурация" is picked -->
-                              <Border IsVisible="{Binding IsCreatingConfig}"
-                                      Background="{DynamicResource AgInsetBrush}"
-                                      BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                      CornerRadius="9" Padding="10" Margin="0,2,0,0">
-                                <StackPanel Spacing="6">
-                                  <TextBlock Classes="label" Text="НОВАЯ КОНФИГУРАЦИЯ" />
-                                  <TextBox Classes="field" Text="{Binding NewConfigName, Mode=TwoWay}"
-                                           Watermark="Имя (необязательно)" />
-                                  <TextBox Classes="field" Text="{Binding NewConfigText, Mode=TwoWay}"
-                                           AcceptsReturn="True" Height="70" TextWrapping="Wrap"
-                                           Watermark="vpn://...   или   текст .conf" />
-                                  <UniformGrid Columns="4">
-                                    <Button Classes="softbtn" Content="Файл" Click="OnNewConfigBrowse" Margin="0,0,6,0" />
-                                    <Button Classes="softbtn" Content="QR" Click="OnNewConfigQrImage" Margin="0,0,6,0" />
-                                    <Button Classes="softbtn" Content="Камера" Click="OnNewConfigCamera" Margin="0,0,6,0" />
-                                    <Button Classes="softbtn" Content="Буфер" Click="OnNewConfigClipboard" />
-                                  </UniformGrid>
-                                  <TextBlock Text="{Binding NewConfigStatus}" Classes="muted" FontSize="11.5"
-                                             TextWrapping="Wrap" />
-                                  <Grid ColumnDefinitions="*,Auto,Auto">
-                                    <Button Grid.Column="1" Classes="softbtn" Content="Отмена"
-                                            Command="{Binding CancelNewConfigCommand}" />
-                                    <Button Grid.Column="2" Classes="accent" Content="Сохранить" Margin="6,0,0,0"
-                                            Command="{Binding SaveNewConfigCommand}" />
-                                  </Grid>
-                                </StackPanel>
-                              </Border>
-
-                              <ItemsControl ItemsSource="{Binding Members}">
-                                <ItemsControl.ItemTemplate>
-                                  <DataTemplate>
-                                    <Border Background="{DynamicResource AgPanelBrush}"
-                                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                            CornerRadius="9" Padding="9,8" Margin="0,3"
-                                            ContextRequested="OnMemberRowContext">
-                                      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                                        <Ellipse Grid.Column="0" Width="9" Height="9"
-                                                 Fill="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Margin="9,0,0,0" Text="{Binding}"
-                                                   FontSize="12.5" FontWeight="Medium"
-                                                   VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <StackPanel Grid.Column="2" Orientation="Vertical" Spacing="0">
-                                          <Button Classes="icon" Content="▲"
-                                                  Command="{Binding $parent[ItemsControl].DataContext.MoveUpCommand}"
-                                                  CommandParameter="{Binding}"
-                                                  FontSize="8" Padding="3,0" />
-                                          <Button Classes="icon" Content="▼"
-                                                  Command="{Binding $parent[ItemsControl].DataContext.MoveDownCommand}"
-                                                  CommandParameter="{Binding}"
-                                                  FontSize="8" Padding="3,0" />
-                                        </StackPanel>
-                                        <Button Grid.Column="3" Classes="icon" Content="✕" Margin="4,0,0,0"
-                                                Command="{Binding $parent[ItemsControl].DataContext.RemoveMemberCommand}"
-                                                CommandParameter="{Binding}" />
-                                      </Grid>
-                                    </Border>
-                                  </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                              </ItemsControl>
-                            </StackPanel>
-
-                            <!-- Routing : the "use routing" flag is always visible but disabled until a
-                                 list is chosen; then the list selection itself. -->
-                            <StackPanel Spacing="6">
-                              <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ" />
-                              <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding CanToggleRouting}">
-                                <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
-                                              OnContent="" OffContent=""
-                                              MinWidth="0" />
-                                <TextBlock Grid.Column="1" Margin="11,0,0,0"
-                                           Text="Использовать маршрутизацию" FontSize="12.5" FontWeight="Medium"
-                                           VerticalAlignment="Center" />
-                              </Grid>
-                              <ComboBox Classes="field" ItemsSource="{Binding RoutingListOptions}"
-                                        SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
-                                <ComboBox.ItemTemplate>
-                                  <DataTemplate>
-                                    <TextBlock Text="{Binding Name}" />
-                                  </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                              </ComboBox>
-                            </StackPanel>
-
-                            <!-- Name -->
-                            <StackPanel Spacing="6">
-                              <TextBlock Classes="label" Text="НАЗВАНИЕ" />
-                              <TextBox Classes="field" Text="{Binding Name}" IsReadOnly="True" />
-                            </StackPanel>
-
-                            <!-- Balancer + interval. The mode selector is disabled with one config or
-                                 none (nothing to balance); the interval shows only while balancing. -->
-                            <StackPanel Spacing="9">
-                              <TextBlock Classes="label" Text="БАЛАНСИРОВЩИК" />
-                              <Border Background="{DynamicResource AgInsetBrush}"
-                                      BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                      CornerRadius="9" Padding="3" IsEnabled="{Binding CanUseBalancer}">
-                                <UniformGrid Columns="3">
-                                  <Button Classes="seg"
-                                          Classes.active="{Binding IsOffMode}"
-                                          Command="{Binding SetOffModeCommand}"
-                                          Content="Не использовать" HorizontalAlignment="Stretch" />
-                                  <Button Classes="seg"
-                                          Classes.active="{Binding IsPriorityMode}"
-                                          Command="{Binding SetPriorityModeCommand}"
-                                          Content="По приоритету" HorizontalAlignment="Stretch" />
-                                  <Button Classes="seg"
-                                          Classes.active="{Binding IsLatencyMode}"
-                                          Command="{Binding SetLatencyModeCommand}"
-                                          Content="По доступности" HorizontalAlignment="Stretch" />
-                                </UniformGrid>
-                              </Border>
-                              <TextBlock IsVisible="{Binding !CanUseBalancer}" Classes="muted" FontSize="11.5"
-                                         TextWrapping="Wrap"
-                                         Text="Балансировщик доступен при двух и более конфигурациях." />
-                              <Grid ColumnDefinitions="*,Auto,4,Auto,4,Auto" IsVisible="{Binding ShowInterval}">
-                                <TextBlock Grid.Column="0" Classes="muted" FontSize="11.5"
-                                           Text="Интервал проверки" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Classes="chip"
-                                        Classes.active="{Binding IsInterval10}"
-                                        Command="{Binding SetInterval10Command}" Content="10с" />
-                                <Button Grid.Column="3" Classes="chip"
-                                        Classes.active="{Binding IsInterval30}"
-                                        Command="{Binding SetInterval30Command}" Content="30с" />
-                                <Button Grid.Column="5" Classes="chip"
-                                        Classes.active="{Binding IsInterval60}"
-                                        Command="{Binding SetInterval60Command}" Content="60с" />
-                              </Grid>
-                            </StackPanel>
-
-                          </StackPanel>
-                        </Border>
-                      </StackPanel>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
-          </DockPanel>
-        </Border>
+        </Panel>
 
         <!-- Routing (Routing tab): Правила | Источники sub-tabs -->
-        <Border Classes="card" Margin="12,6,0,12" Padding="0" IsVisible="{Binding IsRouting}">
-          <DockPanel LastChildFill="True">
+        <DockPanel IsVisible="{Binding IsRouting}" LastChildFill="True">
 
             <!-- sub-tab toggle -->
             <Border DockPanel.Dock="Top" Margin="12,12,12,0"
@@ -407,11 +275,9 @@
               </StackPanel>
             </Grid>
           </DockPanel>
-        </Border>
 
         <!-- Settings sections (Settings tab): a radio list mirroring the routing rail -->
-        <Border Classes="card" Margin="12,6,0,12" Padding="0" IsVisible="{Binding IsSettings}">
-          <DockPanel LastChildFill="True">
+        <DockPanel IsVisible="{Binding IsSettings}" LastChildFill="True">
             <TextBlock DockPanel.Dock="Top" Classes="section" Text="НАСТРОЙКИ" Margin="14,11,14,8" />
             <StackPanel Margin="12,2,12,12">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsGeneral}" Margin="0,3"
@@ -446,6 +312,22 @@
                 </Grid>
               </Button>
 
+              <Button Classes="rowselect" Classes.active="{Binding IsSettingsLogs}" Margin="0,3"
+                      Command="{Binding SelectSettingsCommand}" CommandParameter="logs">
+                <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                    <Ellipse Width="16" Height="16" StrokeThickness="2"
+                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                             IsVisible="{Binding IsSettingsLogs}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Grid>
+                  <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Логи"
+                             FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                </Grid>
+              </Button>
+
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsAbout}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="about">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,10">
@@ -462,45 +344,245 @@
                 </Grid>
               </Button>
             </StackPanel>
-          </DockPanel>
-        </Border>
+        </DockPanel>
 
         </Grid>
+        </DockPanel>
+        </Border>
       </DockPanel>
 
       <!-- RIGHT CONTENT (12px gutter on its left → consistent in both docked and full-width modes) -->
-      <Border Grid.Column="1" Classes="card" Margin="12,6,12,12" Padding="0">
-        <Grid>
+      <Border Grid.Column="1" Classes="card" Margin="12,12,12,12" Padding="0">
+        <DockPanel LastChildFill="True">
 
-          <!-- HOME : current state summary + live agent journal -->
-          <DockPanel IsVisible="{Binding IsHome}" LastChildFill="True">
-            <StackPanel DockPanel.Dock="Top" Margin="18,14,18,10">
-              <TextBlock Classes="section" Text="СОСТОЯНИЕ" />
-              <StackPanel Orientation="Horizontal" Spacing="9" Margin="0,9,0,0" VerticalAlignment="Center">
-                <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding AgentStatusText}" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding ActiveProfileName}" Classes="muted" FontSize="13.5" VerticalAlignment="Center" />
+          <!-- persistent header (shown on every tab): the round power control toggles the ACTIVE profile;
+               the reconnect / better-connection notice sits beside it. Per-profile connect lives in each
+               profile's detail. -->
+          <Border DockPanel.Dock="Top" Height="52" Padding="12,0"
+                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*">
+              <Button Grid.Column="0" Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center"
+                      Command="{Binding ToggleConnectionCommand}"
+                      IsEnabled="{Binding CanToggleConnection}">
+                <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
+                  <Border Width="28" Height="28" CornerRadius="14"
+                          Background="{Binding ConnectCircleBrush}"
+                          BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="1">
+                    <Panel>
+                      <TextBlock Text="{Binding ConnectGlyph}" Foreground="{Binding ConnectCircleForeground}"
+                                 FontSize="11" IsVisible="{Binding !IsConnecting}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Classes.pulse="{Binding IsConnecting}" Width="11" Height="11"
+                               IsVisible="{Binding IsConnecting}" Fill="{Binding ConnectCircleForeground}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Panel>
+                  </Border>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AgFgBrush}" />
+                    <TextBlock Text="{Binding ConnectHint}" FontSize="10"
+                               Foreground="{Binding ConnectHintBrush}" />
+                  </StackPanel>
+                </StackPanel>
+              </Button>
+
+              <Border Grid.Column="1" IsVisible="{Binding NoticeVisible}"
+                      VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
+                      Margin="12,0,0,0"
+                      Background="{DynamicResource AgAccentBrush}"
+                      CornerRadius="8" Padding="12,5">
+                <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
+                  <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
+                             FontSize="12" FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
+                          Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
+                          VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
+                </Grid>
+              </Border>
+            </Grid>
+          </Border>
+
+          <Grid>
+
+          <!-- HOME : profile master-detail right pane — pick-a-profile hint, or the open profile's aspect.
+               Each aspect's editor binds to OpenProfile (DataContext switched on the inner panel); the
+               outer panel keeps the window VM so IsAspect* drives which one shows. -->
+          <Panel IsVisible="{Binding IsHome}">
+
+            <TextBlock IsVisible="{Binding IsProfileList}"
+                       Text="Выберите профиль слева, чтобы увидеть и изменить его настройки."
+                       Classes="muted" FontSize="13" Margin="18"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" />
+
+            <ScrollViewer IsVisible="{Binding IsProfileDetail}">
+              <StackPanel Margin="18,16">
+
+                <!-- Конфигурация : the profile's member configs -->
+                <StackPanel IsVisible="{Binding IsAspectConfig}">
+                  <StackPanel DataContext="{Binding OpenProfile}" Spacing="8">
+                    <Grid ColumnDefinitions="Auto,Auto">
+                      <TextBlock Grid.Column="0" Classes="label" Text="КОНФИГУРАЦИИ" VerticalAlignment="Center" />
+                      <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+                              Padding="7,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Members.Count}" FontSize="10.5" Classes="muted" FontWeight="SemiBold" />
+                      </Border>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <ComboBox Grid.Column="0" Classes="field"
+                                ItemsSource="{Binding AvailableConfigs}"
+                                SelectedItem="{Binding AddMemberSelection, Mode=TwoWay}"
+                                PlaceholderText="Выбрать..." Margin="0,0,8,0" />
+                      <Button Grid.Column="1" Classes="accent"
+                              Command="{Binding AddMemberCommand}"
+                              IsEnabled="{Binding CanAddMember}">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="+" />
+                          <TextBlock Text="Добавить" />
+                        </StackPanel>
+                      </Button>
+                    </Grid>
+
+                    <!-- inline "new config" form: shown when the combo's "+ Новая конфигурация" is picked -->
+                    <Border IsVisible="{Binding IsCreatingConfig}"
+                            Background="{DynamicResource AgInsetBrush}"
+                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                            CornerRadius="9" Padding="10" Margin="0,2,0,0">
+                      <StackPanel Spacing="6">
+                        <TextBlock Classes="label" Text="НОВАЯ КОНФИГУРАЦИЯ" />
+                        <TextBox Classes="field" Text="{Binding NewConfigName, Mode=TwoWay}"
+                                 Watermark="Имя (необязательно)" />
+                        <TextBox Classes="field" Text="{Binding NewConfigText, Mode=TwoWay}"
+                                 AcceptsReturn="True" Height="70" TextWrapping="Wrap"
+                                 Watermark="vpn://...   или   текст .conf" />
+                        <UniformGrid Columns="4">
+                          <Button Classes="softbtn" Content="Файл" Click="OnNewConfigBrowse" Margin="0,0,6,0" />
+                          <Button Classes="softbtn" Content="QR" Click="OnNewConfigQrImage" Margin="0,0,6,0" />
+                          <Button Classes="softbtn" Content="Камера" Click="OnNewConfigCamera" Margin="0,0,6,0" />
+                          <Button Classes="softbtn" Content="Буфер" Click="OnNewConfigClipboard" />
+                        </UniformGrid>
+                        <TextBlock Text="{Binding NewConfigStatus}" Classes="muted" FontSize="11.5"
+                                   TextWrapping="Wrap" />
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                          <Button Grid.Column="1" Classes="softbtn" Content="Отмена"
+                                  Command="{Binding CancelNewConfigCommand}" />
+                          <Button Grid.Column="2" Classes="accent" Content="Сохранить" Margin="6,0,0,0"
+                                  Command="{Binding SaveNewConfigCommand}" />
+                        </Grid>
+                      </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding Members}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Background="{DynamicResource AgPanelBrush}"
+                                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                                  CornerRadius="9" Padding="9,8" Margin="0,3"
+                                  ContextRequested="OnMemberRowContext">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                              <Ellipse Grid.Column="0" Width="9" Height="9"
+                                       Fill="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
+                              <TextBlock Grid.Column="1" Margin="9,0,0,0" Text="{Binding}"
+                                         FontSize="12.5" FontWeight="Medium"
+                                         VerticalAlignment="Center"
+                                         TextTrimming="CharacterEllipsis" />
+                              <StackPanel Grid.Column="2" Orientation="Vertical" Spacing="0">
+                                <Button Classes="icon" Content="▲"
+                                        Command="{Binding $parent[ItemsControl].DataContext.MoveUpCommand}"
+                                        CommandParameter="{Binding}"
+                                        FontSize="8" Padding="3,0" />
+                                <Button Classes="icon" Content="▼"
+                                        Command="{Binding $parent[ItemsControl].DataContext.MoveDownCommand}"
+                                        CommandParameter="{Binding}"
+                                        FontSize="8" Padding="3,0" />
+                              </StackPanel>
+                              <Button Grid.Column="3" Classes="icon" Content="✕" Margin="4,0,0,0"
+                                      Command="{Binding $parent[ItemsControl].DataContext.RemoveMemberCommand}"
+                                      CommandParameter="{Binding}" />
+                            </Grid>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </StackPanel>
+
+                <!-- Маршрутизация : the "use routing" flag (disabled until a list is chosen) + the list -->
+                <StackPanel IsVisible="{Binding IsAspectRouting}">
+                  <StackPanel DataContext="{Binding OpenProfile}" Spacing="6">
+                    <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ" />
+                    <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding CanToggleRouting}">
+                      <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
+                                    OnContent="" OffContent=""
+                                    MinWidth="0" />
+                      <TextBlock Grid.Column="1" Margin="11,0,0,0"
+                                 Text="Использовать маршрутизацию" FontSize="12.5" FontWeight="Medium"
+                                 VerticalAlignment="Center" />
+                    </Grid>
+                    <ComboBox Classes="field" ItemsSource="{Binding RoutingListOptions}"
+                              SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                  </StackPanel>
+                </StackPanel>
+
+                <!-- Балансировщик : mode + recheck interval (disabled with one config; interval only while balancing) -->
+                <StackPanel IsVisible="{Binding IsAspectBalancer}">
+                  <StackPanel DataContext="{Binding OpenProfile}" Spacing="9">
+                    <TextBlock Classes="label" Text="БАЛАНСИРОВЩИК" />
+                    <Border Background="{DynamicResource AgInsetBrush}"
+                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                            CornerRadius="9" Padding="3" IsEnabled="{Binding CanUseBalancer}">
+                      <UniformGrid Columns="3">
+                        <Button Classes="seg"
+                                Classes.active="{Binding IsOffMode}"
+                                Command="{Binding SetOffModeCommand}"
+                                Content="Не использовать" HorizontalAlignment="Stretch" />
+                        <Button Classes="seg"
+                                Classes.active="{Binding IsPriorityMode}"
+                                Command="{Binding SetPriorityModeCommand}"
+                                Content="По приоритету" HorizontalAlignment="Stretch" />
+                        <Button Classes="seg"
+                                Classes.active="{Binding IsLatencyMode}"
+                                Command="{Binding SetLatencyModeCommand}"
+                                Content="По доступности" HorizontalAlignment="Stretch" />
+                      </UniformGrid>
+                    </Border>
+                    <TextBlock IsVisible="{Binding !CanUseBalancer}" Classes="muted" FontSize="11.5"
+                               TextWrapping="Wrap"
+                               Text="Балансировщик доступен при двух и более конфигурациях." />
+                    <Grid ColumnDefinitions="*,Auto,4,Auto,4,Auto" IsVisible="{Binding ShowInterval}">
+                      <TextBlock Grid.Column="0" Classes="muted" FontSize="11.5"
+                                 Text="Интервал проверки" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="chip"
+                              Classes.active="{Binding IsInterval10}"
+                              Command="{Binding SetInterval10Command}" Content="10с" />
+                      <Button Grid.Column="3" Classes="chip"
+                              Classes.active="{Binding IsInterval30}"
+                              Command="{Binding SetInterval30Command}" Content="30с" />
+                      <Button Grid.Column="5" Classes="chip"
+                              Classes.active="{Binding IsInterval60}"
+                              Command="{Binding SetInterval60Command}" Content="60с" />
+                    </Grid>
+                  </StackPanel>
+                </StackPanel>
+
+                <!-- Название : the profile name (read-only) -->
+                <StackPanel IsVisible="{Binding IsAspectName}">
+                  <StackPanel DataContext="{Binding OpenProfile}" Spacing="6">
+                    <TextBlock Classes="label" Text="НАЗВАНИЕ" />
+                    <TextBox Classes="field" Text="{Binding Name}" IsReadOnly="True" />
+                  </StackPanel>
+                </StackPanel>
+
               </StackPanel>
-            </StackPanel>
-
-            <TextBlock DockPanel.Dock="Top" Classes="section" Text="ЖУРНАЛ АГЕНТА" Margin="18,4,18,8" />
-
-            <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                    Background="{DynamicResource AgInsetBrush}" Margin="18,0,18,14" CornerRadius="12">
-              <Panel>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                  <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
-                                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                       FontSize="11.5" LineHeight="18"
-                                       Foreground="{DynamicResource AgMutedBrush}"
-                                       TextWrapping="Wrap" Margin="16,13" />
-                </ScrollViewer>
-                <TextBlock IsVisible="{Binding !HasLogs}" Classes="muted" FontSize="12"
-                           Text="Журнал появится, когда агент начнёт работу."
-                           Margin="18,15" VerticalAlignment="Top" />
-              </Panel>
-            </Border>
-          </DockPanel>
+            </ScrollViewer>
+          </Panel>
 
           <!-- ROUTING : selected list editor (inline, replaces the dialog) -->
           <Panel IsVisible="{Binding IsRouting}">
@@ -707,6 +789,30 @@
                 </StackPanel>
               </Border>
 
+              <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsLogs}">
+                <StackPanel>
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                    <TextBlock Text="ЖУРНАЛ АГЕНТА" Classes="section" />
+                  </Border>
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                          Background="{DynamicResource AgInsetBrush}" Margin="15,12,15,15"
+                          CornerRadius="12" MaxHeight="520">
+                    <Panel>
+                      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
+                                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                             FontSize="11.5" LineHeight="18"
+                                             Foreground="{DynamicResource AgMutedBrush}"
+                                             TextWrapping="Wrap" Margin="16,13" />
+                      </ScrollViewer>
+                      <TextBlock IsVisible="{Binding !HasLogs}" Classes="muted" FontSize="12"
+                                 Text="Журнал появится, когда агент начнёт работу."
+                                 Margin="18,15" VerticalAlignment="Top" />
+                    </Panel>
+                  </Border>
+                </StackPanel>
+              </Border>
+
               <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsAbout}">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
@@ -722,6 +828,7 @@
           </ScrollViewer>
 
         </Grid>
+        </DockPanel>
       </Border>
 
     </Grid>

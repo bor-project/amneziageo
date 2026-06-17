@@ -21,7 +21,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _toggleInFlight;
     private string? _lastNotice;
     private long _selectedRoutingListId = -1;
-    private string? _pendingExpandProfile;
+    private string? _pendingOpenProfile;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -83,10 +83,26 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSettings))]
     private string _nav = "home";
 
+    // Profile master-detail: the profile opened for editing (null = the profiles list is shown), and
+    // which of its aspect pages the left rail has selected.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProfileList))]
+    [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
+    [NotifyPropertyChangedFor(nameof(OpenProfileName))]
+    private BalancerItemViewModel? _openProfile;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAspectConfig))]
+    [NotifyPropertyChangedFor(nameof(IsAspectRouting))]
+    [NotifyPropertyChangedFor(nameof(IsAspectBalancer))]
+    [NotifyPropertyChangedFor(nameof(IsAspectName))]
+    private string _profileAspect = "config";
+
     // Which settings section the left rail has selected while on the Settings tab.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSecurity))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
     [NotifyPropertyChangedFor(nameof(IsSettingsAbout))]
     private string _settingsSection = "general";
 
@@ -318,6 +334,27 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool IsSettings => Nav == "settings";
 
+    /// <summary>Whether the profiles list is shown (no profile opened for detail).</summary>
+    public bool IsProfileList => OpenProfile is null;
+
+    /// <summary>Whether a profile is opened: the left rail shows its aspects, the right pane the editor.</summary>
+    public bool IsProfileDetail => OpenProfile is not null;
+
+    /// <summary>Name of the opened profile, shown atop its aspect rail.</summary>
+    public string OpenProfileName => OpenProfile?.Name ?? string.Empty;
+
+    /// <summary>Whether the opened profile's configuration aspect is selected.</summary>
+    public bool IsAspectConfig => ProfileAspect == "config";
+
+    /// <summary>Whether the opened profile's routing aspect is selected.</summary>
+    public bool IsAspectRouting => ProfileAspect == "routing";
+
+    /// <summary>Whether the opened profile's balancer aspect is selected.</summary>
+    public bool IsAspectBalancer => ProfileAspect == "balancer";
+
+    /// <summary>Whether the opened profile's name aspect is selected.</summary>
+    public bool IsAspectName => ProfileAspect == "name";
+
     /// <summary>Whether the General settings section is selected.</summary>
     public bool IsSettingsGeneral => SettingsSection == "general";
 
@@ -326,6 +363,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Whether the About settings section is selected.</summary>
     public bool IsSettingsAbout => SettingsSection == "about";
+
+    /// <summary>Whether the Logs settings section is selected (the agent journal lives here now).</summary>
+    public bool IsSettingsLogs => SettingsSection == "logs";
 
     /// <summary>Whether the routing "rules" sub-tab is active (the rule-lists).</summary>
     public bool IsRoutingRules => RoutingTab != "sources";
@@ -389,6 +429,28 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SettingsSection = section;
     }
 
+    // Open a profile into its detail view (aspect rail + right-pane editor), starting on the overview.
+    [RelayCommand]
+    private void OpenProfileDetail(BalancerItemViewModel profile)
+    {
+        OpenProfile = profile;
+        ProfileAspect = "config";
+    }
+
+    // Back from a profile's detail to the profiles list.
+    [RelayCommand]
+    private void BackToProfiles()
+    {
+        OpenProfile = null;
+    }
+
+    // Switch which aspect page (overview / config / routing / balancer / name) the right pane shows.
+    [RelayCommand]
+    private void SelectProfileAspect(string aspect)
+    {
+        ProfileAspect = aspect;
+    }
+
     [RelayCommand]
     private void ToggleTheme()
     {
@@ -441,6 +503,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             HasRoutingLists = false;
             HasSources = false;
             RoutingEditor = null;
+            // Drop the open profile too: its BalancerItemViewModel is about to be cleared, and the Home
+            // detail pane would otherwise keep editing a vanished profile (firing IPC at a dead pipe)
+            // until the next reconnect snapshot rebuilds the list.
+            OpenProfile = null;
+            ProfileAspect = "config";
             _selectedRoutingListId = -1;
             _configNames = [];
             ActiveMember = null;
@@ -480,6 +547,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         foreach (var item in Balancers)
         {
             item.IsActive = string.Equals(item.Name, snapshot.SelectedTarget ?? snapshot.BoundTarget, StringComparison.Ordinal);
+            // A DIFFERENT profile is the live tunnel: this profile's connect button reads "Переключить".
+            item.OtherActive = snapshot.Active && !string.Equals(item.Name, snapshot.BoundTarget, StringComparison.Ordinal);
         }
 
         // Top-center notice (auto-hides after 5s, dismissable): a different profile is selected while a
@@ -711,7 +780,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync);
                 existing.ApplyFromEntry(entry, options, _configNames);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
@@ -725,14 +794,22 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             }
         }
 
-        // Auto-expand a profile just created via "+ Профиль" so the user can add configs immediately.
-        if (_pendingExpandProfile is not null)
+        // If the profile opened in the detail view was removed elsewhere, fall back to the list.
+        if (OpenProfile is not null && !Balancers.Contains(OpenProfile))
         {
-            var created = Balancers.FirstOrDefault(b => string.Equals(b.Name, _pendingExpandProfile, StringComparison.Ordinal));
+            OpenProfile = null;
+        }
+
+        // Open a profile just created via "+ Профиль" straight into its detail (on the configuration
+        // aspect) so configs can be added immediately.
+        if (_pendingOpenProfile is not null)
+        {
+            var created = Balancers.FirstOrDefault(b => string.Equals(b.Name, _pendingOpenProfile, StringComparison.Ordinal));
             if (created is not null)
             {
-                created.IsExpanded = true;
-                _pendingExpandProfile = null;
+                OpenProfile = created;
+                ProfileAspect = "config";
+                _pendingOpenProfile = null;
             }
         }
     }
@@ -757,7 +834,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             new IpcCommand(IpcContract.OpAddBalancer, [name, "60", "priority"]));
         if (ack.Ok)
         {
-            _pendingExpandProfile = name;
+            _pendingOpenProfile = name;
         }
     }
 
@@ -806,6 +883,43 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task SelectProfileAsync(string profile)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [profile]));
+    }
+
+    // Per-profile connect/disconnect from a profile's detail. Connecting first selects the profile, then
+    // connects: the agent latches the new target on connect and the supervisor switches a live tunnel to
+    // it (tears the old one down, brings this one up). Optimistic state mirrors ToggleConnection so the
+    // header power control does not flicker while the switch is in flight.
+    private async Task ToggleProfileConnectionAsync(string profile, bool connect)
+    {
+        IsTunnelActive = connect;
+        BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
+        _toggleInFlight = true;
+        try
+        {
+            if (connect)
+            {
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [profile]));
+                var ack = await _connection.SendCommandAsync(
+                    new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
+                if (!ack.Ok)
+                {
+                    IsTunnelActive = false;
+                }
+            }
+            else
+            {
+                var ack = await _connection.SendCommandAsync(
+                    new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
+                if (!ack.Ok)
+                {
+                    IsTunnelActive = true;
+                }
+            }
+        }
+        finally
+        {
+            _toggleInFlight = false;
+        }
     }
 
     [RelayCommand]

@@ -230,15 +230,18 @@
                               </ItemsControl>
                             </StackPanel>
 
-                            <!-- Name -->
+                            <!-- Routing : the "use routing" flag is always visible but disabled until a
+                                 list is chosen; then the list selection itself. -->
                             <StackPanel Spacing="6">
-                              <TextBlock Classes="label" Text="НАЗВАНИЕ" />
-                              <TextBox Classes="field" Text="{Binding Name}" IsReadOnly="True" />
-                            </StackPanel>
-
-                            <!-- Routing -->
-                            <StackPanel Spacing="6">
-                              <TextBlock Classes="label" Text="СПИСОК МАРШРУТИЗАЦИИ" />
+                              <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ" />
+                              <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding CanToggleRouting}">
+                                <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
+                                              OnContent="" OffContent=""
+                                              MinWidth="0" />
+                                <TextBlock Grid.Column="1" Margin="11,0,0,0"
+                                           Text="Использовать маршрутизацию" FontSize="12.5" FontWeight="Medium"
+                                           VerticalAlignment="Center" />
+                              </Grid>
                               <ComboBox Classes="field" ItemsSource="{Binding RoutingListOptions}"
                                         SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
                                 <ComboBox.ItemTemplate>
@@ -247,14 +250,12 @@
                                   </DataTemplate>
                                 </ComboBox.ItemTemplate>
                               </ComboBox>
-                              <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding CanToggleRouting}" Margin="0,5,0,0">
-                                <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
-                                              OnContent="" OffContent=""
-                                              MinWidth="0" />
-                                <TextBlock Grid.Column="1" Margin="11,0,0,0"
-                                           Text="Использовать маршрутизацию" FontSize="12.5" FontWeight="Medium"
-                                           VerticalAlignment="Center" />
-                              </Grid>
+                            </StackPanel>
+
+                            <!-- Name -->
+                            <StackPanel Spacing="6">
+                              <TextBlock Classes="label" Text="НАЗВАНИЕ" />
+                              <TextBox Classes="field" Text="{Binding Name}" IsReadOnly="True" />
                             </StackPanel>
 
                             <!-- Balancer + interval. The mode selector is disabled with one config or

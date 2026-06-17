@@ -56,6 +56,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private bool _isActive;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanToggleRouting))]
     private RoutingListChoice _selectedRoutingList = RoutingListChoice.None;
 
     [ObservableProperty]

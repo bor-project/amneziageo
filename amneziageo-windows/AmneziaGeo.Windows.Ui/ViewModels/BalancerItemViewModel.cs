@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Avalonia.Media;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -12,9 +13,13 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// </summary>
 internal sealed partial class BalancerItemViewModel : ViewModelBase
 {
+    /// <summary>The sentinel combo-box item that opens the inline "new config" form.</summary>
+    public const string NewConfigOption = "+ Новая конфигурация";
+
     private readonly Func<string, int, string, IReadOnlyList<string>, Task> _saveBalancer;
     private readonly Func<string, long?, bool, Task> _assignRouting;
     private readonly Func<string, Task> _selectProfile;
+    private readonly Func<string, string, Task<IpcAck>> _importConfig;
     private bool _suppress;
 
     [ObservableProperty]
@@ -58,7 +63,21 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private bool _useRouting;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanAddMember))]
     private string? _addMemberSelection;
+
+    // Inline "new config" form, shown under the combo box when the sentinel item is selected.
+    [ObservableProperty]
+    private bool _isCreatingConfig;
+
+    [ObservableProperty]
+    private string _newConfigName = string.Empty;
+
+    [ObservableProperty]
+    private string _newConfigText = string.Empty;
+
+    [ObservableProperty]
+    private string _newConfigStatus = string.Empty;
 
     /// <summary>
     /// ctor
@@ -66,11 +85,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     public BalancerItemViewModel(
         Func<string, int, string, IReadOnlyList<string>, Task> saveBalancer,
         Func<string, long?, bool, Task> assignRouting,
-        Func<string, Task> selectProfile)
+        Func<string, Task> selectProfile,
+        Func<string, string, Task<IpcAck>> importConfig)
     {
         _saveBalancer = saveBalancer;
         _assignRouting = assignRouting;
         _selectProfile = selectProfile;
+        _importConfig = importConfig;
 
         // Adding/removing a member flips whether the balancer is available (>1 config), so refresh the
         // dependent state when the membership changes.
@@ -114,6 +135,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// True when a real routing list is selected and the toggle can flip use_routing on.
     /// </summary>
     public bool CanToggleRouting => !SelectedRoutingList.IsNone;
+
+    /// <summary>
+    /// Whether the "Добавить" button is actionable: a real config (not the "new config" sentinel) is
+    /// selected. Disabled when nothing is selected.
+    /// </summary>
+    public bool CanAddMember => !string.IsNullOrEmpty(AddMemberSelection) && AddMemberSelection != NewConfigOption;
 
     /// <summary>
     /// Whether the balancer can be used at all: only with more than one config. With 0 or 1 config the
@@ -267,6 +294,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     public void RefreshAvailableConfigs(IReadOnlyList<string> allConfigs)
     {
         AvailableConfigs.Clear();
+        AvailableConfigs.Add(NewConfigOption);
         foreach (var name in allConfigs)
         {
             if (!Members.Contains(name))
@@ -310,13 +338,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             return;
         }
 
-        if (Members.Count == 0)
-        {
-            // A profile must keep at least one member.
-            Members.Add(member);
-            return;
-        }
-
+        // A profile may now be empty (configs are added back into it later).
         if (!AvailableConfigs.Contains(member))
         {
             AvailableConfigs.Add(member);
@@ -328,16 +350,75 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     [RelayCommand]
     private async Task AddMember()
     {
-        if (AddMemberSelection is null || Members.Contains(AddMemberSelection))
+        if (!CanAddMember || Members.Contains(AddMemberSelection!))
         {
             return;
         }
 
-        var added = AddMemberSelection;
+        var added = AddMemberSelection!;
         Members.Add(added);
         AvailableConfigs.Remove(added);
         AddMemberSelection = null;
         await PersistMembersAsync();
+    }
+
+    partial void OnAddMemberSelectionChanged(string? value)
+    {
+        // Ignore the combo reset during a snapshot apply, so the open inline form and the user's input
+        // survive the periodic snapshot reconcile.
+        if (_suppress)
+        {
+            return;
+        }
+
+        // Selecting the sentinel reveals the inline new-config form; a real config just enables "Добавить".
+        IsCreatingConfig = value == NewConfigOption;
+    }
+
+    [RelayCommand]
+    private async Task SaveNewConfig()
+    {
+        var imported = VpnLinkCodec.TryDecode(NewConfigText);
+        if (imported is null)
+        {
+            NewConfigStatus = "Не распознано (.conf или vpn://)";
+            return;
+        }
+
+        var name = !string.IsNullOrWhiteSpace(NewConfigName) ? NewConfigName.Trim()
+            : !string.IsNullOrWhiteSpace(imported.Name) ? imported.Name!.Trim()
+            : "config";
+
+        var ack = await _importConfig(name, imported.ConfText);
+        if (!ack.Ok)
+        {
+            NewConfigStatus = ack.Message;
+            return;
+        }
+
+        if (!Members.Contains(name))
+        {
+            Members.Add(name);
+        }
+
+        AvailableConfigs.Remove(name);
+        await PersistMembersAsync();
+        ResetNewConfig();
+    }
+
+    [RelayCommand]
+    private void CancelNewConfig()
+    {
+        ResetNewConfig();
+    }
+
+    private void ResetNewConfig()
+    {
+        IsCreatingConfig = false;
+        NewConfigName = string.Empty;
+        NewConfigText = string.Empty;
+        NewConfigStatus = string.Empty;
+        AddMemberSelection = null;
     }
 
     partial void OnModeChanged(string value)
@@ -393,11 +474,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
     private Task PersistMembersAsync()
     {
-        if (_suppress || Members.Count == 0)
+        if (_suppress)
         {
             return Task.CompletedTask;
         }
 
+        // 0 members is allowed: a profile can be emptied and refilled later.
         return _saveBalancer(Name, RecheckSeconds, Mode, [.. Members]);
     }
 }

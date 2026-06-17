@@ -140,16 +140,13 @@ internal sealed class TunnelRunner(
         // tunnel.
         using var sessionCts = new CancellationTokenSource();
 
-        // The kill-switch blocks everything that does not egress the tunnel interface — a FULL-tunnel
-        // concept. In split / routing mode the whole point is that non-routed traffic goes direct, so
-        // arming it there severs the entire direct internet and leaves only the handful of tunnel-routed
-        // domains reachable (the browser shows ERR_NETWORK_ACCESS_DENIED for everything else). Arm it
-        // only in full tunnel; in split mode the routing list — not a blanket firewall — decides what
-        // goes through the tunnel, and direct traffic must keep flowing.
-        if (appSettings.KillSwitchEnabled && !geoSplit)
-        {
-            _ = Task.Run(() => ArmKillSwitchAsync(name, appSettings.AllowLan, sessionCts.Token));
-        }
+        // Always arm the WFP firewall once the tunnel adapter appears: it blocks QUIC (UDP/443) egressing
+        // the tunnel so HTTP/3 falls back to TCP, which is reliable over the obfuscated tunnel (raw QUIC
+        // stalls — e.g. some YouTube videos never load). The KILL-SWITCH (block everything off-tunnel) is
+        // a full-tunnel concept and is layered on only then: in split mode it would sever the
+        // intended-direct traffic (ERR_NETWORK_ACCESS_DENIED for everything not routed), so it stays off.
+        var killSwitch = appSettings.KillSwitchEnabled && !geoSplit;
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, appSettings.AllowLan, sessionCts.Token));
 
         try
         {
@@ -279,11 +276,12 @@ internal sealed class TunnelRunner(
     }
 
     /// <summary>
-    /// Waits for the tunnel adapter to appear, then arms the WFP kill-switch on it. If the tunnel is
-    /// torn down before or while arming (the session token is cancelled), the kill-switch is not left
-    /// armed: the post-arm re-check disables it, and teardown's own Disable() is idempotent.
+    /// Waits for the tunnel adapter to appear, then arms the WFP firewall on it (QUIC block always, plus
+    /// the kill-switch when <paramref name="killSwitch"/>). If the tunnel is torn down before or while
+    /// arming (the session token is cancelled), nothing is left armed: the post-arm re-check disables it,
+    /// and teardown's own Disable() is idempotent.
     /// </summary>
-    private async Task ArmKillSwitchAsync(string name, bool allowLan, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool allowLan, CancellationToken ct)
     {
         try
         {
@@ -293,7 +291,7 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is { } index)
                 {
-                    firewall.Enable(index, allowLan);
+                    firewall.Enable(index, killSwitch, allowLan);
                     if (ct.IsCancellationRequested)
                     {
                         firewall.Disable();
@@ -305,7 +303,7 @@ internal sealed class TunnelRunner(
                 await Task.Delay(500, ct);
             }
 
-            logger.LogWarning("kill-switch: tunnel adapter {Name} did not appear; not armed", name);
+            logger.LogWarning("firewall: tunnel adapter {Name} did not appear; not armed", name);
         }
         catch (OperationCanceledException)
         {

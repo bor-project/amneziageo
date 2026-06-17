@@ -20,7 +20,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private readonly Func<string, long?, bool, Task> _assignRouting;
     private readonly Func<string, Task> _selectProfile;
     private readonly Func<string, string, Task<IpcAck>> _importConfig;
+    private readonly Func<string, bool, Task> _setProfileConnection;
     private bool _suppress;
+    // Optimistic running override: set the instant the user taps connect/disconnect on this profile so the
+    // button flips immediately (like the header power control); cleared once a snapshot's real status
+    // agrees with the requested state.
+    private bool? _pendingRunning;
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -43,6 +48,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
+    [NotifyPropertyChangedFor(nameof(IsRunning))]
     private string _status = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
@@ -54,6 +60,10 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isActive;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ConnectActionText))]
+    private bool _otherActive;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanToggleRouting))]
@@ -87,12 +97,14 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         Func<string, int, string, IReadOnlyList<string>, Task> saveBalancer,
         Func<string, long?, bool, Task> assignRouting,
         Func<string, Task> selectProfile,
-        Func<string, string, Task<IpcAck>> importConfig)
+        Func<string, string, Task<IpcAck>> importConfig,
+        Func<string, bool, Task> setProfileConnection)
     {
         _saveBalancer = saveBalancer;
         _assignRouting = assignRouting;
         _selectProfile = selectProfile;
         _importConfig = importConfig;
+        _setProfileConnection = setProfileConnection;
 
         // Adding/removing a member flips whether the balancer is available (>1 config), so refresh the
         // dependent state when the membership changes.
@@ -131,6 +143,19 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// The status badge color.
     /// </summary>
     public IBrush StatusBrush => StatusLabels.Brush(Status);
+
+    /// <summary>
+    /// Whether this profile is the one the agent currently has up (the runner serves exactly one target
+    /// at a time, so any non-disconnected status means this profile is the live/connecting one). Drives
+    /// the per-profile Подключить vs Отключить affordance.
+    /// </summary>
+    public bool IsRunning => _pendingRunning ?? !string.Equals(Status, ConnectionStatus.Disconnected, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Label for the per-profile connect button: "Переключить" when a DIFFERENT profile is the live tunnel
+    /// (tapping switches to this one), otherwise "Подключить".
+    /// </summary>
+    public string ConnectActionText => OtherActive ? "Переключить" : "Подключить";
 
     /// <summary>
     /// True when a real routing list is selected and the toggle can flip use_routing on.
@@ -195,6 +220,29 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private Task Select()
     {
         return _selectProfile(Name);
+    }
+
+    // Connect THIS profile: select it as the target, then connect. If another profile is already up, the
+    // agent's supervisor re-latches the target on connect and re-runs the loop — tearing the old tunnel
+    // down and bringing this one up (an automatic switch).
+    [RelayCommand]
+    private Task ConnectProfile()
+    {
+        SetPendingRunning(true);
+        return _setProfileConnection(Name, true);
+    }
+
+    [RelayCommand]
+    private Task DisconnectProfile()
+    {
+        SetPendingRunning(false);
+        return _setProfileConnection(Name, false);
+    }
+
+    private void SetPendingRunning(bool value)
+    {
+        _pendingRunning = value;
+        OnPropertyChanged(nameof(IsRunning));
     }
 
     [RelayCommand]
@@ -286,7 +334,16 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             _suppress = false;
         }
 
+        // Release the optimistic running override once the real status agrees with the user's last tap
+        // (e.g. the agent has started connecting this profile, or finished disconnecting it).
+        var statusRunning = !string.Equals(Status, ConnectionStatus.Disconnected, StringComparison.Ordinal);
+        if (_pendingRunning == statusRunning)
+        {
+            _pendingRunning = null;
+        }
+
         OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(IsRunning));
     }
 
     /// <summary>

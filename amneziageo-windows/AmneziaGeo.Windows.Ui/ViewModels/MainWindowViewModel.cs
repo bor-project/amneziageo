@@ -33,6 +33,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ConnectButtonText))]
     [NotifyPropertyChangedFor(nameof(ConnectButtonBrush))]
+    [NotifyPropertyChangedFor(nameof(AgentStatusText))]
+    [NotifyPropertyChangedFor(nameof(IsConnecting))]
+    [NotifyPropertyChangedFor(nameof(ConnectGlyph))]
+    [NotifyPropertyChangedFor(nameof(ConnectHint))]
+    [NotifyPropertyChangedFor(nameof(ConnectStageBrush))]
+    [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
+    [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
+    [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
+    [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     private bool _isTunnelActive;
 
     [ObservableProperty]
@@ -43,6 +52,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(AgentStatusBrush))]
+    [NotifyPropertyChangedFor(nameof(IsConnecting))]
+    [NotifyPropertyChangedFor(nameof(ConnectGlyph))]
+    [NotifyPropertyChangedFor(nameof(ConnectHint))]
+    [NotifyPropertyChangedFor(nameof(ConnectStageBrush))]
+    [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
+    [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
+    [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
+    [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
@@ -169,7 +186,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Banner status text in the connection card.
     /// </summary>
-    public string AgentStatusText => IsConnected ? StatusLabels.Text(BoundStatus) : "Нет связи с агентом";
+    public string AgentStatusText => IsConnected
+        ? ConnState switch
+        {
+            // Mirror the reconciled ConnState so the label never momentarily contradicts the power
+            // circle during a connect / disconnect transition. State 2 keeps the precise status label
+            // (Connected vs Degraded); the transient state reads the intent direction.
+            2 => StatusLabels.Text(BoundStatus),
+            1 => StatusLabels.Text(IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
+            _ => StatusLabels.Text(ConnectionStatus.Disconnected),
+        }
+        : "Нет связи с агентом";
 
     /// <summary>
     /// Connection-card status indicator color.
@@ -205,6 +232,66 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Whether the connect / disconnect button is actionable (the agent pipe is up).
     /// </summary>
     public bool CanToggleConnection => IsConnected;
+
+    // --- Power-button connection control (design "Кнопка-питание"): a round on/off circle with the
+    // status and a hint beside it, tinted by state (disconnected / connecting / connected). ---
+    private static readonly IBrush _stageOff = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xF7));
+    private static readonly IBrush _stageConnecting = new SolidColorBrush(Color.FromRgb(0xFD, 0xF6, 0xEC));
+    private static readonly IBrush _stageConnected = new SolidColorBrush(Color.FromRgb(0xF0, 0xFA, 0xF4));
+    private static readonly IBrush _circleGreen = new SolidColorBrush(Color.FromRgb(0x1F, 0x9D, 0x57));
+    private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
+    private static readonly IBrush _circleBorderAmber = new SolidColorBrush(Color.FromRgb(0xF0, 0xD3, 0xA8));
+    private static readonly IBrush _glyphGray = new SolidColorBrush(Color.FromRgb(0x7B, 0x81, 0x8D));
+    private static readonly IBrush _glyphAmber = new SolidColorBrush(Color.FromRgb(0xE0, 0x90, 0x2F));
+    private static readonly IBrush _textGreen = new SolidColorBrush(Color.FromRgb(0x16, 0x7A, 0x44));
+    private static readonly IBrush _textAmber = new SolidColorBrush(Color.FromRgb(0xB8, 0x72, 0x1F));
+    private static readonly IBrush _textGray = new SolidColorBrush(Color.FromRgb(0x5B, 0x61, 0x6E));
+    private static readonly IBrush _hintBrush = new SolidColorBrush(Color.FromRgb(0x9A, 0xA0, 0xAB));
+
+    // 0 = disconnected, 1 = connecting / disconnecting (transient), 2 = connected. The agent's reported
+    // balancer status is reconciled with the desired tunnel state (IsTunnelActive) so a momentarily-stale
+    // snapshot cannot flicker the control on click: the instant connect is requested, Active flips true
+    // while the balancer status still lags at its previous terminal value ("disconnected") for one push —
+    // without this bridge that frame snaps the circle back to the off look before "connecting" arrives.
+    // Intent on + a down status reads "connecting"; intent off + an up status reads "disconnecting".
+    private int ConnState => BoundStatus switch
+    {
+        ConnectionStatus.Connected or ConnectionStatus.Degraded => IsTunnelActive ? 2 : 1,
+        ConnectionStatus.Connecting or ConnectionStatus.Disconnecting or ConnectionStatus.Failover => 1,
+        _ => IsTunnelActive ? 1 : 0,
+    };
+
+    /// <summary>Whether the connecting spinner shows in the power circle.</summary>
+    public bool IsConnecting => ConnState == 1;
+
+    /// <summary>Glyph in the power circle: ▶ to connect, ■ to stop, empty while connecting (spinner).</summary>
+    public string ConnectGlyph => ConnState switch { 1 => string.Empty, 2 => "■", _ => "▶" };
+
+    /// <summary>Hint line under the status in the power control.</summary>
+    public string ConnectHint => ConnState switch
+    {
+        1 => "Устанавливается соединение…",
+        2 => "Нажмите, чтобы отключиться",
+        _ => "Нажмите, чтобы подключиться",
+    };
+
+    /// <summary>Tinted background of the power-control stage.</summary>
+    public IBrush ConnectStageBrush => ConnState switch { 2 => _stageConnected, 1 => _stageConnecting, _ => _stageOff };
+
+    /// <summary>Power circle fill.</summary>
+    public IBrush ConnectCircleBrush => ConnState == 2 ? _circleGreen : Brushes.White;
+
+    /// <summary>Power circle border.</summary>
+    public IBrush ConnectCircleBorderBrush => ConnState switch { 2 => Brushes.Transparent, 1 => _circleBorderAmber, _ => _circleBorderGray };
+
+    /// <summary>Power circle glyph / spinner colour.</summary>
+    public IBrush ConnectCircleForeground => ConnState switch { 2 => Brushes.White, 1 => _glyphAmber, _ => _glyphGray };
+
+    /// <summary>Status label colour in the power control.</summary>
+    public IBrush ConnectStatusBrush => ConnState switch { 2 => _textGreen, 1 => _textAmber, _ => _textGray };
+
+    /// <summary>Hint label colour in the power control.</summary>
+    public IBrush ConnectHintBrush => _hintBrush;
 
     /// <summary>
     /// Whether the Home tab is shown.
@@ -461,17 +548,40 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void SyncConfigs(IReadOnlyList<ConfigEntry> entries)
     {
-        Configs.Clear();
-        foreach (var entry in entries)
+        // Reconcile in place (match by name) rather than Clear()+Add(): rebuilding the collection on
+        // every snapshot push would regenerate every row's controls, flickering the list each tick even
+        // though usually only the status field moves during a connect. Update the existing rows instead.
+        var present = entries.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+        for (var i = Configs.Count - 1; i >= 0; i--)
         {
-            Configs.Add(new ConfigItemViewModel
+            if (!present.Contains(Configs[i].Name))
             {
-                Name = entry.Name,
-                Endpoint = entry.Endpoint,
-                GeoSplit = entry.GeoSplit,
-                Rules = entry.Rules,
-                Status = entry.Status,
-            });
+                Configs.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var existing = Configs.FirstOrDefault(c => string.Equals(c.Name, entry.Name, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                existing = new ConfigItemViewModel { Name = entry.Name };
+                Configs.Insert(Math.Min(i, Configs.Count), existing);
+            }
+            else
+            {
+                var from = Configs.IndexOf(existing);
+                if (from != i)
+                {
+                    Configs.Move(from, i);
+                }
+            }
+
+            existing.Endpoint = entry.Endpoint;
+            existing.GeoSplit = entry.GeoSplit;
+            existing.Rules = entry.Rules;
+            existing.Status = entry.Status;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
@@ -479,17 +589,39 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void SyncRoutingLists(IReadOnlyList<RoutingListEntry> entries)
     {
-        RoutingLists.Clear();
-        foreach (var entry in entries)
+        // Reconcile in place (match by id) for the same reason as SyncConfigs / SyncSources, and so the
+        // selected-list highlight is not dropped and re-set on every snapshot.
+        var present = entries.Select(e => e.Id).ToHashSet();
+        for (var i = RoutingLists.Count - 1; i >= 0; i--)
         {
-            RoutingLists.Add(new RoutingListSummaryViewModel
+            if (!present.Contains(RoutingLists[i].Id))
             {
-                Id = entry.Id,
-                Name = entry.Name,
-                RuleCount = entry.RuleCount,
-                RouteCount = entry.RouteCount,
-                DomainCount = entry.DomainCount,
-            });
+                RoutingLists.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var existing = RoutingLists.FirstOrDefault(r => r.Id == entry.Id);
+            if (existing is null)
+            {
+                existing = new RoutingListSummaryViewModel { Id = entry.Id };
+                RoutingLists.Insert(Math.Min(i, RoutingLists.Count), existing);
+            }
+            else
+            {
+                var from = RoutingLists.IndexOf(existing);
+                if (from != i)
+                {
+                    RoutingLists.Move(from, i);
+                }
+            }
+
+            existing.Name = entry.Name;
+            existing.RuleCount = entry.RuleCount;
+            existing.RouteCount = entry.RouteCount;
+            existing.DomainCount = entry.DomainCount;
         }
     }
 

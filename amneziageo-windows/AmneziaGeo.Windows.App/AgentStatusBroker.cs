@@ -211,9 +211,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
     private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        if (args.Count < 4)
+        if (args.Count < 3)
         {
-            return new IpcAck(false, "add-balancer requires a name, recheck, mode, and at least one member");
+            return new IpcAck(false, "add-balancer requires a name, recheck, and mode");
         }
 
         if (!int.TryParse(args[1], out var recheck) || recheck <= 0)
@@ -239,10 +239,14 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var existing = await store.GetBalancerAsync(args[0], ct);
         var updated = new BalancerGroup(args[0], recheck, members, mode);
         await store.SaveBalancerAsync(updated, ct);
-        if (existing is null
+        var changed = existing is null
             || existing.RecheckSeconds != updated.RecheckSeconds
             || !string.Equals(existing.Mode, updated.Mode, StringComparison.Ordinal)
-            || !existing.Members.SequenceEqual(updated.Members, StringComparer.Ordinal))
+            || !existing.Members.SequenceEqual(updated.Members, StringComparer.Ordinal);
+
+        // Only disrupt the live session when the *active* profile changed; creating or editing other
+        // profiles (e.g. "+ Профиль") must not reconnect the running tunnel.
+        if (changed && string.Equals(args[0], BoundTarget, StringComparison.Ordinal))
         {
             control.Invalidate();
         }

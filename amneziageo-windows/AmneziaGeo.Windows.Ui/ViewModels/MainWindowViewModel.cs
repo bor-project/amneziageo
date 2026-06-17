@@ -21,6 +21,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _toggleInFlight;
     private string? _lastNotice;
     private long _selectedRoutingListId = -1;
+    private string? _pendingExpandProfile;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -556,7 +557,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync);
                 existing.ApplyFromEntry(entry, options, _configNames);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
@@ -567,6 +568,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             if (index != i)
             {
                 Balancers.Move(index, i);
+            }
+        }
+
+        // Auto-expand a profile just created via "+ Профиль" so the user can add configs immediately.
+        if (_pendingExpandProfile is not null)
+        {
+            var created = Balancers.FirstOrDefault(b => string.Equals(b.Name, _pendingExpandProfile, StringComparison.Ordinal));
+            if (created is not null)
+            {
+                created.IsExpanded = true;
+                _pendingExpandProfile = null;
             }
         }
     }
@@ -582,11 +594,48 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return options;
     }
 
+    // "+ Профиль": create an empty profile (no dialog), then auto-expand it so configs can be added.
+    [RelayCommand]
+    private async Task CreateProfile()
+    {
+        var name = UniqueProfileName();
+        var ack = await _connection.SendCommandAsync(
+            new IpcCommand(IpcContract.OpAddBalancer, [name, "60", "priority"]));
+        if (ack.Ok)
+        {
+            _pendingExpandProfile = name;
+        }
+    }
+
+    private string UniqueProfileName()
+    {
+        const string baseName = "Новый профиль";
+        var existing = Balancers.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
+        if (!existing.Contains(baseName))
+        {
+            return baseName;
+        }
+
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{baseName} {i}";
+            if (!existing.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
     private async Task SaveBalancerAsync(string name, int recheck, string mode, IReadOnlyList<string> members)
     {
         var args = new List<string> { name, recheck.ToString(System.Globalization.CultureInfo.InvariantCulture), mode };
         args.AddRange(members);
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, args));
+    }
+
+    private async Task<IpcAck> ImportConfigAsync(string name, string confText)
+    {
+        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportConfig, [name, confText]));
     }
 
     private async Task AssignRoutingAsync(string profile, long? listId, bool useRouting)

@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds status snapshots and pushes them to connected UI clients over the status pipe.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, AgentControl control, SettingsStore settingsStore, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, AgentControl control, SettingsStore settingsStore, LogRingBuffer logBuffer, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -192,7 +192,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "invalid recheck seconds");
         }
 
-        var mode = args[2].Equals("latency", StringComparison.OrdinalIgnoreCase) ? "latency" : "priority";
+        var mode = args[2].ToLowerInvariant() switch
+        {
+            "latency" => "latency",
+            "off" => "off",
+            _ => "priority",
+        };
         var members = args.Skip(3).ToList();
         foreach (var member in members)
         {
@@ -667,7 +672,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0));
         }
 
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target, sources);
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target, sources, logBuffer.Snapshot());
     }
 
     /// <summary>

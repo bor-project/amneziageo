@@ -22,8 +22,10 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Detail))]
+    [NotifyPropertyChangedFor(nameof(IsOffMode))]
     [NotifyPropertyChangedFor(nameof(IsPriorityMode))]
     [NotifyPropertyChangedFor(nameof(IsLatencyMode))]
+    [NotifyPropertyChangedFor(nameof(ShowInterval))]
     private string _mode = "priority";
 
     [ObservableProperty]
@@ -69,6 +71,18 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         _saveBalancer = saveBalancer;
         _assignRouting = assignRouting;
         _selectProfile = selectProfile;
+
+        // Adding/removing a member flips whether the balancer is available (>1 config), so refresh the
+        // dependent state when the membership changes.
+        Members.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(CanUseBalancer));
+            OnPropertyChanged(nameof(IsOffMode));
+            OnPropertyChanged(nameof(IsPriorityMode));
+            OnPropertyChanged(nameof(IsLatencyMode));
+            OnPropertyChanged(nameof(ShowInterval));
+            OnPropertyChanged(nameof(Detail));
+        };
     }
 
     /// <summary>
@@ -102,14 +116,31 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     public bool CanToggleRouting => !SelectedRoutingList.IsNone;
 
     /// <summary>
-    /// Whether the profile uses the priority-order balancer mode.
+    /// Whether the balancer can be used at all: only with more than one config. With 0 or 1 config the
+    /// balancer controls are disabled and the group runs as a plain single tunnel.
     /// </summary>
-    public bool IsPriorityMode => Mode == "priority";
+    public bool CanUseBalancer => Members.Count > 1;
 
     /// <summary>
-    /// Whether the profile uses the best-availability balancer mode.
+    /// Whether the balancer is off ("don't use"): the user chose it, or it's forced off by having one
+    /// config or none.
     /// </summary>
-    public bool IsLatencyMode => Mode == "latency";
+    public bool IsOffMode => !CanUseBalancer || Mode == "off";
+
+    /// <summary>
+    /// Whether the profile uses the priority-order balancer mode (only meaningful when balancing).
+    /// </summary>
+    public bool IsPriorityMode => CanUseBalancer && Mode == "priority";
+
+    /// <summary>
+    /// Whether the profile uses the best-availability balancer mode (only meaningful when balancing).
+    /// </summary>
+    public bool IsLatencyMode => CanUseBalancer && Mode == "latency";
+
+    /// <summary>
+    /// Whether the recheck-interval row is relevant: shown only while actually balancing (probing).
+    /// </summary>
+    public bool ShowInterval => CanUseBalancer && Mode != "off";
 
     /// <summary>
     /// Whether the recheck interval is at the 10-second preset.
@@ -136,6 +167,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private Task Select()
     {
         return _selectProfile(Name);
+    }
+
+    [RelayCommand]
+    private void SetOffMode()
+    {
+        Mode = "off";
     }
 
     [RelayCommand]
@@ -175,8 +212,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     {
         get
         {
-            var mode = Mode == "latency" ? "по задержке" : "по приоритету";
             var active = ActiveMember ?? "—";
+            if (IsOffMode)
+            {
+                return $"без балансировки · активен: {active} · серверов: {Members.Count}";
+            }
+
+            var mode = Mode == "latency" ? "по задержке" : "по приоритету";
             return $"{mode} · активен: {active} · проверка: {RecheckSeconds}с · серверов: {Members.Count}";
         }
     }

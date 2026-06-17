@@ -22,6 +22,11 @@ internal static class AppHost
 
         var builder = Host.CreateApplicationBuilder();
 
+        // Capture recent log lines in memory so the UI home screen can show a live activity journal;
+        // the same instance is registered for the status broker and fed by the Serilog sink below.
+        var logBuffer = new LogRingBuffer();
+        builder.Services.AddSingleton(logBuffer);
+
         builder.Logging.ClearProviders();
         builder.Services.AddSerilog(config => config
             .MinimumLevel.Information()
@@ -29,7 +34,8 @@ internal static class AppHost
             .WriteTo.Console()
             .WriteTo.File(
                 Path.Combine(TunnelPaths.LogDirectory(), "ageo-.log"),
-                rollingInterval: RollingInterval.Day));
+                rollingInterval: RollingInterval.Day)
+            .WriteTo.Sink(new RingBufferSink(logBuffer)));
 
         RegisterServices(builder.Services);
 

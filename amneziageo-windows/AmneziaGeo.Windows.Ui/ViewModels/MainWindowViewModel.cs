@@ -99,6 +99,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasSources;
 
+    // The agent activity journal shown on the home screen: newest line first, joined into one string so
+    // the view is a single (selectable) text block — no per-line controls to regenerate each push.
+    [ObservableProperty]
+    private string _logText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasLogs;
+
     // Set while applying a snapshot so echoing the agent's current settings into the toggles does not
     // bounce straight back as a set-setting command.
     private bool _suppressSettingPush;
@@ -367,6 +375,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         KillSwitchEnabled = snapshot.KillSwitchEnabled;
         AllowLan = snapshot.AllowLan;
         _suppressSettingPush = false;
+
+        var logs = snapshot.Logs ?? [];
+        HasLogs = logs.Count > 0;
+        // Newest first so the latest activity stays visible at the top without scrolling.
+        LogText = logs.Count == 0 ? string.Empty : string.Join('\n', logs.Reverse());
     }
 
     /// <summary>

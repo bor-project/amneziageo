@@ -32,6 +32,24 @@ public sealed partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
+    private async void OnExportMemberClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: string configName })
+        {
+            return;
+        }
+
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        var export = new ExportDialogViewModel(vm.Connection, configName);
+        var dialog = new ExportDialog { DataContext = export };
+        _ = export.LoadAsync();
+        await dialog.ShowDialog(this);
+    }
+
     private async void OnConfigTapped(object? sender, TappedEventArgs e)
     {
         if (sender is not Control { DataContext: ConfigItemViewModel config })

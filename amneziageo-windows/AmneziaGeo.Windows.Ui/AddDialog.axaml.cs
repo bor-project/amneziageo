@@ -2,7 +2,9 @@ using System.IO;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using AmneziaGeo.Windows.Ui.Services;
 using AmneziaGeo.Windows.Ui.ViewModels;
 
 namespace AmneziaGeo.Windows.Ui;
@@ -30,6 +32,50 @@ public sealed partial class AddDialog : Window
             {
                 vm.ConfigName = Path.GetFileNameWithoutExtension(file);
             }
+        }
+    }
+
+    private async void OnImportQrImage(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not AddDialogViewModel vm)
+        {
+            return;
+        }
+
+        var path = await PickFileAsync("QR-картинка", "png", "jpg", "jpeg", "bmp");
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var bitmap = new Bitmap(path);
+            var text = QrCodec.Decode(bitmap);
+            if (text is null)
+            {
+                vm.StatusMessage = "QR-код не найден на картинке";
+                return;
+            }
+
+            var imported = VpnLinkCodec.TryDecodeQr(text);
+            if (imported is null)
+            {
+                vm.StatusMessage = "QR распознан, но это не конфигурация";
+                return;
+            }
+
+            vm.ImportText = imported.ConfText;
+            if (string.IsNullOrWhiteSpace(vm.ConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
+            {
+                vm.ConfigName = imported.Name!;
+            }
+
+            vm.StatusMessage = "QR распознан — нажмите OK для импорта";
+        }
+        catch (Exception ex)
+        {
+            vm.StatusMessage = ex.Message;
         }
     }
 

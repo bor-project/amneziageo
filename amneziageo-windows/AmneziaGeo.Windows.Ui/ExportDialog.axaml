@@ -1,0 +1,47 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AmneziaGeo.Windows.Ui.ExportDialog"
+        Title="Экспорт конфигурации"
+        Width="460" Height="620"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+  <DockPanel Margin="16">
+
+    <TextBlock DockPanel.Dock="Top" Text="{Binding ConfigName}" FontWeight="SemiBold" FontSize="16" />
+
+    <!-- format toggle: raw .conf vs Amnezia vpn:// link -->
+    <Border DockPanel.Dock="Top" Margin="0,12,0,0"
+            Background="{DynamicResource AgInsetBrush}"
+            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="9" Padding="3">
+      <UniformGrid Columns="2">
+        <Button Classes="seg" Classes.active="{Binding IsConf}" Command="{Binding ShowConfCommand}"
+                Content="Файл .conf" HorizontalAlignment="Stretch" />
+        <Button Classes="seg" Classes.active="{Binding IsLink}" Command="{Binding ShowLinkCommand}"
+                Content="Ссылка vpn://" HorizontalAlignment="Stretch" />
+      </UniformGrid>
+    </Border>
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0">
+      <Button Content="Копировать" Click="OnCopy" IsEnabled="{Binding IsReady}" />
+      <Button Content="Сохранить..." Click="OnSave" IsEnabled="{Binding IsReady}" />
+      <Button Content="Закрыть" Click="OnClose" IsDefault="True" />
+    </StackPanel>
+
+    <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}"
+               Foreground="{DynamicResource AgMutedBrush}" FontSize="12"
+               TextWrapping="Wrap" Margin="0,10,0,0" />
+
+    <StackPanel Spacing="10" Margin="0,14,0,0">
+      <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+              IsVisible="{Binding HasQr}">
+        <Image Source="{Binding QrImage}" Width="240" Height="240" />
+      </Border>
+      <TextBox Text="{Binding Payload}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+               Height="150" FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11" />
+    </StackPanel>
+
+  </DockPanel>
+</Window>

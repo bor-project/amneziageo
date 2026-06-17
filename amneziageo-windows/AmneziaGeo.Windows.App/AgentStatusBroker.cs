@@ -158,6 +158,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpRemoveSource => await RemoveSourceAsync(command.Args, ct),
                 IpcContract.OpUpdateSources => await UpdateSourcesAsync(ct),
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
+                IpcContract.OpGetConfig => GetConfig(command.Args),
+                IpcContract.OpImportConfig => ImportConfig(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -178,6 +180,33 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         configRepo.Add(args[0], args[1]);
         logger.LogInformation("added config {Name}", args[0]);
         return new IpcAck(true, $"added config {args[0]}");
+    }
+
+    private IpcAck GetConfig(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "get-config requires a name");
+        }
+
+        if (!configRepo.Exists(args[0]))
+        {
+            return new IpcAck(false, $"unknown config: {args[0]}");
+        }
+
+        return new IpcAck(true, configRepo.ReadText(args[0]));
+    }
+
+    private IpcAck ImportConfig(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2)
+        {
+            return new IpcAck(false, "import-config requires a name and config text");
+        }
+
+        configRepo.AddFromText(args[0], args[1]);
+        logger.LogInformation("imported config {Name}", args[0]);
+        return new IpcAck(true, $"импортирован {args[0]}");
     }
 
     private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)

@@ -149,24 +149,32 @@
                               <TextBox Classes="field" Text="{Binding Name}" IsReadOnly="True" />
                             </StackPanel>
 
-                            <!-- Balancer + interval -->
+                            <!-- Balancer + interval. The mode selector is disabled with one config or
+                                 none (nothing to balance); the interval shows only while balancing. -->
                             <StackPanel Spacing="9">
                               <TextBlock Classes="label" Text="БАЛАНСИРОВЩИК" />
                               <Border Background="{DynamicResource AgInsetBrush}"
                                       BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                      CornerRadius="9" Padding="3">
-                                <Grid ColumnDefinitions="*,3,*">
-                                  <Button Grid.Column="0" Classes="seg"
+                                      CornerRadius="9" Padding="3" IsEnabled="{Binding CanUseBalancer}">
+                                <UniformGrid Columns="3">
+                                  <Button Classes="seg"
+                                          Classes.active="{Binding IsOffMode}"
+                                          Command="{Binding SetOffModeCommand}"
+                                          Content="Не использовать" HorizontalAlignment="Stretch" />
+                                  <Button Classes="seg"
                                           Classes.active="{Binding IsPriorityMode}"
                                           Command="{Binding SetPriorityModeCommand}"
                                           Content="По приоритету" HorizontalAlignment="Stretch" />
-                                  <Button Grid.Column="2" Classes="seg"
+                                  <Button Classes="seg"
                                           Classes.active="{Binding IsLatencyMode}"
                                           Command="{Binding SetLatencyModeCommand}"
                                           Content="По доступности" HorizontalAlignment="Stretch" />
-                                </Grid>
+                                </UniformGrid>
                               </Border>
-                              <Grid ColumnDefinitions="*,Auto,4,Auto,4,Auto">
+                              <TextBlock IsVisible="{Binding !CanUseBalancer}" Classes="muted" FontSize="11.5"
+                                         TextWrapping="Wrap"
+                                         Text="Балансировщик доступен при двух и более конфигурациях." />
+                              <Grid ColumnDefinitions="*,Auto,4,Auto,4,Auto" IsVisible="{Binding ShowInterval}">
                                 <TextBlock Grid.Column="0" Classes="muted" FontSize="11.5"
                                            Text="Интервал проверки" VerticalAlignment="Center" />
                                 <Button Grid.Column="1" Classes="chip"
@@ -347,22 +355,33 @@
       <Border Grid.Column="1" Classes="card" Margin="12,12,12,12" Padding="0">
         <Grid>
 
-          <!-- HOME -->
+          <!-- HOME : current state summary + live agent journal -->
           <DockPanel IsVisible="{Binding IsHome}" LastChildFill="True">
-            <StackPanel DockPanel.Dock="Top" Margin="24,20,24,16">
-              <TextBlock Classes="section" Text="СОСТОЯНИЕ БАЛАНСИРОВЩИКА" />
-              <TextBlock Text="Активный профиль и латентности будут отображаться здесь, когда агент будет подключён."
-                         Classes="muted" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+            <StackPanel DockPanel.Dock="Top" Margin="24,20,24,12">
+              <TextBlock Classes="section" Text="СОСТОЯНИЕ" />
+              <StackPanel Orientation="Horizontal" Spacing="9" Margin="0,9,0,0" VerticalAlignment="Center">
+                <Ellipse Width="10" Height="10" Fill="{Binding AgentStatusBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding AgentStatusText}" FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ActiveProfileName}" Classes="muted" FontSize="13.5" VerticalAlignment="Center" />
+              </StackPanel>
             </StackPanel>
 
-            <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0"
-                    Background="{DynamicResource AgInsetBrush}" Margin="24,8,24,18" CornerRadius="12">
-              <ScrollViewer>
-                <StackPanel Margin="16,13" Spacing="6">
-                  <TextBlock Text="Логи появятся когда агент будет подключён и доступен через IPC."
-                             Classes="muted mono" FontSize="12" />
-                </StackPanel>
-              </ScrollViewer>
+            <TextBlock DockPanel.Dock="Top" Classes="section" Text="ЖУРНАЛ АГЕНТА" Margin="24,4,24,8" />
+
+            <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                    Background="{DynamicResource AgInsetBrush}" Margin="24,0,24,18" CornerRadius="12">
+              <Panel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                  <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
+                                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                       FontSize="11.5" LineHeight="18"
+                                       Foreground="{DynamicResource AgMutedBrush}"
+                                       TextWrapping="Wrap" Margin="16,13" />
+                </ScrollViewer>
+                <TextBlock IsVisible="{Binding !HasLogs}" Classes="muted" FontSize="12"
+                           Text="Журнал появится, когда агент начнёт работу."
+                           Margin="18,15" VerticalAlignment="Top" />
+              </Panel>
             </Border>
           </DockPanel>
 

@@ -445,9 +445,9 @@ internal sealed class Cli(
 
     private async Task<int> BalancerModeAsync(string name, string mode)
     {
-        if (mode is not ("priority" or "latency"))
+        if (mode is not ("priority" or "latency" or "off"))
         {
-            Console.WriteLine("mode must be priority or latency");
+            Console.WriteLine("mode must be priority, latency, or off");
             return 1;
         }
 

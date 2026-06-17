@@ -24,6 +24,11 @@ internal sealed class BalancerRunner(
     private AppSettings _settings = new();
     private int[] _failbackStreak = [];
 
+    // True only when the group is actually balancing: more than one member and a real selection mode.
+    // When off ("don't use") or a single member, we pin to the first member and skip all periodic
+    // probing, so an unused balancer costs nothing on the backend.
+    private bool _balancing;
+
     /// <summary>
     /// Supervises the agent's target: re-reads the group and routing, idles while stopped, and
     /// (re)runs a failover session on each change so connect / disconnect and routing edits apply
@@ -124,14 +129,18 @@ internal sealed class BalancerRunner(
     {
         _settings = await settingsStore.LoadAsync(ct);
 
-        var members = group.Members;
-        if (members.Count == 0)
+        if (group.Members.Count == 0)
         {
             logger.LogWarning("balancer {Group} has no members", group.Name);
-            await SetStateAsync("disconnected", members, -1);
+            await SetStateAsync("disconnected", group.Members, -1);
             await IdleAsync(ct);
             return;
         }
+
+        // Balancing applies only with >1 member and a real mode. Otherwise pin to the first (top-priority)
+        // member and run it as a plain single tunnel — no challenger probing, no failover, no overhead.
+        _balancing = group.Members.Count > 1 && !group.Mode.Equals("off", StringComparison.OrdinalIgnoreCase);
+        IReadOnlyList<string> members = _balancing ? group.Members : [group.Members[0]];
 
         foreach (var member in members)
         {
@@ -144,7 +153,7 @@ internal sealed class BalancerRunner(
             }
         }
 
-        logger.LogInformation("balancer {Group} mode={Mode}", group.Name, group.Mode);
+        logger.LogInformation("balancer {Group} mode={Mode} balancing={Balancing}", group.Name, group.Mode, _balancing);
         await ProjectRoutingAsync(group.Name, members, ct);
         StopAll(members);
         _failbackStreak = new int[members.Count];
@@ -190,7 +199,7 @@ internal sealed class BalancerRunner(
                     continue;
                 }
 
-                if ((DateTimeOffset.UtcNow - lastRecheck).TotalSeconds >= group.RecheckSeconds)
+                if (_balancing && (DateTimeOffset.UtcNow - lastRecheck).TotalSeconds >= group.RecheckSeconds)
                 {
                     lastRecheck = DateTimeOffset.UtcNow;
                     var challenger = await FindChallengerAsync(members, current, ct);
@@ -289,7 +298,9 @@ internal sealed class BalancerRunner(
 
     private bool IsLatencyMode()
     {
-        return _group.Mode.Equals("latency", StringComparison.OrdinalIgnoreCase);
+        // Latency selection only matters while actually balancing; a pinned single member uses priority
+        // order (no probes).
+        return _balancing && _group.Mode.Equals("latency", StringComparison.OrdinalIgnoreCase);
     }
 
     private string StatusFor(int current)

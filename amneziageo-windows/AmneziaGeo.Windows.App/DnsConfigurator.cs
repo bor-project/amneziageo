@@ -1,5 +1,6 @@
 using System.Management;
 using System.Net;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -94,6 +95,31 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             }
         }
     }
+
+    /// <summary>
+    /// Clears the OS DNS resolver cache (the same call <c>ipconfig /flushdns</c> makes). Run right after
+    /// the redirect to the loopback proxy is applied: without it, a domain resolved before connecting —
+    /// e.g. a popular site like youtube.com already in the cache — is served from the cache and never
+    /// reaches the proxy, so it is never matched and never routed into the tunnel until its TTL expires
+    /// (split routing silently misses it while its uncached CDN subdomains do get tracked). Also run on
+    /// teardown so proxy answers carrying tunnel-routed IPs do not linger. Best-effort; never throws.
+    /// </summary>
+    public void FlushCache()
+    {
+        try
+        {
+            DnsFlushResolverCache();
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "dns cache flush failed");
+        }
+    }
+
+    // ipconfig /flushdns calls this same dnsapi export; it clears the system resolver cache in-process
+    // with no process spawn. Undocumented but stable since Windows XP.
+    [DllImport("dnsapi.dll", EntryPoint = "DnsFlushResolverCache")]
+    private static extern uint DnsFlushResolverCache();
 
     /// <summary>
     /// Restores the DNS servers this instance redirected.

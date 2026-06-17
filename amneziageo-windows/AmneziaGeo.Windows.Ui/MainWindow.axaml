@@ -17,13 +17,14 @@
   <Grid>
   <DockPanel LastChildFill="True">
 
-    <!-- HEADER : the round power-button connection control, on the LEFT -->
+    <!-- HEADER : the round power-button connection control (LEFT) + the reconnect/notice banner (RIGHT) -->
     <Border DockPanel.Dock="Top" Height="42"
             Background="{DynamicResource AgSidebarBrush}"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*">
 
       <!-- click the circle to toggle the tunnel; tint and glyph reflect the state -->
-      <Button Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,3,12,0"
+      <Button Grid.Column="0" Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,3,12,0"
               Command="{Binding ToggleConnectionCommand}"
               IsEnabled="{Binding CanToggleConnection}">
         <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
@@ -47,6 +48,25 @@
           </StackPanel>
         </StackPanel>
       </Button>
+
+      <!-- reconnect / better-connection notice, shown at the header level beside the power button -->
+      <Border Grid.Column="1" IsVisible="{Binding NoticeVisible}"
+              VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
+              Margin="12,0,12,0"
+              Background="{DynamicResource AgAccentBrush}"
+              CornerRadius="8" Padding="12,5">
+        <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+          <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
+          <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
+                     FontSize="12" FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
+                  Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
+                  VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
+        </Grid>
+      </Border>
+
+      </Grid>
     </Border>
 
     <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
@@ -707,24 +727,6 @@
     </Grid>
 
   </DockPanel>
-
-    <!-- TOP-CENTER NOTICE BANNER (settings changed / better connection available) -->
-    <Border IsVisible="{Binding NoticeVisible}"
-            VerticalAlignment="Top" HorizontalAlignment="Center"
-            Margin="0,58,0,0" MaxWidth="560"
-            Background="{DynamicResource AgAccentBrush}"
-            CornerRadius="10" Padding="16,10"
-            BoxShadow="0 6 20 0 #33000000">
-      <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-        <Ellipse Grid.Column="0" Width="9" Height="9" Fill="White" VerticalAlignment="Center" Margin="0,0,10,0" />
-        <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
-                   FontSize="12.5" FontWeight="SemiBold"
-                   TextWrapping="Wrap" VerticalAlignment="Center" />
-        <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
-                Content="✕" Foreground="White" FontSize="13" Margin="10,0,0,0"
-                VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
-      </Grid>
-    </Border>
 
   </Grid>
 </Window>

@@ -148,6 +148,16 @@ internal sealed class TunnelRunner(
         var killSwitch = appSettings.KillSwitchEnabled && !geoSplit;
         _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, appSettings.AllowLan, sessionCts.Token));
 
+        // Re-flush the OS DNS cache once the tunnel is up. The connect-time flush above runs before the
+        // adapter and its routes exist, so a name resolved in the window before the clean resolver's /32
+        // route goes live can be answered from the local network's poisoned cache (a geo-blocked apex
+        // like chatgpt.com gets a sinkhole IP that then sticks). Flushing again after the adapter appears
+        // drops that window poison so the next lookup resolves cleanly through the tunnel.
+        if (applied)
+        {
+            _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, sessionCts.Token));
+        }
+
         try
         {
             WireGuardEngine.RunTunnelService(config, name);
@@ -272,6 +282,38 @@ internal sealed class TunnelRunner(
             }
 
             await Task.Delay(500);
+        }
+    }
+
+    /// <summary>
+    /// Waits for the tunnel adapter (and its AllowedIPs routes, including the clean resolver's /32) to
+    /// appear, then flushes the OS DNS cache — once when the adapter is up and once more after the first
+    /// handshake settles. This drops any sinkhole answer cached during the bring-up window (before the
+    /// clean resolver was routed through the tunnel), so a geo-blocked apex re-resolves cleanly instead
+    /// of serving stale poison. Cancelled with the session if the tunnel is torn down first.
+    /// </summary>
+    private async Task FlushDnsWhenTunnelUpAsync(string name, CancellationToken ct)
+    {
+        try
+        {
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (routes.FindInterfaceIndex(name) is not null)
+                {
+                    dns.FlushCache();
+                    await Task.Delay(2000, ct);
+                    dns.FlushCache();
+                    return;
+                }
+
+                await Task.Delay(500, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Tunnel went down before it came up; nothing to flush.
         }
     }
 

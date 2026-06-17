@@ -33,11 +33,33 @@ internal sealed class TunnelRunner(
         var geo = await store.GetActiveTunnelGeoAsync(name);
 
         var geoSplit = geo?.GeoSplit ?? false;
-        var geoRoutes = geo?.Routes ?? [];
+        var geoRoutes = new List<string>(geo?.Routes ?? []);
         var domains = geo?.Domains ?? [];
 
         // This tunnel adapter is IPv4-only when the config declares no IPv6 Address.
         var stripV6 = !HasIpv6Address(config);
+
+        // The proxy tracks matched domains only in split mode (in full tunnel everything is already
+        // routed; tracking would replace 0.0.0.0/0 with a few /32s).
+        var trackDomains = geoSplit && domains.Count > 0;
+
+        // Clean resolver for TUNNELED (matched) names = the config's own DNS, reached THROUGH the tunnel.
+        // A geo-blocked domain must resolve here, not via the local network resolver, which hands back a
+        // poisoned/blocked answer (e.g. chatgpt.com -> a sinkhole IP) that then gets routed into the
+        // tunnel to nowhere. Add the resolver's address to the tunneled routes so it is reachable.
+        var configDns = WgConfigEditor.GetDns(config);
+        IReadOnlyList<string> tunnelResolver = configDns.Count > 0 ? configDns : ["1.1.1.1"];
+        if (trackDomains)
+        {
+            foreach (var server in tunnelResolver)
+            {
+                var route = $"{server}/32";
+                if (IPAddress.TryParse(server, out _) && !geoRoutes.Contains(route))
+                {
+                    geoRoutes.Add(route);
+                }
+            }
+        }
 
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), geoRoutes);
         if (stripV6)
@@ -60,27 +82,21 @@ internal sealed class TunnelRunner(
         var appSettings = await settings.LoadAsync();
 
         // Capture the resolvers the system uses now, before redirecting, so the proxy can forward
-        // non-geo queries upstream — keeps corporate/existing name resolution working when running
-        // alongside another VPN.
+        // NON-tunneled queries to them — keeps corporate/existing name resolution working alongside
+        // another VPN. The loopback proxy always runs (split AND full): on this IPv4-only tunnel it
+        // denies AAAA and HTTPS/SVCB (type 65) so dual-stack clients don't stall and Chrome doesn't take
+        // an HTTP/3 hint path that bypasses the tunnel.
         var upstream = dns.CaptureUpstream();
-        var configDns = WgConfigEditor.GetDns(config);
         IReadOnlyList<string> redirectServers = [];
 
-        // Always run the loopback DNS proxy — in split AND in full tunnel. On this IPv4-only tunnel it
-        // denies AAAA and HTTPS/SVCB (type 65), so dual-stack clients don't stall on IPv6 with no
-        // transit and Chrome doesn't take an HTTP/3 hint path that bypasses the tunnel; it also forwards
-        // queries to a clean resolver reached through the tunnel. In split mode it additionally tracks
-        // matched domains; in full tunnel it must NOT (that would replace 0.0.0.0/0 with a few /32s).
-        var trackDomains = geoSplit && domains.Count > 0;
+        // Local resolver for NON-tunneled names: in split the captured system resolver (coexisting /
+        // corporate names keep resolving); in full tunnel everything is tunneled, so resolve all names
+        // via the clean resolver above.
+        var localResolver = geoSplit
+            ? (upstream.Count > 0 ? upstream : tunnelResolver)
+            : tunnelResolver;
 
-        // Proxy upstream: in full tunnel forward to the config's own resolver, reached cleanly THROUGH
-        // the tunnel; in split mode forward to the captured system resolver so coexisting (corporate)
-        // name resolution keeps working alongside another VPN.
-        var proxyUpstream = geoSplit
-            ? (upstream.Count > 0 ? upstream : configDns)
-            : (configDns.Count > 0 ? configDns : upstream);
-
-        var proxy = StartProxy(name, config, trackDomains ? domains : [], geoRoutes, appSettings.RefreshSeconds, stripV6, proxyUpstream, trackDomains);
+        var proxy = StartProxy(name, config, trackDomains ? domains : [], geoRoutes, appSettings.RefreshSeconds, stripV6, tunnelResolver, localResolver, trackDomains);
         if (proxy?.BoundV4 is not null)
         {
             redirectServers = [proxy.BoundV4.ToString()];
@@ -159,7 +175,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> geoRoutes, int refreshSeconds, bool stripV6, IReadOnlyList<string> upstream, bool trackDomains)
+    private DnsProxy? StartProxy(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> geoRoutes, int refreshSeconds, bool stripV6, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, bool trackDomains)
     {
         DomainTracker? tracker = null;
         if (trackDomains)
@@ -174,10 +190,9 @@ internal sealed class TunnelRunner(
             _ = Task.Run(tracker.RunAsync);
         }
 
-        var upstreamIp = upstream.Count > 0 && IPAddress.TryParse(upstream[0], out var parsed)
-            ? parsed
-            : IPAddress.Parse("1.1.1.1");
-        var proxy = new DnsProxy(domains, upstreamIp, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6);
+        var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
+        var localIp = ParseFirst(localUpstream, tunnelIp);
+        var proxy = new DnsProxy(domains, tunnelIp, localIp, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6);
         if (proxy.BoundV4 is null)
         {
             // Could not bind any loopback :53 (another resolver holds it). Degrade gracefully.
@@ -190,6 +205,11 @@ internal sealed class TunnelRunner(
         };
         thread.Start();
         return proxy;
+    }
+
+    private static IPAddress ParseFirst(IReadOnlyList<string> servers, IPAddress fallback)
+    {
+        return servers.Count > 0 && IPAddress.TryParse(servers[0], out var ip) ? ip : fallback;
     }
 
     private static bool HasIpv6Address(string config)

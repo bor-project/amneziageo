@@ -32,7 +32,8 @@ internal sealed class DnsProxy
     private readonly List<UdpClient> _servers = [];
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<GeoDomain> _domains;
-    private readonly IPAddress _upstream;
+    private readonly IPAddress _tunnelUpstream;
+    private readonly IPAddress _localUpstream;
     private readonly DomainTracker? _tracker;
     private readonly ILogger<DnsProxy> _logger;
     private readonly bool _stripV6;
@@ -41,11 +42,15 @@ internal sealed class DnsProxy
     /// ctor. Binds a loopback DNS endpoint, falling back to an alternative IPv4 loopback alias when
     /// the primary 127.0.0.1:53 is already taken. Never throws: when nothing can bind, <see
     /// cref="BoundV4"/> stays null and the caller degrades (connect without DNS interception).
+    /// <paramref name="tunnelUpstream"/> resolves matched (to-be-tunneled) names — a clean resolver
+    /// reached through the tunnel, so geo-blocked domains get their real IPs rather than the local
+    /// network's poisoned answer; <paramref name="localUpstream"/> resolves everything else.
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress upstream, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6)
     {
         _domains = domains;
-        _upstream = upstream;
+        _tunnelUpstream = tunnelUpstream;
+        _localUpstream = localUpstream;
         _tracker = tracker;
         _logger = logger;
         _stripV6 = stripV6;
@@ -149,6 +154,11 @@ internal sealed class DnsProxy
             var name = DnsMessage.QuestionName(query);
             var type = DnsMessage.QuestionType(query);
 
+            // A matched (to-be-tunneled) name resolves via the clean tunnel resolver so a geo-blocked
+            // domain gets its real IPs instead of the local network's poisoned/blocked answer; everything
+            // else uses the local resolver so coexisting / corporate names keep resolving.
+            var matched = name is not null && DomainMatcher.IsTunneled(name, _domains);
+
             byte[] response;
             if (_stripV6 && type == TypeAaaa)
             {
@@ -171,7 +181,7 @@ internal sealed class DnsProxy
             }
             else
             {
-                response = Forward(query);
+                response = Forward(query, matched ? _tunnelUpstream : _localUpstream);
                 StoreInCache(name, type, response);
             }
 
@@ -180,13 +190,16 @@ internal sealed class DnsProxy
             // egresses off-tunnel and (for a blocked destination) is dropped — costing a multi-second
             // TCP retransmit on every freshly resolved domain. A tracking failure must never withhold
             // the answer, so it is isolated.
-            try
+            if (matched)
             {
-                TrackIfMatched(name, response);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "tracking matched domain failed");
+                try
+                {
+                    Track(name!, response);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "tracking matched domain failed");
+                }
             }
 
             lock (server)
@@ -244,24 +257,19 @@ internal sealed class DnsProxy
         return type.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + name.TrimEnd('.').ToLowerInvariant();
     }
 
-    private byte[] Forward(byte[] query)
+    private static byte[] Forward(byte[] query, IPAddress upstream)
     {
         using (var client = new UdpClient())
         {
             client.Client.ReceiveTimeout = UpstreamTimeoutMs;
-            client.Send(query, query.Length, new IPEndPoint(_upstream, 53));
+            client.Send(query, query.Length, new IPEndPoint(upstream, 53));
             var remote = new IPEndPoint(IPAddress.Any, 0);
             return client.Receive(ref remote);
         }
     }
 
-    private void TrackIfMatched(string? name, byte[] response)
+    private void Track(string name, byte[] response)
     {
-        if (name is null || !DomainMatcher.IsTunneled(name, _domains))
-        {
-            return;
-        }
-
         var ips = new List<string>();
         foreach (var ip in DnsMessage.Addresses(response))
         {

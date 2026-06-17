@@ -27,6 +27,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const byte WeightDhcp = 4;
     private const byte WeightLoopback = 8;
     private const byte WeightTun = 10;
+    // QUIC block sits ABOVE the tunnel permit (10) but below the app hard-permit (14): it must override
+    // "permit everything on the tunnel interface" for UDP/443 while never touching this process's underlay.
+    private const byte WeightQuicBlock = 12;
     private const byte WeightApp = 14;
     private const byte WeightHyperV = 14;
 
@@ -65,7 +68,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// carve-out present. Returns false and installs nothing on any failure. Thread-safe with respect
     /// to <see cref="Disable"/> so a tunnel teardown racing the arming cannot leave a stray engine.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool allowLan)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool allowLan)
     {
         lock (_gate)
         {
@@ -73,7 +76,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
             if (ConvertInterfaceIndexToLuid(tunnelInterfaceIndex, out var luid) != 0)
             {
-                logger.LogError("kill-switch: could not resolve LUID for interface index {Index}", tunnelInterfaceIndex);
+                logger.LogError("firewall: could not resolve LUID for interface index {Index}", tunnelInterfaceIndex);
                 return false;
             }
 
@@ -81,7 +84,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             var open = FwpmEngineOpen0(IntPtr.Zero, RpcCAuthnWinnt, IntPtr.Zero, ref session, out var engine);
             if (open != 0)
             {
-                logger.LogError("kill-switch: FwpmEngineOpen0 failed 0x{Code:X8}", open);
+                logger.LogError("firewall: FwpmEngineOpen0 failed 0x{Code:X8}", open);
                 return false;
             }
 
@@ -89,28 +92,36 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             {
                 CreateSublayer(engine);
 
-                // Permits first.
-                PermitApp(engine);
-                PermitTunInterface(engine, luid);
-                PermitLoopback(engine);
-                PermitDhcpV4(engine);
-                if (allowLan)
+                // Always: block QUIC (UDP/443) egressing the tunnel so HTTP/3 falls back to TCP, which is
+                // reliable over the obfuscated tunnel (QUIC stalls — e.g. some YouTube videos). Weighted
+                // above the tunnel permit so it still wins when the kill-switch's permit-tun is present.
+                BlockTunnelQuic(engine, luid);
+
+                if (killSwitch)
                 {
-                    PermitLan(engine);
+                    // Permits first.
+                    PermitApp(engine);
+                    PermitTunInterface(engine, luid);
+                    PermitLoopback(engine);
+                    PermitDhcpV4(engine);
+                    if (allowLan)
+                    {
+                        PermitLan(engine);
+                    }
+
+                    TryPermitHyperV(engine); // best-effort; not fatal if the L2 layer is unavailable
+
+                    // Block everything else, last.
+                    BlockAll(engine);
                 }
 
-                TryPermitHyperV(engine); // best-effort; not fatal if the L2 layer is unavailable
-
-                // Block everything else, last.
-                BlockAll(engine);
-
                 _engine = engine;
-                logger.LogInformation("kill-switch armed on interface {Index} (allowLan={AllowLan})", tunnelInterfaceIndex, allowLan);
+                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, allowLan={AllowLan})", tunnelInterfaceIndex, killSwitch, allowLan);
                 return true;
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "kill-switch: failed to install filters");
+                logger.LogError(ex, "firewall: failed to install filters");
                 FwpmEngineClose0(engine); // drops anything added so far (dynamic session)
                 return false;
             }
@@ -288,6 +299,30 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 logger.LogWarning("kill-switch: Hyper-V permit not installed (0x{Code:X8}); continuing", rc);
                 return;
             }
+        }
+    }
+
+    private void BlockTunnelQuic(IntPtr engine, ulong luid)
+    {
+        // Match: traffic egressing the tunnel adapter AND UDP AND remote port 443 (= QUIC / HTTP-3).
+        // Different field keys are AND-ed, so this is exactly "QUIC over the tunnel". IPv4 only — this is
+        // a v4-only tunnel and AAAA is denied at the proxy, so there is no v6 QUIC to route.
+        var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
+        try
+        {
+            Marshal.WriteInt64(luidPtr, (long)luid);
+            var cond = new[]
+            {
+                Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
+                Condition(CondIpProtocol, MatchEqual, FwpUint8, ProtocolUdp),
+                Condition(CondIpRemotePort, MatchEqual, FwpUint16, 443),
+            };
+
+            Add(engine, LayerAleAuthConnectV4, WeightQuicBlock, ActionBlock, 0, cond, "Block QUIC (UDP/443) on tunnel");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(luidPtr);
         }
     }
 

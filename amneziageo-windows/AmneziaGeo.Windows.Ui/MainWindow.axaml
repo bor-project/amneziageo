@@ -51,13 +51,11 @@
       </Border>
     </Border>
 
-    <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card);
-         the left column auto-collapses to 0 when the sidebar is hidden, so the right content spans
-         the full width on Settings. -->
+    <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
     <Grid ColumnDefinitions="Auto,*" Background="{DynamicResource AgSidebarBrush}">
 
-      <!-- LEFT SIDEBAR (hidden on Settings → right content goes full-width) -->
-      <DockPanel Grid.Column="0" Width="400" IsVisible="{Binding !IsSettings}"
+      <!-- LEFT SIDEBAR (always visible; its content swaps per tab — profiles / routing / settings) -->
+      <DockPanel Grid.Column="0" Width="400"
                  Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
 
         <!-- nav: compact, full sidebar width, three equal segments (right edge flush to the gutter) -->
@@ -77,8 +75,8 @@
 
         <Grid>
 
-        <!-- Profiles list (Home / Settings tabs) -->
-        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding !IsRouting}">
+        <!-- Profiles list (Home tab) -->
+        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsHome}">
           <DockPanel LastChildFill="True">
             <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" Margin="15,14,15,10">
               <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛИ" VerticalAlignment="Center" />
@@ -239,7 +237,7 @@
                                     <Border Background="{DynamicResource AgPanelBrush}"
                                             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                                             CornerRadius="9" Padding="9,8" Margin="0,3">
-                                      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
                                         <Ellipse Grid.Column="0" Width="9" Height="9"
                                                  Fill="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" Margin="9,0,0,0" Text="{Binding}"
@@ -256,7 +254,10 @@
                                                   CommandParameter="{Binding}"
                                                   FontSize="8" Padding="3,0" />
                                         </StackPanel>
-                                        <Button Grid.Column="3" Classes="icon" Content="✕" Margin="4,0,0,0"
+                                        <Button Grid.Column="3" Classes="icon" Content="↗" Margin="4,0,0,0"
+                                                Click="OnExportMemberClick"
+                                                ToolTip.Tip="Экспорт конфига (файл / ссылка / QR)" />
+                                        <Button Grid.Column="4" Classes="icon" Content="✕" Margin="4,0,0,0"
                                                 Command="{Binding $parent[ItemsControl].DataContext.RemoveMemberCommand}"
                                                 CommandParameter="{Binding}" />
                                       </Grid>
@@ -345,6 +346,62 @@
                            Classes="muted" FontSize="12" Margin="6,12" TextWrapping="Wrap" />
               </StackPanel>
             </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        <!-- Settings sections (Settings tab): a radio list mirroring the routing rail -->
+        <Border Classes="card" Margin="12,12,0,12" Padding="0" IsVisible="{Binding IsSettings}">
+          <DockPanel LastChildFill="True">
+            <TextBlock DockPanel.Dock="Top" Classes="section" Text="НАСТРОЙКИ" Margin="15,14,15,10" />
+            <StackPanel Margin="12,2,12,12">
+              <Button Classes="rowselect" Classes.active="{Binding IsSettingsGeneral}" Margin="0,3"
+                      Command="{Binding SelectSettingsCommand}" CommandParameter="general">
+                <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                    <Ellipse Width="16" Height="16" StrokeThickness="2"
+                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                             IsVisible="{Binding IsSettingsGeneral}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Grid>
+                  <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Общие"
+                             FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                </Grid>
+              </Button>
+
+              <Button Classes="rowselect" Classes.active="{Binding IsSettingsSecurity}" Margin="0,3"
+                      Command="{Binding SelectSettingsCommand}" CommandParameter="security">
+                <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                    <Ellipse Width="16" Height="16" StrokeThickness="2"
+                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                             IsVisible="{Binding IsSettingsSecurity}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Grid>
+                  <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="Безопасность"
+                             FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                </Grid>
+              </Button>
+
+              <Button Classes="rowselect" Classes.active="{Binding IsSettingsAbout}" Margin="0,3"
+                      Command="{Binding SelectSettingsCommand}" CommandParameter="about">
+                <Grid ColumnDefinitions="Auto,*" Margin="12,10">
+                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                    <Ellipse Width="16" Height="16" StrokeThickness="2"
+                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                             IsVisible="{Binding IsSettingsAbout}"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Grid>
+                  <TextBlock Grid.Column="1" Margin="11,0,0,0" Text="О приложении"
+                             FontWeight="SemiBold" FontSize="13.5" VerticalAlignment="Center" />
+                </Grid>
+              </Button>
+            </StackPanel>
           </DockPanel>
         </Border>
 
@@ -524,12 +581,11 @@
             </DockPanel>
           </Panel>
 
-          <!-- SETTINGS -->
+          <!-- SETTINGS : the section chosen in the left rail -->
           <ScrollViewer IsVisible="{Binding IsSettings}">
             <StackPanel Margin="24,22" MaxWidth="640" HorizontalAlignment="Left">
-              <TextBlock Text="Настройки" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,18" />
 
-              <Border Classes="subcard" Margin="0,0,0,16">
+              <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsGeneral}">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
                     <TextBlock Text="ОБЩИЕ" Classes="section" />
@@ -559,7 +615,7 @@
                 </StackPanel>
               </Border>
 
-              <Border Classes="subcard" Margin="0,0,0,16">
+              <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsSecurity}">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
                     <TextBlock Text="БЕЗОПАСНОСТЬ" Classes="section" />
@@ -586,7 +642,7 @@
                 </StackPanel>
               </Border>
 
-              <Border Classes="subcard" Margin="0,0,0,16">
+              <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsAbout}">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="17,13">
                     <TextBlock Text="О ПРИЛОЖЕНИИ" Classes="section" />

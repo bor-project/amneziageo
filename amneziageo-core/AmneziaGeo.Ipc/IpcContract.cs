@@ -119,4 +119,15 @@ public static class IpcContract
     /// Command to import a config from raw wg-quick text (file/QR/link parsed UI-side). Args: name, text.
     /// </summary>
     public const string OpImportConfig = "import-config";
+
+    /// <summary>
+    /// Command to delete a stored config by name, with its service, geo settings, resolutions, and
+    /// balancer memberships. Args: name. Refused if the config is a member of the running profile.
+    /// </summary>
+    public const string OpRemoveConfig = "remove-config";
+
+    /// <summary>
+    /// Command to delete a profile (balancer) by name. Args: name. Refused if it is the running profile.
+    /// </summary>
+    public const string OpRemoveBalancer = "remove-balancer";
 }

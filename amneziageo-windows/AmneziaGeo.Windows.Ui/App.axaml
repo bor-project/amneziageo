@@ -129,6 +129,15 @@
       <Setter Property="Padding" Value="5,3,11,3" />
     </Style>
 
+    <!-- powerbig : the large round connection control shown in the right pane on the profiles list.
+         Chrome-less (only the drawn rings + circle show); the round circle reflects connection state. -->
+    <Style Selector="Button.powerbig">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="120" />
+    </Style>
+
     <!-- connectpill : the connect / stop button (compact, white text on a bound status-coloured fill) -->
     <Style Selector="Button.connectpill">
       <Setter Property="Foreground" Value="White" />

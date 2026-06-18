@@ -11,6 +11,8 @@
   <Window.Resources>
     <!-- "sync" glyph (two circular arrows): the per-source refresh / update icon. -->
     <StreamGeometry x:Key="AgRefreshGeometry">M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z</StreamGeometry>
+    <!-- "power" glyph (broken ring + top bar): the large connection control's centre icon. -->
+    <StreamGeometry x:Key="AgPowerGeometry">M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z</StreamGeometry>
   </Window.Resources>
 
 
@@ -20,8 +22,10 @@
     <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
     <Grid ColumnDefinitions="Auto,*" Background="{DynamicResource AgSidebarBrush}">
 
-      <!-- LEFT SIDEBAR (always visible; its content swaps per tab — profiles / routing / settings) -->
-      <DockPanel Grid.Column="0" Width="400"
+      <!-- LEFT SIDEBAR (always visible; its content swaps per tab — profiles / routing / settings).
+           Narrower now that it holds only lists (the editors moved to the right pane); 340 keeps the
+           3-segment nav ("Маршрутизация" at 11px) from clipping. -->
+      <DockPanel Grid.Column="0" Width="340"
                  Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
 
         <!-- one left card mirroring the right one: the nav is its header bar (white + bottom divider),
@@ -361,7 +365,10 @@
           <Border DockPanel.Dock="Top" Height="52" Padding="12,0"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*">
+              <!-- hidden on the Home profiles-list: the large power button in the right pane takes over
+                   there, so this would only duplicate it. -->
               <Button Grid.Column="0" Classes="powerctl" HorizontalAlignment="Left" VerticalAlignment="Center"
+                      IsVisible="{Binding ShowHeaderPower}"
                       Command="{Binding ToggleConnectionCommand}"
                       IsEnabled="{Binding CanToggleConnection}">
                 <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
@@ -411,10 +418,51 @@
                outer panel keeps the window VM so IsAspect* drives which one shows. -->
           <Panel IsVisible="{Binding IsHome}">
 
-            <TextBlock IsVisible="{Binding IsProfileList}"
-                       Text="Выберите профиль слева, чтобы увидеть и изменить его настройки."
-                       Classes="muted" FontSize="13" Margin="18"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <!-- profiles list: a large round power button fills the right pane (the header control is
+                 hidden here so it is not duplicated). Click toggles the active profile; the rings + circle
+                 colour reflect connection state. Pick a profile on the left to edit its settings. -->
+            <StackPanel IsVisible="{Binding IsProfileList}"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18">
+              <Button Classes="powerbig" HorizontalAlignment="Center"
+                      Command="{Binding ToggleConnectionCommand}"
+                      IsEnabled="{Binding CanToggleConnection}"
+                      ToolTip.Tip="{Binding ConnectHint}">
+                <Grid Width="236" Height="236">
+                  <Ellipse Width="236" Height="236" Stroke="{DynamicResource AgBorderBrush}"
+                           StrokeThickness="1" Opacity="0.7" />
+                  <Ellipse Width="196" Height="196" Stroke="{DynamicResource AgBorderBrush}"
+                           StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Ellipse Width="158" Height="158" Stroke="{DynamicResource AgBorder2Brush}"
+                           StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Border Width="132" Height="132" CornerRadius="66"
+                          Background="{Binding ConnectCircleBrush}"
+                          BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="2"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          BoxShadow="0 8 24 0 #1F000000">
+                    <Panel>
+                      <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="54" Height="54"
+                                Foreground="{Binding ConnectCircleForeground}"
+                                IsVisible="{Binding !IsConnecting}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Classes.pulse="{Binding IsConnecting}" Width="44" Height="44"
+                               IsVisible="{Binding IsConnecting}" Fill="{Binding ConnectCircleForeground}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Panel>
+                  </Border>
+                </Grid>
+              </Button>
+
+              <StackPanel HorizontalAlignment="Center" Spacing="4" Margin="0,4,0,0">
+                <TextBlock Text="{Binding AgentStatusText}" FontSize="17" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" Foreground="{Binding ConnectStatusBrush}" />
+                <TextBlock Text="{Binding ConnectHint}" FontSize="12.5"
+                           HorizontalAlignment="Center" Foreground="{Binding ConnectHintBrush}" />
+              </StackPanel>
+
+              <TextBlock Text="Выберите профиль слева, чтобы изменить его настройки."
+                         Classes="muted" FontSize="12" Margin="0,10,0,0" MaxWidth="320"
+                         HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+            </StackPanel>
 
             <ScrollViewer IsVisible="{Binding IsProfileDetail}">
               <StackPanel Margin="18,16">

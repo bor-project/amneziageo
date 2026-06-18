@@ -81,6 +81,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsHome))]
     [NotifyPropertyChangedFor(nameof(IsRouting))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
+    [NotifyPropertyChangedFor(nameof(ShowHeaderPower))]
     private string _nav = "home";
 
     // Profile master-detail: the profile opened for editing (null = the profiles list is shown), and
@@ -89,6 +90,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsProfileList))]
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
     [NotifyPropertyChangedFor(nameof(OpenProfileName))]
+    [NotifyPropertyChangedFor(nameof(ShowHeaderPower))]
     private BalancerItemViewModel? _openProfile;
 
     [ObservableProperty]
@@ -336,6 +338,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Whether the profiles list is shown (no profile opened for detail).</summary>
     public bool IsProfileList => OpenProfile is null;
+
+    /// <summary>
+    /// Whether the header power control is shown. Hidden on the Home profiles-list, where the large
+    /// power button in the right pane takes over (the header control would only duplicate it); shown
+    /// on a profile's detail and on the Routing / Settings tabs.
+    /// </summary>
+    public bool ShowHeaderPower => !(IsHome && IsProfileList);
 
     /// <summary>Whether a profile is opened: the left rail shows its aspects, the right pane the editor.</summary>
     public bool IsProfileDetail => OpenProfile is not null;

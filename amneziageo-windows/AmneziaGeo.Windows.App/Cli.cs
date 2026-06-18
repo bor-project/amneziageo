@@ -537,7 +537,8 @@ internal sealed class Cli(
             }
 
             var snapshot = await received.Task;
-            Console.WriteLine($"agent v{snapshot.AgentVersion} target={snapshot.BoundTarget ?? "(none)"}");
+            Console.WriteLine($"agent v{snapshot.AgentVersion} running={snapshot.Active} status={snapshot.BoundStatus} bound={snapshot.BoundTarget ?? "(none)"} selected={snapshot.SelectedTarget ?? "(none)"}");
+            Console.WriteLine($"settings\tkillswitch={snapshot.KillSwitchEnabled}\tallow-lan={snapshot.AllowLan}\trestart-required={snapshot.RestartRequired}\tbetter={snapshot.BetterMember ?? "(none)"}");
             foreach (var config in snapshot.Configs)
             {
                 Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\t{config.Status}");
@@ -545,7 +546,18 @@ internal sealed class Cli(
 
             foreach (var balancer in snapshot.Balancers)
             {
-                Console.WriteLine($"balancer\t{balancer.Name}\t{balancer.Mode}\t{balancer.Status}\tactive={balancer.ActiveMember ?? "(none)"}");
+                var routing = balancer.UseRouting ? balancer.RoutingListId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "on" : "off";
+                Console.WriteLine($"balancer\t{balancer.Name}\t{balancer.Mode}\t{balancer.Status}\tactive={balancer.ActiveMember ?? "(none)"}\tmembers=[{string.Join(", ", balancer.Members)}]\trouting={routing}");
+            }
+
+            foreach (var list in snapshot.RoutingLists ?? [])
+            {
+                Console.WriteLine($"routing-list\t{list.Id}\t{list.Name}\trules={list.RuleCount}\troutes={list.RouteCount}\tdomains={list.DomainCount}");
+            }
+
+            foreach (var source in snapshot.Sources ?? [])
+            {
+                Console.WriteLine($"source\t{source.Name}\t{source.Kind}\tupdated={source.Updated ?? "(never)"}\tcats={source.CategoryCount}");
             }
 
             return 0;

@@ -160,6 +160,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
                 IpcContract.OpGetConfig => GetConfig(command.Args),
                 IpcContract.OpImportConfig => ImportConfig(command.Args),
+                IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
+                IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -207,6 +209,61 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         configRepo.AddFromText(args[0], args[1]);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, $"импортирован {args[0]}");
+    }
+
+    private async Task<IpcAck> RemoveConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "remove-config requires a name");
+        }
+
+        var name = args[0];
+        if (!configRepo.Exists(name))
+        {
+            return new IpcAck(false, $"unknown config: {name}");
+        }
+
+        // Refuse to pull a config out from under the running tunnel: if it is a member of the bound
+        // target while connected, deleting it would change the live member set (and could orphan the
+        // active member). The caller disconnects, or removes it from the profile, first.
+        var bound = BoundTarget;
+        if (control.Running && bound is not null)
+        {
+            var boundBalancer = await store.GetBalancerAsync(bound, ct);
+            if (boundBalancer is not null && boundBalancer.Members.Contains(name, StringComparer.Ordinal))
+            {
+                return new IpcAck(false, $"config {name} is in use by the running profile {bound}; disconnect first");
+            }
+        }
+
+        await configRepo.RemoveAsync(name, ct);
+        logger.LogInformation("removed config {Name}", name);
+        return new IpcAck(true, $"removed config {name}");
+    }
+
+    private async Task<IpcAck> RemoveBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "remove-balancer requires a name");
+        }
+
+        var name = args[0];
+        if (await store.GetBalancerAsync(name, ct) is null)
+        {
+            return new IpcAck(false, $"unknown profile: {name}");
+        }
+
+        // Refuse to delete the profile the tunnel is currently running on; disconnect first.
+        if (control.Running && string.Equals(name, BoundTarget, StringComparison.Ordinal))
+        {
+            return new IpcAck(false, $"profile {name} is running; disconnect first");
+        }
+
+        await store.RemoveBalancerAsync(name, ct);
+        logger.LogInformation("removed profile {Name}", name);
+        return new IpcAck(true, $"removed profile {name}");
     }
 
     private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)

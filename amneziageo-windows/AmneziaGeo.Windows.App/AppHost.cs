@@ -69,6 +69,7 @@ internal static class AppHost
         services.AddSingleton<GeoActivator>();
         services.AddSingleton<GeoConfigurator>();
         services.AddSingleton<GeoFileUpdater>();
+        services.AddSingleton<GeoUpdateChecker>();
         services.AddSingleton<UpdateChecker>();
         services.AddSingleton<UpdateState>();
         services.AddSingleton<TunnelRunner>();

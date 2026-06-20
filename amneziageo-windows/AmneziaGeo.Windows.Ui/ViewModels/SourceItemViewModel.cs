@@ -41,12 +41,24 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowProgress))]
+    [NotifyPropertyChangedFor(nameof(ShowUpdateBadge))]
     private bool _updating;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowProgress))]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
     private int _progress;
+
+    /// <summary>
+    /// True when the last update-check found a newer remote file; the row badges it until re-downloaded.
+    /// Hidden while a download is in flight (the spinner already shows the fresh state is coming).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowUpdateBadge))]
+    private bool _updateAvailable;
+
+    /// <summary>Whether to badge the row with "обновление доступно".</summary>
+    public bool ShowUpdateBadge => UpdateAvailable && !Updating;
 
     /// <summary>
     /// A short label like "geosite · 1240 категорий · 2026-06-16 19:40" or "geoip · не загружен".

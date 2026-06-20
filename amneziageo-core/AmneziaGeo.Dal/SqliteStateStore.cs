@@ -46,7 +46,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         source_url     TEXT NOT NULL,
                         updated_at     TEXT NOT NULL,
                         sha256         TEXT NOT NULL,
-                        category_count INTEGER NOT NULL
+                        category_count INTEGER NOT NULL,
+                        etag           TEXT NOT NULL DEFAULT '',
+                        last_modified  TEXT NOT NULL DEFAULT ''
                     );
 
                     CREATE TABLE IF NOT EXISTS tunnel_geo (
@@ -139,6 +141,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_split INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+
+            // HTTP validators for the geo-list update-check: captured at download time so a later check
+            // can issue a conditional request and learn whether the remote file changed without re-fetching it.
+            await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN etag TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN last_modified TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
         }
     }
 
@@ -864,19 +871,23 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO geo_files (name, source_url, updated_at, sha256, category_count)
-                    VALUES ($name, $url, $updated, $sha, $count)
+                    INSERT INTO geo_files (name, source_url, updated_at, sha256, category_count, etag, last_modified)
+                    VALUES ($name, $url, $updated, $sha, $count, $etag, $lastmod)
                     ON CONFLICT(name) DO UPDATE SET
                         source_url     = excluded.source_url,
                         updated_at     = excluded.updated_at,
                         sha256         = excluded.sha256,
-                        category_count = excluded.category_count;
+                        category_count = excluded.category_count,
+                        etag           = excluded.etag,
+                        last_modified  = excluded.last_modified;
                     """;
                 command.Parameters.AddWithValue("$name", metadata.Name);
                 command.Parameters.AddWithValue("$url", metadata.SourceUrl);
                 command.Parameters.AddWithValue("$updated", metadata.UpdatedAt.ToString("O", CultureInfo.InvariantCulture));
                 command.Parameters.AddWithValue("$sha", metadata.Sha256);
                 command.Parameters.AddWithValue("$count", metadata.CategoryCount);
+                command.Parameters.AddWithValue("$etag", metadata.ETag);
+                command.Parameters.AddWithValue("$lastmod", metadata.LastModified);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
@@ -895,7 +906,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT source_url, updated_at, sha256, category_count
+                    SELECT source_url, updated_at, sha256, category_count, etag, last_modified
                     FROM geo_files
                     WHERE name = $name;
                     """;
@@ -930,7 +941,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT name, source_url, updated_at, sha256, category_count
+                    SELECT name, source_url, updated_at, sha256, category_count, etag, last_modified
                     FROM geo_files
                     ORDER BY name;
                     """;
@@ -1455,7 +1466,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     private static GeoFileMetadata ReadGeoFile(string name, SqliteDataReader reader, int offset = 0)
     {
         var updatedAt = DateTimeOffset.Parse(reader.GetString(offset + 1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        return new GeoFileMetadata(name, reader.GetString(offset), updatedAt, reader.GetString(offset + 2), reader.GetInt32(offset + 3));
+        return new GeoFileMetadata(
+            name,
+            reader.GetString(offset),
+            updatedAt,
+            reader.GetString(offset + 2),
+            reader.GetInt32(offset + 3),
+            reader.GetString(offset + 4),
+            reader.GetString(offset + 5));
     }
 
     private static BalancerState ReadBalancerState(string group, SqliteDataReader reader, int offset = 0)

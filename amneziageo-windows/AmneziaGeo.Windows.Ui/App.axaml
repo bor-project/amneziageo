@@ -110,6 +110,20 @@
       <Setter Property="CornerRadius" Value="9" />
     </Style>
 
+    <!-- danger : a destructive action (delete profile). Outlined red — literal colours so it reads on
+         both themes without depending on a theme brush. -->
+    <Style Selector="Button.danger">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="#E0A0A0" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="#D64545" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="12,4" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+
     <Style Selector="Button.icon">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -136,6 +150,18 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="CornerRadius" Value="120" />
+    </Style>
+
+    <!-- backbtn : header "back to the previous menu" control. Chrome-less and subtle, like the rest;
+         the only feedback is the shared press opacity. -->
+    <Style Selector="Button.backbtn">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="6,4" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinWidth" Value="0" />
     </Style>
 
     <!-- connectpill : the connect / stop button (compact, white text on a bound status-coloured fill) -->

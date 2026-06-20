@@ -357,18 +357,24 @@
                       Command="{Binding ToggleConnectionCommand}"
                       IsEnabled="{Binding CanToggleConnection}">
                 <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
-                  <Border Width="28" Height="28" CornerRadius="14"
-                          Background="{Binding ConnectCircleBrush}"
-                          BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="1">
-                    <Panel>
+                  <!-- Connect spinner: a rotating accent arc around the circle while connecting/disconnecting
+                       (reuses the shared Control.spin rotation). Everything stays within the original 28px
+                       footprint — the circle is inset to 22 so the arc has a clean gap around it — so the
+                       plaque never changes size; idle shows just the circle + glyph. -->
+                  <Panel Width="28" Height="28">
+                    <Ellipse Classes="connspin" Classes.spinning="{Binding IsConnecting}"
+                             Width="26" Height="26" Stroke="{Binding ConnectCircleForeground}"
+                             StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border Width="22" Height="22" CornerRadius="11"
+                            Background="{Binding ConnectCircleBrush}"
+                            BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="1"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
                       <TextBlock Text="{Binding ConnectGlyph}" Foreground="{Binding ConnectCircleForeground}"
-                                 FontSize="11" IsVisible="{Binding !IsConnecting}"
+                                 FontSize="10" IsVisible="{Binding !IsConnecting}"
                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      <Ellipse Classes.pulse="{Binding IsConnecting}" Width="11" Height="11"
-                               IsVisible="{Binding IsConnecting}" Fill="{Binding ConnectCircleForeground}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Panel>
-                  </Border>
+                    </Border>
+                  </Panel>
                   <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
                                Foreground="{DynamicResource AgFgBrush}" />

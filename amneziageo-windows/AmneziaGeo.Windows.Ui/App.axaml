@@ -343,6 +343,24 @@
       </Style.Animations>
     </Style>
 
+    <!-- Connect-control spinner: a single accent arc that travels around the ring by animating
+         StrokeDashOffset (the dash "marches" along the stroke). This moves the arc WITHOUT a rotation
+         transform — rotations silently fail here (see Control.spin), but StrokeDashOffset is a plain
+         render property animated like opacity. The dash pattern (one dash + one gap ≈ the circumference)
+         shows a single arc; one full offset period = one revolution. Idle invisible; .spinning shows it. -->
+    <Style Selector="Ellipse.connspin">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Ellipse.connspin.spinning">
+      <Setter Property="Opacity" Value="1" />
+      <Style.Animations>
+        <Animation Duration="0:0:0.9" IterationCount="INFINITE" Easing="LinearEasing">
+          <KeyFrame Cue="0%"><Setter Property="StrokeDashOffset" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="StrokeDashOffset" Value="-41" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
     <!-- Control.pulse : opacity breathing — a robust "busy" indicator (pure opacity, no transform so it
          cannot silently fail on a transform-origin/RenderTransform quirk the way a rotation can). -->
     <Style Selector="Control.pulse">

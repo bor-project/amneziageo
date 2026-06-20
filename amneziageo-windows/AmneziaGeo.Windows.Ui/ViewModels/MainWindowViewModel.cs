@@ -789,7 +789,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
                 existing.ApplyFromEntry(entry, options, _configNames);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
@@ -876,6 +876,29 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task<IpcAck> ImportConfigAsync(string name, string confText)
     {
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportConfig, [name, confText]));
+    }
+
+    private async Task<IpcAck> RemoveConfigAsync(string name)
+    {
+        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));
+    }
+
+    // Delete the profile currently open in the detail view, then fall back to the profiles list. The
+    // agent refuses while the profile is the running tunnel, so on a non-OK ack the view stays put.
+    [RelayCommand]
+    private async Task DeleteOpenProfile()
+    {
+        if (OpenProfile is null)
+        {
+            return;
+        }
+
+        var ack = await _connection.SendCommandAsync(
+            new IpcCommand(IpcContract.OpRemoveBalancer, [OpenProfile.Name]));
+        if (ack.Ok)
+        {
+            OpenProfile = null;
+        }
     }
 
     private async Task AssignRoutingAsync(string profile, long? listId, bool useRouting)

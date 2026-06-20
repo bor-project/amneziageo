@@ -21,6 +21,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private readonly Func<string, Task> _selectProfile;
     private readonly Func<string, string, Task<IpcAck>> _importConfig;
     private readonly Func<string, bool, Task> _setProfileConnection;
+    private readonly Func<string, Task<IpcAck>> _removeConfig;
     private bool _suppress;
     // Optimistic running override: set the instant the user taps connect/disconnect on this profile so the
     // button flips immediately (like the header power control); cleared once a snapshot's real status
@@ -98,16 +99,18 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         Func<string, long?, bool, Task> assignRouting,
         Func<string, Task> selectProfile,
         Func<string, string, Task<IpcAck>> importConfig,
-        Func<string, bool, Task> setProfileConnection)
+        Func<string, bool, Task> setProfileConnection,
+        Func<string, Task<IpcAck>> removeConfig)
     {
         _saveBalancer = saveBalancer;
         _assignRouting = assignRouting;
         _selectProfile = selectProfile;
         _importConfig = importConfig;
         _setProfileConnection = setProfileConnection;
+        _removeConfig = removeConfig;
 
-        // Adding/removing a member flips whether the balancer is available (>1 config), so refresh the
-        // dependent state when the membership changes.
+        // Adding/removing/reordering a member flips whether the balancer is available (>1 config) and
+        // which member is the default (first), so refresh the dependent state when membership changes.
         Members.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(CanUseBalancer));
@@ -116,6 +119,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsLatencyMode));
             OnPropertyChanged(nameof(ShowInterval));
             OnPropertyChanged(nameof(Detail));
+            OnPropertyChanged(nameof(DefaultMember));
         };
     }
 
@@ -173,6 +177,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// balancer controls are disabled and the group runs as a plain single tunnel.
     /// </summary>
     public bool CanUseBalancer => Members.Count > 1;
+
+    /// <summary>
+    /// The config used by default: the first member. With the balancer off (or a single config) the
+    /// agent pins to the first member, and in priority mode the first member is the preferred one — so
+    /// "default" is always the head of the list. The per-config radio picks it (moves it to the front).
+    /// </summary>
+    public string? DefaultMember => Members.Count > 0 ? Members[0] : null;
 
     /// <summary>
     /// Whether the balancer is off ("don't use"): the user chose it, or it's forced off by having one
@@ -360,6 +371,39 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
                 AvailableConfigs.Add(name);
             }
         }
+    }
+
+    // Make a member the default (the config used by default): move it to the front of the list. The
+    // agent pins to the first member when not balancing, and treats it as highest priority when it is.
+    [RelayCommand]
+    private Task SetDefaultMember(string member)
+    {
+        var index = Members.IndexOf(member);
+        if (index <= 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        Members.Move(index, 0);
+        return PersistMembersAsync();
+    }
+
+    /// <summary>
+    /// Deletes a config from the catalogue entirely (not just this profile). The agent refuses while the
+    /// config is in use by the running profile, so on a non-OK ack nothing changes; otherwise it is also
+    /// dropped from this profile's members (the deleted name must not linger as a dangling member).
+    /// </summary>
+    public async Task DeleteConfigAsync(string member)
+    {
+        var ack = await _removeConfig(member);
+        if (!ack.Ok)
+        {
+            return;
+        }
+
+        Members.Remove(member);
+        AvailableConfigs.Remove(member);
+        await PersistMembersAsync();
     }
 
     [RelayCommand]

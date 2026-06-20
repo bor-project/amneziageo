@@ -192,8 +192,21 @@ public sealed partial class MainWindow : Window
 
         var export = new MenuItem { Header = "Экспорт конфига" };
         export.Click += (_, _) => _ = ExportConfigAsync(configName);
+
+        // Delete the config from the catalogue (the open profile carries the delete delegate; the agent
+        // refuses while the config is in use by the running profile).
+        var delete = new MenuItem { Header = "Удалить конфигурацию" };
+        delete.Click += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel { OpenProfile: { } profile })
+            {
+                _ = profile.DeleteConfigAsync(configName);
+            }
+        };
+
         var flyout = new MenuFlyout();
         flyout.Items.Add(export);
+        flyout.Items.Add(delete);
         flyout.ShowAt(target, showAtPointer: true);
         e.Handled = true;
     }

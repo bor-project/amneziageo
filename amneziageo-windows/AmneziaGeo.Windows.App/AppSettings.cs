@@ -48,4 +48,15 @@ internal sealed record AppSettings
     /// checks. The installer is expected to sit next to this file (resolved relative to it).
     /// </summary>
     public string UpdateUrl { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When set, the agent periodically checks the geo sources for a newer remote file (without
+    /// downloading) and the UI badges/notifies. Defaults on.
+    /// </summary>
+    public bool GeoAutoCheck { get; init; } = true;
+
+    /// <summary>
+    /// How often the periodic geo-source update-check runs, in hours.
+    /// </summary>
+    public int GeoCheckIntervalHours { get; init; } = 24;
 }

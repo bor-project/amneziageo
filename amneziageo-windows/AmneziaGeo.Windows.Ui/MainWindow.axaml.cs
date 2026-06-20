@@ -139,6 +139,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // "Вручную": open the large editor seeded with the current draft text; on OK write it back so the
+    // normal Save (import) flow picks it up.
+    private async void OnNewConfigManual(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: BalancerItemViewModel vm })
+        {
+            return;
+        }
+
+        var editor = new ConfigEditorViewModel { Text = vm.NewConfigText };
+        var dialog = new ConfigEditorDialog { DataContext = editor };
+        if (await dialog.ShowDialog<bool>(this))
+        {
+            vm.NewConfigText = editor.Text;
+            vm.NewConfigStatus = "Готово — нажмите «Сохранить».";
+        }
+    }
+
     private static void ApplyQrToNewConfig(BalancerItemViewModel vm, Bitmap bitmap)
     {
         var text = QrCodec.Decode(bitmap);
@@ -178,50 +196,54 @@ public sealed partial class MainWindow : Window
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 
-    /// <summary>
-    /// Opens the per-config context menu (export) on a right-click of a member row. The menu is built here,
-    /// with its command wired from the captured config name, because a MenuItem hosted in a flyout popup does
-    /// not reliably inherit the row's DataContext for a {Binding}-based command in Avalonia 11.
-    /// </summary>
-    private void OnMemberRowContext(object? sender, ContextRequestedEventArgs e)
+    // Copy the current export payload (.conf or vpn:// link) to the clipboard. Clipboard access is a
+    // window concern, so the inline export pane's button is wired here rather than in the view model.
+    private async void OnConfigExportCopy(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: string configName } target)
+        if (DataContext is not MainWindowViewModel { ConfigExport: { } vm })
         {
             return;
         }
 
-        var export = new MenuItem { Header = "Экспорт конфига" };
-        export.Click += (_, _) => _ = ExportConfigAsync(configName);
-
-        // Delete the config from the catalogue (the open profile carries the delete delegate; the agent
-        // refuses while the config is in use by the running profile).
-        var delete = new MenuItem { Header = "Удалить конфигурацию" };
-        delete.Click += (_, _) =>
+        var clipboard = GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
         {
-            if (DataContext is MainWindowViewModel { OpenProfile: { } profile })
-            {
-                _ = profile.DeleteConfigAsync(configName);
-            }
-        };
-
-        var flyout = new MenuFlyout();
-        flyout.Items.Add(export);
-        flyout.Items.Add(delete);
-        flyout.ShowAt(target, showAtPointer: true);
-        e.Handled = true;
+            await clipboard.SetTextAsync(vm.Payload);
+            vm.StatusMessage = "Скопировано в буфер обмена.";
+        }
     }
 
-    private async System.Threading.Tasks.Task ExportConfigAsync(string configName)
+    // Save the current export payload to a file the user picks (window concern, like the copy above).
+    private async void OnConfigExportSave(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm)
+        if (DataContext is not MainWindowViewModel { ConfigExport: { } vm })
         {
             return;
         }
 
-        var export = new ExportDialogViewModel(vm.Connection, configName);
-        var dialog = new ExportDialog { DataContext = export };
-        _ = export.LoadAsync();
-        await dialog.ShowDialog(this);
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Сохранить конфигурацию",
+            SuggestedFileName = vm.SuggestedFileName,
+        });
+        if (file is null)
+        {
+            return;
+        }
+
+        await using var stream = await file.OpenWriteAsync();
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(vm.Payload);
+        vm.StatusMessage = "Сохранено.";
+    }
+
+    // Double-clicking a member config row opens its management page (same as the ⚙ button on the row).
+    private void OnMemberRowDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is Control { DataContext: string configName } && DataContext is MainWindowViewModel vm)
+        {
+            vm.OpenConfigManageCommand.Execute(configName);
+        }
     }
 
     private async void OnConfigTapped(object? sender, TappedEventArgs e)

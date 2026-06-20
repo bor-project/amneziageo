@@ -25,6 +25,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasQr))]
+    [NotifyPropertyChangedFor(nameof(ShowQr))]
     private Bitmap? _qrImage;
 
     [ObservableProperty]
@@ -32,6 +33,12 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _isReady;
+
+    // Inline editing of the .conf text: the payload box is read-only until "Изменить" unlocks it. Editing
+    // applies to the raw config form (not the vpn:// link), and "Сохранить" persists it in place.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowQr))]
+    private bool _isEditing;
 
     /// <summary>
     /// ctor
@@ -53,6 +60,9 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
 
     /// <summary>Whether a QR code was rendered for the current payload.</summary>
     public bool HasQr => QrImage is not null;
+
+    /// <summary>Whether the QR is shown: a QR exists and the text is not being edited.</summary>
+    public bool ShowQr => QrImage is not null && !IsEditing;
 
     /// <summary>A suggested file name for the current form.</summary>
     public string SuggestedFileName => AsLink ? $"{ConfigName}.vpn.txt" : $"{ConfigName}.conf";
@@ -109,5 +119,54 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
     private void ShowLink()
     {
         AsLink = true;
+    }
+
+    // "Изменить": unlock the text for editing. Force the raw .conf form first — editing applies to the
+    // config text, not the vpn:// link.
+    [RelayCommand]
+    private void BeginEdit()
+    {
+        if (!IsReady)
+        {
+            return;
+        }
+
+        AsLink = false;
+        StatusMessage = string.Empty;
+        IsEditing = true;
+    }
+
+    // "Отмена": discard edits, revert the text, lock it again.
+    [RelayCommand]
+    private void CancelEdit()
+    {
+        IsEditing = false;
+        Refresh();
+    }
+
+    // "Сохранить": persist the edited .conf in place (edit-config), then lock + re-render.
+    [RelayCommand]
+    private async Task SaveEdit()
+    {
+        var text = Payload.Trim();
+        if (text.Length == 0
+            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
+            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
+        {
+            StatusMessage = "Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).";
+            return;
+        }
+
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpEditConfig, [ConfigName, text]));
+        if (!ack.Ok)
+        {
+            StatusMessage = ack.Message;
+            return;
+        }
+
+        _confText = text;
+        IsEditing = false;
+        Refresh();
+        StatusMessage = "Сохранено.";
     }
 }

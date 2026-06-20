@@ -722,7 +722,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
-                for (var position = 0; position < balancer.Members.Count; position++)
+                // A profile with no members still needs a row: the schema keys a balancer by its member
+                // rows (there is no standalone header table), so writing zero rows would make the profile
+                // vanish on the next snapshot rebuild — which is exactly why a freshly created "+ Профиль"
+                // never appeared. Persist a single placeholder row with an empty-string member instead;
+                // GetBalancerAsync filters it back out, so the profile reads as members-empty.
+                IReadOnlyList<string> rows = balancer.Members.Count > 0 ? balancer.Members : [string.Empty];
+                for (var position = 0; position < rows.Count; position++)
                 {
                     var insert = connection.CreateCommand();
                     await using (insert.ConfigureAwait(false))
@@ -735,7 +741,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                             """;
                         insert.Parameters.AddWithValue("$name", balancer.Name);
                         insert.Parameters.AddWithValue("$position", position);
-                        insert.Parameters.AddWithValue("$member", balancer.Members[position]);
+                        insert.Parameters.AddWithValue("$member", rows[position]);
                         insert.Parameters.AddWithValue("$recheck", balancer.RecheckSeconds);
                         insert.Parameters.AddWithValue("$mode", balancer.Mode);
                         insert.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
@@ -780,7 +786,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 {
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        members.Add(reader.GetString(0));
+                        var member = reader.GetString(0);
+                        // Skip the empty-string placeholder row that persists a memberless profile.
+                        if (member.Length > 0)
+                        {
+                            members.Add(member);
+                        }
+
                         recheckSeconds = reader.GetInt32(1);
                         mode = reader.GetString(2);
                         found = true;

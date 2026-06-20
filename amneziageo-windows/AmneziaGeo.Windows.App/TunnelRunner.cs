@@ -155,7 +155,7 @@ internal sealed class TunnelRunner(
         // drops that window poison so the next lookup resolves cleanly through the tunnel.
         if (applied)
         {
-            _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, sessionCts.Token));
+            _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, proxy, sessionCts.Token));
         }
 
         try
@@ -292,7 +292,7 @@ internal sealed class TunnelRunner(
     /// clean resolver was routed through the tunnel), so a geo-blocked apex re-resolves cleanly instead
     /// of serving stale poison. Cancelled with the session if the tunnel is torn down first.
     /// </summary>
-    private async Task FlushDnsWhenTunnelUpAsync(string name, CancellationToken ct)
+    private async Task FlushDnsWhenTunnelUpAsync(string name, DnsProxy? proxy, CancellationToken ct)
     {
         try
         {
@@ -302,8 +302,16 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is not null)
                 {
+                    // Drop the proxy's OWN cache too (not just the OS cache): a matched geo-blocked name
+                    // resolved in the bring-up window — before the clean resolver's /32 route was live —
+                    // leaked to the poisoned local resolver and was cached here. Without clearing it the
+                    // OS re-query is answered from the proxy's stale poison and the domain stays broken.
+                    // Cleared at both flush points so the route-settle gap after the adapter appears is
+                    // covered.
+                    proxy?.ClearCache();
                     dns.FlushCache();
                     await Task.Delay(2000, ct);
+                    proxy?.ClearCache();
                     dns.FlushCache();
                     return;
                 }

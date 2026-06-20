@@ -160,6 +160,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
                 IpcContract.OpGetConfig => GetConfig(command.Args),
                 IpcContract.OpImportConfig => ImportConfig(command.Args),
+                IpcContract.OpEditConfig => EditConfig(command.Args),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
@@ -209,6 +210,26 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         configRepo.AddFromText(args[0], args[1]);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, $"импортирован {args[0]}");
+    }
+
+    private IpcAck EditConfig(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2)
+        {
+            return new IpcAck(false, "edit-config requires a name and config text");
+        }
+
+        if (!configRepo.Exists(args[0]))
+        {
+            return new IpcAck(false, $"unknown config: {args[0]}");
+        }
+
+        // Overwrites the .conf in place; membership/geo/routing are untouched. A thrown validation error
+        // is turned into a failed ack by ExecuteCommandAsync's catch. A running member uses the new text
+        // only after the next reconnect.
+        configRepo.EditFromText(args[0], args[1]);
+        logger.LogInformation("edited config {Name}", args[0]);
+        return new IpcAck(true, $"сохранён {args[0]}");
     }
 
     private async Task<IpcAck> RemoveConfigAsync(IReadOnlyList<string> args, CancellationToken ct)

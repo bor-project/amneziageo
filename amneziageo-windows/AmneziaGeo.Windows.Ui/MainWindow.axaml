@@ -3,8 +3,8 @@
         xmlns:svc="clr-namespace:AmneziaGeo.Windows.Ui.Services"
         x:Class="AmneziaGeo.Windows.Ui.MainWindow"
         Title="AmneziaGeo"
-        Width="1180" Height="760"
-        MinWidth="900" MinHeight="560"
+        Width="750" Height="560"
+        MinWidth="750" MinHeight="560"
         Background="{DynamicResource AgBgBrush}"
         FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
         Foreground="{DynamicResource AgFgBrush}">
@@ -25,10 +25,9 @@
     <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
     <Grid ColumnDefinitions="Auto,*" Background="{DynamicResource AgSidebarBrush}">
 
-      <!-- LEFT SIDEBAR (always visible; its content swaps per tab — profiles / routing / settings).
-           Narrower now that it holds only lists (the editors moved to the right pane); 340 keeps the
-           3-segment nav ("Маршрутизация" at 11px) from clipping. -->
-      <DockPanel Grid.Column="0" Width="340"
+      <!-- LEFT SIDEBAR (always visible; its content swaps per tab — profiles / settings). Holds only
+           lists / rails (editors live in the right pane), so it stays narrow. -->
+      <DockPanel Grid.Column="0" Width="300"
                  Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
 
         <!-- one left card mirroring the right one: the nav is its header bar (white + bottom divider),
@@ -87,37 +86,38 @@
                   <ItemsControl ItemsSource="{Binding Balancers}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
-                        <!-- the whole row opens the profile; the filled dot shows the active one -->
+                        <!-- the whole row selects (makes the profile active); the ▶ chevron on the right
+                             opens its settings. The chevron is a nested button: Avalonia marks its press
+                             handled, so the row's Select does not also fire when the chevron is clicked. -->
                         <Button Classes="rowselect" Classes.active="{Binding IsActive}" Margin="0,3"
-                                Command="{Binding $parent[ItemsControl].DataContext.OpenProfileDetailCommand}"
-                                CommandParameter="{Binding}">
-                          <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,6,12,6">
-                            <!-- the dot activates the profile (one click); the rest of the row opens it.
-                                 A nested button: Avalonia marks its press handled, so the row's
-                                 OpenProfileDetail does not also fire. -->
-                            <Button Grid.Column="0" Classes="radiopick" VerticalAlignment="Center"
-                                    Command="{Binding SelectCommand}"
-                                    ToolTip.Tip="Сделать активным профилем">
-                              <Grid Width="18" Height="18">
-                                <Ellipse Width="16" Height="16" StrokeThickness="2"
-                                         Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                <Ellipse Width="16" Height="16" StrokeThickness="2"
-                                         Stroke="{DynamicResource AgAccentBrush}" Fill="Transparent"
-                                         IsVisible="{Binding IsActive}"
-                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                                         IsVisible="{Binding IsActive}"
-                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
-                              </Grid>
-                            </Button>
+                                Command="{Binding SelectCommand}"
+                                ToolTip.Tip="Сделать активным профилем">
+                          <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,6,6,6">
+                            <!-- active indicator: filled accent dot when this is the selected profile -->
+                            <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                              <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                       Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              <Ellipse Width="16" Height="16" StrokeThickness="2"
+                                       Stroke="{DynamicResource AgAccentBrush}" Fill="Transparent"
+                                       IsVisible="{Binding IsActive}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                                       IsVisible="{Binding IsActive}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
                             <StackPanel Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center">
                               <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13.5" />
                               <TextBlock Text="{Binding Detail}" FontSize="11.5" Classes="muted"
                                          TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <TextBlock Grid.Column="2" Text="▶" Classes="muted" FontSize="11"
-                                       VerticalAlignment="Center" Margin="6,0,0,0" />
+                            <Button Grid.Column="2" Classes="icon" VerticalAlignment="Center"
+                                    Padding="9,7" Margin="4,0,0,0"
+                                    Command="{Binding $parent[ItemsControl].DataContext.OpenProfileDetailCommand}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip.Tip="Открыть настройки профиля">
+                              <TextBlock Text="▶" Classes="muted" FontSize="11" />
+                            </Button>
                           </Grid>
                         </Button>
                       </DataTemplate>
@@ -130,7 +130,8 @@
               </ScrollViewer>
             </DockPanel>
 
-            <!-- open profile: its aspect rail (Конфигурация / Маршрутизация / Балансировщик / Название) -->
+            <!-- open profile: its aspect rail (Конфигурация / Маршрутизация / Балансировщик / Название).
+                 Stays visible while a member config is managed; only the right pane swaps to the config page. -->
             <DockPanel IsVisible="{Binding IsProfileDetail}" LastChildFill="True">
               <!-- the open profile's name (the back-to-list navigation now lives in the right pane header) -->
               <StackPanel DockPanel.Dock="Top" Margin="14,11,14,8">
@@ -153,7 +154,7 @@
                     </Grid>
                     <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                       <TextBlock Text="Конфигурация" FontWeight="SemiBold" FontSize="13.5" />
-                      <TextBlock Text="Серверы профиля" FontSize="11.5" Classes="muted"
+                      <TextBlock Text="Серверы и их порядок" FontSize="11.5" Classes="muted"
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
@@ -171,7 +172,7 @@
                     </Grid>
                     <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                       <TextBlock Text="Маршрутизация" FontWeight="SemiBold" FontSize="13.5" />
-                      <TextBlock Text="Какой трафик в туннель" FontSize="11.5" Classes="muted"
+                      <TextBlock Text="Что направлять через VPN" FontSize="11.5" Classes="muted"
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
@@ -189,7 +190,7 @@
                     </Grid>
                     <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                       <TextBlock Text="Балансировщик" FontWeight="SemiBold" FontSize="13.5" />
-                      <TextBlock Text="Переключение серверов" FontSize="11.5" Classes="muted"
+                      <TextBlock Text="Переключение между серверами" FontSize="11.5" Classes="muted"
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
@@ -206,8 +207,8 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Grid>
                     <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                      <TextBlock Text="Название" FontWeight="SemiBold" FontSize="13.5" />
-                      <TextBlock Text="Имя профиля" FontSize="11.5" Classes="muted"
+                      <TextBlock Text="Основные" FontWeight="SemiBold" FontSize="13.5" />
+                      <TextBlock Text="Имя и удаление профиля" FontSize="11.5" Classes="muted"
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
@@ -238,7 +239,7 @@
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="Общие" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Тема и язык интерфейса" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="Оформление и язык" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -257,7 +258,7 @@
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="Безопасность" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Kill-switch и локальная сеть" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="Kill-switch и доступ к локальной сети" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -276,7 +277,7 @@
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="Источники данных" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Базы geosite и geoip" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="Базы доменов и стран (geosite/geoip)" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -314,7 +315,7 @@
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="О приложении" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Версия приложения" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="Версия и сведения" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -337,10 +338,11 @@
           <Border DockPanel.Dock="Top" Height="52" Padding="12,0"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto">
-              <!-- back to the previous menu (the profiles list); shown only inside a profile's detail. -->
+              <!-- back control (one button): inside a config page → member list, otherwise → profiles list.
+                   Shown throughout a profile's detail (including while managing a config). -->
               <Button Grid.Column="0" Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
                       IsVisible="{Binding IsProfileDetail}"
-                      Command="{Binding BackToProfilesCommand}" ToolTip.Tip="К списку профилей">
+                      Command="{Binding BackCommand}" ToolTip.Tip="Назад">
                 <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                   <TextBlock Text="←" FontSize="16" VerticalAlignment="Center" />
                   <TextBlock Text="Назад" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center" />
@@ -417,6 +419,20 @@
                            StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <Ellipse Width="158" Height="158" Stroke="{DynamicResource AgBorder2Brush}"
                            StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <!-- accent ring-wave overlays: light up in sequence during a transient connect (outward)
+                       / disconnect (inward); invisible (opacity 0) otherwise. r1 inner → r3 outer. -->
+                  <Ellipse Classes="ring r1" Classes.waveout="{Binding IsConnectingOut}"
+                           Classes.wavein="{Binding IsConnectingIn}"
+                           Width="158" Height="158" Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Ellipse Classes="ring r2" Classes.waveout="{Binding IsConnectingOut}"
+                           Classes.wavein="{Binding IsConnectingIn}"
+                           Width="196" Height="196" Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Ellipse Classes="ring r3" Classes.waveout="{Binding IsConnectingOut}"
+                           Classes.wavein="{Binding IsConnectingIn}"
+                           Width="236" Height="236" Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <Border Width="132" Height="132" CornerRadius="66"
                           Background="{Binding ConnectCircleBrush}"
                           BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="2"
@@ -447,7 +463,7 @@
                          HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
 
-            <ScrollViewer IsVisible="{Binding IsProfileDetail}">
+            <ScrollViewer IsVisible="{Binding ShowProfileAspects}">
               <StackPanel Margin="18,16">
 
                 <!-- Конфигурация : the profile's member configs -->
@@ -464,7 +480,7 @@
                       <ComboBox Grid.Column="0" Classes="field"
                                 ItemsSource="{Binding AvailableConfigs}"
                                 SelectedItem="{Binding AddMemberSelection, Mode=TwoWay}"
-                                PlaceholderText="Выбрать..." Margin="0,0,8,0" />
+                                PlaceholderText="Выберите или создайте…" Margin="0,0,8,0" />
                       <Button Grid.Column="1" Classes="accent"
                               Command="{Binding AddMemberCommand}"
                               IsEnabled="{Binding CanAddMember}">
@@ -487,11 +503,18 @@
                         <TextBox Classes="field" Text="{Binding NewConfigText, Mode=TwoWay}"
                                  AcceptsReturn="True" Height="70" TextWrapping="Wrap"
                                  Watermark="vpn://...   или   текст .conf" />
-                        <UniformGrid Columns="4">
-                          <Button Classes="softbtn" Content="Файл" Click="OnNewConfigBrowse" Margin="0,0,6,0" />
-                          <Button Classes="softbtn" Content="QR" Click="OnNewConfigQrImage" Margin="0,0,6,0" />
-                          <Button Classes="softbtn" Content="Камера" Click="OnNewConfigCamera" Margin="0,0,6,0" />
-                          <Button Classes="softbtn" Content="Буфер" Click="OnNewConfigClipboard" />
+                        <UniformGrid Columns="5">
+                          <Button Classes="softbtn" Content="Файл" Click="OnNewConfigBrowse" Margin="0,0,5,0"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                          <Button Classes="softbtn" Content="QR" Click="OnNewConfigQrImage" Margin="0,0,5,0"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                          <Button Classes="softbtn" Content="Камера" Click="OnNewConfigCamera" Margin="0,0,5,0"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                          <Button Classes="softbtn" Content="Буфер" Click="OnNewConfigClipboard" Margin="0,0,5,0"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                          <Button Classes="softbtn" Content="Вручную" Click="OnNewConfigManual"
+                                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                  ToolTip.Tip="Ввести / отредактировать текст конфигурации в большом редакторе" />
                         </UniformGrid>
                         <TextBlock Text="{Binding NewConfigStatus}" Classes="muted" FontSize="11.5"
                                    TextWrapping="Wrap" />
@@ -512,9 +535,9 @@
                           <Border Background="{DynamicResource AgPanelBrush}"
                                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                                   CornerRadius="9" Padding="9,8" Margin="0,3"
-                                  ContextRequested="OnMemberRowContext"
-                                  ToolTip.Tip="Радио — сделать конфигурацией по умолчанию; правый клик — экспорт / удалить">
-                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                  DoubleTapped="OnMemberRowDoubleTapped"
+                                  ToolTip.Tip="Двойной клик — настройки конфигурации · радио — по умолчанию · ⚙ — действия">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
                               <!-- the radio picks the default config (moves it to the front); the filled
                                    dot marks the current default. -->
                               <Button Grid.Column="0" Classes="radiopick" VerticalAlignment="Center"
@@ -560,9 +583,21 @@
                                         CommandParameter="{Binding}"
                                         FontSize="8" Padding="3,0" />
                               </StackPanel>
-                              <Button Grid.Column="3" Classes="icon" Content="✕" Margin="4,0,0,0"
+                              <!-- ⚙ opens this config's management view (edit / export / location / delete) in
+                                   the sidebar + right pane; the command lives on the window VM, so bind via
+                                   the Window ancestor (the row's DataContext is the open profile VM). -->
+                              <Button Grid.Column="3" Classes="icon" VerticalAlignment="Center" Margin="2,0,0,0"
+                                      Padding="5,4"
+                                      Command="{Binding $parent[Window].DataContext.OpenConfigManageCommand}"
+                                      CommandParameter="{Binding}"
+                                      ToolTip.Tip="Действия с конфигурацией">
+                                <PathIcon Data="{DynamicResource AgGearGeometry}" Width="14" Height="14"
+                                          Foreground="{DynamicResource AgMutedBrush}" />
+                              </Button>
+                              <Button Grid.Column="4" Classes="icon" Content="✕" Margin="2,0,0,0"
                                       Command="{Binding $parent[ItemsControl].DataContext.RemoveMemberCommand}"
-                                      CommandParameter="{Binding}" />
+                                      CommandParameter="{Binding}"
+                                      ToolTip.Tip="Убрать из профиля" />
                             </Grid>
                           </Border>
                         </DataTemplate>
@@ -630,7 +665,12 @@
                         <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
 
                         <StackPanel Spacing="6">
-                          <TextBlock Classes="label" Text="ЗАПИСИ" />
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="label" Text="ЗАПИСИ" VerticalAlignment="Center" />
+                            <Button Grid.Column="1" Classes="icon" Content="Очистить" FontSize="11"
+                                    Command="{Binding ClearRulesCommand}"
+                                    ToolTip.Tip="Удалить все записи списка" />
+                          </Grid>
                           <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                                   Background="{DynamicResource AgPanelBrush}" CornerRadius="10">
                             <ItemsControl ItemsSource="{Binding Rules}" Margin="8,8">
@@ -720,6 +760,87 @@
                   </StackPanel>
                 </StackPanel>
 
+              </StackPanel>
+            </ScrollViewer>
+
+            <!-- CONFIG MANAGEMENT : one full page with every action. The aspect rail on the left stays put;
+                 the back control here returns to the member list. Edit / export reuse the dialog VMs inline
+                 (their sub-blocks switch DataContext); location + delete bind the window VM directly. -->
+            <ScrollViewer IsVisible="{Binding IsConfigManage}">
+              <StackPanel Margin="18,16" Spacing="14">
+
+                <!-- config name (the back-to-list control lives in the header now, labelled "Назад") -->
+                <TextBlock Text="{Binding OpenConfig}" FontWeight="SemiBold" FontSize="16" />
+
+                <!-- the config text + export. The box is read-only until "Изменить" unlocks it for inline
+                     editing (the old separate editor section was dropped — it duplicated this); "Сохранить"
+                     persists the .conf in place. The format toggle is disabled while editing. -->
+                <StackPanel Spacing="10" DataContext="{Binding ConfigExport}">
+                  <Border Background="{DynamicResource AgInsetBrush}"
+                          BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                          CornerRadius="9" Padding="3" HorizontalAlignment="Left"
+                          IsEnabled="{Binding !IsEditing}">
+                    <UniformGrid Columns="2" Width="320">
+                      <Button Classes="seg" Classes.active="{Binding IsConf}" Command="{Binding ShowConfCommand}"
+                              Content="Файл .conf" HorizontalAlignment="Stretch" />
+                      <Button Classes="seg" Classes.active="{Binding IsLink}" Command="{Binding ShowLinkCommand}"
+                              Content="Ссылка vpn://" HorizontalAlignment="Stretch" />
+                    </UniformGrid>
+                  </Border>
+                  <TextBlock IsVisible="{Binding IsEditing}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                             Text="Должны быть секции [Interface] и [Peer]. Членство в профилях, гео и маршруты сохранятся." />
+                  <Border HorizontalAlignment="Left" Background="White" CornerRadius="8" Padding="10"
+                          IsVisible="{Binding ShowQr}">
+                    <Image Source="{Binding QrImage}" Width="220" Height="220" />
+                  </Border>
+                  <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                          CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
+                    <TextBox Text="{Binding Payload, Mode=TwoWay}" IsReadOnly="{Binding !IsEditing}"
+                             AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                             VerticalContentAlignment="Top" Height="240"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             BorderThickness="0" Background="Transparent"
+                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+                  </Border>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="softbtn" Content="Изменить" Command="{Binding BeginEditCommand}"
+                            IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
+                    <Button Classes="accent" Content="Сохранить" Command="{Binding SaveEditCommand}"
+                            IsVisible="{Binding IsEditing}" />
+                    <Button Classes="softbtn" Content="Отмена" Command="{Binding CancelEditCommand}"
+                            IsVisible="{Binding IsEditing}" />
+                    <Button Classes="softbtn" Content="Копировать" Click="OnConfigExportCopy"
+                            IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
+                    <Button Classes="softbtn" Content="Сохранить в файл…" Click="OnConfigExportSave"
+                            IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
+                  </StackPanel>
+                  <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
+                <!-- the file's full path + reveal in Explorer -->
+                <StackPanel Spacing="10">
+                  <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                          CornerRadius="8" Background="{DynamicResource AgPanelBrush}" Padding="10,8">
+                    <SelectableTextBlock Text="{Binding ConfigFilePath}" Classes="mono" FontSize="12"
+                                         TextWrapping="Wrap" />
+                  </Border>
+                  <Button Classes="softbtn" Content="Открыть в проводнике" HorizontalAlignment="Left"
+                          Command="{Binding RevealConfigCommand}" />
+                </StackPanel>
+
+                <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
+                <!-- remove the config from the catalogue (and all profiles) -->
+                <StackPanel Spacing="10">
+                  <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                             Text="Конфигурация удалится из каталога и из всех профилей. Если она используется запущенным профилем, сначала отключите его." />
+                  <Button Classes="danger" Content="Удалить конфигурацию" HorizontalAlignment="Left"
+                          Command="{Binding DeleteOpenConfigCommand}" />
+                  <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
               </StackPanel>
             </ScrollViewer>
           </Panel>

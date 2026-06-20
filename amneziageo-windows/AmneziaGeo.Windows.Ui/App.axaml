@@ -361,6 +361,68 @@
       </Style.Animations>
     </Style>
 
+    <!-- Power-button ring wave: three accent rings (r1 inner → r3 outer) light up in sequence during a
+         transient connect (waveout: r1→r2→r3, outward) or disconnect (wavein: r3→r2→r1, inward). Each ring
+         runs the same opacity pulse; only the start delay differs, producing the travelling wave. Idle
+         opacity is 0 (invisible). -->
+    <Style Selector="Ellipse.ring">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Ellipse.r1.waveout">
+      <Style.Animations>
+        <Animation Duration="0:0:1.35" Delay="0:0:0" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+          <KeyFrame Cue="30%"><Setter Property="Opacity" Value="0.85" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.r2.waveout">
+      <Style.Animations>
+        <Animation Duration="0:0:1.35" Delay="0:0:0.45" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+          <KeyFrame Cue="30%"><Setter Property="Opacity" Value="0.85" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.r3.waveout">
+      <Style.Animations>
+        <Animation Duration="0:0:1.35" Delay="0:0:0.9" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+          <KeyFrame Cue="30%"><Setter Property="Opacity" Value="0.85" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.r1.wavein">
+      <Style.Animations>
+        <Animation Duration="0:0:1.35" Delay="0:0:0.9" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+          <KeyFrame Cue="30%"><Setter Property="Opacity" Value="0.85" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.r2.wavein">
+      <Style.Animations>
+        <Animation Duration="0:0:1.35" Delay="0:0:0.45" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+          <KeyFrame Cue="30%"><Setter Property="Opacity" Value="0.85" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.r3.wavein">
+      <Style.Animations>
+        <Animation Duration="0:0:1.35" Delay="0:0:0" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+          <KeyFrame Cue="30%"><Setter Property="Opacity" Value="0.85" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
     <!-- Strict, flicker-free ComboBox dropdown rows. The popup lives outside any window's template
          scope, so these must be app-level. -->
     <Style Selector="ComboBoxItem /template/ ContentPresenter#PART_ContentPresenter">

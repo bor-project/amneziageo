@@ -406,18 +406,20 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// Deletes a config from the catalogue entirely (not just this profile). The agent refuses while the
     /// config is in use by the running profile, so on a non-OK ack nothing changes; otherwise it is also
     /// dropped from this profile's members (the deleted name must not linger as a dangling member).
+    /// Returns the agent's ack so the caller can report a refusal.
     /// </summary>
-    public async Task DeleteConfigAsync(string member)
+    public async Task<IpcAck> DeleteConfigAsync(string member)
     {
         var ack = await _removeConfig(member);
         if (!ack.Ok)
         {
-            return;
+            return ack;
         }
 
         Members.Remove(member);
         AvailableConfigs.Remove(member);
         await PersistMembersAsync();
+        return ack;
     }
 
     [RelayCommand]

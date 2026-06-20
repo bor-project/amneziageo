@@ -100,6 +100,17 @@ internal sealed class DnsProxy
         }
     }
 
+    /// <summary>
+    /// Drops all cached answers. Called once the tunnel is up so any answer cached during the bring-up
+    /// window — before the clean resolver's /32 route was live, when a matched (geo-blocked) name could
+    /// leak to the local network's poisoned resolver and be cached (e.g. chatgpt.com -> a sinkhole IP) —
+    /// is discarded and re-resolved cleanly through the tunnel.
+    /// </summary>
+    public void ClearCache()
+    {
+        _cache.Clear();
+    }
+
     private bool Bind(IPAddress address)
     {
         try

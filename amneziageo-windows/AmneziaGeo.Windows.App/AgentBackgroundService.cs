@@ -14,7 +14,6 @@ internal sealed class AgentBackgroundService(
     BalancerRunner runner,
     AgentControl control,
     NetworkReconciler reconciler,
-    IHostApplicationLifetime lifetime,
     ILogger<AgentBackgroundService> logger) : BackgroundService
 {
     /// <inheritdoc/>
@@ -23,17 +22,22 @@ internal sealed class AgentBackgroundService(
         // Heal any DNS/route state a crashed or severed predecessor left behind before doing anything.
         reconciler.Reconcile();
 
+        // The launch target may not exist yet (fresh install: no profiles configured). Don't abort the
+        // service — serve the pipe and idle so the GUI can connect, create a profile, then select +
+        // connect. Only seed the selected target when it actually resolves; otherwise leave it unset and
+        // hand the runner an empty group to idle on.
         var group = await ResolveGroupAsync(target.Name, stoppingToken);
-        if (group is null)
+        if (group is not null)
         {
-            logger.LogError("agent: unknown target {Target}", target.Name);
-            lifetime.StopApplication();
-            return;
+            logger.LogInformation("agent starting: group {Group} ({Count} member(s))", group.Name, group.Members.Count);
+            control.SetTarget(group.Name);
+        }
+        else
+        {
+            logger.LogInformation("agent starting: target '{Target}' not configured yet; idling", target.Name);
         }
 
-        logger.LogInformation("agent starting: group {Group} ({Count} member(s))", group.Name, group.Members.Count);
-        control.SetTarget(group.Name);
-        await runner.RunAsync(group, stoppingToken);
+        await runner.RunAsync(group ?? new BalancerGroup(target.Name, 60, []), stoppingToken);
         logger.LogInformation("agent stopped");
     }
 

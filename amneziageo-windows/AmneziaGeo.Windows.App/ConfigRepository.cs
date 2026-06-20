@@ -102,6 +102,27 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
+    /// Overwrites an existing configuration's wg-quick text in place (manual edit). The file (and thus the
+    /// config's profile memberships, geo, and routing state) is preserved — only its contents change.
+    /// </summary>
+    public void EditFromText(string name, string text)
+    {
+        if (!Exists(name))
+        {
+            throw new InvalidOperationException($"configuration {name} does not exist");
+        }
+
+        if (string.IsNullOrWhiteSpace(text)
+            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
+            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("not a valid WireGuard/AmneziaWG configuration");
+        }
+
+        File.WriteAllText(TunnelPaths.ConfigFile(name), text);
+    }
+
+    /// <summary>
     /// Duplicates a configuration together with its geo settings and saved resolutions.
     /// </summary>
     public async Task CopyAsync(string source, string destination, CancellationToken ct = default)

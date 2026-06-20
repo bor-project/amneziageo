@@ -34,6 +34,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectButtonBrush))]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(IsConnecting))]
+    [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
+    [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectGlyph))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
     [NotifyPropertyChangedFor(nameof(ConnectStageBrush))]
@@ -52,6 +54,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(AgentStatusBrush))]
     [NotifyPropertyChangedFor(nameof(IsConnecting))]
+    [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
+    [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectGlyph))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
     [NotifyPropertyChangedFor(nameof(ConnectStageBrush))]
@@ -89,6 +93,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
     [NotifyPropertyChangedFor(nameof(OpenProfileName))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderPower))]
+    [NotifyPropertyChangedFor(nameof(ShowProfileAspects))]
     private BalancerItemViewModel? _openProfile;
 
     [ObservableProperty]
@@ -97,6 +102,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsAspectBalancer))]
     [NotifyPropertyChangedFor(nameof(IsAspectName))]
     private string _profileAspect = "config";
+
+    // Config management (one level below a profile's Конфигурация aspect): the member config opened for
+    // actions (null = the member list is shown). The right pane shows one full page with every action
+    // (edit / export / location / delete); the left aspect rail stays put and a back control in the right
+    // pane returns to the member list.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsConfigManage))]
+    [NotifyPropertyChangedFor(nameof(ShowProfileAspects))]
+    [NotifyPropertyChangedFor(nameof(ConfigFilePath))]
+    private string? _openConfig;
+
+    // The config page's view model, built when a config is opened. It reuses the export dialog VM, which
+    // now also hosts inline editing of the .conf text (the separate editor section was dropped).
+    [ObservableProperty]
+    private ExportDialogViewModel? _configExport;
+
+    [ObservableProperty]
+    private string _configDeleteStatus = string.Empty;
 
     // Which settings section the left rail has selected while on the Settings tab.
     [ObservableProperty]
@@ -289,6 +312,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Whether the connecting spinner shows in the power circle.</summary>
     public bool IsConnecting => ConnState == 1;
 
+    /// <summary>Transient connect (intent on): the power-button ring wave travels outward.</summary>
+    public bool IsConnectingOut => IsConnecting && IsTunnelActive;
+
+    /// <summary>Transient disconnect (intent off): the power-button ring wave travels inward.</summary>
+    public bool IsConnectingIn => IsConnecting && !IsTunnelActive;
+
     /// <summary>Glyph in the power circle: ▶ to connect, ■ to stop, empty while connecting (spinner).</summary>
     public string ConnectGlyph => ConnState switch { 1 => string.Empty, 2 => "■", _ => "▶" };
 
@@ -355,6 +384,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Whether the opened profile's name aspect is selected.</summary>
     public bool IsAspectName => ProfileAspect == "name";
+
+    /// <summary>Whether a member config is opened for management (the full config page shows on the right).</summary>
+    public bool IsConfigManage => OpenConfig is not null;
+
+    /// <summary>
+    /// Whether the profile's aspect editors (right pane) show: inside a profile, but not while a member
+    /// config is opened for management (which takes over the right pane). The aspect rail on the left
+    /// stays visible throughout the profile detail.
+    /// </summary>
+    public bool ShowProfileAspects => IsProfileDetail && !IsConfigManage;
+
+    /// <summary>Full path to the opened config's .conf file (shown in the location section).</summary>
+    public string ConfigFilePath => OpenConfig is null ? string.Empty : ConfigPaths.ConfigFile(OpenConfig);
 
     /// <summary>Whether the General settings section is selected.</summary>
     public bool IsSettingsGeneral => SettingsSection == "general";
@@ -424,24 +466,92 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ProfileAspect = "config";
     }
 
-    // Back from a profile's detail to the profiles list.
+    // Header back control (one button, always labelled "Назад"): from the config page back to the member
+    // list, otherwise from a profile's detail back to the profiles list.
     [RelayCommand]
-    private void BackToProfiles()
+    private void Back()
     {
+        if (OpenConfig is not null)
+        {
+            OpenConfig = null;
+            return;
+        }
+
         OpenProfile = null;
     }
 
-    // Switch which aspect page (overview / config / routing / balancer / name) the right pane shows.
+    // Switch which aspect page (overview / config / routing / balancer / name) the right pane shows. A rail
+    // click always returns to the aspect's list (never resumes a config that was open for management),
+    // even when the same aspect is re-selected — so coming back never lands mid-edit.
     [RelayCommand]
     private void SelectProfileAspect(string aspect)
     {
+        OpenConfig = null;
         ProfileAspect = aspect;
+    }
+
+    // Open a member config into its full management page (right pane). The aspect rail stays put.
+    [RelayCommand]
+    private void OpenConfigManage(string configName)
+    {
+        OpenConfig = configName;
+    }
+
+    // Reveal the opened config's .conf in Explorer (the location action's button).
+    [RelayCommand]
+    private void RevealConfig()
+    {
+        if (OpenConfig is not null)
+        {
+            ConfigPaths.RevealInExplorer(OpenConfig);
+        }
+    }
+
+    // Delete the opened config from the catalogue (and the open profile's members), then return to the
+    // config list. The agent refuses while the config is in use by the running profile, so on a non-OK
+    // ack the view stays put and shows why.
+    [RelayCommand]
+    private async Task DeleteOpenConfig()
+    {
+        if (OpenConfig is null || OpenProfile is null)
+        {
+            return;
+        }
+
+        ConfigDeleteStatus = string.Empty;
+        var ack = await OpenProfile.DeleteConfigAsync(OpenConfig);
+        if (ack.Ok)
+        {
+            OpenConfig = null;
+        }
+        else
+        {
+            ConfigDeleteStatus = ack.Message;
+        }
+    }
+
+    // Build the config page's view model when a config is opened; null it out when the page closes.
+    partial void OnOpenConfigChanged(string? value)
+    {
+        ConfigDeleteStatus = string.Empty;
+        if (value is null)
+        {
+            ConfigExport = null;
+            return;
+        }
+
+        var export = new ExportDialogViewModel(_connection, value);
+        ConfigExport = export;
+        _ = export.LoadAsync();
     }
 
     // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the
     // instance is safe because the snapshot reconcile keeps the same BalancerItemViewModel instances.
     partial void OnOpenProfileChanged(BalancerItemViewModel? oldValue, BalancerItemViewModel? newValue)
     {
+        // Leaving / switching profiles drops any config opened for management.
+        OpenConfig = null;
+
         if (oldValue is not null)
         {
             oldValue.PropertyChanged -= OnOpenProfilePropertyChanged;
@@ -469,6 +579,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     partial void OnProfileAspectChanged(string value)
     {
+        // Switching the aspect rail leaves config management (only reachable from the config list).
+        OpenConfig = null;
+
         if (value == "routing")
         {
             SyncProfileRoutingEditor();

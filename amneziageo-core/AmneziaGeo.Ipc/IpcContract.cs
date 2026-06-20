@@ -136,4 +136,17 @@ public static class IpcContract
     /// Command to delete a profile (balancer) by name. Args: name. Refused if it is the running profile.
     /// </summary>
     public const string OpRemoveBalancer = "remove-balancer";
+
+    /// <summary>
+    /// Command to check for an application update against the configured update URL. No args. The ack
+    /// message holds a human-readable status; availability also rides the next status snapshot.
+    /// </summary>
+    public const string OpCheckUpdate = "check-update";
+
+    /// <summary>
+    /// Command to seed the default geo sources (if none) and synchronously download every source and
+    /// re-materialize the routing lists. No args. Used by the installer's "download lists" step; the ack
+    /// returns a human-readable result and Ok=false on any download failure (non-fatal to the caller).
+    /// </summary>
+    public const string OpDownloadGeo = "download-geo";
 }

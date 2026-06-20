@@ -1,0 +1,87 @@
+<Window x:Class="AmneziaGeo.Windows.Installer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AmneziaGeo" Height="300" Width="520"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="{StaticResource BackgroundBrush}"
+        FontFamily="{StaticResource AppFontFamily}"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Ideal">
+
+  <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="B2V" />
+  </Window.Resources>
+
+  <Grid Margin="18">
+    <Border Style="{StaticResource Card}" Padding="24,22">
+      <DockPanel LastChildFill="True">
+
+        <!-- Header -->
+        <StackPanel DockPanel.Dock="Top">
+          <TextBlock Text="{Binding Heading}" FontSize="23" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding VersionText}" Style="{StaticResource MutedTextBlock}" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <!-- Sub text / status line -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="{Binding SubText}"
+                   Style="{StaticResource MutedTextBlock}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   Margin="0,16,0,0" />
+
+        <!-- Geo-list download outcome (final screen, install/update). -->
+        <TextBlock DockPanel.Dock="Top"
+                   Text="{Binding GeoResult}"
+                   Style="{StaticResource MutedTextBlock}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Margin="0,8,0,0"
+                   Visibility="{Binding HasGeoResult, Converter={StaticResource B2V}}" />
+
+        <!-- Progress (apply phase) -->
+        <StackPanel DockPanel.Dock="Bottom"
+                    Visibility="{Binding ShowProgress, Converter={StaticResource B2V}}">
+          <ProgressBar Value="{Binding Progress}" Maximum="100" IsIndeterminate="{Binding IsIndeterminate}" />
+          <TextBlock Text="{Binding Progress, StringFormat={}{0}%}"
+                     Style="{StaticResource MutedTextBlock}"
+                     HorizontalAlignment="Right" Margin="0,8,0,0"
+                     Visibility="{Binding ShowPercent, Converter={StaticResource B2V}}" />
+        </StackPanel>
+
+        <!-- Done -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Visibility="{Binding ShowDone, Converter={StaticResource B2V}}">
+          <Button Content="Закрыть" Style="{StaticResource AccentButton}" Command="{Binding CloseCommand}" />
+        </StackPanel>
+
+        <!-- Actions (ready phase): optional list-download checkbox + the mode buttons. -->
+        <StackPanel DockPanel.Dock="Bottom"
+                    Visibility="{Binding ShowActions, Converter={StaticResource B2V}}">
+          <CheckBox Content="Загрузить актуальные списки геоданных"
+                    IsChecked="{Binding DownloadLists}"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ShowDownloadOption, Converter={StaticResource B2V}}" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Удалить" Style="{StaticResource DangerButton}"
+                    Command="{Binding RemoveCommand}" Margin="0,0,10,0"
+                    Visibility="{Binding ShowRemove, Converter={StaticResource B2V}}" />
+            <Button Content="Восстановить"
+                    Command="{Binding RepairCommand}" Margin="0,0,10,0"
+                    Visibility="{Binding ShowRepair, Converter={StaticResource B2V}}" />
+            <Button Content="Обновить" Style="{StaticResource AccentButton}"
+                    Command="{Binding UpdateCommand}" Margin="0,0,10,0"
+                    Visibility="{Binding ShowUpdate, Converter={StaticResource B2V}}" />
+            <Button Content="{Binding InstallButtonText}" Style="{StaticResource AccentButton}"
+                    Command="{Binding InstallCommand}"
+                    Visibility="{Binding ShowInstall, Converter={StaticResource B2V}}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- filler so DockPanel balances -->
+        <Grid />
+      </DockPanel>
+    </Border>
+  </Grid>
+</Window>

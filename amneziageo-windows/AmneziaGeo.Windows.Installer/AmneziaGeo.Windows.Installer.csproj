@@ -1,0 +1,28 @@
+<!-- AmneziaGeo installer UI: a WiX v5 out-of-process managed (WPF) Bootstrapper Application.
+     Plain Microsoft.NET.Sdk (NOT the WiX SDK) producing a WinExe; the only package is the v5
+     BA API. Self-contained publish (-p:SelfContained=true on the publish command) so the target
+     needs no .NET runtime to show the installer UI. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AmneziaGeo.Windows.Installer</AssemblyName>
+    <RootNamespace>AmneziaGeo.Windows.Installer</RootNamespace>
+    <!-- We create the WPF Application by hand in the BA thread, so suppress the auto-generated
+         WPF entry point and use our own Program.Main. -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The single SDK package for managed BAs in WiX v5 (replaces v4's WixToolset.Mba.Core +
+         WixToolset.BalUtil); carries mbanative.dll as a runtime asset. -->
+    <PackageReference Include="WixToolset.BootstrapperApplicationApi" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

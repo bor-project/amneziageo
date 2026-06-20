@@ -393,6 +393,27 @@
                           VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
                 </Grid>
               </Border>
+
+              <!-- Update banner (separate channel from the reconnect notice; declared after it so it
+                   takes visual priority in the same cell). Click «Обновить» to download + install. -->
+              <Border Grid.Column="1" IsVisible="{Binding UpdateBannerVisible}"
+                      VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
+                      Margin="12,0,0,0"
+                      Background="{DynamicResource AgAccentBrush}"
+                      CornerRadius="8" Padding="12,5">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
+                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
+                  <TextBlock Grid.Column="1" Text="{Binding UpdateVersion, StringFormat='Доступно обновление {0}'}"
+                             Foreground="White" FontSize="12" FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <Button Grid.Column="2" Classes="radiopick" Command="{Binding InstallUpdateCommand}"
+                          Content="Обновить" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                          Margin="10,0,0,0" VerticalAlignment="Center" />
+                  <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissUpdateBannerCommand}"
+                          Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
+                          VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
+                </Grid>
+              </Border>
             </Grid>
           </Border>
 
@@ -1012,8 +1033,32 @@
                   </Border>
                   <Grid ColumnDefinitions="*,Auto" Margin="15,11">
                     <TextBlock Text="Версия" FontSize="13.5" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="AmneziaGeo 1.0.0" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
                   </Grid>
+
+                  <!-- Update: configurable metadata URL, manual check, and download+install. -->
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="15,12">
+                    <StackPanel Spacing="9">
+                      <TextBlock Text="ОБНОВЛЕНИЕ" Classes="section" />
+                      <TextBlock Text="URL файла версии (установщик берётся рядом с ним)" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
+                                 Text="{Binding UpdateUrl, Mode=TwoWay}" Watermark="https://.../version.json" />
+                        <Button Grid.Column="1" Classes="softbtn" Content="Проверить" Command="{Binding CheckUpdateCommand}" />
+                      </Grid>
+                      <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                      <StackPanel Spacing="6" IsVisible="{Binding UpdateAvailable}">
+                        <TextBlock Text="{Binding UpdateVersion, StringFormat='Доступна версия {0}'}" FontSize="13" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                          <Button Classes="accent" Content="Скачать и установить" Command="{Binding InstallUpdateCommand}"
+                                  IsEnabled="{Binding !UpdateDownloading}" />
+                          <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
+                                     FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
                 </StackPanel>
               </Border>
             </StackPanel>

@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds status snapshots and pushes them to connected UI clients over the status pipe.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, AgentControl control, SettingsStore settingsStore, LogRingBuffer logBuffer, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, LogRingBuffer logBuffer, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -163,6 +163,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpEditConfig => EditConfig(command.Args),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
+                IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
+                IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -724,6 +726,86 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
     }
 
+    /// <summary>
+    /// Checks the configured update URL for a different application version, records the result for the
+    /// snapshot, and returns a human-readable status. A different version (newer or older) counts as
+    /// available since the installer permits rollback.
+    /// </summary>
+    private async Task<IpcAck> CheckUpdateAsync(CancellationToken ct)
+    {
+        var settings = await settingsStore.LoadAsync(ct);
+        if (string.IsNullOrWhiteSpace(settings.UpdateUrl))
+        {
+            return new IpcAck(false, "URL обновлений не задан.");
+        }
+
+        var info = await updateChecker.CheckAsync(settings.UpdateUrl, Version(), ct);
+        updateState.Latest = info;
+        await BroadcastIfChangedAsync(ct);
+
+        if (info is null)
+        {
+            return new IpcAck(false, "Не удалось получить сведения об обновлении.");
+        }
+
+        if (!info.Available)
+        {
+            return new IpcAck(true, "Установлена актуальная версия.");
+        }
+
+        return new IpcAck(true, info.IsDowngrade
+            ? $"Доступен откат к версии {info.Version}."
+            : $"Доступно обновление до версии {info.Version}.");
+    }
+
+    /// <summary>
+    /// Seeds the default geo sources (if none) then SYNCHRONOUSLY downloads every source and
+    /// re-materializes the routing lists, returning a result. Used by the installer's "download lists"
+    /// step (the privileged agent does the download the unprivileged bootstrapper cannot). A download
+    /// failure is reported (Ok=false) but is non-fatal to the caller.
+    /// </summary>
+    private async Task<IpcAck> DownloadGeoAsync(CancellationToken ct)
+    {
+        await GeoDefaults.SeedIfEmptyAsync(store, logger, ct);
+
+        var sources = await store.ListGeoSourcesAsync(ct);
+        if (sources.Count == 0)
+        {
+            return new IpcAck(true, "Нет источников для загрузки.");
+        }
+
+        var failed = new List<string>();
+        foreach (var source in sources)
+        {
+            try
+            {
+                await geoFileUpdater.UpdateAsync(source, null, ct);
+            }
+            catch (Exception ex)
+            {
+                failed.Add(source.Name);
+                logger.LogWarning(ex, "geo download failed: {Name}", source.Name);
+            }
+        }
+
+        try
+        {
+            await geo.RematerializeAllRoutingListsAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "geo re-materialize failed");
+            await BroadcastIfChangedAsync(ct);
+            return new IpcAck(false, $"Списки скачаны, но не удалось обработать: {ex.Message}");
+        }
+
+        await BroadcastIfChangedAsync(ct);
+
+        return failed.Count == 0
+            ? new IpcAck(true, $"Списки загружены ({sources.Count}).")
+            : new IpcAck(false, $"Загружено {sources.Count - failed.Count} из {sources.Count}; не удалось: {string.Join(", ", failed)}.");
+    }
+
     private async Task<string> BuildJsonAsync(CancellationToken ct)
     {
         var snapshot = await BuildSnapshotAsync(ct);
@@ -796,7 +878,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0));
         }
 
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target, sources, logBuffer.Snapshot());
+        var update = updateState.Latest;
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target, sources, logBuffer.Snapshot(),
+            settings.UpdateUrl,
+            update?.Available ?? false,
+            update?.Version ?? string.Empty,
+            update?.SetupUrl ?? string.Empty,
+            update?.Description ?? string.Empty);
     }
 
     /// <summary>

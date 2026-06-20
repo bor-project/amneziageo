@@ -121,6 +121,12 @@ public static class IpcContract
     public const string OpImportConfig = "import-config";
 
     /// <summary>
+    /// Command to overwrite an existing config's wg-quick text (manual edit). Args: name, text. The config
+    /// must already exist; its profile memberships, geo, and routing state are preserved.
+    /// </summary>
+    public const string OpEditConfig = "edit-config";
+
+    /// <summary>
     /// Command to delete a stored config by name, with its service, geo settings, resolutions, and
     /// balancer memberships. Args: name. Refused if the config is a member of the running profile.
     /// </summary>

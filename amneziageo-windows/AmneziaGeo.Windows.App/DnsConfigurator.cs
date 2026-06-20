@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Management;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -70,6 +71,11 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
                 // cannot make us "restore" the proxy address itself.
                 saved[index] = current.Where(s => !proxyServers.Contains(s) && !IsLoopback(s)).ToArray();
                 SetDns(adapter, proxyServers);
+                // WMI SetDNSServerSearchOrder is IPv4-ONLY: it leaves the adapter's IPv6 DNS (often the
+                // router's fe80:: resolver) in place, and Windows will use it — handing back the local
+                // network's POISONED answer for a geo-blocked apex (e.g. chatgpt.com) that then bypasses
+                // the proxy entirely. Point IPv6 DNS at the proxy's ::1 too so every query reaches us.
+                RedirectV6Dns(index);
             }
         }
 
@@ -155,6 +161,38 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         {
             // Empty originals => the adapter was on automatic (DHCP); resetting to none reverts it.
             SetAdapter(index, original);
+            // Hand IPv6 DNS back to automatic (re-acquired via RA/DHCPv6) — it was redirected to ::1.
+            ResetV6Dns(index);
+        }
+    }
+
+    // WMI cannot set IPv6 DNS; netsh can, by interface index. Best-effort, never throws.
+    private static void RedirectV6Dns(uint index)
+    {
+        Netsh($"interface ipv6 set dnsservers name={index} static ::1 primary validate=no");
+    }
+
+    private static void ResetV6Dns(uint index)
+    {
+        Netsh($"interface ipv6 set dnsservers name={index} source=dhcp");
+    }
+
+    private static void Netsh(string arguments)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo("netsh", arguments)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            process?.WaitForExit(4000);
+        }
+        catch (Exception)
+        {
+            // netsh missing or an adapter rejecting the change must not abort the apply/restore.
         }
     }
 

@@ -213,6 +213,21 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Clears all entries of this list at once (then auto-saves), for rebuilding a large list from scratch.
+    /// </summary>
+    [RelayCommand]
+    private void ClearRules()
+    {
+        if (Rules.Count == 0)
+        {
+            return;
+        }
+
+        Rules.Clear();
+        ScheduleSave();
+    }
+
     partial void OnNameChanged(string value)
     {
         ScheduleSave();

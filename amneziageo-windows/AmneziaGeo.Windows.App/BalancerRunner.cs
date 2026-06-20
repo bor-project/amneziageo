@@ -103,8 +103,12 @@ internal sealed class BalancerRunner(
             return new BalancerGroup(name, 60, [name]);
         }
 
-        logger.LogError("balancer {Group} no longer resolvable", name);
-        return null;
+        // Nothing to resolve yet (fresh install with no profiles, or the bound target was deleted): keep
+        // the supervisor alive with an empty group so it idles and the pipe/status stay up, then picks a
+        // profile up once one is created and selected. Returning null here would end the supervisor and
+        // leave the agent unable to ever connect without a process restart.
+        logger.LogInformation("no resolvable target '{Group}'; idling", name);
+        return new BalancerGroup(name, 60, []);
     }
 
     /// <summary>

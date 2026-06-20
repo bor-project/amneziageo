@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AmneziaGeo Windows installer (per-machine MSI, x64, self-contained payload).
+
+  Layout (prod split, matching the architecture):
+    * AmneziaGeo.Windows.App.exe  -> installed AND registered as the "AmneziaGeoAgent" Windows
+      service under LocalSystem (auto-start). This is the privileged VPN backend: it creates the
+      AmneziaWG/Wintun adapter, programs routes, the WFP kill-switch and DNS — all of which need
+      admin, which is why the per-machine MSI (elevated once at install) is the right place for it.
+      The service is idle-tolerant: with no profile configured yet it just serves the pipe.
+    * AmneziaGeo.Windows.Ui.exe   -> the GUI, run by the normal user via the Start-menu shortcut,
+      NO elevation. It is a pure named-pipe client (pipe ACL already allows Authenticated Users).
+    * everything else from the self-contained publish (the .NET runtime, tunnel.dll, wintun.dll,
+      Avalonia natives, ...) is harvested verbatim from the staged publish directory.
+
+  Runtime data (state.db, Configurations\, geo\, logs\) lives in ProgramData\AmneziaGeo and is
+  created by the service at runtime, so the MSI does not lay it down.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package Name="AmneziaGeo"
+           Manufacturer="AmneziaGeo"
+           Version="1.0.0.0"
+           UpgradeCode="CF01DE97-3FF5-4A9A-B106-DAD6D3D95CB5"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <!-- AllowSameVersionUpgrades: a rebuilt MSI at the same version cleanly replaces a prior install
+         (same UpgradeCode) instead of stacking a second registration. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="Уже установлена более новая версия AmneziaGeo." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="AmneziaGeo" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AgMenuFolder" Name="AmneziaGeo" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="AmneziaGeo" Level="1">
+      <ComponentGroupRef Id="Payload" />
+      <ComponentRef Id="AgentServiceExe" />
+      <ComponentRef Id="GuiShortcut" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <!-- Bundled payload: the whole staged publish EXCEPT the two exes handled explicitly below
+         (and pdbs, which the runtime does not need). Subfolders (Avalonia natives, etc.) preserved. -->
+    <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
+      <Files Include="$(var.StageDir)\**">
+        <Exclude Files="$(var.StageDir)\AmneziaGeo.Windows.App.exe" />
+        <Exclude Files="$(var.StageDir)\**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- The backend agent, registered as the LocalSystem auto-start service the GUI talks to.
+         Service name MUST match TunnelPaths.AgentServiceName() ("AmneziaGeoAgent") so the in-app
+         service controls line up. The agent binds the default target "main"; if "main" does not
+         exist yet the agent idles (serves the pipe) until the user creates and selects a profile. -->
+    <Component Id="AgentServiceExe" Directory="INSTALLFOLDER">
+      <File Id="AppExe" Source="$(var.StageDir)\AmneziaGeo.Windows.App.exe" KeyPath="yes" />
+      <ServiceInstall Id="AgentSvcInstall"
+                      Name="AmneziaGeoAgent"
+                      DisplayName="AmneziaGeo Agent"
+                      Description="Бэкенд AmneziaGeo VPN (туннель AmneziaWG, маршрутизация, kill-switch, DNS)."
+                      Type="ownProcess"
+                      Start="auto"
+                      ErrorControl="normal"
+                      Account="LocalSystem"
+                      Arguments="--agent main"
+                      Vital="yes" />
+      <ServiceControl Id="AgentSvcControl"
+                      Name="AmneziaGeoAgent"
+                      Start="install"
+                      Stop="both"
+                      Remove="uninstall"
+                      Wait="yes" />
+    </Component>
+
+    <!-- Shortcuts to the unprivileged GUI (Ui.exe itself is harvested with the payload): one on the
+         (all-users) Desktop and one in the Start menu. Own component in the menu folder, with an HKCU
+         keypath (the per-user shortcut data) so the non-advertised shortcuts pass ICE43/ICE57; both
+         target the exe by path. -->
+    <Component Id="GuiShortcut" Directory="AgMenuFolder">
+      <Shortcut Id="UiStartMenuShortcut"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="UiDesktopShortcut"
+                Directory="DesktopFolder"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"
+                     Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+</Wix>

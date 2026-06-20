@@ -23,4 +23,6 @@ public sealed record StatusSnapshot(
     bool UpdateAvailable = false,
     string UpdateVersion = "",
     string UpdateSetupUrl = "",
-    string UpdateDescription = "");
+    string UpdateDescription = "",
+    bool GeoAutoCheck = true,
+    int GeoCheckIntervalHours = 24);

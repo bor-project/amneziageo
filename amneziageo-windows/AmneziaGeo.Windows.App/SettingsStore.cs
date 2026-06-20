@@ -23,6 +23,8 @@ internal sealed class SettingsStore(IStateStore store)
             KillSwitchEnabled = await ReadBoolAsync("killswitch", defaults.KillSwitchEnabled, ct),
             AllowLan = await ReadBoolAsync("allow-lan", defaults.AllowLan, ct),
             UpdateUrl = await ReadStringAsync("update-url", defaults.UpdateUrl, ct),
+            GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
+            GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
         };
     }
 
@@ -73,9 +75,9 @@ internal sealed class SettingsStore(IStateStore store)
     }
 
     private static readonly string[] IntKeys =
-        ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds"];
+        ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds", "geo-check-interval-hours"];
 
-    private static readonly string[] BoolKeys = ["killswitch", "allow-lan"];
+    private static readonly string[] BoolKeys = ["killswitch", "allow-lan", "geo-auto-check"];
 
     private static readonly string[] StringKeys = ["update-url"];
 

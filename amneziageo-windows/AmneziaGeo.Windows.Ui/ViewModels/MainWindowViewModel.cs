@@ -27,6 +27,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
     private bool _updateUrlInitialized;
+    // Signature (sorted names) of the geo sources that had updates the last time the banner was shown,
+    // so a persistent "update available" state isn't re-raised on every snapshot and a dismissed banner
+    // stays dismissed until the set of outdated sources changes.
+    private string? _geoBannerSignature;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -188,6 +192,22 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _updateBannerVisible;
+
+    [ObservableProperty]
+    private bool _geoUpdateBannerVisible;
+
+    [ObservableProperty]
+    private int _geoUpdateCount;
+
+    [ObservableProperty]
+    private bool _geoAutoCheck = true;
+
+    [ObservableProperty]
+    private int _geoCheckIntervalHours = 24;
+
+    /// <summary>Preset interval options (hours) for the geo auto-check combo; an out-of-band value is
+    /// inserted on demand so the combo can always display the agent's actual setting.</summary>
+    public ObservableCollection<int> GeoCheckIntervals { get; } = [6, 12, 24, 48, 168];
 
     [ObservableProperty]
     private string _appVersion = "AmneziaGeo —";
@@ -815,9 +835,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _suppressSettingPush = true;
         KillSwitchEnabled = snapshot.KillSwitchEnabled;
         AllowLan = snapshot.AllowLan;
+        GeoAutoCheck = snapshot.GeoAutoCheck;
+        EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
+        GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         _suppressSettingPush = false;
 
         ApplyUpdateState(snapshot);
+        ApplyGeoUpdateBanner();
 
         var logs = snapshot.Logs ?? [];
         HasLogs = logs.Count > 0;
@@ -872,6 +896,42 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             _ = SetSettingAsync("allow-lan", value);
         }
+    }
+
+    partial void OnGeoAutoCheckChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("geo-auto-check", value);
+        }
+    }
+
+    partial void OnGeoCheckIntervalHoursChanged(int value)
+    {
+        if (!_suppressSettingPush && value > 0)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
+                ["geo-check-interval-hours", value.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
+        }
+    }
+
+    // Keeps the interval combo able to display whatever the agent reports: an out-of-band value (e.g. set
+    // via CLI) that isn't a preset is inserted in order, so the ComboBox SelectedItem never goes null —
+    // which, two-way-bound to an int, would otherwise write 0 back into the property.
+    private void EnsureGeoInterval(int hours)
+    {
+        if (hours <= 0 || GeoCheckIntervals.Contains(hours))
+        {
+            return;
+        }
+
+        var index = 0;
+        while (index < GeoCheckIntervals.Count && GeoCheckIntervals[index] < hours)
+        {
+            index++;
+        }
+
+        GeoCheckIntervals.Insert(index, hours);
     }
 
     private async Task SetSettingAsync(string key, bool value)
@@ -960,6 +1020,47 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void DismissUpdateBanner()
     {
         UpdateBannerVisible = false;
+    }
+
+    // Raises the geo-list update banner once per "wave": when the set of sources with a pending update
+    // changes to a non-empty set the banner shows; a dismissed banner stays dismissed until that set
+    // changes again; when nothing is outdated the banner hides. Driven off the per-source flags the
+    // snapshot already carries, so no extra round-trip is needed.
+    private void ApplyGeoUpdateBanner()
+    {
+        var outdated = Sources
+            .Where(s => s.UpdateAvailable)
+            .Select(s => s.Name)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        GeoUpdateCount = outdated.Count;
+        if (outdated.Count == 0)
+        {
+            GeoUpdateBannerVisible = false;
+            _geoBannerSignature = null;
+            return;
+        }
+
+        var signature = string.Join('\n', outdated);
+        if (!string.Equals(signature, _geoBannerSignature, StringComparison.Ordinal))
+        {
+            _geoBannerSignature = signature;
+            GeoUpdateBannerVisible = true;
+        }
+    }
+
+    [RelayCommand]
+    private async Task UpdateGeoNow()
+    {
+        GeoUpdateBannerVisible = false;
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpUpdateSources, []));
+    }
+
+    [RelayCommand]
+    private void DismissGeoUpdateBanner()
+    {
+        GeoUpdateBannerVisible = false;
     }
 
     // Streams the installer to a temp file, reporting integer download percent (mirrors the agent's

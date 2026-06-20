@@ -414,6 +414,28 @@
                           VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
                 </Grid>
               </Border>
+
+              <!-- Geo-list update banner (separate channel; declared last so it takes visual priority in
+                   the same cell). «Обновить сейчас» downloads all sources; «✕» defers until the set of
+                   outdated sources changes (can still be updated later in Settings → sources). -->
+              <Border Grid.Column="1" IsVisible="{Binding GeoUpdateBannerVisible}"
+                      VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
+                      Margin="12,0,0,0"
+                      Background="{DynamicResource AgAccentBrush}"
+                      CornerRadius="8" Padding="12,5">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
+                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
+                  <TextBlock Grid.Column="1" Text="{Binding GeoUpdateCount, StringFormat='Доступны обновления geo-списков: {0}'}"
+                             Foreground="White" FontSize="12" FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                  <Button Grid.Column="2" Classes="radiopick" Command="{Binding UpdateGeoNowCommand}"
+                          Content="Обновить сейчас" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                          Margin="10,0,0,0" VerticalAlignment="Center" />
+                  <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissGeoUpdateBannerCommand}"
+                          Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
+                          VerticalAlignment="Center" ToolTip.Tip="Позже — можно обновить в настройках" />
+                </Grid>
+              </Border>
             </Grid>
           </Border>
 
@@ -969,6 +991,28 @@
                   </Border>
 
                   <StackPanel Margin="15,12" Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
+                        <TextBlock Text="Автопроверка обновлений" FontSize="13.5" />
+                        <TextBlock Text="Периодически проверять источники на новую версию и уведомлять."
+                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <ComboBox Classes="field" Width="92" VerticalAlignment="Center"
+                                  IsEnabled="{Binding GeoAutoCheck}"
+                                  ItemsSource="{Binding GeoCheckIntervals}"
+                                  SelectedItem="{Binding GeoCheckIntervalHours, Mode=TwoWay}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding StringFormat='{}{0} ч'}" />
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
+                      </StackPanel>
+                    </Grid>
+                    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
                     <TextBlock Classes="label" Text="ДОБАВИТЬ БАЗУ" />
                     <Grid ColumnDefinitions="Auto,*,Auto">
                       <ComboBox Grid.Column="0" Classes="field" Width="118" Margin="0,0,8,0"

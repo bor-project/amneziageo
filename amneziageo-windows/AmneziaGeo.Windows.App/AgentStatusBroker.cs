@@ -605,15 +605,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
     /// <summary>
     /// Checks every source for a newer remote file without downloading it, records the result per source
-    /// for the snapshot, and returns a summary. The whole sweep is time-bounded so a slow source cannot
-    /// overrun the client's command timeout.
+    /// for the snapshot, broadcasts, and returns how many of the sources have an update available. The
+    /// whole sweep is time-bounded so a slow source cannot overrun the caller's timeout. Public so the
+    /// periodic <see cref="GeoUpdateCheckService"/> can trigger the same sweep.
     /// </summary>
-    private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
+    public async Task<(int Available, int Total)> CheckAllSourcesAsync(CancellationToken ct)
     {
         var sources = await store.ListGeoSourcesAsync(ct);
         if (sources.Count == 0)
         {
-            return new IpcAck(true, "Нет источников для проверки.");
+            return (0, 0);
         }
 
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -629,9 +630,23 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         await BroadcastIfChangedAsync(ct);
+        return (available, sources.Count);
+    }
+
+    /// <summary>
+    /// IPC handler for a manual "check all sources" — runs the sweep and returns a human-readable summary.
+    /// </summary>
+    private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
+    {
+        var (available, total) = await CheckAllSourcesAsync(ct);
+        if (total == 0)
+        {
+            return new IpcAck(true, "Нет источников для проверки.");
+        }
+
         return new IpcAck(true, available == 0
-            ? $"Проверено источников: {sources.Count}. Обновлений нет."
-            : $"Проверено источников: {sources.Count}. Доступно обновлений: {available}.");
+            ? $"Проверено источников: {total}. Обновлений нет."
+            : $"Проверено источников: {total}. Доступно обновлений: {available}.");
     }
 
     /// <summary>
@@ -991,7 +1006,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             update?.Available ?? false,
             update?.Version ?? string.Empty,
             update?.SetupUrl ?? string.Empty,
-            update?.Description ?? string.Empty);
+            update?.Description ?? string.Empty,
+            settings.GeoAutoCheck,
+            settings.GeoCheckIntervalHours);
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
 using AmneziaGeo.Decl;
@@ -17,7 +18,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
     /// </summary>
     public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, IProgress<int>? progress = null, CancellationToken ct = default)
     {
-        var data = await DownloadAsync(source.Url, progress, ct);
+        var (data, etag, lastModified) = await DownloadAsync(source.Url, progress, ct);
 
         var path = TunnelPaths.GeoDataFile(source.Name);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -28,7 +29,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
             ? GeoIpDatabase.Countries(data).Count
             : GeoSiteDatabase.Categories(data).Count;
 
-        var metadata = new GeoFileMetadata(source.Name, source.Url, DateTimeOffset.UtcNow, sha, count);
+        var metadata = new GeoFileMetadata(source.Name, source.Url, DateTimeOffset.UtcNow, sha, count, etag, lastModified);
         await store.SaveGeoFileAsync(metadata, ct);
         return metadata;
     }
@@ -36,13 +37,17 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
     /// <summary>
     /// Streams the URL into memory, reporting download progress as integer percent (or -1 when the
     /// server sends no Content-Length). Streaming — rather than GetByteArrayAsync — is what lets the UI
-    /// show a live percentage for the multi-megabyte geo files.
+    /// show a live percentage for the multi-megabyte geo files. Also returns the response's HTTP
+    /// validators (ETag / Last-Modified, empty when absent) so a later update-check can ask the server
+    /// whether the file changed without downloading it again.
     /// </summary>
-    private async Task<byte[]> DownloadAsync(string url, IProgress<int>? progress, CancellationToken ct)
+    private async Task<(byte[] Data, string ETag, string LastModified)> DownloadAsync(string url, IProgress<int>? progress, CancellationToken ct)
     {
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
         var total = response.Content.Headers.ContentLength;
+        var etag = response.Headers.ETag?.ToString() ?? string.Empty;
+        var lastModified = response.Content.Headers.LastModified?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty;
 
         using var source = await response.Content.ReadAsStreamAsync(ct);
         using var buffer = new MemoryStream(total is > 0 and < int.MaxValue ? (int)total : 0);
@@ -69,6 +74,6 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
             }
         }
 
-        return buffer.ToArray();
+        return (buffer.ToArray(), etag, lastModified);
     }
 }

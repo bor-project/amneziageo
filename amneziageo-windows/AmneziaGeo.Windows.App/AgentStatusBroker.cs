@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds status snapshots and pushes them to connected UI clients over the status pipe.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, LogRingBuffer logBuffer, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, LogRingBuffer logBuffer, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -21,6 +21,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     // Presence in the map means "updating"; the snapshot overlays it onto each SourceEntry so the UI can
     // spin the refresh icon and show a percentage.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _updating = new(StringComparer.Ordinal);
+
+    // Per-source "a newer remote file exists" flag, set by the update-check and cleared when the source
+    // is re-downloaded. Surfaced on each SourceEntry so the UI can badge the row.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The profile whose live status the connection card reflects: the running target while connected,
@@ -158,6 +162,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpRemoveSource => await RemoveSourceAsync(command.Args, ct),
                 IpcContract.OpUpdateSources => await UpdateSourcesAsync(ct),
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
+                IpcContract.OpCheckSources => await CheckSourcesAsync(ct),
+                IpcContract.OpCheckSource => await CheckSourceAsync(command.Args, ct),
                 IpcContract.OpGetConfig => GetConfig(command.Args),
                 IpcContract.OpImportConfig => ImportConfig(command.Args),
                 IpcContract.OpEditConfig => EditConfig(command.Args),
@@ -554,6 +560,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         var name = args[0];
         await store.RemoveGeoSourceAsync(name, ct);
+        _updateAvailable.TryRemove(name, out _);
         try
         {
             var path = TunnelPaths.GeoDataFile(name);
@@ -597,6 +604,102 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     }
 
     /// <summary>
+    /// Checks every source for a newer remote file without downloading it, records the result per source
+    /// for the snapshot, and returns a summary. The whole sweep is time-bounded so a slow source cannot
+    /// overrun the client's command timeout.
+    /// </summary>
+    private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
+    {
+        var sources = await store.ListGeoSourcesAsync(ct);
+        if (sources.Count == 0)
+        {
+            return new IpcAck(true, "Нет источников для проверки.");
+        }
+
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(TimeSpan.FromSeconds(20));
+
+        var available = 0;
+        foreach (var source in sources)
+        {
+            if (await CheckOneAsync(source, budget.Token) == GeoUpdateChecker.Status.Available)
+            {
+                available++;
+            }
+        }
+
+        await BroadcastIfChangedAsync(ct);
+        return new IpcAck(true, available == 0
+            ? $"Проверено источников: {sources.Count}. Обновлений нет."
+            : $"Проверено источников: {sources.Count}. Доступно обновлений: {available}.");
+    }
+
+    /// <summary>
+    /// Checks a single source for a newer remote file without downloading it.
+    /// </summary>
+    private async Task<IpcAck> CheckSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "check-source requires a name");
+        }
+
+        var sources = await store.ListGeoSourcesAsync(ct);
+        var source = sources.FirstOrDefault(s => string.Equals(s.Name, args[0], StringComparison.Ordinal));
+        if (source is null)
+        {
+            return new IpcAck(false, $"unknown source: {args[0]}");
+        }
+
+        var status = await CheckOneAsync(source, ct);
+        await BroadcastIfChangedAsync(ct);
+        return new IpcAck(true, status switch
+        {
+            GeoUpdateChecker.Status.Available => $"Доступно обновление: {source.Name}.",
+            GeoUpdateChecker.Status.UpToDate => $"{source.Name}: актуально.",
+            _ => $"{source.Name}: не удалось проверить.",
+        });
+    }
+
+    /// <summary>
+    /// Runs the update-check for one source and records the result. A definite answer flips the
+    /// per-source flag; an Unknown (network error / nothing to compare) leaves the prior state intact.
+    /// </summary>
+    private async Task<GeoUpdateChecker.Status> CheckOneAsync(GeoSource source, CancellationToken ct)
+    {
+        GeoUpdateChecker.Status status;
+        try
+        {
+            // A per-source ceiling so one stalled connect can't ride HttpClient's default timeout past the
+            // client's command timeout; it also bounds the single-source (check-source) path, which has no
+            // outer sweep budget.
+            using var perSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            perSource.CancelAfter(TimeSpan.FromSeconds(10));
+            status = await geoUpdateChecker.CheckAsync(source, perSource.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return GeoUpdateChecker.Status.Unknown;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "geo source check failed: {Name}", source.Name);
+            return GeoUpdateChecker.Status.Unknown;
+        }
+
+        if (status == GeoUpdateChecker.Status.Available)
+        {
+            _updateAvailable[source.Name] = true;
+        }
+        else if (status == GeoUpdateChecker.Status.UpToDate)
+        {
+            _updateAvailable[source.Name] = false;
+        }
+
+        return status;
+    }
+
+    /// <summary>
     /// Re-downloads the given sources and re-materializes the routing lists on a background task, then
     /// pushes a fresh snapshot. Kept off the IPC command path so a slow download never blocks the pipe
     /// or overruns the client's command timeout. A lightweight ticker broadcasts in-flight progress so
@@ -623,7 +726,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                     try
                     {
                         await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
-                        // Downloaded: switch to indeterminate while the re-materialize runs below.
+                        // Downloaded: the local file is now current, so any pending update flag is stale.
+                        _updateAvailable[source.Name] = false;
+                        // Switch to indeterminate while the re-materialize runs below.
                         _updating[source.Name] = -1;
                     }
                     catch (Exception ex)
@@ -780,6 +885,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             try
             {
                 await geoFileUpdater.UpdateAsync(source, null, ct);
+                _updateAvailable[source.Name] = false;
             }
             catch (Exception ex)
             {
@@ -875,7 +981,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 ? null
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
             var updating = _updating.TryGetValue(source.Name, out var percent);
-            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0));
+            var updateAvailable = _updateAvailable.TryGetValue(source.Name, out var avail) && avail;
+            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable));
         }
 
         var update = updateState.Latest;

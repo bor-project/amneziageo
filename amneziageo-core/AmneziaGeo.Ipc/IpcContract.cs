@@ -110,6 +110,19 @@ public static class IpcContract
     public const string OpUpdateSource = "update-source";
 
     /// <summary>
+    /// Command to check every geo data source for a newer remote file WITHOUT downloading it (conditional
+    /// request / checksum). No args. Each source's result rides the next snapshot
+    /// (SourceEntry.UpdateAvailable); the ack message holds a human-readable summary.
+    /// </summary>
+    public const string OpCheckSources = "check-sources";
+
+    /// <summary>
+    /// Command to check a single geo data source for a newer remote file without downloading it. Args: name.
+    /// The result rides the next snapshot; the ack message holds a human-readable status.
+    /// </summary>
+    public const string OpCheckSource = "check-source";
+
+    /// <summary>
     /// Command to read a stored config's wg-quick text for export. Args: name. The ack message holds the
     /// raw .conf text.
     /// </summary>

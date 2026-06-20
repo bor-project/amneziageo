@@ -961,7 +961,10 @@
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <TextBlock Text="ИСТОЧНИКИ ДАННЫХ" Classes="section" VerticalAlignment="Center" />
-                      <Button Grid.Column="1" Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="Обновить все" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Button Classes="softbtn" Command="{Binding CheckSourcesCommand}" Content="Проверить обновления" />
+                        <Button Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="Обновить все" />
+                      </StackPanel>
                     </Grid>
                   </Border>
 
@@ -1001,6 +1004,9 @@
                                     <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
                                                TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="● Доступно обновление" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AgAccentBrush}" Margin="0,3,0,0"
+                                               IsVisible="{Binding ShowUpdateBadge}" />
                                   </StackPanel>
                                   <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center" Margin="8,0,0,0"
                                           Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"

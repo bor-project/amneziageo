@@ -1112,6 +1112,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.CategoryCount = entry.CategoryCount;
             existing.Updating = entry.Updating;
             existing.Progress = entry.Progress;
+            existing.UpdateAvailable = entry.UpdateAvailable;
         }
 
         HasSources = Sources.Count > 0;
@@ -1398,5 +1399,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task UpdateSources()
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpUpdateSources, []));
+    }
+
+    [RelayCommand]
+    private async Task CheckSources()
+    {
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCheckSources, []));
+        ShowNotice(ack.Message);
     }
 }

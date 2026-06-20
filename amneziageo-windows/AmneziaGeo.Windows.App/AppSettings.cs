@@ -42,4 +42,10 @@ internal sealed record AppSettings
     /// so host/Hyper-V SSH and local devices keep working. Defaults on.
     /// </summary>
     public bool AllowLan { get; init; } = true;
+
+    /// <summary>
+    /// URL of the update metadata file (JSON with version/description/setup). Empty disables update
+    /// checks. The installer is expected to sit next to this file (resolved relative to it).
+    /// </summary>
+    public string UpdateUrl { get; init; } = string.Empty;
 }

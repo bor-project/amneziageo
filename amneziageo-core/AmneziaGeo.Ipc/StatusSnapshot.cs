@@ -18,4 +18,9 @@ public sealed record StatusSnapshot(
     bool AllowLan = true,
     string? SelectedTarget = null,
     IReadOnlyList<SourceEntry>? Sources = null,
-    IReadOnlyList<string>? Logs = null);
+    IReadOnlyList<string>? Logs = null,
+    string UpdateUrl = "",
+    bool UpdateAvailable = false,
+    string UpdateVersion = "",
+    string UpdateSetupUrl = "",
+    string UpdateDescription = "");

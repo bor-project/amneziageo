@@ -22,6 +22,7 @@ internal sealed class SettingsStore(IStateStore store)
             ProbeTimeoutSeconds = await ReadIntAsync("probe-timeout-seconds", defaults.ProbeTimeoutSeconds, ct),
             KillSwitchEnabled = await ReadBoolAsync("killswitch", defaults.KillSwitchEnabled, ct),
             AllowLan = await ReadBoolAsync("allow-lan", defaults.AllowLan, ct),
+            UpdateUrl = await ReadStringAsync("update-url", defaults.UpdateUrl, ct),
         };
     }
 
@@ -53,6 +54,13 @@ internal sealed class SettingsStore(IStateStore store)
             return true;
         }
 
+        if (StringKeys.Contains(key))
+        {
+            // Free-form (e.g. the update URL); an empty value clears it.
+            await store.SetSettingAsync(key, value.Trim(), ct);
+            return true;
+        }
+
         return false;
     }
 
@@ -61,13 +69,21 @@ internal sealed class SettingsStore(IStateStore store)
     /// </summary>
     public static IReadOnlyList<string> Keys()
     {
-        return [.. IntKeys, .. BoolKeys];
+        return [.. IntKeys, .. BoolKeys, .. StringKeys];
     }
 
     private static readonly string[] IntKeys =
         ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds"];
 
     private static readonly string[] BoolKeys = ["killswitch", "allow-lan"];
+
+    private static readonly string[] StringKeys = ["update-url"];
+
+    private async Task<string> ReadStringAsync(string key, string fallback, CancellationToken ct)
+    {
+        var value = await store.GetSettingAsync(key, ct);
+        return value ?? fallback;
+    }
 
     private async Task<int> ReadIntAsync(string key, int fallback, CancellationToken ct)
     {

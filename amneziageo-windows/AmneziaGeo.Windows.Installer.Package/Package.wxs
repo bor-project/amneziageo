@@ -20,15 +20,16 @@
 
   <Package Name="AmneziaGeo"
            Manufacturer="AmneziaGeo"
-           Version="1.0.0.0"
+           Version="1.0.1.0"
            UpgradeCode="CF01DE97-3FF5-4A9A-B106-DAD6D3D95CB5"
            Scope="perMachine"
            Compressed="yes">
 
-    <!-- AllowSameVersionUpgrades: a rebuilt MSI at the same version cleanly replaces a prior install
-         (same UpgradeCode) instead of stacking a second registration. -->
-    <MajorUpgrade AllowSameVersionUpgrades="yes"
-                  DowngradeErrorMessage="Уже установлена более новая версия AmneziaGeo." />
+    <!-- AllowDowngrades: the Burn bundle (AmneziaGeo.Windows.Installer) drives install / update /
+         repair / remove and may reinstall the same code or downgrade. AllowDowngrades makes the MSI
+         accept an equal-or-lower version — a major upgrade that removes the prior install and lays
+         the new files down fresh — instead of blocking it. -->
+    <MajorUpgrade AllowDowngrades="yes" />
     <MediaTemplate EmbedCab="yes" />
 
     <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->

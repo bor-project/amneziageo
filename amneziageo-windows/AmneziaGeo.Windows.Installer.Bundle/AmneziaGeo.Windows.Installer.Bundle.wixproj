@@ -1,0 +1,19 @@
+<!-- Burn bundle (WiX v5). Built by build-installer.ps1, which supplies the BA exe path, the MSI path
+     and the 4-field bundle version, and writes BaPayloads.generated.wxs (auto-included alongside
+     Bundle.wxs). Produces AmneziaGeoSetup.exe. -->
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <OutputName>AmneziaGeoSetup</OutputName>
+    <Platform>x64</Platform>
+    <!-- Preprocessor variables consumed by Bundle.wxs as $(var.*). -->
+    <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath)</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="EnsureBundleInputs" BeforeTargets="Build"
+          Condition="'$(BaExe)' == '' or '$(MsiPath)' == '' or '$(BundleVersion)' == ''">
+    <Error Text="BaExe / MsiPath / BundleVersion not set. Build via build-installer.ps1." />
+  </Target>
+
+</Project>

@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -21,6 +24,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _toggleInFlight;
     private string? _lastNotice;
     private string? _pendingOpenProfile;
+    private string _updateSetupUrl = string.Empty;
+    private string? _bannerUpdateVersion;
+    private bool _updateUrlInitialized;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -157,6 +163,34 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _allowLan = true;
+
+    // App self-update (#54): the configured metadata URL, the latest check result, and download state.
+    [ObservableProperty]
+    private string _updateUrl = string.Empty;
+
+    [ObservableProperty]
+    private bool _updateAvailable;
+
+    [ObservableProperty]
+    private string _updateVersion = string.Empty;
+
+    [ObservableProperty]
+    private string _updateDescription = string.Empty;
+
+    [ObservableProperty]
+    private string _updateStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool _updateDownloading;
+
+    [ObservableProperty]
+    private int _updateDownloadPercent;
+
+    [ObservableProperty]
+    private bool _updateBannerVisible;
+
+    [ObservableProperty]
+    private string _appVersion = "AmneziaGeo —";
 
     [ObservableProperty]
     private string _newSourceKind = "geosite";
@@ -783,6 +817,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         AllowLan = snapshot.AllowLan;
         _suppressSettingPush = false;
 
+        ApplyUpdateState(snapshot);
+
         var logs = snapshot.Logs ?? [];
         HasLogs = logs.Count > 0;
         // Newest first so the latest activity stays visible at the top without scrolling.
@@ -841,6 +877,122 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task SetSettingAsync(string key, bool value)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value ? "on" : "off"]));
+    }
+
+    // Applies the update-related snapshot fields. The URL field is initialised once then left to the
+    // user (saved on «Проверить») so periodic snapshots do not clobber typing; a freshly available
+    // version raises the banner once.
+    private void ApplyUpdateState(StatusSnapshot snapshot)
+    {
+        AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "—" : snapshot.AgentVersion)}";
+
+        if (!_updateUrlInitialized)
+        {
+            UpdateUrl = snapshot.UpdateUrl;
+            _updateUrlInitialized = true;
+        }
+
+        UpdateAvailable = snapshot.UpdateAvailable;
+        UpdateVersion = snapshot.UpdateVersion;
+        UpdateDescription = snapshot.UpdateDescription;
+        _updateSetupUrl = snapshot.UpdateSetupUrl;
+
+        if (snapshot.UpdateAvailable && !string.IsNullOrEmpty(snapshot.UpdateVersion))
+        {
+            if (!string.Equals(snapshot.UpdateVersion, _bannerUpdateVersion, StringComparison.Ordinal))
+            {
+                _bannerUpdateVersion = snapshot.UpdateVersion;
+                UpdateBannerVisible = true;
+            }
+        }
+        else
+        {
+            UpdateBannerVisible = false;
+            _bannerUpdateVersion = null;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CheckUpdate()
+    {
+        UpdateStatus = "Проверка…";
+        // Save the URL first (so the agent and the periodic check use it), then ask for a check.
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["update-url", UpdateUrl ?? string.Empty]));
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCheckUpdate, []));
+        UpdateStatus = ack.Message;
+    }
+
+    [RelayCommand]
+    private async Task InstallUpdate()
+    {
+        if (string.IsNullOrEmpty(_updateSetupUrl) || UpdateDownloading)
+        {
+            return;
+        }
+
+        UpdateBannerVisible = false;
+        UpdateDownloading = true;
+        UpdateDownloadPercent = 0;
+        UpdateStatus = "Загрузка установщика…";
+        try
+        {
+            var path = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p));
+            UpdateStatus = "Запуск установщика…";
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+
+            // Quit so the installer can replace the app's in-use files.
+            if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                desktop.Shutdown();
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus = $"Ошибка: {ex.Message}";
+        }
+        finally
+        {
+            UpdateDownloading = false;
+        }
+    }
+
+    [RelayCommand]
+    private void DismissUpdateBanner()
+    {
+        UpdateBannerVisible = false;
+    }
+
+    // Streams the installer to a temp file, reporting integer download percent (mirrors the agent's
+    // GeoFileUpdater loop but writes straight to disk — the setup is ~100 MB).
+    private static async Task<string> DownloadSetupAsync(string url, IProgress<int> progress)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "AmneziaGeoSetup.exe");
+        using var http = new HttpClient();
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        var total = response.Content.Headers.ContentLength;
+        await using var source = await response.Content.ReadAsStreamAsync();
+        await using var file = File.Create(path);
+        var buffer = new byte[81920];
+        long read = 0;
+        var lastPercent = -1;
+        int n;
+        while ((n = await source.ReadAsync(buffer)) > 0)
+        {
+            await file.WriteAsync(buffer.AsMemory(0, n));
+            read += n;
+            if (total is > 0)
+            {
+                var percent = (int)(read * 100 / total.Value);
+                if (percent != lastPercent)
+                {
+                    lastPercent = percent;
+                    progress.Report(percent);
+                }
+            }
+        }
+
+        return path;
     }
 
     private void SyncConfigs(IReadOnlyList<ConfigEntry> entries)

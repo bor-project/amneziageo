@@ -4,6 +4,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.1.<build>. -->
+    <Version>1.0.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

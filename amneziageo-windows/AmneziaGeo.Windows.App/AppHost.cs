@@ -45,6 +45,8 @@ internal static class AppHost
             builder.Services.AddSingleton(new AgentTarget(agentTarget));
             builder.Services.AddHostedService<AgentBackgroundService>();
             builder.Services.AddHostedService<StatusPipeServer>();
+            builder.Services.AddHostedService<UpdateCheckService>();
+            builder.Services.AddHostedService<GeoBootstrapService>();
         }
 
         return builder.Build();
@@ -67,6 +69,8 @@ internal static class AppHost
         services.AddSingleton<GeoActivator>();
         services.AddSingleton<GeoConfigurator>();
         services.AddSingleton<GeoFileUpdater>();
+        services.AddSingleton<UpdateChecker>();
+        services.AddSingleton<UpdateState>();
         services.AddSingleton<TunnelRunner>();
         services.AddSingleton<BalancerRunner>();
         services.AddSingleton<BackupService>();

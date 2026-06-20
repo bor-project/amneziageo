@@ -34,6 +34,9 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.1.<build> so the
+         running app reports the same version the self-update check compares against. -->
+    <Version>1.0.1</Version>
     <PlatformTarget>x64</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

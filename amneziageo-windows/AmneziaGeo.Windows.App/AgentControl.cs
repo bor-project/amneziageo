@@ -13,6 +13,7 @@ internal sealed class AgentControl
     private volatile string? _betterMember;
     private volatile string? _target;
     private volatile string? _runningTarget;
+    private volatile bool _connectFailed;
     private CancellationTokenSource _change = new();
 
     /// <summary>
@@ -51,6 +52,13 @@ internal sealed class AgentControl
     public string? RunningTarget => _runningTarget;
 
     /// <summary>
+    /// One-shot flag latched when a user-initiated connect gave up without bringing up any member within
+    /// the data-driven deadline. The UI surfaces it as a "failed to connect" banner. Cleared on the next
+    /// connect / disconnect command (a fresh user action).
+    /// </summary>
+    public bool ConnectFailed => _connectFailed;
+
+    /// <summary>
     /// A token that fires once when the desired state or persisted configuration changes.
     /// Capture it before reading <see cref="Running"/>, then link it into the session's
     /// cancellation so in-flight waits abort promptly and the supervisor re-evaluates.
@@ -74,6 +82,8 @@ internal sealed class AgentControl
     public void SetRunning(bool value)
     {
         _running = value;
+        // A fresh user connect / disconnect clears any prior failed-connect notice.
+        _connectFailed = false;
         // Latch the selected target as the running target on connect: the runner brings up the
         // currently-selected profile and then stays on it (live edits re-apply; a later selection does
         // not switch the tunnel until the next connect).
@@ -106,6 +116,21 @@ internal sealed class AgentControl
     /// </summary>
     public void Invalidate()
     {
+        Signal();
+    }
+
+    /// <summary>
+    /// Called by the runner when a connect attempt gave up (no member reachable within the deadline):
+    /// latches the one-shot failed notice, drops the desired state to stopped (отбой), and signals the
+    /// supervisor to idle.
+    /// </summary>
+    public void FailConnect()
+    {
+        _connectFailed = true;
+        _running = false;
+        _runningTarget = null;
+        _restartRequired = false;
+        _betterMember = null;
         Signal();
     }
 

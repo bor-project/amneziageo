@@ -816,7 +816,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // better member is available on a backup. Shown once per distinct notice, not re-armed while
         // the same one holds.
         string? notice = null;
-        if (snapshot.Active && snapshot.SelectedTarget is not null
+        if (snapshot.ConnectFailed)
+        {
+            notice = "Не удалось подключиться — сервер не ответил.";
+        }
+        else if (snapshot.Active && snapshot.SelectedTarget is not null
             && !string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal))
         {
             notice = $"Выбран профиль «{snapshot.SelectedTarget}». Переподключитесь, чтобы применить.";

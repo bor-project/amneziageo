@@ -20,7 +20,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private IReadOnlyList<string> _configNames = [];
     private bool _toggleInFlight;
     private string? _lastNotice;
-    private long _selectedRoutingListId = -1;
     private string? _pendingOpenProfile;
 
     [ObservableProperty]
@@ -79,7 +78,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHome))]
-    [NotifyPropertyChangedFor(nameof(IsRouting))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderPower))]
     private string _nav = "home";
@@ -104,17 +102,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSecurity))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
     [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
     [NotifyPropertyChangedFor(nameof(IsSettingsAbout))]
     private string _settingsSection = "general";
-
-    // Which routing sub-tab is active: the rule-lists ("rules") or the geo-data sources ("sources").
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsRoutingRules))]
-    [NotifyPropertyChangedFor(nameof(IsRoutingSources))]
-    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
-    [NotifyPropertyChangedFor(nameof(ShowRoutingRulesEmpty))]
-    private string _routingTab = "rules";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ThemeLabel))]
@@ -126,11 +117,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _noticeText;
 
+    // The rule editor for the OPEN profile's selected routing list, shown inline under the profile's
+    // Маршрутизация aspect. Driven by the open profile's SelectedRoutingList (built/rebuilt by
+    // SyncProfileRoutingEditor); null when no real list is selected.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRoutingEditor))]
-    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
-    [NotifyPropertyChangedFor(nameof(ShowRoutingRulesEmpty))]
     private RoutingListEditorViewModel? _routingEditor;
+
+    // "Used in N profiles" hint shown beside the inline editor, so editing a shared list is not a
+    // surprise (the catalogue is shared across profiles).
+    [ObservableProperty]
+    private string _routingUsageHint = string.Empty;
 
     [ObservableProperty]
     private bool _killSwitchEnabled;
@@ -322,17 +319,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public IBrush ConnectHintBrush => _hintBrush;
 
     /// <summary>
-    /// Whether the Home tab is shown.
+    /// Whether the Home (profiles) view is shown.
     /// </summary>
     public bool IsHome => Nav == "home";
 
     /// <summary>
-    /// Whether the Routing tab is shown.
-    /// </summary>
-    public bool IsRouting => Nav == "routing";
-
-    /// <summary>
-    /// Whether the Settings tab is shown.
+    /// Whether the Settings view is shown (opened via the gear button).
     /// </summary>
     public bool IsSettings => Nav == "settings";
 
@@ -376,20 +368,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Whether the Logs settings section is selected (the agent journal lives here now).</summary>
     public bool IsSettingsLogs => SettingsSection == "logs";
 
-    /// <summary>Whether the routing "rules" sub-tab is active (the rule-lists).</summary>
-    public bool IsRoutingRules => RoutingTab != "sources";
-
-    /// <summary>Whether the routing "sources" sub-tab is active (the geo-data bases).</summary>
-    public bool IsRoutingSources => RoutingTab == "sources";
-
-    /// <summary>Right pane shows the rule editor: rules sub-tab with a list open.</summary>
-    public bool ShowRoutingEditor => IsRoutingRules && HasRoutingEditor;
-
-    /// <summary>Right pane shows the "pick a rule" hint: rules sub-tab, nothing open.</summary>
-    public bool ShowRoutingRulesEmpty => IsRoutingRules && !HasRoutingEditor;
+    /// <summary>Whether the Sources settings section is selected (the geo-data bases live here now).</summary>
+    public bool IsSettingsSources => SettingsSection == "sources";
 
     /// <summary>
-    /// Whether a routing list is open in the inline editor (drives the routing page master/detail).
+    /// Whether the inline rule editor is shown under the open profile's Маршрутизация aspect (a real
+    /// or freshly-created list is selected).
     /// </summary>
     public bool HasRoutingEditor => RoutingEditor is not null;
 
@@ -418,12 +402,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void NavHome()
     {
         Nav = "home";
-    }
-
-    [RelayCommand]
-    private void NavRouting()
-    {
-        Nav = "routing";
     }
 
     [RelayCommand]
@@ -458,6 +436,113 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void SelectProfileAspect(string aspect)
     {
         ProfileAspect = aspect;
+    }
+
+    // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the
+    // instance is safe because the snapshot reconcile keeps the same BalancerItemViewModel instances.
+    partial void OnOpenProfileChanged(BalancerItemViewModel? oldValue, BalancerItemViewModel? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.PropertyChanged -= OnOpenProfilePropertyChanged;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.PropertyChanged += OnOpenProfilePropertyChanged;
+        }
+        else
+        {
+            RoutingEditor = null;
+        }
+
+        SyncProfileRoutingEditor();
+    }
+
+    private void OnOpenProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BalancerItemViewModel.SelectedRoutingList))
+        {
+            SyncProfileRoutingEditor();
+        }
+    }
+
+    partial void OnProfileAspectChanged(string value)
+    {
+        if (value == "routing")
+        {
+            SyncProfileRoutingEditor();
+        }
+    }
+
+    // Build (or keep) the inline rule editor for the open profile's selected routing list. Only runs on
+    // the Маршрутизация aspect so opening a profile does not fetch rules the user may never look at.
+    private void SyncProfileRoutingEditor()
+    {
+        var profile = OpenProfile;
+        if (profile is null || ProfileAspect != "routing")
+        {
+            return;
+        }
+
+        var choice = profile.SelectedRoutingList;
+        if (choice is null || choice.IsNone)
+        {
+            RoutingEditor = null;
+            UpdateRoutingUsageHint();
+            return;
+        }
+
+        if (choice.IsNewSentinel)
+        {
+            // Picking "+ Новый список": show a fresh create-editor (keep the one in progress, don't rebuild).
+            if (RoutingEditor is not { IsNew: true })
+            {
+                var editor = new RoutingListEditorViewModel(_connection, OnProfileRoutingEditorSaved);
+                RoutingEditor = editor;
+                _ = editor.LoadAsync();
+            }
+
+            UpdateRoutingUsageHint();
+            return;
+        }
+
+        // A real, existing list: build its editor unless it is already the one being shown.
+        if (RoutingEditor is null || RoutingEditor.Id != choice.Id)
+        {
+            var editor = new RoutingListEditorViewModel(_connection, choice.Id!.Value, choice.Name, OnProfileRoutingEditorSaved);
+            RoutingEditor = editor;
+            _ = editor.LoadAsync();
+        }
+
+        UpdateRoutingUsageHint();
+    }
+
+    // When a freshly-created inline list is first saved (gets a real id), bind it to the open profile so
+    // the profile starts using it; the next snapshot resolves SelectedRoutingList to the new list.
+    private void OnProfileRoutingEditorSaved(long id)
+    {
+        if (OpenProfile is { SelectedRoutingList.IsNewSentinel: true } profile)
+        {
+            _ = AssignRoutingAsync(profile.Name, id, false);
+        }
+    }
+
+    // Recompute the "used in N profiles" hint for the open profile's selected list (the catalogue is
+    // shared, so editing one list can affect several profiles).
+    private void UpdateRoutingUsageHint()
+    {
+        var choice = OpenProfile?.SelectedRoutingList;
+        if (choice is null || !choice.IsReal)
+        {
+            RoutingUsageHint = string.Empty;
+            return;
+        }
+
+        var count = Balancers.Count(b => b.SelectedRoutingList.Id == choice.Id);
+        RoutingUsageHint = count > 1
+            ? $"Этот список используется в {count} профилях — правки затронут все из них."
+            : "Список используется только в этом профиле.";
     }
 
     [RelayCommand]
@@ -517,7 +602,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             // until the next reconnect snapshot rebuilds the list.
             OpenProfile = null;
             ProfileAspect = "config";
-            _selectedRoutingListId = -1;
             _configNames = [];
             ActiveMember = null;
             _noticeTimer.Stop();
@@ -548,7 +632,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         HasConfigs = Configs.Count > 0;
         HasBalancers = Balancers.Count > 0;
         HasRoutingLists = RoutingLists.Count > 0;
-        UpdateRoutingSelection();
+        UpdateRoutingUsageHint();
 
         var bound = snapshot.Balancers.FirstOrDefault(b => b.Name == snapshot.BoundTarget);
         ActiveMember = bound?.ActiveMember;
@@ -831,6 +915,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             options.Add(new RoutingListChoice(entry.Id, entry.Name));
         }
 
+        // The trailing "+ Новый список" sentinel reveals the inline new-list editor, mirroring the
+        // "+ Новая конфигурация" sentinel in the config combo.
+        options.Add(RoutingListChoice.NewList);
         return options;
     }
 
@@ -954,40 +1041,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
-    private void SelectRoutingList(RoutingListSummaryViewModel list)
-    {
-        _selectedRoutingListId = list.Id;
-        var editor = new RoutingListEditorViewModel(_connection, list.Id, list.Name, OnRoutingEditorSaved);
-        RoutingEditor = editor;
-        UpdateRoutingSelection();
-        _ = editor.LoadAsync();
-    }
-
-    [RelayCommand]
-    private void NewRoutingList()
-    {
-        _selectedRoutingListId = -1;
-        var editor = new RoutingListEditorViewModel(_connection, OnRoutingEditorSaved);
-        RoutingEditor = editor;
-        UpdateRoutingSelection();
-        _ = editor.LoadAsync();
-    }
-
-    // The editor auto-saves on change; track the (possibly newly-created) list id so the left-rail
-    // selection stays on the row being edited.
-    private void OnRoutingEditorSaved(long id)
-    {
-        _selectedRoutingListId = id;
-        UpdateRoutingSelection();
-    }
-
     // Stop a queued auto-save on the editor being replaced/closed so it can't fire after the fact.
     partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
     {
         oldValue?.CancelPendingSave();
     }
 
+    // "Удалить список" in the inline editor: delete the shared list, then clear the open profile's
+    // routing. The snapshot resolves SelectedRoutingList back to "none" once the list is gone.
     [RelayCommand]
     private async Task DeleteRoutingListEdit()
     {
@@ -999,31 +1060,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (await RoutingEditor.DeleteAsync())
         {
             RoutingEditor = null;
-            _selectedRoutingListId = -1;
-            UpdateRoutingSelection();
+            if (OpenProfile is not null)
+            {
+                await AssignRoutingAsync(OpenProfile.Name, null, false);
+            }
         }
-    }
-
-    private void UpdateRoutingSelection()
-    {
-        foreach (var list in RoutingLists)
-        {
-            list.IsSelected = list.Id == _selectedRoutingListId;
-        }
-    }
-
-    [RelayCommand]
-    private void CloseRoutingEditor()
-    {
-        RoutingEditor = null;
-        _selectedRoutingListId = -1;
-        UpdateRoutingSelection();
-    }
-
-    [RelayCommand]
-    private void SelectRoutingTab(string tab)
-    {
-        RoutingTab = tab == "sources" ? "sources" : "rules";
     }
 
     // Infer the source kind from the URL's file name: a name containing "geosite" or "geoip" (any

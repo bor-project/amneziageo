@@ -162,9 +162,10 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     public string ConnectActionText => OtherActive ? "Переключить" : "Подключить";
 
     /// <summary>
-    /// True when a real routing list is selected and the toggle can flip use_routing on.
+    /// True when a real routing list is selected and the toggle can flip use_routing on. The "new list"
+    /// sentinel does not count — there is nothing to route to until it is named and saved.
     /// </summary>
-    public bool CanToggleRouting => !SelectedRoutingList.IsNone;
+    public bool CanToggleRouting => SelectedRoutingList.IsReal;
 
     /// <summary>
     /// Whether the "Добавить" button is actionable: a real config (not the "new config" sentinel) is
@@ -330,14 +331,27 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
                 Members.Add(member);
             }
 
-            RoutingListOptions.Clear();
-            foreach (var option in routingOptions)
+            // Capture the "+ Новый список" intent BEFORE touching the options: clearing the bound
+            // collection makes the ComboBox null its SelectedItem (writing null into SelectedRoutingList).
+            var wasCreatingNew = SelectedRoutingList is { IsNewSentinel: true };
+
+            // Rebuild the options only when the catalogue actually changed. A Clear()+Add() on every
+            // snapshot would null the ComboBox's selection (which then NREs the read below and churns the
+            // inline editor) even when nothing changed — e.g. a snapshot that only added a config.
+            if (!RoutingListOptions.SequenceEqual(routingOptions))
             {
-                RoutingListOptions.Add(option);
+                RoutingListOptions.Clear();
+                foreach (var option in routingOptions)
+                {
+                    RoutingListOptions.Add(option);
+                }
             }
 
-            SelectedRoutingList = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
-            UseRouting = entry.UseRouting && !SelectedRoutingList.IsNone;
+            var resolved = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
+            // Keep an in-progress "+ Новый список" pick until the new list is saved+assigned (resolved
+            // turns real); otherwise reflect the agent's stored list. Always assigns a non-null value.
+            SelectedRoutingList = wasCreatingNew && !resolved.IsReal ? RoutingListChoice.NewList : resolved;
+            UseRouting = entry.UseRouting && SelectedRoutingList.IsReal;
             RefreshAvailableConfigs(allConfigs);
         }
         finally
@@ -545,17 +559,30 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
     partial void OnSelectedRoutingListChanged(RoutingListChoice value)
     {
-        if (_suppress)
+        // value can momentarily be null: clearing the bound options nulls the ComboBox's SelectedItem.
+        if (_suppress || value is null)
         {
             return;
         }
 
-        if (value.IsNone && UseRouting)
+        // The "+ Новый список" sentinel has no id yet: the window builds the inline new-list editor and
+        // binds the resulting list to this profile once it is first saved — nothing to assign here.
+        if (value.IsNewSentinel)
+        {
+            if (UseRouting)
+            {
+                UseRouting = false;
+            }
+
+            return;
+        }
+
+        if (!value.IsReal && UseRouting)
         {
             UseRouting = false;
         }
 
-        _ = _assignRouting(Name, value.Id, UseRouting && !value.IsNone);
+        _ = _assignRouting(Name, value.IsReal ? value.Id : null, UseRouting && value.IsReal);
     }
 
     partial void OnUseRoutingChanged(bool value)

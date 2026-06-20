@@ -74,6 +74,59 @@ internal sealed class UapiClient
         return latest;
     }
 
+    /// <summary>
+    /// Aggregate peer counters read from the device: the latest handshake (unix seconds, 0 = never), and
+    /// the summed rx / tx bytes across peers.
+    /// </summary>
+    public readonly record struct PeerStatus(long HandshakeSec, long RxBytes, long TxBytes);
+
+    /// <summary>
+    /// Returns the device's peer counters, or null when the device is unreachable. This is the structured,
+    /// data form of the engine's connection progress: a completed handshake (HandshakeSec &gt; 0) means
+    /// connected; a server that never answers shows HandshakeSec == 0 and RxBytes == 0 even as we keep
+    /// sending initiations (TxBytes grows) — the data equivalent of the engine's "handshake did not
+    /// complete" log, used to detect a failed connect without scraping logs.
+    /// </summary>
+    public PeerStatus? TryGetPeerStatus(string tunnelName)
+    {
+        string state;
+        try
+        {
+            state = Get(tunnelName);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        long handshake = 0;
+        long rx = 0;
+        long tx = 0;
+        foreach (var line in state.Split('\n'))
+        {
+            if (line.StartsWith("last_handshake_time_sec=", StringComparison.Ordinal)
+                && long.TryParse(line["last_handshake_time_sec=".Length..].Trim(), out var hs))
+            {
+                if (hs > handshake)
+                {
+                    handshake = hs;
+                }
+            }
+            else if (line.StartsWith("rx_bytes=", StringComparison.Ordinal)
+                && long.TryParse(line["rx_bytes=".Length..].Trim(), out var r))
+            {
+                rx += r;
+            }
+            else if (line.StartsWith("tx_bytes=", StringComparison.Ordinal)
+                && long.TryParse(line["tx_bytes=".Length..].Trim(), out var t))
+            {
+                tx += t;
+            }
+        }
+
+        return new PeerStatus(handshake, rx, tx);
+    }
+
     private static string Exchange(string tunnelName, string request)
     {
         var pipeName = $@"ProtectedPrefix\Administrators\AmneziaWG\{tunnelName}";

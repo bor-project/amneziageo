@@ -25,4 +25,5 @@ public sealed record StatusSnapshot(
     string UpdateSetupUrl = "",
     string UpdateDescription = "",
     bool GeoAutoCheck = true,
-    int GeoCheckIntervalHours = 24);
+    int GeoCheckIntervalHours = 24,
+    bool ConnectFailed = false);

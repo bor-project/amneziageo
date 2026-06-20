@@ -20,6 +20,11 @@ internal sealed class BalancerRunner(
 {
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
+    // How long a connect attempt tolerates no handshake AND zero bytes received before treating the member
+    // as unreachable — the data-driven failure signal (the server never answered our handshake
+    // initiations). ConnectTimeoutSeconds stays the absolute backstop.
+    private static readonly TimeSpan _noResponseWindow = TimeSpan.FromSeconds(12);
+
     private BalancerGroup _group = null!;
     private AppSettings _settings = new();
     private int[] _failbackStreak = [];
@@ -165,6 +170,18 @@ internal sealed class BalancerRunner(
 
         await SetStateAsync("connecting", members, -1);
         var current = await ConnectBestAsync(members, -1, ct);
+        if (current < 0 && !ct.IsCancellationRequested)
+        {
+            // A user-initiated connect could not bring up any member within the data-driven deadline.
+            // Give up (отбой) and raise a one-shot "failed" notice for the UI rather than retrying
+            // forever; FailConnect drops the desired state to stopped, so the supervisor then idles.
+            logger.LogWarning("connect failed: no member reachable for {Group}", group.Name);
+            StopAll(members);
+            await SetStateAsync("disconnected", members, -1);
+            control.FailConnect();
+            return;
+        }
+
         await SetStateAsync(StatusFor(current), members, current);
         var lastRecheck = DateTimeOffset.UtcNow;
 
@@ -445,7 +462,8 @@ internal sealed class BalancerRunner(
     {
         serviceManager.CreateService(member);
         serviceManager.StartQuiet(member);
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(_settings.ConnectTimeoutSeconds);
+        var start = DateTimeOffset.UtcNow;
+        var deadline = start.AddSeconds(_settings.ConnectTimeoutSeconds);
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (ct.IsCancellationRequested)
@@ -453,9 +471,20 @@ internal sealed class BalancerRunner(
                 return false;
             }
 
-            if (uapi.TryGetLastHandshake(member) is > 0)
+            var status = uapi.TryGetPeerStatus(member);
+            if (status is { HandshakeSec: > 0 })
             {
                 return true;
+            }
+
+            // Data-driven failure: the engine has had time to send handshake initiations, but the server
+            // has returned nothing (no handshake, zero rx). That is the structured form of the engine's
+            // "handshake did not complete" — give up on this member now rather than waiting the backstop.
+            if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
+            {
+                logger.LogWarning("member {Member}: no handshake, no bytes received in {Sec}s; unreachable",
+                    member, (int)_noResponseWindow.TotalSeconds);
+                break;
             }
 
             await DelayAsync(TimeSpan.FromSeconds(1), ct);

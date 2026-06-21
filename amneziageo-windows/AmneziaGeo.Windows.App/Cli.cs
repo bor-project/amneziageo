@@ -155,7 +155,8 @@ internal sealed class Cli(
 
     private async Task<int> UpdateSourcesAsync()
     {
-        foreach (var source in await store.ListGeoSourcesAsync())
+        var sources = await store.ListGeoSourcesAsync();
+        await Task.WhenAll(sources.Select(async source =>
         {
             try
             {
@@ -166,7 +167,7 @@ internal sealed class Cli(
             {
                 Console.WriteLine($"failed {source.Name}: {ex.Message}");
             }
-        }
+        }));
 
         await RematerializeAllAsync();
         await geoConfigurator.RematerializeAllRoutingListsAsync();

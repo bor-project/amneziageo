@@ -736,7 +736,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var ticker = ProgressPumpAsync(pump.Token);
             try
             {
-                foreach (var source in pending)
+                // Download all sources concurrently: a slow or unreachable source (e.g. github.com on a
+                // censored network) must not hold up the others, so "Обновить все" finishes in the time of
+                // the slowest source, not the sum. Per-source state lives in concurrent maps and each
+                // writes a distinct file, so the only contention is the brief metadata write (busy-retried).
+                await Task.WhenAll(pending.Select(async source =>
                 {
                     try
                     {
@@ -751,7 +755,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                         logger.LogWarning(ex, "geo source download failed: {Name}", source.Name);
                         _updating.TryRemove(source.Name, out _);
                     }
-                }
+                }));
 
                 // Stop the percentage broadcaster before re-materializing: there is no percent to show
                 // while applying, and the spinner keeps running client-side from the broadcast "applying"

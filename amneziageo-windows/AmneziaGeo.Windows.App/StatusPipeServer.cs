@@ -39,10 +39,22 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, ILogger<StatusP
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "failed to create status pipe; retrying");
+                // A held pipe (another agent still owns it) is an expected, recoverable state — log it
+                // concisely without a stack trace and back off, instead of flooding the journal every
+                // second. The startup guard normally takes over before we reach here.
+                var taken = ex is UnauthorizedAccessException or IOException;
+                if (taken)
+                {
+                    logger.LogWarning("status pipe is held by another agent ({Reason}); retrying", ex.GetType().Name);
+                }
+                else
+                {
+                    logger.LogError(ex, "failed to create status pipe; retrying");
+                }
+
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(1), ct);
+                    await Task.Delay(taken ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(1), ct);
                 }
                 catch (OperationCanceledException)
                 {

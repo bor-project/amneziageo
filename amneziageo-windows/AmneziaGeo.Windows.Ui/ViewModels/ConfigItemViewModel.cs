@@ -22,6 +22,15 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private IReadOnlyList<string> _rules = [];
 
     [ObservableProperty]
+    private bool _useWebSocket;
+
+    [ObservableProperty]
+    private string _webSocketHost = string.Empty;
+
+    [ObservableProperty]
+    private int _webSocketPort = 443;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private string _status = ConnectionStatus.Idle;

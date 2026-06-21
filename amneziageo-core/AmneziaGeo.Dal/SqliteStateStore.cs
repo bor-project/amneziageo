@@ -65,6 +65,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at        TEXT NOT NULL
                     );
 
+                    CREATE TABLE IF NOT EXISTS config_transport (
+                        name       TEXT PRIMARY KEY,
+                        use_ws     INTEGER NOT NULL DEFAULT 0,
+                        ws_host    TEXT NOT NULL DEFAULT '',
+                        ws_port    INTEGER NOT NULL DEFAULT 443,
+                        updated_at TEXT NOT NULL
+                    );
+
                     CREATE TABLE IF NOT EXISTS domain_ips (
                         id         INTEGER PRIMARY KEY AUTOINCREMENT,
                         tunnel     TEXT NOT NULL,
@@ -146,6 +154,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // can issue a conditional request and learn whether the remote file changed without re-fetching it.
             await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN etag TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN last_modified TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
+
+            // WebSocket transport host, added after the table shipped with only use_ws/ws_port.
+            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
         }
     }
 
@@ -482,6 +493,83 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await using (command.ConfigureAwait(false))
             {
                 command.CommandText = "DELETE FROM tunnel_geo WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<ConfigTransport?> GetConfigTransportAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT use_ws, ws_host, ws_port FROM config_transport WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2));
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetConfigTransportAsync(ConfigTransport transport, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, updated_at)
+                    VALUES ($name, $use, $host, $port, $updated)
+                    ON CONFLICT(name) DO UPDATE SET
+                        use_ws     = excluded.use_ws,
+                        ws_host    = excluded.ws_host,
+                        ws_port    = excluded.ws_port,
+                        updated_at = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$name", transport.Name);
+                command.Parameters.AddWithValue("$use", transport.UseWebSocket ? 1 : 0);
+                command.Parameters.AddWithValue("$host", transport.WebSocketHost);
+                command.Parameters.AddWithValue("$port", transport.WebSocketPort);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveConfigTransportAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

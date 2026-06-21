@@ -8,4 +8,7 @@ public sealed record ConfigEntry(
     string Endpoint,
     bool GeoSplit,
     string Status,
-    IReadOnlyList<string> Rules);
+    IReadOnlyList<string> Rules,
+    bool WebSocket = false,
+    string WebSocketHost = "",
+    int WebSocketPort = 443);

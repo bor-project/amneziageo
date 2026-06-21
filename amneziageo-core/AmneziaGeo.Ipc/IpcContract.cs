@@ -46,6 +46,14 @@ public static class IpcContract
     public const string OpSetGeo = "set-geo";
 
     /// <summary>
+    /// Command to set a config's WebSocket transport (carry the AmneziaWG UDP over TCP/TLS via wstunnel,
+    /// for networks that block UDP). Args: name, on/off, port (the wstunnel server's TLS port, e.g. 443),
+    /// and optional host (the wstunnel server hostname; empty reuses the config's own Endpoint host).
+    /// Applies on the next connect.
+    /// </summary>
+    public const string OpSetWebSocket = "set-websocket";
+
+    /// <summary>
     /// Command to list available geo categories; the ack message holds newline-separated rule tokens.
     /// </summary>
     public const string OpListGeo = "list-geo";

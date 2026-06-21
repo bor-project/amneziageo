@@ -260,7 +260,7 @@ public sealed partial class MainWindow : Window
 
         var dialog = new ConfigSettingsDialog
         {
-            DataContext = new ConfigSettingsViewModel(vm.Connection, config.Name, config.GeoSplit, config.Rules),
+            DataContext = new ConfigSettingsViewModel(vm.Connection, config.Name, config.Endpoint, config.GeoSplit, config.Rules, config.UseWebSocket, config.WebSocketHost, config.WebSocketPort),
         };
         await dialog.ShowDialog(this);
     }

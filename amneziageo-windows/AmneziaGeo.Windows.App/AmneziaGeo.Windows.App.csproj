@@ -11,6 +11,9 @@
   <ItemGroup>
     <None Include="..\amneziawg-windows\x64\tunnel.dll" Link="tunnel.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\amneziawg-windows\.deps\wintun\bin\amd64\wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
+    <!-- wstunnel client (erebe/wstunnel v10): the UDP-over-TCP transport launched per tunnel when a
+         config enables WebSocket. Shipped next to the agent exe so TunnelPaths.WsTunnelExe() finds it. -->
+    <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

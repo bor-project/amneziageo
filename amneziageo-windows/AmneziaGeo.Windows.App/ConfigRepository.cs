@@ -169,6 +169,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         }
 
         await store.RemoveTunnelGeoAsync(name, ct);
+        await store.RemoveConfigTransportAsync(name, ct);
         await store.RemoveDomainResolutionsAsync(name, ct);
 
         foreach (var balancerName in await store.ListBalancerNamesAsync(ct))

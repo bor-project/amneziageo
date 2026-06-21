@@ -139,7 +139,7 @@ internal sealed class TunnelRunner(
         // reachable in parallel by routing the RFC1918 ranges out the physical gateway. Split mode never
         // tunnels the default, so the LAN is already direct and needs no exclusion. Added before the
         // adapter comes up so the next-hop resolves to the physical gateway, not the tunnel.
-        var lanExcluded = !geoSplit && appSettings.AllowLan && routes.AddLanExclusions(name);
+        var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6);
 
         // The engine no longer arms its own kill-switch (we split the default route above), so when the
         // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
@@ -149,11 +149,12 @@ internal sealed class TunnelRunner(
 
         // Always arm the WFP firewall once the tunnel adapter appears: it blocks QUIC (UDP/443) egressing
         // the tunnel so HTTP/3 falls back to TCP, which is reliable over the obfuscated tunnel (raw QUIC
-        // stalls — e.g. some YouTube videos never load). The KILL-SWITCH (block everything off-tunnel) is
-        // a full-tunnel concept and is layered on only then: in split mode it would sever the
-        // intended-direct traffic (ERR_NETWORK_ACCESS_DENIED for everything not routed), so it stays off.
-        var killSwitch = appSettings.KillSwitchEnabled && !geoSplit;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, appSettings.AllowLan, sessionCts.Token));
+        // stalls — e.g. some YouTube videos never load). The KILL-SWITCH (block everything off-tunnel) is a
+        // full-tunnel concept: on in full tunnel, off in split (where it would sever the intended-direct
+        // traffic). LAN bypass is always included; a dual-stack tunnel (config has a v6 Address) also gets
+        // the v6 LAN bypass.
+        var killSwitch = !geoSplit;
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, sessionCts.Token));
 
         // Re-flush the OS DNS cache once the tunnel is up. The connect-time flush above runs before the
         // adapter and its routes exist, so a name resolved in the window before the clean resolver's /32
@@ -343,7 +344,7 @@ internal sealed class TunnelRunner(
     /// arming (the session token is cancelled), nothing is left armed: the post-arm re-check disables it,
     /// and teardown's own Disable() is idempotent.
     /// </summary>
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool allowLan, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, CancellationToken ct)
     {
         try
         {
@@ -353,7 +354,7 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is { } index)
                 {
-                    firewall.Enable(index, killSwitch, allowLan);
+                    firewall.Enable(index, killSwitch, dualStack);
                     if (ct.IsCancellationRequested)
                     {
                         firewall.Disable();

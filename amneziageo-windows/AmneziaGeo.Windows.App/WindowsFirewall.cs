@@ -9,9 +9,9 @@ namespace AmneziaGeo.Windows.App;
 /// A WFP (Windows Filtering Platform) kill-switch, ported from the reference daemon's
 /// windowsfirewall.cpp. When enabled it installs, in its own sublayer, a lowest-weight block-all plus
 /// higher-weight permits, so the only traffic allowed is: this process (which carries the encrypted
-/// WireGuard underlay to the server), the tunnel adapter, loopback, DHCP, Hyper-V VM&lt;-&gt;VM, and —
-/// when allowLan is set — the private LAN ranges. The LAN bypass is what lets host/Hyper-V SSH and
-/// local devices keep working while every other off-tunnel path is blocked.
+/// WireGuard underlay to the server), the tunnel adapter, loopback, DHCP, Hyper-V VM&lt;-&gt;VM, and the
+/// private LAN ranges (IPv4 always; IPv6 ULA/NDP additionally on a dual-stack tunnel). The LAN bypass is
+/// what lets host/Hyper-V SSH and local devices keep working while every other off-tunnel path is blocked.
 ///
 /// All objects live in a dynamic WFP session: if this process dies, the engine handle closes and the
 /// whole sublayer + filters are removed automatically, so a crash cannot leave the machine firewalled
@@ -45,6 +45,16 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         "255.255.255.255/32",
     ];
 
+    // IPv6 LAN ranges permitted as the v6 LAN bypass on a dual-stack tunnel: ULA (the v6 RFC1918),
+    // link-local (covers NDP unicast), and link-local multicast (covers NDP / DHCPv6 multicast). Permits
+    // are address-based, so no ICMPv6-type conditions are needed.
+    private static readonly string[] LanCidrsV6 =
+    [
+        "fc00::/7",
+        "fe80::/10",
+        "ff02::/16",
+    ];
+
     private readonly object _gate = new();
     private IntPtr _engine = IntPtr.Zero;
 
@@ -68,7 +78,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// carve-out present. Returns false and installs nothing on any failure. Thread-safe with respect
     /// to <see cref="Disable"/> so a tunnel teardown racing the arming cannot leave a stray engine.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool allowLan)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack)
     {
         lock (_gate)
         {
@@ -104,9 +114,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitTunInterface(engine, luid);
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
-                    if (allowLan)
+                    PermitLan(engine); // LAN bypass is a baseline guarantee — always permitted under the kill-switch
+                    if (dualStack)
                     {
-                        PermitLan(engine);
+                        PermitLanV6(engine); // v6 LAN bypass (ULA + NDP) on a dual-stack tunnel
                     }
 
                     TryPermitHyperV(engine); // best-effort; not fatal if the L2 layer is unavailable
@@ -116,7 +127,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 }
 
                 _engine = engine;
-                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, allowLan={AllowLan})", tunnelInterfaceIndex, killSwitch, allowLan);
+                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack})", tunnelInterfaceIndex, killSwitch, dualStack);
                 return true;
             }
             catch (Exception ex)
@@ -276,6 +287,41 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
                 Add(engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (out)");
                 Add(engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (in)");
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(maskPtr);
+            }
+        }
+    }
+
+    private void PermitLanV6(IntPtr engine)
+    {
+        foreach (var cidr in LanCidrsV6)
+        {
+            var slash = cidr.IndexOf('/');
+            var address = IPAddress.Parse(cidr[..slash]);
+            var prefix = byte.Parse(cidr[(slash + 1)..], System.Globalization.CultureInfo.InvariantCulture);
+            var bytes = address.GetAddressBytes(); // 16 bytes, network order
+            var maskPtr = Marshal.AllocHGlobal(17); // FWP_V6_ADDR_AND_MASK { UINT8 addr[16]; UINT8 prefixLength; }
+            try
+            {
+                Marshal.Copy(bytes, 0, maskPtr, 16);
+                Marshal.WriteByte(maskPtr, 16, prefix);
+                var cond = new[]
+                {
+                    Condition(CondIpRemoteAddress, MatchEqual, FwpV6AddrMask, (ulong)maskPtr),
+                };
+
+                // Best-effort: a v6 permit failure must NOT abort arming the (v4) kill-switch, so use
+                // AddRaw + log instead of Add (which throws). The engine copies the condition synchronously,
+                // so maskPtr is freed once the calls return.
+                var rcOut = AddRaw(engine, LayerAleAuthConnectV6, WeightLan, ActionPermit, 0, cond, $"Permit LAN v6 {cidr} (out)");
+                var rcIn = AddRaw(engine, LayerAleAuthRecvAcceptV6, WeightLan, ActionPermit, 0, cond, $"Permit LAN v6 {cidr} (in)");
+                if (rcOut != 0 || rcIn != 0)
+                {
+                    logger.LogWarning("kill-switch: v6 LAN permit {Cidr} not fully installed (out=0x{Out:X8}, in=0x{In:X8})", cidr, rcOut, rcIn);
+                }
             }
             finally
             {
@@ -474,6 +520,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const uint FwpUint64 = 4;
     private const uint FwpByteBlobType = 12;
     private const uint FwpV4AddrMask = 256; // FWP_V4_ADDR_MASK
+    private const uint FwpV6AddrMask = 257; // FWP_V6_ADDR_MASK
 
     // FWP_MATCH_TYPE.
     private const uint MatchEqual = 0;

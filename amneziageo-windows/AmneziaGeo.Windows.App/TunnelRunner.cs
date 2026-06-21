@@ -134,6 +134,13 @@ internal sealed class TunnelRunner(
         var endpoint = TunnelEndpoint.Resolve(config);
         var excluded = endpoint is not null && routes.AddEndpointExclusion(name, endpoint);
 
+        // Full tunnel routes the default into the tunnel, which would swallow the local network too. Keep
+        // the private LAN (RDP/SSH/printers, including a host one hop away in another local subnet)
+        // reachable in parallel by routing the RFC1918 ranges out the physical gateway. Split mode never
+        // tunnels the default, so the LAN is already direct and needs no exclusion. Added before the
+        // adapter comes up so the next-hop resolves to the physical gateway, not the tunnel.
+        var lanExcluded = !geoSplit && appSettings.AllowLan && routes.AddLanExclusions(name);
+
         // The engine no longer arms its own kill-switch (we split the default route above), so when the
         // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
         // token lets teardown cancel a still-pending arm and guarantees the filters come down with the
@@ -178,6 +185,11 @@ internal sealed class TunnelRunner(
             if (excluded)
             {
                 routes.RemoveEndpointExclusion(name, endpoint!);
+            }
+
+            if (lanExcluded)
+            {
+                routes.RemoveLanExclusions(name);
             }
         }
     }

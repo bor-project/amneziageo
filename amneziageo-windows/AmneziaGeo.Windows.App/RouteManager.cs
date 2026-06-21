@@ -20,6 +20,17 @@ internal sealed partial class RouteManager
     private const uint ErrorObjectAlreadyExists = 5010;
     private const uint MibIpProtoNetMgmt = 3; // NL_ROUTE_PROTOCOL RouteProtocolNetMgmt — tags our routes
 
+    // Routable private IPv4 ranges kept OFF the tunnel in full-tunnel mode so the local network — RDP,
+    // SSH, printers, including hosts one hop away in another local subnet — stays reachable in parallel
+    // with the tunnel. Link-local / multicast / broadcast are on-link or special and need no exclusion
+    // route (mirrors the reference's excludeLocalNetworks, which silently skips those).
+    private static readonly (string Network, byte Prefix)[] LanExclusions =
+    [
+        ("10.0.0.0", 8),
+        ("172.16.0.0", 12),
+        ("192.168.0.0", 16),
+    ];
+
     /// <summary>
     /// Adds a host route for the endpoint via the current physical gateway, so the tunnel's underlay
     /// packets to the server are not themselves routed into the tunnel. Persisted (keyed by tunnel
@@ -71,6 +82,87 @@ internal sealed partial class RouteManager
             }
 
             TryDelete(file);
+        }
+    }
+
+    /// <summary>
+    /// In full-tunnel mode the engine routes the default (split into two /1 halves) into the tunnel,
+    /// which would swallow the local network too. This pins the private LAN ranges to the physical
+    /// gateway with a more-specific route so local access (RDP/SSH/printers, including a host one hop
+    /// away in another local subnet) keeps working alongside the tunnel. The connected subnet stays
+    /// direct anyway via its on-link route; this adds the routed local subnets the on-link route misses.
+    /// Each range is persisted (keyed by tunnel name) so it can be reverted even after a crash. Must be
+    /// called before the tunnel adapter comes up so the best next-hop resolves to the physical gateway,
+    /// not the tunnel. Returns true if any exclusion was installed.
+    /// </summary>
+    public bool AddLanExclusions(string name)
+    {
+        var any = false;
+        foreach (var (network, prefix) in LanExclusions)
+        {
+            var dest = IPAddress.Parse(network);
+            var (gateway, interfaceIndex) = FindPhysicalGateway(dest);
+            if (gateway is null)
+            {
+                // No physical route to this range (e.g. no default gateway): leave it; the on-link
+                // connected subnet, if any, still routes directly without an explicit exclusion.
+                continue;
+            }
+
+            var row = NewRow(dest, prefix, interfaceIndex, gateway);
+            var result = CreateIpForwardEntry2(ref row);
+            if (result is NoError or ErrorObjectAlreadyExists)
+            {
+                UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
+                any = true;
+            }
+        }
+
+        return any;
+    }
+
+    /// <summary>
+    /// Removes the LAN-bypass exclusion routes installed for a tunnel.
+    /// </summary>
+    public void RemoveLanExclusions(string name)
+    {
+        var path = TunnelPaths.LanStateFile(name);
+        foreach (var cidr in ReadStateFile(path))
+        {
+            DeleteCidrRoute(cidr);
+        }
+
+        TryDelete(path);
+    }
+
+    /// <summary>
+    /// Removes any LAN-bypass exclusion routes persisted by a previous run (any tunnel), even from
+    /// another process; reverts leftovers from a killed full-tunnel session. No-op if none are recorded.
+    /// </summary>
+    public void RestoreSavedLanExclusions()
+    {
+        foreach (var file in TunnelPaths.LanStateFiles())
+        {
+            foreach (var cidr in ReadStateFile(file))
+            {
+                DeleteCidrRoute(cidr);
+            }
+
+            TryDelete(file);
+        }
+    }
+
+    private static void DeleteCidrRoute(string cidr)
+    {
+        var slash = cidr.IndexOf('/');
+        var network = slash >= 0 ? cidr[..slash] : cidr;
+        if (IPAddress.TryParse(network, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+        {
+            // Match the exact prefix length too: a LAN exclusion shares its network address with no
+            // host route we create, but matching by address alone would over-delete a same-network
+            // route at a different prefix. The CIDR string carries the length, so use it.
+            byte? prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : null;
+            DeleteManagedRoutes(ip, ifIndex: null, prefixLength: prefix);
         }
     }
 
@@ -158,7 +250,7 @@ internal sealed partial class RouteManager
     /// interface) by matching the live routing table, so the exact entry is removed regardless of how
     /// the next hop changed.
     /// </summary>
-    private static void DeleteManagedRoutes(IPAddress destination, uint? ifIndex)
+    private static void DeleteManagedRoutes(IPAddress destination, uint? ifIndex, byte? prefixLength = null)
     {
         var dest = ToRouteAddress(destination);
         foreach (var row in ReadForwardTable())
@@ -171,6 +263,11 @@ internal sealed partial class RouteManager
             }
 
             if (ifIndex is not null && row.InterfaceIndex != ifIndex.Value)
+            {
+                continue;
+            }
+
+            if (prefixLength is not null && row.DestinationPrefix.PrefixLength != prefixLength.Value)
             {
                 continue;
             }
@@ -248,18 +345,22 @@ internal sealed partial class RouteManager
 
     private static void UpdateState(string name, string endpoint, bool add)
     {
-        var path = TunnelPaths.RouteStateFile(name);
+        UpdateStateFile(TunnelPaths.RouteStateFile(name), endpoint, add);
+    }
+
+    private static void UpdateStateFile(string path, string entry, bool add)
+    {
         var saved = ReadStateFile(path);
         if (add)
         {
-            if (!saved.Contains(endpoint))
+            if (!saved.Contains(entry))
             {
-                saved.Add(endpoint);
+                saved.Add(entry);
             }
         }
         else
         {
-            saved.Remove(endpoint);
+            saved.Remove(entry);
         }
 
         if (saved.Count == 0)

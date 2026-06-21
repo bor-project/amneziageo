@@ -87,6 +87,24 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to a tunnel's persisted LAN-bypass exclusion routes (the RFC1918 ranges kept off the tunnel
+    /// in full-tunnel mode), used to revert them after a stop, even from another process when the tunnel
+    /// exited without running its teardown.
+    /// </summary>
+    public static string LanStateFile(string name)
+    {
+        return Path.Combine(RootDirectory(), $"lan-state-{Sanitize(name)}.txt");
+    }
+
+    /// <summary>
+    /// All persisted LAN-bypass exclusion state files (any tunnel), so a reconciler can revert leftovers.
+    /// </summary>
+    public static IEnumerable<string> LanStateFiles()
+    {
+        return EnumerateState("lan-state*.txt");
+    }
+
+    /// <summary>
     /// Directory holding service log files.
     /// </summary>
     public static string LogDirectory()

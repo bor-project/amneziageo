@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
@@ -18,7 +20,18 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
     /// </summary>
     public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, IProgress<int>? progress = null, CancellationToken ct = default)
     {
-        var (data, etag, lastModified) = await DownloadAsync(source.Url, progress, ct);
+        // Download only when the remote file actually changed: a conditional GET (ETag / Last-Modified
+        // captured at the last download) lets the server answer 304, so an unchanged multi-megabyte list
+        // is never re-fetched or rewritten. Both the installer's "download-geo" and the app's "Обновить
+        // все" run through here, so both are change-only.
+        var existing = await store.GetGeoFileAsync(source.Name, ct);
+        var fresh = await DownloadAsync(source.Url, existing, progress, ct);
+        if (fresh is null)
+        {
+            return existing!;   // null only when the server confirmed unchanged (existing is non-null)
+        }
+
+        var (data, etag, lastModified) = fresh.Value;
 
         var path = TunnelPaths.GeoDataFile(source.Name);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -41,23 +54,70 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
     /// validators (ETag / Last-Modified, empty when absent) so a later update-check can ask the server
     /// whether the file changed without downloading it again.
     /// </summary>
-    private async Task<(byte[] Data, string ETag, string LastModified)> DownloadAsync(string url, IProgress<int>? progress, CancellationToken ct)
+    // A dead/blocked host (e.g. github.com on a censored network) must fail fast, not freeze the row for
+    // the OS's ~21 s SYN timeout. Bounds the connect + response-headers phase.
+    private static readonly TimeSpan _connectTimeout = TimeSpan.FromSeconds(12);
+
+    // No byte for this long aborts the body transfer. With HttpCompletionOption.ResponseHeadersRead the
+    // HttpClient.Timeout stops covering the stream once the headers arrive, so a server that sends
+    // headers then goes silent would hang the body read — and the geo-source row's spinner — forever.
+    private static readonly TimeSpan _stallTimeout = TimeSpan.FromSeconds(30);
+
+    // Returns null when the server confirms the file is unchanged (304, or a 200 whose validator still
+    // matches) so the caller can skip the download entirely.
+    private async Task<(byte[] Data, string ETag, string LastModified)?> DownloadAsync(string url, GeoFileMetadata? existing, IProgress<int>? progress, CancellationToken ct)
     {
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        // One deadline reused across phases: a short bound for connect/headers, then an INACTIVITY bound
+        // for the body that is reset on every chunk below — so a slow but progressing multi-megabyte
+        // download is never killed, while a stalled or unreachable source fails fast and lets the row
+        // clear so the user can retry.
+        using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        stall.CancelAfter(_connectTimeout);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (existing is not null)
+        {
+            if (!string.IsNullOrEmpty(existing.ETag) && EntityTagHeaderValue.TryParse(existing.ETag, out var tag))
+            {
+                request.Headers.IfNoneMatch.Add(tag);
+            }
+
+            if (!string.IsNullOrEmpty(existing.LastModified)
+                && DateTimeOffset.TryParse(existing.LastModified, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var since))
+            {
+                request.Headers.IfModifiedSince = since;
+            }
+        }
+
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stall.Token);
+        if (response.StatusCode == HttpStatusCode.NotModified && existing is not null)
+        {
+            return null;   // server says unchanged — nothing to download
+        }
+
         response.EnsureSuccessStatusCode();
-        var total = response.Content.Headers.ContentLength;
         var etag = response.Headers.ETag?.ToString() ?? string.Empty;
+        // Some servers ignore conditional headers and return 200 even when nothing changed; if the
+        // validator still matches what we have, treat it as unchanged and skip the body.
+        if (existing is not null && !string.IsNullOrEmpty(existing.ETag) && string.Equals(existing.ETag, etag, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        stall.CancelAfter(_stallTimeout);   // headers are in — switch to the body inactivity bound
+        var total = response.Content.Headers.ContentLength;
         var lastModified = response.Content.Headers.LastModified?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty;
 
-        using var source = await response.Content.ReadAsStreamAsync(ct);
+        using var source = await response.Content.ReadAsStreamAsync(stall.Token);
         using var buffer = new MemoryStream(total is > 0 and < int.MaxValue ? (int)total : 0);
         var chunk = new byte[81920];
         long read = 0;
         var lastPercent = -1;
         int n;
-        while ((n = await source.ReadAsync(chunk, ct)) > 0)
+        while ((n = await source.ReadAsync(chunk, stall.Token)) > 0)
         {
-            await buffer.WriteAsync(chunk.AsMemory(0, n), ct);
+            stall.CancelAfter(_stallTimeout);   // progress arrived — push the inactivity deadline back
+            await buffer.WriteAsync(chunk.AsMemory(0, n), stall.Token);
             read += n;
             if (total is > 0)
             {

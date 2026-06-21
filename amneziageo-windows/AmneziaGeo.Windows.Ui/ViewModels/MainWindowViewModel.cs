@@ -130,6 +130,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private ExportDialogViewModel? _configExport;
 
+    // The open config's WebSocket (UDP-over-TCP) transport settings, shown on its management page.
+    [ObservableProperty]
+    private ConfigTransportViewModel? _configTransport;
+
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
 
@@ -592,12 +596,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (value is null)
         {
             ConfigExport = null;
+            ConfigTransport = null;
             return;
         }
 
         var export = new ExportDialogViewModel(_connection, value);
         ConfigExport = export;
         _ = export.LoadAsync();
+
+        // Seed the WebSocket (UDP-over-TCP) transport editor from the opened config's current snapshot values.
+        var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443);
     }
 
     // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the

@@ -51,6 +51,10 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
 
             if (launch.RunUi)
             {
+                // Self-register the elevated logon autostart task (no-op in Debug) so the product comes back
+                // after a reboot without a UAC prompt; the MSI removes it on uninstall.
+                ScheduledTaskInstaller.EnsureLogonTask(logger);
+
                 logger.LogInformation("starting UI");
                 UiProgram.BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
                 cts.Cancel();

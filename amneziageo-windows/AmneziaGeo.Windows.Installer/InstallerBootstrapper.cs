@@ -32,9 +32,16 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private LaunchAction _launch;
     private int _result;
 
+    private volatile bool _engineConnected;
+
+    /// <summary>True once the Burn engine has hosted us (OnCreate fired). Used by the standalone-launch
+    /// watchdog in <see cref="Program"/> to tell a real engine launch apart from a direct double-click.</summary>
+    public bool EngineConnected => _engineConnected;
+
     protected override void OnCreate(CreateEventArgs args)
     {
         base.OnCreate(args);
+        _engineConnected = true;
         _command = args.Command;
         _interactive = _command.Display == Display.Full;
     }

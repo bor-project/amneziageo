@@ -1,6 +1,7 @@
 <#
   Builds the AmneziaGeo setup bundle (AmneziaGeoSetup.exe):
-    1. publishes the backend (App) and GUI (Ui) as ONE self-contained win-x64 folder (stage),
+    1. publishes the single-process host (AmneziaGeo.exe = agent in-process + tray UI) as ONE
+       self-contained win-x64 folder (stage),
     2. builds the per-machine MSI from that stage (AmneziaGeo.Windows.Installer.Package),
     3. publishes the WPF bootstrapper application self-contained (AmneziaGeo.Windows.Installer),
     4. generates a PayloadGroup over the BA publish folder (Burn does not auto-harvest it),
@@ -20,8 +21,7 @@ $rid = 'win-x64'
 $bundleDir = $PSScriptRoot
 $win       = Split-Path $bundleDir -Parent                       # ...\amneziageo-windows
 
-$appProj    = Join-Path $win 'AmneziaGeo.Windows.App\AmneziaGeo.Windows.App.csproj'
-$uiProj     = Join-Path $win 'AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.csproj'
+$hostProj   = Join-Path $win 'tools\AmneziaGeo.Windows.Launcher\AmneziaGeo.Windows.Launcher.csproj'
 $baProj     = Join-Path $win 'AmneziaGeo.Windows.Installer\AmneziaGeo.Windows.Installer.csproj'
 $msiProj    = Join-Path $win 'AmneziaGeo.Windows.Installer.Package\AmneziaGeo.Windows.Installer.Package.wixproj'
 $bundleProj = Join-Path $bundleDir 'AmneziaGeo.Windows.Installer.Bundle.wixproj'
@@ -41,13 +41,13 @@ Write-Host "== bundle version $version =="
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-Write-Host '== publish backend (AmneziaGeo.Windows.App, self-contained) =='
-dotnet publish $appProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version -o $stage
-if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
+Write-Host '== publish single-process host (AmneziaGeo.exe, self-contained) =='
+dotnet publish $hostProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version -o $stage
+if ($LASTEXITCODE -ne 0) { throw "Host publish failed ($LASTEXITCODE)" }
 
-Write-Host '== publish GUI (AmneziaGeo.Windows.Ui, self-contained) =='
-dotnet publish $uiProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version -o $stage
-if ($LASTEXITCODE -ne 0) { throw "UI publish failed ($LASTEXITCODE)" }
+# Ship a clean Launcher config: the dev appsettings seeds test profiles/lists; blank it so the shipped
+# product only hosts the agent + UI (LauncherOptions defaults: RunService + RunUi, no seeding).
+Set-Content -Path (Join-Path $stage 'appsettings.json') -Value '{}' -Encoding UTF8
 
 # ---- 2. build the MSI from the stage ----
 Write-Host '== build MSI =='

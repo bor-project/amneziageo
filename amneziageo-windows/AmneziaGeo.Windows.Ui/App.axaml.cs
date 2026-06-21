@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
@@ -15,8 +16,12 @@ namespace AmneziaGeo.Windows.Ui;
 /// </summary>
 public sealed partial class App : Application
 {
+    // Brand accent — the static window / taskbar icon disc (the big power button's look, on-brand colour).
+    private static readonly Color _accent = Color.FromRgb(0x2a, 0x6f, 0xdb);
+
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private MainWindow? _window;
+    private MainWindowViewModel? _viewModel;
     private AgentConnection? _connection;
     private TrayIcon? _trayIcon;
     private bool _exiting;
@@ -41,7 +46,8 @@ public sealed partial class App : Application
             var connection = new AgentConnection();
             _connection = connection;
             var viewModel = new MainWindowViewModel(connection);
-            var window = new MainWindow { DataContext = viewModel, Icon = BuildIcon() };
+            _viewModel = viewModel;
+            var window = new MainWindow { DataContext = viewModel, Icon = BuildIcon(_accent) };
             _window = window;
             desktop.MainWindow = window;
 
@@ -55,6 +61,8 @@ public sealed partial class App : Application
             };
 
             SetUpTrayIcon();
+            // Recolour the tray icon whenever the connection state changes (green/amber/grey).
+            viewModel.PropertyChanged += OnViewModelPropertyChanged;
             viewModel.Start();
         }
 
@@ -74,6 +82,14 @@ public sealed partial class App : Application
         _window?.Hide();
     }
 
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.TrayStatusColor) && _trayIcon is not null && _viewModel is not null)
+        {
+            _trayIcon.Icon = BuildIcon(_viewModel.TrayStatusColor);
+        }
+    }
+
     private void SetUpTrayIcon()
     {
         var open = new NativeMenuItem("Открыть");
@@ -88,7 +104,8 @@ public sealed partial class App : Application
 
         _trayIcon = new TrayIcon
         {
-            Icon = BuildIcon(),
+            // Starts grey (disconnected); OnViewModelPropertyChanged recolours it as state moves.
+            Icon = BuildIcon(_viewModel?.TrayStatusColor ?? _accent),
             ToolTipText = "AmneziaGeo",
             Menu = menu,
             IsVisible = true,
@@ -118,20 +135,26 @@ public sealed partial class App : Application
         _desktop?.Shutdown();
     }
 
-    // Draws the app / tray icon at runtime (a white power glyph on the accent disc) so the project needs no
-    // binary icon asset. The render-to-bitmap PNG drives both the tray icon and the window icon.
-    private static WindowIcon BuildIcon()
+    // The "power" glyph of the big on-screen connection button (AgPowerGeometry — a 24x24 Material path),
+    // shared so the icon matches the control.
+    private static readonly Geometry _powerGlyph = Geometry.Parse(
+        "M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z");
+
+    // Draws the app / tray icon at runtime (a white power glyph on a coloured disc) so the project needs no
+    // binary icon asset. The render-to-bitmap PNG drives both the tray icon (disc tinted by connection
+    // state) and the window icon (brand accent). The glyph is the same one the on-screen big button uses.
+    private static WindowIcon BuildIcon(Color disc)
     {
-        var accent = new SolidColorBrush(Color.FromRgb(0x2a, 0x6f, 0xdb));
-        var stroke = new Pen(Brushes.White, 2.6) { LineCap = PenLineCap.Round };
+        var discBrush = new SolidColorBrush(disc);
         using var bitmap = new RenderTargetBitmap(new PixelSize(32, 32), new Vector(96, 96));
         using (var ctx = bitmap.CreateDrawingContext())
         {
-            ctx.DrawEllipse(accent, null, new Point(16, 16), 15, 15);
-            ctx.DrawEllipse(null, stroke, new Point(16, 17), 6, 6);
-            // Cut the gap at the top of the ring, then drop the stem through it (the power symbol).
-            ctx.DrawRectangle(accent, null, new Rect(13, 6, 6, 7));
-            ctx.DrawLine(stroke, new Point(16, 8), new Point(16, 16.5));
+            ctx.DrawEllipse(discBrush, null, new Point(16, 16), 15.5, 15.5);
+            // Scale the 24x24 glyph to ~20px and centre it in the 32px icon.
+            using (ctx.PushTransform(Matrix.CreateScale(20.0 / 24, 20.0 / 24) * Matrix.CreateTranslation(6, 6)))
+            {
+                ctx.DrawGeometry(Brushes.White, null, _powerGlyph);
+            }
         }
 
         using var stream = new MemoryStream();

@@ -53,6 +53,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
+    [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
     private bool _isTunnelActive;
 
     [ObservableProperty]
@@ -73,6 +74,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
+    [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
@@ -393,6 +395,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Hint label colour in the power control.</summary>
     public IBrush ConnectHintBrush => _hintBrush;
+
+    /// <summary>Disc colour for the tray icon: green connected, amber connecting/transient, grey off.
+    /// Single source for the tray tint so it tracks the on-screen power control's three states.</summary>
+    public Color TrayStatusColor => ConnState switch
+    {
+        2 => Color.FromRgb(0x1F, 0x9D, 0x57),
+        1 => Color.FromRgb(0xE0, 0x90, 0x2F),
+        _ => Color.FromRgb(0x7B, 0x81, 0x8D),
+    };
 
     /// <summary>
     /// Whether the Home (profiles) view is shown.

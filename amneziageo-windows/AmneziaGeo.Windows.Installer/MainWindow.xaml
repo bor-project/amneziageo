@@ -43,7 +43,8 @@
         <!-- Progress (apply phase) -->
         <StackPanel DockPanel.Dock="Bottom"
                     Visibility="{Binding ShowProgress, Converter={StaticResource B2V}}">
-          <ProgressBar Value="{Binding Progress}" Maximum="100" IsIndeterminate="{Binding IsIndeterminate}" />
+          <!-- RangeBase.Value binds TwoWay by default; Progress is read-only, so pin OneWay or the binding throws. -->
+          <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" IsIndeterminate="{Binding IsIndeterminate}" />
           <TextBlock Text="{Binding Progress, StringFormat={}{0}%}"
                      Style="{StaticResource MutedTextBlock}"
                      HorizontalAlignment="Right" Margin="0,8,0,0"

@@ -18,6 +18,7 @@ internal sealed class NetworkReconciler(DnsConfigurator dns, RouteManager routes
     {
         dns.RestoreSaved();
         routes.RestoreSavedExclusions();
+        routes.RestoreSavedLanExclusions();
         logger.LogDebug("network state reconciled");
     }
 }

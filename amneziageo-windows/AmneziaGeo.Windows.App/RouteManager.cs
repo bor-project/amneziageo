@@ -318,15 +318,19 @@ internal sealed partial class RouteManager
     private static void WriteV6(ref SOCKADDR_INET sa, IPAddress ip)
     {
         var b = ip.GetAddressBytes();
-        sa.sin6_addr_hi = BitConverter.ToUInt64(b, 0);
-        sa.sin6_addr_lo = BitConverter.ToUInt64(b, 8);
+        sa.sin6_addr_0 = BitConverter.ToUInt32(b, 0);
+        sa.sin6_addr_1 = BitConverter.ToUInt32(b, 4);
+        sa.sin6_addr_2 = BitConverter.ToUInt32(b, 8);
+        sa.sin6_addr_3 = BitConverter.ToUInt32(b, 12);
     }
 
     private static bool V6Equals(SOCKADDR_INET sa, IPAddress ip)
     {
         var b = ip.GetAddressBytes();
-        return sa.sin6_addr_hi == BitConverter.ToUInt64(b, 0)
-            && sa.sin6_addr_lo == BitConverter.ToUInt64(b, 8);
+        return sa.sin6_addr_0 == BitConverter.ToUInt32(b, 0)
+            && sa.sin6_addr_1 == BitConverter.ToUInt32(b, 4)
+            && sa.sin6_addr_2 == BitConverter.ToUInt32(b, 8)
+            && sa.sin6_addr_3 == BitConverter.ToUInt32(b, 12);
     }
 
     /// <summary>
@@ -521,17 +525,21 @@ internal sealed partial class RouteManager
         }
     }
 
-    // SOCKADDR_INET is the v4/v6 union (28 bytes). The v4 fields keep their original offsets so the
-    // existing IPv4 paths are byte-for-byte unchanged; the v6 address occupies bytes 8..24 (after
-    // family/port/flowinfo), held as two ulongs to write/read all 16 bytes without an unsafe buffer.
+    // SOCKADDR_INET is the v4/v6 union (28 bytes). The native struct is 4-byte aligned (its address is a
+    // UCHAR[16]); holding the v6 address as ulong fields would give THIS struct 8-byte alignment, which
+    // shifts every field after InterfaceIndex in the embedding MIB_IPFORWARD_ROW2 — iphlpapi then gets a
+    // misaligned row and CreateIpForwardEntry2 fails (breaking the per-domain /32 routes). Represent the
+    // v6 address as four uints (4-aligned) so the layout matches native byte-for-byte.
     [StructLayout(LayoutKind.Explicit, Size = 28)]
     private struct SOCKADDR_INET
     {
         [FieldOffset(0)] public ushort si_family;
         [FieldOffset(2)] public ushort sin_port;
         [FieldOffset(4)] public uint sin_addr;        // sockaddr_in.sin_addr (IPv4)
-        [FieldOffset(8)] public ulong sin6_addr_hi;   // sockaddr_in6.sin6_addr bytes 0..7
-        [FieldOffset(16)] public ulong sin6_addr_lo;  // sockaddr_in6.sin6_addr bytes 8..15
+        [FieldOffset(8)] public uint sin6_addr_0;     // sockaddr_in6.sin6_addr bytes 0..3
+        [FieldOffset(12)] public uint sin6_addr_1;    // bytes 4..7
+        [FieldOffset(16)] public uint sin6_addr_2;    // bytes 8..11
+        [FieldOffset(20)] public uint sin6_addr_3;    // bytes 12..15
         [FieldOffset(24)] public uint sin6_scope_id;
     }
 

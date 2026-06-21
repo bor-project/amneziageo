@@ -16,6 +16,7 @@ namespace AmneziaGeo.Windows.App;
 internal sealed partial class RouteManager
 {
     private const ushort AfInet = 2;
+    private const ushort AfInet6 = 23;
     private const uint NoError = 0;
     private const uint ErrorObjectAlreadyExists = 5010;
     private const uint MibIpProtoNetMgmt = 3; // NL_ROUTE_PROTOCOL RouteProtocolNetMgmt — tags our routes
@@ -29,6 +30,14 @@ internal sealed partial class RouteManager
         ("10.0.0.0", 8),
         ("172.16.0.0", 12),
         ("192.168.0.0", 16),
+    ];
+
+    // The IPv6 LAN range kept off the tunnel on a dual-stack tunnel: ULA (the v6 analogue of RFC1918).
+    // Link-local (fe80::/10) and multicast are on-link/special and need no exclusion route. Only added
+    // when a physical v6 route to it exists (else skipped), so v4-only networks are unaffected.
+    private static readonly (string Network, byte Prefix)[] LanExclusionsV6 =
+    [
+        ("fc00::", 7),
     ];
 
     /// <summary>
@@ -95,7 +104,7 @@ internal sealed partial class RouteManager
     /// called before the tunnel adapter comes up so the best next-hop resolves to the physical gateway,
     /// not the tunnel. Returns true if any exclusion was installed.
     /// </summary>
-    public bool AddLanExclusions(string name)
+    public bool AddLanExclusions(string name, bool dualStack)
     {
         var any = false;
         foreach (var (network, prefix) in LanExclusions)
@@ -115,6 +124,29 @@ internal sealed partial class RouteManager
             {
                 UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
                 any = true;
+            }
+        }
+
+        // On a dual-stack tunnel the engine also routes ::/0 (as ::/1 + 8000::/1) into the tunnel, so the
+        // v6 LAN needs the same exclusion. Use the kernel's best physical v6 route as the next-hop; if no
+        // v6 route to ULA exists, skip it (v4-only / no-v6 networks stay untouched).
+        if (dualStack)
+        {
+            foreach (var (network, prefix) in LanExclusionsV6)
+            {
+                var dest = IPAddress.Parse(network);
+                if (FindBestV6Route(dest) is not { } best)
+                {
+                    continue;
+                }
+
+                var row = NewRowV6(dest, prefix, best.InterfaceIndex, best.NextHop);
+                var result = CreateIpForwardEntry2(ref row);
+                if (result is NoError or ErrorObjectAlreadyExists)
+                {
+                    UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
+                    any = true;
+                }
             }
         }
 
@@ -156,39 +188,47 @@ internal sealed partial class RouteManager
     {
         var slash = cidr.IndexOf('/');
         var network = slash >= 0 ? cidr[..slash] : cidr;
-        if (IPAddress.TryParse(network, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+        if (!IPAddress.TryParse(network, out var ip))
         {
-            // Match the exact prefix length too: a LAN exclusion shares its network address with no
-            // host route we create, but matching by address alone would over-delete a same-network
-            // route at a different prefix. The CIDR string carries the length, so use it.
-            byte? prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : null;
+            return;
+        }
+
+        // Match the exact prefix length too: a LAN exclusion shares its network address with no host
+        // route we create, but matching by address alone would over-delete a same-network route at a
+        // different prefix. The CIDR string carries the length, so use it.
+        byte? prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : null;
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            DeleteManagedV6Routes(ip, prefix ?? 128);
+        }
+        else if (ip.AddressFamily == AddressFamily.InterNetwork)
+        {
             DeleteManagedRoutes(ip, ifIndex: null, prefixLength: prefix);
         }
     }
 
     /// <summary>
-    /// Adds an on-link host route for an IP through the tunnel interface. IPv6 is a no-op: these
-    /// tunnels are IPv4-only and never carry IPv6 traffic.
+    /// Adds an on-link host route for an IP through the tunnel interface (a /32 for IPv4, a /128 for
+    /// IPv6), so a geo-matched destination is carried by the tunnel. On a v4-only tunnel the caller
+    /// never hands an IPv6 address (AAAA is denied at the proxy); on a dual-stack tunnel both apply.
     /// </summary>
     public bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
-        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            return false;
-        }
-
-        var row = NewRow(ip, 32, tunnelInterfaceIndex, nextHop: null); // on-link (no gateway)
+        var row = ip.AddressFamily == AddressFamily.InterNetworkV6
+            ? NewRowV6(ip, 128, tunnelInterfaceIndex, nextHop: null) // on-link (no gateway)
+            : NewRow(ip, 32, tunnelInterfaceIndex, nextHop: null);
         var result = CreateIpForwardEntry2(ref row);
         return result is NoError or ErrorObjectAlreadyExists;
     }
 
     /// <summary>
-    /// Removes a host route for an IP from the tunnel interface. IPv6 is a no-op.
+    /// Removes a host route for an IP from the tunnel interface (v4 /32 or v6 /128).
     /// </summary>
     public void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
+            DeleteManagedV6Routes(ip, 128);
             return;
         }
 
@@ -246,6 +286,86 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Builds an IPv6 MIB_IPFORWARD_ROW2 for a host/prefix route. A null next hop yields an on-link
+    /// route (::); otherwise the route is via the given next-hop (which may be a link-local gateway).
+    /// </summary>
+    private static MIB_IPFORWARD_ROW2 NewRowV6(IPAddress destination, byte prefixLength, uint interfaceIndex, SOCKADDR_INET? nextHop)
+    {
+        var row = new MIB_IPFORWARD_ROW2();
+        InitializeIpForwardEntry(ref row);
+        row.InterfaceIndex = interfaceIndex;
+        row.DestinationPrefix.Prefix.si_family = AfInet6;
+        WriteV6(ref row.DestinationPrefix.Prefix, destination);
+        row.DestinationPrefix.PrefixLength = prefixLength;
+        if (nextHop is { } hop)
+        {
+            row.NextHop = hop;
+        }
+        else
+        {
+            row.NextHop.si_family = AfInet6; // :: (on-link)
+        }
+
+        row.Protocol = MibIpProtoNetMgmt;
+        row.Metric = 1;
+        return row;
+    }
+
+    /// <summary>
+    /// Writes an IPv6 address into a SOCKADDR_INET's 16-byte address field. The IPAddress bytes are in
+    /// network order; stored as two little-endian ulongs so the native struct holds them byte-for-byte.
+    /// </summary>
+    private static void WriteV6(ref SOCKADDR_INET sa, IPAddress ip)
+    {
+        var b = ip.GetAddressBytes();
+        sa.sin6_addr_hi = BitConverter.ToUInt64(b, 0);
+        sa.sin6_addr_lo = BitConverter.ToUInt64(b, 8);
+    }
+
+    private static bool V6Equals(SOCKADDR_INET sa, IPAddress ip)
+    {
+        var b = ip.GetAddressBytes();
+        return sa.sin6_addr_hi == BitConverter.ToUInt64(b, 0)
+            && sa.sin6_addr_lo == BitConverter.ToUInt64(b, 8);
+    }
+
+    /// <summary>
+    /// Asks the kernel for the best (longest-prefix-match) route to an IPv6 destination and returns its
+    /// outgoing interface and next-hop, or null if there is no v6 route. Called before the tunnel comes
+    /// up, so the result is the physical path — used to pin a v6 LAN exclusion off the tunnel.
+    /// </summary>
+    private static (uint InterfaceIndex, SOCKADDR_INET NextHop)? FindBestV6Route(IPAddress destination)
+    {
+        var dest = new SOCKADDR_INET { si_family = AfInet6 };
+        WriteV6(ref dest, destination);
+        var best = new MIB_IPFORWARD_ROW2();
+        var bestSource = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, ref dest, 0, ref best, ref bestSource) != NoError)
+        {
+            return null;
+        }
+
+        return (best.InterfaceIndex, best.NextHop);
+    }
+
+    private static void DeleteManagedV6Routes(IPAddress destination, byte prefixLength)
+    {
+        foreach (var row in ReadForwardTable(AfInet6))
+        {
+            if (row.DestinationPrefix.Prefix.si_family != AfInet6
+                || row.Protocol != MibIpProtoNetMgmt
+                || row.DestinationPrefix.PrefixLength != prefixLength
+                || !V6Equals(row.DestinationPrefix.Prefix, destination))
+            {
+                continue;
+            }
+
+            var copy = row;
+            DeleteIpForwardEntry2(ref copy);
+        }
+    }
+
+    /// <summary>
     /// Deletes our own management routes to an IPv4 destination (optionally restricted to one
     /// interface) by matching the live routing table, so the exact entry is removed regardless of how
     /// the next hop changed.
@@ -253,7 +373,7 @@ internal sealed partial class RouteManager
     private static void DeleteManagedRoutes(IPAddress destination, uint? ifIndex, byte? prefixLength = null)
     {
         var dest = ToRouteAddress(destination);
-        foreach (var row in ReadForwardTable())
+        foreach (var row in ReadForwardTable(AfInet))
         {
             if (row.DestinationPrefix.Prefix.si_family != AfInet
                 || row.DestinationPrefix.Prefix.sin_addr != dest
@@ -277,10 +397,10 @@ internal sealed partial class RouteManager
         }
     }
 
-    private static List<MIB_IPFORWARD_ROW2> ReadForwardTable()
+    private static List<MIB_IPFORWARD_ROW2> ReadForwardTable(ushort family)
     {
         var rows = new List<MIB_IPFORWARD_ROW2>();
-        if (GetIpForwardTable2(AfInet, out var table) != NoError || table == IntPtr.Zero)
+        if (GetIpForwardTable2(family, out var table) != NoError || table == IntPtr.Zero)
         {
             return rows;
         }
@@ -401,12 +521,18 @@ internal sealed partial class RouteManager
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Size = 28)]
+    // SOCKADDR_INET is the v4/v6 union (28 bytes). The v4 fields keep their original offsets so the
+    // existing IPv4 paths are byte-for-byte unchanged; the v6 address occupies bytes 8..24 (after
+    // family/port/flowinfo), held as two ulongs to write/read all 16 bytes without an unsafe buffer.
+    [StructLayout(LayoutKind.Explicit, Size = 28)]
     private struct SOCKADDR_INET
     {
-        public ushort si_family;
-        public ushort sin_port;
-        public uint sin_addr;
+        [FieldOffset(0)] public ushort si_family;
+        [FieldOffset(2)] public ushort sin_port;
+        [FieldOffset(4)] public uint sin_addr;        // sockaddr_in.sin_addr (IPv4)
+        [FieldOffset(8)] public ulong sin6_addr_hi;   // sockaddr_in6.sin6_addr bytes 0..7
+        [FieldOffset(16)] public ulong sin6_addr_lo;  // sockaddr_in6.sin6_addr bytes 8..15
+        [FieldOffset(24)] public uint sin6_scope_id;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -438,6 +564,9 @@ internal sealed partial class RouteManager
 
     [LibraryImport("iphlpapi.dll")]
     private static partial uint GetBestInterface(uint destAddr, out uint bestIfIndex);
+
+    [LibraryImport("iphlpapi.dll")]
+    private static partial uint GetBestRoute2(IntPtr interfaceLuid, uint interfaceIndex, IntPtr sourceAddress, ref SOCKADDR_INET destinationAddress, uint addressSortOptions, ref MIB_IPFORWARD_ROW2 bestRoute, ref SOCKADDR_INET bestSourceAddress);
 
     [LibraryImport("iphlpapi.dll")]
     private static partial void InitializeIpForwardEntry(ref MIB_IPFORWARD_ROW2 row);

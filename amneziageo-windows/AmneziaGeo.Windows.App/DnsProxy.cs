@@ -68,6 +68,11 @@ internal sealed class DnsProxy
         {
             BoundV6 = IPAddress.IPv6Loopback;
         }
+
+        // DIAG: surface the proxy's effective state so a "geosite doesn't route" report can be diagnosed
+        // from the log (did it bind? how many domains? which upstreams?).
+        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} localUp={LocalUp} v4={V4} v6={V6} stripV6={StripV6}",
+            _domains.Count, _tunnelUpstream, _localUpstream, BoundV4, BoundV6, _stripV6);
     }
 
     /// <summary>The IPv4 loopback address the proxy bound, or null if none was free.</summary>
@@ -169,6 +174,13 @@ internal sealed class DnsProxy
             // domain gets its real IPs instead of the local network's poisoned/blocked answer; everything
             // else uses the local resolver so coexisting / corporate names keep resolving.
             var matched = name is not null && DomainMatcher.IsTunneled(name, _domains);
+
+            // DIAG: log only geo-MATCHED queries (the domains the user configured to route) so a
+            // "X not routed" report can be localised, without logging every name the system resolves.
+            if (matched && name is not null)
+            {
+                _logger.LogInformation("DIAG dns matched {Name} type={Type} -> tunnel {Up}", name, type, _tunnelUpstream);
+            }
 
             byte[] response;
             if (_stripV6 && type == TypeAaaa)

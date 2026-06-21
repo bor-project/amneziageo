@@ -150,6 +150,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpAddConfig => AddConfig(command.Args),
                 IpcContract.OpAddBalancer => await AddBalancerAsync(command.Args, ct),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
+                IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
                 IpcContract.OpListGeo => await ListGeoAsync(ct),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
@@ -357,6 +358,62 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var (rules, routes, domains) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
         logger.LogInformation("set-geo {Name}: split={On}, {Rules} rules -> {Routes} routes, {Domains} domains", args[0], on, rules, routes, domains);
         return new IpcAck(true, $"saved: {rules} rules, {routes} routes, {domains} domains (applies on reconnect)");
+    }
+
+    private async Task<IpcAck> SetWebSocketAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 3)
+        {
+            return new IpcAck(false, "set-websocket requires a config name, on/off, and a port");
+        }
+
+        if (!configRepo.Exists(args[0]))
+        {
+            return new IpcAck(false, $"unknown config: {args[0]}");
+        }
+
+        var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
+        if (!int.TryParse(args[2], System.Globalization.CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
+        {
+            return new IpcAck(false, "invalid websocket port (1-65535)");
+        }
+
+        // Optional 4th arg: the wstunnel host. Empty reuses the config's own Endpoint host.
+        var host = args.Count > 3 ? args[3].Trim() : string.Empty;
+        await store.SetConfigTransportAsync(new ConfigTransport(args[0], on, host, port), ct);
+
+        // Transport rewrites the dial path (UDP -> loopback wstunnel); like a routing change it only
+        // applies cleanly on a fresh tunnel. If the changed config is in the running target, flag a
+        // reconnect and let the UI prompt — the new setting is persisted and takes effect next connect.
+        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        {
+            control.SetRestartRequired();
+        }
+
+        logger.LogInformation("set-websocket {Name}: on={On}, port={Port}", args[0], on, port);
+        return new IpcAck(true, on
+            ? $"WebSocket включён, порт {port} (применится при переподключении)"
+            : "WebSocket выключен (применится при переподключении)");
+    }
+
+    /// <summary>
+    /// Returns whether a config is the running single-config target or a member of the running balancer.
+    /// </summary>
+    private async Task<bool> IsRunningMemberAsync(string config, CancellationToken ct)
+    {
+        var bound = BoundTarget;
+        if (bound is null)
+        {
+            return false;
+        }
+
+        if (string.Equals(bound, config, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var balancer = await store.GetBalancerAsync(bound, ct);
+        return balancer is not null && balancer.Members.Contains(config, StringComparer.Ordinal);
     }
 
     private async Task<IpcAck> ListGeoAsync(CancellationToken ct)
@@ -947,11 +1004,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         foreach (var name in configRepo.List())
         {
             var geoSettings = await store.GetTunnelGeoAsync(name, ct);
+            var transport = await store.GetConfigTransportAsync(name, ct);
             var status = boundState is not null && boundMembers.Contains(name, StringComparer.Ordinal)
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443));
         }
 
         var balancers = new List<BalancerEntry>();

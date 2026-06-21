@@ -67,6 +67,22 @@ public interface IStateStore
     Task RemoveTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns the config's transport settings (WebSocket over TCP), or null when none are stored
+    /// (the config uses plain UDP).
+    /// </summary>
+    Task<ConfigTransport?> GetConfigTransportAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a config's transport settings.
+    /// </summary>
+    Task SetConfigTransportAsync(ConfigTransport transport, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a config's transport settings.
+    /// </summary>
+    Task RemoveConfigTransportAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates a geo download source.
     /// </summary>
     Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default);

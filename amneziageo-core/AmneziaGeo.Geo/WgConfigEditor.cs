@@ -60,6 +60,45 @@ public static class WgConfigEditor
     }
 
     /// <summary>
+    /// Returns the raw peer Endpoint value (e.g. "vpn.example.com:9080"), or null when absent.
+    /// </summary>
+    public static string? GetEndpoint(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("Endpoint", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed[(trimmed.IndexOf('=') + 1)..].Trim();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the config with its peer Endpoint replaced by the given value (e.g. "127.0.0.1:51820").
+    /// Used to redirect the dial through a local transport (wstunnel) when the original Endpoint's UDP
+    /// is blocked. A no-op when the config declares no Endpoint.
+    /// </summary>
+    public static string SetEndpoint(string config, string endpoint)
+    {
+        var kept = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            if (line.Trim().StartsWith("Endpoint", StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add($"Endpoint = {endpoint}");
+                continue;
+            }
+
+            kept.Add(line);
+        }
+
+        return string.Join('\n', kept);
+    }
+
+    /// <summary>
     /// Returns the peer public key declared in the config.
     /// </summary>
     public static string? GetPeerPublicKey(string config)

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Windows.Engine;
@@ -29,6 +30,39 @@ internal sealed class TunnelRunner(
         reconciler.Reconcile();
 
         var config = await File.ReadAllTextAsync(TunnelPaths.ConfigFile(name));
+
+        // Resolve the WebSocket (UDP-over-TCP) transport plan up front from the ORIGINAL endpoint, but
+        // start the wstunnel child last (just before the engine) so a setup failure cannot orphan it.
+        // When enabled, the engine dials a loopback wstunnel port and the real server is reached
+        // out-of-band over TCP/TLS, so the endpoint exclusion below must target the real server IP, not
+        // loopback.
+        var transport = await store.GetConfigTransportAsync(name);
+        var useWebSocket = transport?.UseWebSocket == true;
+        string? wsHost = null;        // the wstunnel server host the WSS connection dials
+        var wsTargetPort = 0;         // server-side AmneziaWG UDP port = the original Endpoint's port
+        IPAddress? wsServerIp = null; // resolved wsHost, excluded so wstunnel's own TCP/TLS stays off-tunnel
+        if (useWebSocket)
+        {
+            var parsed = ParseEndpoint(WgConfigEditor.GetEndpoint(config));
+            if (parsed is null)
+            {
+                logger.LogError("websocket transport: config {Name} has no usable Endpoint; using plain UDP", name);
+                useWebSocket = false;
+            }
+            else
+            {
+                var (endpointHost, endpointPort) = parsed.Value;
+                wsTargetPort = endpointPort;
+                // The wstunnel host defaults to the config's own Endpoint host but can be overridden (e.g.
+                // a separate WS front / CDN). Resolve THAT host for the exclusion route, since that is where
+                // wstunnel opens its TCP/TLS connection.
+                wsHost = string.IsNullOrWhiteSpace(transport!.WebSocketHost) ? endpointHost : transport.WebSocketHost.Trim();
+                wsServerIp = ResolveHostV4(wsHost);
+            }
+        }
+
+        WsTunnelTransport? wsTransport = null;
+
         // Prefer the live balancer routing projection; fall back to the config's own set-geo split.
         var geo = await store.GetActiveTunnelGeoAsync(name);
 
@@ -131,7 +165,9 @@ internal sealed class TunnelRunner(
             _ = Task.Run(() => ConfigureTunnelAdapterDnsAsync(name, redirectServers));
         }
 
-        var endpoint = TunnelEndpoint.Resolve(config);
+        // With the WebSocket transport the engine's endpoint is loopback; the connection that must stay
+        // off the tunnel is wstunnel's own to the real server, so exclude the real server IP instead.
+        var endpoint = useWebSocket ? wsServerIp : TunnelEndpoint.Resolve(config);
         var excluded = endpoint is not null && routes.AddEndpointExclusion(name, endpoint);
 
         // Full tunnel routes the default into the tunnel, which would swallow the local network too. Keep
@@ -166,6 +202,21 @@ internal sealed class TunnelRunner(
             _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, proxy, sessionCts.Token));
         }
 
+        // Start the WebSocket transport last and redirect the endpoint to its loopback port. Done here,
+        // with nothing between it and the engine start, so a started child is always reached by the
+        // finally below (no orphaned wstunnel process). A start failure aborts the connect.
+        if (useWebSocket)
+        {
+            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, transport!.WebSocketPort, wsTargetPort, loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
+            if (wsTransport is null)
+            {
+                throw new InvalidOperationException($"WebSocket transport (wstunnel) failed to start for {name}");
+            }
+
+            config = WgConfigEditor.SetEndpoint(config, $"127.0.0.1:{wsTransport.LocalPort}");
+            logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}", name, wsTransport.LocalPort);
+        }
+
         try
         {
             WireGuardEngine.RunTunnelService(config, name);
@@ -174,6 +225,11 @@ internal sealed class TunnelRunner(
         {
             sessionCts.Cancel();
             firewall.Disable();
+
+            if (wsTransport is not null)
+            {
+                await wsTransport.DisposeAsync();
+            }
 
             if (applied)
             {
@@ -230,6 +286,62 @@ internal sealed class TunnelRunner(
     private static IPAddress ParseFirst(IReadOnlyList<string> servers, IPAddress fallback)
     {
         return servers.Count > 0 && IPAddress.TryParse(servers[0], out var ip) ? ip : fallback;
+    }
+
+    /// <summary>
+    /// Splits a wg-quick Endpoint value ("host:port") into host and port, or null when malformed. The
+    /// last colon separates the port so IPv6 literals (rare for an Endpoint host) are not mis-split.
+    /// </summary>
+    private static (string Host, int Port)? ParseEndpoint(string? endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            return null;
+        }
+
+        var colon = endpoint.LastIndexOf(':');
+        if (colon <= 0 || colon == endpoint.Length - 1)
+        {
+            return null;
+        }
+
+        var host = endpoint[..colon].Trim();
+        if (host.Length == 0
+            || !int.TryParse(endpoint[(colon + 1)..].Trim(), System.Globalization.CultureInfo.InvariantCulture, out var port)
+            || port is < 1 or > 65535)
+        {
+            return null;
+        }
+
+        return (host, port);
+    }
+
+    /// <summary>
+    /// Resolves a host (or IPv4 literal) to its first IPv4 address, or null when unresolvable — used to
+    /// exclude the wstunnel server from the tunnel so its TCP/TLS connection routes out the physical gateway.
+    /// </summary>
+    private static IPAddress? ResolveHostV4(string host)
+    {
+        if (IPAddress.TryParse(host, out var literal))
+        {
+            return literal.AddressFamily == AddressFamily.InterNetwork ? literal : null;
+        }
+
+        try
+        {
+            foreach (var address in Dns.GetHostAddresses(host))
+            {
+                if (address.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return address;
+                }
+            }
+        }
+        catch (SocketException)
+        {
+        }
+
+        return null;
     }
 
     private static bool HasIpv6Address(string config)

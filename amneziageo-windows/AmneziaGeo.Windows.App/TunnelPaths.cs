@@ -46,6 +46,15 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the bundled wstunnel client executable, shipped next to the agent so the privileged
+    /// service can launch it as the UDP-over-TCP transport. Lives in the install directory, not ProgramData.
+    /// </summary>
+    public static string WsTunnelExe()
+    {
+        return Path.Combine(AppContext.BaseDirectory, "wstunnel.exe");
+    }
+
+    /// <summary>
     /// Path to the shared SQLite state database.
     /// </summary>
     public static string StateDbFile()

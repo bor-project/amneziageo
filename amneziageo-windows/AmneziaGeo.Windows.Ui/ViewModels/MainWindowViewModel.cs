@@ -1119,6 +1119,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.GeoSplit = entry.GeoSplit;
             existing.Rules = entry.Rules;
             existing.Status = entry.Status;
+            existing.UseWebSocket = entry.WebSocket;
+            existing.WebSocketHost = entry.WebSocketHost;
+            existing.WebSocketPort = entry.WebSocketPort;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];

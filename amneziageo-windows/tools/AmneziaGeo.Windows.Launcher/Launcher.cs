@@ -34,20 +34,18 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
 
             if (launch.RunService)
             {
-                if (launch.Target is null)
-                {
-                    logger.LogError("specify --target <balancer-or-config> or --config <path>");
-                    return 1;
-                }
+                // The shipped product launches with no args: default to the "main" profile (the same target
+                // the old agent service bound). The UI re-targets to whatever profile the user selects, and an
+                // absent/unknown target just idles serving the pipe, so a missing target never blocks startup.
+                var target = launch.Target ?? "main";
 
                 if (launch.ConfigPath is not null)
                 {
-                    logger.LogInformation("registering config '{Target}' from {Path}", launch.Target, launch.ConfigPath);
-                    AppEntry.RunAsync(["config-add", launch.Target, launch.ConfigPath]).GetAwaiter().GetResult();
+                    logger.LogInformation("registering config '{Target}' from {Path}", target, launch.ConfigPath);
+                    AppEntry.RunAsync(["config-add", target, launch.ConfigPath]).GetAwaiter().GetResult();
                 }
 
-                logger.LogInformation("starting backend (agent, in-process) for '{Target}'", launch.Target);
-                var target = launch.Target;
+                logger.LogInformation("starting backend (agent, in-process) for '{Target}'", target);
                 agentTask = Task.Run(() => AppEntry.RunAsync(["--agent", target], cts.Token));
             }
 

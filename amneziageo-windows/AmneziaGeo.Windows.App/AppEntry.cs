@@ -1,6 +1,7 @@
 using AmneziaGeo.Decl;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -20,6 +21,13 @@ public static class AppEntry
             await EnsureStoreAsync(host.Services);
             if (agentTarget is not null)
             {
+                // Take over the status pipe from any prior owner (a crashed dev launcher, a stray dotnet
+                // run child, or the installed service running next to a dev session) before the host binds
+                // it; otherwise the pipe's DACL makes pipe creation spin forever on ACCESS_DENIED.
+                var serviceManager = host.Services.GetRequiredService<ServiceManager>();
+                var guardLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SoleAgentGuard");
+                await SoleAgentGuard.EnsureSoleAsync(serviceManager, guardLogger, cancellationToken);
+
                 await host.RunAsync(cancellationToken);
                 return 0;
             }

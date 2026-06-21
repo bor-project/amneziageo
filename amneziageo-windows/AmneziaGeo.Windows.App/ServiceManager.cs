@@ -206,6 +206,14 @@ internal sealed class ServiceManager
     }
 
     /// <summary>
+    /// Stops the agent service without printing the service-control output.
+    /// </summary>
+    public int StopAgentQuiet()
+    {
+        return Run("stop", TunnelPaths.AgentServiceName()).Code;
+    }
+
+    /// <summary>
     /// Prints the status of the agent service.
     /// </summary>
     public int AgentStatus()

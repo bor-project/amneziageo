@@ -38,9 +38,12 @@ internal sealed class TunnelRunner(
         // loopback.
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
-        string? wsHost = null;        // the wstunnel server host the WSS connection dials
-        var wsTargetPort = 0;         // server-side AmneziaWG UDP port = the original Endpoint's port
-        IPAddress? wsServerIp = null; // resolved wsHost, excluded so wstunnel's own TCP/TLS stays off-tunnel
+        string? wsHost = null;            // the wstunnel server host the WSS connection dials
+        var wsPort = 0;                   // the wstunnel server TLS port
+        var wsTargetPort = 0;             // server-side AmneziaWG UDP port = the original Endpoint's port
+        var wsPathPrefix = string.Empty;  // optional auth/anti-probe path token
+        var wsCredentials = string.Empty; // optional basic-auth "user[:pass]"
+        IPAddress? wsServerIp = null;     // resolved wsHost, excluded so wstunnel's own TCP/TLS stays off-tunnel
         if (useWebSocket)
         {
             var parsed = ParseEndpoint(WgConfigEditor.GetEndpoint(config));
@@ -53,10 +56,15 @@ internal sealed class TunnelRunner(
             {
                 var (endpointHost, endpointPort) = parsed.Value;
                 wsTargetPort = endpointPort;
-                // The wstunnel host defaults to the config's own Endpoint host but can be overridden (e.g.
-                // a separate WS front / CDN). Resolve THAT host for the exclusion route, since that is where
-                // wstunnel opens its TCP/TLS connection.
-                wsHost = string.IsNullOrWhiteSpace(transport!.WebSocketHost) ? endpointHost : transport.WebSocketHost.Trim();
+                // The host field defaults to the config's own Endpoint host but may carry a full
+                // wss://[user:pass@]host[:port]/[token] URL (separate WS front, plus optional auth in one
+                // string). Resolve the resulting host for the exclusion route, since that is where wstunnel
+                // opens its TCP/TLS connection.
+                var ws = WsEndpoint.Parse(transport!.WebSocketHost, transport.WebSocketPort, endpointHost);
+                wsHost = ws.Host;
+                wsPort = ws.Port;
+                wsPathPrefix = ws.PathPrefix;
+                wsCredentials = ws.Credentials;
                 wsServerIp = ResolveHostV4(wsHost);
             }
         }
@@ -207,7 +215,7 @@ internal sealed class TunnelRunner(
         // finally below (no orphaned wstunnel process). A start failure aborts the connect.
         if (useWebSocket)
         {
-            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, transport!.WebSocketPort, wsTargetPort, loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
+            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials, loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
             if (wsTransport is null)
             {
                 throw new InvalidOperationException($"WebSocket transport (wstunnel) failed to start for {name}");

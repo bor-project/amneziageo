@@ -69,15 +69,46 @@ internal sealed partial class ConfigSettingsViewModel : ViewModelBase
         get
         {
             var awgPort = EndpointPort(_endpoint);
-            var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) && p is > 0 and <= 65535 ? p : 443;
-            return
+            var fallbackPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) && p is > 0 and <= 65535 ? p : 443;
+            // The host field may be a bare host or a full ws(s):// URL carrying port / path-token / creds.
+            var (wsPort, token, hasCreds) = ParseWsField(WebSocketHost, fallbackPort);
+            // A token gates access by path (--restrict-http-upgrade-path-prefix); it does NOT combine with
+            // --restrict-to on the CLI, so show one or the other. No token → restrict the destination instead.
+            var restrictLine = string.IsNullOrEmpty(token)
+                ? $"  --restrict-to 127.0.0.1:{awgPort} \\\n"
+                : $"  --restrict-http-upgrade-path-prefix {token} \\\n";
+            var hint =
                 $"На сервере: установите wstunnel и запустите его как службу с командой\n\n" +
                 $"wstunnel server wss://0.0.0.0:{wsPort} \\\n" +
-                $"  --restrict-to 127.0.0.1:{awgPort} \\\n" +
+                restrictLine +
                 $"  --tls-certificate <fullchain.pem> --tls-private-key <privkey.pem>\n\n" +
                 $"Где fullchain/privkey — уже имеющийся сертификат сервера (тот, что у x-ui / no-ip). " +
                 $"Откройте TCP {wsPort} в фаерволе. Клиент завернёт UDP AmneziaWG в этот WebSocket.";
+            if (hasCreds)
+            {
+                hint += "\n\nДля логина (user:pass) серверу нужен --restrict-config <yaml> с проверкой заголовка Authorization (см. доки wstunnel).";
+            }
+
+            return hint;
         }
+    }
+
+    /// <summary>
+    /// Lightweight parse of the host field for the hint: a full ws(s):// URL yields its port, path token
+    /// (server --restrict-http-upgrade-path-prefix), and whether it carries basic-auth credentials.
+    /// </summary>
+    private static (int Port, string Token, bool HasCreds) ParseWsField(string field, int fallbackPort)
+    {
+        var value = field?.Trim() ?? string.Empty;
+        if (value.Contains("://", StringComparison.Ordinal)
+            && Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            && !string.IsNullOrEmpty(uri.Host))
+        {
+            var port = uri.Port > 0 ? uri.Port : fallbackPort;
+            return (port, uri.AbsolutePath.Trim('/'), !string.IsNullOrEmpty(uri.UserInfo));
+        }
+
+        return (fallbackPort, string.Empty, false);
     }
 
     private static int EndpointPort(string endpoint)

@@ -19,16 +19,20 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private readonly string _serverHost;
     private readonly int _wsPort;
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (the original Endpoint's port)
+    private readonly string _pathPrefix; // optional auth/anti-probe path token (server --restrict-http-upgrade-path-prefix)
+    private readonly string _credentials; // optional basic-auth "user[:pass]"
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private Process? _process;
     private Task? _supervisor;
 
-    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, int localPort, ILogger logger)
+    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, int localPort, ILogger logger)
     {
         _serverHost = serverHost;
         _wsPort = wsPort;
         _targetPort = targetPort;
+        _pathPrefix = pathPrefix;
+        _credentials = credentials;
         LocalPort = localPort;
         _logger = logger;
     }
@@ -44,7 +48,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     /// when the bundled binary is missing or the listener never came up, so the caller can fail the connect
     /// cleanly rather than bring up a tunnel whose endpoint goes nowhere.
     /// </summary>
-    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, ILogger logger, CancellationToken ct)
+    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, ILogger logger, CancellationToken ct)
     {
         var exe = TunnelPaths.WsTunnelExe();
         if (!File.Exists(exe))
@@ -53,7 +57,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return null;
         }
 
-        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, FreeUdpPort(), logger);
+        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, FreeUdpPort(), logger);
         transport.Spawn();
         transport._supervisor = Task.Run(() => transport.SuperviseAsync(transport._cts.Token));
 
@@ -76,7 +80,20 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         // certificate validates. --tls-verify-certificate is required because wstunnel DISABLES
         // verification by default (it would connect to any self-signed cert); the server reuses the
         // existing real x-ui/no-ip certificate for this hostname, so verifying it defeats MITM.
-        var args = $"client --tls-verify-certificate -L \"udp://{LocalPort}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
+        // Optional auth, carried in one URL field by the UI: a path token (-P, matched server-side by
+        // --restrict-http-upgrade-path-prefix; also defeats blind probing) and/or basic-auth credentials.
+        var auth = string.Empty;
+        if (_pathPrefix.Length > 0)
+        {
+            auth += $" -P \"{_pathPrefix}\"";
+        }
+
+        if (_credentials.Length > 0)
+        {
+            auth += $" --http-upgrade-credentials \"{_credentials}\"";
+        }
+
+        var args = $"client --tls-verify-certificate{auth} -L \"udp://{LocalPort}:127.0.0.1:{_targetPort}?timeout_sec=0\" \"wss://{_serverHost}:{_wsPort}\"";
         var info = new ProcessStartInfo(TunnelPaths.WsTunnelExe(), args)
         {
             UseShellExecute = false,

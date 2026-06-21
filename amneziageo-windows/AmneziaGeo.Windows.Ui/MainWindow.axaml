@@ -245,25 +245,6 @@
                 </Grid>
               </Button>
 
-              <Button Classes="rowselect" Classes.active="{Binding IsSettingsSecurity}" Margin="0,3"
-                      Command="{Binding SelectSettingsCommand}" CommandParameter="security">
-                <Grid ColumnDefinitions="Auto,*" Margin="12,10">
-                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
-                    <Ellipse Width="16" Height="16" StrokeThickness="2"
-                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                             IsVisible="{Binding IsSettingsSecurity}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Grid>
-                  <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Безопасность" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Kill-switch и доступ к локальной сети" FontSize="11.5" Classes="muted"
-                               TextTrimming="CharacterEllipsis" />
-                  </StackPanel>
-                </Grid>
-              </Button>
-
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsSources}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="sources">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,10">
@@ -928,33 +909,6 @@
                         <Button Classes="seg" Content="EN" IsEnabled="False" />
                       </StackPanel>
                     </Border>
-                  </Grid>
-                </StackPanel>
-              </Border>
-
-              <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsSecurity}">
-                <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
-                    <TextBlock Text="БЕЗОПАСНОСТЬ" Classes="section" />
-                  </Border>
-                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                      <TextBlock Text="Kill-switch" FontSize="13.5" />
-                      <TextBlock Text="Блокировать весь трафик вне туннеля. Применяется при переподключении."
-                                 Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
-                                  IsChecked="{Binding KillSwitchEnabled, Mode=TwoWay}" />
-                  </Grid>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
-                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                      <TextBlock Text="Доступ к локальной сети" FontSize="13.5" />
-                      <TextBlock Text="Разрешить локальную сеть при kill-switch (SSH, принтеры, NAS)."
-                                 Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
-                                  IsChecked="{Binding AllowLan, Mode=TwoWay}" />
                   </Grid>
                 </StackPanel>
               </Border>

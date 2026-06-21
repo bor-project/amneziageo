@@ -254,8 +254,6 @@ internal sealed class Cli(
         Console.WriteLine($"dead-threshold-seconds\t{settings.DeadThresholdSeconds}");
         Console.WriteLine($"failback-probes\t{settings.FailbackProbes}");
         Console.WriteLine($"probe-timeout-seconds\t{settings.ProbeTimeoutSeconds}");
-        Console.WriteLine($"killswitch\t{settings.KillSwitchEnabled}");
-        Console.WriteLine($"allow-lan\t{settings.AllowLan}");
         return 0;
     }
 
@@ -538,7 +536,7 @@ internal sealed class Cli(
 
             var snapshot = await received.Task;
             Console.WriteLine($"agent v{snapshot.AgentVersion} running={snapshot.Active} status={snapshot.BoundStatus} bound={snapshot.BoundTarget ?? "(none)"} selected={snapshot.SelectedTarget ?? "(none)"}");
-            Console.WriteLine($"settings\tkillswitch={snapshot.KillSwitchEnabled}\tallow-lan={snapshot.AllowLan}\trestart-required={snapshot.RestartRequired}\tbetter={snapshot.BetterMember ?? "(none)"}");
+            Console.WriteLine($"settings\trestart-required={snapshot.RestartRequired}\tbetter={snapshot.BetterMember ?? "(none)"}");
             foreach (var config in snapshot.Configs)
             {
                 Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\t{config.Status}");

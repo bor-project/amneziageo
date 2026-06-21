@@ -134,7 +134,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Which settings section the left rail has selected while on the Settings tab.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
-    [NotifyPropertyChangedFor(nameof(IsSettingsSecurity))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
     [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
     [NotifyPropertyChangedFor(nameof(IsSettingsAbout))]
@@ -161,12 +160,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // surprise (the catalogue is shared across profiles).
     [ObservableProperty]
     private string _routingUsageHint = string.Empty;
-
-    [ObservableProperty]
-    private bool _killSwitchEnabled;
-
-    [ObservableProperty]
-    private bool _allowLan = true;
 
     // App self-update (#54): the configured metadata URL, the latest check result, and download state.
     [ObservableProperty]
@@ -454,9 +447,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Whether the General settings section is selected.</summary>
     public bool IsSettingsGeneral => SettingsSection == "general";
-
-    /// <summary>Whether the Security settings section is selected.</summary>
-    public bool IsSettingsSecurity => SettingsSection == "security";
 
     /// <summary>Whether the About settings section is selected.</summary>
     public bool IsSettingsAbout => SettingsSection == "about";
@@ -837,8 +827,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ShowNotice(notice);
 
         _suppressSettingPush = true;
-        KillSwitchEnabled = snapshot.KillSwitchEnabled;
-        AllowLan = snapshot.AllowLan;
         GeoAutoCheck = snapshot.GeoAutoCheck;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
@@ -884,22 +872,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _noticeTimer.Stop();
         NoticeVisible = false;
-    }
-
-    partial void OnKillSwitchEnabledChanged(bool value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync("killswitch", value);
-        }
-    }
-
-    partial void OnAllowLanChanged(bool value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync("allow-lan", value);
-        }
     }
 
     partial void OnGeoAutoCheckChanged(bool value)

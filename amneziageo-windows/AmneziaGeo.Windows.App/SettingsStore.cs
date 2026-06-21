@@ -20,8 +20,6 @@ internal sealed class SettingsStore(IStateStore store)
             DeadThresholdSeconds = await ReadIntAsync("dead-threshold-seconds", defaults.DeadThresholdSeconds, ct),
             FailbackProbes = await ReadIntAsync("failback-probes", defaults.FailbackProbes, ct),
             ProbeTimeoutSeconds = await ReadIntAsync("probe-timeout-seconds", defaults.ProbeTimeoutSeconds, ct),
-            KillSwitchEnabled = await ReadBoolAsync("killswitch", defaults.KillSwitchEnabled, ct),
-            AllowLan = await ReadBoolAsync("allow-lan", defaults.AllowLan, ct),
             UpdateUrl = await ReadStringAsync("update-url", defaults.UpdateUrl, ct),
             GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
             GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
@@ -77,7 +75,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] IntKeys =
         ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds", "geo-check-interval-hours"];
 
-    private static readonly string[] BoolKeys = ["killswitch", "allow-lan", "geo-auto-check"];
+    private static readonly string[] BoolKeys = ["geo-auto-check"];
 
     private static readonly string[] StringKeys = ["update-url"];
 

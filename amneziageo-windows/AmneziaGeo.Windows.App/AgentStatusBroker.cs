@@ -835,13 +835,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"invalid setting or value; keys: {string.Join(", ", SettingsStore.Keys())}");
         }
 
-        // The kill-switch is armed at connect time, so a change while a tunnel is up applies on the next
-        // reconnect — flag it so the UI shows the same reconnect prompt as a routing change.
-        if (control.Running && (key is "killswitch" or "allow-lan"))
-        {
-            control.SetRestartRequired();
-        }
-
         logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
     }
@@ -1001,7 +994,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var update = updateState.Latest;
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, settings.KillSwitchEnabled, settings.AllowLan, control.Target, sources, logBuffer.Snapshot(),
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, control.Target, sources, logBuffer.Snapshot(),
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,

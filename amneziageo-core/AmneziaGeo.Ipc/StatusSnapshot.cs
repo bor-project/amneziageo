@@ -14,8 +14,6 @@ public sealed record StatusSnapshot(
     string BoundStatus = ConnectionStatus.Disconnected,
     bool RestartRequired = false,
     string? BetterMember = null,
-    bool KillSwitchEnabled = false,
-    bool AllowLan = true,
     string? SelectedTarget = null,
     IReadOnlyList<SourceEntry>? Sources = null,
     IReadOnlyList<string>? Logs = null,

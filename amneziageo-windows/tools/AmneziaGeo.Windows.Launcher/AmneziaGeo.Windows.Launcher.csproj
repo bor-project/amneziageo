@@ -6,6 +6,12 @@
     <PlatformTarget>x64</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- This is the shipped single-process product (agent in-process + tray UI). -->
+    <AssemblyName>AmneziaGeo</AssemblyName>
+    <!-- Elevate on a manual (shortcut) launch via UAC. Release only, so a Debug `dotnet run` from an
+         already-elevated dev shell is not blocked by the requireAdministrator linkage; the logon
+         scheduled task launches the Release build elevated without a prompt. -->
+    <ApplicationManifest Condition="'$(Configuration)' == 'Release'">app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

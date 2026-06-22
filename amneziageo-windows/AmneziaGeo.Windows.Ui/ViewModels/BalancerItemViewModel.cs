@@ -23,6 +23,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private readonly Func<string, bool, Task> _setProfileConnection;
     private readonly Func<string, Task<IpcAck>> _removeConfig;
     private bool _suppress;
+    // True while the user is building a brand-new routing list ("+ Новый список"). Set by the combo pick,
+    // cleared when another option is chosen; snapshots honour it so the periodic reconcile does not snap the
+    // selection back to the list the agent still has assigned. Once the new list is saved its id is recorded
+    // in _savedNewListId, and the hold is released only when a snapshot reports THAT list assigned — so the
+    // selection never flashes through the previously-assigned list.
+    private bool _creatingNewList;
+    private long? _savedNewListId;
     // Optimistic running override: set the instant the user taps connect/disconnect on this profile so the
     // button flips immediately (like the header power control); cleared once a snapshot's real status
     // agrees with the requested state.
@@ -331,10 +338,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
                 Members.Add(member);
             }
 
-            // Capture the "+ Новый список" intent BEFORE touching the options: clearing the bound
-            // collection makes the ComboBox null its SelectedItem (writing null into SelectedRoutingList).
-            var wasCreatingNew = SelectedRoutingList is { IsNewSentinel: true };
-
             // Rebuild the options only when the catalogue actually changed. A Clear()+Add() on every
             // snapshot would null the ComboBox's selection (which then NREs the read below and churns the
             // inline editor) even when nothing changed — e.g. a snapshot that only added a config.
@@ -348,9 +351,21 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             }
 
             var resolved = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
-            // Keep an in-progress "+ Новый список" pick until the new list is saved+assigned (resolved
-            // turns real); otherwise reflect the agent's stored list. Always assigns a non-null value.
-            SelectedRoutingList = wasCreatingNew && !resolved.IsReal ? RoutingListChoice.NewList : resolved;
+            // While the user is building a new list, hold the "+ Новый список" pick across snapshots — do NOT
+            // snap back to the list the agent still has assigned, which would replace the new empty editor
+            // with the previous list and all its rules. Release the hold only once the snapshot actually
+            // reports the freshly-saved new list assigned (so the selection never flashes through the old
+            // list); picking another option clears the hold directly (OnSelectedRoutingListChanged).
+            if (_creatingNewList && !(_savedNewListId is long saved && resolved.Id == saved))
+            {
+                SelectedRoutingList = RoutingListChoice.NewList;
+            }
+            else
+            {
+                _creatingNewList = false;
+                _savedNewListId = null;
+                SelectedRoutingList = resolved;
+            }
             UseRouting = entry.UseRouting && SelectedRoutingList.IsReal;
             RefreshAvailableConfigs(allConfigs);
         }
@@ -559,12 +574,31 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         _ = PersistMembersAsync();
     }
 
+    /// <summary>
+    /// Called once the in-progress new list has been saved with a real id (and is being assigned to this
+    /// profile). The "+ Новый список" hold is kept until a snapshot reports this id assigned, then released
+    /// so the selection resolves straight to the new list — never flashing through the previously-assigned one.
+    /// </summary>
+    public void NotifyNewListSaved(long id)
+    {
+        _savedNewListId = id;
+    }
+
     partial void OnSelectedRoutingListChanged(RoutingListChoice value)
     {
         // value can momentarily be null: clearing the bound options nulls the ComboBox's SelectedItem.
         if (_suppress || value is null)
         {
             return;
+        }
+
+        // Remember whether the user is now building a new list, so periodic snapshots don't snap the
+        // selection back to the agent's stored list and drop the in-progress new-list editor. Picking any
+        // other option ends the new-list intent outright.
+        _creatingNewList = value.IsNewSentinel;
+        if (!value.IsNewSentinel)
+        {
+            _savedNewListId = null;
         }
 
         // The "+ Новый список" sentinel has no id yet: the window builds the inline new-list editor and

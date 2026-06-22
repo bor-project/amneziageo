@@ -701,6 +701,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         if (OpenProfile is { SelectedRoutingList.IsNewSentinel: true } profile)
         {
+            // The new list now has a real id: record it so the "+ Новый список" hold releases to this list
+            // (not the previously-assigned one) on the next snapshot, then bind it to the profile.
+            profile.NotifyNewListSaved(id);
             _ = AssignRoutingAsync(profile.Name, id, false);
         }
     }

@@ -44,7 +44,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         base.OnCreate(args);
         _engineConnected = true;
         _command = args.Command;
-        _interactive = _command.Display == Display.Full;
+        _interactive = _command.Display == Display.Full && _command.Action != LaunchAction.Uninstall;
     }
 
     protected override void Run()
@@ -71,7 +71,22 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         new WindowInteropHelper(window).EnsureHandle();   // realise the HWND for engine.Apply
 
         engine.Detect();
-        app.Run(window);
+
+        // A bundle launched for uninstall (e.g. the ARP "Uninstall" entry, which runs us with
+        // LaunchAction.Uninstall) drives the removal headlessly: the realised HWND above is enough for
+        // engine.Apply and detection auto-runs the remove (OnDetectComplete, treated non-interactive), so
+        // the maintenance window never shows — this is what stops the installer window(s) appearing on
+        // removal. Re-running setup.exe and clicking "Remove" is a different launch (Action=Install/Modify)
+        // and keeps its window.
+        if (_command.Action == LaunchAction.Uninstall)
+        {
+            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            app.Run();
+        }
+        else
+        {
+            app.Run(window);
+        }
 
         engine.Quit(_result);
     }

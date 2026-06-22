@@ -28,7 +28,11 @@ internal readonly record struct WsEndpoint(string Host, int Port, string PathPre
         {
             var port = uri.Port > 0 ? uri.Port : fallbackPort;
             var path = uri.AbsolutePath.Trim('/');
-            return new WsEndpoint(uri.Host, port, path, uri.UserInfo);
+            // UserInfo is percent-escaped by the UI (so symbols survive the URL); unescape it back to the
+            // literal "user[:pass]" wstunnel's --http-upgrade-credentials expects. A plain (un-escaped)
+            // value is unchanged by this.
+            var credentials = string.IsNullOrEmpty(uri.UserInfo) ? string.Empty : Uri.UnescapeDataString(uri.UserInfo);
+            return new WsEndpoint(uri.Host, port, path, credentials);
         }
 
         return new WsEndpoint(value, fallbackPort, string.Empty, string.Empty);

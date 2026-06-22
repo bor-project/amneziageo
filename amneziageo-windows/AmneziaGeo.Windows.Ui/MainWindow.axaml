@@ -801,15 +801,33 @@
                             IsChecked="{Binding UseWebSocket}" />
                   <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
                     <StackPanel Spacing="2">
-                      <TextBlock Text="Адрес сервера (host или URL):" />
+                      <TextBlock Text="Адрес сервера (host):" />
                       <TextBox Text="{Binding WebSocketHost}"
-                               Watermark="как у сервера, или wss://[логин:пароль@]хост:443/токен" />
-                      <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
-                                 Text="Токен (путь) и/или логин:пароль можно вписать прямо в URL — одной строкой." />
+                               Watermark="как у сервера, например wss-front.example.com" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <TextBlock Text="Порт сервера (TLS):" VerticalAlignment="Center" />
                       <TextBox Width="90" Text="{Binding WebSocketPort}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Авторизация:" />
+                      <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
+                        <ComboBoxItem Content="Без авторизации" />
+                        <ComboBoxItem Content="Логин и пароль" />
+                        <ComboBoxItem Content="Токен (секретный путь)" />
+                      </ComboBox>
+                    </StackPanel>
+                    <!-- basic auth: login + password (folded into wss://user:pass@host on save) -->
+                    <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
+                      <TextBlock Text="Логин:" />
+                      <TextBox Text="{Binding WebSocketUser}" Watermark="логин" />
+                      <TextBlock Text="Пароль:" Margin="0,4,0,0" />
+                      <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="пароль" />
+                    </StackPanel>
+                    <!-- token auth: secret path (folded into wss://host/token on save) -->
+                    <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
+                      <TextBlock Text="Токен (секретный путь):" />
+                      <TextBox Text="{Binding WebSocketToken}" Watermark="секретный-путь" />
                     </StackPanel>
                     <Border Background="{DynamicResource AgInsetBrush}" CornerRadius="6" Padding="8">
                       <TextBlock Text="{Binding ServerHint}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"

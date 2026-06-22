@@ -138,7 +138,16 @@ internal sealed class TunnelRunner(
         // public resolver from swallowing local lookups.
         var lanResolvers = dns.CaptureUpstream();
         var upstream = preferredDns.Count > 0 ? preferredDns : lanResolvers;
-        var (parsedCidrs, exclusionDomains) = ParseExclusions(appSettings.Exclusions);
+        var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(appSettings.Exclusions);
+        var exclusionDomains = new List<string>(parsedExclusionDomains);
+        // The WebSocket underlay server's hostname must resolve via the LAN resolver, never through the
+        // tunnel: in full tunnel non-matched names go to the tunnel resolver, but the tunnel is not up yet
+        // and cannot come up until wstunnel reaches the server, whose name it must resolve first. Treat it
+        // as a split-DNS local domain so it resolves out-of-band (its route is already excluded above).
+        if (useWebSocket && wsHost is not null && !IPAddress.TryParse(wsHost, out _))
+        {
+            exclusionDomains.Add(wsHost);
+        }
         var exclusionCidrs = new List<string>(parsedCidrs);
 
         // Auto-detect the currently-connected local subnets and keep them direct too (deduped against the

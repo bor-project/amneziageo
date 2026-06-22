@@ -211,11 +211,31 @@ public sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    /// <summary>Switches the window to the indeterminate "downloading lists" view (after the MSI step).</summary>
+    /// <summary>Switches the window to the indeterminate "checking for base updates" view (update/repair
+    /// only — runs before deciding whether a download is needed).</summary>
+    public void BeginGeoCheck()
+    {
+        SubText = "Проверка обновлений баз гео…";
+        IsIndeterminate = true;
+    }
+
+    /// <summary>Switches the window to the "downloading lists" view (after the MSI step). Starts
+    /// indeterminate (a spinner) until the first real percentage arrives via <see cref="ReportGeoProgress"/>.</summary>
     public void BeginGeoDownload()
     {
-        SubText = "Загрузка списков геоданных…";
+        SubText = "Загрузка файлов баз гео…";
+        Progress = 0;
         IsIndeterminate = true;
+    }
+
+    /// <summary>Reports geo-list download progress, flipping the spinner to a determinate percentage.</summary>
+    public void ReportGeoProgress(int percent)
+    {
+        if (percent is >= 0 and <= 100)
+        {
+            IsIndeterminate = false;
+            Progress = percent;
+        }
     }
 
     /// <summary>Called once apply finishes; shows the result.</summary>

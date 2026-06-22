@@ -60,8 +60,9 @@
          Return="ignore" so a hiccup never blocks uninstall. -->
     <CustomAction Id="AgCleanup"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'AmneziaGeo.exe' -and $_.CommandLine -like '*--agent*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; schtasks /delete /tn AmneziaGeo /f; Get-Service 'AmneziaGeo$*' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue; sc.exe delete $_.Name }&quot;"
-                  Execute="immediate"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command &quot;Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'AmneziaGeo.exe' -and $_.CommandLine -like '*--agent*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; schtasks /delete /tn AmneziaGeo /f; Get-Service 'AmneziaGeo$*' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue; sc.exe delete $_.Name }&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
                   Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="AgCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />

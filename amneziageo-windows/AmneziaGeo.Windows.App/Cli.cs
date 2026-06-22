@@ -115,6 +115,8 @@ internal sealed class Cli(
                 return await BalancerRunAsync(name);
             case ["ipc-probe"]:
                 return await IpcProbeAsync();
+            case ["ipc-ui-probe", var seconds]:
+                return await IpcUiProbeAsync(seconds);
             case ["ipc-cmd", var op, .. var cmdArgs]:
                 return await IpcCmdAsync(op, cmdArgs);
             case ["balancer-state"]:
@@ -561,6 +563,37 @@ internal sealed class Cli(
 
             return 0;
         }
+    }
+
+    /// <summary>
+    /// Test helper: connects as a UI session (announces attach-ui) and stays connected for the given
+    /// seconds, then disconnects — so the agent's "tunnel lives only while a UI is connected" teardown can
+    /// be exercised headlessly (the real GUI cannot run over SSH). Prints connect/disconnect and each
+    /// snapshot's running state.
+    /// </summary>
+    private static async Task<int> IpcUiProbeAsync(string secondsArg)
+    {
+        if (!int.TryParse(secondsArg, System.Globalization.CultureInfo.InvariantCulture, out var seconds) || seconds <= 0)
+        {
+            Console.WriteLine("ipc-ui-probe requires positive seconds");
+            return 1;
+        }
+
+        var client = new StatusPipeClient { AnnounceUi = true };
+        client.Connected += () => Console.WriteLine("[ui-probe] connected (announced UI)");
+        client.Disconnected += () => Console.WriteLine("[ui-probe] disconnected");
+        client.SnapshotReceived += snapshot => Console.WriteLine($"[ui-probe] running={snapshot.Active} status={snapshot.BoundStatus}");
+
+        using (var cts = new CancellationTokenSource())
+        {
+            var loop = client.RunAsync(cts.Token);
+            await Task.Delay(TimeSpan.FromSeconds(seconds));
+            Console.WriteLine("[ui-probe] closing connection");
+            cts.Cancel();
+            await loop;
+        }
+
+        return 0;
     }
 
     private static async Task<int> IpcCmdAsync(string op, string[] args)

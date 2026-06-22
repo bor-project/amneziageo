@@ -16,6 +16,20 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private readonly Lock _gate = new();
     private string? _lastJson;
 
+    // Connections that announced themselves as UI sessions (attach-ui). The tunnel's lifetime is tied to
+    // their presence: when the last one drops while a tunnel is up, the tunnel is disconnected after a
+    // short grace. Subset of _clients; guarded by _gate.
+    private readonly HashSet<PipeConnection> _uiSessions = [];
+
+    // Pending "UI gone" teardown, cancelled if a UI re-attaches within the grace window — this covers the
+    // UI client's own auto-reconnect after a transient pipe drop, so the tunnel does not flap. Guarded by _gate.
+    private CancellationTokenSource? _teardownGrace;
+
+    // How long the tunnel survives after the last UI session drops. Must exceed the UI client's reconnect
+    // delay (StatusPipeClient retries ~2s) so a brief pipe hiccup followed by a reconnect does not tear the
+    // tunnel down; short enough that a real window-close/crash disconnects promptly.
+    private static readonly TimeSpan _uiTeardownGrace = TimeSpan.FromSeconds(5);
+
     // Per-source download/apply progress while an update is in flight, keyed by source name. The value
     // is the download percent (0-100), or -1 while the routing lists re-materialize (indeterminate).
     // Presence in the map means "updating"; the snapshot overlays it onto each SourceEntry so the UI can
@@ -76,14 +90,92 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
         finally
         {
+            bool wasUi;
             lock (_gate)
             {
                 _clients.Remove(connection);
+                wasUi = _uiSessions.Remove(connection);
             }
 
             connection.Dispose();
             logger.LogInformation("status client disconnected");
+
+            // Only a UI session leaving can end the tunnel — a transient command client (the CLI) never
+            // does. Done after releasing the lock so the grace-teardown scheduling does not run under it.
+            if (wasUi)
+            {
+                OnUiSessionEnded();
+            }
         }
+    }
+
+    /// <summary>
+    /// Registers a connection as a presence-holding UI session and cancels any pending "UI gone" teardown.
+    /// The cancel covers the UI client's own auto-reconnect after a transient pipe drop: the prior
+    /// connection's exit may have scheduled a teardown that this reattach must call off, so the tunnel
+    /// stays up across the blip.
+    /// </summary>
+    private void MarkUiSession(PipeConnection connection)
+    {
+        lock (_gate)
+        {
+            _uiSessions.Add(connection);
+            _teardownGrace?.Cancel();
+            _teardownGrace?.Dispose();
+            _teardownGrace = null;
+        }
+
+        logger.LogInformation("UI session attached");
+    }
+
+    /// <summary>
+    /// Called when a UI session's connection drops. If it was the last UI and a tunnel is up, schedules a
+    /// disconnect after a short grace (cancelled if a UI re-attaches in that window). This is what ties the
+    /// VPN's lifetime to the app: closing the window or a UI crash brings the tunnel down, while the
+    /// privileged agent service keeps running idle.
+    /// </summary>
+    private void OnUiSessionEnded()
+    {
+        CancellationToken graceToken;
+        lock (_gate)
+        {
+            if (_uiSessions.Count > 0 || !control.Running)
+            {
+                // Another UI is still attached, or there is no tunnel to bring down.
+                return;
+            }
+
+            _teardownGrace?.Cancel();
+            _teardownGrace?.Dispose();
+            _teardownGrace = new CancellationTokenSource();
+            graceToken = _teardownGrace.Token;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(_uiTeardownGrace, graceToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return; // a UI re-attached within the grace window
+            }
+
+            lock (_gate)
+            {
+                if (_uiSessions.Count > 0)
+                {
+                    return;
+                }
+            }
+
+            if (control.Running)
+            {
+                logger.LogInformation("no UI connected; disconnecting tunnel");
+                control.SetRunning(false);
+            }
+        });
     }
 
     /// <summary>
@@ -129,6 +221,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var envelope = JsonSerializer.Deserialize<IpcEnvelope>(line, IpcJson.Options);
         if (envelope is not { Type: IpcContract.CommandType, Command: not null })
         {
+            return;
+        }
+
+        // Attach is handled here (not in ExecuteCommandAsync) because it needs the connection identity to
+        // register it as a presence-holding UI session.
+        if (envelope.Command.Op == IpcContract.OpAttachUi)
+        {
+            MarkUiSession(connection);
+            var attachAck = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.AckType, Ack: new IpcAck(true, "attached")), IpcJson.Options);
+            await connection.SendAsync(attachAck, ct);
             return;
         }
 

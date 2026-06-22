@@ -38,6 +38,13 @@ public sealed class StatusPipeClient
     public bool IsConnected => _writer is not null;
 
     /// <summary>
+    /// When true, the client sends an <see cref="IpcContract.OpAttachUi"/> marker on every (re)connect so
+    /// the agent treats this connection as a presence-holding UI session — the tunnel stays up only while
+    /// such a session is connected. The UI sets this; transient command clients (the CLI) leave it false.
+    /// </summary>
+    public bool AnnounceUi { get; init; }
+
+    /// <summary>
     /// Connects and reads messages until cancellation, reconnecting after drops.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
@@ -127,6 +134,11 @@ public sealed class StatusPipeClient
             {
                 _writer = writer;
                 Connected?.Invoke();
+                if (AnnounceUi)
+                {
+                    await AnnounceUiAsync(writer, ct).ConfigureAwait(false);
+                }
+
                 try
                 {
                     while (!ct.IsCancellationRequested)
@@ -151,6 +163,30 @@ public sealed class StatusPipeClient
                     FailPendingAck();
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Sends the UI-attach marker on the freshly opened connection. Fire-and-forget (no ack awaited): the
+    /// agent's reply is an ordinary ack with no pending request and is harmlessly ignored. Uses the write
+    /// lock so it cannot interleave with a concurrent user command.
+    /// </summary>
+    private async Task AnnounceUiAsync(StreamWriter writer, CancellationToken ct)
+    {
+        var line = JsonSerializer.Serialize(
+            new IpcEnvelope(IpcContract.CommandType, Command: new IpcCommand(IpcContract.OpAttachUi, [])),
+            IpcJson.Options);
+        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await writer.WriteLineAsync(line.AsMemory(), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            _writeLock.Release();
         }
     }
 

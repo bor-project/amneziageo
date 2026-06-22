@@ -107,6 +107,10 @@ internal sealed class Cli(
                 return await RoutingListAddAsync(listName, listRules);
             case ["assign-routing", var profile, var list, var toggle]:
                 return await AssignRoutingAsync(profile, list, toggle);
+            case ["set-websocket", var name, var toggle, var port]:
+                return await SetWebSocketAsync(name, toggle, port, string.Empty);
+            case ["set-websocket", var name, var toggle, var port, var host]:
+                return await SetWebSocketAsync(name, toggle, port, host);
             case ["connect"]:
                 return await IpcCmdAsync(IpcContract.OpSetConnection, ["connect"]);
             case ["disconnect"]:
@@ -670,6 +674,29 @@ internal sealed class Cli(
         var useRouting = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
         await store.SetProfileRoutingAsync(profile, listId, useRouting);
         Console.WriteLine($"assigned {profile}: list={list} use={(useRouting ? "on" : "off")}");
+        return 0;
+    }
+
+    // Offline counterpart of the agent's set-websocket IPC op (AgentStatusBroker.SetWebSocketAsync): writes
+    // a config's WebSocket transport straight to the store, for seeding from the launcher. host may be empty
+    // (reuse the config's Endpoint host) or a full wss://[user:pass@]host:port[/token] URL carrying auth.
+    private async Task<int> SetWebSocketAsync(string name, string toggle, string portText, string host)
+    {
+        if (!configRepo.Exists(name))
+        {
+            Console.WriteLine($"unknown config: {name}");
+            return 1;
+        }
+
+        if (!int.TryParse(portText, System.Globalization.CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
+        {
+            Console.WriteLine("invalid websocket port (1-65535)");
+            return 1;
+        }
+
+        var on = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
+        await store.SetConfigTransportAsync(new ConfigTransport(name, on, host.Trim(), port));
+        Console.WriteLine($"set-websocket {name}: on={(on ? "on" : "off")}, port={port}, host={(host.Length == 0 ? "(endpoint)" : host)}");
         return 0;
     }
 

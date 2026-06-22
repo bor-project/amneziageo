@@ -34,6 +34,45 @@ internal sealed class LauncherOptions
     /// Profiles (balancer groups) to ensure exist on startup, with optional routing-list assignment.
     /// </summary>
     public ProfileSpec[] Profiles { get; set; } = [];
+
+    /// <summary>
+    /// Per-config WebSocket (UDP-over-TCP) transport to seed on startup.
+    /// </summary>
+    public WebSocketSpec[] WebSockets { get; set; } = [];
+
+    /// <summary>
+    /// When true the startup seed runs only once (guarded by a marker file) so re-launches do not
+    /// overwrite the user's later changes. Used by a shipped preconfigured build; dev leaves it false to
+    /// re-seed a known state every launch.
+    /// </summary>
+    public bool SeedOnce { get; set; }
+}
+
+/// <summary>
+/// Bootstrap spec for a config's WebSocket transport (wstunnel).
+/// </summary>
+internal sealed class WebSocketSpec
+{
+    /// <summary>
+    /// The config name whose transport to set (must already be registered via ConfigPaths).
+    /// </summary>
+    public string Config { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether the WebSocket transport is turned on. Seed it off to preconfigure without forcing it.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// The TLS port of the wstunnel server (usually 443).
+    /// </summary>
+    public int Port { get; set; } = 443;
+
+    /// <summary>
+    /// The server address: empty (reuse the config's Endpoint host), a bare host, or a full
+    /// wss://[user:pass@]host:port[/token] URL carrying optional auth (basic creds and/or a path token).
+    /// </summary>
+    public string Host { get; set; } = string.Empty;
 }
 
 /// <summary>

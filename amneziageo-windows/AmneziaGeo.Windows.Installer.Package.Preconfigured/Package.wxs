@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AmneziaGeo PRECONFIGURED Windows installer (per-machine MSI, x64, self-contained payload).
+
+  This is a SEPARATE, single-process (launcher) build of AmneziaGeo that ships PRECONFIGURED: the staged
+  publish includes a seed appsettings.json and a bundled config (seed\*.conf), so on first launch the host
+  registers that config, its routing list, a profile, and the WebSocket (wstunnel) transport without any
+  user input. Built by build-installer-preconfigured.ps1, NOT by build-installer.ps1.
+
+  Single-process model: the product is ONE elevated process, AmneziaGeo.exe, which hosts the privileged VPN
+  backend (AmneziaWG/Wintun adapter, routes, WFP kill-switch, DNS) in-process together with the tray GUI.
+  There is no always-on Windows service; the host runs only while the user wants the VPN (it lives in the
+  tray) and tears the tunnel down on exit.
+
+  Elevation + autostart: AmneziaGeo.exe ships a requireAdministrator manifest, so a manual (shortcut) launch
+  elevates via UAC. On first run the host self-registers a per-user logon scheduled task ("AmneziaGeo",
+  highest privileges) so it auto-starts elevated at sign-in without a prompt. This MSI removes that task and
+  any leftover per-tunnel services on uninstall.
+
+  It shares the product UpgradeCode and ProgramData state with the normal (service) build, so the two are
+  mutually exclusive: installing this replaces a normal install and vice versa. The first-run seed is
+  guarded by a marker in ProgramData (LauncherOptions.SeedOnce), so it never re-seeds over the user's later
+  changes, and a reinstall does not re-seed.
+
+  Runtime data (state.db, Configurations\, geo\, logs\) lives in ProgramData\AmneziaGeo and is created by
+  the host at runtime, so the MSI does not lay it down.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package Name="AmneziaGeo"
+           Manufacturer="AmneziaGeo"
+           Version="1.0.1.0"
+           UpgradeCode="CF01DE97-3FF5-4A9A-B106-DAD6D3D95CB5"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <!-- AllowDowngrades: lets an equal-or-lower version reinstall as a major upgrade (remove prior, lay new
+         down) instead of blocking it; also what lets this build replace the normal (service) one. -->
+    <MajorUpgrade AllowDowngrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="AmneziaGeo" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AgMenuFolder" Name="AmneziaGeo" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="AmneziaGeo" Level="1">
+      <ComponentGroupRef Id="Payload" />
+      <ComponentRef Id="GuiShortcut" />
+    </Feature>
+
+    <!-- On full removal (including the remove phase of a major upgrade) tear down the running product: stop
+         the tray host (the agent host process only), drop the logon task, then gracefully stop+delete any
+         leftover per-tunnel services (a graceful Stop-Service runs each tunnel's own teardown, reverting
+         its routes / DNS / firewall). Fixed names only, so no deferred CustomActionData. Best-effort:
+         Return="ignore" so a hiccup never blocks uninstall. -->
+    <CustomAction Id="AgCleanup"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'AmneziaGeo.exe' -and $_.CommandLine -like '*--agent*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; schtasks /delete /tn AmneziaGeo /f; Get-Service 'AmneziaGeo$*' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue; sc.exe delete $_.Name }&quot;"
+                  Execute="immediate"
+                  Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="AgCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+
+  <Fragment>
+    <!-- The whole staged publish: a self-contained win-x64 publish of the single-process host, which brings
+         AmneziaGeo.exe and every dependency (the .NET runtime, App/Ui assemblies, tunnel.dll, wintun.dll,
+         wstunnel.exe, Avalonia natives, ...) PLUS the staged seed appsettings.json and seed\*.conf that
+         preconfigure it. pdbs excluded; subfolders (incl. seed\) preserved. -->
+    <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
+      <Files Include="$(var.StageDir)\**">
+        <Exclude Files="$(var.StageDir)\**\*.pdb" />
+        <!-- The host references App/Ui as libraries, so their apphost .exe stubs land in the publish but
+             are dead in the single-process model (the entry point is AmneziaGeo.exe). Drop the stray exes
+             to avoid a confusing second client; their .dll assemblies stay, since the host loads them. -->
+        <Exclude Files="$(var.StageDir)\AmneziaGeo.Windows.App.exe" />
+        <Exclude Files="$(var.StageDir)\AmneziaGeo.Windows.Ui.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- Shortcuts to the single-process host (AmneziaGeo.exe is harvested with the payload above): one on
+         the (all-users) Desktop and one in the Start menu. Own component in the menu folder with an HKCU
+         keypath so the non-advertised shortcuts pass ICE43/ICE57; both target the exe by path. A manual
+         launch elevates via the host's requireAdministrator manifest. -->
+    <Component Id="GuiShortcut" Directory="AgMenuFolder">
+      <Shortcut Id="UiStartMenuShortcut"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="UiDesktopShortcut"
+                Directory="DesktopFolder"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"
+                     Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+</Wix>

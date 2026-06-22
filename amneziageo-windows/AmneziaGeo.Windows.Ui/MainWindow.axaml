@@ -365,64 +365,9 @@
                 </StackPanel>
               </Button>
 
-              <Border Grid.Column="1" IsVisible="{Binding NoticeVisible}"
-                      VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
-                      Margin="12,0,0,0"
-                      Background="{DynamicResource AgAccentBrush}"
-                      CornerRadius="8" Padding="12,5">
-                <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
-                  <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
-                             FontSize="12" FontWeight="SemiBold"
-                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                  <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
-                          Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
-                          VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
-                </Grid>
-              </Border>
-
-              <!-- Update banner (separate channel from the reconnect notice; declared after it so it
-                   takes visual priority in the same cell). Click «Обновить» to download + install. -->
-              <Border Grid.Column="1" IsVisible="{Binding UpdateBannerVisible}"
-                      VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
-                      Margin="12,0,0,0"
-                      Background="{DynamicResource AgAccentBrush}"
-                      CornerRadius="8" Padding="12,5">
-                <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
-                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
-                  <TextBlock Grid.Column="1" Text="{Binding UpdateVersion, StringFormat='Доступно обновление {0}'}"
-                             Foreground="White" FontSize="12" FontWeight="SemiBold"
-                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                  <Button Grid.Column="2" Classes="radiopick" Command="{Binding InstallUpdateCommand}"
-                          Content="Обновить" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                          Margin="10,0,0,0" VerticalAlignment="Center" />
-                  <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissUpdateBannerCommand}"
-                          Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
-                          VerticalAlignment="Center" ToolTip.Tip="Закрыть" />
-                </Grid>
-              </Border>
-
-              <!-- Geo-list update banner (separate channel; declared last so it takes visual priority in
-                   the same cell). «Обновить сейчас» downloads all sources; «✕» defers until the set of
-                   outdated sources changes (can still be updated later in Settings → sources). -->
-              <Border Grid.Column="1" IsVisible="{Binding GeoUpdateBannerVisible}"
-                      VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="680"
-                      Margin="12,0,0,0"
-                      Background="{DynamicResource AgAccentBrush}"
-                      CornerRadius="8" Padding="12,5">
-                <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
-                  <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Center" Margin="0,0,9,0" />
-                  <TextBlock Grid.Column="1" Text="{Binding GeoUpdateCount, StringFormat='Доступны обновления geo-списков: {0}'}"
-                             Foreground="White" FontSize="12" FontWeight="SemiBold"
-                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                  <Button Grid.Column="2" Classes="radiopick" Command="{Binding UpdateGeoNowCommand}"
-                          Content="Обновить сейчас" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                          Margin="10,0,0,0" VerticalAlignment="Center" />
-                  <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissGeoUpdateBannerCommand}"
-                          Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
-                          VerticalAlignment="Center" ToolTip.Tip="Позже — можно обновить в настройках" />
-                </Grid>
-              </Border>
+              <!-- Notice / update / geo-update banners moved out of this header into a floating toast
+                   over the right content pane (see the StackPanel at the end of the content grid): the
+                   header's narrow middle column clipped long notices on small windows. -->
             </Grid>
           </Border>
 
@@ -1104,6 +1049,68 @@
               </Border>
             </StackPanel>
           </ScrollViewer>
+
+          <!-- Floating notification toast: overlays the top-center of the right content pane (declared
+               last in the content grid so it sits on top; ZIndex pins it above the tab panels). Full
+               pane width with wrapping text → long notices are never clipped the way the header's narrow
+               middle column clipped them. Collapsed banners take no space, so nothing is blocked when
+               idle. The three channels stack (priority order: reconnect notice → app update → geo
+               update); each keeps its own IsVisible and only shows when relevant. -->
+          <StackPanel ZIndex="50" VerticalAlignment="Top" HorizontalAlignment="Center"
+                      Margin="12,12,12,0" MaxWidth="560" Spacing="6">
+
+            <Border IsVisible="{Binding NoticeVisible}"
+                    Background="{DynamicResource AgAccentBrush}"
+                    CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
+                <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
+                           FontSize="12" FontWeight="SemiBold"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
+                        Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
+                        VerticalAlignment="Top" ToolTip.Tip="Закрыть" />
+              </Grid>
+            </Border>
+
+            <!-- Update banner: «Обновить» downloads + installs. -->
+            <Border IsVisible="{Binding UpdateBannerVisible}"
+                    Background="{DynamicResource AgAccentBrush}"
+                    CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
+                <TextBlock Grid.Column="1" Text="{Binding UpdateVersion, StringFormat='Доступно обновление {0}'}"
+                           Foreground="White" FontSize="12" FontWeight="SemiBold"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Classes="radiopick" Command="{Binding InstallUpdateCommand}"
+                        Content="Обновить" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                        Margin="10,0,0,0" VerticalAlignment="Center" />
+                <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissUpdateBannerCommand}"
+                        Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
+                        VerticalAlignment="Top" ToolTip.Tip="Закрыть" />
+              </Grid>
+            </Border>
+
+            <!-- Geo-list update banner: «Обновить сейчас» downloads all sources; «✕» defers until the
+                 set of outdated sources changes (can still be updated later in Settings → sources). -->
+            <Border IsVisible="{Binding GeoUpdateBannerVisible}"
+                    Background="{DynamicResource AgAccentBrush}"
+                    CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
+                <TextBlock Grid.Column="1" Text="{Binding GeoUpdateCount, StringFormat='Доступны обновления geo-списков: {0}'}"
+                           Foreground="White" FontSize="12" FontWeight="SemiBold"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Classes="radiopick" Command="{Binding UpdateGeoNowCommand}"
+                        Content="Обновить сейчас" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                        Margin="10,0,0,0" VerticalAlignment="Center" />
+                <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissGeoUpdateBannerCommand}"
+                        Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
+                        VerticalAlignment="Top" ToolTip.Tip="Позже — можно обновить в настройках" />
+              </Grid>
+            </Border>
+
+          </StackPanel>
 
         </Grid>
         </DockPanel>

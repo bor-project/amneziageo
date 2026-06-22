@@ -31,6 +31,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private InstallerAction _action;
     private LaunchAction _launch;
     private int _result;
+    private InstallState _detectedState;
 
     private volatile bool _engineConnected;
 
@@ -112,6 +113,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         var state = _newerRelated
             ? InstallState.NewerInstalled
             : (_msiPresent || _olderRelated) ? InstallState.Installed : InstallState.NotInstalled;
+        _detectedState = state;
 
         _dispatcher.BeginInvoke(() =>
         {
@@ -175,12 +177,11 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return;
         }
 
-        // The MSI installed and started the agent service. Ask the privileged agent to download the geo
-        // lists and report the outcome — a failure here is non-fatal, the install already succeeded.
+        // The MSI installed and started the agent service. Drive the geo step against the privileged agent
+        // and report the outcome — a failure here is non-fatal, the install already succeeded.
         _dispatcher.BeginInvoke(async () =>
         {
-            _vm.BeginGeoDownload();
-            var geo = await TryDownloadGeoAsync();
+            var geo = await RunGeoStepAsync();
             _result = 0;
             _vm.CompleteWithGeo(SuccessText(_action), geo);
             if (!_interactive)
@@ -190,20 +191,45 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         });
     }
 
-    private static async Task<string> TryDownloadGeoAsync()
+    /// <summary>
+    /// Runs the geo-data step against the running agent. On a fresh install the bases do not exist yet, so
+    /// it always downloads (showing live percent). On update/repair it first asks the agent whether anything
+    /// is actually out of date (and reachable) and skips the download when nothing needs updating.
+    /// </summary>
+    private async Task<string> RunGeoStepAsync()
     {
         try
         {
-            var (_, message) = await AgentPipeClient.SendAsync(
+            if (_detectedState != InstallState.NotInstalled)
+            {
+                _vm.BeginGeoCheck();
+                var check = await AgentPipeClient.SendAsync(
+                    "check-sources", [],
+                    connectTimeout: TimeSpan.FromSeconds(20),
+                    ackTimeout: TimeSpan.FromSeconds(60),
+                    CancellationToken.None);
+
+                // Definite "nothing to update" (0) skips the download; -1 (no snapshot / unknown) or >0
+                // falls through and downloads, since skipping when unsure would leave bases stale.
+                if (check.GeoUpdatesAvailable == 0)
+                {
+                    return "Базы гео актуальны — загрузка не требуется.";
+                }
+            }
+
+            _vm.BeginGeoDownload();
+            var progress = new Progress<int>(p => _vm.ReportGeoProgress(p));
+            var dl = await AgentPipeClient.SendAsync(
                 "download-geo", [],
                 connectTimeout: TimeSpan.FromSeconds(20),
                 ackTimeout: TimeSpan.FromSeconds(180),
-                CancellationToken.None);
-            return message;
+                CancellationToken.None,
+                progress);
+            return dl.Message;
         }
         catch (Exception ex)
         {
-            return $"Не удалось загрузить списки ({ex.Message}). Можно обновить позже в приложении.";
+            return $"Не удалось обновить базы гео ({ex.Message}). Можно сделать это позже в приложении.";
         }
     }
 

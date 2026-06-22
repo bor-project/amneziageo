@@ -1050,35 +1050,63 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(true, "Нет источников для загрузки.");
         }
 
-        var failed = new List<string>();
+        // Mark every source in-flight so each status snapshot carries per-source download percent: the
+        // installer's bootstrapper reads those snapshots to drive a real progress bar instead of an
+        // indeterminate spinner. Download concurrently (like "Обновить все") so the aggregate climbs
+        // smoothly and the whole step takes the time of the slowest source, not the sum.
         foreach (var source in sources)
         {
+            _updating[source.Name] = 0;
+        }
+
+        var failed = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var pump = new CancellationTokenSource();
+        var ticker = ProgressPumpAsync(pump.Token);
+        try
+        {
+            await Task.WhenAll(sources.Select(async source =>
+            {
+                try
+                {
+                    await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name), ct);
+                    _updateAvailable[source.Name] = false;
+                }
+                catch (Exception ex)
+                {
+                    failed.Add(source.Name);
+                    logger.LogWarning(ex, "geo download failed: {Name}", source.Name);
+                }
+                finally
+                {
+                    // Done (success or fail): pin to 100 so the BA's aggregate reaches 100% rather than
+                    // stalling on a source that errored mid-download.
+                    _updating[source.Name] = 100;
+                }
+            }));
+
             try
             {
-                await geoFileUpdater.UpdateAsync(source, null, ct);
-                _updateAvailable[source.Name] = false;
+                await geo.RematerializeAllRoutingListsAsync(ct);
             }
             catch (Exception ex)
             {
-                failed.Add(source.Name);
-                logger.LogWarning(ex, "geo download failed: {Name}", source.Name);
+                logger.LogError(ex, "geo re-materialize failed");
+                return new IpcAck(false, $"Списки скачаны, но не удалось обработать: {ex.Message}");
             }
         }
-
-        try
+        finally
         {
-            await geo.RematerializeAllRoutingListsAsync(ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "geo re-materialize failed");
-            await BroadcastIfChangedAsync(ct);
-            return new IpcAck(false, $"Списки скачаны, но не удалось обработать: {ex.Message}");
+            foreach (var source in sources)
+            {
+                _updating.TryRemove(source.Name, out _);
+            }
+
+            pump.Cancel();
+            await ticker;
+            await BroadcastIfChangedAsync(CancellationToken.None);
         }
 
-        await BroadcastIfChangedAsync(ct);
-
-        return failed.Count == 0
+        return failed.IsEmpty
             ? new IpcAck(true, $"Списки загружены ({sources.Count}).")
             : new IpcAck(false, $"Загружено {sources.Count - failed.Count} из {sources.Count}; не удалось: {string.Join(", ", failed)}.");
     }

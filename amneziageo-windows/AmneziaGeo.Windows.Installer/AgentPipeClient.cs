@@ -17,12 +17,20 @@ internal static class AgentPipeClient
     private const string PipeName = "AmneziaGeo.Agent";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>The agent's reply to a command, plus what its status snapshots revealed while we waited.
+    /// <paramref name="GeoUpdatesAvailable"/> is the number of geo sources flagged "update available" in the
+    /// last snapshot seen (-1 if none seen) — used to decide whether a download is worth offering.</summary>
+    public readonly record struct AgentReply(bool Ok, string Message, int GeoUpdatesAvailable);
+
     /// <summary>
     /// Connects (retrying until <paramref name="connectTimeout"/>), sends the command, and returns the
-    /// agent's ack. Throws on connect/timeout/pipe failure.
+    /// agent's ack. While waiting for the ack it reads the status snapshots the agent pushes: it reports an
+    /// aggregate download percent (across in-flight geo sources) to <paramref name="progress"/>, and tracks
+    /// how many sources have an update available. Throws on connect/timeout/pipe failure.
     /// </summary>
-    public static async Task<(bool Ok, string Message)> SendAsync(
-        string op, string[] args, TimeSpan connectTimeout, TimeSpan ackTimeout, CancellationToken ct)
+    public static async Task<AgentReply> SendAsync(
+        string op, string[] args, TimeSpan connectTimeout, TimeSpan ackTimeout, CancellationToken ct,
+        IProgress<int>? progress = null)
     {
         using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await pipe.ConnectAsync((int)connectTimeout.TotalMilliseconds, ct);
@@ -36,7 +44,10 @@ internal static class AgentPipeClient
         using var ackCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         ackCts.CancelAfter(ackTimeout);
 
-        // The agent pushes a status snapshot on connect (and may push more); ignore everything until our ack.
+        var updatesAvailable = -1;
+
+        // The agent pushes a status snapshot on connect and as state changes; read each one for progress /
+        // update-availability, and return once our command's ack arrives.
         while (true)
         {
             var line = await reader.ReadLineAsync(ackCts.Token);
@@ -51,9 +62,19 @@ internal static class AgentPipeClient
             }
 
             var envelope = JsonSerializer.Deserialize<Envelope>(line, Json);
-            if (envelope?.Type == "ack" && envelope.Ack is not null)
+            if (envelope?.Type == "snapshot" && envelope.Snapshot?.Sources is { Length: > 0 } sources)
             {
-                return (envelope.Ack.Ok, envelope.Ack.Message ?? string.Empty);
+                var inflight = sources.Where(s => s.Updating).ToArray();
+                if (inflight.Length > 0 && progress is not null)
+                {
+                    progress.Report((int)inflight.Average(s => Math.Clamp(s.Progress, 0, 100)));
+                }
+
+                updatesAvailable = sources.Count(s => s.UpdateAvailable);
+            }
+            else if (envelope?.Type == "ack" && envelope.Ack is not null)
+            {
+                return new AgentReply(envelope.Ack.Ok, envelope.Ack.Message ?? string.Empty, updatesAvailable);
             }
         }
     }
@@ -63,6 +84,7 @@ internal static class AgentPipeClient
         [JsonPropertyName("type")] public string? Type { get; set; }
         [JsonPropertyName("command")] public Command? Command { get; set; }
         [JsonPropertyName("ack")] public Ack? Ack { get; set; }
+        [JsonPropertyName("snapshot")] public Snapshot? Snapshot { get; set; }
     }
 
     private sealed class Command
@@ -75,5 +97,17 @@ internal static class AgentPipeClient
     {
         [JsonPropertyName("ok")] public bool Ok { get; set; }
         [JsonPropertyName("message")] public string? Message { get; set; }
+    }
+
+    private sealed class Snapshot
+    {
+        [JsonPropertyName("sources")] public Source[]? Sources { get; set; }
+    }
+
+    private sealed class Source
+    {
+        [JsonPropertyName("updating")] public bool Updating { get; set; }
+        [JsonPropertyName("progress")] public int Progress { get; set; }
+        [JsonPropertyName("updateAvailable")] public bool UpdateAvailable { get; set; }
     }
 }

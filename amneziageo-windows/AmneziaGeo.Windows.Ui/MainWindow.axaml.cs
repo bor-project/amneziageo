@@ -237,6 +237,178 @@ public sealed partial class MainWindow : Window
         vm.StatusMessage = "Сохранено.";
     }
 
+    // WebSocket settings share (copy / save / paste / load) — mirrors the config export/import. The
+    // button's DataContext is the open config's ConfigTransportViewModel (the WS section's DataContext).
+    private async void OnWsExportCopy(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
+        {
+            return;
+        }
+
+        var clipboard = GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+        {
+            await clipboard.SetTextAsync(vm.BuildTransferPayload());
+            vm.StatusMessage = "Скопировано в буфер обмена.";
+        }
+    }
+
+    private async void OnWsExportSave(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
+        {
+            return;
+        }
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Сохранить настройки WebSocket",
+            SuggestedFileName = vm.SuggestedFileName,
+        });
+        if (file is null)
+        {
+            return;
+        }
+
+        await using var stream = await file.OpenWriteAsync();
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(vm.BuildTransferPayload());
+        vm.StatusMessage = "Сохранено.";
+    }
+
+    private async void OnWsImportPaste(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
+        {
+            return;
+        }
+
+        var clipboard = GetTopLevel(this)?.Clipboard;
+        if (clipboard is null)
+        {
+            return;
+        }
+
+        var text = await clipboard.GetTextAsync();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            vm.StatusMessage = "В буфере обмена нет текста.";
+            return;
+        }
+
+        vm.ApplyImport(text);
+    }
+
+    private async void OnWsImportFile(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
+        {
+            return;
+        }
+
+        var path = await PickFileAsync("Настройки WebSocket", "txt", "conf");
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            vm.ApplyImport(await File.ReadAllTextAsync(path));
+        }
+        catch (Exception ex)
+        {
+            vm.StatusMessage = ex.Message;
+        }
+    }
+
+    // Routing-list share (copy / save / paste / load) — the button's DataContext is the window VM's
+    // RoutingEditor (a RoutingListEditorViewModel).
+    private async void OnRoutingExportCopy(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
+        {
+            return;
+        }
+
+        var clipboard = GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+        {
+            await clipboard.SetTextAsync(vm.BuildTransferPayload());
+            vm.StatusMessage = "Скопировано в буфер обмена.";
+        }
+    }
+
+    private async void OnRoutingExportSave(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
+        {
+            return;
+        }
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Сохранить список маршрутизации",
+            SuggestedFileName = vm.SuggestedFileName,
+        });
+        if (file is null)
+        {
+            return;
+        }
+
+        await using var stream = await file.OpenWriteAsync();
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(vm.BuildTransferPayload());
+        vm.StatusMessage = "Сохранено.";
+    }
+
+    private async void OnRoutingImportPaste(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
+        {
+            return;
+        }
+
+        var clipboard = GetTopLevel(this)?.Clipboard;
+        if (clipboard is null)
+        {
+            return;
+        }
+
+        var text = await clipboard.GetTextAsync();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            vm.StatusMessage = "В буфере обмена нет текста.";
+            return;
+        }
+
+        vm.ApplyImport(text);
+    }
+
+    private async void OnRoutingImportFile(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
+        {
+            return;
+        }
+
+        var path = await PickFileAsync("Список маршрутизации", "txt");
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            vm.ApplyImport(await File.ReadAllTextAsync(path));
+        }
+        catch (Exception ex)
+        {
+            vm.StatusMessage = ex.Message;
+        }
+    }
+
     // Double-clicking a member config row opens its management page (same as the ⚙ button on the row).
     private void OnMemberRowDoubleTapped(object? sender, TappedEventArgs e)
     {

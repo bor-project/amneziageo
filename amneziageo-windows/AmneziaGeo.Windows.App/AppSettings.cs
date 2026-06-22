@@ -46,4 +46,11 @@ internal sealed record AppSettings
     /// How often the periodic geo-source update-check runs, in hours.
     /// </summary>
     public int GeoCheckIntervalHours { get; init; } = 24;
+
+    /// <summary>
+    /// Preferred DNS server(s) for NON-tunneled (local) name resolution, comma/space separated. Empty
+    /// means auto-detect the system's current resolvers. Tunneled (geo-matched) names still use the
+    /// config's clean resolver, so this does not weaken geo resolution.
+    /// </summary>
+    public string PreferredDns { get; init; } = string.Empty;
 }

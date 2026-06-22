@@ -27,6 +27,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
     private bool _updateUrlInitialized;
+    private bool _preferredDnsInitialized;
     // Signature (sorted names) of the geo sources that had updates the last time the banner was shown,
     // so a persistent "update available" state isn't re-raised on every snapshot and a dismissed banner
     // stays dismissed until the set of outdated sources changes.
@@ -166,6 +167,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // surprise (the catalogue is shared across profiles).
     [ObservableProperty]
     private string _routingUsageHint = string.Empty;
+
+    // Preferred DNS for non-tunneled names (empty = auto). Pushed via SavePreferredDns; applies on reconnect.
+    [ObservableProperty]
+    private string _preferredDns = string.Empty;
 
     // App self-update (#54): the configured metadata URL, the latest check result, and download state.
     [ObservableProperty]
@@ -951,6 +956,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             _updateUrlInitialized = true;
         }
 
+        // Initialise the preferred-DNS field once so periodic snapshots don't overwrite the user's typing.
+        if (!_preferredDnsInitialized)
+        {
+            PreferredDns = snapshot.PreferredDns;
+            _preferredDnsInitialized = true;
+        }
+
         UpdateAvailable = snapshot.UpdateAvailable;
         UpdateVersion = snapshot.UpdateVersion;
         UpdateDescription = snapshot.UpdateDescription;
@@ -969,6 +981,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             UpdateBannerVisible = false;
             _bannerUpdateVersion = null;
         }
+    }
+
+    // Persist the preferred DNS (empty clears it → auto-detect). Applies on the next connect, like other
+    // transport settings, so a notice tells the user to reconnect.
+    [RelayCommand]
+    private async Task SavePreferredDns()
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["preferred-dns", PreferredDns ?? string.Empty]));
+        ShowNotice("Предпочитаемый DNS сохранён — применится при переподключении.");
     }
 
     [RelayCommand]

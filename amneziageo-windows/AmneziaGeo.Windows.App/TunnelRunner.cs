@@ -128,7 +128,11 @@ internal sealed class TunnelRunner(
         // another VPN. The loopback proxy always runs (split AND full): on this IPv4-only tunnel it
         // denies AAAA and HTTPS/SVCB (type 65) so dual-stack clients don't stall and Chrome doesn't take
         // an HTTP/3 hint path that bypasses the tunnel.
-        var upstream = dns.CaptureUpstream();
+        // A user-set "preferred DNS" overrides the auto-detected system resolvers for NON-tunneled names;
+        // empty falls back to what the system uses now. Tunneled (geo-matched) names keep the clean
+        // tunnelResolver above, so this never weakens geo resolution.
+        var preferredDns = ParseDnsServers(appSettings.PreferredDns);
+        var upstream = preferredDns.Count > 0 ? preferredDns : dns.CaptureUpstream();
         IReadOnlyList<string> redirectServers = [];
 
         // Local resolver for NON-tunneled names: in split the captured system resolver (coexisting /
@@ -294,6 +298,20 @@ internal sealed class TunnelRunner(
     private static IPAddress ParseFirst(IReadOnlyList<string> servers, IPAddress fallback)
     {
         return servers.Count > 0 && IPAddress.TryParse(servers[0], out var ip) ? ip : fallback;
+    }
+
+    // Parses the user's "preferred DNS" setting (comma/space/semicolon separated) into valid IP literals,
+    // dropping anything that is not a parseable address. Empty input yields an empty list (auto-detect).
+    private static IReadOnlyList<string> ParseDnsServers(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        return [.. value
+            .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => IPAddress.TryParse(s, out _))];
     }
 
     /// <summary>

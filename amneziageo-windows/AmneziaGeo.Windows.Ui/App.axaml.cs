@@ -38,10 +38,10 @@ public sealed partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             _desktop = desktop;
-            // Don't auto-quit when the window closes: the close box decides whether to hide to the tray
-            // (tunnel up — keep it running in the background) or exit (tunnel off — see OnMainWindowClosing),
-            // and the tray "Выход" exits explicitly. Either way the lifetime must not quit on its own when
-            // the last window closes.
+            // Don't auto-quit when the window closes: the close box always hides to the tray (the app
+            // keeps running in the background — agent link and any active tunnel stay up), and the tray
+            // "Выход" exits explicitly. Either way the lifetime must not quit on its own when the last
+            // window closes.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             var connection = new AgentConnection();
@@ -70,10 +70,9 @@ public sealed partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    // The close box (X) behaves by VPN state: while a tunnel is up or coming up the window hides to the
-    // tray and the agent keeps the tunnel running in the background; while it is off or coming down there
-    // is nothing to keep alive, so the app exits fully instead of idling in the tray. A real exit goes
-    // through ExitApp, which sets _exiting so the genuine close is allowed through.
+    // The close box (X) always hides the window to the tray so the app keeps running in the background
+    // (the agent link and any active tunnel stay up) regardless of VPN state; exit happens only through
+    // the tray "Выход", which goes via ExitApp and sets _exiting so the genuine close is allowed through.
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
     {
         if (_exiting)
@@ -81,19 +80,8 @@ public sealed partial class App : Application
             return;
         }
 
-        // IsTunnelActive is the desired-tunnel intent: true for connected/connecting, false for
-        // disconnecting/disconnected — exactly the "keep in tray vs close fully" split.
-        if (_viewModel?.IsTunnelActive == true)
-        {
-            e.Cancel = true;
-            _window?.Hide();
-            return;
-        }
-
-        // VPN off / coming down: cancel the bare close and run an orderly shutdown (ExitApp calls
-        // Shutdown, which closes the window again with _exiting set so it goes through).
         e.Cancel = true;
-        ExitApp();
+        _window?.Hide();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

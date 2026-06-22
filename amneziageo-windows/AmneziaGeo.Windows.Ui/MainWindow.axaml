@@ -737,9 +737,13 @@
                      the window VM's context (the name box sets its own OpenProfile context) so it can
                      bind DeleteOpenProfileCommand. -->
                 <StackPanel IsVisible="{Binding IsAspectName}" Spacing="16">
-                  <StackPanel DataContext="{Binding OpenProfile}" Spacing="6">
+                  <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="НАЗВАНИЕ" />
-                    <TextBox Classes="field" Text="{Binding Name}" IsReadOnly="True" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBox Classes="field" Width="260" Text="{Binding ProfileRename, Mode=TwoWay}" />
+                      <Button Classes="softbtn" Content="Переименовать" Command="{Binding RenameProfileCommand}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                   </StackPanel>
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="УДАЛЕНИЕ" />
@@ -760,8 +764,15 @@
             <ScrollViewer IsVisible="{Binding IsConfigManage}">
               <StackPanel Margin="18,16" Spacing="14">
 
-                <!-- config name (the back-to-list control lives in the header now, labelled "Назад") -->
-                <TextBlock Text="{Binding OpenConfig}" FontWeight="SemiBold" FontSize="16" />
+                <!-- config name — editable rename (the back-to-list control lives in the header, "Назад") -->
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="label" Text="НАЗВАНИЕ" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBox Classes="field" Width="260" Text="{Binding ConfigRename, Mode=TwoWay}" />
+                    <Button Classes="softbtn" Content="Переименовать" Command="{Binding RenameConfigCommand}" />
+                  </StackPanel>
+                  <TextBlock Text="{Binding ConfigRenameStatus}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                </StackPanel>
 
                 <!-- the config text + export. The box is read-only until "Изменить" unlocks it for inline
                      editing (the old separate editor section was dropped — it duplicated this); "Сохранить"
@@ -830,7 +841,7 @@
                       <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
                         <ComboBoxItem Content="Без авторизации" />
                         <ComboBoxItem Content="Логин и пароль" />
-                        <ComboBoxItem Content="Токен (секретный путь)" />
+                        <ComboBoxItem Content="Токен" />
                       </ComboBox>
                     </StackPanel>
                     <!-- basic auth: login + password (folded into wss://user:pass@host on save) -->
@@ -842,7 +853,7 @@
                     </StackPanel>
                     <!-- token auth: secret path (folded into wss://host/token on save) -->
                     <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
-                      <TextBlock Text="Токен (секретный путь):" />
+                      <TextBlock Text="Токен:" />
                       <TextBox Text="{Binding WebSocketToken}" Watermark="секретный-путь" />
                     </StackPanel>
                     <Border Background="{DynamicResource AgInsetBrush}" CornerRadius="6" Padding="8">
@@ -953,13 +964,51 @@
                               Command="{Binding SavePreferredDnsCommand}" />
                     </Grid>
                   </StackPanel>
+
+                  <!-- divider -->
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
+                  <!-- Bypass exclusions: kept direct + resolved by the local DNS, for a live LAN in full tunnel. -->
+                  <StackPanel Margin="15,11" Spacing="6">
+                    <TextBlock Text="Исключения (прямой доступ)" FontSize="13.5" />
+                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Что НЕ заворачивать в туннель: домены (резолвятся локальным DNS) или IP/подсети (идут напрямую). По одному в строке. Локалхост, локальная сеть (10.x, 172.16-31.x, 192.168.x), .local/.lan и подобные уже исключены по умолчанию — сюда добавляйте своё." />
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,2">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="Автоисключать локальные сети" FontSize="13" />
+                        <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                   Text="Сам определять подключённые подсети (включая не-RFC1918 / CGNAT) и держать их напрямую. Обновляется при каждом подключении." />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                    IsChecked="{Binding AutoExcludeLan, Mode=TwoWay}" />
+                    </Grid>
+                    <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
+                             VerticalContentAlignment="Top"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
+                             Text="{Binding Exclusions, Mode=TwoWay}"
+                             Watermark=".ddns.example.net&#x0a;corp.local&#x0a;10.50.0.0/16&#x0a;example.ru" />
+                    <Button Classes="softbtn" HorizontalAlignment="Left" Content="Сохранить"
+                            Command="{Binding SaveExclusionsCommand}" />
+                  </StackPanel>
                 </StackPanel>
               </Border>
 
               <Border Classes="subcard" Margin="0" IsVisible="{Binding IsSettingsLogs}">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
-                    <TextBlock Text="ЖУРНАЛ АГЕНТА" Classes="section" />
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,9">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Grid.Column="0" Text="ЖУРНАЛ АГЕНТА" Classes="section" VerticalAlignment="Center" />
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="Уровень:" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
+                        <ComboBox SelectedIndex="{Binding LogSeverity, Mode=TwoWay}" MinWidth="150">
+                          <ComboBoxItem Content="Все" />
+                          <ComboBoxItem Content="Информация и выше" />
+                          <ComboBoxItem Content="Предупреждения и выше" />
+                          <ComboBoxItem Content="Только ошибки" />
+                        </ComboBox>
+                      </StackPanel>
+                    </Grid>
                   </Border>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                           Background="{DynamicResource AgInsetBrush}" Margin="15,12,15,15"

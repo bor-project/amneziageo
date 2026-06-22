@@ -15,7 +15,15 @@ public static class AppEntry
     /// </summary>
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        var agentTarget = args is ["--agent", var target] ? target : null;
+        // "--agent <name>" binds a specific launch target (the preconfigured installer seeds e.g. "main");
+        // bare "--agent" runs the agent with no launch target so a clean install idles without a phantom
+        // binding and instead picks up the persisted user selection (AgentControl.SelectedTargetKey).
+        var agentTarget = args switch
+        {
+            ["--agent", var target] => target,
+            ["--agent"] => string.Empty,
+            _ => null,
+        };
         using (var host = AppHost.Build(agentTarget))
         {
             await EnsureStoreAsync(host.Services);

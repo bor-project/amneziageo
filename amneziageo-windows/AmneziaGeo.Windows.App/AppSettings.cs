@@ -53,4 +53,22 @@ internal sealed record AppSettings
     /// config's clean resolver, so this does not weaken geo resolution.
     /// </summary>
     public string PreferredDns { get; init; } = string.Empty;
+
+    /// <summary>
+    /// User bypass list, one entry per line (or comma/semicolon separated): a domain suffix
+    /// (e.g. <c>.ddns.example.net</c>, <c>corp.local</c>) kept on the LOCAL resolver, or an IP/CIDR
+    /// (e.g. <c>192.168.50.0/24</c>) routed straight out the physical gateway instead of the tunnel.
+    /// Always combined with the built-in defaults (loopback, RFC1918 LAN, common local suffixes); empty
+    /// means just the defaults. Lets the local network and chosen hosts stay reachable in full tunnel.
+    /// </summary>
+    public string Exclusions { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When set, every connect also auto-detects the machine's currently-connected local subnets (the
+    /// physical adapters' on-link IPv4 networks not already covered by the built-in RFC1918 defaults) and
+    /// keeps them direct — so non-RFC1918 corporate / CGNAT LANs are ignored by the tunnel without manual
+    /// entry. Re-detected each connect (picks up DHCP / roaming changes) and de-duplicated against the
+    /// defaults and the manual list. Default on.
+    /// </summary>
+    public bool AutoExcludeLan { get; init; } = true;
 }

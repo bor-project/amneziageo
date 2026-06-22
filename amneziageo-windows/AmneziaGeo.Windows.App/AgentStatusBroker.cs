@@ -272,6 +272,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpEditConfig => EditConfig(command.Args),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
+                IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
+                IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
@@ -370,6 +372,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         await configRepo.RemoveAsync(name, ct);
+        await ClearBindingIfTargetAsync(name, ct);
         logger.LogInformation("removed config {Name}", name);
         return new IpcAck(true, $"removed config {name}");
     }
@@ -394,8 +397,117 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         await store.RemoveBalancerAsync(name, ct);
+        await ClearBindingIfTargetAsync(name, ct);
         logger.LogInformation("removed profile {Name}", name);
         return new IpcAck(true, $"removed profile {name}");
+    }
+
+    // Drops the persisted target binding when the just-removed profile/config was the selected target, so
+    // a deleted referent does not leave a dangling selection the connection card would keep showing.
+    private async Task ClearBindingIfTargetAsync(string name, CancellationToken ct)
+    {
+        if (string.Equals(name, control.Target, StringComparison.Ordinal))
+        {
+            control.ClearTarget();
+            await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
+        }
+    }
+
+    private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
+        {
+            return new IpcAck(false, "rename-config requires the current and new name");
+        }
+
+        var oldName = args[0];
+        var newName = args[1].Trim();
+        if (string.Equals(oldName, newName, StringComparison.Ordinal))
+        {
+            return new IpcAck(true, "имя не изменилось");
+        }
+
+        if (!configRepo.Exists(oldName))
+        {
+            return new IpcAck(false, $"unknown config: {oldName}");
+        }
+
+        if (configRepo.Exists(newName) || await store.GetBalancerAsync(newName, ct) is not null)
+        {
+            return new IpcAck(false, $"имя {newName} уже занято");
+        }
+
+        // Refuse while the config is live under the running tunnel: moving the .conf out from under the
+        // active member would break it. Disconnect first.
+        if (control.Running && await IsRunningMemberAsync(oldName, ct))
+        {
+            return new IpcAck(false, $"config {oldName} is in use by the running tunnel; disconnect first");
+        }
+
+        await configRepo.RenameAsync(oldName, newName, ct);
+
+        // A single-config target named after the config follows the rename so the selection keeps working.
+        if (string.Equals(oldName, control.Target, StringComparison.Ordinal))
+        {
+            control.SetTarget(newName);
+            await store.SetSettingAsync(AgentControl.SelectedTargetKey, newName, ct);
+        }
+
+        logger.LogInformation("renamed config {Old} -> {New}", oldName, newName);
+        return new IpcAck(true, $"переименован в {newName}");
+    }
+
+    private async Task<IpcAck> RenameProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
+        {
+            return new IpcAck(false, "rename-profile requires the current and new name");
+        }
+
+        var oldName = args[0];
+        var newName = args[1].Trim();
+        if (string.Equals(oldName, newName, StringComparison.Ordinal))
+        {
+            return new IpcAck(true, "имя не изменилось");
+        }
+
+        var balancer = await store.GetBalancerAsync(oldName, ct);
+        if (balancer is null)
+        {
+            return new IpcAck(false, $"unknown profile: {oldName}");
+        }
+
+        if (await store.GetBalancerAsync(newName, ct) is not null || configRepo.Exists(newName))
+        {
+            return new IpcAck(false, $"имя {newName} уже занято");
+        }
+
+        // Refuse to rename the profile the tunnel is running on; disconnect first.
+        if (control.Running && string.Equals(oldName, BoundTarget, StringComparison.Ordinal))
+        {
+            return new IpcAck(false, $"profile {oldName} is running; disconnect first");
+        }
+
+        // Move the balancer row, then carry the routing assignment (keyed by profile name) and the
+        // selection/binding across to the new name.
+        await store.SaveBalancerAsync(balancer with { Name = newName }, ct);
+        await store.RemoveBalancerAsync(oldName, ct);
+
+        var (listId, useRouting) = await store.GetProfileRoutingAsync(oldName, ct);
+        if (listId is not null || useRouting)
+        {
+            await store.SetProfileRoutingAsync(newName, listId, useRouting, ct);
+            await store.SetProfileRoutingAsync(oldName, null, false, ct);
+        }
+
+        if (string.Equals(oldName, control.Target, StringComparison.Ordinal))
+        {
+            control.SetTarget(newName);
+            await store.SetSettingAsync(AgentControl.SelectedTargetKey, newName, ct);
+        }
+
+        logger.LogInformation("renamed profile {Old} -> {New}", oldName, newName);
+        return new IpcAck(true, $"переименован в {newName}");
     }
 
     private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -674,6 +786,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         control.SetTarget(name);
+        // Persist the selection so it survives an agent/host restart (the launch argument no longer
+        // carries a default target).
+        await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
         logger.LogInformation("selected profile {Profile}", name);
 
         // No auto-switch: a connected tunnel keeps running its current target; the UI shows a
@@ -1195,7 +1310,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.GeoAutoCheck,
             settings.GeoCheckIntervalHours,
             control.ConnectFailed,
-            settings.PreferredDns);
+            settings.PreferredDns,
+            settings.Exclusions,
+            settings.AutoExcludeLan);
     }
 
     /// <summary>

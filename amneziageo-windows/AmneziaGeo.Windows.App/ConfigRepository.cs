@@ -153,6 +153,66 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
+    /// Renames a configuration: moves the .conf and carries its geo settings, transport settings, saved
+    /// resolutions, and balancer memberships over to the new name. The destination must be free.
+    /// </summary>
+    public async Task RenameAsync(string oldName, string newName, CancellationToken ct = default)
+    {
+        EnsureValidName(newName);
+        if (string.Equals(oldName, newName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!Exists(oldName))
+        {
+            throw new InvalidOperationException($"configuration {oldName} does not exist");
+        }
+
+        if (Exists(newName))
+        {
+            throw new InvalidOperationException($"configuration {newName} already exists");
+        }
+
+        File.Move(TunnelPaths.ConfigFile(oldName), TunnelPaths.ConfigFile(newName));
+
+        var geo = await store.GetTunnelGeoAsync(oldName, ct);
+        if (geo is not null)
+        {
+            await store.SaveTunnelGeoAsync(geo with { Name = newName }, ct);
+            await store.RemoveTunnelGeoAsync(oldName, ct);
+        }
+
+        var transport = await store.GetConfigTransportAsync(oldName, ct);
+        if (transport is not null)
+        {
+            await store.SetConfigTransportAsync(transport with { Name = newName }, ct);
+            await store.RemoveConfigTransportAsync(oldName, ct);
+        }
+
+        foreach (var resolution in await store.ListDomainResolutionsAsync(oldName, ct))
+        {
+            await store.SaveDomainResolutionAsync(newName, resolution, ct);
+        }
+
+        await store.RemoveDomainResolutionsAsync(oldName, ct);
+
+        foreach (var balancerName in await store.ListBalancerNamesAsync(ct))
+        {
+            var balancer = await store.GetBalancerAsync(balancerName, ct);
+            if (balancer is null || !balancer.Members.Contains(oldName, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            var members = balancer.Members
+                .Select(member => string.Equals(member, oldName, StringComparison.Ordinal) ? newName : member)
+                .ToList();
+            await store.SaveBalancerAsync(balancer with { Members = members }, ct);
+        }
+    }
+
+    /// <summary>
     /// Deletes a configuration, its service, geo settings, resolutions, and balancer memberships.
     /// </summary>
     public async Task RemoveAsync(string name, CancellationToken ct = default)

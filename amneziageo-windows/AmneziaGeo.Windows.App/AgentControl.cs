@@ -7,6 +7,12 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class AgentControl
 {
+    /// <summary>
+    /// Store-settings key under which the user-selected target profile is persisted, so a chosen
+    /// profile survives an agent/host restart instead of reverting to a launch-argument default.
+    /// </summary>
+    public const string SelectedTargetKey = "selected-target";
+
     private readonly Lock _gate = new();
     private volatile bool _running;
     private volatile bool _restartRequired;
@@ -109,6 +115,16 @@ internal sealed class AgentControl
         // notice); a stopped agent uses this target on the next connect. So we deliberately do NOT
         // signal the runner here.
         _target = name;
+    }
+
+    /// <summary>
+    /// Clears the selected target (no profile chosen). Used when the bound profile/config is deleted or
+    /// the persisted selection is found dangling, so the connection card stops showing a phantom target.
+    /// Does not signal: callers decide whether a re-evaluation is needed.
+    /// </summary>
+    public void ClearTarget()
+    {
+        _target = null;
     }
 
     /// <summary>

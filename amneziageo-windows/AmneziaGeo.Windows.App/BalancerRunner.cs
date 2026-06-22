@@ -108,12 +108,19 @@ internal sealed class BalancerRunner(
             return new BalancerGroup(name, 60, [name]);
         }
 
-        // Nothing to resolve yet (fresh install with no profiles, or the bound target was deleted): keep
-        // the supervisor alive with an empty group so it idles and the pipe/status stay up, then picks a
-        // profile up once one is created and selected. Returning null here would end the supervisor and
-        // leave the agent unable to ever connect without a process restart.
-        logger.LogInformation("no resolvable target '{Group}'; idling", name);
-        return new BalancerGroup(name, 60, []);
+        // The target names neither a profile nor a config. Either nothing is selected yet (clean install)
+        // or the bound profile/config was deleted — a broken binding. Drop any dangling selection so the
+        // UI stops showing a phantom target, and keep the supervisor alive on a nameless empty group so it
+        // idles (the pipe/status stay up) until a profile is created and selected. Returning null here
+        // would end the supervisor and leave the agent unable to ever connect without a process restart.
+        if (!string.IsNullOrEmpty(name))
+        {
+            await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
+            control.ClearTarget();
+            logger.LogInformation("target '{Group}' does not exist; cleared binding, idling", name);
+        }
+
+        return new BalancerGroup(string.Empty, 60, []);
     }
 
     /// <summary>
@@ -140,8 +147,24 @@ internal sealed class BalancerRunner(
 
         if (group.Members.Count == 0)
         {
-            logger.LogWarning("balancer {Group} has no members", group.Name);
+            // A named-but-empty profile is worth a warning; the nameless empty group (no target selected)
+            // is the normal idle state and must stay quiet.
+            if (!string.IsNullOrEmpty(group.Name))
+            {
+                logger.LogWarning("balancer {Group} has no members", group.Name);
+            }
+
             await SetStateAsync("disconnected", group.Members, -1);
+
+            // A user connect to a memberless profile can never succeed. Drop the desired state to stopped
+            // and raise the one-shot failed notice instead of sitting on Running=true, which the UI reads
+            // as a perpetual "connecting…" with no feedback. FailConnect signals, so the supervisor
+            // re-enters the idle/stopped branch on the next loop.
+            if (control.Running)
+            {
+                control.FailConnect();
+            }
+
             await IdleAsync(ct);
             return;
         }
@@ -157,6 +180,14 @@ internal sealed class BalancerRunner(
             {
                 logger.LogError("missing config: {Member}", member);
                 await SetStateAsync("disconnected", members, -1);
+
+                // Same as the empty-profile case: a member whose .conf is gone can never dial, so fail the
+                // connect rather than leaving Running=true (perpetual "connecting…").
+                if (control.Running)
+                {
+                    control.FailConnect();
+                }
+
                 await IdleAsync(ct);
                 return;
             }

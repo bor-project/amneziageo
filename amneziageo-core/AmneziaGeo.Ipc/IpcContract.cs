@@ -159,6 +159,18 @@ public static class IpcContract
     public const string OpRemoveBalancer = "remove-balancer";
 
     /// <summary>
+    /// Command to rename a config. Args: current name, new name. Carries the config's geo, transport,
+    /// resolutions, and balancer memberships across. Refused if in use by the running tunnel.
+    /// </summary>
+    public const string OpRenameConfig = "rename-config";
+
+    /// <summary>
+    /// Command to rename a profile (balancer). Args: current name, new name. Carries the profile's
+    /// routing assignment and selection/binding across. Refused if it is the running profile.
+    /// </summary>
+    public const string OpRenameProfile = "rename-profile";
+
+    /// <summary>
     /// Command to check for an application update against the configured update URL. No args. The ack
     /// message holds a human-readable status; availability also rides the next status snapshot.
     /// </summary>

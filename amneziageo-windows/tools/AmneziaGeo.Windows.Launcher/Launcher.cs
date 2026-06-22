@@ -18,9 +18,17 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
     {
         var launch = LaunchOptions.Resolve(options.Value, args);
 
-        RegisterConfigs(launch.ConfigPaths);
-        ApplyRoutingLists(options.Value.RoutingLists);
-        ApplyProfiles(options.Value.Profiles);
+        // Seeding. In dev (SeedOnce=false) it re-applies every launch (a known starting state). For a
+        // shipped preconfigured build (SeedOnce=true) it runs only on the first launch and then leaves a
+        // marker, so a user's later edits (toggling WebSocket, changing routing) survive subsequent logons.
+        if (ShouldSeed())
+        {
+            RegisterConfigs(launch.ConfigPaths);
+            ApplyRoutingLists(options.Value.RoutingLists);
+            ApplyProfiles(options.Value.Profiles);
+            ApplyWebSockets(options.Value.WebSockets);
+            MarkSeeded();
+        }
 
         if (!launch.RunService && !launch.RunUi)
         {
@@ -134,11 +142,90 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
         }
     }
 
+    // Whether to run the startup seed. Always in dev; once (guarded by a marker file) for a shipped
+    // preconfigured build, so re-seeding never clobbers the user's later changes.
+    private bool ShouldSeed()
+    {
+        if (!options.Value.SeedOnce)
+        {
+            return true;
+        }
+
+        if (File.Exists(SeedMarkerPath()))
+        {
+            logger.LogInformation("seed-once: marker present, skipping startup seed");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void MarkSeeded()
+    {
+        if (!options.Value.SeedOnce)
+        {
+            return;
+        }
+
+        try
+        {
+            var marker = SeedMarkerPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
+            File.WriteAllText(marker, "seeded");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "failed to write seed-once marker");
+        }
+    }
+
+    // Lives next to the shared state (ProgramData\AmneziaGeo) so it survives reinstall (the MSI does not
+    // remove ProgramData) — a reinstall should not re-seed over the user's existing setup.
+    private static string SeedMarkerPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "AmneziaGeo",
+        "launcher-seeded.marker");
+
+    private void ApplyWebSockets(IReadOnlyList<WebSocketSpec> webSockets)
+    {
+        foreach (var ws in webSockets)
+        {
+            if (string.IsNullOrWhiteSpace(ws.Config))
+            {
+                continue;
+            }
+
+            logger.LogInformation("seeding WebSocket transport for '{Config}' (enabled={Enabled}, port={Port})", ws.Config, ws.Enabled, ws.Port);
+            try
+            {
+                AppEntry.RunAsync(
+                [
+                    "set-websocket",
+                    ws.Config,
+                    ws.Enabled ? "on" : "off",
+                    ws.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ws.Host ?? string.Empty,
+                ]).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "failed to seed WebSocket transport for '{Config}'", ws.Config);
+            }
+        }
+    }
+
     private void RegisterConfigs(IReadOnlyList<string> paths)
     {
         foreach (var raw in paths)
         {
             var expanded = Environment.ExpandEnvironmentVariables(raw);
+            // A relative path resolves against the install dir (the exe's folder), not the working
+            // directory, so a bundled seed conf (e.g. "seed\bor123.conf") is found whether launched from
+            // the shortcut or the elevated logon task.
+            if (!Path.IsPathRooted(expanded))
+            {
+                expanded = Path.GetFullPath(expanded, AppContext.BaseDirectory);
+            }
 
             string[] files;
             if (Directory.Exists(expanded))

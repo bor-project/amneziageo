@@ -1,0 +1,19 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <!-- x64 package: the bundled payload is a win-x64 self-contained publish of the launcher
+         (AmneziaGeo.exe), installed under ProgramFiles64Folder. -->
+    <Platform>x64</Platform>
+    <OutputName>AmneziaGeo-preconfigured-1.0.1-win-x64</OutputName>
+
+    <!-- StageDir (the staged self-contained launcher publish + seed files to harvest) is supplied by
+         build-installer-preconfigured.ps1 via -p:StageDir=...; expose it as $(var.StageDir). -->
+    <DefineConstants>StageDir=$(StageDir)</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="EnsureStageDir" BeforeTargets="Build"
+          Condition="'$(StageDir)' == '' or !Exists('$(StageDir)')">
+    <Error Text="StageDir is not set or does not exist. Build via build-installer-preconfigured.ps1 (it publishes the launcher self-contained, stages the seed, and passes -p:StageDir)." />
+  </Target>
+
+</Project>

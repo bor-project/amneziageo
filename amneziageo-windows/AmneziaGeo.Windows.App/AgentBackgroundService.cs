@@ -22,22 +22,38 @@ internal sealed class AgentBackgroundService(
         // Heal any DNS/route state a crashed or severed predecessor left behind before doing anything.
         reconciler.Reconcile();
 
-        // The launch target may not exist yet (fresh install: no profiles configured). Don't abort the
-        // service — serve the pipe and idle so the GUI can connect, create a profile, then select +
-        // connect. Only seed the selected target when it actually resolves; otherwise leave it unset and
-        // hand the runner an empty group to idle on.
-        var group = await ResolveGroupAsync(target.Name, stoppingToken);
+        // Prefer the persisted user selection (survives restarts) over the launch argument; the launch
+        // arg is only a seed for the preconfigured installer's "main". On a clean install both are empty,
+        // so the service serves the pipe and idles — no phantom binding — until the GUI creates a profile
+        // and selects it. A persisted selection that no longer resolves is a broken binding: drop it.
+        var stored = await store.GetSettingAsync(AgentControl.SelectedTargetKey, stoppingToken);
+        var launch = !string.IsNullOrWhiteSpace(stored) ? stored! : target.Name;
+        var group = string.IsNullOrWhiteSpace(launch) ? null : await ResolveGroupAsync(launch, stoppingToken);
         if (group is not null)
         {
             logger.LogInformation("agent starting: group {Group} ({Count} member(s))", group.Name, group.Members.Count);
             control.SetTarget(group.Name);
+
+            // Persist a launch-arg seed (preconfigured "--agent main") as the selection so it sticks even
+            // if the argument is later dropped.
+            if (string.IsNullOrWhiteSpace(stored))
+            {
+                await store.SetSettingAsync(AgentControl.SelectedTargetKey, group.Name, stoppingToken);
+            }
         }
         else
         {
-            logger.LogInformation("agent starting: target '{Target}' not configured yet; idling", target.Name);
+            // Clear a dangling persisted selection so the connection card shows a clean slate, not a
+            // phantom target that can never connect.
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, stoppingToken);
+            }
+
+            logger.LogInformation("agent starting: no target configured yet; idling");
         }
 
-        await runner.RunAsync(group ?? new BalancerGroup(target.Name, 60, []), stoppingToken);
+        await runner.RunAsync(group ?? new BalancerGroup(string.Empty, 60, []), stoppingToken);
         logger.LogInformation("agent stopped");
     }
 

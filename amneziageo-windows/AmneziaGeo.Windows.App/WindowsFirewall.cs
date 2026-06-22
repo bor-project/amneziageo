@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -78,7 +79,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// carve-out present. Returns false and installs nothing on any failure. Thread-safe with respect
     /// to <see cref="Disable"/> so a tunnel teardown racing the arming cannot leave a stray engine.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
     {
         lock (_gate)
         {
@@ -111,10 +112,19 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 {
                     // Permits first.
                     PermitApp(engine);
+
+                    // The WebSocket transport carries the encrypted underlay to the server over a SEPARATE
+                    // child process (wstunnel.exe), not this app — so permit it too, or the block-all below
+                    // severs the tunnel's TCP/TLS lifeline and the full tunnel connects but passes no data.
+                    if (!string.IsNullOrEmpty(underlayAppPath) && File.Exists(underlayAppPath))
+                    {
+                        PermitExe(engine, underlayAppPath, "Permit wstunnel underlay");
+                    }
+
                     PermitTunInterface(engine, luid);
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
-                    PermitLan(engine); // LAN bypass is a baseline guarantee — always permitted under the kill-switch
+                    PermitLan(engine, extraLanCidrs ?? []); // LAN bypass + user exclusion CIDRs — always permitted under the kill-switch
                     if (dualStack)
                     {
                         PermitLanV6(engine); // v6 LAN bypass (ULA + NDP) on a dual-stack tunnel
@@ -196,10 +206,23 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         var path = Environment.ProcessPath
             ?? throw new InvalidOperationException("kill-switch: cannot determine this process's executable path");
 
+        if (!PermitExe(engine, path, "Permit AmneziaGeo app"))
+        {
+            throw new InvalidOperationException("kill-switch: could not permit the AmneziaGeo app");
+        }
+    }
+
+    // Permits all traffic from a specific executable (matched by Windows app-id) as a hard permit
+    // (CLEAR_ACTION_RIGHT) so the encrypted underlay to the server survives even if another sublayer would
+    // block it. Returns false (without throwing) when the app-id cannot be resolved, so a best-effort
+    // underlay permit does not abort the whole kill-switch.
+    private bool PermitExe(IntPtr engine, string path, string label)
+    {
         var rc = FwpmGetAppIdFromFileName0(path, out var appId);
         if (rc != 0 || appId == IntPtr.Zero)
         {
-            throw new InvalidOperationException($"FwpmGetAppIdFromFileName0 failed 0x{rc:X8}");
+            logger.LogWarning("kill-switch: FwpmGetAppIdFromFileName0 failed 0x{Code:X8} for {Path}", rc, path);
+            return false;
         }
 
         try
@@ -209,12 +232,12 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 Condition(CondAleAppId, MatchEqual, FwpByteBlobType, (ulong)appId),
             };
 
-            // Hard permit (CLEAR_ACTION_RIGHT): the encrypted underlay to the server must survive even
-            // if another sublayer would block it.
             foreach (var layer in AleLayers)
             {
-                Add(engine, layer, WeightApp, ActionPermit, FilterFlagClearActionRight, cond, "Permit AmneziaGeo app");
+                Add(engine, layer, WeightApp, ActionPermit, FilterFlagClearActionRight, cond, label);
             }
+
+            return true;
         }
         finally
         {
@@ -270,28 +293,55 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         Add(engine, LayerAleAuthRecvAcceptV4, WeightDhcp, ActionPermit, 0, cond, "Permit inbound DHCP");
     }
 
-    private void PermitLan(IntPtr engine)
+    private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs)
     {
         foreach (var cidr in LanCidrsV4)
         {
-            var (addr, mask) = ParseV4Cidr(cidr);
-            var maskPtr = Marshal.AllocHGlobal(2 * sizeof(uint)); // FWP_V4_ADDR_AND_MASK { UINT32 addr; UINT32 mask; }
+            PermitV4Cidr(engine, cidr);
+        }
+
+        // User exclusion CIDRs (e.g. a CGNAT 100.64.0.0/10 or a corporate subnet) must be permitted too,
+        // or the block-all severs them despite their exclusion route. A single malformed entry must NEVER
+        // abort arming the kill-switch — that would leave the full tunnel with no firewall at all (no
+        // block-all, no QUIC block) and a leak on drop. PermitV4Cidr validates and skips invalid/v6 CIDRs;
+        // the try/catch is belt-and-suspenders for this security-critical path.
+        foreach (var cidr in extraCidrs)
+        {
             try
             {
-                Marshal.WriteInt32(maskPtr, 0, (int)addr);
-                Marshal.WriteInt32(maskPtr, sizeof(uint), (int)mask);
-                var cond = new[]
-                {
-                    Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
-                };
-
-                Add(engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (out)");
-                Add(engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (in)");
+                PermitV4Cidr(engine, cidr);
             }
-            finally
+            catch (Exception ex)
             {
-                Marshal.FreeHGlobal(maskPtr);
+                logger.LogWarning(ex, "kill-switch: skipping LAN CIDR {Cidr}", cidr);
             }
+        }
+    }
+
+    private void PermitV4Cidr(IntPtr engine, string cidr)
+    {
+        if (!TryParseV4Cidr(cidr, out var addr, out var mask))
+        {
+            logger.LogWarning("kill-switch: skipping invalid LAN CIDR {Cidr}", cidr);
+            return;
+        }
+
+        var maskPtr = Marshal.AllocHGlobal(2 * sizeof(uint)); // FWP_V4_ADDR_AND_MASK { UINT32 addr; UINT32 mask; }
+        try
+        {
+            Marshal.WriteInt32(maskPtr, 0, (int)addr);
+            Marshal.WriteInt32(maskPtr, sizeof(uint), (int)mask);
+            var cond = new[]
+            {
+                Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
+            };
+
+            Add(engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (out)");
+            Add(engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (in)");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(maskPtr);
         }
     }
 
@@ -458,20 +508,28 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// Parses an IPv4 CIDR into host-order address and mask DWORDs (the byte order WFP's
     /// FWP_V4_ADDR_AND_MASK expects).
     /// </summary>
-    private static (uint Addr, uint Mask) ParseV4Cidr(string cidr)
+    // Parses "a.b.c.d/n" into a network address + mask. Returns false (no throw) for a non-IPv4 address
+    // or an out-of-range/non-numeric prefix, so a malformed user CIDR is skipped rather than aborting the
+    // whole kill-switch. The 0..32 bound also avoids a negative C# shift count yielding a bogus mask.
+    private static bool TryParseV4Cidr(string cidr, out uint addr, out uint mask)
     {
+        addr = 0;
+        mask = 0;
         var slash = cidr.IndexOf('/');
-        var address = IPAddress.Parse(cidr[..slash]);
-        if (address.AddressFamily != AddressFamily.InterNetwork)
+        if (slash < 0
+            || !IPAddress.TryParse(cidr[..slash], out var address)
+            || address.AddressFamily != AddressFamily.InterNetwork
+            || !int.TryParse(cidr[(slash + 1)..], out var bits)
+            || bits is < 0 or > 32)
         {
-            throw new ArgumentException($"not an IPv4 CIDR: {cidr}");
+            return false;
         }
 
-        var bits = int.Parse(cidr[(slash + 1)..]);
         var bytes = address.GetAddressBytes();
-        var addr = ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16) | ((uint)bytes[2] << 8) | bytes[3];
-        var mask = bits == 0 ? 0u : uint.MaxValue << (32 - bits);
-        return (addr & mask, mask);
+        addr = ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16) | ((uint)bytes[2] << 8) | bytes[3];
+        mask = bits == 0 ? 0u : uint.MaxValue << (32 - bits);
+        addr &= mask;
+        return true;
     }
 
     // ---- interop ------------------------------------------------------------------------------

@@ -104,7 +104,7 @@ internal sealed partial class RouteManager
     /// called before the tunnel adapter comes up so the best next-hop resolves to the physical gateway,
     /// not the tunnel. Returns true if any exclusion was installed.
     /// </summary>
-    public bool AddLanExclusions(string name, bool dualStack)
+    public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs)
     {
         var any = false;
         foreach (var (network, prefix) in LanExclusions)
@@ -123,6 +123,35 @@ internal sealed partial class RouteManager
             if (result is NoError or ErrorObjectAlreadyExists)
             {
                 UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
+                any = true;
+            }
+        }
+
+        // User bypass entries (IP/CIDR from the exclusions list): route each straight out the physical
+        // gateway so the chosen hosts/subnets stay direct in full tunnel, persisted alongside the LAN
+        // ranges so they are reverted together. IPv4 only — the common LAN/bypass case.
+        foreach (var cidr in extraCidrs)
+        {
+            var slash = cidr.IndexOf('/');
+            if (slash < 0
+                || !IPAddress.TryParse(cidr[..slash], out var dest)
+                || dest.AddressFamily != AddressFamily.InterNetwork
+                || !byte.TryParse(cidr[(slash + 1)..], out var prefix))
+            {
+                continue;
+            }
+
+            var (gateway, interfaceIndex) = FindPhysicalGateway(dest);
+            if (gateway is null)
+            {
+                continue;
+            }
+
+            var row = NewRow(dest, prefix, interfaceIndex, gateway);
+            var result = CreateIpForwardEntry2(ref row);
+            if (result is NoError or ErrorObjectAlreadyExists)
+            {
+                UpdateStateFile(TunnelPaths.LanStateFile(name), $"{dest}/{prefix}", add: true);
                 any = true;
             }
         }
@@ -151,6 +180,117 @@ internal sealed partial class RouteManager
         }
 
         return any;
+    }
+
+    /// <summary>
+    /// Detects the machine's currently-connected local IPv4 subnets: the on-link networks of up, physical
+    /// adapters (loopback, tunnels, and our own WireGuard/wintun adapters skipped) that are NOT already
+    /// covered by a built-in LAN exclusion. These are the non-RFC1918 corporate / CGNAT LANs the defaults
+    /// miss, returned as "network/prefix" for the caller to keep direct. Re-evaluated each connect so DHCP
+    /// / roaming changes are reflected.
+    /// </summary>
+    public IReadOnlyList<string> LocalSubnets()
+    {
+        var result = new List<string>();
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up
+                || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+            {
+                continue;
+            }
+
+            // Never harvest our own tunnel adapter's subnet — excluding it would break the tunnel.
+            if (ni.Name.StartsWith("AmneziaGeo", StringComparison.OrdinalIgnoreCase)
+                || ni.Description.Contains("WireGuard", StringComparison.OrdinalIgnoreCase)
+                || ni.Description.Contains("AmneziaWG", StringComparison.OrdinalIgnoreCase)
+                || ni.Description.Contains("Wintun", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+            {
+                if (ua.Address.AddressFamily != AddressFamily.InterNetwork)
+                {
+                    continue;
+                }
+
+                var prefix = ua.PrefixLength;
+                if (prefix is <= 0 or >= 31)
+                {
+                    continue; // /31-/32 is a point-to-point/host, /0 a default — none describe a LAN
+                }
+
+                var network = NetworkAddress(ua.Address, prefix);
+                if (IsDefaultLanCovered(network, prefix))
+                {
+                    continue; // already kept direct by a built-in RFC1918 / link-local range
+                }
+
+                var cidr = $"{network}/{prefix}";
+                if (!result.Contains(cidr))
+                {
+                    result.Add(cidr);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // True when network/prefix sits inside a built-in LAN exclusion (RFC1918) or link-local 169.254/16,
+    // so it is already direct and need not be added again.
+    private static bool IsDefaultLanCovered(IPAddress network, int prefix)
+    {
+        foreach (var (range, rangePrefix) in new[] { ("10.0.0.0", 8), ("172.16.0.0", 12), ("192.168.0.0", 16), ("169.254.0.0", 16) })
+        {
+            if (prefix >= rangePrefix && InRange(network, IPAddress.Parse(range), rangePrefix))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IPAddress NetworkAddress(IPAddress ip, int prefix)
+    {
+        var bytes = ip.GetAddressBytes();
+        var mask = PrefixToMask(prefix);
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] &= mask[i];
+        }
+
+        return new IPAddress(bytes);
+    }
+
+    private static bool InRange(IPAddress addr, IPAddress network, int prefix)
+    {
+        var a = addr.GetAddressBytes();
+        var n = network.GetAddressBytes();
+        var mask = PrefixToMask(prefix);
+        for (var i = 0; i < 4; i++)
+        {
+            if ((a[i] & mask[i]) != (n[i] & mask[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static byte[] PrefixToMask(int prefix)
+    {
+        var mask = new byte[4];
+        for (var i = 0; i < prefix && i < 32; i++)
+        {
+            mask[i / 8] |= (byte)(0x80 >> (i % 8));
+        }
+
+        return mask;
     }
 
     /// <summary>

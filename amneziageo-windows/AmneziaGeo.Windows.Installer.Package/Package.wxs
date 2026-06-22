@@ -58,12 +58,16 @@
          per-tunnel services. The active tunnel is already torn down by the AmneziaGeoAgent service's
          own graceful stop (ServiceControl below), which reverts its routes / DNS / firewall; this only
          catches a per-tunnel service orphaned by an agent crash. Fixed names only (no installer
-         properties), so the action needs no deferred CustomActionData. Best-effort: Return="ignore" so
-         a hiccup never blocks uninstall. -->
+         properties), so the action needs no deferred CustomActionData. Runs DEFERRED in the system
+         context (Impersonate="no") so the powershell child lands on session 0, not the user's desktop —
+         otherwise it flashes a console window mid-(un)install (visible during an in-app update's upgrade).
+         -WindowStyle Hidden/-NonInteractive harden that. Best-effort: Return="ignore" so a hiccup never
+         blocks uninstall. -->
     <CustomAction Id="AgCleanup"
                   Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-Service 'AmneziaGeo$*' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue; sc.exe delete $_.Name }&quot;"
-                  Execute="immediate"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command &quot;Get-Service 'AmneziaGeo$*' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue; sc.exe delete $_.Name }&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
                   Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="AgCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
@@ -83,8 +87,10 @@
 
     <!-- The backend agent, registered as the LocalSystem auto-start service the GUI talks to.
          Service name MUST match TunnelPaths.AgentServiceName() ("AmneziaGeoAgent") so the in-app
-         service controls line up. The agent binds the default target "main"; if "main" does not
-         exist yet the agent idles (serves the pipe) until the user creates and selects a profile. -->
+         service controls line up. The agent flag with no launch target (see Arguments below) ships a
+         clean install with NO phantom binding: the agent idles (serves the pipe) and picks up the
+         user's persisted profile selection once one is created and selected. (The preconfigured
+         installer instead seeds an explicit "main" target.) -->
     <Component Id="AgentServiceExe" Directory="INSTALLFOLDER">
       <File Id="AppExe" Source="$(var.StageDir)\AmneziaGeo.Windows.App.exe" KeyPath="yes" />
       <ServiceInstall Id="AgentSvcInstall"
@@ -95,7 +101,7 @@
                       Start="auto"
                       ErrorControl="normal"
                       Account="LocalSystem"
-                      Arguments="--agent main"
+                      Arguments="--agent"
                       Vital="yes" />
       <ServiceControl Id="AgentSvcControl"
                       Name="AmneziaGeoAgent"

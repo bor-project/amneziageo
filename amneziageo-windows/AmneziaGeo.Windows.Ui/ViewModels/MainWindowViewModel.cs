@@ -138,6 +138,21 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
 
+    // The editable name field for the open config (seeded with its current name) and a one-line status
+    // for a rejected rename (e.g. the name is taken, or the config is in use by the running tunnel).
+    [ObservableProperty]
+    private string _configRename = string.Empty;
+
+    [ObservableProperty]
+    private string _configRenameStatus = string.Empty;
+
+    // The editable name field for the open profile (seeded with its current name) and its rename status.
+    [ObservableProperty]
+    private string _profileRename = string.Empty;
+
+    [ObservableProperty]
+    private string _profileRenameStatus = string.Empty;
+
     // Which settings section the left rail has selected while on the Settings tab.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
@@ -171,6 +186,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Preferred DNS for non-tunneled names (empty = auto). Pushed via SavePreferredDns; applies on reconnect.
     [ObservableProperty]
     private string _preferredDns = string.Empty;
+
+    // Bypass exclusions: domains kept on the local resolver, IP/CIDRs routed direct (one per line). Empty
+    // = just the built-in defaults (loopback, RFC1918 LAN, common local suffixes). Applies on reconnect.
+    private bool _exclusionsInitialized;
+
+    [ObservableProperty]
+    private string _exclusions = string.Empty;
 
     // App self-update (#54): the configured metadata URL, the latest check result, and download state.
     [ObservableProperty]
@@ -206,6 +228,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _geoAutoCheck = true;
 
+    // Auto-exclude detected local subnets from the tunnel (default on). Pushed on toggle; applies on reconnect.
+    [ObservableProperty]
+    private bool _autoExcludeLan = true;
+
     [ObservableProperty]
     private int _geoCheckIntervalHours = 24;
 
@@ -237,6 +263,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _hasLogs;
+
+    // The most recent agent log lines (oldest first) as delivered by the last snapshot, kept raw so the
+    // severity filter can re-derive LogText without another round-trip.
+    private IReadOnlyList<string> _logLines = [];
+
+    // Minimum severity shown in the journal: 0 = все, 1 = INFO и выше, 2 = WARN и выше, 3 = только ошибки.
+    // Lines are rendered "HH:mm:ss LVL message"; the 3-char level token drives the filter.
+    [ObservableProperty]
+    private int _logSeverity;
 
     // Set while applying a snapshot so echoing the agent's current settings into the toggles does not
     // bounce straight back as a set-setting command.
@@ -594,10 +629,42 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // Rename the open config. On success the page closes; the rebroadcast list shows the new name, under
+    // which the user can reopen it. On a refused rename (name taken, or in use by the running tunnel) the
+    // page stays put and shows why.
+    [RelayCommand]
+    private async Task RenameConfig()
+    {
+        var current = OpenConfig;
+        if (current is null)
+        {
+            return;
+        }
+
+        var next = (ConfigRename ?? string.Empty).Trim();
+        if (next.Length == 0 || string.Equals(next, current, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ConfigRenameStatus = string.Empty;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRenameConfig, [current, next]));
+        if (ack.Ok)
+        {
+            OpenConfig = null;
+        }
+        else
+        {
+            ConfigRenameStatus = ack.Message;
+        }
+    }
+
     // Build the config page's view model when a config is opened; null it out when the page closes.
     partial void OnOpenConfigChanged(string? value)
     {
         ConfigDeleteStatus = string.Empty;
+        ConfigRename = value ?? string.Empty;
+        ConfigRenameStatus = string.Empty;
         if (value is null)
         {
             ConfigExport = null;
@@ -620,6 +687,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         // Leaving / switching profiles drops any config opened for management.
         OpenConfig = null;
+        ProfileRename = newValue?.Name ?? string.Empty;
+        ProfileRenameStatus = string.Empty;
 
         if (oldValue is not null)
         {
@@ -836,7 +905,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         string? notice = null;
         if (snapshot.ConnectFailed)
         {
-            notice = "Не удалось подключиться — сервер не ответил.";
+            // Distinguish a memberless profile (nothing to dial) from a real reachability failure, so the
+            // message is actionable instead of the misleading "сервер не ответил".
+            var emptyProfile = snapshot.SelectedTarget is not null
+                && snapshot.Balancers.FirstOrDefault(b =>
+                       string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Members.Count: 0 };
+            notice = emptyProfile
+                ? $"Профиль «{snapshot.SelectedTarget}» пуст — добавьте конфигурацию."
+                : "Не удалось подключиться — сервер не ответил.";
         }
         else if (snapshot.Active && snapshot.SelectedTarget is not null
             && !string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal))
@@ -856,6 +932,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         _suppressSettingPush = true;
         GeoAutoCheck = snapshot.GeoAutoCheck;
+        AutoExcludeLan = snapshot.AutoExcludeLan;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         _suppressSettingPush = false;
@@ -863,10 +940,44 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ApplyUpdateState(snapshot);
         ApplyGeoUpdateBanner();
 
-        var logs = snapshot.Logs ?? [];
-        HasLogs = logs.Count > 0;
-        // Newest first so the latest activity stays visible at the top without scrolling.
-        LogText = logs.Count == 0 ? string.Empty : string.Join('\n', logs.Reverse());
+        _logLines = snapshot.Logs ?? [];
+        HasLogs = _logLines.Count > 0;
+        RebuildLogText();
+    }
+
+    partial void OnLogSeverityChanged(int value)
+    {
+        RebuildLogText();
+    }
+
+    // Rebuilds the journal text from the raw lines applying the current severity filter, newest first so
+    // the latest activity stays visible at the top without scrolling.
+    private void RebuildLogText()
+    {
+        var threshold = LogSeverity;
+        var shown = threshold <= 0
+            ? _logLines
+            : [.. _logLines.Where(line => LineRank(line) >= threshold)];
+        LogText = shown.Count == 0 ? string.Empty : string.Join('\n', shown.Reverse());
+    }
+
+    // Severity rank of a rendered log line ("HH:mm:ss LVL message"): trace/debug = 0, info = 1,
+    // warn = 2, error/fatal = 3. Unparseable lines rank as info so they are never hidden by a relaxed
+    // filter yet drop out under the errors-only view.
+    private static int LineRank(string line)
+    {
+        if (line.Length < 12)
+        {
+            return 1;
+        }
+
+        return line.Substring(9, 3) switch
+        {
+            "TRC" or "DBG" => 0,
+            "WRN" => 2,
+            "ERR" or "FTL" => 3,
+            _ => 1,
+        };
     }
 
     /// <summary>
@@ -907,6 +1018,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("geo-auto-check", value);
+        }
+    }
+
+    partial void OnAutoExcludeLanChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("auto-exclude-lan", value);
         }
     }
 
@@ -963,6 +1082,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             _preferredDnsInitialized = true;
         }
 
+        // Same one-shot init for the exclusions list, so periodic pushes don't clobber editing.
+        if (!_exclusionsInitialized)
+        {
+            Exclusions = snapshot.Exclusions;
+            _exclusionsInitialized = true;
+        }
+
         UpdateAvailable = snapshot.UpdateAvailable;
         UpdateVersion = snapshot.UpdateVersion;
         UpdateDescription = snapshot.UpdateDescription;
@@ -992,6 +1118,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ShowNotice("Предпочитаемый DNS сохранён — применится при переподключении.");
     }
 
+    // Persist the bypass exclusions list (empty = just the built-in defaults). Applies on the next connect.
+    [RelayCommand]
+    private async Task SaveExclusions()
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["exclusions", Exclusions ?? string.Empty]));
+        ShowNotice("Исключения сохранены — применятся при переподключении.");
+    }
+
     [RelayCommand]
     private async Task CheckUpdate()
     {
@@ -1018,7 +1152,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             var path = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p));
             UpdateStatus = "Запуск установщика…";
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+
+            // /passive: a single progress UI, no prompts. The display level propagates to the upgrade's
+            // related-bundle uninstall, so the old version is removed WITHOUT its own second installer
+            // window flashing alongside the new one. UseShellExecute lets the bundle elevate (UAC) once.
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Arguments = "/passive" });
 
             // Quit so the installer can replace the app's in-use files.
             if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
@@ -1375,6 +1513,35 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (ack.Ok)
         {
             OpenProfile = null;
+        }
+    }
+
+    // Rename the open profile. On success the detail closes; the rebroadcast list shows the new name. On a
+    // refused rename (name taken, or it is the running profile) the view stays put and shows why.
+    [RelayCommand]
+    private async Task RenameProfile()
+    {
+        var profile = OpenProfile;
+        if (profile is null)
+        {
+            return;
+        }
+
+        var next = (ProfileRename ?? string.Empty).Trim();
+        if (next.Length == 0 || string.Equals(next, profile.Name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ProfileRenameStatus = string.Empty;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRenameProfile, [profile.Name, next]));
+        if (ack.Ok)
+        {
+            OpenProfile = null;
+        }
+        else
+        {
+            ProfileRenameStatus = ack.Message;
         }
     }
 

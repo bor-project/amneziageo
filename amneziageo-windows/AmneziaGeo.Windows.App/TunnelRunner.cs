@@ -132,7 +132,29 @@ internal sealed class TunnelRunner(
         // empty falls back to what the system uses now. Tunneled (geo-matched) names keep the clean
         // tunnelResolver above, so this never weakens geo resolution.
         var preferredDns = ParseDnsServers(appSettings.PreferredDns);
-        var upstream = preferredDns.Count > 0 ? preferredDns : dns.CaptureUpstream();
+        // The real system/LAN resolver, captured regardless of any preferred-DNS override: LOCAL names
+        // (the LAN, corporate, and user exclusion-list domains) must keep resolving HERE, not offshore —
+        // this is what keeps the local network alive in full tunnel and fixes a preferred-DNS set to a
+        // public resolver from swallowing local lookups.
+        var lanResolvers = dns.CaptureUpstream();
+        var upstream = preferredDns.Count > 0 ? preferredDns : lanResolvers;
+        var (parsedCidrs, exclusionDomains) = ParseExclusions(appSettings.Exclusions);
+        var exclusionCidrs = new List<string>(parsedCidrs);
+
+        // Auto-detect the currently-connected local subnets and keep them direct too (deduped against the
+        // manual list). Re-run every connect, so a changed LAN is picked up. The detector already drops
+        // RFC1918/link-local (built-in) and our own tunnel adapter, so this adds only the extras.
+        if (appSettings.AutoExcludeLan)
+        {
+            foreach (var subnet in routes.LocalSubnets())
+            {
+                if (!exclusionCidrs.Contains(subnet))
+                {
+                    exclusionCidrs.Add(subnet);
+                }
+            }
+        }
+
         IReadOnlyList<string> redirectServers = [];
 
         // Local resolver for NON-tunneled names: in split the captured system resolver (coexisting /
@@ -142,7 +164,7 @@ internal sealed class TunnelRunner(
             ? (upstream.Count > 0 ? upstream : tunnelResolver)
             : tunnelResolver;
 
-        var proxy = StartProxy(name, config, trackDomains ? domains : [], geoRoutes, appSettings.RefreshSeconds, stripV6, tunnelResolver, localResolver, trackDomains);
+        var proxy = StartProxy(name, config, trackDomains ? domains : [], geoRoutes, appSettings.RefreshSeconds, stripV6, tunnelResolver, localResolver, lanResolvers, exclusionDomains, trackDomains);
         if (proxy?.BoundV4 is not null)
         {
             redirectServers = [proxy.BoundV4.ToString()];
@@ -187,7 +209,7 @@ internal sealed class TunnelRunner(
         // reachable in parallel by routing the RFC1918 ranges out the physical gateway. Split mode never
         // tunnels the default, so the LAN is already direct and needs no exclusion. Added before the
         // adapter comes up so the next-hop resolves to the physical gateway, not the tunnel.
-        var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6);
+        var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs);
 
         // The engine no longer arms its own kill-switch (we split the default route above), so when the
         // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
@@ -202,7 +224,10 @@ internal sealed class TunnelRunner(
         // traffic). LAN bypass is always included; a dual-stack tunnel (config has a v6 Address) also gets
         // the v6 LAN bypass.
         var killSwitch = !geoSplit;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, sessionCts.Token));
+        // Under the kill-switch the WebSocket underlay (wstunnel.exe child) must be whitelisted by app-id,
+        // or the block-all severs its TCP/TLS lifeline and the full tunnel passes no data.
+        var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, sessionCts.Token));
 
         // Re-flush the OS DNS cache once the tunnel is up. The connect-time flush above runs before the
         // adapter and its routes exist, so a name resolved in the window before the clean resolver's /32
@@ -263,7 +288,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> geoRoutes, int refreshSeconds, bool stripV6, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, bool trackDomains)
+    private DnsProxy? StartProxy(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> geoRoutes, int refreshSeconds, bool stripV6, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, bool trackDomains)
     {
         DomainTracker? tracker = null;
         if (trackDomains)
@@ -280,7 +305,8 @@ internal sealed class TunnelRunner(
 
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var localIp = ParseFirst(localUpstream, tunnelIp);
-        var proxy = new DnsProxy(domains, tunnelIp, localIp, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6);
+        IPAddress? lanIp = lanUpstream.Count > 0 && IPAddress.TryParse(lanUpstream[0], out var li) ? li : null;
+        var proxy = new DnsProxy(domains, tunnelIp, localIp, lanIp, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6);
         if (proxy.BoundV4 is null)
         {
             // Could not bind any loopback :53 (another resolver holds it). Degrade gracefully.
@@ -312,6 +338,47 @@ internal sealed class TunnelRunner(
         return [.. value
             .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(s => IPAddress.TryParse(s, out _))];
+    }
+
+    // Splits the user exclusions list (newline / comma / semicolon / space separated) into IP/CIDR
+    // entries (routed direct out the physical gateway in full tunnel) and domain entries (resolved by the
+    // LAN resolver, split-DNS). A bare IP becomes a host route (/32 or /128); anything not parseable as an
+    // address is treated as a domain suffix.
+    private static (IReadOnlyList<string> Cidrs, IReadOnlyList<string> Domains) ParseExclusions(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return ([], []);
+        }
+
+        var cidrs = new List<string>();
+        var domains = new List<string>();
+        foreach (var token in value.Split(['\n', '\r', ',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var slash = token.IndexOf('/');
+            var host = slash >= 0 ? token[..slash] : token;
+            if (IPAddress.TryParse(host, out var ip))
+            {
+                var maxPrefix = ip.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
+                if (slash < 0)
+                {
+                    cidrs.Add($"{host}/{maxPrefix}"); // bare IP -> host route
+                }
+                else if (int.TryParse(token[(slash + 1)..], out var prefix) && prefix >= 0 && prefix <= maxPrefix)
+                {
+                    cidrs.Add($"{host}/{prefix}");
+                }
+
+                // else: a parseable IP with a malformed/out-of-range prefix (typo like 10.0.0.0/abc or /99)
+                // is dropped — never reaches the route or firewall layer, so one typo can't disarm anything.
+            }
+            else
+            {
+                domains.Add(token);
+            }
+        }
+
+        return (cidrs, domains);
     }
 
     /// <summary>
@@ -482,7 +549,7 @@ internal sealed class TunnelRunner(
     /// arming (the session token is cancelled), nothing is left armed: the post-arm re-check disables it,
     /// and teardown's own Disable() is idempotent.
     /// </summary>
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
     {
         try
         {
@@ -492,7 +559,7 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is { } index)
                 {
-                    firewall.Enable(index, killSwitch, dualStack);
+                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs);
                     if (ct.IsCancellationRequested)
                     {
                         firewall.Disable();

@@ -82,7 +82,7 @@ internal sealed partial class ConfigSettingsViewModel : ViewModelBase
                 $"wstunnel server wss://0.0.0.0:{wsPort} \\\n" +
                 restrictLine +
                 $"  --tls-certificate <fullchain.pem> --tls-private-key <privkey.pem>\n\n" +
-                $"Где fullchain/privkey — уже имеющийся сертификат сервера (тот, что у x-ui / no-ip). " +
+                $"Где fullchain/privkey — уже имеющийся сертификат сервера. " +
                 $"Откройте TCP {wsPort} в фаерволе. Клиент завернёт UDP AmneziaWG в этот WebSocket.";
             if (hasCreds)
             {

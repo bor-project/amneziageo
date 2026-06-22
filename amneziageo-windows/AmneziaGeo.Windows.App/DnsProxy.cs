@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Decl;
@@ -29,11 +30,19 @@ internal sealed class DnsProxy
     // intercept — instead of failing to come up.
     private static readonly IPAddress[] V4Candidates = [IPAddress.Loopback, IPAddress.Parse("127.0.0.2")];
 
+    // Built-in suffixes always resolved via the LAN resolver and never tunneled, so the local network
+    // keeps working in full tunnel. Single-label names (no dot) and reverse-DNS for private ranges are
+    // handled separately in IsLocalName. User entries from the exclusions list are added on top.
+    private static readonly string[] BuiltinLocalSuffixes =
+        ["local", "lan", "home", "home.arpa", "internal", "intranet", "corp", "localdomain", "localhost"];
+
     private readonly List<UdpClient> _servers = [];
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<GeoDomain> _domains;
     private readonly IPAddress _tunnelUpstream;
     private readonly IPAddress _localUpstream;
+    private readonly IPAddress? _lanUpstream;
+    private readonly IReadOnlyList<string> _localDomains;
     private readonly DomainTracker? _tracker;
     private readonly ILogger<DnsProxy> _logger;
     private readonly bool _stripV6;
@@ -46,11 +55,13 @@ internal sealed class DnsProxy
     /// reached through the tunnel, so geo-blocked domains get their real IPs rather than the local
     /// network's poisoned answer; <paramref name="localUpstream"/> resolves everything else.
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6)
     {
         _domains = domains;
         _tunnelUpstream = tunnelUpstream;
         _localUpstream = localUpstream;
+        _lanUpstream = lanUpstream;
+        _localDomains = [.. localDomains.Select(d => d.Trim().Trim('.').ToLowerInvariant()).Where(d => d.Length > 0)];
         _tracker = tracker;
         _logger = logger;
         _stripV6 = stripV6;
@@ -71,8 +82,8 @@ internal sealed class DnsProxy
 
         // DIAG: surface the proxy's effective state so a "geosite doesn't route" report can be diagnosed
         // from the log (did it bind? how many domains? which upstreams?).
-        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} localUp={LocalUp} v4={V4} v6={V6} stripV6={StripV6}",
-            _domains.Count, _tunnelUpstream, _localUpstream, BoundV4, BoundV6, _stripV6);
+        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} localUp={LocalUp} lanUp={LanUp} localDomains={LocalDomains} v4={V4} v6={V6} stripV6={StripV6}",
+            _domains.Count, _tunnelUpstream, _localUpstream, _lanUpstream is null ? "(none)" : _lanUpstream, _localDomains.Count, BoundV4, BoundV6, _stripV6);
     }
 
     /// <summary>The IPv4 loopback address the proxy bound, or null if none was free.</summary>
@@ -170,10 +181,16 @@ internal sealed class DnsProxy
             var name = DnsMessage.QuestionName(query);
             var type = DnsMessage.QuestionType(query);
 
+            // A local/LAN name (built-in suffix, single-label host, reverse-DNS for a private range, or a
+            // user exclusion entry) resolves via the LAN resolver and is answered as-is — no AAAA/HTTPS
+            // deny, no tunnel routing — so the local network keeps working even in full tunnel, where every
+            // other name would otherwise be forced offshore.
+            var isLocal = name is not null && _lanUpstream is not null && IsLocalName(name);
+
             // A matched (to-be-tunneled) name resolves via the clean tunnel resolver so a geo-blocked
             // domain gets its real IPs instead of the local network's poisoned/blocked answer; everything
             // else uses the local resolver so coexisting / corporate names keep resolving.
-            var matched = name is not null && DomainMatcher.IsTunneled(name, _domains);
+            var matched = !isLocal && name is not null && DomainMatcher.IsTunneled(name, _domains);
 
             // DIAG: log only geo-MATCHED queries (the domains the user configured to route) so a
             // "X not routed" report can be localised, without logging every name the system resolves.
@@ -183,13 +200,13 @@ internal sealed class DnsProxy
             }
 
             byte[] response;
-            if (_stripV6 && type == TypeAaaa)
+            if (!isLocal && _stripV6 && type == TypeAaaa)
             {
                 // IPv4-only tunnel: return NODATA for AAAA so clients use IPv4 instead of stalling
                 // on IPv6 addresses that route into a tunnel with no IPv6 transit.
                 response = DnsMessage.BuildNoData(query);
             }
-            else if (type == TypeHttps)
+            else if (!isLocal && type == TypeHttps)
             {
                 // HTTPS/SVCB records carry ipv4hint/ipv6hint addresses that we cannot intercept and
                 // route into the tunnel. Honoring them lets clients (Chrome) connect straight to those
@@ -204,7 +221,8 @@ internal sealed class DnsProxy
             }
             else
             {
-                response = Forward(query, matched ? _tunnelUpstream : _localUpstream);
+                var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
+                response = Forward(query, upstream);
                 StoreInCache(name, type, response);
             }
 
@@ -233,6 +251,66 @@ internal sealed class DnsProxy
         catch (Exception)
         {
         }
+    }
+
+    // Whether a queried name should be resolved by the LAN resolver and kept off the tunnel: a bare
+    // single-label host (nas, router), reverse-DNS for a private range, a built-in local suffix, or a
+    // user exclusion-list domain. Matched as a dotted suffix so "x.corp.local" matches "corp.local".
+    private bool IsLocalName(string name)
+    {
+        var n = name.TrimEnd('.').ToLowerInvariant();
+        if (n.Length == 0)
+        {
+            return false;
+        }
+
+        if (!n.Contains('.'))
+        {
+            return true; // single-label intranet hostname
+        }
+
+        if (n.EndsWith(".in-addr.arpa", StringComparison.Ordinal))
+        {
+            // Only PRIVATE-range reverse-DNS goes to the LAN resolver; a PTR for a public address must not
+            // bypass the tunnel resolver. (IPv6 reverse zones are left to the normal path — v6 is denied.)
+            return IsPrivateReverseV4(n);
+        }
+
+        foreach (var suffix in BuiltinLocalSuffixes.Concat(_localDomains))
+        {
+            if (n == suffix || n.EndsWith("." + suffix, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // "d.c.b.a.in-addr.arpa" encodes the address a.b.c.d; treat only RFC1918 / link-local reverse zones
+    // (including partial zones like "10.in-addr.arpa") as local. The first octet is the last label.
+    private static bool IsPrivateReverseV4(string name)
+    {
+        var body = name[..^".in-addr.arpa".Length].TrimEnd('.');
+        var labels = body.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (labels.Length == 0 || !byte.TryParse(labels[^1], out var o1))
+        {
+            return false;
+        }
+
+        if (o1 == 10)
+        {
+            return true;
+        }
+
+        byte? o2 = labels.Length >= 2 && byte.TryParse(labels[^2], out var b) ? b : null;
+        return o1 switch
+        {
+            192 => o2 == 168,
+            172 => o2 is >= 16 and <= 31,
+            169 => o2 == 254,
+            _ => false,
+        };
     }
 
     private bool TryGetCached(string? name, int type, byte[] query, out byte[] response)

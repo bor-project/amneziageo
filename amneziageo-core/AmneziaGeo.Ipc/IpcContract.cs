@@ -170,4 +170,13 @@ public static class IpcContract
     /// returns a human-readable result and Ok=false on any download failure (non-fatal to the caller).
     /// </summary>
     public const string OpDownloadGeo = "download-geo";
+
+    /// <summary>
+    /// Sent once by the UI right after connecting to mark its pipe connection as a presence-holding
+    /// session. No args. The agent ties the tunnel's lifetime to UI presence: when the last attached UI
+    /// session drops (window closed or the process crashed) and a tunnel is up, the agent disconnects it
+    /// after a short grace. Transient command clients (the CLI) never send this, so they do not keep the
+    /// tunnel alive or tear it down.
+    /// </summary>
+    public const string OpAttachUi = "attach-ui";
 }

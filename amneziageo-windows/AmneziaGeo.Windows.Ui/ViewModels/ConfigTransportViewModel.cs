@@ -157,6 +157,43 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         }
     }
 
+    /// <summary>A suggested file name when exporting these settings.</summary>
+    public string SuggestedFileName => $"{ConfigName}-websocket.txt";
+
+    /// <summary>
+    /// Serialises the current WebSocket settings (enabled, port, composed address incl. auth) to a
+    /// portable blob for copy / save — the same share flow a config has.
+    /// </summary>
+    public string BuildTransferPayload()
+    {
+        var port = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) && p is > 0 and <= 65535 ? p : 443;
+        return Services.PortableTransfer.EncodeWebSocket(UseWebSocket, port, ComposeAddress(port));
+    }
+
+    /// <summary>
+    /// Applies an imported WebSocket blob to the editable fields (the user still presses «Сохранить» to
+    /// persist). Returns whether the text was a recognisable blob.
+    /// </summary>
+    public bool ApplyImport(string text)
+    {
+        if (!Services.PortableTransfer.TryDecodeWebSocket(text, out var enabled, out var port, out var host))
+        {
+            StatusMessage = "Не похоже на настройки WebSocket.";
+            return false;
+        }
+
+        UseWebSocket = enabled;
+        var (parsedHost, parsedPort, user, password, token, mode) = ParseStored(host);
+        WebSocketHost = string.IsNullOrWhiteSpace(parsedHost) ? EndpointHost(_endpoint) : parsedHost;
+        WebSocketPort = (parsedPort > 0 ? parsedPort : port).ToString(CultureInfo.InvariantCulture);
+        AuthMode = mode;
+        WebSocketUser = user;
+        WebSocketPassword = password;
+        WebSocketToken = token;
+        StatusMessage = "Импортировано — нажмите «Сохранить», чтобы применить.";
+        return true;
+    }
+
     /// <summary>
     /// Builds the stored address from the host field and the selected auth mode: a bare host when no auth,
     /// a <c>wss://user:pass@host:port</c> URL for login+password (user/pass percent-escaped so symbols

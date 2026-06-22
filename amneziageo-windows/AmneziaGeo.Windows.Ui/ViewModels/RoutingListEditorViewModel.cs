@@ -228,6 +228,43 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         ScheduleSave();
     }
 
+    /// <summary>A suggested file name when exporting this list.</summary>
+    public string SuggestedFileName => string.IsNullOrWhiteSpace(Name) ? "routing.txt" : $"{Name.Trim()}-routing.txt";
+
+    /// <summary>
+    /// Serialises this list (name + rules) to a portable blob for copy / save — the same share flow a
+    /// config has.
+    /// </summary>
+    public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, Rules);
+
+    /// <summary>
+    /// Replaces this list's name + rules from an imported blob (auto-saves through the agent). Returns
+    /// whether the text was a recognisable routing-list blob.
+    /// </summary>
+    public bool ApplyImport(string text)
+    {
+        if (!PortableTransfer.TryDecodeRouting(text, out var name, out var importedRules))
+        {
+            StatusMessage = "Не похоже на список маршрутизации.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            Name = name;
+        }
+
+        Rules.Clear();
+        foreach (var rule in importedRules)
+        {
+            Rules.Add(rule);
+        }
+
+        ScheduleSave();
+        StatusMessage = $"Импортировано правил: {importedRules.Count}.";
+        return true;
+    }
+
     partial void OnNameChanged(string value)
     {
         ScheduleSave();

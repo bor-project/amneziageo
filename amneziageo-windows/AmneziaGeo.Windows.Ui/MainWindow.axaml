@@ -667,6 +667,22 @@
                             </ItemsControl>
                           </Border>
                         </StackPanel>
+
+                        <!-- Share the list (name + rules) the same way a config is shared: copy / save to
+                             file for export, paste / load file for import. -->
+                        <StackPanel Spacing="6">
+                          <TextBlock Classes="label" Text="ИМПОРТ / ЭКСПОРТ" />
+                          <WrapPanel>
+                            <Button Classes="softbtn" Content="Копировать" Margin="0,0,6,6"
+                                    Click="OnRoutingExportCopy" ToolTip.Tip="Скопировать список в буфер обмена" />
+                            <Button Classes="softbtn" Content="Сохранить в файл…" Margin="0,0,6,6"
+                                    Click="OnRoutingExportSave" />
+                            <Button Classes="softbtn" Content="Вставить" Margin="0,0,6,6"
+                                    Click="OnRoutingImportPaste" ToolTip.Tip="Импортировать список из буфера обмена" />
+                            <Button Classes="softbtn" Content="Загрузить файл…" Margin="0,0,6,6"
+                                    Click="OnRoutingImportFile" />
+                          </WrapPanel>
+                        </StackPanel>
                       </StackPanel>
                     </Border>
 
@@ -839,6 +855,22 @@
                             IsEnabled="{Binding !IsBusy}" />
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                                VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </StackPanel>
+
+                  <!-- Share the WebSocket settings the same way a config is shared: copy / save to file for
+                       export, paste / load file for import (import fills the fields; press «Сохранить»). -->
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="ИМПОРТ / ЭКСПОРТ" />
+                    <WrapPanel>
+                      <Button Classes="softbtn" Content="Копировать" Margin="0,0,6,6"
+                              Click="OnWsExportCopy" ToolTip.Tip="Скопировать настройки в буфер обмена" />
+                      <Button Classes="softbtn" Content="Сохранить в файл…" Margin="0,0,6,6"
+                              Click="OnWsExportSave" />
+                      <Button Classes="softbtn" Content="Вставить" Margin="0,0,6,6"
+                              Click="OnWsImportPaste" ToolTip.Tip="Импортировать настройки из буфера обмена" />
+                      <Button Classes="softbtn" Content="Загрузить файл…" Margin="0,0,6,6"
+                              Click="OnWsImportFile" />
+                    </WrapPanel>
                   </StackPanel>
                 </StackPanel>
 

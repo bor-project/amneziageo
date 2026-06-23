@@ -79,9 +79,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
-    private string? _activeMember;
-
-    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private bool _hasConfigs;
 
@@ -112,7 +109,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAspectConfig))]
     [NotifyPropertyChangedFor(nameof(IsAspectRouting))]
-    [NotifyPropertyChangedFor(nameof(IsAspectBalancer))]
+    [NotifyPropertyChangedFor(nameof(IsAspectProxy))]
     [NotifyPropertyChangedFor(nameof(IsAspectName))]
     private string _profileAspect = "config";
 
@@ -397,8 +394,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Intent on + a down status reads "connecting"; intent off + an up status reads "disconnecting".
     private int ConnState => BoundStatus switch
     {
-        ConnectionStatus.Connected or ConnectionStatus.Degraded => IsTunnelActive ? 2 : 1,
-        ConnectionStatus.Connecting or ConnectionStatus.Disconnecting or ConnectionStatus.Failover => 1,
+        ConnectionStatus.Connected => IsTunnelActive ? 2 : 1,
+        ConnectionStatus.Connecting or ConnectionStatus.Disconnecting => 1,
         _ => IsTunnelActive ? 1 : 0,
     };
 
@@ -481,8 +478,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Whether the opened profile's routing aspect is selected.</summary>
     public bool IsAspectRouting => ProfileAspect == "routing";
 
-    /// <summary>Whether the opened profile's balancer aspect is selected.</summary>
-    public bool IsAspectBalancer => ProfileAspect == "balancer";
+    /// <summary>Whether the opened profile's proxy (WebSocket) aspect is selected.</summary>
+    public bool IsAspectProxy => ProfileAspect == "proxy";
 
     /// <summary>Whether the opened profile's name aspect is selected.</summary>
     public bool IsAspectName => ProfileAspect == "name";
@@ -491,11 +488,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsConfigManage => OpenConfig is not null;
 
     /// <summary>
-    /// Whether the profile's aspect editors (right pane) show: inside a profile, but not while a member
-    /// config is opened for management (which takes over the right pane). The aspect rail on the left
-    /// stays visible throughout the profile detail.
+    /// Whether the profile's aspect editors (right pane) show: whenever a profile is open. Each aspect
+    /// renders a slice of the profile's single configuration (text / proxy) or its routing / name.
     /// </summary>
-    public bool ShowProfileAspects => IsProfileDetail && !IsConfigManage;
+    public bool ShowProfileAspects => IsProfileDetail;
 
     /// <summary>Full path to the opened config's .conf file (shown in the location section).</summary>
     public string ConfigFilePath => OpenConfig is null ? string.Empty : ConfigPaths.ConfigFile(OpenConfig);
@@ -570,12 +566,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void Back()
     {
-        if (OpenConfig is not null)
-        {
-            OpenConfig = null;
-            return;
-        }
-
         OpenProfile = null;
     }
 
@@ -585,7 +575,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void SelectProfileAspect(string aspect)
     {
-        OpenConfig = null;
         ProfileAspect = aspect;
     }
 
@@ -685,8 +674,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // instance is safe because the snapshot reconcile keeps the same BalancerItemViewModel instances.
     partial void OnOpenProfileChanged(BalancerItemViewModel? oldValue, BalancerItemViewModel? newValue)
     {
-        // Leaving / switching profiles drops any config opened for management.
-        OpenConfig = null;
+        // Open the profile's single configuration so its editors (text / proxy) are available on the rail.
+        OpenConfig = string.IsNullOrEmpty(newValue?.Config) ? null : newValue!.Config;
         ProfileRename = newValue?.Name ?? string.Empty;
         ProfileRenameStatus = string.Empty;
 
@@ -713,13 +702,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             SyncProfileRoutingEditor();
         }
+        else if (e.PropertyName == nameof(BalancerItemViewModel.Config))
+        {
+            OpenConfig = string.IsNullOrEmpty(OpenProfile?.Config) ? null : OpenProfile!.Config;
+        }
     }
 
     partial void OnProfileAspectChanged(string value)
     {
-        // Switching the aspect rail leaves config management (only reachable from the config list).
-        OpenConfig = null;
-
         if (value == "routing")
         {
             SyncProfileRoutingEditor();
@@ -857,7 +847,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             OpenProfile = null;
             ProfileAspect = "config";
             _configNames = [];
-            ActiveMember = null;
             _noticeTimer.Stop();
             _lastNotice = null;
             NoticeVisible = false;
@@ -888,9 +877,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         HasRoutingLists = RoutingLists.Count > 0;
         UpdateRoutingUsageHint();
 
-        var bound = snapshot.Balancers.FirstOrDefault(b => b.Name == snapshot.BoundTarget);
-        ActiveMember = bound?.ActiveMember;
-
         foreach (var item in Balancers)
         {
             item.IsActive = string.Equals(item.Name, snapshot.SelectedTarget ?? snapshot.BoundTarget, StringComparison.Ordinal);
@@ -909,7 +895,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             // message is actionable instead of the misleading "сервер не ответил".
             var emptyProfile = snapshot.SelectedTarget is not null
                 && snapshot.Balancers.FirstOrDefault(b =>
-                       string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Members.Count: 0 };
+                       string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Config.Length: 0 };
             notice = emptyProfile
                 ? $"Профиль «{snapshot.SelectedTarget}» пуст — добавьте конфигурацию."
                 : "Не удалось подключиться — сервер не ответил.";
@@ -922,10 +908,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         else if (snapshot.RestartRequired)
         {
             notice = "Настройки изменены. Переподключитесь, чтобы применить.";
-        }
-        else if (snapshot.BetterMember is not null)
-        {
-            notice = $"Доступно приоритетное подключение: {snapshot.BetterMember}. Переподключитесь, чтобы вернуться.";
         }
 
         ShowNotice(notice);
@@ -1402,12 +1384,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             if (existing is null)
             {
                 existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
-                existing.ApplyFromEntry(entry, options, _configNames);
+                existing.ApplyFromEntry(entry, options);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
             }
 
-            existing.ApplyFromEntry(entry, options, _configNames);
+            existing.ApplyFromEntry(entry, options);
             var index = Balancers.IndexOf(existing);
             if (index != i)
             {
@@ -1455,7 +1437,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         var name = UniqueProfileName();
         var ack = await _connection.SendCommandAsync(
-            new IpcCommand(IpcContract.OpAddBalancer, [name, "60", "priority"]));
+            new IpcCommand(IpcContract.OpAddBalancer, [name]));
         if (ack.Ok)
         {
             _pendingOpenProfile = name;
@@ -1481,11 +1463,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private async Task SaveBalancerAsync(string name, int recheck, string mode, IReadOnlyList<string> members)
+    private async Task SaveBalancerAsync(string name, string config)
     {
-        var args = new List<string> { name, recheck.ToString(System.Globalization.CultureInfo.InvariantCulture), mode };
-        args.AddRange(members);
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, args));
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, [name, config]));
     }
 
     private async Task<IpcAck> ImportConfigAsync(string name, string confText)

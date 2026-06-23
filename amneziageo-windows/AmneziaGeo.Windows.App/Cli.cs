@@ -93,16 +93,16 @@ internal sealed class Cli(
                 return ConfigEdit(name, path);
             case ["config-remove", var name]:
                 return await ConfigRemoveAsync(name);
-            case ["balancer-add", var name, var recheck, .. var members]:
-                return await BalancerAddAsync(name, recheck, members);
+            case ["balancer-add", var name]:
+                return await BalancerAddAsync(name, string.Empty);
+            case ["balancer-add", var name, var config]:
+                return await BalancerAddAsync(name, config);
             case ["balancer-list"]:
                 return await BalancerListAsync();
             case ["balancer-show", var name]:
                 return await BalancerShowAsync(name);
             case ["balancer-remove", var name]:
                 return await BalancerRemoveAsync(name);
-            case ["balancer-mode", var name, var mode]:
-                return await BalancerModeAsync(name, mode);
             case ["routing-list-add", var listName, .. var listRules]:
                 return await RoutingListAddAsync(listName, listRules);
             case ["assign-routing", var profile, var list, var toggle]:
@@ -259,8 +259,6 @@ internal sealed class Cli(
         Console.WriteLine($"refresh-seconds\t{settings.RefreshSeconds}");
         Console.WriteLine($"connect-timeout-seconds\t{settings.ConnectTimeoutSeconds}");
         Console.WriteLine($"dead-threshold-seconds\t{settings.DeadThresholdSeconds}");
-        Console.WriteLine($"failback-probes\t{settings.FailbackProbes}");
-        Console.WriteLine($"probe-timeout-seconds\t{settings.ProbeTimeoutSeconds}");
         return 0;
     }
 
@@ -379,31 +377,16 @@ internal sealed class Cli(
         return 0;
     }
 
-    private async Task<int> BalancerAddAsync(string name, string recheck, string[] members)
+    private async Task<int> BalancerAddAsync(string name, string config)
     {
-        if (!int.TryParse(recheck, out var seconds) || seconds <= 0)
+        if (!string.IsNullOrEmpty(config) && !configRepo.Exists(config))
         {
-            Console.WriteLine("invalid recheck seconds");
+            Console.WriteLine($"unknown config: {config}");
             return 1;
         }
 
-        if (members.Length == 0)
-        {
-            Console.WriteLine("at least one member required");
-            return 1;
-        }
-
-        foreach (var member in members)
-        {
-            if (!configRepo.Exists(member))
-            {
-                Console.WriteLine($"unknown config: {member}");
-                return 1;
-            }
-        }
-
-        await store.SaveBalancerAsync(new BalancerGroup(name, seconds, members));
-        Console.WriteLine($"saved balancer {name}: recheck={seconds}s, members={string.Join(" > ", members)}");
+        await store.SaveBalancerAsync(new BalancerGroup(name, config));
+        Console.WriteLine($"saved profile {name}: config={(config.Length > 0 ? config : "(none)")}");
         return 0;
     }
 
@@ -414,7 +397,7 @@ internal sealed class Cli(
             var balancer = await store.GetBalancerAsync(name);
             if (balancer is not null)
             {
-                Console.WriteLine($"{name}\t{balancer.Mode}\t{balancer.RecheckSeconds}s\t{string.Join(" > ", balancer.Members)}");
+                Console.WriteLine($"{name}\t{(balancer.Config.Length > 0 ? balancer.Config : "(none)")}");
             }
         }
 
@@ -430,14 +413,15 @@ internal sealed class Cli(
             return 1;
         }
 
-        Console.WriteLine($"balancer {name} (mode {balancer.Mode}, recheck {balancer.RecheckSeconds}s)");
-        for (var i = 0; i < balancer.Members.Count; i++)
+        var config = balancer.Config;
+        if (config.Length == 0)
         {
-            var member = balancer.Members[i];
-            var state = configRepo.Exists(member) ? serviceManager.QueryState(member) : "MISSING";
-            Console.WriteLine($"  {i}. {member}\t{state}");
+            Console.WriteLine($"profile {name} (no configuration)");
+            return 0;
         }
 
+        var state = configRepo.Exists(config) ? serviceManager.QueryState(config) : "MISSING";
+        Console.WriteLine($"profile {name}\t{config}\t{state}");
         return 0;
     }
 
@@ -445,26 +429,6 @@ internal sealed class Cli(
     {
         await store.RemoveBalancerAsync(name);
         Console.WriteLine($"removed balancer {name}");
-        return 0;
-    }
-
-    private async Task<int> BalancerModeAsync(string name, string mode)
-    {
-        if (mode is not ("priority" or "latency" or "off"))
-        {
-            Console.WriteLine("mode must be priority, latency, or off");
-            return 1;
-        }
-
-        var balancer = await store.GetBalancerAsync(name);
-        if (balancer is null)
-        {
-            Console.WriteLine($"unknown balancer: {name}");
-            return 1;
-        }
-
-        await store.SaveBalancerAsync(balancer with { Mode = mode });
-        Console.WriteLine($"balancer {name} mode = {mode}");
         return 0;
     }
 
@@ -543,7 +507,7 @@ internal sealed class Cli(
 
             var snapshot = await received.Task;
             Console.WriteLine($"agent v{snapshot.AgentVersion} running={snapshot.Active} status={snapshot.BoundStatus} bound={snapshot.BoundTarget ?? "(none)"} selected={snapshot.SelectedTarget ?? "(none)"}");
-            Console.WriteLine($"settings\trestart-required={snapshot.RestartRequired}\tbetter={snapshot.BetterMember ?? "(none)"}");
+            Console.WriteLine($"settings\trestart-required={snapshot.RestartRequired}");
             foreach (var config in snapshot.Configs)
             {
                 Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\t{config.Status}");
@@ -552,7 +516,7 @@ internal sealed class Cli(
             foreach (var balancer in snapshot.Balancers)
             {
                 var routing = balancer.UseRouting ? balancer.RoutingListId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "on" : "off";
-                Console.WriteLine($"balancer\t{balancer.Name}\t{balancer.Mode}\t{balancer.Status}\tactive={balancer.ActiveMember ?? "(none)"}\tmembers=[{string.Join(", ", balancer.Members)}]\trouting={routing}");
+                Console.WriteLine($"profile\t{balancer.Name}\t{balancer.Status}\tconfig={(balancer.Config.Length > 0 ? balancer.Config : "(none)")}\trouting={routing}");
             }
 
             foreach (var list in snapshot.RoutingLists ?? [])

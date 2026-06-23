@@ -21,16 +21,6 @@ public static class ConnectionStatus
     public const string Connected = "connected";
 
     /// <summary>
-    /// Connected on a lower-priority member.
-    /// </summary>
-    public const string Degraded = "degraded";
-
-    /// <summary>
-    /// Switching to another member.
-    /// </summary>
-    public const string Failover = "failover";
-
-    /// <summary>
     /// Tearing the connection down.
     /// </summary>
     public const string Disconnecting = "disconnecting";
@@ -41,7 +31,7 @@ public static class ConnectionStatus
     public const string Disconnected = "disconnected";
 
     /// <summary>
-    /// Preempted by another connection.
+    /// Preempted by another connection that took over the single tunnel slot.
     /// </summary>
     public const string Preempted = "preempted";
 

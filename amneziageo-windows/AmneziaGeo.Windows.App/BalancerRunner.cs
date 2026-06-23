@@ -4,15 +4,15 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Runs a balancer group: connects members (by priority order or lowest probe latency), fails over when
-/// the active member dies, and switches to a consistently better member confirmed by out-of-band probes.
+/// Runs a profile's single configuration: brings the tunnel up, keeps it alive, and re-dials when the
+/// handshake dies. Re-runs on each change so connect / disconnect and routing edits apply live without
+/// restarting the agent. Returns only on shutdown (the host cancellation token).
 /// </summary>
 internal sealed class BalancerRunner(
     ServiceManager serviceManager,
     UapiClient uapi,
     ConfigRepository configRepo,
     NetworkReconciler reconciler,
-    EndpointProbe probe,
     SettingsStore settingsStore,
     IStateStore store,
     AgentControl control,
@@ -20,24 +20,18 @@ internal sealed class BalancerRunner(
 {
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
-    // How long a connect attempt tolerates no handshake AND zero bytes received before treating the member
+    // How long a connect attempt tolerates no handshake AND zero bytes received before treating the config
     // as unreachable — the data-driven failure signal (the server never answered our handshake
     // initiations). ConnectTimeoutSeconds stays the absolute backstop.
     private static readonly TimeSpan _noResponseWindow = TimeSpan.FromSeconds(12);
 
     private BalancerGroup _group = null!;
     private AppSettings _settings = new();
-    private int[] _failbackStreak = [];
-
-    // True only when the group is actually balancing: more than one member and a real selection mode.
-    // When off ("don't use") or a single member, we pin to the first member and skip all periodic
-    // probing, so an unused balancer costs nothing on the backend.
-    private bool _balancing;
 
     /// <summary>
-    /// Supervises the agent's target: re-reads the group and routing, idles while stopped, and
-    /// (re)runs a failover session on each change so connect / disconnect and routing edits apply
-    /// live without restarting the agent. Returns only on shutdown (the host cancellation token).
+    /// Supervises the agent's target: re-reads the profile and routing, idles while stopped, and
+    /// (re)runs a session on each change so connect / disconnect and routing edits apply live without
+    /// restarting the agent. Returns only on shutdown (the host cancellation token).
     /// </summary>
     public async Task RunAsync(BalancerGroup initial, CancellationToken ct)
     {
@@ -56,8 +50,8 @@ internal sealed class BalancerRunner(
 
                 if (!control.Running)
                 {
-                    StopAll(group.Members);
-                    await SetStateAsync("disconnected", group.Members, -1);
+                    Stop(group.Config);
+                    await SetStateAsync("disconnected", null);
                     await IdleAsync(linked.Token);
                     continue;
                 }
@@ -76,11 +70,11 @@ internal sealed class BalancerRunner(
                 }
                 catch (Exception ex)
                 {
-                    // A transient fault (service launch failure, store or probe error, ...) must not
-                    // kill the supervisor or freeze the status; tear down, mark disconnected, and retry.
-                    logger.LogError(ex, "balancer session failed; retrying");
-                    StopAll(group.Members);
-                    await SetStateAsync("disconnected", group.Members, -1);
+                    // A transient fault (service launch failure, store error, ...) must not kill the
+                    // supervisor or freeze the status; tear down, mark disconnected, and retry.
+                    logger.LogError(ex, "tunnel session failed; retrying");
+                    Stop(group.Config);
+                    await SetStateAsync("disconnected", null);
                     await DelayAsync(_livenessPoll, linked.Token);
                 }
             }
@@ -88,8 +82,9 @@ internal sealed class BalancerRunner(
     }
 
     /// <summary>
-    /// Re-reads the target group from the store so member, mode, and recheck edits take effect.
-    /// Falls back to the synthesized single-config group when no balancer row exists.
+    /// Re-reads the target profile from the store so a config or routing edit takes effect. Falls back
+    /// to a profile that owns the named config when no profile row exists (so a bare config name is
+    /// connectable), and clears a dangling binding when the target names neither.
     /// </summary>
     private async Task<BalancerGroup?> ResolveAsync(BalancerGroup initial, CancellationToken ct)
     {
@@ -105,14 +100,13 @@ internal sealed class BalancerRunner(
 
         if (configRepo.Exists(name))
         {
-            return new BalancerGroup(name, 60, [name]);
+            return new BalancerGroup(name, name);
         }
 
         // The target names neither a profile nor a config. Either nothing is selected yet (clean install)
         // or the bound profile/config was deleted — a broken binding. Drop any dangling selection so the
-        // UI stops showing a phantom target, and keep the supervisor alive on a nameless empty group so it
-        // idles (the pipe/status stay up) until a profile is created and selected. Returning null here
-        // would end the supervisor and leave the agent unable to ever connect without a process restart.
+        // UI stops showing a phantom target, and keep the supervisor alive on a nameless empty profile so
+        // it idles (the pipe/status stay up) until a profile is created and selected.
         if (!string.IsNullOrEmpty(name))
         {
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
@@ -120,7 +114,7 @@ internal sealed class BalancerRunner(
             logger.LogInformation("target '{Group}' does not exist; cleared binding, idling", name);
         }
 
-        return new BalancerGroup(string.Empty, 60, []);
+        return new BalancerGroup(string.Empty, string.Empty);
     }
 
     /// <summary>
@@ -138,28 +132,28 @@ internal sealed class BalancerRunner(
     }
 
     /// <summary>
-    /// Runs one failover session: projects routing, connects the best member, then keeps the
-    /// active member alive until the session token fires (a change signal or shutdown).
+    /// Runs one session: projects routing, connects the profile's single config, then keeps it alive
+    /// (re-dialing on a dead handshake) until the session token fires (a change signal or shutdown).
     /// </summary>
     private async Task RunSessionAsync(BalancerGroup group, CancellationToken ct)
     {
         _settings = await settingsStore.LoadAsync(ct);
+        var config = group.Config;
 
-        if (group.Members.Count == 0)
+        if (string.IsNullOrEmpty(config))
         {
-            // A named-but-empty profile is worth a warning; the nameless empty group (no target selected)
-            // is the normal idle state and must stay quiet.
+            // A named-but-config-less profile is worth a warning; the nameless empty profile (no target
+            // selected) is the normal idle state and must stay quiet.
             if (!string.IsNullOrEmpty(group.Name))
             {
-                logger.LogWarning("balancer {Group} has no members", group.Name);
+                logger.LogWarning("profile {Profile} has no configuration", group.Name);
             }
 
-            await SetStateAsync("disconnected", group.Members, -1);
+            await SetStateAsync("disconnected", null);
 
-            // A user connect to a memberless profile can never succeed. Drop the desired state to stopped
-            // and raise the one-shot failed notice instead of sitting on Running=true, which the UI reads
-            // as a perpetual "connecting…" with no feedback. FailConnect signals, so the supervisor
-            // re-enters the idle/stopped branch on the next loop.
+            // A user connect to a config-less profile can never succeed. Drop the desired state to stopped
+            // and raise the one-shot failed notice instead of sitting on Running=true (perpetual
+            // "connecting…"). FailConnect signals, so the supervisor re-enters the idle branch next loop.
             if (control.Running)
             {
                 control.FailConnect();
@@ -169,129 +163,92 @@ internal sealed class BalancerRunner(
             return;
         }
 
-        // Balancing applies only with >1 member and a real mode. Otherwise pin to the first (top-priority)
-        // member and run it as a plain single tunnel — no challenger probing, no failover, no overhead.
-        _balancing = group.Members.Count > 1 && !group.Mode.Equals("off", StringComparison.OrdinalIgnoreCase);
-        IReadOnlyList<string> members = _balancing ? group.Members : [group.Members[0]];
-
-        foreach (var member in members)
+        if (!configRepo.Exists(config))
         {
-            if (!configRepo.Exists(member))
+            logger.LogError("missing config: {Config}", config);
+            await SetStateAsync("disconnected", null);
+
+            // Same as the config-less case: a config whose .conf is gone can never dial, so fail the
+            // connect rather than leaving Running=true (perpetual "connecting…").
+            if (control.Running)
             {
-                logger.LogError("missing config: {Member}", member);
-                await SetStateAsync("disconnected", members, -1);
-
-                // Same as the empty-profile case: a member whose .conf is gone can never dial, so fail the
-                // connect rather than leaving Running=true (perpetual "connecting…").
-                if (control.Running)
-                {
-                    control.FailConnect();
-                }
-
-                await IdleAsync(ct);
-                return;
+                control.FailConnect();
             }
-        }
 
-        logger.LogInformation("balancer {Group} mode={Mode} balancing={Balancing}", group.Name, group.Mode, _balancing);
-        await ProjectRoutingAsync(group.Name, members, ct);
-        StopAll(members);
-        _failbackStreak = new int[members.Count];
-        control.SetBetterMember(null);
-
-        await SetStateAsync("connecting", members, -1);
-        var current = await ConnectBestAsync(members, -1, ct);
-        if (current < 0 && !ct.IsCancellationRequested)
-        {
-            // A user-initiated connect could not bring up any member within the data-driven deadline.
-            // Give up (отбой) and raise a one-shot "failed" notice for the UI rather than retrying
-            // forever; FailConnect drops the desired state to stopped, so the supervisor then idles.
-            logger.LogWarning("connect failed: no member reachable for {Group}", group.Name);
-            StopAll(members);
-            await SetStateAsync("disconnected", members, -1);
-            control.FailConnect();
+            await IdleAsync(ct);
             return;
         }
 
-        await SetStateAsync(StatusFor(current), members, current);
-        var lastRecheck = DateTimeOffset.UtcNow;
+        await ProjectRoutingAsync(group.Name, config, ct);
+        Stop(config);
+
+        await SetStateAsync("connecting", null);
+        if (!await TryConnectAsync(config, ct))
+        {
+            // A user-initiated connect could not bring the config up within the data-driven deadline.
+            // Give up (отбой) and raise a one-shot "failed" notice for the UI rather than retrying
+            // forever; FailConnect drops the desired state to stopped, so the supervisor then idles.
+            if (!ct.IsCancellationRequested)
+            {
+                logger.LogWarning("connect failed: {Config} unreachable for {Profile}", config, group.Name);
+                Stop(config);
+                await SetStateAsync("disconnected", null);
+                control.FailConnect();
+            }
+
+            return;
+        }
+
+        logger.LogInformation("connected: {Config} ({Profile})", config, group.Name);
+        await SetStateAsync("connected", config);
 
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                if (current < 0)
-                {
-                    logger.LogWarning("no member reachable; retrying");
-                    await DelayAsync(_livenessPoll, ct);
-                    current = await ConnectBestAsync(members, -1, ct);
-                    Array.Clear(_failbackStreak);
-                    control.SetBetterMember(null);
-                    await SetStateAsync(StatusFor(current), members, current);
-                    lastRecheck = DateTimeOffset.UtcNow;
-                    continue;
-                }
-
                 await DelayAsync(_livenessPoll, ct);
                 if (ct.IsCancellationRequested)
                 {
                     break;
                 }
 
-                if (!IsAlive(members[current]))
+                if (!IsAlive(config))
                 {
-                    logger.LogWarning("member {Member} unreachable; failing over", members[current]);
-                    await SetStateAsync("failover", members, current);
-                    Stop(members[current]);
-                    current = await ConnectBestAsync(members, current, ct);
-                    Array.Clear(_failbackStreak);
-                    control.SetBetterMember(null);
-                    await SetStateAsync(StatusFor(current), members, current);
-                    lastRecheck = DateTimeOffset.UtcNow;
-                    continue;
-                }
-
-                if (_balancing && (DateTimeOffset.UtcNow - lastRecheck).TotalSeconds >= group.RecheckSeconds)
-                {
-                    lastRecheck = DateTimeOffset.UtcNow;
-                    var challenger = await FindChallengerAsync(members, current, ct);
-                    if (challenger < 0)
+                    logger.LogWarning("config {Config} unreachable; re-dialing", config);
+                    await SetStateAsync("connecting", null);
+                    Stop(config);
+                    if (!await TryConnectAsync(config, ct))
                     {
-                        Array.Clear(_failbackStreak);
-                        control.SetBetterMember(null);
-                        continue;
+                        if (!ct.IsCancellationRequested)
+                        {
+                            logger.LogWarning("re-dial failed: {Config} unreachable", config);
+                            Stop(config);
+                            await SetStateAsync("disconnected", null);
+                            control.FailConnect();
+                        }
+
+                        return;
                     }
 
-                    BumpStreak(challenger);
-                    if (_failbackStreak[challenger] >= _settings.FailbackProbes)
-                    {
-                        // Notify only — do NOT switch. Silently dropping a working backup to return to a
-                        // higher-priority / lower-latency member is disruptive; the UI tells the user a
-                        // better connection is available and they reconnect to take it.
-                        control.SetBetterMember(members[challenger]);
-                    }
+                    await SetStateAsync("connected", config);
                 }
             }
         }
         finally
         {
-            if (current >= 0)
+            // Surface a transient "disconnecting" only on a genuine user disconnect (running off),
+            // not on a config-change re-run, where the session immediately reconnects.
+            if (!control.Running)
             {
-                // Surface a transient "disconnecting" only on a genuine user disconnect (running off),
-                // not on a config-change re-run, where the session immediately reconnects.
-                if (!control.Running)
-                {
-                    await SetStateAsync("disconnecting", members, current);
-                }
-
-                Stop(members[current]);
+                await SetStateAsync("disconnecting", config);
             }
 
-            await SetStateAsync("disconnected", members, -1);
+            Stop(config);
+            await SetStateAsync("disconnected", null);
         }
     }
 
-    private async Task ProjectRoutingAsync(string profile, IReadOnlyList<string> members, CancellationToken ct)
+    private async Task ProjectRoutingAsync(string profile, string config, CancellationToken ct)
     {
         if (await store.GetBalancerAsync(profile, ct) is null)
         {
@@ -303,8 +260,8 @@ internal sealed class BalancerRunner(
         {
             // Routing off (or no list selected): full tunnel via the config's own AllowedIPs
             // (0.0.0.0/0, ::/0). Project an explicit non-split state so the toggle is authoritative
-            // and overrides any member set-geo split. This is a kill-switch full tunnel by design.
-            await ProjectFullTunnelAsync(members, ct);
+            // and overrides any config set-geo split. This is a kill-switch full tunnel by design.
+            await ProjectFullTunnelAsync(config, ct);
             return;
         }
 
@@ -312,181 +269,34 @@ internal sealed class BalancerRunner(
         if (list is null)
         {
             logger.LogWarning("profile {Profile} references missing routing list {Id}", profile, listId.Value);
-            await ProjectFullTunnelAsync(members, ct);
+            await ProjectFullTunnelAsync(config, ct);
             return;
         }
 
-        foreach (var member in members)
-        {
-            if (ct.IsCancellationRequested)
-            {
-                return;
-            }
-
-            await store.SaveTunnelProjectionAsync(member, true, list.Routes, list.Domains, ct);
-        }
-
-        logger.LogInformation("projected routing list '{List}' to {Count} member(s)", list.Name, members.Count);
+        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, ct);
+        logger.LogInformation("projected routing list '{List}' to {Config}", list.Name, config);
     }
 
-    private async Task ProjectFullTunnelAsync(IReadOnlyList<string> members, CancellationToken ct)
+    private async Task ProjectFullTunnelAsync(string config, CancellationToken ct)
     {
         // Projects an explicit non-split state: GetActiveTunnelGeoAsync then returns geoSplit=false, so
         // AllowedIpsResolver falls back to the config's own AllowedIPs (0.0.0.0/0, ::/0) = full tunnel.
-        // Making the projection authoritative means the routing toggle overrides any member set-geo,
-        // so turning routing off reliably switches to full tunnel instead of a leftover member split.
-        foreach (var member in members)
-        {
-            if (ct.IsCancellationRequested)
-            {
-                return;
-            }
-
-            await store.SaveTunnelProjectionAsync(member, false, [], [], ct);
-        }
-
-        logger.LogInformation("projected full tunnel to {Count} member(s) (routing off)", members.Count);
+        // Making the projection authoritative means the routing toggle overrides any config set-geo,
+        // so turning routing off reliably switches to full tunnel instead of a leftover split.
+        await store.SaveTunnelProjectionAsync(config, false, [], [], ct);
+        logger.LogInformation("projected full tunnel to {Config} (routing off)", config);
     }
 
-    private bool IsLatencyMode()
-    {
-        // Latency selection only matters while actually balancing; a pinned single member uses priority
-        // order (no probes).
-        return _balancing && _group.Mode.Equals("latency", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private string StatusFor(int current)
-    {
-        if (current < 0)
-        {
-            return "disconnected";
-        }
-
-        if (IsLatencyMode())
-        {
-            return "connected";
-        }
-
-        return current == 0 ? "connected" : "degraded";
-    }
-
-    private void BumpStreak(int challenger)
-    {
-        for (var i = 0; i < _failbackStreak.Length; i++)
-        {
-            if (i != challenger)
-            {
-                _failbackStreak[i] = 0;
-            }
-        }
-
-        _failbackStreak[challenger]++;
-    }
-
-    private async Task SetStateAsync(string status, IReadOnlyList<string> members, int current)
+    private async Task SetStateAsync(string status, string? activeConfig)
     {
         try
         {
-            var member = current >= 0 ? members[current] : null;
-            await store.SaveBalancerStateAsync(new BalancerState(_group.Name, status, member, DateTimeOffset.UtcNow));
+            await store.SaveBalancerStateAsync(new BalancerState(_group.Name, status, activeConfig, DateTimeOffset.UtcNow));
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "state write failed");
         }
-    }
-
-    private async Task<int> FindChallengerAsync(IReadOnlyList<string> members, int current, CancellationToken ct)
-    {
-        var timeoutMs = _settings.ProbeTimeoutSeconds * 1000;
-        if (IsLatencyMode())
-        {
-            long? bestRtt = null;
-            long? currentRtt = null;
-            var best = -1;
-            for (var i = 0; i < members.Count; i++)
-            {
-                if (ct.IsCancellationRequested)
-                {
-                    return -1;
-                }
-
-                var rtt = await probe.PingAsync(members[i], timeoutMs);
-                if (i == current)
-                {
-                    currentRtt = rtt;
-                }
-
-                if (rtt is not null && (bestRtt is null || rtt < bestRtt))
-                {
-                    bestRtt = rtt;
-                    best = i;
-                }
-            }
-
-            if (best < 0 || best == current)
-            {
-                return -1;
-            }
-
-            return currentRtt is null || bestRtt < currentRtt ? best : -1;
-        }
-
-        for (var i = 0; i < current; i++)
-        {
-            if (ct.IsCancellationRequested)
-            {
-                return -1;
-            }
-
-            if (await probe.IsReachableAsync(members[i], timeoutMs))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private async Task<int> ConnectBestAsync(IReadOnlyList<string> members, int skip, CancellationToken ct)
-    {
-        foreach (var i in await SelectionOrderAsync(members, ct))
-        {
-            if (i == skip || ct.IsCancellationRequested)
-            {
-                continue;
-            }
-
-            if (await TryConnectAsync(members[i], ct))
-            {
-                logger.LogInformation("connected: {Member} (priority {Priority})", members[i], i);
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    private async Task<IReadOnlyList<int>> SelectionOrderAsync(IReadOnlyList<string> members, CancellationToken ct)
-    {
-        if (!IsLatencyMode())
-        {
-            return [.. Enumerable.Range(0, members.Count)];
-        }
-
-        var timeoutMs = _settings.ProbeTimeoutSeconds * 1000;
-        var rtts = new long?[members.Count];
-        for (var i = 0; i < members.Count; i++)
-        {
-            if (ct.IsCancellationRequested)
-            {
-                break;
-            }
-
-            rtts[i] = await probe.PingAsync(members[i], timeoutMs);
-        }
-
-        return [.. Enumerable.Range(0, members.Count).Where(i => rtts[i] is not null).OrderBy(i => rtts[i]!.Value)];
     }
 
     private async Task<bool> TryConnectAsync(string member, CancellationToken ct)
@@ -510,7 +320,7 @@ internal sealed class BalancerRunner(
 
             // Data-driven failure: the engine has had time to send handshake initiations, but the server
             // has returned nothing (no handshake, zero rx). That is the structured form of the engine's
-            // "handshake did not complete" — give up on this member now rather than waiting the backstop.
+            // "handshake did not complete" — give up on this config now rather than waiting the backstop.
             if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
             {
                 logger.LogWarning("member {Member}: no handshake, no bytes received in {Sec}s; unreachable",
@@ -539,18 +349,15 @@ internal sealed class BalancerRunner(
 
     private void Stop(string member)
     {
+        if (string.IsNullOrEmpty(member))
+        {
+            return;
+        }
+
         serviceManager.StopQuiet(member);
         WaitStopped(member);
         serviceManager.DeleteService(member);
         reconciler.Reconcile();
-    }
-
-    private void StopAll(IReadOnlyList<string> members)
-    {
-        foreach (var member in members)
-        {
-            Stop(member);
-        }
     }
 
     private void WaitStopped(string member)

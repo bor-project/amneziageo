@@ -365,7 +365,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         if (control.Running && bound is not null)
         {
             var boundBalancer = await store.GetBalancerAsync(bound, ct);
-            if (boundBalancer is not null && boundBalancer.Members.Contains(name, StringComparer.Ordinal))
+            if (boundBalancer is not null && string.Equals(boundBalancer.Config, name, StringComparison.Ordinal))
             {
                 return new IpcAck(false, $"config {name} is in use by the running profile {bound}; disconnect first");
             }
@@ -512,48 +512,32 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
     private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        if (args.Count < 3)
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
-            return new IpcAck(false, "add-balancer requires a name, recheck, and mode");
+            return new IpcAck(false, "add-balancer requires a profile name");
         }
 
-        if (!int.TryParse(args[1], out var recheck) || recheck <= 0)
+        var name = args[0];
+        var config = args.Count > 1 ? args[1] : string.Empty;
+        if (!string.IsNullOrEmpty(config) && !configRepo.Exists(config))
         {
-            return new IpcAck(false, "invalid recheck seconds");
+            return new IpcAck(false, $"unknown config: {config}");
         }
 
-        var mode = args[2].ToLowerInvariant() switch
-        {
-            "latency" => "latency",
-            "off" => "off",
-            _ => "priority",
-        };
-        var members = args.Skip(3).ToList();
-        foreach (var member in members)
-        {
-            if (!configRepo.Exists(member))
-            {
-                return new IpcAck(false, $"unknown config: {member}");
-            }
-        }
-
-        var existing = await store.GetBalancerAsync(args[0], ct);
-        var updated = new BalancerGroup(args[0], recheck, members, mode);
+        var existing = await store.GetBalancerAsync(name, ct);
+        var updated = new BalancerGroup(name, config);
         await store.SaveBalancerAsync(updated, ct);
-        var changed = existing is null
-            || existing.RecheckSeconds != updated.RecheckSeconds
-            || !string.Equals(existing.Mode, updated.Mode, StringComparison.Ordinal)
-            || !existing.Members.SequenceEqual(updated.Members, StringComparer.Ordinal);
+        var changed = existing is null || !string.Equals(existing.Config, updated.Config, StringComparison.Ordinal);
 
         // Only disrupt the live session when the *active* profile changed; creating or editing other
         // profiles (e.g. "+ Профиль") must not reconnect the running tunnel.
-        if (changed && string.Equals(args[0], BoundTarget, StringComparison.Ordinal))
+        if (changed && string.Equals(name, BoundTarget, StringComparison.Ordinal))
         {
             control.Invalidate();
         }
 
-        logger.LogInformation("saved balancer {Name} ({Count} members)", args[0], members.Count);
-        return new IpcAck(true, $"saved balancer {args[0]}");
+        logger.LogInformation("saved profile {Name} (config '{Config}')", name, config);
+        return new IpcAck(true, $"saved profile {name}");
     }
 
     private async Task<IpcAck> SetGeoAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -627,7 +611,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var balancer = await store.GetBalancerAsync(bound, ct);
-        return balancer is not null && balancer.Members.Contains(config, StringComparer.Ordinal);
+        return balancer is not null && string.Equals(balancer.Config, config, StringComparison.Ordinal);
     }
 
     private async Task<IpcAck> ListGeoAsync(CancellationToken ct)
@@ -1240,9 +1224,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // group's state alone, so a transient connecting / disconnecting state shows on its member
         // cards and stale rows from other groups don't leak in.
         var boundState = BoundTarget is not null ? states.FirstOrDefault(s => s.Group == BoundTarget) : null;
-        IReadOnlyList<string> boundMembers = boundState is null
-            ? []
-            : (await store.GetBalancerAsync(boundState.Group, ct))?.Members ?? [boundState.Group];
+        var boundConfig = boundState is null
+            ? null
+            : (await store.GetBalancerAsync(boundState.Group, ct))?.Config ?? boundState.Group;
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
 
         var configs = new List<ConfigEntry>();
@@ -1250,7 +1234,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         {
             var geoSettings = await store.GetTunnelGeoAsync(name, ct);
             var transport = await store.GetConfigTransportAsync(name, ct);
-            var status = boundState is not null && boundMembers.Contains(name, StringComparer.Ordinal)
+            var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
@@ -1270,11 +1254,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var (routingListId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
             balancers.Add(new BalancerEntry(
                 name,
-                balancer.Mode,
                 state?.Status ?? ConnectionStatus.Disconnected,
-                state?.ActiveMember,
-                balancer.Members,
-                balancer.RecheckSeconds,
+                balancer.Config,
                 routingListId,
                 useRouting));
         }
@@ -1301,7 +1282,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var update = updateState.Latest;
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.BetterMember, control.Target, sources, logBuffer.Snapshot(),
+        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.Target, sources, logBuffer.Snapshot(),
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,
@@ -1323,8 +1304,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     {
         return groupStatus switch
         {
-            "connected" or "degraded" => isActive ? ConnectionStatus.Connected : ConnectionStatus.Idle,
-            "connecting" or "failover" => ConnectionStatus.Connecting,
+            "connected" => isActive ? ConnectionStatus.Connected : ConnectionStatus.Idle,
+            "connecting" => ConnectionStatus.Connecting,
             "disconnecting" => isActive ? ConnectionStatus.Disconnecting : ConnectionStatus.Idle,
             _ => ConnectionStatus.Idle,
         };

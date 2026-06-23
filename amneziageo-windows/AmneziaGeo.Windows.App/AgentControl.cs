@@ -16,7 +16,6 @@ internal sealed class AgentControl
     private readonly Lock _gate = new();
     private volatile bool _running;
     private volatile bool _restartRequired;
-    private volatile string? _betterMember;
     private volatile string? _target;
     private volatile string? _runningTarget;
     private volatile bool _connectFailed;
@@ -35,14 +34,6 @@ internal sealed class AgentControl
     /// reconnects to apply. Cleared on any connect / disconnect.
     /// </summary>
     public bool RestartRequired => _restartRequired;
-
-    /// <summary>
-    /// The name of a higher-priority (or lower-latency) member that is consistently available while the
-    /// balancer is running on a backup. Notify-only: the balancer does not switch back automatically
-    /// (silently dropping a working backup is disruptive); the UI offers the user a return. Null when
-    /// nothing better is available. Cleared on any connect / disconnect.
-    /// </summary>
-    public string? BetterMember => _betterMember;
 
     /// <summary>
     /// The profile the user has selected (the radio). The next connect binds to it; selecting it does
@@ -82,8 +73,7 @@ internal sealed class AgentControl
 
     /// <summary>
     /// Sets the desired connection state and signals the runner to re-evaluate. Clears the
-    /// restart-required and better-member notices: a connect applies the current settings, and a
-    /// disconnect makes both notices moot.
+    /// restart-required notice: a connect applies the current settings, and a disconnect makes it moot.
     /// </summary>
     public void SetRunning(bool value)
     {
@@ -99,7 +89,6 @@ internal sealed class AgentControl
         }
 
         _restartRequired = false;
-        _betterMember = null;
         Signal();
     }
 
@@ -146,7 +135,6 @@ internal sealed class AgentControl
         _running = false;
         _runningTarget = null;
         _restartRequired = false;
-        _betterMember = null;
         Signal();
     }
 
@@ -156,14 +144,6 @@ internal sealed class AgentControl
     public void SetRestartRequired()
     {
         _restartRequired = true;
-    }
-
-    /// <summary>
-    /// Records (or clears, with null) the better member the balancer found while on a backup.
-    /// </summary>
-    public void SetBetterMember(string? member)
-    {
-        _betterMember = member;
     }
 
     private void Signal()

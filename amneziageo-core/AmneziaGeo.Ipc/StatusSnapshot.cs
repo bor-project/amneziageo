@@ -13,7 +13,6 @@ public sealed record StatusSnapshot(
     bool Active = true,
     string BoundStatus = ConnectionStatus.Disconnected,
     bool RestartRequired = false,
-    string? BetterMember = null,
     string? SelectedTarget = null,
     IReadOnlyList<SourceEntry>? Sources = null,
     IReadOnlyList<string>? Logs = null,

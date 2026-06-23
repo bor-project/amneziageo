@@ -31,7 +31,7 @@ internal sealed class AgentBackgroundService(
         var group = string.IsNullOrWhiteSpace(launch) ? null : await ResolveGroupAsync(launch, stoppingToken);
         if (group is not null)
         {
-            logger.LogInformation("agent starting: group {Group} ({Count} member(s))", group.Name, group.Members.Count);
+            logger.LogInformation("agent starting: profile {Profile} (config '{Config}')", group.Name, group.Config);
             control.SetTarget(group.Name);
 
             // Persist a launch-arg seed (preconfigured "--agent main") as the selection so it sticks even
@@ -53,7 +53,7 @@ internal sealed class AgentBackgroundService(
             logger.LogInformation("agent starting: no target configured yet; idling");
         }
 
-        await runner.RunAsync(group ?? new BalancerGroup(string.Empty, 60, []), stoppingToken);
+        await runner.RunAsync(group ?? new BalancerGroup(string.Empty, string.Empty), stoppingToken);
         logger.LogInformation("agent stopped");
     }
 
@@ -67,7 +67,7 @@ internal sealed class AgentBackgroundService(
 
         if (configRepo.Exists(target))
         {
-            return new BalancerGroup(target, 60, [target]);
+            return new BalancerGroup(target, target);
         }
 
         return null;

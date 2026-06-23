@@ -26,18 +26,21 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasQr))]
     [NotifyPropertyChangedFor(nameof(ShowQr))]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private Bitmap? _qrImage;
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private bool _isReady;
 
     // Inline editing of the .conf text: the payload box is read-only until "Изменить" unlocks it. Editing
     // applies to the raw config form (not the vpn:// link), and "Сохранить" persists it in place.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowQr))]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private bool _isEditing;
 
     /// <summary>
@@ -63,6 +66,12 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
 
     /// <summary>Whether the QR is shown: a QR exists and the text is not being edited.</summary>
     public bool ShowQr => QrImage is not null && !IsEditing;
+
+    /// <summary>
+    /// Whether the payload is loaded but no QR could be produced (the config is too large to encode) and we
+    /// are not editing — the UI shows a "doesn't fit in a QR" notice in the QR's place.
+    /// </summary>
+    public bool QrUnavailable => IsReady && !IsEditing && QrImage is null;
 
     /// <summary>A suggested file name for the current form.</summary>
     public string SuggestedFileName => AsLink ? $"{ConfigName}.vpn.txt" : $"{ConfigName}.conf";
@@ -104,8 +113,10 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
         }
         catch (Exception)
         {
+            // Too large to encode as a QR. Leave the status line clean — the QrUnavailable notice in the
+            // QR's place tells the user the config doesn't fit and to use a file or the vpn:// link.
             QrImage = null;
-            StatusMessage = "Слишком длинно для QR — используйте файл или ссылку.";
+            StatusMessage = string.Empty;
         }
     }
 

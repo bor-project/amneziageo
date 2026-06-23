@@ -499,7 +499,7 @@
                     <StackPanel Spacing="10" DataContext="{Binding ConfigExport}">
                       <Border Background="{DynamicResource AgInsetBrush}"
                               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                              CornerRadius="9" Padding="3" HorizontalAlignment="Left"
+                              CornerRadius="9" Padding="3" HorizontalAlignment="Center"
                               IsEnabled="{Binding !IsEditing}">
                         <UniformGrid Columns="2" Width="320">
                           <Button Classes="seg" Classes.active="{Binding IsConf}" Command="{Binding ShowConfCommand}"
@@ -510,9 +510,15 @@
                       </Border>
                       <TextBlock IsVisible="{Binding IsEditing}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                                  Text="Должны быть секции [Interface] и [Peer]. Гео и маршруты профиля сохранятся." />
-                      <Border HorizontalAlignment="Left" Background="White" CornerRadius="8" Padding="10"
+                      <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
                               IsVisible="{Binding ShowQr}">
                         <Image Source="{Binding QrImage}" Width="220" Height="220" />
+                      </Border>
+                      <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+                              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                              CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
+                        <TextBlock Text="Конфигурация не помещается в QR-код. Используйте «Сохранить в файл…» или ссылку vpn://."
+                                   Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
                       </Border>
                       <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
                               CornerRadius="8" Background="{DynamicResource AgPanelBrush}">

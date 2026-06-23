@@ -173,12 +173,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // SyncProfileRoutingEditor); null when no real list is selected.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRoutingEditor))]
+    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
+    [NotifyPropertyChangedFor(nameof(CanEditRouting))]
     private RoutingListEditorViewModel? _routingEditor;
 
-    // "Used in N profiles" hint shown beside the inline editor, so editing a shared list is not a
-    // surprise (the catalogue is shared across profiles).
+    // The routing page is collapsed to just the picker by default; the rule editor opens on "Редактировать"
+    // (an existing list) or by picking "+ Новый список" (a new one).
     [ObservableProperty]
-    private string _routingUsageHint = string.Empty;
+    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
+    [NotifyPropertyChangedFor(nameof(CanEditRouting))]
+    private bool _isRoutingEditing;
 
     // Preferred DNS for non-tunneled names (empty = auto). Pushed via SavePreferredDns; applies on reconnect.
     [ObservableProperty]
@@ -514,6 +518,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool HasRoutingEditor => RoutingEditor is not null;
 
+    /// <summary>Whether the inline rule editor is shown — it is open for editing, or it is a brand-new list.</summary>
+    public bool ShowRoutingEditor => RoutingEditor is not null && (IsRoutingEditing || RoutingEditor.IsNew);
+
+    /// <summary>Whether to offer "Редактировать": a saved list is selected and the editor is still collapsed.</summary>
+    public bool CanEditRouting => RoutingEditor is not null && !RoutingEditor.IsNew && !IsRoutingEditing;
+
     /// <summary>
     /// Current theme label shown on the toggle button.
     /// </summary>
@@ -730,7 +740,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (choice is null || choice.IsNone)
         {
             RoutingEditor = null;
-            UpdateRoutingUsageHint();
             return;
         }
 
@@ -744,7 +753,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 _ = editor.LoadAsync();
             }
 
-            UpdateRoutingUsageHint();
             return;
         }
 
@@ -753,10 +761,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             var editor = new RoutingListEditorViewModel(_connection, choice.Id!.Value, choice.Name, OnProfileRoutingEditorSaved);
             RoutingEditor = editor;
+            IsRoutingEditing = false;
             _ = editor.LoadAsync();
         }
-
-        UpdateRoutingUsageHint();
     }
 
     // When a freshly-created inline list is first saved (gets a real id), bind it to the open profile so
@@ -770,23 +777,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             profile.NotifyNewListSaved(id);
             _ = AssignRoutingAsync(profile.Name, id, false);
         }
-    }
-
-    // Recompute the "used in N profiles" hint for the open profile's selected list (the catalogue is
-    // shared, so editing one list can affect several profiles).
-    private void UpdateRoutingUsageHint()
-    {
-        var choice = OpenProfile?.SelectedRoutingList;
-        if (choice is null || !choice.IsReal)
-        {
-            RoutingUsageHint = string.Empty;
-            return;
-        }
-
-        var count = Balancers.Count(b => b.SelectedRoutingList.Id == choice.Id);
-        RoutingUsageHint = count > 1
-            ? $"Этот список используется в {count} профилях — правки затронут все из них."
-            : "Список используется только в этом профиле.";
     }
 
     [RelayCommand]
@@ -875,7 +865,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         HasConfigs = Configs.Count > 0;
         HasBalancers = Balancers.Count > 0;
         HasRoutingLists = RoutingLists.Count > 0;
-        UpdateRoutingUsageHint();
 
         foreach (var item in Balancers)
         {
@@ -1582,6 +1571,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
     {
         oldValue?.CancelPendingSave();
+    }
+
+    // "Редактировать": open the inline rule editor for the selected saved list (collapsed by default so the
+    // routing page is just the picker until the user opts in).
+    [RelayCommand]
+    private void BeginRoutingEdit()
+    {
+        IsRoutingEditing = true;
     }
 
     // "Удалить список" in the inline editor: delete the shared list, then clear the open profile's

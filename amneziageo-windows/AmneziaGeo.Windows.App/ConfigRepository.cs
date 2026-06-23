@@ -197,18 +197,15 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
         await store.RemoveDomainResolutionsAsync(oldName, ct);
 
-        foreach (var balancerName in await store.ListBalancerNamesAsync(ct))
+        foreach (var profileName in await store.ListBalancerNamesAsync(ct))
         {
-            var balancer = await store.GetBalancerAsync(balancerName, ct);
-            if (balancer is null || !balancer.Members.Contains(oldName, StringComparer.Ordinal))
+            var profile = await store.GetBalancerAsync(profileName, ct);
+            if (profile is null || !string.Equals(profile.Config, oldName, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var members = balancer.Members
-                .Select(member => string.Equals(member, oldName, StringComparison.Ordinal) ? newName : member)
-                .ToList();
-            await store.SaveBalancerAsync(balancer with { Members = members }, ct);
+            await store.SaveBalancerAsync(profile with { Config = newName }, ct);
         }
     }
 
@@ -232,16 +229,15 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         await store.RemoveConfigTransportAsync(name, ct);
         await store.RemoveDomainResolutionsAsync(name, ct);
 
-        foreach (var balancerName in await store.ListBalancerNamesAsync(ct))
+        foreach (var profileName in await store.ListBalancerNamesAsync(ct))
         {
-            var balancer = await store.GetBalancerAsync(balancerName, ct);
-            if (balancer is null || !balancer.Members.Contains(name))
+            var profile = await store.GetBalancerAsync(profileName, ct);
+            if (profile is null || !string.Equals(profile.Config, name, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var members = balancer.Members.Where(member => member != name).ToList();
-            await store.SaveBalancerAsync(balancer with { Members = members }, ct);
+            await store.SaveBalancerAsync(profile with { Config = string.Empty }, ct);
         }
     }
 

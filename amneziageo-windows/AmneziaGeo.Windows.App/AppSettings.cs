@@ -11,24 +11,14 @@ internal sealed record AppSettings
     public int RefreshSeconds { get; init; } = 60;
 
     /// <summary>
-    /// How long a balancer waits for a member handshake before declaring it unreachable, in seconds.
+    /// How long a connect attempt waits for a handshake before declaring the server unreachable, in seconds.
     /// </summary>
     public int ConnectTimeoutSeconds { get; init; } = 20;
 
     /// <summary>
-    /// Handshake age beyond which a balancer treats an active member as dead, in seconds.
+    /// Handshake age beyond which a connected tunnel is treated as dead (triggering a re-dial), in seconds.
     /// </summary>
     public int DeadThresholdSeconds { get; init; } = 180;
-
-    /// <summary>
-    /// Consecutive successful out-of-band probes of a higher-priority member required before failing back to it.
-    /// </summary>
-    public int FailbackProbes { get; init; } = 3;
-
-    /// <summary>
-    /// Timeout for an out-of-band endpoint reachability probe, in seconds.
-    /// </summary>
-    public int ProbeTimeoutSeconds { get; init; } = 2;
 
     /// <summary>
     /// URL of the update metadata file (JSON with version/description/setup). Empty disables update

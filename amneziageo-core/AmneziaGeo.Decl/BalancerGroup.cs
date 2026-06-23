@@ -1,10 +1,9 @@
 namespace AmneziaGeo.Decl;
 
 /// <summary>
-/// An ordered failover group of tunnel configurations with a recheck interval and selection mode.
+/// A named tunnel profile bound to exactly one configuration. An empty <see cref="Config"/>
+/// means the profile has no configuration yet (freshly created, pending import).
 /// </summary>
 public sealed record BalancerGroup(
     string Name,
-    int RecheckSeconds,
-    IReadOnlyList<string> Members,
-    string Mode = "priority");
+    string Config);

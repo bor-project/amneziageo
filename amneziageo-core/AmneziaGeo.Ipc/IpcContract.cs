@@ -36,7 +36,8 @@ public static class IpcContract
     public const string OpAddConfig = "add-config";
 
     /// <summary>
-    /// Command to save a balancer: args are name, recheck seconds, mode, then member names.
+    /// Command to save a profile: args are name and its single configuration name
+    /// (an empty configuration name leaves the profile without a configuration).
     /// </summary>
     public const string OpAddBalancer = "add-balancer";
 

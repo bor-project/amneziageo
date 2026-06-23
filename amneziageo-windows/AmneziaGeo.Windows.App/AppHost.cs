@@ -61,7 +61,6 @@ internal static class AppHost
         services.AddSingleton<ServiceManager>();
         services.AddSingleton<RouteManager>();
         services.AddSingleton<UapiClient>();
-        services.AddSingleton<EndpointProbe>();
         services.AddSingleton<DnsConfigurator>();
         services.AddSingleton<NetworkReconciler>();
         services.AddSingleton<WindowsFirewall>();

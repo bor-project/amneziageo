@@ -409,34 +409,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Double-clicking a member config row opens its management page (same as the ⚙ button on the row).
-    private void OnMemberRowDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if (sender is Control { DataContext: string configName } && DataContext is MainWindowViewModel vm)
-        {
-            vm.OpenConfigManageCommand.Execute(configName);
-        }
-    }
-
-    private async void OnConfigTapped(object? sender, TappedEventArgs e)
-    {
-        if (sender is not Control { DataContext: ConfigItemViewModel config })
-        {
-            return;
-        }
-
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var dialog = new ConfigSettingsDialog
-        {
-            DataContext = new ConfigSettingsViewModel(vm.Connection, config.Name, config.Endpoint, config.GeoSplit, config.Rules, config.UseWebSocket, config.WebSocketHost, config.WebSocketPort),
-        };
-        await dialog.ShowDialog(this);
-    }
-
     /// <summary>
     /// Opens the per-source context menu (delete) on a right-click of a source row. The menu is built
     /// here, with the command assigned directly from the row's view model, because a MenuItem hosted in a

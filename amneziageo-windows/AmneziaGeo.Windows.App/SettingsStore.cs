@@ -18,8 +18,6 @@ internal sealed class SettingsStore(IStateStore store)
             RefreshSeconds = await ReadIntAsync("refresh-seconds", defaults.RefreshSeconds, ct),
             ConnectTimeoutSeconds = await ReadIntAsync("connect-timeout-seconds", defaults.ConnectTimeoutSeconds, ct),
             DeadThresholdSeconds = await ReadIntAsync("dead-threshold-seconds", defaults.DeadThresholdSeconds, ct),
-            FailbackProbes = await ReadIntAsync("failback-probes", defaults.FailbackProbes, ct),
-            ProbeTimeoutSeconds = await ReadIntAsync("probe-timeout-seconds", defaults.ProbeTimeoutSeconds, ct),
             UpdateUrl = await ReadStringAsync("update-url", defaults.UpdateUrl, ct),
             GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
             GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),

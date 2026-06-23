@@ -142,6 +142,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN routing_list_id INTEGER;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN use_routing INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
 
+            // Collapse to one configuration per profile: the balancer (multiple members + failover) was
+            // removed, so keep only the first/default member (position 0) of every profile and drop the
+            // rest. Idempotent — after the first run no position>0 rows remain. routing_list_id/use_routing
+            // are denormalised onto the surviving position-0 row, so the assignment carries over unchanged.
+            await TryAlterAsync(connection, "DELETE FROM balancers WHERE position > 0;", ct).ConfigureAwait(false);
+
             // Balancer routing projection lives in its own columns so it never clobbers a config's
             // own set-geo split: the user columns (geo_split/rules/routes/domains) hold user intent,
             // the proj_* columns hold the active projection, and `projected` selects which is live.
@@ -817,33 +823,25 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
-                // A profile with no members still needs a row: the schema keys a balancer by its member
-                // rows (there is no standalone header table), so writing zero rows would make the profile
-                // vanish on the next snapshot rebuild — which is exactly why a freshly created "+ Профиль"
-                // never appeared. Persist a single placeholder row with an empty-string member instead;
-                // GetBalancerAsync filters it back out, so the profile reads as members-empty.
-                IReadOnlyList<string> rows = balancer.Members.Count > 0 ? balancer.Members : [string.Empty];
-                for (var position = 0; position < rows.Count; position++)
+                // A profile is exactly one row holding its single configuration (the member column). A
+                // config-less profile stores an empty-string member; GetBalancerAsync surfaces it as an
+                // empty Config. The recheck_seconds/mode columns are vestigial (the balancer was removed) —
+                // write fixed values to satisfy the NOT NULL schema without reshaping the table.
+                var insert = connection.CreateCommand();
+                await using (insert.ConfigureAwait(false))
                 {
-                    var insert = connection.CreateCommand();
-                    await using (insert.ConfigureAwait(false))
-                    {
-                        insert.Transaction = transaction;
-                        insert.CommandText =
-                            """
-                            INSERT INTO balancers (name, position, member, recheck_seconds, mode, routing_list_id, use_routing, updated_at)
-                            VALUES ($name, $position, $member, $recheck, $mode, $list, $use, $updated);
-                            """;
-                        insert.Parameters.AddWithValue("$name", balancer.Name);
-                        insert.Parameters.AddWithValue("$position", position);
-                        insert.Parameters.AddWithValue("$member", rows[position]);
-                        insert.Parameters.AddWithValue("$recheck", balancer.RecheckSeconds);
-                        insert.Parameters.AddWithValue("$mode", balancer.Mode);
-                        insert.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
-                        insert.Parameters.AddWithValue("$use", useRouting ? 1 : 0);
-                        insert.Parameters.AddWithValue("$updated", timestamp);
-                        await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                    }
+                    insert.Transaction = transaction;
+                    insert.CommandText =
+                        """
+                        INSERT INTO balancers (name, position, member, recheck_seconds, mode, routing_list_id, use_routing, updated_at)
+                        VALUES ($name, 0, $member, 60, 'priority', $list, $use, $updated);
+                        """;
+                    insert.Parameters.AddWithValue("$name", balancer.Name);
+                    insert.Parameters.AddWithValue("$member", balancer.Config);
+                    insert.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
+                    insert.Parameters.AddWithValue("$use", useRouting ? 1 : 0);
+                    insert.Parameters.AddWithValue("$updated", timestamp);
+                    await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -854,11 +852,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<BalancerGroup?> GetBalancerAsync(string name, CancellationToken ct = default)
     {
-        var members = new List<string>();
-        var recheckSeconds = 0;
-        var mode = "priority";
-        var found = false;
-
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
         {
@@ -869,34 +862,26 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT member, recheck_seconds, mode
+                    SELECT member
                     FROM balancers
                     WHERE name = $name
-                    ORDER BY position;
+                    ORDER BY position
+                    LIMIT 1;
                     """;
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
                 {
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    if (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        var member = reader.GetString(0);
-                        // Skip the empty-string placeholder row that persists a memberless profile.
-                        if (member.Length > 0)
-                        {
-                            members.Add(member);
-                        }
-
-                        recheckSeconds = reader.GetInt32(1);
-                        mode = reader.GetString(2);
-                        found = true;
+                        return new BalancerGroup(name, reader.GetString(0));
                     }
                 }
             }
         }
 
-        return found ? new BalancerGroup(name, recheckSeconds, members, mode) : null;
+        return null;
     }
 
     /// <inheritdoc/>

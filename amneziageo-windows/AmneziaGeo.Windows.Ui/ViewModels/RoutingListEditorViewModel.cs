@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Ui.Services;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -35,6 +36,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBusy;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasQr))]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    private Bitmap? _qrImage;
+
     /// <summary>
     /// ctor used when creating a fresh routing list.
     /// </summary>
@@ -45,6 +51,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _id = 0;
         IsNew = true;
         _saveTimer = CreateSaveTimer();
+        Rules.CollectionChanged += (_, _) => RefreshQr();
     }
 
     /// <summary>
@@ -56,6 +63,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _onSaved = onSaved;
         _id = id;
         _saveTimer = CreateSaveTimer();
+        Rules.CollectionChanged += (_, _) => RefreshQr();
         Name = name;
         IsNew = false;
     }
@@ -90,6 +98,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// Geo category suggestions for the rule input, fetched from the agent.
     /// </summary>
     public ObservableCollection<string> GeoSuggestions { get; } = [];
+
+    /// <summary>Whether a QR code was rendered for this list's share payload.</summary>
+    public bool HasQr => QrImage is not null;
+
+    /// <summary>Whether the list has content but is too large to encode as a QR.</summary>
+    public bool QrUnavailable => QrImage is null && (Name.Trim().Length > 0 || Rules.Count > 0);
 
     /// <summary>
     /// Fetches geo category suggestions and (for existing lists) the current rules.
@@ -268,6 +282,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     partial void OnNameChanged(string value)
     {
         ScheduleSave();
+        RefreshQr();
     }
 
     // Debounce edits into a single save: each change restarts the timer, so rapid typing / multiple
@@ -281,6 +296,19 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 
         _saveTimer.Stop();
         _saveTimer.Start();
+    }
+
+    // Regenerate the share QR from the current name + rules; null when the payload is too large to encode.
+    private void RefreshQr()
+    {
+        try
+        {
+            QrImage = QrCodec.Generate(BuildTransferPayload());
+        }
+        catch
+        {
+            QrImage = null;
+        }
     }
 
     private async Task AutoSaveAsync()

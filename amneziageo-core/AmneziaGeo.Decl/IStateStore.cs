@@ -83,6 +83,22 @@ public interface IStateStore
     Task RemoveConfigTransportAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns a config's preferred DNS settings, or null when none are stored (the config auto-detects
+    /// the system resolvers for non-tunneled names).
+    /// </summary>
+    Task<ConfigDns?> GetConfigDnsAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a config's preferred DNS settings.
+    /// </summary>
+    Task SetConfigDnsAsync(ConfigDns dns, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a config's preferred DNS settings.
+    /// </summary>
+    Task RemoveConfigDnsAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates a geo download source.
     /// </summary>
     Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default);

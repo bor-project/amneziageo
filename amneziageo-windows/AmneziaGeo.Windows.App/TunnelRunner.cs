@@ -128,10 +128,12 @@ internal sealed class TunnelRunner(
         // another VPN. The loopback proxy always runs (split AND full): on this IPv4-only tunnel it
         // denies AAAA and HTTPS/SVCB (type 65) so dual-stack clients don't stall and Chrome doesn't take
         // an HTTP/3 hint path that bypasses the tunnel.
-        // A user-set "preferred DNS" overrides the auto-detected system resolvers for NON-tunneled names;
-        // empty falls back to what the system uses now. Tunneled (geo-matched) names keep the clean
-        // tunnelResolver above, so this never weakens geo resolution.
-        var preferredDns = ParseDnsServers(appSettings.PreferredDns);
+        // This profile's (config's) "preferred DNS" overrides the auto-detected system resolvers for
+        // NON-tunneled names; empty falls back to what the system uses now. Tunneled (geo-matched) names keep
+        // the clean tunnelResolver above, so this never weakens geo resolution. Per-config (moved off the
+        // former global app setting) so each profile carries its own DNS.
+        var dnsOverride = await store.GetConfigDnsAsync(name);
+        var preferredDns = ParseDnsServers(dnsOverride?.Servers ?? string.Empty);
         // The real system/LAN resolver, captured regardless of any preferred-DNS override: LOCAL names
         // (the LAN, corporate, and user exclusion-list domains) must keep resolving HERE, not offshore —
         // this is what keeps the local network alive in full tunnel and fixes a preferred-DNS set to a

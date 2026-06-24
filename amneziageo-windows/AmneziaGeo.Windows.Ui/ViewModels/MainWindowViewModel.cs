@@ -27,7 +27,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
     private bool _updateUrlInitialized;
-    private bool _preferredDnsInitialized;
     // Signature (sorted names) of the geo sources that had updates the last time the banner was shown,
     // so a persistent "update available" state isn't re-raised on every snapshot and a dismissed banner
     // stays dismissed until the set of outdated sources changes.
@@ -110,6 +109,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsAspectConfig))]
     [NotifyPropertyChangedFor(nameof(IsAspectRouting))]
     [NotifyPropertyChangedFor(nameof(IsAspectProxy))]
+    [NotifyPropertyChangedFor(nameof(IsAspectDns))]
     [NotifyPropertyChangedFor(nameof(IsAspectName))]
     private string _profileAspect = "config";
 
@@ -131,6 +131,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // The open config's WebSocket (UDP-over-TCP) transport settings, shown on its management page.
     [ObservableProperty]
     private ConfigTransportViewModel? _configTransport;
+
+    // The open config's preferred-DNS editor, shown on the profile's DNS aspect (per-config, moved off the
+    // former global setting). Built when a config opens, alongside ConfigTransport.
+    [ObservableProperty]
+    private ConfigDnsViewModel? _configDns;
 
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
@@ -190,10 +195,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // surprise (the catalogue is shared across profiles).
     [ObservableProperty]
     private string _routingUsageHint = string.Empty;
-
-    // Preferred DNS for non-tunneled names (empty = auto). Pushed via SavePreferredDns; applies on reconnect.
-    [ObservableProperty]
-    private string _preferredDns = string.Empty;
 
     // Bypass exclusions: domains kept on the local resolver, IP/CIDRs routed direct (one per line). Empty
     // = just the built-in defaults (loopback, RFC1918 LAN, common local suffixes). Applies on reconnect.
@@ -495,6 +496,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Whether the opened profile's proxy (WebSocket) aspect is selected.</summary>
     public bool IsAspectProxy => ProfileAspect == "proxy";
 
+    /// <summary>Whether the opened profile's DNS aspect is selected.</summary>
+    public bool IsAspectDns => ProfileAspect == "dns";
+
     /// <summary>Whether the opened profile's name aspect is selected.</summary>
     public bool IsAspectName => ProfileAspect == "name";
 
@@ -672,6 +676,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             ConfigExport = null;
             ConfigTransport = null;
+            ConfigDns = null;
             return;
         }
 
@@ -679,9 +684,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigExport = export;
         _ = export.LoadAsync();
 
-        // Seed the WebSocket (UDP-over-TCP) transport editor from the opened config's current snapshot values.
+        // Seed the WebSocket (UDP-over-TCP) transport and preferred-DNS editors from the opened config's
+        // current snapshot values.
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443);
+        ConfigDns = new ConfigDnsViewModel(_connection, value, item?.Dns ?? string.Empty);
     }
 
     // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the
@@ -1073,13 +1080,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             _updateUrlInitialized = true;
         }
 
-        // Initialise the preferred-DNS field once so periodic snapshots don't overwrite the user's typing.
-        if (!_preferredDnsInitialized)
-        {
-            PreferredDns = snapshot.PreferredDns;
-            _preferredDnsInitialized = true;
-        }
-
         // Same one-shot init for the exclusions list, so periodic pushes don't clobber editing.
         if (!_exclusionsInitialized)
         {
@@ -1105,15 +1105,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             UpdateBannerVisible = false;
             _bannerUpdateVersion = null;
         }
-    }
-
-    // Persist the preferred DNS (empty clears it → auto-detect). Applies on the next connect, like other
-    // transport settings, so a notice tells the user to reconnect.
-    [RelayCommand]
-    private async Task SavePreferredDns()
-    {
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["preferred-dns", PreferredDns ?? string.Empty]));
-        ShowNotice("Предпочитаемый DNS сохранён — применится при переподключении.");
     }
 
     // Persist the bypass exclusions list (empty = just the built-in defaults). Applies on the next connect.
@@ -1291,6 +1282,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.UseWebSocket = entry.WebSocket;
             existing.WebSocketHost = entry.WebSocketHost;
             existing.WebSocketPort = entry.WebSocketPort;
+            existing.Dns = entry.Dns;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];

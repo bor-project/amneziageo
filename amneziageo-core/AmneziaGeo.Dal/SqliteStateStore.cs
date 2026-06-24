@@ -73,6 +73,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at TEXT NOT NULL
                     );
 
+                    CREATE TABLE IF NOT EXISTS config_dns (
+                        name       TEXT PRIMARY KEY,
+                        servers    TEXT NOT NULL DEFAULT '',
+                        updated_at TEXT NOT NULL
+                    );
+
                     CREATE TABLE IF NOT EXISTS domain_ips (
                         id         INTEGER PRIMARY KEY AUTOINCREMENT,
                         tunnel     TEXT NOT NULL,
@@ -576,6 +582,79 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await using (command.ConfigureAwait(false))
             {
                 command.CommandText = "DELETE FROM config_transport WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<ConfigDns?> GetConfigDnsAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT servers FROM config_dns WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    return new ConfigDns(name, reader.GetString(0));
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetConfigDnsAsync(ConfigDns dns, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO config_dns (name, servers, updated_at)
+                    VALUES ($name, $servers, $updated)
+                    ON CONFLICT(name) DO UPDATE SET
+                        servers    = excluded.servers,
+                        updated_at = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$name", dns.Name);
+                command.Parameters.AddWithValue("$servers", dns.Servers);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveConfigDnsAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM config_dns WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

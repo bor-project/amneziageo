@@ -253,6 +253,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpAddBalancer => await AddBalancerAsync(command.Args, ct),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
+                IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
                 IpcContract.OpListGeo => await ListGeoAsync(ct),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
@@ -529,6 +530,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         string? configText = null;
         ProfilePortable.TransportBlock? transport = null;
         ProfilePortable.GeoBlock? geoBlock = null;
+        string? dns = null;
         var config = balancer.Config;
         if (!string.IsNullOrEmpty(config) && configRepo.Exists(config))
         {
@@ -544,6 +546,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             if (ownGeo is not null && (ownGeo.GeoSplit || ownGeo.Rules.Count > 0))
             {
                 geoBlock = new ProfilePortable.GeoBlock(ownGeo.GeoSplit, ownGeo.Rules.Select(GeoConfigurator.Format).ToList());
+            }
+
+            var configDns = await store.GetConfigDnsAsync(config, ct);
+            if (configDns is not null && configDns.Servers.Length > 0)
+            {
+                dns = configDns.Servers;
             }
         }
 
@@ -562,7 +570,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             configText,
             transport,
             geoBlock,
-            routing);
+            routing,
+            dns);
 
         logger.LogInformation("exported profile {Name}", name);
         return new IpcAck(true, ProfilePortable.Serialize(bundle));
@@ -628,6 +637,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             {
                 // Re-materializes the rule tokens against this machine's geo data (empty until downloaded).
                 await geo.ApplyAsync(configName, g.Split, g.Rules, ct);
+            }
+
+            if (!string.IsNullOrWhiteSpace(bundle.Dns))
+            {
+                await store.SetConfigDnsAsync(new ConfigDns(configName, bundle.Dns.Trim()), ct);
             }
         }
 
@@ -769,6 +783,44 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, on
             ? $"WebSocket включён, порт {port} (применится при переподключении)"
             : "WebSocket выключен (применится при переподключении)");
+    }
+
+    private async Task<IpcAck> SetConfigDnsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "set-config-dns requires a config name");
+        }
+
+        if (!configRepo.Exists(args[0]))
+        {
+            return new IpcAck(false, $"unknown config: {args[0]}");
+        }
+
+        // Optional 2nd arg: the preferred DNS servers (comma/space-separated). Empty clears the override,
+        // reverting non-tunneled resolution to the auto-detected system resolvers.
+        var servers = args.Count > 1 ? args[1].Trim() : string.Empty;
+        if (servers.Length == 0)
+        {
+            await store.RemoveConfigDnsAsync(args[0], ct);
+        }
+        else
+        {
+            await store.SetConfigDnsAsync(new ConfigDns(args[0], servers), ct);
+        }
+
+        // DNS feeds the per-tunnel resolver wiring, decided at connect time; like a routing/transport change
+        // it applies cleanly only on a fresh tunnel. If the changed config is in the running target, flag a
+        // reconnect — the new setting is persisted and takes effect on the next connect.
+        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        {
+            control.SetRestartRequired();
+        }
+
+        logger.LogInformation("set-config-dns {Name}: servers='{Servers}'", args[0], servers);
+        return new IpcAck(true, servers.Length == 0
+            ? "DNS сброшен на автоопределение (применится при переподключении)"
+            : $"DNS сохранён: {servers} (применится при переподключении)");
     }
 
     /// <summary>
@@ -1411,11 +1463,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         {
             var geoSettings = await store.GetTunnelGeoAsync(name, ct);
             var transport = await store.GetConfigTransportAsync(name, ct);
+            var configDns = await store.GetConfigDnsAsync(name, ct);
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty));
         }
 
         var balancers = new List<BalancerEntry>();
@@ -1468,7 +1521,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.GeoAutoCheck,
             settings.GeoCheckIntervalHours,
             control.ConnectFailed,
-            settings.PreferredDns,
             settings.Exclusions,
             settings.AutoExcludeLan);
     }

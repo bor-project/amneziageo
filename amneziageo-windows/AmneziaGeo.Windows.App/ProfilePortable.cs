@@ -31,7 +31,8 @@ internal static class ProfilePortable
 
     /// <summary>
     /// The full exported profile. <see cref="ConfigText"/> is null when the profile has no config yet;
-    /// <see cref="Transport"/>, <see cref="Geo"/>, and <see cref="Routing"/> are null when unset.
+    /// <see cref="Transport"/>, <see cref="Geo"/>, <see cref="Routing"/>, and <see cref="Dns"/> are null
+    /// when unset.
     /// </summary>
     public sealed record Bundle(
         string Format,
@@ -41,7 +42,8 @@ internal static class ProfilePortable
         string? ConfigText,
         TransportBlock? Transport,
         GeoBlock? Geo,
-        RoutingBlock? Routing);
+        RoutingBlock? Routing,
+        string? Dns = null);
 
     /// <summary>
     /// The config's WebSocket (UDP-over-TCP) transport. Host empty reuses the config's own Endpoint host.

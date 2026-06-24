@@ -55,6 +55,13 @@ public static class IpcContract
     public const string OpSetWebSocket = "set-websocket";
 
     /// <summary>
+    /// Command to set a config's preferred DNS for NON-tunneled (local) name resolution. Args: name,
+    /// servers (comma/space-separated; empty clears it → auto-detect the system resolvers). Applies on the
+    /// next connect. Moved here from the former global "preferred-dns" app setting.
+    /// </summary>
+    public const string OpSetConfigDns = "set-config-dns";
+
+    /// <summary>
     /// Command to list available geo categories; the ack message holds newline-separated rule tokens.
     /// </summary>
     public const string OpListGeo = "list-geo";

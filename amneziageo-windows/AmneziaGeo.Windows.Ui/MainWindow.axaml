@@ -289,7 +289,7 @@
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Источники данных" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="Источники geo" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="Базы доменов и стран (geosite/geoip)" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
@@ -580,10 +580,6 @@
                     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
                     <StackPanel Spacing="10">
-                      <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                              CornerRadius="8" Background="{DynamicResource AgPanelBrush}" Padding="10,8">
-                        <SelectableTextBlock Text="{Binding ConfigFilePath}" Classes="mono" FontSize="12" TextWrapping="Wrap" />
-                      </Border>
                       <Button Classes="softbtn" Content="Открыть в проводнике" HorizontalAlignment="Left"
                               Command="{Binding RevealConfigCommand}" />
                     </StackPanel>
@@ -702,6 +698,15 @@
                                     Click="OnRoutingImportFile" />
                           </WrapPanel>
                         </StackPanel>
+
+                        <!-- shareable QR of the list (name + rules); hidden when it does not fit -->
+                        <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+                                IsVisible="{Binding HasQr}">
+                          <Image Source="{Binding QrImage}" Width="200" Height="200" />
+                        </Border>
+                        <TextBlock IsVisible="{Binding QrUnavailable}" Classes="muted" FontSize="11.5"
+                                   HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                                   Text="Список слишком большой для QR — используйте «Сохранить в файл…»." />
                       </StackPanel>
                     </Border>
 
@@ -945,7 +950,7 @@
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Text="ИСТОЧНИКИ ДАННЫХ" Classes="section" VerticalAlignment="Center" />
+                      <TextBlock Text="ИСТОЧНИКИ GEO" Classes="section" VerticalAlignment="Center" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                         <Button Classes="softbtn" Command="{Binding CheckSourcesCommand}" Content="Проверить обновления" />
                         <Button Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="Обновить все" />

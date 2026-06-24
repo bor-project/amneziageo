@@ -409,6 +409,106 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // Profile export/import (the Импорт/экспорт aspect): the whole profile as a portable JSON bundle.
+    // Clipboard and file access are window concerns (like the config / WebSocket / routing share above), so
+    // these live here; the export/import IPC round-trip belongs to the window VM and this just moves the
+    // resulting text to/from the clipboard or a file.
+    private async void OnProfileExportCopy(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        var json = await vm.ExportOpenProfileAsync();
+        if (json is null)
+        {
+            return;
+        }
+
+        var clipboard = GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+        {
+            await clipboard.SetTextAsync(json);
+            vm.ProfilePortStatus = "Профиль скопирован в буфер обмена.";
+        }
+    }
+
+    private async void OnProfileExportSave(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        var json = await vm.ExportOpenProfileAsync();
+        if (json is null)
+        {
+            return;
+        }
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Сохранить профиль",
+            SuggestedFileName = $"{vm.OpenProfileName}.agprofile.json",
+        });
+        if (file is null)
+        {
+            return;
+        }
+
+        await using var stream = await file.OpenWriteAsync();
+        await using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(json);
+        vm.ProfilePortStatus = "Профиль сохранён.";
+    }
+
+    private async void OnProfileImportPaste(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        var clipboard = GetTopLevel(this)?.Clipboard;
+        if (clipboard is null)
+        {
+            return;
+        }
+
+        var text = await clipboard.GetTextAsync();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            vm.ProfilePortStatus = "В буфере обмена нет текста.";
+            return;
+        }
+
+        await vm.ImportProfileBundleAsync(text);
+    }
+
+    private async void OnProfileImportFile(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        var path = await PickFileAsync("Профиль AmneziaGeo", "json");
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await vm.ImportProfileBundleAsync(await File.ReadAllTextAsync(path));
+        }
+        catch (Exception ex)
+        {
+            vm.ProfilePortStatus = ex.Message;
+        }
+    }
+
     /// <summary>
     /// Opens the per-source context menu (delete) on a right-click of a source row. The menu is built
     /// here, with the command assigned directly from the row's view model, because a MenuItem hosted in a

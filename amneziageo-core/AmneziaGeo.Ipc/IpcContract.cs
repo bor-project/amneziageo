@@ -172,6 +172,20 @@ public static class IpcContract
     public const string OpRenameProfile = "rename-profile";
 
     /// <summary>
+    /// Command to export a profile as a portable, self-contained JSON bundle: its config (.conf text with
+    /// keys), transport, the config's own geo split, and its routing list. Args: profile name. The ack
+    /// message holds the JSON.
+    /// </summary>
+    public const string OpExportProfile = "export-profile";
+
+    /// <summary>
+    /// Command to import a profile from a portable JSON bundle, recreating its config, transport, geo, and
+    /// routing list as new, independent entities under fresh (de-duplicated) names. Args: bundle json. The
+    /// ack message holds the new profile name.
+    /// </summary>
+    public const string OpImportProfile = "import-profile";
+
+    /// <summary>
     /// Command to check for an application update against the configured update URL. No args. The ack
     /// message holds a human-readable status; availability also rides the next status snapshot.
     /// </summary>

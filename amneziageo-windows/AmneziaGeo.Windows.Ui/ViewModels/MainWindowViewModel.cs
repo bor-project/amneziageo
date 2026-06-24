@@ -151,6 +151,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _profileRenameStatus = string.Empty;
 
+    // One-line status for the profile export/import (the Импорт/экспорт aspect): "скопировано",
+    // "импортирован <name>", or an error from the agent.
+    [ObservableProperty]
+    private string _profilePortStatus = string.Empty;
+
     // Inline name-edit mode for the profile header: while true the name shows as a text box with a save
     // (diskette) button; otherwise as text with a pencil button.
     [ObservableProperty]
@@ -687,6 +692,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         OpenConfig = string.IsNullOrEmpty(newValue?.Config) ? null : newValue!.Config;
         ProfileRename = newValue?.Name ?? string.Empty;
         ProfileRenameStatus = string.Empty;
+        ProfilePortStatus = string.Empty;
         IsEditingProfileName = false;
 
         if (oldValue is not null)
@@ -1542,6 +1548,51 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         else
         {
             ProfileRenameStatus = ack.Message;
+        }
+    }
+
+    // Export the open profile as a portable JSON bundle (config with keys, transport, geo, routing). The
+    // window code-behind moves the returned text to the clipboard or a file; null means there was nothing
+    // to export (no open profile) or the agent refused (the status carries why).
+    public async Task<string?> ExportOpenProfileAsync()
+    {
+        var profile = OpenProfile;
+        if (profile is null)
+        {
+            return null;
+        }
+
+        ProfilePortStatus = string.Empty;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpExportProfile, [profile.Name]));
+        if (!ack.Ok)
+        {
+            ProfilePortStatus = ack.Message;
+            return null;
+        }
+
+        return ack.Message;
+    }
+
+    // Import a profile from a portable JSON bundle (clipboard or file), recreating it as a new, independent
+    // profile. On success the imported profile opens once the next snapshot lands.
+    public async Task ImportProfileBundleAsync(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            ProfilePortStatus = "Нет данных для импорта.";
+            return;
+        }
+
+        ProfilePortStatus = string.Empty;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportProfile, [json]));
+        if (ack.Ok)
+        {
+            _pendingOpenProfile = ack.Message;
+            ProfilePortStatus = $"Профиль импортирован: {ack.Message}";
+        }
+        else
+        {
+            ProfilePortStatus = ack.Message;
         }
     }
 

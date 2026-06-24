@@ -38,13 +38,6 @@ internal sealed record AppSettings
     public int GeoCheckIntervalHours { get; init; } = 24;
 
     /// <summary>
-    /// Preferred DNS server(s) for NON-tunneled (local) name resolution, comma/space separated. Empty
-    /// means auto-detect the system's current resolvers. Tunneled (geo-matched) names still use the
-    /// config's clean resolver, so this does not weaken geo resolution.
-    /// </summary>
-    public string PreferredDns { get; init; } = string.Empty;
-
-    /// <summary>
     /// User bypass list, one entry per line (or comma/semicolon separated): a domain suffix
     /// (e.g. <c>.ddns.example.net</c>, <c>corp.local</c>) kept on the LOCAL resolver, or an IP/CIDR
     /// (e.g. <c>192.168.50.0/24</c>) routed straight out the physical gateway instead of the tunnel.

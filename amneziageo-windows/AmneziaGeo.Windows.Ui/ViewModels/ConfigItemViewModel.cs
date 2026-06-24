@@ -31,6 +31,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private int _webSocketPort = 443;
 
     [ObservableProperty]
+    private string _dns = string.Empty;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private string _status = ConnectionStatus.Idle;

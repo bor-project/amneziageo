@@ -11,4 +11,5 @@ public sealed record ConfigEntry(
     IReadOnlyList<string> Rules,
     bool WebSocket = false,
     string WebSocketHost = "",
-    int WebSocketPort = 443);
+    int WebSocketPort = 443,
+    string Dns = "");

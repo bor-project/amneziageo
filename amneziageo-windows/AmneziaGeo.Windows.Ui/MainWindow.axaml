@@ -209,6 +209,24 @@
                     </StackPanel>
                   </Grid>
                 </Button>
+                <Button Classes="rowselect" Classes.active="{Binding IsAspectDns}" Margin="0,3"
+                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="dns">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,7">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               IsVisible="{Binding IsAspectDns}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                      <TextBlock Text="DNS" FontWeight="SemiBold" FontSize="13.5" />
+                      <TextBlock Text="DNS для не-туннельного трафика" FontSize="11.5" Classes="muted"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Grid>
+                </Button>
                 <Button Classes="rowselect" Classes.active="{Binding IsAspectName}" Margin="0,3"
                         Command="{Binding SelectProfileAspectCommand}" CommandParameter="name">
                   <Grid ColumnDefinitions="Auto,*" Margin="12,7">
@@ -748,6 +766,26 @@
                   </StackPanel>
                 </StackPanel>
 
+                <!-- DNS : the profile's preferred DNS for non-tunneled names, moved here from the former
+                     global settings. Bound to the open config's ConfigDns editor (per-config, like the
+                     proxy above), so each profile carries its own DNS. -->
+                <StackPanel IsVisible="{Binding IsAspectDns}" Spacing="12">
+                  <TextBlock Classes="label" Text="DNS" />
+                  <TextBlock IsVisible="{Binding !IsConfigManage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                             Text="Сначала добавьте конфигурацию в разделе «Конфигурация»." />
+                  <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="10" DataContext="{Binding ConfigDns}">
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="DNS для обычного (не-туннельного) трафика этого профиля. Несколько — через запятую. Пусто — определять автоматически. Гео-домены резолвятся отдельным чистым DNS." />
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
+                               Text="{Binding Dns}" Watermark="напр. 1.1.1.1, 8.8.8.8" />
+                      <Button Grid.Column="1" Classes="accent" Content="Сохранить"
+                              Command="{Binding SaveCommand}" IsEnabled="{Binding !IsBusy}" />
+                    </Grid>
+                    <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                  </StackPanel>
+                </StackPanel>
+
                 <!-- Импорт/экспорт : the whole profile as a portable bundle, plus delete. Renaming moved to
                      the profile header (inline pencil). The export/import buttons are wired in code-behind
                      (clipboard/file are window concerns); delete binds the window VM's DeleteOpenProfileCommand. -->
@@ -829,21 +867,7 @@
                   <!-- divider -->
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
-                  <!-- Preferred DNS for non-tunneled names (empty = auto-detect the system resolvers). -->
-                  <StackPanel Margin="15,11" Spacing="6">
-                    <TextBlock Text="Предпочитаемый DNS" FontSize="13.5" />
-                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="DNS для обычного (не-туннельного) трафика. Несколько — через запятую. Пусто — определять автоматически. Гео-домены резолвятся отдельным чистым DNS." />
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
-                               Text="{Binding PreferredDns, Mode=TwoWay}" Watermark="напр. 1.1.1.1, 8.8.8.8" />
-                      <Button Grid.Column="1" Classes="softbtn" Content="Сохранить"
-                              Command="{Binding SavePreferredDnsCommand}" />
-                    </Grid>
-                  </StackPanel>
-
-                  <!-- divider -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+                  <!-- Preferred DNS moved out of global settings into each profile's DNS aspect (#13). -->
 
                   <!-- Bypass exclusions: kept direct + resolved by the local DNS, for a live LAN in full tunnel. -->
                   <StackPanel Margin="15,11" Spacing="6">

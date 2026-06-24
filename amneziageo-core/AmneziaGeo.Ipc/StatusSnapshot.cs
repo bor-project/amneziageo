@@ -24,6 +24,5 @@ public sealed record StatusSnapshot(
     bool GeoAutoCheck = true,
     int GeoCheckIntervalHours = 24,
     bool ConnectFailed = false,
-    string PreferredDns = "",
     string Exclusions = "",
     bool AutoExcludeLan = true);

@@ -703,6 +703,36 @@
                             IsVisible="{Binding !RoutingEditor.IsNew}"
                             Command="{Binding DeleteRoutingListEditCommand}" Content="Удалить список" />
                   </StackPanel>
+
+                  <!-- Исключения (перенесено сюда из общих настроек, #14): per-profile список байпаса —
+                       домены остаются на локальном DNS, IP/CIDR идут напрямую — плюс автоисключение LAN.
+                       Привязано к редактору открытого конфига ConfigExclusions. -->
+                  <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="8" DataContext="{Binding ConfigExclusions}">
+                    <TextBlock Classes="label" Text="ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)" />
+                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Что НЕ заворачивать в туннель: домены (резолвятся локальным DNS) или IP/подсети (идут напрямую). По одному в строке. Локалхост, локальная сеть (10.x, 172.16-31.x, 192.168.x), .local/.lan и подобные уже исключены по умолчанию." />
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,2">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="Автоисключать локальные сети" FontSize="13" />
+                        <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                   Text="Сам определять подключённые подсети (включая не-RFC1918 / CGNAT) и держать их напрямую. Обновляется при каждом подключении." />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                    IsChecked="{Binding AutoExcludeLan, Mode=TwoWay}" />
+                    </Grid>
+                    <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
+                             VerticalContentAlignment="Top"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
+                             Text="{Binding Exclusions, Mode=TwoWay}"
+                             Watermark=".ddns.example.net&#x0a;corp.local&#x0a;10.50.0.0/16&#x0a;example.ru" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Classes="accent" HorizontalAlignment="Left" Content="Сохранить"
+                              Command="{Binding SaveCommand}" IsEnabled="{Binding !IsBusy}" />
+                      <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
+                                 VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </StackPanel>
                 </StackPanel>
 
                 <!-- Прокси : per-config WebSocket (wstunnel) transport — UDP over TCP to defeat UDP blocking -->
@@ -864,34 +894,8 @@
                     </Border>
                   </Grid>
 
-                  <!-- divider -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
-
-                  <!-- Preferred DNS moved out of global settings into each profile's DNS aspect (#13). -->
-
-                  <!-- Bypass exclusions: kept direct + resolved by the local DNS, for a live LAN in full tunnel. -->
-                  <StackPanel Margin="15,11" Spacing="6">
-                    <TextBlock Text="Исключения (прямой доступ)" FontSize="13.5" />
-                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="Что НЕ заворачивать в туннель: домены (резолвятся локальным DNS) или IP/подсети (идут напрямую). По одному в строке. Локалхост, локальная сеть (10.x, 172.16-31.x, 192.168.x), .local/.lan и подобные уже исключены по умолчанию — сюда добавляйте своё." />
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,2">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="Автоисключать локальные сети" FontSize="13" />
-                        <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
-                                   Text="Сам определять подключённые подсети (включая не-RFC1918 / CGNAT) и держать их напрямую. Обновляется при каждом подключении." />
-                      </StackPanel>
-                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
-                                    IsChecked="{Binding AutoExcludeLan, Mode=TwoWay}" />
-                    </Grid>
-                    <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
-                             VerticalContentAlignment="Top"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
-                             Text="{Binding Exclusions, Mode=TwoWay}"
-                             Watermark=".ddns.example.net&#x0a;corp.local&#x0a;10.50.0.0/16&#x0a;example.ru" />
-                    <Button Classes="softbtn" HorizontalAlignment="Left" Content="Сохранить"
-                            Command="{Binding SaveExclusionsCommand}" />
-                  </StackPanel>
+                  <!-- DNS (#13) и Исключения (#14) перенесены из общих настроек в аспекты профиля
+                       «DNS» и «Маршрутизация» соответственно. -->
                 </StackPanel>
               </Border>
 

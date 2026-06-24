@@ -62,6 +62,14 @@ public static class IpcContract
     public const string OpSetConfigDns = "set-config-dns";
 
     /// <summary>
+    /// Command to set a config's bypass exclusions (kept OFF the tunnel). Args: name, exclusions (one entry
+    /// per line / comma-separated; domains kept on the local resolver, IP/CIDR routed direct), and
+    /// auto-exclude-LAN on/off (auto-detect connected local subnets each connect). Applies on the next
+    /// connect. Moved here from the former global "exclusions" / "auto-exclude-lan" app settings.
+    /// </summary>
+    public const string OpSetConfigExclusions = "set-config-exclusions";
+
+    /// <summary>
     /// Command to list available geo categories; the ack message holds newline-separated rule tokens.
     /// </summary>
     public const string OpListGeo = "list-geo";

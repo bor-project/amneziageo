@@ -43,7 +43,8 @@ internal static class ProfilePortable
         TransportBlock? Transport,
         GeoBlock? Geo,
         RoutingBlock? Routing,
-        string? Dns = null);
+        string? Dns = null,
+        ExclusionsBlock? Exclusions = null);
 
     /// <summary>
     /// The config's WebSocket (UDP-over-TCP) transport. Host empty reuses the config's own Endpoint host.
@@ -59,6 +60,12 @@ internal static class ProfilePortable
     /// The profile's routing list: whether the profile uses it, the list name, and its rule tokens.
     /// </summary>
     public sealed record RoutingBlock(bool Use, string ListName, IReadOnlyList<string> Rules);
+
+    /// <summary>
+    /// The config's bypass exclusions: the list (one entry per line) and whether to auto-exclude local
+    /// subnets.
+    /// </summary>
+    public sealed record ExclusionsBlock(string List, bool AutoExcludeLan);
 
     /// <summary>
     /// Serializes a bundle to indented JSON.

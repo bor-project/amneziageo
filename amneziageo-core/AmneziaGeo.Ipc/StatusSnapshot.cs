@@ -23,6 +23,4 @@ public sealed record StatusSnapshot(
     string UpdateDescription = "",
     bool GeoAutoCheck = true,
     int GeoCheckIntervalHours = 24,
-    bool ConnectFailed = false,
-    string Exclusions = "",
-    bool AutoExcludeLan = true);
+    bool ConnectFailed = false);

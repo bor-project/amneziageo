@@ -140,7 +140,10 @@ internal sealed class TunnelRunner(
         // public resolver from swallowing local lookups.
         var lanResolvers = dns.CaptureUpstream();
         var upstream = preferredDns.Count > 0 ? preferredDns : lanResolvers;
-        var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(appSettings.Exclusions);
+        // Per-config bypass list (moved off the former global setting), with the same defaulting as the old
+        // global: an empty list and auto-exclude-LAN on when the config has no stored exclusions yet.
+        var configExclusions = await store.GetConfigExclusionsAsync(name);
+        var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(configExclusions?.Exclusions ?? string.Empty);
         var exclusionDomains = new List<string>(parsedExclusionDomains);
         // The WebSocket underlay server's hostname must resolve via the LAN resolver, never through the
         // tunnel: in full tunnel non-matched names go to the tunnel resolver, but the tunnel is not up yet
@@ -155,7 +158,7 @@ internal sealed class TunnelRunner(
         // Auto-detect the currently-connected local subnets and keep them direct too (deduped against the
         // manual list). Re-run every connect, so a changed LAN is picked up. The detector already drops
         // RFC1918/link-local (built-in) and our own tunnel adapter, so this adds only the extras.
-        if (appSettings.AutoExcludeLan)
+        if (configExclusions?.AutoExcludeLan ?? true)
         {
             foreach (var subnet in routes.LocalSubnets())
             {

@@ -99,6 +99,22 @@ public interface IStateStore
     Task RemoveConfigDnsAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns a config's bypass exclusions, or null when none are stored (the config uses just the
+    /// built-in defaults with auto-exclude-LAN on).
+    /// </summary>
+    Task<ConfigExclusions?> GetConfigExclusionsAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates a config's bypass exclusions.
+    /// </summary>
+    Task SetConfigExclusionsAsync(ConfigExclusions exclusions, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a config's bypass exclusions.
+    /// </summary>
+    Task RemoveConfigExclusionsAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates a geo download source.
     /// </summary>
     Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default);

@@ -21,8 +21,6 @@ internal sealed class SettingsStore(IStateStore store)
             UpdateUrl = await ReadStringAsync("update-url", defaults.UpdateUrl, ct),
             GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
             GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
-            Exclusions = await ReadStringAsync("exclusions", defaults.Exclusions, ct),
-            AutoExcludeLan = await ReadBoolAsync("auto-exclude-lan", defaults.AutoExcludeLan, ct),
         };
     }
 
@@ -75,9 +73,9 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] IntKeys =
         ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds", "geo-check-interval-hours"];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "auto-exclude-lan"];
+    private static readonly string[] BoolKeys = ["geo-auto-check"];
 
-    private static readonly string[] StringKeys = ["update-url", "exclusions"];
+    private static readonly string[] StringKeys = ["update-url"];
 
     private async Task<string> ReadStringAsync(string key, string fallback, CancellationToken ct)
     {

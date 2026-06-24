@@ -254,6 +254,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
                 IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
+                IpcContract.OpSetConfigExclusions => await SetConfigExclusionsAsync(command.Args, ct),
                 IpcContract.OpListGeo => await ListGeoAsync(ct),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
@@ -531,6 +532,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         ProfilePortable.TransportBlock? transport = null;
         ProfilePortable.GeoBlock? geoBlock = null;
         string? dns = null;
+        ProfilePortable.ExclusionsBlock? exclusions = null;
         var config = balancer.Config;
         if (!string.IsNullOrEmpty(config) && configRepo.Exists(config))
         {
@@ -553,6 +555,14 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             {
                 dns = configDns.Servers;
             }
+
+            // Carry exclusions only when the config has a stored row (i.e. the user customized the list or
+            // turned auto-exclude-LAN off); an absent row means the defaults, which need not travel.
+            var configEx = await store.GetConfigExclusionsAsync(config, ct);
+            if (configEx is not null)
+            {
+                exclusions = new ProfilePortable.ExclusionsBlock(configEx.Exclusions, configEx.AutoExcludeLan);
+            }
         }
 
         ProfilePortable.RoutingBlock? routing = null;
@@ -571,7 +581,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             transport,
             geoBlock,
             routing,
-            dns);
+            dns,
+            exclusions);
 
         logger.LogInformation("exported profile {Name}", name);
         return new IpcAck(true, ProfilePortable.Serialize(bundle));
@@ -642,6 +653,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             if (!string.IsNullOrWhiteSpace(bundle.Dns))
             {
                 await store.SetConfigDnsAsync(new ConfigDns(configName, bundle.Dns.Trim()), ct);
+            }
+
+            if (bundle.Exclusions is { } ex)
+            {
+                await store.SetConfigExclusionsAsync(new ConfigExclusions(configName, ex.List ?? string.Empty, ex.AutoExcludeLan), ct);
             }
         }
 
@@ -821,6 +837,35 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, servers.Length == 0
             ? "DNS сброшен на автоопределение (применится при переподключении)"
             : $"DNS сохранён: {servers} (применится при переподключении)");
+    }
+
+    private async Task<IpcAck> SetConfigExclusionsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "set-config-exclusions requires a config name");
+        }
+
+        if (!configRepo.Exists(args[0]))
+        {
+            return new IpcAck(false, $"unknown config: {args[0]}");
+        }
+
+        // Arg 2: the bypass list (one entry per line / comma-separated). Arg 3: auto-exclude-LAN on/off;
+        // absent or anything but "off" keeps it on (the historical default).
+        var exclusions = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var autoLan = args.Count < 3 || !args[2].Equals("off", StringComparison.OrdinalIgnoreCase);
+        await store.SetConfigExclusionsAsync(new ConfigExclusions(args[0], exclusions, autoLan), ct);
+
+        // Exclusions reshape AllowedIPs / split-DNS, decided at connect time; like a routing/DNS change they
+        // apply cleanly only on a fresh tunnel. If the changed config is in the running target, flag a reconnect.
+        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        {
+            control.SetRestartRequired();
+        }
+
+        logger.LogInformation("set-config-exclusions {Name}: auto-lan={Auto}, {Len} chars", args[0], autoLan, exclusions.Length);
+        return new IpcAck(true, "Исключения сохранены (применятся при переподключении)");
     }
 
     /// <summary>
@@ -1464,11 +1509,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var geoSettings = await store.GetTunnelGeoAsync(name, ct);
             var transport = await store.GetConfigTransportAsync(name, ct);
             var configDns = await store.GetConfigDnsAsync(name, ct);
+            var configEx = await store.GetConfigExclusionsAsync(name, ct);
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, configEx?.Exclusions ?? string.Empty, configEx?.AutoExcludeLan ?? true));
         }
 
         var balancers = new List<BalancerEntry>();
@@ -1520,9 +1566,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             update?.Description ?? string.Empty,
             settings.GeoAutoCheck,
             settings.GeoCheckIntervalHours,
-            control.ConnectFailed,
-            settings.Exclusions,
-            settings.AutoExcludeLan);
+            control.ConnectFailed);
     }
 
     /// <summary>

@@ -3,8 +3,8 @@
         xmlns:svc="clr-namespace:AmneziaGeo.Windows.Ui.Services"
         x:Class="AmneziaGeo.Windows.Ui.MainWindow"
         Title="AmneziaGeo"
-        Width="750" Height="560"
-        MinWidth="750" MinHeight="560"
+        Width="987" Height="610"
+        MinWidth="800" MinHeight="560"
         Background="{DynamicResource AgBgBrush}"
         FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
         Foreground="{DynamicResource AgFgBrush}">
@@ -27,7 +27,7 @@
 
       <!-- LEFT SIDEBAR (always visible; its content swaps per tab — profiles / settings). Holds only
            lists / rails (editors live in the right pane), so it stays narrow. -->
-      <DockPanel Grid.Column="0" Width="300"
+      <DockPanel Grid.Column="0" Width="377"
                  Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
 
         <!-- one left card mirroring the right one: the nav is its header bar (white + bottom divider),
@@ -35,7 +35,7 @@
         <Border Classes="card" Margin="12,12,0,12" Padding="0">
         <DockPanel LastChildFill="True">
 
-          <Border DockPanel.Dock="Top" Height="52" Padding="14,0"
+          <Border DockPanel.Dock="Top" Height="55" Padding="14,0"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
             <Panel>
               <!-- profiles mode: brand + a gear that opens Settings (the old segmented nav is gone) -->
@@ -348,7 +348,7 @@
           <!-- persistent header (shown on every tab): the round power control toggles the ACTIVE profile;
                the reconnect / better-connection notice sits beside it. Per-profile connect lives in each
                profile's detail. -->
-          <Border DockPanel.Dock="Top" Height="52" Padding="12,0"
+          <Border DockPanel.Dock="Top" Height="55" Padding="12,0"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto">
               <!-- back control (one button): inside a config page → member list, otherwise → profiles list.

@@ -563,26 +563,27 @@
                                  BorderThickness="0" Background="Transparent"
                                  FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
                       </Border>
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Classes="softbtn" Content="Изменить" Command="{Binding BeginEditCommand}"
+                      <!-- Все действия с конфигом в одном ряду по центру; на узком окне кнопки перетекают
+                           на следующую строку (#1: «Открыть в проводнике» перенесена сюда из отдельной секции). -->
+                      <WrapPanel HorizontalAlignment="Center">
+                        <Button Classes="softbtn" Content="Изменить" Command="{Binding BeginEditCommand}" Margin="4"
                                 IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                        <Button Classes="accent" Content="Сохранить" Command="{Binding SaveEditCommand}"
+                        <Button Classes="accent" Content="Сохранить" Command="{Binding SaveEditCommand}" Margin="4"
                                 IsVisible="{Binding IsEditing}" />
-                        <Button Classes="softbtn" Content="Отмена" Command="{Binding CancelEditCommand}"
+                        <Button Classes="softbtn" Content="Отмена" Command="{Binding CancelEditCommand}" Margin="4"
                                 IsVisible="{Binding IsEditing}" />
-                        <Button Classes="softbtn" Content="Копировать" Click="OnConfigExportCopy"
+                        <Button Classes="softbtn" Content="Копировать" Click="OnConfigExportCopy" Margin="4"
                                 IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                        <Button Classes="softbtn" Content="Сохранить в файл…" Click="OnConfigExportSave"
+                        <Button Classes="softbtn" Content="Сохранить в файл…" Click="OnConfigExportSave" Margin="4"
                                 IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                      </StackPanel>
-                      <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                    </StackPanel>
-
-                    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
-
-                    <StackPanel Spacing="10">
-                      <Button Classes="softbtn" Content="Открыть в проводнике" HorizontalAlignment="Left"
-                              Command="{Binding RevealConfigCommand}" />
+                        <!-- Команда живёт на window-VM, а ряд — в скоупе ConfigExport, поэтому тянем её через
+                             предка-окно; видимость (IsEditing) остаётся в текущем скоупе ConfigExport. -->
+                        <Button Classes="softbtn" Content="Открыть в проводнике" Margin="4"
+                                Command="{Binding $parent[Window].DataContext.RevealConfigCommand}"
+                                IsVisible="{Binding !IsEditing}" />
+                      </WrapPanel>
+                      <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                 HorizontalAlignment="Center" TextAlignment="Center" />
                     </StackPanel>
 
                     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
@@ -728,7 +729,7 @@
                       <Button Classes="softbtn" HorizontalAlignment="Left" Content="Добавить локальные сети"
                               Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}" />
                       <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
-                                 Text="Определить подключённые локальные подсети (не-RFC1918 / CGNAT) и добавить их в список ниже — затем проверьте и нажмите «Сохранить». RFC1918 (10.x, 172.16-31.x, 192.168.x) уже исключены по умолчанию." />
+                                 Text="Определить подключённые сейчас локальные подсети и добавить их в список ниже — так видно, что именно идёт напрямую, мимо туннеля. Затем проверьте список и нажмите «Сохранить»." />
                     </StackPanel>
                     <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
                              VerticalContentAlignment="Top"

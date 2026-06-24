@@ -98,8 +98,8 @@ internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
             StatusMessage = added.Count > 0
                 ? $"Добавлено локальных сетей: {added.Count}. Проверьте список и нажмите «Сохранить»."
                 : subnets.Length == 0
-                    ? "Дополнительных локальных сетей не найдено (RFC1918 уже исключены по умолчанию)."
-                    : "Все обнаруженные локальные сети уже в списке.";
+                    ? "Активные локальные сети не обнаружены."
+                    : "Все локальные сети уже в списке.";
         }
         finally
         {

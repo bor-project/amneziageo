@@ -606,13 +606,17 @@
                 <StackPanel IsVisible="{Binding IsAspectRouting}" Spacing="14">
                   <StackPanel DataContext="{Binding OpenProfile}" Spacing="6">
                     <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ" />
-                    <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding CanToggleRouting}">
+                    <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding CanToggleRouting}">
                       <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
                                     OnContent="" OffContent=""
                                     MinWidth="0" />
                       <TextBlock Grid.Column="1" Margin="11,0,0,0"
                                  Text="Использовать маршрутизацию" FontSize="12.5" FontWeight="Medium"
                                  VerticalAlignment="Center" />
+                      <Button Grid.Column="2" Classes="softbtn" Content="Редактировать"
+                              VerticalAlignment="Center"
+                              IsVisible="{Binding $parent[Window].DataContext.CanEditRouting}"
+                              Command="{Binding $parent[Window].DataContext.BeginRoutingEditCommand}" />
                     </Grid>
                     <ComboBox Classes="field" ItemsSource="{Binding RoutingListOptions}"
                               SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
@@ -624,13 +628,9 @@
                     </ComboBox>
                   </StackPanel>
 
-                  <!-- shared-catalogue notice (only for a real, persisted list) -->
-                  <TextBlock IsVisible="{Binding HasRoutingEditor}" Classes="muted" FontSize="11.5"
-                             Text="{Binding RoutingUsageHint}" TextWrapping="Wrap" />
-
                   <!-- inline rule editor for the selected list (bound to the window VM's RoutingEditor) -->
-                  <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="12">
-                    <Border Background="{DynamicResource AgInsetBrush}"
+                  <StackPanel IsVisible="{Binding ShowRoutingEditor}" Spacing="12">
+                    <Border Background="Transparent"
                             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                             CornerRadius="9" Padding="12">
                       <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}">

@@ -221,8 +221,8 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Grid>
                     <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                      <TextBlock Text="Основные" FontWeight="SemiBold" FontSize="13.5" />
-                      <TextBlock Text="Имя и удаление профиля" FontSize="11.5" Classes="muted"
+                      <TextBlock Text="Импорт/экспорт" FontWeight="SemiBold" FontSize="13.5" />
+                      <TextBlock Text="Перенос и удаление профиля" FontSize="11.5" Classes="muted"
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
@@ -748,18 +748,33 @@
                   </StackPanel>
                 </StackPanel>
 
-                <!-- Название : the profile name (read-only) + delete-profile. The delete button stays in
-                     the window VM's context (the name box sets its own OpenProfile context) so it can
-                     bind DeleteOpenProfileCommand. -->
+                <!-- Импорт/экспорт : the whole profile as a portable bundle, plus delete. Renaming moved to
+                     the profile header (inline pencil). The export/import buttons are wired in code-behind
+                     (clipboard/file are window concerns); delete binds the window VM's DeleteOpenProfileCommand. -->
                 <StackPanel IsVisible="{Binding IsAspectName}" Spacing="16">
                   <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="НАЗВАНИЕ" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <TextBox Classes="field" Width="260" Text="{Binding ProfileRename, Mode=TwoWay}" />
-                      <Button Classes="softbtn" Content="Переименовать" Command="{Binding RenameProfileCommand}" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                    <TextBlock Classes="label" Text="ЭКСПОРТ" />
+                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Сохранить профиль целиком — конфигурацию, прокси, гео и маршруты — в файл или буфер обмена для переноса на другое устройство." />
+                    <WrapPanel>
+                      <Button Classes="softbtn" Content="Копировать" Margin="0,0,6,6"
+                              Click="OnProfileExportCopy" ToolTip.Tip="Скопировать профиль в буфер обмена" />
+                      <Button Classes="softbtn" Content="Сохранить в файл…" Margin="0,0,6,6" Click="OnProfileExportSave" />
+                    </WrapPanel>
+                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                               Text="⚠ Файл содержит приватные ключи. Храните и передавайте его безопасно." />
                   </StackPanel>
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="ИМПОРТ" />
+                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Восстановить профиль из файла или буфера обмена — будет создан новый профиль." />
+                    <WrapPanel>
+                      <Button Classes="softbtn" Content="Вставить" Margin="0,0,6,6"
+                              Click="OnProfileImportPaste" ToolTip.Tip="Импортировать профиль из буфера обмена" />
+                      <Button Classes="softbtn" Content="Загрузить файл…" Margin="0,0,6,6" Click="OnProfileImportFile" />
+                    </WrapPanel>
+                  </StackPanel>
+                  <TextBlock Text="{Binding ProfilePortStatus}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="УДАЛЕНИЕ" />
                     <Button Classes="danger" HorizontalAlignment="Left"

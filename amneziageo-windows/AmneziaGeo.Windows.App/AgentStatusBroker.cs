@@ -274,6 +274,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
                 IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
                 IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
+                IpcContract.OpExportProfile => await ExportProfileAsync(command.Args, ct),
+                IpcContract.OpImportProfile => await ImportProfileAsync(command.Args, ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
@@ -508,6 +510,181 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         logger.LogInformation("renamed profile {Old} -> {New}", oldName, newName);
         return new IpcAck(true, $"переименован в {newName}");
+    }
+
+    private async Task<IpcAck> ExportProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "export-profile requires a profile name");
+        }
+
+        var name = args[0];
+        var balancer = await store.GetBalancerAsync(name, ct);
+        if (balancer is null)
+        {
+            return new IpcAck(false, $"unknown profile: {name}");
+        }
+
+        string? configText = null;
+        ProfilePortable.TransportBlock? transport = null;
+        ProfilePortable.GeoBlock? geoBlock = null;
+        var config = balancer.Config;
+        if (!string.IsNullOrEmpty(config) && configRepo.Exists(config))
+        {
+            configText = configRepo.ReadText(config);
+
+            var tr = await store.GetConfigTransportAsync(config, ct);
+            if (tr is not null && (tr.UseWebSocket || tr.WebSocketHost.Length > 0))
+            {
+                transport = new ProfilePortable.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort);
+            }
+
+            var ownGeo = await store.GetTunnelGeoAsync(config, ct);
+            if (ownGeo is not null && (ownGeo.GeoSplit || ownGeo.Rules.Count > 0))
+            {
+                geoBlock = new ProfilePortable.GeoBlock(ownGeo.GeoSplit, ownGeo.Rules.Select(GeoConfigurator.Format).ToList());
+            }
+        }
+
+        ProfilePortable.RoutingBlock? routing = null;
+        var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
+        if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct) is { } list)
+        {
+            routing = new ProfilePortable.RoutingBlock(useRouting, list.Name, list.Rules.Select(GeoConfigurator.Format).ToList());
+        }
+
+        var bundle = new ProfilePortable.Bundle(
+            ProfilePortable.FormatTag,
+            ProfilePortable.CurrentVersion,
+            name,
+            config,
+            configText,
+            transport,
+            geoBlock,
+            routing);
+
+        logger.LogInformation("exported profile {Name}", name);
+        return new IpcAck(true, ProfilePortable.Serialize(bundle));
+    }
+
+    private async Task<IpcAck> ImportProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "import-profile requires the bundle json");
+        }
+
+        ProfilePortable.Bundle? bundle;
+        try
+        {
+            bundle = ProfilePortable.Deserialize(args[0]);
+        }
+        catch (JsonException ex)
+        {
+            return new IpcAck(false, $"не удалось разобрать профиль: {ex.Message}");
+        }
+
+        if (bundle is null || !string.Equals(bundle.Format, ProfilePortable.FormatTag, StringComparison.Ordinal))
+        {
+            return new IpcAck(false, "это не файл профиля AmneziaGeo");
+        }
+
+        if (bundle.Version > ProfilePortable.CurrentVersion)
+        {
+            return new IpcAck(false, $"файл профиля новее (v{bundle.Version}); обновите приложение");
+        }
+
+        // Config and profile names live in one global namespace (rename refuses a name used by either), so
+        // de-duplicate the imported names against both. Routing-list names are a separate space.
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var existing in configRepo.List())
+        {
+            taken.Add(existing);
+        }
+
+        foreach (var existing in await store.ListBalancerNamesAsync(ct))
+        {
+            taken.Add(existing);
+        }
+
+        var configName = string.Empty;
+        if (!string.IsNullOrWhiteSpace(bundle.ConfigText))
+        {
+            var desired = SanitizeFileName(string.IsNullOrWhiteSpace(bundle.Config) ? bundle.Profile : bundle.Config);
+            configName = FreeName(desired, taken);
+            taken.Add(configName);
+
+            // Validates [Interface]/[Peer]; a malformed bundle throws here and aborts the import before any
+            // profile/routing rows are written.
+            configRepo.AddFromText(configName, bundle.ConfigText);
+
+            if (bundle.Transport is { } tr)
+            {
+                await store.SetConfigTransportAsync(new ConfigTransport(configName, tr.UseWebSocket, tr.Host, tr.Port), ct);
+            }
+
+            if (bundle.Geo is { } g)
+            {
+                // Re-materializes the rule tokens against this machine's geo data (empty until downloaded).
+                await geo.ApplyAsync(configName, g.Split, g.Rules, ct);
+            }
+        }
+
+        var profileBase = string.IsNullOrWhiteSpace(bundle.Profile)
+            ? (configName.Length > 0 ? configName : "Профиль")
+            : bundle.Profile;
+        var profileName = FreeName(profileBase, taken);
+        await store.SaveBalancerAsync(new BalancerGroup(profileName, configName), ct);
+
+        if (bundle.Routing is { } r)
+        {
+            var listNames = new HashSet<string>(
+                (await store.ListRoutingListsAsync(ct)).Select(l => l.Name),
+                StringComparer.Ordinal);
+            var listName = FreeName(string.IsNullOrWhiteSpace(r.ListName) ? profileName : r.ListName, listNames);
+            var newListId = await geo.ApplyToRoutingListAsync(0, listName, r.Rules, ct);
+            await store.SetProfileRoutingAsync(profileName, newListId, r.Use, ct);
+        }
+
+        logger.LogInformation("imported profile {Profile} (config '{Config}')", profileName, configName);
+        return new IpcAck(true, profileName);
+    }
+
+    // Returns the desired name if free, otherwise appends " (2)", " (3)", … until one is not taken.
+    private static string FreeName(string desired, HashSet<string> taken)
+    {
+        var baseName = desired.Trim();
+        if (baseName.Length == 0)
+        {
+            baseName = "Профиль";
+        }
+
+        if (!taken.Contains(baseName))
+        {
+            return baseName;
+        }
+
+        for (var i = 2; i < 10000; i++)
+        {
+            var candidate = $"{baseName} ({i})";
+            if (!taken.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return $"{baseName} ({Guid.NewGuid():N})";
+    }
+
+    // A config is stored as <name>.conf, so its name (and a profile's, since they share a namespace) must be
+    // a valid file name; replace anything that is not.
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var chars = name.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c).ToArray();
+        var clean = new string(chars).Trim();
+        return clean.Length == 0 ? "config" : clean;
     }
 
     private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)

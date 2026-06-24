@@ -695,7 +695,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443);
         ConfigDns = new ConfigDnsViewModel(_connection, value, item?.Dns ?? string.Empty);
-        ConfigExclusions = new ConfigExclusionsViewModel(_connection, value, item?.Exclusions ?? string.Empty, item?.AutoExcludeLan ?? true);
+        ConfigExclusions = new ConfigExclusionsViewModel(_connection, value, item?.Exclusions ?? string.Empty);
     }
 
     // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the
@@ -1247,7 +1247,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.WebSocketPort = entry.WebSocketPort;
             existing.Dns = entry.Dns;
             existing.Exclusions = entry.Exclusions;
-            existing.AutoExcludeLan = entry.AutoExcludeLan;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];

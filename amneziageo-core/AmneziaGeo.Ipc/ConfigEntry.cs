@@ -13,5 +13,4 @@ public sealed record ConfigEntry(
     string WebSocketHost = "",
     int WebSocketPort = 443,
     string Dns = "",
-    string Exclusions = "",
-    bool AutoExcludeLan = true);
+    string Exclusions = "");

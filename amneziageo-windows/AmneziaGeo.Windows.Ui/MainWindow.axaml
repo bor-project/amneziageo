@@ -553,7 +553,8 @@
                                    Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
                       </Border>
                       <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                              CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
+                              CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+                              IsVisible="{Binding IsEditing}">
                         <TextBox Text="{Binding Payload, Mode=TwoWay}" IsReadOnly="{Binding !IsEditing}"
                                  AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
                                  VerticalContentAlignment="Top" Height="240"
@@ -716,21 +717,19 @@
                   </StackPanel>
 
                   <!-- Исключения (перенесено сюда из общих настроек, #14): per-profile список байпаса —
-                       домены остаются на локальном DNS, IP/CIDR идут напрямую — плюс автоисключение LAN.
-                       Привязано к редактору открытого конфига ConfigExclusions. -->
+                       домены остаются на локальном DNS, IP/CIDR идут напрямую. Кнопка «Добавить локальные
+                       сети» (#24) подставляет обнаруженные подсети в список (мерж, без дублей) — вместо
+                       прежнего невидимого авто-флага. Привязано к редактору открытого конфига ConfigExclusions. -->
                   <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="8" DataContext="{Binding ConfigExclusions}">
                     <TextBlock Classes="label" Text="ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)" />
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                                Text="Что НЕ заворачивать в туннель: домены (резолвятся локальным DNS) или IP/подсети (идут напрямую). По одному в строке. Локалхост, локальная сеть (10.x, 172.16-31.x, 192.168.x), .local/.lan и подобные уже исключены по умолчанию." />
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,2">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <TextBlock Text="Автоисключать локальные сети" FontSize="13" />
-                        <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
-                                   Text="Сам определять подключённые подсети (включая не-RFC1918 / CGNAT) и держать их напрямую. Обновляется при каждом подключении." />
-                      </StackPanel>
-                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
-                                    IsChecked="{Binding AutoExcludeLan, Mode=TwoWay}" />
-                    </Grid>
+                    <StackPanel Spacing="4" Margin="0,2">
+                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="Добавить локальные сети"
+                              Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}" />
+                      <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                 Text="Определить подключённые локальные подсети (не-RFC1918 / CGNAT) и добавить их в список ниже — затем проверьте и нажмите «Сохранить». RFC1918 (10.x, 172.16-31.x, 192.168.x) уже исключены по умолчанию." />
+                    </StackPanel>
                     <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
                              VerticalContentAlignment="Top"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"

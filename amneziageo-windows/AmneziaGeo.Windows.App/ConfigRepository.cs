@@ -197,6 +197,13 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
             await store.RemoveConfigDnsAsync(oldName, ct);
         }
 
+        var exclusions = await store.GetConfigExclusionsAsync(oldName, ct);
+        if (exclusions is not null)
+        {
+            await store.SetConfigExclusionsAsync(exclusions with { Name = newName }, ct);
+            await store.RemoveConfigExclusionsAsync(oldName, ct);
+        }
+
         foreach (var resolution in await store.ListDomainResolutionsAsync(oldName, ct))
         {
             await store.SaveDomainResolutionAsync(newName, resolution, ct);
@@ -235,6 +242,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         await store.RemoveTunnelGeoAsync(name, ct);
         await store.RemoveConfigTransportAsync(name, ct);
         await store.RemoveConfigDnsAsync(name, ct);
+        await store.RemoveConfigExclusionsAsync(name, ct);
         await store.RemoveDomainResolutionsAsync(name, ct);
 
         foreach (var profileName in await store.ListBalancerNamesAsync(ct))

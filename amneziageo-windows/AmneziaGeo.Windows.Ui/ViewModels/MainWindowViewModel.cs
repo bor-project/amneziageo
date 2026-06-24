@@ -137,6 +137,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private ConfigDnsViewModel? _configDns;
 
+    // The open config's bypass-exclusions editor, shown on the profile's Маршрутизация aspect (per-config,
+    // moved off the former global settings). Built when a config opens.
+    [ObservableProperty]
+    private ConfigExclusionsViewModel? _configExclusions;
+
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
 
@@ -196,13 +201,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _routingUsageHint = string.Empty;
 
-    // Bypass exclusions: domains kept on the local resolver, IP/CIDRs routed direct (one per line). Empty
-    // = just the built-in defaults (loopback, RFC1918 LAN, common local suffixes). Applies on reconnect.
-    private bool _exclusionsInitialized;
-
-    [ObservableProperty]
-    private string _exclusions = string.Empty;
-
     // App self-update (#54): the configured metadata URL, the latest check result, and download state.
     [ObservableProperty]
     private string _updateUrl = string.Empty;
@@ -237,9 +235,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _geoAutoCheck = true;
 
-    // Auto-exclude detected local subnets from the tunnel (default on). Pushed on toggle; applies on reconnect.
-    [ObservableProperty]
-    private bool _autoExcludeLan = true;
 
     [ObservableProperty]
     private int _geoCheckIntervalHours = 24;
@@ -677,6 +672,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             ConfigExport = null;
             ConfigTransport = null;
             ConfigDns = null;
+            ConfigExclusions = null;
             return;
         }
 
@@ -684,11 +680,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigExport = export;
         _ = export.LoadAsync();
 
-        // Seed the WebSocket (UDP-over-TCP) transport and preferred-DNS editors from the opened config's
-        // current snapshot values.
+        // Seed the WebSocket (UDP-over-TCP) transport, preferred-DNS, and bypass-exclusions editors from the
+        // opened config's current snapshot values.
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443);
         ConfigDns = new ConfigDnsViewModel(_connection, value, item?.Dns ?? string.Empty);
+        ConfigExclusions = new ConfigExclusionsViewModel(_connection, value, item?.Exclusions ?? string.Empty, item?.AutoExcludeLan ?? true);
     }
 
     // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the
@@ -937,7 +934,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         _suppressSettingPush = true;
         GeoAutoCheck = snapshot.GeoAutoCheck;
-        AutoExcludeLan = snapshot.AutoExcludeLan;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         _suppressSettingPush = false;
@@ -1026,14 +1022,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    partial void OnAutoExcludeLanChanged(bool value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync("auto-exclude-lan", value);
-        }
-    }
-
     partial void OnGeoCheckIntervalHoursChanged(int value)
     {
         if (!_suppressSettingPush && value > 0)
@@ -1080,13 +1068,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             _updateUrlInitialized = true;
         }
 
-        // Same one-shot init for the exclusions list, so periodic pushes don't clobber editing.
-        if (!_exclusionsInitialized)
-        {
-            Exclusions = snapshot.Exclusions;
-            _exclusionsInitialized = true;
-        }
-
         UpdateAvailable = snapshot.UpdateAvailable;
         UpdateVersion = snapshot.UpdateVersion;
         UpdateDescription = snapshot.UpdateDescription;
@@ -1107,13 +1088,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Persist the bypass exclusions list (empty = just the built-in defaults). Applies on the next connect.
-    [RelayCommand]
-    private async Task SaveExclusions()
-    {
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["exclusions", Exclusions ?? string.Empty]));
-        ShowNotice("Исключения сохранены — применятся при переподключении.");
-    }
 
     [RelayCommand]
     private async Task CheckUpdate()
@@ -1283,6 +1257,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.WebSocketHost = entry.WebSocketHost;
             existing.WebSocketPort = entry.WebSocketPort;
             existing.Dns = entry.Dns;
+            existing.Exclusions = entry.Exclusions;
+            existing.AutoExcludeLan = entry.AutoExcludeLan;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];

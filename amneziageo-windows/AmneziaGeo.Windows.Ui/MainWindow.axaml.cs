@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
@@ -290,7 +291,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var text = await clipboard.GetTextAsync();
+        var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
             vm.StatusMessage = "В буфере обмена нет текста.";
@@ -376,7 +377,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var text = await clipboard.GetTextAsync();
+        var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
             vm.StatusMessage = "В буфере обмена нет текста.";
@@ -476,7 +477,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var text = await clipboard.GetTextAsync();
+        var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
             vm.ProfilePortStatus = "В буфере обмена нет текста.";

@@ -184,10 +184,10 @@ internal sealed partial class RouteManager
 
     /// <summary>
     /// Detects the machine's currently-connected local IPv4 subnets: the on-link networks of up, physical
-    /// adapters (loopback, tunnels, and our own WireGuard/wintun adapters skipped) that are NOT already
-    /// covered by a built-in LAN exclusion. These are the non-RFC1918 corporate / CGNAT LANs the defaults
-    /// miss, returned as "network/prefix" for the caller to keep direct. Re-evaluated each connect so DHCP
-    /// / roaming changes are reflected.
+    /// adapters (loopback, tunnels, our own WireGuard/wintun adapters, and APIPA link-local skipped),
+    /// returned as "network/prefix". Includes the ordinary RFC1918 home/office ranges so the user can see
+    /// exactly which subnets are kept direct, not just the rare non-RFC1918 corporate / CGNAT LANs.
+    /// Re-evaluated on each call so DHCP / roaming changes are reflected.
     /// </summary>
     public IReadOnlyList<string> LocalSubnets()
     {
@@ -223,9 +223,9 @@ internal sealed partial class RouteManager
                 }
 
                 var network = NetworkAddress(ua.Address, prefix);
-                if (IsDefaultLanCovered(network, prefix))
+                if (IsLinkLocal(network, prefix))
                 {
-                    continue; // already kept direct by a built-in RFC1918 / link-local range
+                    continue; // APIPA auto-config address — no real LAN behind it, not worth listing
                 }
 
                 var cidr = $"{network}/{prefix}";
@@ -239,20 +239,10 @@ internal sealed partial class RouteManager
         return result;
     }
 
-    // True when network/prefix sits inside a built-in LAN exclusion (RFC1918) or link-local 169.254/16,
-    // so it is already direct and need not be added again.
-    private static bool IsDefaultLanCovered(IPAddress network, int prefix)
-    {
-        foreach (var (range, rangePrefix) in new[] { ("10.0.0.0", 8), ("172.16.0.0", 12), ("192.168.0.0", 16), ("169.254.0.0", 16) })
-        {
-            if (prefix >= rangePrefix && InRange(network, IPAddress.Parse(range), rangePrefix))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    // True for an APIPA link-local 169.254/16 network — a DHCP-failed auto-config address with no real LAN
+    // behind it, so listing it as a "local subnet" would only be noise.
+    private static bool IsLinkLocal(IPAddress network, int prefix)
+        => prefix >= 16 && InRange(network, IPAddress.Parse("169.254.0.0"), 16);
 
     private static IPAddress NetworkAddress(IPAddress ip, int prefix)
     {

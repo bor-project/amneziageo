@@ -679,7 +679,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT exclusions, auto_exclude_lan FROM config_exclusions WHERE name = $name;";
+                command.CommandText = "SELECT exclusions FROM config_exclusions WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -690,7 +690,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigExclusions(name, reader.GetString(0), reader.GetInt32(1) != 0);
+                    return new ConfigExclusions(name, reader.GetString(0));
                 }
             }
         }
@@ -709,16 +709,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_exclusions (name, exclusions, auto_exclude_lan, updated_at)
-                    VALUES ($name, $exclusions, $auto, $updated)
+                    INSERT INTO config_exclusions (name, exclusions, updated_at)
+                    VALUES ($name, $exclusions, $updated)
                     ON CONFLICT(name) DO UPDATE SET
-                        exclusions       = excluded.exclusions,
-                        auto_exclude_lan = excluded.auto_exclude_lan,
-                        updated_at       = excluded.updated_at;
+                        exclusions = excluded.exclusions,
+                        updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", exclusions.Name);
                 command.Parameters.AddWithValue("$exclusions", exclusions.Exclusions);
-                command.Parameters.AddWithValue("$auto", exclusions.AutoExcludeLan ? 1 : 0);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

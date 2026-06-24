@@ -153,21 +153,10 @@ internal sealed class TunnelRunner(
         {
             exclusionDomains.Add(wsHost);
         }
+        // Local subnets are no longer auto-harvested here: the user adds the detected subnets to the
+        // exclusions list explicitly (the UI's "add local subnets" action), so whatever should stay direct
+        // is already in parsedCidrs above and is visible/editable.
         var exclusionCidrs = new List<string>(parsedCidrs);
-
-        // Auto-detect the currently-connected local subnets and keep them direct too (deduped against the
-        // manual list). Re-run every connect, so a changed LAN is picked up. The detector already drops
-        // RFC1918/link-local (built-in) and our own tunnel adapter, so this adds only the extras.
-        if (configExclusions?.AutoExcludeLan ?? true)
-        {
-            foreach (var subnet in routes.LocalSubnets())
-            {
-                if (!exclusionCidrs.Contains(subnet))
-                {
-                    exclusionCidrs.Add(subnet);
-                }
-            }
-        }
 
         IReadOnlyList<string> redirectServers = [];
 

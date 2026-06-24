@@ -63,11 +63,17 @@ public static class IpcContract
 
     /// <summary>
     /// Command to set a config's bypass exclusions (kept OFF the tunnel). Args: name, exclusions (one entry
-    /// per line / comma-separated; domains kept on the local resolver, IP/CIDR routed direct), and
-    /// auto-exclude-LAN on/off (auto-detect connected local subnets each connect). Applies on the next
-    /// connect. Moved here from the former global "exclusions" / "auto-exclude-lan" app settings.
+    /// per line / comma-separated; domains kept on the local resolver, IP/CIDR routed direct). Applies on
+    /// the next connect. Moved here from the former global "exclusions" app setting.
     /// </summary>
     public const string OpSetConfigExclusions = "set-config-exclusions";
+
+    /// <summary>
+    /// Command to list the machine's currently-connected local subnets (the non-RFC1918 / CGNAT networks the
+    /// built-in defaults miss). No args. The ack message holds newline-separated CIDRs; the UI merges them
+    /// into a profile's exclusions list on demand (replacing the former auto-exclude-LAN flag).
+    /// </summary>
+    public const string OpListLocalSubnets = "list-local-subnets";
 
     /// <summary>
     /// Command to list available geo categories; the ack message holds newline-separated rule tokens.

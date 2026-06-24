@@ -7,10 +7,10 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
 /// The per-config bypass-exclusions editor shown on a profile's Маршрутизация aspect: the manual list
-/// (domains kept on the local resolver, IP/CIDR routed direct) plus the auto-exclude-LAN toggle. Saved
-/// through the agent (set-config-exclusions). Moved here from the former global settings so each profile
-/// carries its own. The toggle persists immediately; the list persists on «Сохранить». Both apply on the
-/// next connect.
+/// (domains kept on the local resolver, IP/CIDR routed direct), saved through the agent
+/// (set-config-exclusions). Moved here from the former global settings so each profile carries its own.
+/// The former auto-exclude-LAN flag is replaced by an explicit "add local subnets" action that fetches the
+/// machine's connected subnets and merges them into the visible list. Applies on the next connect.
 /// </summary>
 internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
 {
@@ -20,53 +20,86 @@ internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
     private string _exclusions = string.Empty;
 
     [ObservableProperty]
-    private bool _autoExcludeLan = true;
-
-    [ObservableProperty]
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
     private bool _isBusy;
 
     /// <summary>
-    /// ctor. Seeds the backing fields directly so the auto-save in <see cref="OnAutoExcludeLanChanged"/>
-    /// does not fire on construction.
+    /// ctor
     /// </summary>
-    public ConfigExclusionsViewModel(AgentConnection connection, string name, string exclusions, bool autoExcludeLan)
+    public ConfigExclusionsViewModel(AgentConnection connection, string name, string exclusions)
     {
         _connection = connection;
         ConfigName = name;
         _exclusions = exclusions;
-        _autoExcludeLan = autoExcludeLan;
     }
 
     /// <summary>The configuration name being edited.</summary>
     public string ConfigName { get; }
 
-    // The toggle persists immediately (the textarea waits for «Сохранить»). Built once on config-open and
-    // never re-seeded from snapshots, so this only fires on a real user toggle.
-    partial void OnAutoExcludeLanChanged(bool value)
-    {
-        _ = PersistAsync();
-    }
-
     /// <summary>
-    /// Saves the exclusions list (and the current toggle) through the agent. Applies on reconnect.
+    /// Saves the exclusions list through the agent. Applies on reconnect.
     /// </summary>
     [RelayCommand]
-    private Task SaveAsync()
-    {
-        return PersistAsync();
-    }
-
-    private async Task PersistAsync()
+    private async Task SaveAsync()
     {
         IsBusy = true;
         try
         {
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConfigExclusions,
-                [ConfigName, (Exclusions ?? string.Empty).Trim(), AutoExcludeLan ? "on" : "off"]));
+                [ConfigName, (Exclusions ?? string.Empty).Trim()]));
             StatusMessage = ack.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Fetches the machine's currently-connected local subnets from the agent and merges them into the list
+    /// (no duplicates). The user reviews the result and presses «Сохранить» to persist — nothing is saved
+    /// here, so the addition stays visible and editable first.
+    /// </summary>
+    [RelayCommand]
+    private async Task AddLocalSubnetsAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListLocalSubnets, []));
+            if (!ack.Ok)
+            {
+                StatusMessage = ack.Message;
+                return;
+            }
+
+            var subnets = ack.Message
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            // Merge into the current list, preserving its existing lines and appending only subnets not
+            // already present (case-insensitive).
+            var lines = (Exclusions ?? string.Empty)
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n')
+                .Select(line => line.Trim())
+                .Where(line => line.Length > 0)
+                .ToList();
+            var seen = new HashSet<string>(lines, StringComparer.OrdinalIgnoreCase);
+
+            var added = subnets.Where(subnet => seen.Add(subnet)).ToList();
+            if (added.Count > 0)
+            {
+                lines.AddRange(added);
+                Exclusions = string.Join(Environment.NewLine, lines);
+            }
+
+            StatusMessage = added.Count > 0
+                ? $"Добавлено локальных сетей: {added.Count}. Проверьте список и нажмите «Сохранить»."
+                : subnets.Length == 0
+                    ? "Дополнительных локальных сетей не найдено (RFC1918 уже исключены по умолчанию)."
+                    : "Все обнаруженные локальные сети уже в списке.";
         }
         finally
         {

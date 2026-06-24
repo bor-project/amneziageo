@@ -37,9 +37,6 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private string _exclusions = string.Empty;
 
     [ObservableProperty]
-    private bool _autoExcludeLan = true;
-
-    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private string _status = ConnectionStatus.Idle;

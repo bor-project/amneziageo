@@ -62,10 +62,9 @@ internal static class ProfilePortable
     public sealed record RoutingBlock(bool Use, string ListName, IReadOnlyList<string> Rules);
 
     /// <summary>
-    /// The config's bypass exclusions: the list (one entry per line) and whether to auto-exclude local
-    /// subnets.
+    /// The config's bypass exclusions: the list, one entry per line.
     /// </summary>
-    public sealed record ExclusionsBlock(string List, bool AutoExcludeLan);
+    public sealed record ExclusionsBlock(string List);
 
     /// <summary>
     /// Serializes a bundle to indented JSON.

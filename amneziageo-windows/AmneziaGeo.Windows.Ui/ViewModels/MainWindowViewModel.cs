@@ -145,10 +145,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     // The editable name field for the open profile (seeded with its current name) and its rename status.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveProfileName))]
     private string _profileRename = string.Empty;
 
     [ObservableProperty]
     private string _profileRenameStatus = string.Empty;
+
+    // Inline name-edit mode for the profile header: while true the name shows as a text box with a save
+    // (diskette) button; otherwise as text with a pencil button.
+    [ObservableProperty]
+    private bool _isEditingProfileName;
 
     // Which settings section the left rail has selected while on the Settings tab.
     [ObservableProperty]
@@ -472,6 +478,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Name of the opened profile, shown atop its aspect rail.</summary>
     public string OpenProfileName => OpenProfile?.Name ?? string.Empty;
 
+    /// <summary>Whether the inline name editor can save (the typed name is not blank).</summary>
+    public bool CanSaveProfileName => !string.IsNullOrWhiteSpace(ProfileRename);
+
     /// <summary>Whether the opened profile's configuration aspect is selected.</summary>
     public bool IsAspectConfig => ProfileAspect == "config";
 
@@ -678,6 +687,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         OpenConfig = string.IsNullOrEmpty(newValue?.Config) ? null : newValue!.Config;
         ProfileRename = newValue?.Name ?? string.Empty;
         ProfileRenameStatus = string.Empty;
+        IsEditingProfileName = false;
 
         if (oldValue is not null)
         {
@@ -1497,6 +1507,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Rename the open profile. On success the detail closes; the rebroadcast list shows the new name. On a
+    // "✎" in the profile header: switch the name to an inline editor seeded with the current name.
+    [RelayCommand]
+    private void BeginProfileNameEdit()
+    {
+        ProfileRename = OpenProfileName;
+        ProfileRenameStatus = string.Empty;
+        IsEditingProfileName = true;
+    }
+
     // refused rename (name taken, or it is the running profile) the view stays put and shows why.
     [RelayCommand]
     private async Task RenameProfile()
@@ -1510,6 +1529,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var next = (ProfileRename ?? string.Empty).Trim();
         if (next.Length == 0 || string.Equals(next, profile.Name, StringComparison.Ordinal))
         {
+            IsEditingProfileName = false;
             return;
         }
 

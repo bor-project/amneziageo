@@ -136,8 +136,22 @@
               <!-- the open profile's name (the back-to-list navigation now lives in the right pane header) -->
               <StackPanel DockPanel.Dock="Top" Margin="14,11,14,8">
                 <TextBlock Classes="section" Text="ПРОФИЛЬ" />
-                <TextBlock Text="{Binding OpenProfileName}" FontWeight="SemiBold" FontSize="14"
-                           Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                <!-- name + pencil; tapping the pencil swaps to an inline editor with a diskette save button -->
+                <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0" IsVisible="{Binding !IsEditingProfileName}">
+                  <TextBlock Grid.Column="0" Text="{Binding OpenProfileName}" FontWeight="SemiBold" FontSize="14"
+                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <Button Grid.Column="1" Classes="icon" Content="✎" FontSize="14"
+                          Command="{Binding BeginProfileNameEditCommand}" ToolTip.Tip="Переименовать" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0" IsVisible="{Binding IsEditingProfileName}">
+                  <TextBox Grid.Column="0" Classes="field" Text="{Binding ProfileRename, Mode=TwoWay}"
+                           VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Classes="icon" Content="💾" FontSize="14" Margin="6,0,0,0"
+                          Command="{Binding RenameProfileCommand}" IsEnabled="{Binding CanSaveProfileName}"
+                          ToolTip.Tip="Сохранить имя" />
+                </Grid>
+                <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                           IsVisible="{Binding IsEditingProfileName}" />
               </StackPanel>
 
               <StackPanel Margin="12,2,12,12">

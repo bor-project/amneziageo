@@ -72,7 +72,7 @@ internal sealed class BalancerRunner(
                 {
                     // A transient fault (service launch failure, store error, ...) must not kill the
                     // supervisor or freeze the status; tear down, mark disconnected, and retry.
-                    logger.LogError(ex, "tunnel session failed; retrying");
+                    logger.LogError(ex, "tunnel session failed: {Reason}; retrying", ex.Message);
                     Stop(group.Config);
                     await SetStateAsync("disconnected", null);
                     await DelayAsync(_livenessPoll, linked.Token);
@@ -190,7 +190,19 @@ internal sealed class BalancerRunner(
             // forever; FailConnect drops the desired state to stopped, so the supervisor then idles.
             if (!ct.IsCancellationRequested)
             {
-                logger.LogWarning("connect failed: {Config} unreachable for {Profile}", config, group.Name);
+                // Surface the per-tunnel service's own failure reason (wstunnel missing, config parse, etc.)
+                // that it forwarded to the shared store; fall back to the generic line when there is none
+                // (a plain reachability timeout leaves no message).
+                var reason = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(config), ct);
+                if (string.IsNullOrEmpty(reason))
+                {
+                    logger.LogWarning("connect failed: {Config} unreachable for {Profile}", config, group.Name);
+                }
+                else
+                {
+                    logger.LogWarning("connect failed: {Config} ({Profile}) — {Reason}", config, group.Name, reason);
+                }
+
                 Stop(config);
                 await SetStateAsync("disconnected", null);
                 control.FailConnect();
@@ -301,10 +313,22 @@ internal sealed class BalancerRunner(
 
     private async Task<bool> TryConnectAsync(string member, CancellationToken ct)
     {
-        serviceManager.CreateService(member);
-        serviceManager.StartQuiet(member);
+        // Clear any forwarded reason from a previous attempt so a failure now reflects THIS run.
+        await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(member), string.Empty, ct);
+
+        logger.LogInformation("connecting {Member}: creating and starting tunnel service", member);
+        var created = serviceManager.CreateService(member);
+        var started = serviceManager.StartQuiet(member);
+        if (created != 0 || started != 0)
+        {
+            logger.LogWarning("tunnel service {Member} did not start cleanly: sc create={Create}, sc start={Start}",
+                member, created, started);
+        }
+
         var start = DateTimeOffset.UtcNow;
         var deadline = start.AddSeconds(_settings.ConnectTimeoutSeconds);
+        var sawService = false;
+        var lastHeartbeat = start;
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (ct.IsCancellationRequested)
@@ -312,20 +336,39 @@ internal sealed class BalancerRunner(
                 return false;
             }
 
-            var status = uapi.TryGetPeerStatus(member);
-            if (status is { HandshakeSec: > 0 })
+            if (uapi.TryGetPeerStatus(member) is { } status)
             {
-                return true;
-            }
+                var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalSeconds;
+                if (status.HandshakeSec > 0)
+                {
+                    logger.LogInformation("{Member}: handshake received in {Sec}s", member, elapsed);
+                    return true;
+                }
 
-            // Data-driven failure: the engine has had time to send handshake initiations, but the server
-            // has returned nothing (no handshake, zero rx). That is the structured form of the engine's
-            // "handshake did not complete" — give up on this config now rather than waiting the backstop.
-            if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
-            {
-                logger.LogWarning("member {Member}: no handshake, no bytes received in {Sec}s; unreachable",
-                    member, (int)_noResponseWindow.TotalSeconds);
-                break;
+                // The pipe answered: the per-tunnel service started and its engine is up — distinguishes a
+                // service that never launched from one that launched but the server stays silent.
+                if (!sawService)
+                {
+                    sawService = true;
+                    logger.LogInformation("{Member}: tunnel service responding over UAPI; waiting for handshake", member);
+                }
+
+                if (DateTimeOffset.UtcNow - lastHeartbeat >= TimeSpan.FromSeconds(4))
+                {
+                    lastHeartbeat = DateTimeOffset.UtcNow;
+                    logger.LogInformation("{Member}: no handshake yet (sent {Tx} B, received {Rx} B, {Sec}s)",
+                        member, status.TxBytes, status.RxBytes, elapsed);
+                }
+
+                // Data-driven failure: the engine has had time to send handshake initiations (TxBytes grows),
+                // but the server has returned nothing (no handshake, zero rx). That is the structured form of
+                // the engine's "handshake did not complete" — give up now rather than waiting the backstop.
+                if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
+                {
+                    logger.LogWarning("{Member}: server did not answer — no handshake, 0 bytes received in {Sec}s (sent {Tx} B); unreachable",
+                        member, (int)_noResponseWindow.TotalSeconds, status.TxBytes);
+                    break;
+                }
             }
 
             await DelayAsync(TimeSpan.FromSeconds(1), ct);

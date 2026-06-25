@@ -22,9 +22,32 @@ internal sealed class TunnelRunner(
     ILogger<TunnelRunner> logger)
 {
     /// <summary>
-    /// Loads the tunnel config and materialized geo set, then hands control to the native service loop.
+    /// Loads the tunnel config and materialized geo set, then hands control to the native service loop. On
+    /// a setup failure it forwards the reason to the shared store so the agent can surface it in the UI
+    /// journal — this per-tunnel service process's own log file (ageo-DATE_NNN.log) is not shown in the UI.
     /// </summary>
     public async Task RunAsync(string name)
+    {
+        try
+        {
+            await RunInnerAsync(name);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: persist the failure reason for the agent to re-log; never mask the original.
+            try
+            {
+                await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), ex.Message);
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+    }
+
+    private async Task RunInnerAsync(string name)
     {
         // Start from a clean slate: revert any DNS/route leftovers from a previous tunnel.
         reconciler.Reconcile();

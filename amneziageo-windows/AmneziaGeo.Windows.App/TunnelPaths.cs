@@ -22,6 +22,16 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Settings-store key carrying the last connect-failure reason for a tunnel. The per-tunnel service
+    /// process writes it on a setup failure; the agent reads it back on a failed connect so the cause shows
+    /// up in the UI journal (the per-tunnel process's own log file is not visible to the UI).
+    /// </summary>
+    public static string ConnectMessageKey(string name)
+    {
+        return $"connect-error:{name}";
+    }
+
+    /// <summary>
     /// Directory holding the stored wg-quick configs.
     /// </summary>
     public static string ConfigurationsDirectory()

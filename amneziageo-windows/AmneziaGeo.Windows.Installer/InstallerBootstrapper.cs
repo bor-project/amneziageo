@@ -75,7 +75,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         // A bundle launched for uninstall (e.g. the ARP "Uninstall" entry, which runs us with
         // LaunchAction.Uninstall) drives the removal headlessly: the realised HWND above is enough for
         // engine.Apply and detection auto-runs the remove (OnDetectComplete, treated non-interactive), so
-        // the maintenance window never shows — this is what stops the installer window(s) appearing on
+        // the maintenance window never shows - this is what stops the installer window(s) appearing on
         // removal. Re-running setup.exe and clicking "Remove" is a different launch (Action=Install/Modify)
         // and keeps its window.
         if (_command.Action == LaunchAction.Uninstall)
@@ -95,7 +95,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnDetectRelatedBundle(object? sender, DetectRelatedBundleEventArgs e)
     {
-        // Burn reports same-UpgradeCode bundles here (there is no "Downgrade" relation type — direction
+        // Burn reports same-UpgradeCode bundles here (there is no "Downgrade" relation type - direction
         // is decided by comparing versions with the engine's own comparer). A newer installed version
         // means installing over it would be a downgrade (allowed, see OnPlanRelatedBundle).
         if (e.RelationType != RelationType.Upgrade)
@@ -146,7 +146,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private void OnPlanRelatedBundle(object? sender, PlanRelatedBundleEventArgs e)
     {
         // When installing, always clear any related bundle (older OR newer) so only our version
-        // remains — this is what makes a downgrade go through instead of Burn refusing it.
+        // remains - this is what makes a downgrade go through instead of Burn refusing it.
         if (_launch == LaunchAction.Install)
         {
             e.State = RequestState.Absent;
@@ -193,7 +193,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         }
 
         // The MSI installed and started the agent service. Drive the geo step against the privileged agent
-        // and report the outcome — a failure here is non-fatal, the install already succeeded.
+        // and report the outcome - a failure here is non-fatal, the install already succeeded.
         _dispatcher.BeginInvoke(async () =>
         {
             var geo = await RunGeoStepAsync();
@@ -228,7 +228,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 // falls through and downloads, since skipping when unsure would leave bases stale.
                 if (check.GeoUpdatesAvailable == 0)
                 {
-                    return "Базы гео актуальны — загрузка не требуется.";
+                    return "Базы гео актуальны - загрузка не требуется.";
                 }
             }
 

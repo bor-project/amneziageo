@@ -7,7 +7,7 @@ namespace AmneziaGeo.Windows.App;
 /// A portable, self-contained snapshot of a single profile: its bound config (.conf text, including the
 /// private keys), the config's transport and own geo split, and the profile's routing list. Serialized to
 /// JSON for save-to-file / clipboard transfer between machines, and re-created on import under fresh names.
-/// Materialized route/domain sets are intentionally omitted — only the rule tokens travel, so the target
+/// Materialized route/domain sets are intentionally omitted - only the rule tokens travel, so the target
 /// machine re-materializes them against its own geo data.
 /// </summary>
 internal static class ProfilePortable

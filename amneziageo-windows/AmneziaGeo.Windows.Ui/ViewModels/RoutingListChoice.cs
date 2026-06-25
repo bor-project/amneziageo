@@ -8,7 +8,7 @@ internal sealed record RoutingListChoice(long? Id, string Name)
     /// <summary>
     /// The synthetic "no routing list" choice.
     /// </summary>
-    public static RoutingListChoice None { get; } = new(null, "— не задан —");
+    public static RoutingListChoice None { get; } = new(null, "- не задан -");
 
     /// <summary>
     /// The synthetic "create a new list" choice (Id -1): picking it reveals the inline new-list editor,
@@ -27,7 +27,7 @@ internal sealed record RoutingListChoice(long? Id, string Name)
     public bool IsNewSentinel => Id == -1;
 
     /// <summary>
-    /// True for a real, persisted list (positive id) — not the "none" or "new" sentinels.
+    /// True for a real, persisted list (positive id) - not the "none" or "new" sentinels.
     /// </summary>
     public bool IsReal => Id is > 0;
 }

@@ -24,7 +24,7 @@ internal sealed class TunnelRunner(
     /// <summary>
     /// Loads the tunnel config and materialized geo set, then hands control to the native service loop. On
     /// a setup failure it forwards the reason to the shared store so the agent can surface it in the UI
-    /// journal — this per-tunnel service process's own log file (ageo-DATE_NNN.log) is not shown in the UI.
+    /// journal - this per-tunnel service process's own log file (ageo-DATE_NNN.log) is not shown in the UI.
     /// </summary>
     public async Task RunAsync(string name)
     {
@@ -147,7 +147,7 @@ internal sealed class TunnelRunner(
         var appSettings = await settings.LoadAsync();
 
         // Capture the resolvers the system uses now, before redirecting, so the proxy can forward
-        // NON-tunneled queries to them — keeps corporate/existing name resolution working alongside
+        // NON-tunneled queries to them - keeps corporate/existing name resolution working alongside
         // another VPN. The loopback proxy always runs (split AND full): on this IPv4-only tunnel it
         // denies AAAA and HTTPS/SVCB (type 65) so dual-stack clients don't stall and Chrome doesn't take
         // an HTTP/3 hint path that bypasses the tunnel.
@@ -158,7 +158,7 @@ internal sealed class TunnelRunner(
         var dnsOverride = await store.GetConfigDnsAsync(name);
         var preferredDns = ParseDnsServers(dnsOverride?.Servers ?? string.Empty);
         // The real system/LAN resolver, captured regardless of any preferred-DNS override: LOCAL names
-        // (the LAN, corporate, and user exclusion-list domains) must keep resolving HERE, not offshore —
+        // (the LAN, corporate, and user exclusion-list domains) must keep resolving HERE, not offshore -
         // this is what keeps the local network alive in full tunnel and fixes a preferred-DNS set to a
         // public resolver from swallowing local lookups.
         var lanResolvers = dns.CaptureUpstream();
@@ -179,7 +179,7 @@ internal sealed class TunnelRunner(
         // The default bypass set (the RFC1918 ranges + the machine's currently-connected subnets) is computed
         // at runtime, never stored: with no exclusions row it is what keeps the LAN direct in full tunnel, so
         // it always matches the network the host is on right now. Once the user saves a row, that list is
-        // authoritative (they can pare it down — even drop the LAN ranges — or extend it).
+        // authoritative (they can pare it down - even drop the LAN ranges - or extend it).
         var exclusionCidrs = configExclusions is null
             ? new List<string>(routes.DefaultExclusionEntries())
             : new List<string>(parsedCidrs);
@@ -201,7 +201,7 @@ internal sealed class TunnelRunner(
         else
         {
             // Could not bind loopback :53 (another resolver holds it): degrade to setting resolvers
-            // directly — no AAAA/type-65 deny, but connectivity rather than a hang.
+            // directly - no AAAA/type-65 deny, but connectivity rather than a hang.
             redirectServers = configDns.Count > 0 ? configDns : upstream;
             logger.LogWarning("DNS proxy unavailable (loopback :53 busy); using direct resolvers");
         }
@@ -248,7 +248,7 @@ internal sealed class TunnelRunner(
 
         // Always arm the WFP firewall once the tunnel adapter appears: it blocks QUIC (UDP/443) egressing
         // the tunnel so HTTP/3 falls back to TCP, which is reliable over the obfuscated tunnel (raw QUIC
-        // stalls — e.g. some YouTube videos never load). The KILL-SWITCH (block everything off-tunnel) is a
+        // stalls - e.g. some YouTube videos never load). The KILL-SWITCH (block everything off-tunnel) is a
         // full-tunnel concept: on in full tunnel, off in split (where it would sever the intended-direct
         // traffic). LAN bypass is always included; a dual-stack tunnel (config has a v6 Address) also gets
         // the v6 LAN bypass.
@@ -399,7 +399,7 @@ internal sealed class TunnelRunner(
                 }
 
                 // else: a parseable IP with a malformed/out-of-range prefix (typo like 10.0.0.0/abc or /99)
-                // is dropped — never reaches the route or firewall layer, so one typo can't disarm anything.
+                // is dropped - never reaches the route or firewall layer, so one typo can't disarm anything.
             }
             else
             {
@@ -439,7 +439,7 @@ internal sealed class TunnelRunner(
     }
 
     /// <summary>
-    /// Resolves a host (or IPv4 literal) to its first IPv4 address, or null when unresolvable — used to
+    /// Resolves a host (or IPv4 literal) to its first IPv4 address, or null when unresolvable - used to
     /// exclude the wstunnel server from the tunnel so its TCP/TLS connection routes out the physical gateway.
     /// </summary>
     private static IPAddress? ResolveHostV4(string host)
@@ -481,7 +481,7 @@ internal sealed class TunnelRunner(
 
     /// <summary>
     /// Replaces a default route (0.0.0.0/0 or ::/0) with its two /1 halves, which together cover the
-    /// same address space for routing but are not /0 — so the engine routes the full tunnel without
+    /// same address space for routing but are not /0 - so the engine routes the full tunnel without
     /// arming its own kill-switch. Other prefixes pass through unchanged; the result is de-duplicated.
     /// </summary>
     private static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps)
@@ -534,7 +534,7 @@ internal sealed class TunnelRunner(
 
     /// <summary>
     /// Waits for the tunnel adapter (and its AllowedIPs routes, including the clean resolver's /32) to
-    /// appear, then flushes the OS DNS cache — once when the adapter is up and once more after the first
+    /// appear, then flushes the OS DNS cache - once when the adapter is up and once more after the first
     /// handshake settles. This drops any sinkhole answer cached during the bring-up window (before the
     /// clean resolver was routed through the tunnel), so a geo-blocked apex re-resolves cleanly instead
     /// of serving stale poison. Cancelled with the session if the tunnel is torn down first.
@@ -550,7 +550,7 @@ internal sealed class TunnelRunner(
                 if (routes.FindInterfaceIndex(name) is not null)
                 {
                     // Drop the proxy's OWN cache too (not just the OS cache): a matched geo-blocked name
-                    // resolved in the bring-up window — before the clean resolver's /32 route was live —
+                    // resolved in the bring-up window - before the clean resolver's /32 route was live -
                     // leaked to the poisoned local resolver and was cached here. Without clearing it the
                     // OS re-query is answered from the proxy's stale poison and the domain stays broken.
                     // Cleared at both flush points so the route-settle gap after the adapter appears is

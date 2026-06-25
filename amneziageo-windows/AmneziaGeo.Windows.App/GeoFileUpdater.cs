@@ -49,7 +49,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
 
     /// <summary>
     /// Streams the URL into memory, reporting download progress as integer percent (or -1 when the
-    /// server sends no Content-Length). Streaming — rather than GetByteArrayAsync — is what lets the UI
+    /// server sends no Content-Length). Streaming - rather than GetByteArrayAsync - is what lets the UI
     /// show a live percentage for the multi-megabyte geo files. Also returns the response's HTTP
     /// validators (ETag / Last-Modified, empty when absent) so a later update-check can ask the server
     /// whether the file changed without downloading it again.
@@ -60,7 +60,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
 
     // No byte for this long aborts the body transfer. With HttpCompletionOption.ResponseHeadersRead the
     // HttpClient.Timeout stops covering the stream once the headers arrive, so a server that sends
-    // headers then goes silent would hang the body read — and the geo-source row's spinner — forever.
+    // headers then goes silent would hang the body read - and the geo-source row's spinner - forever.
     private static readonly TimeSpan _stallTimeout = TimeSpan.FromSeconds(30);
 
     // Returns null when the server confirms the file is unchanged (304, or a 200 whose validator still
@@ -68,7 +68,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
     private async Task<(byte[] Data, string ETag, string LastModified)?> DownloadAsync(string url, GeoFileMetadata? existing, IProgress<int>? progress, CancellationToken ct)
     {
         // One deadline reused across phases: a short bound for connect/headers, then an INACTIVITY bound
-        // for the body that is reset on every chunk below — so a slow but progressing multi-megabyte
+        // for the body that is reset on every chunk below - so a slow but progressing multi-megabyte
         // download is never killed, while a stalled or unreachable source fails fast and lets the row
         // clear so the user can retry.
         using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -92,7 +92,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stall.Token);
         if (response.StatusCode == HttpStatusCode.NotModified && existing is not null)
         {
-            return null;   // server says unchanged — nothing to download
+            return null;   // server says unchanged - nothing to download
         }
 
         response.EnsureSuccessStatusCode();
@@ -104,7 +104,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
             return null;
         }
 
-        stall.CancelAfter(_stallTimeout);   // headers are in — switch to the body inactivity bound
+        stall.CancelAfter(_stallTimeout);   // headers are in - switch to the body inactivity bound
         var total = response.Content.Headers.ContentLength;
         var lastModified = response.Content.Headers.LastModified?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty;
 
@@ -116,7 +116,7 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
         int n;
         while ((n = await source.ReadAsync(chunk, stall.Token)) > 0)
         {
-            stall.CancelAfter(_stallTimeout);   // progress arrived — push the inactivity deadline back
+            stall.CancelAfter(_stallTimeout);   // progress arrived - push the inactivity deadline back
             await buffer.WriteAsync(chunk.AsMemory(0, n), stall.Token);
             read += n;
             if (total is > 0)

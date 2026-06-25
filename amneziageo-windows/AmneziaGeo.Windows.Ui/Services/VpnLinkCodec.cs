@@ -134,7 +134,7 @@ internal static class VpnLinkCodec
                 return TryParseAmneziaJson(json);
             }
 
-            // Multi-chunk QR (rare for a single config) needs several frames assembled — not supported here.
+            // Multi-chunk QR (rare for a single config) needs several frames assembled - not supported here.
             return null;
         }
 

@@ -84,7 +84,7 @@ internal sealed class UapiClient
     /// Returns the device's peer counters, or null when the device is unreachable. This is the structured,
     /// data form of the engine's connection progress: a completed handshake (HandshakeSec &gt; 0) means
     /// connected; a server that never answers shows HandshakeSec == 0 and RxBytes == 0 even as we keep
-    /// sending initiations (TxBytes grows) — the data equivalent of the engine's "handshake did not
+    /// sending initiations (TxBytes grows) - the data equivalent of the engine's "handshake did not
     /// complete" log, used to detect a failed connect without scraping logs.
     /// </summary>
     public PeerStatus? TryGetPeerStatus(string tunnelName)

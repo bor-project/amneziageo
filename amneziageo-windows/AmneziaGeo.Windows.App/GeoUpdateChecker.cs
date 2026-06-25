@@ -23,7 +23,7 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
         /// <summary>The remote file matches what we have.</summary>
         UpToDate,
 
-        /// <summary>The remote file differs (or was never downloaded) — a download would change it.</summary>
+        /// <summary>The remote file differs (or was never downloaded) - a download would change it.</summary>
         Available,
 
         /// <summary>Could not determine (network error, or the server offered nothing to compare).</summary>
@@ -38,7 +38,7 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
         var meta = await store.GetGeoFileAsync(source.Name, ct);
         if (meta is null)
         {
-            // Never downloaded — the initial download is the "update" that is available.
+            // Never downloaded - the initial download is the "update" that is available.
             return Status.Available;
         }
 
@@ -120,7 +120,7 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
             var text = await http.GetStringAsync(url + ".sha256sum", ct);
             var hash = text.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
 
-            // Guard against a "soft 404" — an HTTP 200 carrying an HTML error / captive-portal page rather
+            // Guard against a "soft 404" - an HTTP 200 carrying an HTML error / captive-portal page rather
             // than the checksum. Only a real 64-char hex digest is comparable; anything else means "can't
             // tell" (Unknown), never a false "update available".
             if (hash is not { Length: 64 } || !hash.All(Uri.IsHexDigit))

@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.Ui.Services;
 /// <summary>
 /// Opens the default camera with FlashCap, raises each frame as an Avalonia bitmap for a live preview,
 /// and decodes QR codes from the frames (ZXing). One frame is decoded at a time; a newly-seen QR text is
-/// reported via the callback. Pure-managed — no native dependencies beyond the OS camera APIs.
+/// reported via the callback. Pure-managed - no native dependencies beyond the OS camera APIs.
 /// </summary>
 internal sealed class QrCameraScanner(Action<Bitmap> onPreview, Action<string> onDecoded) : IAsyncDisposable
 {

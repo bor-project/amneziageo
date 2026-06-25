@@ -27,7 +27,7 @@ public sealed partial class MainWindow : Window
     }
 
     // After the ✎ command flips the profile header into its inline name editor, move keyboard focus into the
-    // box and select its text so the user can type immediately — the editor is otherwise only made visible,
+    // box and select its text so the user can type immediately - the editor is otherwise only made visible,
     // not focused. Deferred to Background priority so it runs after the IsVisible binding has applied.
     private void OnBeginProfileNameEdit(object? sender, RoutedEventArgs e)
     {
@@ -140,7 +140,7 @@ public sealed partial class MainWindow : Window
 
             if (bytes is null)
             {
-                vm.NewConfigStatus = "В буфере обмена нет картинки — используйте файл или камеру";
+                vm.NewConfigStatus = "В буфере обмена нет картинки - используйте файл или камеру";
                 return;
             }
 
@@ -168,7 +168,7 @@ public sealed partial class MainWindow : Window
         if (await dialog.ShowDialog<bool>(this))
         {
             vm.NewConfigText = editor.Text;
-            vm.NewConfigStatus = "Готово — нажмите «Сохранить».";
+            vm.NewConfigStatus = "Готово - нажмите «Сохранить».";
         }
     }
 
@@ -194,7 +194,7 @@ public sealed partial class MainWindow : Window
             vm.NewConfigName = imported.Name!;
         }
 
-        vm.NewConfigStatus = "QR распознан — нажмите «Сохранить»";
+        vm.NewConfigStatus = "QR распознан - нажмите «Сохранить»";
     }
 
     private async System.Threading.Tasks.Task<string?> PickFileAsync(string title, params string[] extensions)
@@ -252,7 +252,7 @@ public sealed partial class MainWindow : Window
         vm.StatusMessage = "Сохранено.";
     }
 
-    // WebSocket settings share (copy / save / paste / load) — mirrors the config export/import. The
+    // WebSocket settings share (copy / save / paste / load) - mirrors the config export/import. The
     // button's DataContext is the open config's ConfigTransportViewModel (the WS section's DataContext).
     private async void OnWsExportCopy(object? sender, RoutedEventArgs e)
     {
@@ -338,7 +338,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Routing-list share (copy / save / paste / load) — the button's DataContext is the window VM's
+    // Routing-list share (copy / save / paste / load) - the button's DataContext is the window VM's
     // RoutingEditor (a RoutingListEditorViewModel).
     private async void OnRoutingExportCopy(object? sender, RoutedEventArgs e)
     {

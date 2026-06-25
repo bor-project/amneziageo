@@ -180,7 +180,7 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
     }
 
     // Lives next to the shared state (ProgramData\AmneziaGeo) so it survives reinstall (the MSI does not
-    // remove ProgramData) — a reinstall should not re-seed over the user's existing setup.
+    // remove ProgramData) - a reinstall should not re-seed over the user's existing setup.
     private static string SeedMarkerPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "AmneziaGeo",

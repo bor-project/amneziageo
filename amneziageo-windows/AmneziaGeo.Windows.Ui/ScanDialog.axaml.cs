@@ -49,7 +49,7 @@ public sealed partial class ScanDialog : Window
         var imported = VpnLinkCodec.TryDecodeQr(text);
         if (imported is null)
         {
-            vm.StatusMessage = "QR распознан, но это не конфигурация — продолжаю…";
+            vm.StatusMessage = "QR распознан, но это не конфигурация - продолжаю…";
             return;
         }
 

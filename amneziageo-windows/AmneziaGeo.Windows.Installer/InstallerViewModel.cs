@@ -30,7 +30,7 @@ public enum InstallerAction
 }
 
 /// <summary>
-/// Drives the installer window. UI-only: it knows nothing about Burn — the BA injects an
+/// Drives the installer window. UI-only: it knows nothing about Burn - the BA injects an
 /// <c>invoke</c> callback (run a maintenance action) and a <c>close</c> callback, and pushes
 /// detection / progress / result back in via the Set* / Report* methods (always on the UI thread).
 /// </summary>
@@ -143,7 +143,7 @@ public sealed class InstallerViewModel : ObservableObject
 
     public bool ShowDownloadOption => Phase == Phase.Ready && (ShowInstall || ShowUpdate);
 
-    /// <summary>True while the list download runs (no percentage available) — spins the progress bar.</summary>
+    /// <summary>True while the list download runs (no percentage available) - spins the progress bar.</summary>
     public bool IsIndeterminate
     {
         get => _indeterminate;
@@ -212,7 +212,7 @@ public sealed class InstallerViewModel : ObservableObject
     }
 
     /// <summary>Switches the window to the indeterminate "checking for base updates" view (update/repair
-    /// only — runs before deciding whether a download is needed).</summary>
+    /// only - runs before deciding whether a download is needed).</summary>
     public void BeginGeoCheck()
     {
         SubText = "Проверка обновлений баз гео…";

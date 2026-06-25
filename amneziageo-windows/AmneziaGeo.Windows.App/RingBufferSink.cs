@@ -19,7 +19,7 @@ internal sealed class RingBufferSink(LogRingBuffer buffer) : ILogEventSink
             $"{logEvent.Timestamp.LocalDateTime:HH:mm:ss} {Level(logEvent.Level)} {message}");
         if (logEvent.Exception is not null)
         {
-            line += $" — {logEvent.Exception.Message}";
+            line += $" - {logEvent.Exception.Message}";
         }
 
         buffer.Add(line);

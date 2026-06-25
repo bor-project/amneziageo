@@ -535,7 +535,7 @@ internal sealed class Cli(
 
     /// <summary>
     /// Test helper: connects as a UI session (announces attach-ui) and stays connected for the given
-    /// seconds, then disconnects — so the agent's "tunnel lives only while a UI is connected" teardown can
+    /// seconds, then disconnects - so the agent's "tunnel lives only while a UI is connected" teardown can
     /// be exercised headlessly (the real GUI cannot run over SSH). Prints connect/disconnect and each
     /// snapshot's running state.
     /// </summary>

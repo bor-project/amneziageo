@@ -27,7 +27,7 @@ internal sealed class DnsProxy
 
     // IPv4 loopback candidates tried in order: when another resolver (e.g. a second VPN) already
     // holds 127.0.0.1:53 exclusively, fall back to a dedicated loopback alias so we can still
-    // intercept — instead of failing to come up.
+    // intercept - instead of failing to come up.
     private static readonly IPAddress[] V4Candidates = [IPAddress.Loopback, IPAddress.Parse("127.0.0.2")];
 
     // Built-in suffixes always resolved via the LAN resolver and never tunneled, so the local network
@@ -51,7 +51,7 @@ internal sealed class DnsProxy
     /// ctor. Binds a loopback DNS endpoint, falling back to an alternative IPv4 loopback alias when
     /// the primary 127.0.0.1:53 is already taken. Never throws: when nothing can bind, <see
     /// cref="BoundV4"/> stays null and the caller degrades (connect without DNS interception).
-    /// <paramref name="tunnelUpstream"/> resolves matched (to-be-tunneled) names — a clean resolver
+    /// <paramref name="tunnelUpstream"/> resolves matched (to-be-tunneled) names - a clean resolver
     /// reached through the tunnel, so geo-blocked domains get their real IPs rather than the local
     /// network's poisoned answer; <paramref name="localUpstream"/> resolves everything else.
     /// </summary>
@@ -118,8 +118,8 @@ internal sealed class DnsProxy
 
     /// <summary>
     /// Drops all cached answers. Called once the tunnel is up so any answer cached during the bring-up
-    /// window — before the clean resolver's /32 route was live, when a matched (geo-blocked) name could
-    /// leak to the local network's poisoned resolver and be cached (e.g. chatgpt.com -> a sinkhole IP) —
+    /// window - before the clean resolver's /32 route was live, when a matched (geo-blocked) name could
+    /// leak to the local network's poisoned resolver and be cached (e.g. chatgpt.com -> a sinkhole IP) -
     /// is discarded and re-resolved cleanly through the tunnel.
     /// </summary>
     public void ClearCache()
@@ -182,8 +182,8 @@ internal sealed class DnsProxy
             var type = DnsMessage.QuestionType(query);
 
             // A local/LAN name (built-in suffix, single-label host, reverse-DNS for a private range, or a
-            // user exclusion entry) resolves via the LAN resolver and is answered as-is — no AAAA/HTTPS
-            // deny, no tunnel routing — so the local network keeps working even in full tunnel, where every
+            // user exclusion entry) resolves via the LAN resolver and is answered as-is - no AAAA/HTTPS
+            // deny, no tunnel routing - so the local network keeps working even in full tunnel, where every
             // other name would otherwise be forced offshore.
             var isLocal = name is not null && _lanUpstream is not null && IsLocalName(name);
 
@@ -210,7 +210,7 @@ internal sealed class DnsProxy
             {
                 // HTTPS/SVCB records carry ipv4hint/ipv6hint addresses that we cannot intercept and
                 // route into the tunnel. Honoring them lets clients (Chrome) connect straight to those
-                // hints over HTTP/3, bypassing geo routing — for a geo-blocked destination that is a
+                // hints over HTTP/3, bypassing geo routing - for a geo-blocked destination that is a
                 // failed QUIC attempt followed by a slow fallback. Deny it (NODATA) so clients fall
                 // back to A records, which we do track and route.
                 response = DnsMessage.BuildNoData(query);
@@ -228,7 +228,7 @@ internal sealed class DnsProxy
 
             // Install routing for a matched domain BEFORE answering. Otherwise the client receives the
             // IP and opens a connection before the tunnel route + allowed-ip exist, so its first SYN
-            // egresses off-tunnel and (for a blocked destination) is dropped — costing a multi-second
+            // egresses off-tunnel and (for a blocked destination) is dropped - costing a multi-second
             // TCP retransmit on every freshly resolved domain. A tracking failure must never withhold
             // the answer, so it is isolated.
             if (matched)
@@ -272,7 +272,7 @@ internal sealed class DnsProxy
         if (n.EndsWith(".in-addr.arpa", StringComparison.Ordinal))
         {
             // Only PRIVATE-range reverse-DNS goes to the LAN resolver; a PTR for a public address must not
-            // bypass the tunnel resolver. (IPv6 reverse zones are left to the normal path — v6 is denied.)
+            // bypass the tunnel resolver. (IPv6 reverse zones are left to the normal path - v6 is denied.)
             return IsPrivateReverseV4(n);
         }
 

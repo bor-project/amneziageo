@@ -140,7 +140,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     }
 
     // Connect THIS profile: select it as the target, then connect. If another profile is already up, the
-    // agent's supervisor re-latches the target on connect and re-runs the loop — tearing the old tunnel
+    // agent's supervisor re-latches the target on connect and re-runs the loop - tearing the old tunnel
     // down and bringing this one up (an automatic switch).
     [RelayCommand]
     private Task ConnectProfile()
@@ -187,7 +187,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             }
 
             var resolved = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
-            // While the user is building a new list, hold the "+ Новый список" pick across snapshots — do NOT
+            // While the user is building a new list, hold the "+ Новый список" pick across snapshots - do NOT
             // snap back to the list the agent still has assigned. Release the hold only once the snapshot
             // actually reports the freshly-saved new list assigned.
             if (_creatingNewList && !(_savedNewListId is long saved && resolved.Id == saved))

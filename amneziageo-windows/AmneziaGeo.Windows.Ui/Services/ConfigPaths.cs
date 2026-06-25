@@ -7,7 +7,7 @@ namespace AmneziaGeo.Windows.Ui.Services;
 /// <summary>
 /// Client-side resolution of where the agent stores wg-quick configs, mirroring
 /// AmneziaGeo.Windows.App.TunnelPaths. CommonApplicationData (%ProgramData%) is machine-global, so the
-/// client computes the same path the LocalSystem agent writes to — used only to reveal a file in Explorer.
+/// client computes the same path the LocalSystem agent writes to - used only to reveal a file in Explorer.
 /// </summary>
 internal static class ConfigPaths
 {

@@ -59,7 +59,7 @@ internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
 
     /// <summary>
     /// Fetches the machine's currently-connected local subnets from the agent and merges them into the list
-    /// (no duplicates). The user reviews the result and presses «Сохранить» to persist — nothing is saved
+    /// (no duplicates). The user reviews the result and presses «Сохранить» to persist - nothing is saved
     /// here, so the addition stays visible and editable first.
     /// </summary>
     [RelayCommand]

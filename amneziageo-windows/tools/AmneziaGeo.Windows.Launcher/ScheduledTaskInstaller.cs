@@ -15,7 +15,7 @@ internal static class ScheduledTaskInstaller
 
     /// <summary>
     /// Ensures the "AmneziaGeo" logon task exists and points at the running host. Idempotent (recreated
-    /// with /f every run); best-effort — a failure only means no silent autostart, never blocks the app.
+    /// with /f every run); best-effort - a failure only means no silent autostart, never blocks the app.
     /// </summary>
     public static void EnsureLogonTask(ILogger logger)
     {

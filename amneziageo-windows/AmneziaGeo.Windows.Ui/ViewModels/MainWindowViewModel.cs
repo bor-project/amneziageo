@@ -249,7 +249,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<int> GeoCheckIntervals { get; } = [6, 12, 24, 48, 168];
 
     [ObservableProperty]
-    private string _appVersion = "AmneziaGeo —";
+    private string _appVersion = "AmneziaGeo -";
 
     [ObservableProperty]
     private string _newSourceKind = "geosite";
@@ -266,7 +266,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _hasSources;
 
     // The agent activity journal shown on the home screen: newest line first, joined into one string so
-    // the view is a single (selectable) text block — no per-line controls to regenerate each push.
+    // the view is a single (selectable) text block - no per-line controls to regenerate each push.
     [ObservableProperty]
     private string _logText = string.Empty;
 
@@ -356,7 +356,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Name shown under the status banner in the connection card.
     /// </summary>
-    public string ActiveProfileName => BoundTarget ?? "—";
+    public string ActiveProfileName => BoundTarget ?? "-";
 
     /// <summary>
     /// Whether nothing is configured yet.
@@ -401,7 +401,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // 0 = disconnected, 1 = connecting / disconnecting (transient), 2 = connected. The agent's reported
     // balancer status is reconciled with the desired tunnel state (IsTunnelActive) so a momentarily-stale
     // snapshot cannot flicker the control on click: the instant connect is requested, Active flips true
-    // while the balancer status still lags at its previous terminal value ("disconnected") for one push —
+    // while the balancer status still lags at its previous terminal value ("disconnected") for one push -
     // without this bridge that frame snaps the circle back to the off look before "connecting" arrives.
     // Intent on + a down status reads "connecting"; intent off + an up status reads "disconnecting".
     private int ConnState => BoundStatus switch
@@ -535,7 +535,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool HasRoutingEditor => RoutingEditor is not null;
 
-    /// <summary>Whether the inline rule editor is shown — it is open for editing, or it is a brand-new list.</summary>
+    /// <summary>Whether the inline rule editor is shown - it is open for editing, or it is a brand-new list.</summary>
     public bool ShowRoutingEditor => RoutingEditor is not null && (IsRoutingEditing || RoutingEditor.IsNew);
 
     /// <summary>Whether to offer "Редактировать": a saved list is selected and the editor is still collapsed.</summary>
@@ -598,7 +598,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     // Switch which aspect page (overview / config / routing / balancer / name) the right pane shows. A rail
     // click always returns to the aspect's list (never resumes a config that was open for management),
-    // even when the same aspect is re-selected — so coming back never lands mid-edit.
+    // even when the same aspect is re-selected - so coming back never lands mid-edit.
     [RelayCommand]
     private void SelectProfileAspect(string aspect)
     {
@@ -901,7 +901,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         // The agent stores the selected/bound target as EITHER a profile name or the bare config name the
         // profile wraps (a legacy `set-profile <config>`, a preconfigured "main" seed, or a target set out
-        // of band). A profile's name and its config name never coincide — they share one namespace — so we
+        // of band). A profile's name and its config name never coincide - they share one namespace - so we
         // match on either; otherwise the current target lights up no row at all (the reported bug).
         var selected = snapshot.SelectedTarget ?? snapshot.BoundTarget;
         foreach (var item in Balancers)
@@ -912,7 +912,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         // Top-center notice (auto-hides after 5s, dismissable): a different profile is selected while a
-        // tunnel is up (reconnect to apply — no auto-switch), settings changed on a live tunnel, or a
+        // tunnel is up (reconnect to apply - no auto-switch), settings changed on a live tunnel, or a
         // better member is available on a backup. Shown once per distinct notice, not re-armed while
         // the same one holds.
         string? notice = null;
@@ -924,8 +924,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 && snapshot.Balancers.FirstOrDefault(b =>
                        string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Config.Length: 0 };
             notice = emptyProfile
-                ? $"Профиль «{snapshot.SelectedTarget}» пуст — добавьте конфигурацию."
-                : "Не удалось подключиться — сервер не ответил.";
+                ? $"Профиль «{snapshot.SelectedTarget}» пуст - добавьте конфигурацию."
+                : "Не удалось подключиться - сервер не ответил.";
         }
         else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
         {
@@ -1067,7 +1067,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Keeps the interval combo able to display whatever the agent reports: an out-of-band value (e.g. set
-    // via CLI) that isn't a preset is inserted in order, so the ComboBox SelectedItem never goes null —
+    // via CLI) that isn't a preset is inserted in order, so the ComboBox SelectedItem never goes null -
     // which, two-way-bound to an int, would otherwise write 0 back into the property.
     private void EnsureGeoInterval(int hours)
     {
@@ -1095,7 +1095,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // version raises the banner once.
     private void ApplyUpdateState(StatusSnapshot snapshot)
     {
-        AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "—" : snapshot.AgentVersion)}";
+        AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
 
         if (!_updateUrlInitialized)
         {
@@ -1220,7 +1220,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Streams the installer to a temp file, reporting integer download percent (mirrors the agent's
-    // GeoFileUpdater loop but writes straight to disk — the setup is ~100 MB).
+    // GeoFileUpdater loop but writes straight to disk - the setup is ~100 MB).
     private static async Task<string> DownloadSetupAsync(string url, IProgress<int> progress)
     {
         var path = Path.Combine(Path.GetTempPath(), "AmneziaGeoSetup.exe");
@@ -1585,7 +1585,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Import a profile from a portable JSON bundle (clipboard or file). Import is offered only from inside an
-    // open profile's settings, so the bundle restores *into* that profile — replacing its config, transport,
+    // open profile's settings, so the bundle restores *into* that profile - replacing its config, transport,
     // geo, routing and exclusions in place while keeping its name (and thus its connection-target selection).
     // On success the (same) profile re-opens once the next snapshot lands.
     public async Task ImportProfileBundleAsync(string json)
@@ -1676,7 +1676,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     // "Закрыть": collapse the inline rule editor back to just the picker. An in-progress NEW list is dropped
     // (a real, saved list stays in the catalogue and reopens via "Редактировать"); nothing persists here, so
-    // unsaved edits are discarded — saving is now always explicit (the "Сохранить" button in the editor).
+    // unsaved edits are discarded - saving is now always explicit (the "Сохранить" button in the editor).
     [RelayCommand]
     private void CloseRoutingEdit()
     {

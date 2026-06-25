@@ -626,26 +626,32 @@
                 <StackPanel IsVisible="{Binding IsAspectRouting}" Spacing="14">
                   <StackPanel DataContext="{Binding OpenProfile}" Spacing="6">
                     <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ" />
-                    <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding CanToggleRouting}">
+                    <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding CanToggleRouting}">
                       <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
                                     OnContent="" OffContent=""
                                     MinWidth="0" />
                       <TextBlock Grid.Column="1" Margin="11,0,0,0"
                                  Text="Использовать маршрутизацию" FontSize="12.5" FontWeight="Medium"
                                  VerticalAlignment="Center" />
-                      <Button Grid.Column="2" Classes="softbtn" Content="Редактировать"
+                    </Grid>
+                    <!-- list picker + a pencil (right, like the profile-name editor) that opens the inline
+                         rule editor; the whole picker hides while that editor is open. -->
+                    <Grid ColumnDefinitions="*,Auto"
+                          IsVisible="{Binding !$parent[Window].DataContext.ShowRoutingEditor}">
+                      <ComboBox Grid.Column="0" Classes="field" ItemsSource="{Binding RoutingListOptions}"
+                                SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding Name}" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <Button Grid.Column="1" Classes="icon" Content="✎" FontSize="14" Margin="6,0,0,0"
                               VerticalAlignment="Center"
                               IsVisible="{Binding $parent[Window].DataContext.CanEditRouting}"
-                              Command="{Binding $parent[Window].DataContext.BeginRoutingEditCommand}" />
+                              Command="{Binding $parent[Window].DataContext.BeginRoutingEditCommand}"
+                              ToolTip.Tip="Редактировать список" />
                     </Grid>
-                    <ComboBox Classes="field" ItemsSource="{Binding RoutingListOptions}"
-                              SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
-                      <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                          <TextBlock Text="{Binding Name}" />
-                        </DataTemplate>
-                      </ComboBox.ItemTemplate>
-                    </ComboBox>
                   </StackPanel>
 
                   <!-- inline rule editor for the selected list (bound to the window VM's RoutingEditor) -->

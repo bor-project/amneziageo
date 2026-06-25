@@ -616,6 +616,20 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"файл профиля новее (v{bundle.Version}); обновите приложение");
         }
 
+        // Import is offered only from inside a profile's settings, so it restores *into* that open profile:
+        // the bundle replaces the open profile in place. Its name stays, so the connection target (which keys
+        // on the name) keeps pointing at it and now carries the imported config — this is what makes a restore
+        // onto a fresh "+ Профиль" placeholder connectable. The target name is args[1]; when it is absent or
+        // unknown (e.g. a CLI import with no open profile) we fall back to creating a fresh, independent profile.
+        var replaceTarget = args.Count > 1 ? args[1] : string.Empty;
+        var replacing = string.IsNullOrWhiteSpace(replaceTarget) ? null : await store.GetBalancerAsync(replaceTarget, ct);
+
+        // Swapping the config out from under a live tunnel would orphan the running member; make the user disconnect.
+        if (replacing is not null && control.Running && string.Equals(replaceTarget, BoundTarget, StringComparison.Ordinal))
+        {
+            return new IpcAck(false, $"профиль {replaceTarget} подключён; отключитесь перед импортом");
+        }
+
         // Config and profile names live in one global namespace (rename refuses a name used by either), so
         // de-duplicate the imported names against both. Routing-list names are a separate space.
         var taken = new HashSet<string>(StringComparer.Ordinal);
@@ -662,11 +676,34 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        var profileBase = string.IsNullOrWhiteSpace(bundle.Profile)
-            ? (configName.Length > 0 ? configName : "Профиль")
-            : bundle.Profile;
-        var profileName = FreeName(profileBase, taken);
-        await store.SaveBalancerAsync(new BalancerGroup(profileName, configName), ct);
+        string profileName;
+        var oldConfigToRemove = string.Empty;
+        if (replacing is not null)
+        {
+            // A restore must carry a config: rebinding the open profile to an empty config (and then deleting
+            // the one it had) would blank a working profile — the very "конфиг пустой" failure this fixes. So a
+            // config-less bundle is refused here rather than allowed to overwrite-then-delete.
+            if (string.IsNullOrEmpty(configName))
+            {
+                return new IpcAck(false, "файл профиля не содержит конфигурацию для восстановления");
+            }
+
+            // Restore in place: keep the open profile's name, point it at the freshly imported config. The
+            // config it used to hold is removed only at the very end (after routing is applied), so a late
+            // failure leaves the old config recoverable rather than the profile half-overwritten.
+            profileName = replacing.Name;
+            oldConfigToRemove = replacing.Config;
+            await store.SaveBalancerAsync(new BalancerGroup(profileName, configName), ct);
+        }
+        else
+        {
+            var profileBase = string.IsNullOrWhiteSpace(bundle.Profile)
+                ? (configName.Length > 0 ? configName : "Профиль")
+                : bundle.Profile;
+            profileName = FreeName(profileBase, taken);
+            await store.SaveBalancerAsync(new BalancerGroup(profileName, configName), ct);
+        }
+
         await EnsureDefaultTargetAsync(profileName, ct);
 
         if (bundle.Routing is { } r)
@@ -678,9 +715,43 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var newListId = await geo.ApplyToRoutingListAsync(0, listName, r.Rules, ct);
             await store.SetProfileRoutingAsync(profileName, newListId, r.Use, ct);
         }
+        else if (replacing is not null)
+        {
+            // The bundle carries no routing; a restore must not leave the replaced profile's old assignment in place.
+            await store.SetProfileRoutingAsync(profileName, null, false, ct);
+        }
 
-        logger.LogInformation("imported profile {Profile} (config '{Config}')", profileName, configName);
+        // Drop the replaced profile's previous config now that the new binding and routing are fully in place.
+        // Removed only when no other profile still binds it (RemoveAsync would otherwise unbind that profile too);
+        // the in-use check sits immediately before the removal so the window for a concurrent rebind is minimal.
+        if (!string.IsNullOrEmpty(oldConfigToRemove)
+            && !string.Equals(oldConfigToRemove, configName, StringComparison.Ordinal)
+            && configRepo.Exists(oldConfigToRemove)
+            && !await ConfigInUseAsync(oldConfigToRemove, ct))
+        {
+            await configRepo.RemoveAsync(oldConfigToRemove, ct);
+        }
+
+        logger.LogInformation(
+            replacing is not null ? "restored profile {Profile} from import (config '{Config}')" : "imported profile {Profile} (config '{Config}')",
+            profileName,
+            configName);
         return new IpcAck(true, profileName);
+    }
+
+    // True when any profile still binds the given config, so removing the config would unbind that profile too.
+    private async Task<bool> ConfigInUseAsync(string config, CancellationToken ct)
+    {
+        foreach (var profileName in await store.ListBalancerNamesAsync(ct))
+        {
+            var profile = await store.GetBalancerAsync(profileName, ct);
+            if (profile is not null && string.Equals(profile.Config, config, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Returns the desired name if free, otherwise appends " (2)", " (3)", … until one is not taken.

@@ -1584,8 +1584,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return ack.Message;
     }
 
-    // Import a profile from a portable JSON bundle (clipboard or file), recreating it as a new, independent
-    // profile. On success the imported profile opens once the next snapshot lands.
+    // Import a profile from a portable JSON bundle (clipboard or file). Import is offered only from inside an
+    // open profile's settings, so the bundle restores *into* that profile — replacing its config, transport,
+    // geo, routing and exclusions in place while keeping its name (and thus its connection-target selection).
+    // On success the (same) profile re-opens once the next snapshot lands.
     public async Task ImportProfileBundleAsync(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -1594,12 +1596,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        var target = OpenProfile?.Name;
         ProfilePortStatus = string.Empty;
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportProfile, [json]));
+        var args = string.IsNullOrEmpty(target) ? new[] { json } : new[] { json, target };
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportProfile, args));
         if (ack.Ok)
         {
             _pendingOpenProfile = ack.Message;
-            ProfilePortStatus = $"Профиль импортирован: {ack.Message}";
+            ProfilePortStatus = string.IsNullOrEmpty(target)
+                ? $"Профиль импортирован: {ack.Message}"
+                : "Профиль восстановлен из файла.";
         }
         else
         {

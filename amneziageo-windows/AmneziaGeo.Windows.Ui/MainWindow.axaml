@@ -898,7 +898,7 @@
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="ИМПОРТ" />
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="Восстановить профиль из файла или буфера обмена — будет создан новый профиль." />
+                               Text="Восстановить этот профиль из файла или буфера обмена. Импорт заменит текущий профиль целиком — его конфигурацию, прокси, гео и маршруты." />
                     <WrapPanel>
                       <Button Classes="softbtn" Content="Вставить" Margin="0,0,6,6"
                               Click="OnProfileImportPaste" ToolTip.Tip="Импортировать профиль из буфера обмена" />

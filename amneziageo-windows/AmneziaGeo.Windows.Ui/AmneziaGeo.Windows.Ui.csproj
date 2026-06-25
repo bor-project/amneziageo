@@ -6,6 +6,9 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.1.<build>. -->
     <Version>1.0.1</Version>
+    <!-- Embed the Win32 icon into AmneziaGeo.Windows.Ui.exe so Explorer, the Start-menu/Desktop shortcuts
+         and the taskbar/pinned button show it (the runtime BuildIcon only sets the live window/tray icon). -->
+    <ApplicationIcon>Assets\AmneziaGeo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,6 +21,14 @@
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
     <!-- Pure-managed camera capture for live QR scanning. -->
     <PackageReference Include="FlashCap" Version="1.11.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Ship the .ico into the publish output so the installer (WiX <Icon> / shortcut / ARP) can reference
+         it; ApplicationIcon above already embeds it into the exe for the shell. -->
+    <None Include="Assets\AmneziaGeo.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

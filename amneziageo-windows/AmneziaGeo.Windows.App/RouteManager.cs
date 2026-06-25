@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -104,9 +105,14 @@ internal sealed partial class RouteManager
     /// called before the tunnel adapter comes up so the best next-hop resolves to the physical gateway,
     /// not the tunnel. Returns true if any exclusion was installed.
     /// </summary>
-    public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs)
+    public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs, bool applyBuiltinFloor)
     {
         var any = false;
+        // The built-in RFC1918 floor applies only when the config has no exclusions row (legacy / safety).
+        // Once a row exists (seeded or user-edited) the list is authoritative — these ranges come from it, so
+        // the user can remove them. Behaviour is preserved because the seed materialises the same ranges.
+        if (applyBuiltinFloor)
+        {
         foreach (var (network, prefix) in LanExclusions)
         {
             var dest = IPAddress.Parse(network);
@@ -125,6 +131,7 @@ internal sealed partial class RouteManager
                 UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
                 any = true;
             }
+        }
         }
 
         // User bypass entries (IP/CIDR from the exclusions list): route each straight out the physical
@@ -237,6 +244,38 @@ internal sealed partial class RouteManager
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The default bypass set, materialised as list entries: the RFC1918 LAN ranges plus any currently
+    /// connected subnet outside them (CGNAT / public-IP LAN). Seeds a fresh config's exclusions and backs the
+    /// "add local networks" button, so what used to be an implicit full-tunnel floor is visible and editable.
+    /// </summary>
+    public IReadOnlyList<string> DefaultExclusionEntries()
+    {
+        var list = LanExclusions.Select(r => $"{r.Network}/{r.Prefix}").ToList();
+        foreach (var subnet in LocalSubnets())
+        {
+            if (!IsWithinDefaultRanges(subnet) && !list.Contains(subnet))
+            {
+                list.Add(subnet);
+            }
+        }
+
+        return list;
+    }
+
+    // Whether a CIDR's network falls inside one of the RFC1918 default ranges, so a connected subnet already
+    // covered by the defaults is not also listed redundantly (e.g. 192.168.1.0/24 under 192.168.0.0/16).
+    private static bool IsWithinDefaultRanges(string cidr)
+    {
+        var slash = cidr.IndexOf('/');
+        if (slash < 0 || !IPAddress.TryParse(cidr[..slash], out var addr))
+        {
+            return false;
+        }
+
+        return LanExclusions.Any(r => InRange(addr, IPAddress.Parse(r.Network), r.Prefix));
     }
 
     // True for an APIPA link-local 169.254/16 network — a DHCP-failed auto-config address with no real LAN

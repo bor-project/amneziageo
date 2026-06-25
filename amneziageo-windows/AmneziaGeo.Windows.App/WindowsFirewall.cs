@@ -79,7 +79,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// carve-out present. Returns false and installs nothing on any failure. Thread-safe with respect
     /// to <see cref="Disable"/> so a tunnel teardown racing the arming cannot leave a stray engine.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, bool applyBuiltinFloor = true)
     {
         lock (_gate)
         {
@@ -124,7 +124,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitTunInterface(engine, luid);
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
-                    PermitLan(engine, extraLanCidrs ?? []); // LAN bypass + user exclusion CIDRs — always permitted under the kill-switch
+                    PermitLan(engine, extraLanCidrs ?? [], applyBuiltinFloor); // LAN bypass (built-in floor when no row) + user exclusion CIDRs
                     if (dualStack)
                     {
                         PermitLanV6(engine); // v6 LAN bypass (ULA + NDP) on a dual-stack tunnel
@@ -293,11 +293,16 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         Add(engine, LayerAleAuthRecvAcceptV4, WeightDhcp, ActionPermit, 0, cond, "Permit inbound DHCP");
     }
 
-    private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs)
+    private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs, bool applyBuiltinFloor)
     {
-        foreach (var cidr in LanCidrsV4)
+        // The built-in RFC1918 LAN permit is the floor for configs with no exclusions row. Once a row exists
+        // the list (extraCidrs) is authoritative, so a user who drops a range has the kill-switch block it.
+        if (applyBuiltinFloor)
         {
-            PermitV4Cidr(engine, cidr);
+            foreach (var cidr in LanCidrsV4)
+            {
+                PermitV4Cidr(engine, cidr);
+            }
         }
 
         // User exclusion CIDRs (e.g. a CGNAT 100.64.0.0/10 or a corporate subnet) must be permitted too,

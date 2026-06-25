@@ -13,6 +13,9 @@ public sealed class StatusPipeClient
     private static readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(30);
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    // Serializes the whole request->ack cycle. The protocol tracks a single pending ack, so only one command
+    // may be in flight at a time — otherwise concurrent callers get each other's responses (see SendCommandAsync).
+    private readonly SemaphoreSlim _commandLock = new(1, 1);
     private readonly Lock _ackGate = new();
     private StreamWriter? _writer;
     private TaskCompletionSource<IpcAck>? _pendingAck;
@@ -87,37 +90,66 @@ public sealed class StatusPipeClient
             return new IpcAck(false, "not connected to agent");
         }
 
-        var tcs = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
-        lock (_ackGate)
-        {
-            _pendingAck = tcs;
-        }
-
         var line = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.CommandType, Command: command), IpcJson.Options);
-        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+
+        // One command in flight at a time: the single _pendingAck slot can pair a response with its request
+        // only if the previous command has been acked first. Two concurrent callers (e.g. two routing-list
+        // editors loading at once) would otherwise overwrite _pendingAck and have their replies cross-delivered
+        // FIFO — the symptom was an editor showing another command's response (the whole geo catalogue instead
+        // of the list's rules). Holding _commandLock across the write AND the ack wait keeps each pair intact.
+        await _commandLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await writer.WriteLineAsync(line.AsMemory(), ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-        {
-            return new IpcAck(false, $"send failed: {ex.Message}");
+            var tcs = new TaskCompletionSource<IpcAck>(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_ackGate)
+            {
+                _pendingAck = tcs;
+            }
+
+            await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await writer.WriteLineAsync(line.AsMemory(), ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+                ClearPendingAck(tcs);
+                return new IpcAck(false, $"send failed: {ex.Message}");
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
+
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                timeout.CancelAfter(_commandTimeout);
+                try
+                {
+                    return await tcs.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    ClearPendingAck(tcs);
+                    return new IpcAck(false, "command timed out");
+                }
+            }
         }
         finally
         {
-            _writeLock.Release();
+            _commandLock.Release();
         }
+    }
 
-        using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
+    // Drops the pending ack slot if it is still the given request's, so a later response cannot resolve a
+    // request that already failed or timed out.
+    private void ClearPendingAck(TaskCompletionSource<IpcAck> tcs)
+    {
+        lock (_ackGate)
         {
-            timeout.CancelAfter(_commandTimeout);
-            try
+            if (ReferenceEquals(_pendingAck, tcs))
             {
-                return await tcs.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return new IpcAck(false, "command timed out");
+                _pendingAck = null;
             }
         }
     }

@@ -667,6 +667,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             : bundle.Profile;
         var profileName = FreeName(profileBase, taken);
         await store.SaveBalancerAsync(new BalancerGroup(profileName, configName), ct);
+        await EnsureDefaultTargetAsync(profileName, ct);
 
         if (bundle.Routing is { } r)
         {
@@ -718,6 +719,22 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return clean.Length == 0 ? "config" : clean;
     }
 
+    // Makes the given profile the connection target when none is selected yet, so a fresh user who just
+    // added (or imported) a profile can connect it straight away. The header connect button drives the
+    // bound target, which would otherwise stay empty and make a connect a silent no-op. Idempotent: once
+    // any target is set this does nothing, so adding further profiles never steals the selection.
+    private async Task EnsureDefaultTargetAsync(string name, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(control.Target))
+        {
+            return;
+        }
+
+        control.SetTarget(name);
+        await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
+        logger.LogInformation("auto-selected profile {Profile} as connection target (none was set)", name);
+    }
+
     private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -735,6 +752,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var existing = await store.GetBalancerAsync(name, ct);
         var updated = new BalancerGroup(name, config);
         await store.SaveBalancerAsync(updated, ct);
+        await EnsureDefaultTargetAsync(name, ct);
         var changed = existing is null || !string.Equals(existing.Config, updated.Config, StringComparison.Ordinal);
 
         // Only disrupt the live session when the *active* profile changed; creating or editing other

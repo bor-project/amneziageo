@@ -141,14 +141,18 @@
                   <TextBlock Grid.Column="0" Text="{Binding OpenProfileName}" FontWeight="SemiBold" FontSize="14"
                              VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                   <Button Grid.Column="1" Classes="icon" Content="✎" FontSize="14"
-                          Command="{Binding BeginProfileNameEditCommand}" ToolTip.Tip="Переименовать" />
+                          Command="{Binding BeginProfileNameEditCommand}" Click="OnBeginProfileNameEdit"
+                          ToolTip.Tip="Переименовать" />
                 </Grid>
-                <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0" IsVisible="{Binding IsEditingProfileName}">
-                  <TextBox Grid.Column="0" Classes="field" Text="{Binding ProfileRename, Mode=TwoWay}"
-                           VerticalAlignment="Center" />
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0" IsVisible="{Binding IsEditingProfileName}">
+                  <TextBox Grid.Column="0" x:Name="ProfileNameBox" Classes="field"
+                           Text="{Binding ProfileRename, Mode=TwoWay}" VerticalAlignment="Center" />
                   <Button Grid.Column="1" Classes="icon" Content="💾" FontSize="14" Margin="6,0,0,0"
                           Command="{Binding RenameProfileCommand}" IsEnabled="{Binding CanSaveProfileName}"
                           ToolTip.Tip="Сохранить имя" />
+                  <Button Grid.Column="2" Classes="icon" Content="✕" FontSize="14" Margin="4,0,0,0"
+                          Command="{Binding CancelProfileNameEditCommand}"
+                          ToolTip.Tip="Отменить переименование" />
                 </Grid>
                 <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap"
                            IsVisible="{Binding IsEditingProfileName}" />

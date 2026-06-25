@@ -105,38 +105,14 @@ internal sealed partial class RouteManager
     /// called before the tunnel adapter comes up so the best next-hop resolves to the physical gateway,
     /// not the tunnel. Returns true if any exclusion was installed.
     /// </summary>
-    public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs, bool applyBuiltinFloor)
+    public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs)
     {
         var any = false;
-        // The built-in RFC1918 floor applies only when the config has no exclusions row (legacy / safety).
-        // Once a row exists (seeded or user-edited) the list is authoritative — these ranges come from it, so
-        // the user can remove them. Behaviour is preserved because the seed materialises the same ranges.
-        if (applyBuiltinFloor)
-        {
-        foreach (var (network, prefix) in LanExclusions)
-        {
-            var dest = IPAddress.Parse(network);
-            var (gateway, interfaceIndex) = FindPhysicalGateway(dest);
-            if (gateway is null)
-            {
-                // No physical route to this range (e.g. no default gateway): leave it; the on-link
-                // connected subnet, if any, still routes directly without an explicit exclusion.
-                continue;
-            }
 
-            var row = NewRow(dest, prefix, interfaceIndex, gateway);
-            var result = CreateIpForwardEntry2(ref row);
-            if (result is NoError or ErrorObjectAlreadyExists)
-            {
-                UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
-                any = true;
-            }
-        }
-        }
-
-        // User bypass entries (IP/CIDR from the exclusions list): route each straight out the physical
-        // gateway so the chosen hosts/subnets stay direct in full tunnel, persisted alongside the LAN
-        // ranges so they are reverted together. IPv4 only — the common LAN/bypass case.
+        // Bypass entries — the runtime default set (RFC1918 ranges + connected subnets, see
+        // DefaultExclusionEntries) when the config has no exclusions row, otherwise the user's saved list.
+        // Route each straight out the physical gateway so the chosen hosts/subnets stay direct in full
+        // tunnel, persisted so they are reverted together. IPv4 only — the common LAN/bypass case.
         foreach (var cidr in extraCidrs)
         {
             var slash = cidr.IndexOf('/');

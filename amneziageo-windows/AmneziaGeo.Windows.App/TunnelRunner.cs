@@ -167,10 +167,6 @@ internal sealed class TunnelRunner(
         // global: an empty list and auto-exclude-LAN on when the config has no stored exclusions yet.
         var configExclusions = await store.GetConfigExclusionsAsync(name);
         var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(configExclusions?.Exclusions ?? string.Empty);
-        // With no exclusions row the built-in RFC1918 LAN floor still applies (legacy / safety). Once a row
-        // exists (seeded at config creation or user-edited) the list is the single source of truth, so the
-        // floor steps aside and the user can drop even the LAN ranges.
-        var applyBuiltinFloor = configExclusions is null;
         var exclusionDomains = new List<string>(parsedExclusionDomains);
         // The WebSocket underlay server's hostname must resolve via the LAN resolver, never through the
         // tunnel: in full tunnel non-matched names go to the tunnel resolver, but the tunnel is not up yet
@@ -180,10 +176,13 @@ internal sealed class TunnelRunner(
         {
             exclusionDomains.Add(wsHost);
         }
-        // Local subnets are no longer auto-harvested here: the user adds the detected subnets to the
-        // exclusions list explicitly (the UI's "add local subnets" action), so whatever should stay direct
-        // is already in parsedCidrs above and is visible/editable.
-        var exclusionCidrs = new List<string>(parsedCidrs);
+        // The default bypass set (the RFC1918 ranges + the machine's currently-connected subnets) is computed
+        // at runtime, never stored: with no exclusions row it is what keeps the LAN direct in full tunnel, so
+        // it always matches the network the host is on right now. Once the user saves a row, that list is
+        // authoritative (they can pare it down — even drop the LAN ranges — or extend it).
+        var exclusionCidrs = configExclusions is null
+            ? new List<string>(routes.DefaultExclusionEntries())
+            : new List<string>(parsedCidrs);
 
         IReadOnlyList<string> redirectServers = [];
 
@@ -239,7 +238,7 @@ internal sealed class TunnelRunner(
         // reachable in parallel by routing the RFC1918 ranges out the physical gateway. Split mode never
         // tunnels the default, so the LAN is already direct and needs no exclusion. Added before the
         // adapter comes up so the next-hop resolves to the physical gateway, not the tunnel.
-        var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs, applyBuiltinFloor);
+        var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs);
 
         // The engine no longer arms its own kill-switch (we split the default route above), so when the
         // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
@@ -257,7 +256,7 @@ internal sealed class TunnelRunner(
         // Under the kill-switch the WebSocket underlay (wstunnel.exe child) must be whitelisted by app-id,
         // or the block-all severs its TCP/TLS lifeline and the full tunnel passes no data.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, applyBuiltinFloor, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, sessionCts.Token));
 
         // Re-flush the OS DNS cache once the tunnel is up. The connect-time flush above runs before the
         // adapter and its routes exist, so a name resolved in the window before the clean resolver's /32
@@ -579,7 +578,7 @@ internal sealed class TunnelRunner(
     /// arming (the session token is cancelled), nothing is left armed: the post-arm re-check disables it,
     /// and teardown's own Disable() is idempotent.
     /// </summary>
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, bool applyBuiltinFloor, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
     {
         try
         {
@@ -589,7 +588,7 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is { } index)
                 {
-                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, applyBuiltinFloor);
+                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs);
                     if (ct.IsCancellationRequested)
                     {
                         firewall.Disable();

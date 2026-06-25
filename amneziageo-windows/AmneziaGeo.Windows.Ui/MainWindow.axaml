@@ -662,14 +662,14 @@
                       <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}">
                         <StackPanel Spacing="6">
                           <TextBlock Classes="label" Text="ИМЯ СПИСКА" />
-                          <TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}" Watermark="напр. openai-route" />
+                          <TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}" Watermark="напр. мой-список" />
                         </StackPanel>
 
                         <StackPanel Spacing="6">
                           <TextBlock Classes="label" Text="ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)" />
                           <Grid ColumnDefinitions="*,Auto">
                             <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
-                                             Watermark="напр. geosite:openai, geoip:de, example.com, 1.2.3.0/24"
+                                             Watermark="напр. geosite:категория, geoip:страна, example.com, 1.2.3.0/24"
                                              Text="{Binding RuleInput, Mode=TwoWay}"
                                              ItemsSource="{Binding GeoSuggestions}"
                                              FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />

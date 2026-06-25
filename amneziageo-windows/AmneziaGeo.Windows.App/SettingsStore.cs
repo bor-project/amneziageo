@@ -18,7 +18,9 @@ internal sealed class SettingsStore(IStateStore store)
             RefreshSeconds = await ReadIntAsync("refresh-seconds", defaults.RefreshSeconds, ct),
             ConnectTimeoutSeconds = await ReadIntAsync("connect-timeout-seconds", defaults.ConnectTimeoutSeconds, ct),
             DeadThresholdSeconds = await ReadIntAsync("dead-threshold-seconds", defaults.DeadThresholdSeconds, ct),
-            UpdateUrl = await ReadStringAsync("update-url", defaults.UpdateUrl, ct),
+            // The update URL is baked into the build (installer config), not a persisted/user setting, so it
+            // is always the baked default - a stale 'update-url' row from older builds must not shadow it.
+            UpdateUrl = defaults.UpdateUrl,
             GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
             GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
         };
@@ -54,7 +56,7 @@ internal sealed class SettingsStore(IStateStore store)
 
         if (StringKeys.Contains(key))
         {
-            // Free-form (e.g. the update URL); an empty value clears it.
+            // Free-form string settings (currently none); an empty value clears it.
             await store.SetSettingAsync(key, value.Trim(), ct);
             return true;
         }
@@ -75,13 +77,8 @@ internal sealed class SettingsStore(IStateStore store)
 
     private static readonly string[] BoolKeys = ["geo-auto-check"];
 
-    private static readonly string[] StringKeys = ["update-url"];
-
-    private async Task<string> ReadStringAsync(string key, string fallback, CancellationToken ct)
-    {
-        var value = await store.GetSettingAsync(key, ct);
-        return value ?? fallback;
-    }
+    // No user-settable string settings: the update URL used to live here but is now baked into the build.
+    private static readonly string[] StringKeys = [];
 
     private async Task<int> ReadIntAsync(string key, int fallback, CancellationToken ct)
     {

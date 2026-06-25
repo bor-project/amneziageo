@@ -7,8 +7,10 @@
     <OutputName>AmneziaGeo-preconfigured-1.0.1-win-x64</OutputName>
 
     <!-- StageDir (the staged self-contained launcher publish + seed files to harvest) is supplied by
-         build-installer-preconfigured.ps1 via -p:StageDir=...; expose it as $(var.StageDir). -->
-    <DefineConstants>StageDir=$(StageDir)</DefineConstants>
+         build-installer-preconfigured.ps1 via -p:StageDir=...; expose it as $(var.StageDir). HasIcon (also
+         from the build, sourced from installer.config.json) gates the ARP/shortcut icon: "false" omits it. -->
+    <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
+    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon)</DefineConstants>
   </PropertyGroup>
 
   <Target Name="EnsureStageDir" BeforeTargets="Build"

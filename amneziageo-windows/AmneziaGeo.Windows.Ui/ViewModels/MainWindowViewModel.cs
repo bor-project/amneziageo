@@ -26,7 +26,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string? _pendingOpenProfile;
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
-    private bool _updateUrlInitialized;
     // Signature (sorted names) of the geo sources that had updates the last time the banner was shown,
     // so a persistent "update available" state isn't re-raised on every snapshot and a dismissed banner
     // stays dismissed until the set of outdated sources changes.
@@ -206,8 +205,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CanEditRouting))]
     private bool _isRoutingEditing;
 
-    // App self-update (#54): the configured metadata URL, the latest check result, and download state.
+    // App self-update (#54): the metadata URL (baked into the build, surfaced read-only via the snapshot to
+    // gate the update UI), the latest check result, and download state.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasUpdateUrl))]
     private string _updateUrl = string.Empty;
 
     [ObservableProperty]
@@ -1098,18 +1099,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value ? "on" : "off"]));
     }
 
-    // Applies the update-related snapshot fields. The URL field is initialised once then left to the
-    // user (saved on «Проверить») so periodic snapshots do not clobber typing; a freshly available
-    // version raises the banner once.
+    /// <summary>
+    /// Whether an update URL is configured (baked into the build from installer.config.json). When false the
+    /// update section and its check control are hidden - there is nothing to check against.
+    /// </summary>
+    public bool HasUpdateUrl => !string.IsNullOrWhiteSpace(UpdateUrl);
+
+    // Applies the update-related snapshot fields. The URL is baked into the build and surfaced read-only
+    // (it drives only HasUpdateUrl, which gates the update UI); a freshly available version raises the banner.
     private void ApplyUpdateState(StatusSnapshot snapshot)
     {
         AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
 
-        if (!_updateUrlInitialized)
-        {
-            UpdateUrl = snapshot.UpdateUrl;
-            _updateUrlInitialized = true;
-        }
+        UpdateUrl = snapshot.UpdateUrl;
 
         UpdateAvailable = snapshot.UpdateAvailable;
         UpdateVersion = snapshot.UpdateVersion;
@@ -1136,8 +1138,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task CheckUpdate()
     {
         UpdateStatus = "Проверка…";
-        // Save the URL first (so the agent and the periodic check use it), then ask for a check.
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["update-url", UpdateUrl ?? string.Empty]));
+        // The URL is baked into the build (installer config), not user-entered; just ask for a check.
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCheckUpdate, []));
         UpdateStatus = ack.Message;
     }

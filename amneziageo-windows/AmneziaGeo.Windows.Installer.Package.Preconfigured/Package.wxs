@@ -39,6 +39,13 @@
     <MajorUpgrade AllowDowngrades="yes" />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- App icon (carried into the staged publish via the Ui project reference) for the Add/Remove Programs
+         entry and shortcuts; omitted entirely when the installer config supplies no icon (HasIcon=false). -->
+    <?if $(var.HasIcon) = "true" ?>
+    <Icon Id="AgIcon.ico" SourceFile="$(var.StageDir)\Assets\AmneziaGeo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AgIcon.ico" />
+    <?endif?>
+
     <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="AmneziaGeo" />
@@ -90,6 +97,21 @@
          keypath so the non-advertised shortcuts pass ICE43/ICE57; both target the exe by path. A manual
          launch elevates via the host's requireAdministrator manifest. -->
     <Component Id="GuiShortcut" Directory="AgMenuFolder">
+<?if $(var.HasIcon) = "true" ?>
+      <Shortcut Id="UiStartMenuShortcut"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.exe"
+                Icon="AgIcon.ico" IconIndex="0"
+                WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="UiDesktopShortcut"
+                Directory="DesktopFolder"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.exe"
+                Icon="AgIcon.ico" IconIndex="0"
+                WorkingDirectory="INSTALLFOLDER" />
+<?else?>
       <Shortcut Id="UiStartMenuShortcut"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
@@ -101,6 +123,7 @@
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.exe"
                 WorkingDirectory="INSTALLFOLDER" />
+<?endif?>
       <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"
                      Type="integer" Value="1" KeyPath="yes" />

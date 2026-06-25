@@ -38,25 +38,17 @@
           <Border DockPanel.Dock="Top" Height="55" Padding="14,0"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
             <Panel>
-              <!-- profiles mode: brand + a gear that opens Settings (the old segmented nav is gone) -->
-              <Grid IsVisible="{Binding !IsSettings}" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+              <!-- brand always shown; the gear (opens Settings) only on the profiles view. The back control
+                   for Settings lives in the RIGHT pane header, so all navigation sits top-right. -->
+              <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                 <TextBlock Grid.Column="0" Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
                            VerticalAlignment="Center" />
-                <Button Grid.Column="1" Classes="icon" Padding="6,4"
+                <Button Grid.Column="1" Classes="icon" Padding="6,4" IsVisible="{Binding !IsSettings}"
                         Command="{Binding NavSettingsCommand}" ToolTip.Tip="Настройки">
                   <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"
                             Foreground="{DynamicResource AgMutedBrush}" />
                 </Button>
               </Grid>
-              <!-- settings mode: a back control returns to the profiles view -->
-              <Button IsVisible="{Binding IsSettings}" Classes="backbtn" HorizontalAlignment="Left"
-                      VerticalAlignment="Center"
-                      Command="{Binding NavHomeCommand}" ToolTip.Tip="К профилям">
-                <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                  <TextBlock Text="←" FontSize="16" VerticalAlignment="Center" />
-                  <TextBlock Text="Настройки" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
-                </StackPanel>
-              </Button>
             </Panel>
           </Border>
 
@@ -123,9 +115,6 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <TextBlock IsVisible="{Binding !HasBalancers}"
-                             Text="Нет профилей. Нажмите «+ Профиль»."
-                             Classes="muted" FontSize="12" Margin="6,12" TextWrapping="Wrap" />
                 </StackPanel>
               </ScrollViewer>
             </DockPanel>
@@ -191,6 +180,24 @@
                     <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                       <TextBlock Text="Маршрутизация" FontWeight="SemiBold" FontSize="13.5" />
                       <TextBlock Text="Что направлять через VPN" FontSize="11.5" Classes="muted"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Grid>
+                </Button>
+                <Button Classes="rowselect" Classes.active="{Binding IsAspectExclusions}" Margin="0,3"
+                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="exclusions">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,7">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               IsVisible="{Binding IsAspectExclusions}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                      <TextBlock Text="Исключения" FontWeight="SemiBold" FontSize="13.5" />
+                      <TextBlock Text="Прямой доступ мимо туннеля" FontSize="11.5" Classes="muted"
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
@@ -360,6 +367,17 @@
               <Button Grid.Column="0" Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
                       IsVisible="{Binding IsProfileDetail}"
                       Command="{Binding BackCommand}" ToolTip.Tip="Назад">
+                <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                  <TextBlock Text="←" FontSize="16" VerticalAlignment="Center" />
+                  <TextBlock Text="Назад" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+
+              <!-- back from Settings to the profiles view: lives here (top of the right pane) so all
+                   navigation is top-right, consistent with the profile-detail back above. -->
+              <Button Grid.Column="0" Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
+                      IsVisible="{Binding IsSettings}"
+                      Command="{Binding NavHomeCommand}" ToolTip.Tip="К профилям">
                 <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                   <TextBlock Text="←" FontSize="16" VerticalAlignment="Center" />
                   <TextBlock Text="Назад" FontSize="12.5" FontWeight="Medium" VerticalAlignment="Center" />
@@ -705,6 +723,17 @@
                           </WrapPanel>
                         </StackPanel>
 
+                        <!-- Save persists the list and builds the share QR below; the QR is produced only
+                             here, never live while typing (that swapped the Image and stole input focus).
+                             Close collapses the editor back to the picker (window VM command). -->
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <Button Classes="accent" Content="Сохранить" Command="{Binding SaveCommand}"
+                                  IsEnabled="{Binding !IsBusy}" ToolTip.Tip="Сохранить список и обновить QR" />
+                          <Button Classes="softbtn" Content="Закрыть"
+                                  Command="{Binding $parent[Window].DataContext.CloseRoutingEditCommand}"
+                                  ToolTip.Tip="Закрыть редактор" />
+                        </StackPanel>
+
                         <!-- shareable QR of the list (name + rules); hidden when it does not fit -->
                         <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
                                 IsVisible="{Binding HasQr}">
@@ -721,12 +750,17 @@
                             Command="{Binding DeleteRoutingListEditCommand}" Content="Удалить список" />
                   </StackPanel>
 
-                  <!-- Исключения (перенесено сюда из общих настроек, #14): per-profile список байпаса —
-                       домены остаются на локальном DNS, IP/CIDR идут напрямую. Кнопка «Добавить локальные
-                       сети» (#24) подставляет обнаруженные подсети в список (мерж, без дублей) — вместо
-                       прежнего невидимого авто-флага. Привязано к редактору открытого конфига ConfigExclusions. -->
+                </StackPanel>
+
+                <!-- Исключения (вынесено в свой аспект, #29): per-profile список байпаса — домены остаются на
+                     локальном DNS, IP/CIDR идут напрямую. Кнопка «Добавить локальные сети» (#24) подставляет
+                     обнаруженные подсети (мерж, без дублей). Привязано к редактору открытого конфига
+                     ConfigExclusions, с гейтом IsConfigManage как у аспектов «Прокси» / «DNS». -->
+                <StackPanel IsVisible="{Binding IsAspectExclusions}" Spacing="12">
+                  <TextBlock Classes="label" Text="ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)" />
+                  <TextBlock IsVisible="{Binding !IsConfigManage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                             Text="Сначала добавьте конфигурацию в разделе «Конфигурация»." />
                   <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="8" DataContext="{Binding ConfigExclusions}">
-                    <TextBlock Classes="label" Text="ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)" />
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                                Text="Что НЕ заворачивать в туннель: домены (резолвятся локальным DNS) или IP/подсети (идут напрямую). По одному в строке. Локалхост, локальная сеть (10.x, 172.16-31.x, 192.168.x), .local/.lan и подобные уже исключены по умолчанию." />
                     <StackPanel Spacing="4" Margin="0,2">

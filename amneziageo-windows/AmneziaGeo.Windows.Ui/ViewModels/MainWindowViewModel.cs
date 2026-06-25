@@ -759,6 +759,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // When the routing editor is swapped out (list switch, close, profile change, disconnect), detach its
+    // auto-save: a persisted list with a queued edit is flushed so navigating away does not lose it, while an
+    // un-persisted "+ Новый список" draft is abandoned (so it leaves no orphan).
+    partial void OnRoutingEditorChanging(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
+    {
+        oldValue?.DetachAutoSave();
+    }
+
     // Build (or keep) the inline rule editor for the open profile's selected routing list. Only runs on
     // the Маршрутизация aspect so opening a profile does not fetch rules the user may never look at.
     private void SyncProfileRoutingEditor()
@@ -1674,9 +1682,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         IsRoutingEditing = true;
     }
 
-    // "Закрыть": collapse the inline rule editor back to just the picker. An in-progress NEW list is dropped
-    // (a real, saved list stays in the catalogue and reopens via "Редактировать"); nothing persists here, so
-    // unsaved edits are discarded - saving is now always explicit (the "Сохранить" button in the editor).
+    // "Закрыть": collapse the inline rule editor back to just the picker. Edits auto-save (debounced), so a
+    // real (already-saved) list's pending change is flushed when the editor is detached; an in-progress NEW
+    // list that was never named/saved is simply dropped (there is no Save button anymore).
     [RelayCommand]
     private void CloseRoutingEdit()
     {

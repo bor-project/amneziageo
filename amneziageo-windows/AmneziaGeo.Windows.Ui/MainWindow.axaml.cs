@@ -378,6 +378,22 @@ public sealed partial class MainWindow : Window
         vm.StatusMessage = "Сохранено.";
     }
 
+    // "Показать QR": render the list (name + rules) as a QR in a dialog. On demand, so the editor never holds
+    // a live QR that would swap its Image and steal input focus.
+    private async void OnRoutingShowQr(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
+        {
+            return;
+        }
+
+        var dialog = new QrDialog
+        {
+            DataContext = new QrDialogViewModel("QR списка маршрутизации", vm.BuildTransferPayload(), vm.SuggestedFileName),
+        };
+        await dialog.ShowDialog(this);
+    }
+
     private async void OnRoutingImportPaste(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: RoutingListEditorViewModel vm })

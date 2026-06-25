@@ -54,6 +54,11 @@
       <ComponentRef Id="GuiShortcut" />
     </Feature>
 
+    <!-- App icon (same .ico embedded into Ui.exe) for the shortcuts and the Add/Remove Programs entry.
+         Sourced from the UI publish output staged under Assets\ by build-installer.ps1. -->
+    <Icon Id="AgIcon.ico" SourceFile="$(var.StageDir)\Assets\AmneziaGeo.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AgIcon.ico" />
+
     <!-- On full removal (including the remove phase of a major upgrade) mop up any leftover transient
          per-tunnel services. The active tunnel is already torn down by the AmneziaGeoAgent service's
          own graceful stop (ServiceControl below), which reverts its routes / DNS / firewall; this only
@@ -120,12 +125,14 @@
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
+                Icon="AgIcon.ico" IconIndex="0"
                 WorkingDirectory="INSTALLFOLDER" />
       <Shortcut Id="UiDesktopShortcut"
                 Directory="DesktopFolder"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
+                Icon="AgIcon.ico" IconIndex="0"
                 WorkingDirectory="INSTALLFOLDER" />
       <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"

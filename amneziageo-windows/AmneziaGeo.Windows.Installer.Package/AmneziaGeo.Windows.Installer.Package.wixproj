@@ -7,8 +7,11 @@
     <OutputName>AmneziaGeo-1.0.1-win-x64</OutputName>
 
     <!-- StageDir (the staged self-contained publish to harvest) is supplied by build-installer.ps1
-         via -p:StageDir=...; expose it to the WXS preprocessor as $(var.StageDir). -->
-    <DefineConstants>StageDir=$(StageDir)</DefineConstants>
+         via -p:StageDir=...; expose it to the WXS preprocessor as $(var.StageDir). HasIcon (also from
+         build-installer.ps1, sourced from installer.config.json) gates the ARP/shortcut icon: "false"
+         omits it entirely. -->
+    <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
+    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon)</DefineConstants>
   </PropertyGroup>
 
   <Target Name="EnsureStageDir" BeforeTargets="Build"

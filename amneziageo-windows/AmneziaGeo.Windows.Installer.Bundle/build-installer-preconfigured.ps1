@@ -49,6 +49,39 @@ $stage    = Join-Path $bundleDir 'stage-preconfigured'
 $confFile = Split-Path $ConfigPath -Leaf                     # bor123.conf
 $confName = [System.IO.Path]::GetFileNameWithoutExtension($confFile)  # bor123
 
+# ---- installer config (installer.config.json): icon embedded into AmneziaGeo.exe + the ARP/shortcuts;
+# updateUrl baked into the app; signingCert signs the MSI. Each optional - null/empty leaves it off. ----
+$cfgPath = Join-Path $bundleDir 'installer.config.json'
+$cfg = if (Test-Path $cfgPath) { Get-Content $cfgPath -Raw | ConvertFrom-Json } else { $null }
+
+$updateUrl = if ($cfg -and $cfg.updateUrl) { [string]$cfg.updateUrl } else { '' }
+$updateProps = if ($updateUrl) { @("-p:UpdateUrl=$updateUrl") } else { @() }
+
+$iconAbs = ''
+if ($cfg -and $cfg.iconPath) {
+    $p = [string]$cfg.iconPath
+    $iconAbs = if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $bundleDir $p }
+    $iconAbs = [System.IO.Path]::GetFullPath($iconAbs)
+    if (-not (Test-Path $iconAbs)) { throw "iconPath '$p' set in installer.config.json but not found at $iconAbs" }
+}
+$hasIcon = if ($iconAbs) { 'true' } else { 'false' }
+$iconProps = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$iconAbs") } else { @('-p:HasIcon=false') }
+Write-Host "== config: icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+
+function Invoke-Sign([string]$file) {
+    if (-not ($cfg -and $cfg.signingCert)) { return }
+    $sc = $cfg.signingCert
+    $a = @('sign', '/fd', 'SHA256')
+    if ($sc.timestampUrl) { $a += @('/tr', [string]$sc.timestampUrl, '/td', 'SHA256') }
+    if ($sc.thumbprint) { $a += @('/sha1', [string]$sc.thumbprint) }
+    elseif ($sc.pfxPath) { $a += @('/f', [string]$sc.pfxPath); if ($sc.password) { $a += @('/p', [string]$sc.password) } }
+    else { Write-Host '   signingCert set but neither thumbprint nor pfxPath given - skipping signing'; return }
+    $a += $file
+    Write-Host "== sign $([System.IO.Path]::GetFileName($file)) =="
+    & signtool.exe @a
+    if ($LASTEXITCODE -ne 0) { throw "signtool failed on $file ($LASTEXITCODE)" }
+}
+
 # ---- version: 1.0.1.<commit count> (4th field always increasing) ----
 $build = (& git -C $win rev-list --count HEAD).Trim()
 if (-not $build) { $build = '0' }
@@ -60,7 +93,7 @@ if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Write-Host '== publish launcher (AmneziaGeo.exe, self-contained) =='
-dotnet publish $launcherProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version -o $stage
+dotnet publish $launcherProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps $iconProps -o $stage
 if ($LASTEXITCODE -ne 0) { throw "launcher publish failed ($LASTEXITCODE)" }
 
 # ---- 2. stage the seed (appsettings.json + seed\<conf>) ----
@@ -100,13 +133,14 @@ Write-Host "== seeded: config '$confName', WebSocket enabled=$wsEnabled, host=$w
 
 # ---- 3. build the MSI from the stage ----
 Write-Host '== build preconfigured MSI =='
-dotnet build $msiProj -c $Configuration -p:StageDir=$stage
+dotnet build $msiProj -c $Configuration -p:StageDir=$stage "-p:HasIcon=$hasIcon"
 if ($LASTEXITCODE -ne 0) { throw "MSI build failed ($LASTEXITCODE)" }
 
 $msiBin = Join-Path (Split-Path $msiProj -Parent) 'bin'
 $msi = Get-ChildItem -Recurse $msiBin -Filter *.msi -ErrorAction SilentlyContinue |
        Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $msi) { throw 'MSI not found under bin after build.' }
+Invoke-Sign $msi.FullName
 
 Write-Host '== result =='
 $msi | Select-Object FullName, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}

@@ -12,6 +12,12 @@
          already-elevated dev shell is not blocked by the requireAdministrator linkage; the logon
          scheduled task launches the Release build elevated without a prompt. -->
     <ApplicationManifest Condition="'$(Configuration)' == 'Release'">app.manifest</ApplicationManifest>
+    <!-- Icon from the installer build (installer.config.json), same contract as ui.csproj: HasIcon=false omits
+         it, IconFile overrides the source. Embeds into AmneziaGeo.exe (the shipped single-process product);
+         the staged Assets\AmneziaGeo.ico (carried in via the Ui project reference) feeds the MSI ARP/shortcut. -->
+    <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
+    <IconFile Condition="'$(IconFile)' == ''">..\..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</IconFile>
+    <ApplicationIcon Condition="'$(HasIcon)' == 'true'">$(IconFile)</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

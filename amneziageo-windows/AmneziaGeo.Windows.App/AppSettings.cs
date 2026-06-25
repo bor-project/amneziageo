@@ -1,3 +1,6 @@
+using System.Linq;
+using System.Reflection;
+
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
@@ -5,6 +8,13 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed record AppSettings
 {
+    // The update URL baked into the assembly at build time (App.csproj AssemblyMetadata, fed from
+    // installer.config.json by build-installer.ps1). Empty when the build configured no update URL.
+    private static readonly string BakedUpdateUrl =
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "AmneziaGeo.UpdateUrl")?.Value ?? string.Empty;
+
     /// <summary>
     /// How often tunneled domains are re-resolved, in seconds.
     /// </summary>
@@ -22,9 +32,10 @@ internal sealed record AppSettings
 
     /// <summary>
     /// URL of the update metadata file (JSON with version/description/setup). Empty disables update
-    /// checks. The installer is expected to sit next to this file (resolved relative to it).
+    /// checks (and hides their UI). The installer is expected to sit next to this file (resolved relative
+    /// to it). Defaults to the value baked into the build from installer.config.json.
     /// </summary>
-    public string UpdateUrl { get; init; } = string.Empty;
+    public string UpdateUrl { get; init; } = BakedUpdateUrl;
 
     /// <summary>
     /// When set, the agent periodically checks the geo sources for a newer remote file (without

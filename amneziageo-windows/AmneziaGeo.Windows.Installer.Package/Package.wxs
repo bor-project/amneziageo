@@ -55,9 +55,12 @@
     </Feature>
 
     <!-- App icon (same .ico embedded into Ui.exe) for the shortcuts and the Add/Remove Programs entry.
-         Sourced from the UI publish output staged under Assets\ by build-installer.ps1. -->
+         Sourced from the UI publish output staged under Assets\ by build-installer.ps1. Omitted entirely
+         when the installer config supplies no icon (HasIcon=false). -->
+    <?if $(var.HasIcon) = "true" ?>
     <Icon Id="AgIcon.ico" SourceFile="$(var.StageDir)\Assets\AmneziaGeo.ico" />
     <Property Id="ARPPRODUCTICON" Value="AgIcon.ico" />
+    <?endif?>
 
     <!-- On full removal (including the remove phase of a major upgrade) mop up any leftover transient
          per-tunnel services. The active tunnel is already torn down by the AmneziaGeoAgent service's
@@ -121,6 +124,7 @@
          keypath (the per-user shortcut data) so the non-advertised shortcuts pass ICE43/ICE57; both
          target the exe by path. -->
     <Component Id="GuiShortcut" Directory="AgMenuFolder">
+<?if $(var.HasIcon) = "true" ?>
       <Shortcut Id="UiStartMenuShortcut"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
@@ -134,6 +138,19 @@
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
                 Icon="AgIcon.ico" IconIndex="0"
                 WorkingDirectory="INSTALLFOLDER" />
+<?else?>
+      <Shortcut Id="UiStartMenuShortcut"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="UiDesktopShortcut"
+                Directory="DesktopFolder"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+<?endif?>
       <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"
                      Type="integer" Value="1" KeyPath="yes" />

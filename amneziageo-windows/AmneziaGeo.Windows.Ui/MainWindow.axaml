@@ -1098,16 +1098,15 @@
                     <TextBlock Grid.Column="1" Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
                   </Grid>
 
-                  <!-- Update: configurable metadata URL, manual check, and download+install. -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="15,12">
+                  <!-- Update: manual check + download/install. The metadata URL is baked into the build
+                       (installer config), not shown/editable; the section is hidden when no URL is
+                       configured (no updates -> no check UI). -->
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="15,12"
+                          IsVisible="{Binding HasUpdateUrl}">
                     <StackPanel Spacing="9">
                       <TextBlock Text="ОБНОВЛЕНИЕ" Classes="section" />
-                      <TextBlock Text="URL файла версии (установщик берётся рядом с ним)" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                      <Grid ColumnDefinitions="*,Auto">
-                        <TextBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
-                                 Text="{Binding UpdateUrl, Mode=TwoWay}" Watermark="https://.../version.json" />
-                        <Button Grid.Column="1" Classes="softbtn" Content="Проверить" Command="{Binding CheckUpdateCommand}" />
-                      </Grid>
+                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="Проверить обновления"
+                              Command="{Binding CheckUpdateCommand}" />
                       <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                       <StackPanel Spacing="6" IsVisible="{Binding UpdateAvailable}">
                         <TextBlock Text="{Binding UpdateVersion, StringFormat='Доступна версия {0}'}" FontSize="13" FontWeight="SemiBold" />

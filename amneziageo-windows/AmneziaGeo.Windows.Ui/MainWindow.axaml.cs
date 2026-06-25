@@ -7,6 +7,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using AmneziaGeo.Windows.Ui.Services;
 using AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -23,6 +24,19 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+    }
+
+    // After the ✎ command flips the profile header into its inline name editor, move keyboard focus into the
+    // box and select its text so the user can type immediately — the editor is otherwise only made visible,
+    // not focused. Deferred to Background priority so it runs after the IsVisible binding has applied.
+    private void OnBeginProfileNameEdit(object? sender, RoutedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var box = this.FindControl<TextBox>("ProfileNameBox");
+            box?.Focus();
+            box?.SelectAll();
+        }, DispatcherPriority.Background);
     }
 
     private async void OnNewConfigBrowse(object? sender, RoutedEventArgs e)

@@ -704,10 +704,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         // Open the profile's single configuration so its editors (text / proxy) are available on the rail.
         OpenConfig = string.IsNullOrEmpty(newValue?.Config) ? null : newValue!.Config;
-        ProfileRename = newValue?.Name ?? string.Empty;
-        ProfileRenameStatus = string.Empty;
+
+        // Reset the inline rename editor only when the profile identity actually changes. A background
+        // snapshot can re-assign the open profile to a refreshed instance of the SAME profile; without this
+        // guard that would wipe the half-typed name and close the editor mid-edit (the reported focus loss).
+        var sameProfile = oldValue is not null && newValue is not null
+            && string.Equals(oldValue.Name, newValue.Name, StringComparison.Ordinal);
+        if (!sameProfile)
+        {
+            ProfileRename = newValue?.Name ?? string.Empty;
+            ProfileRenameStatus = string.Empty;
+            IsEditingProfileName = false;
+        }
         ProfilePortStatus = string.Empty;
-        IsEditingProfileName = false;
 
         if (oldValue is not null)
         {
@@ -1476,6 +1485,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ProfileRename = OpenProfileName;
         ProfileRenameStatus = string.Empty;
         IsEditingProfileName = true;
+    }
+
+    // "✕" next to the inline name editor: leave rename mode without saving, restoring the current name.
+    [RelayCommand]
+    private void CancelProfileNameEdit()
+    {
+        ProfileRename = OpenProfileName;
+        ProfileRenameStatus = string.Empty;
+        IsEditingProfileName = false;
     }
 
     // refused rename (name taken, or it is the running profile) the view stays put and shows why.

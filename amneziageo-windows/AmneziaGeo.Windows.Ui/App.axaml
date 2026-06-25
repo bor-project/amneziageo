@@ -52,7 +52,7 @@
       <Setter Property="FontFamily" Value="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
     </Style>
 
-    <!-- Button.seg : sidebar nav segment — compact, stretches to fill its (equal) column. -->
+    <!-- Button.seg : sidebar nav segment - compact, stretches to fill its (equal) column. -->
     <Style Selector="Button.seg">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -110,7 +110,7 @@
       <Setter Property="CornerRadius" Value="9" />
     </Style>
 
-    <!-- danger : a destructive action (delete profile). Outlined red — literal colours so it reads on
+    <!-- danger : a destructive action (delete profile). Outlined red - literal colours so it reads on
          both themes without depending on a theme brush. -->
     <Style Selector="Button.danger">
       <Setter Property="Background" Value="Transparent" />
@@ -209,7 +209,7 @@
 
     <!-- ============================================================================================
          ONE place that governs ALL button interaction (classed buttons here AND plain buttons in the
-         dialogs). The rule: a button never recolours on pointer-over / press / disabled — the
+         dialogs). The rule: a button never recolours on pointer-over / press / disabled - the
          content-presenter is pinned to the control's OWN Background / Foreground / BorderBrush in
          every state, so whatever a class sets (or .active sets) is exactly what shows, hovered or not.
          The ONLY feedback is a subtle press opacity; disabled is dimmed. No per-class hover styles
@@ -255,7 +255,7 @@
 
     <!-- ONE place for text-input borders (classed .field AND plain dialog text boxes / the
          AutoCompleteBox's inner text box). FluentTheme paints the hover/focus border on the template
-         PART (Border#PART_BorderElement), so it MUST be pinned there — a control-level setter never
+         PART (Border#PART_BorderElement), so it MUST be pinned there - a control-level setter never
          reaches it. Same neutral secondary border in every state: no pointer-over / focus recolour,
          no accent focus underline, no transition fade. -->
     <Style Selector="TextBox /template/ Border#PART_BorderElement">
@@ -345,7 +345,7 @@
 
     <!-- Connect-control spinner: a single accent arc that travels around the ring by animating
          StrokeDashOffset (the dash "marches" along the stroke). This moves the arc WITHOUT a rotation
-         transform — rotations silently fail here (see Control.spin), but StrokeDashOffset is a plain
+         transform - rotations silently fail here (see Control.spin), but StrokeDashOffset is a plain
          render property animated like opacity. The dash pattern (one dash + one gap ≈ the circumference)
          shows a single arc; one full offset period = one revolution. Idle invisible; .spinning shows it. -->
     <Style Selector="Ellipse.connspin">
@@ -361,7 +361,7 @@
       </Style.Animations>
     </Style>
 
-    <!-- Control.pulse : opacity breathing — a robust "busy" indicator (pure opacity, no transform so it
+    <!-- Control.pulse : opacity breathing - a robust "busy" indicator (pure opacity, no transform so it
          cannot silently fail on a transform-origin/RenderTransform quirk the way a rotation can). -->
     <Style Selector="Control.pulse">
       <Style.Animations>

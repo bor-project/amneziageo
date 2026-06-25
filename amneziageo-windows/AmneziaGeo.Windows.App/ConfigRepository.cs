@@ -103,7 +103,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
     /// <summary>
     /// Overwrites an existing configuration's wg-quick text in place (manual edit). The file (and thus the
-    /// config's profile memberships, geo, and routing state) is preserved — only its contents change.
+    /// config's profile memberships, geo, and routing state) is preserved - only its contents change.
     /// </summary>
     public void EditFromText(string name, string text)
     {

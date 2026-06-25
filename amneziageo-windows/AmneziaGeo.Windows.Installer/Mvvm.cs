@@ -5,7 +5,7 @@ using System.Windows.Input;
 namespace AmneziaGeo.Windows.Installer;
 
 /// <summary>
-/// Minimal INotifyPropertyChanged base — the BA stays lean (no MVVM toolkit dependency) so its
+/// Minimal INotifyPropertyChanged base - the BA stays lean (no MVVM toolkit dependency) so its
 /// self-contained publish payload is small.
 /// </summary>
 public abstract class ObservableObject : INotifyPropertyChanged

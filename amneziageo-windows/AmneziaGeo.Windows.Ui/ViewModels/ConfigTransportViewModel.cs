@@ -11,7 +11,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// toggle, the server address, the TLS port, an authorization mode (none / basic login+password / path
 /// token) with its inputs, and a server-setup hint. The mode + inputs are folded into one stored address
 /// string (a bare host, or a <c>wss://[user:pass@]host:port[/token]</c> URL) on save and parsed back on
-/// load — the agent already understands both auth forms from that single field. Saving sends set-websocket.
+/// load - the agent already understands both auth forms from that single field. Saving sends set-websocket.
 /// </summary>
 internal sealed partial class ConfigTransportViewModel : ViewModelBase
 {
@@ -105,14 +105,14 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
                 $"wstunnel server wss://0.0.0.0:{wsPort} \\\n" +
                 restrictLine +
                 $"  --tls-certificate <fullchain.pem> --tls-private-key <privkey.pem>\n\n" +
-                $"Где fullchain/privkey — уже имеющийся сертификат сервера. " +
+                $"Где fullchain/privkey - уже имеющийся сертификат сервера. " +
                 $"Откройте TCP {wsPort} в фаерволе. Клиент завернёт UDP AmneziaWG в этот WebSocket.";
 
             if (IsBasicAuth && WebSocketUser.Trim().Length > 0)
             {
                 hint +=
                     "\n\nАвторизация «логин и пароль»: клиент шлёт заголовок Authorization: Basic. " +
-                    "На сервере включите проверку — wstunnel запускают с --restrict-config <yaml>, где задают " +
+                    "На сервере включите проверку - wstunnel запускают с --restrict-config <yaml>, где задают " +
                     "разрешённый логин/пароль (Authorization). Логин/пароль НЕ обязаны совпадать с конфигом AmneziaWG.";
             }
             else if (IsTokenAuth && token.Length > 0)
@@ -137,7 +137,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         {
             if (UseWebSocket && (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var validate) || validate is < 1 or > 65535))
             {
-                StatusMessage = "Укажите корректный порт WebSocket (1–65535).";
+                StatusMessage = "Укажите корректный порт WebSocket (1-65535).";
                 return;
             }
 
@@ -162,7 +162,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
 
     /// <summary>
     /// Serialises the current WebSocket settings (enabled, port, composed address incl. auth) to a
-    /// portable blob for copy / save — the same share flow a config has.
+    /// portable blob for copy / save - the same share flow a config has.
     /// </summary>
     public string BuildTransferPayload()
     {
@@ -190,7 +190,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         WebSocketUser = user;
         WebSocketPassword = password;
         WebSocketToken = token;
-        StatusMessage = "Импортировано — нажмите «Сохранить», чтобы применить.";
+        StatusMessage = "Импортировано - нажмите «Сохранить», чтобы применить.";
         return true;
     }
 

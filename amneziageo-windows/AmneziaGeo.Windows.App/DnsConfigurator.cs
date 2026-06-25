@@ -8,7 +8,7 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Points network adapters' DNS at the loopback proxy and restores them, via WMI
-/// (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder) — the same mechanism
+/// (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder) - the same mechanism
 /// Set-DnsClientServerAddress uses, in-process (no process spawn). On this OS the pure-P/Invoke
 /// SetInterfaceDnsSettings is a no-op and a bare registry write isn't honored without the WMI/CIM
 /// notify, so WMI is the only reliable no-spawn option (needs BuiltInComInteropSupport).
@@ -72,7 +72,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
                 saved[index] = current.Where(s => !proxyServers.Contains(s) && !IsLoopback(s)).ToArray();
                 SetDns(adapter, proxyServers);
                 // WMI SetDNSServerSearchOrder is IPv4-ONLY: it leaves the adapter's IPv6 DNS (often the
-                // router's fe80:: resolver) in place, and Windows will use it — handing back the local
+                // router's fe80:: resolver) in place, and Windows will use it - handing back the local
                 // network's POISONED answer for a geo-blocked apex (e.g. chatgpt.com) that then bypasses
                 // the proxy entirely. Point IPv6 DNS at the proxy's ::1 too so every query reaches us.
                 RedirectV6Dns(index);
@@ -104,8 +104,8 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 
     /// <summary>
     /// Clears the OS DNS resolver cache (the same call <c>ipconfig /flushdns</c> makes). Run right after
-    /// the redirect to the loopback proxy is applied: without it, a domain resolved before connecting —
-    /// e.g. a popular site like youtube.com already in the cache — is served from the cache and never
+    /// the redirect to the loopback proxy is applied: without it, a domain resolved before connecting -
+    /// e.g. a popular site like youtube.com already in the cache - is served from the cache and never
     /// reaches the proxy, so it is never matched and never routed into the tunnel until its TTL expires
     /// (split routing silently misses it while its uncached CDN subdomains do get tracked). Also run on
     /// teardown so proxy answers carrying tunnel-routed IPs do not linger. Best-effort; never throws.
@@ -161,7 +161,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         {
             // Empty originals => the adapter was on automatic (DHCP); resetting to none reverts it.
             SetAdapter(index, original);
-            // Hand IPv6 DNS back to automatic (re-acquired via RA/DHCPv6) — it was redirected to ::1.
+            // Hand IPv6 DNS back to automatic (re-acquired via RA/DHCPv6) - it was redirected to ::1.
             ResetV6Dns(index);
         }
     }

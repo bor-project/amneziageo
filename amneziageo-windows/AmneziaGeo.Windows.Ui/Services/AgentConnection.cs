@@ -7,7 +7,7 @@ namespace AmneziaGeo.Windows.Ui.Services;
 /// </summary>
 internal sealed class AgentConnection : IDisposable
 {
-    // AnnounceUi: this is the real UI, so mark the pipe connection as a presence session — the agent keeps
+    // AnnounceUi: this is the real UI, so mark the pipe connection as a presence session - the agent keeps
     // the tunnel up only while a UI is connected and disconnects it shortly after the window closes/crashes.
     private readonly StatusPipeClient _client = new() { AnnounceUi = true };
     private readonly CancellationTokenSource _cts = new();

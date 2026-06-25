@@ -21,7 +21,7 @@ internal sealed class BalancerRunner(
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
     // How long a connect attempt tolerates no handshake AND zero bytes received before treating the config
-    // as unreachable — the data-driven failure signal (the server never answered our handshake
+    // as unreachable - the data-driven failure signal (the server never answered our handshake
     // initiations). ConnectTimeoutSeconds stays the absolute backstop.
     private static readonly TimeSpan _noResponseWindow = TimeSpan.FromSeconds(12);
 
@@ -104,7 +104,7 @@ internal sealed class BalancerRunner(
         }
 
         // The target names neither a profile nor a config. Either nothing is selected yet (clean install)
-        // or the bound profile/config was deleted — a broken binding. Drop any dangling selection so the
+        // or the bound profile/config was deleted - a broken binding. Drop any dangling selection so the
         // UI stops showing a phantom target, and keep the supervisor alive on a nameless empty profile so
         // it idles (the pipe/status stay up) until a profile is created and selected.
         if (!string.IsNullOrEmpty(name))
@@ -200,7 +200,7 @@ internal sealed class BalancerRunner(
                 }
                 else
                 {
-                    logger.LogWarning("connect failed: {Config} ({Profile}) — {Reason}", config, group.Name, reason);
+                    logger.LogWarning("connect failed: {Config} ({Profile}) - {Reason}", config, group.Name, reason);
                 }
 
                 Stop(config);
@@ -345,7 +345,7 @@ internal sealed class BalancerRunner(
                     return true;
                 }
 
-                // The pipe answered: the per-tunnel service started and its engine is up — distinguishes a
+                // The pipe answered: the per-tunnel service started and its engine is up - distinguishes a
                 // service that never launched from one that launched but the server stays silent.
                 if (!sawService)
                 {
@@ -362,10 +362,10 @@ internal sealed class BalancerRunner(
 
                 // Data-driven failure: the engine has had time to send handshake initiations (TxBytes grows),
                 // but the server has returned nothing (no handshake, zero rx). That is the structured form of
-                // the engine's "handshake did not complete" — give up now rather than waiting the backstop.
+                // the engine's "handshake did not complete" - give up now rather than waiting the backstop.
                 if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
                 {
-                    logger.LogWarning("{Member}: server did not answer — no handshake, 0 bytes received in {Sec}s (sent {Tx} B); unreachable",
+                    logger.LogWarning("{Member}: server did not answer - no handshake, 0 bytes received in {Sec}s (sent {Tx} B); unreachable",
                         member, (int)_noResponseWindow.TotalSeconds, status.TxBytes);
                     break;
                 }

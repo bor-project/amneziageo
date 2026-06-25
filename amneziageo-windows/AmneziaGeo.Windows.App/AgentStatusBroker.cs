@@ -21,7 +21,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     // short grace. Subset of _clients; guarded by _gate.
     private readonly HashSet<PipeConnection> _uiSessions = [];
 
-    // Pending "UI gone" teardown, cancelled if a UI re-attaches within the grace window — this covers the
+    // Pending "UI gone" teardown, cancelled if a UI re-attaches within the grace window - this covers the
     // UI client's own auto-reconnect after a transient pipe drop, so the tunnel does not flap. Guarded by _gate.
     private CancellationTokenSource? _teardownGrace;
 
@@ -100,7 +100,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             connection.Dispose();
             logger.LogInformation("status client disconnected");
 
-            // Only a UI session leaving can end the tunnel — a transient command client (the CLI) never
+            // Only a UI session leaving can end the tunnel - a transient command client (the CLI) never
             // does. Done after releasing the lock so the grace-teardown scheduling does not run under it.
             if (wasUi)
             {
@@ -618,7 +618,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         // Import is offered only from inside a profile's settings, so it restores *into* that open profile:
         // the bundle replaces the open profile in place. Its name stays, so the connection target (which keys
-        // on the name) keeps pointing at it and now carries the imported config — this is what makes a restore
+        // on the name) keeps pointing at it and now carries the imported config - this is what makes a restore
         // onto a fresh "+ Профиль" placeholder connectable. The target name is args[1]; when it is absent or
         // unknown (e.g. a CLI import with no open profile) we fall back to creating a fresh, independent profile.
         var replaceTarget = args.Count > 1 ? args[1] : string.Empty;
@@ -681,7 +681,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         if (replacing is not null)
         {
             // A restore must carry a config: rebinding the open profile to an empty config (and then deleting
-            // the one it had) would blank a working profile — the very "конфиг пустой" failure this fixes. So a
+            // the one it had) would blank a working profile - the very "конфиг пустой" failure this fixes. So a
             // config-less bundle is refused here rather than allowed to overwrite-then-delete.
             if (string.IsNullOrEmpty(configName))
             {
@@ -879,7 +879,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         // Transport rewrites the dial path (UDP -> loopback wstunnel); like a routing change it only
         // applies cleanly on a fresh tunnel. If the changed config is in the running target, flag a
-        // reconnect and let the UI prompt — the new setting is persisted and takes effect next connect.
+        // reconnect and let the UI prompt - the new setting is persisted and takes effect next connect.
         if (control.Running && await IsRunningMemberAsync(args[0], ct))
         {
             control.SetRestartRequired();
@@ -917,7 +917,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         // DNS feeds the per-tunnel resolver wiring, decided at connect time; like a routing/transport change
         // it applies cleanly only on a fresh tunnel. If the changed config is in the running target, flag a
-        // reconnect — the new setting is persisted and takes effect on the next connect.
+        // reconnect - the new setting is persisted and takes effect on the next connect.
         if (control.Running && await IsRunningMemberAsync(args[0], ct))
         {
             control.SetRestartRequired();
@@ -958,8 +958,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     }
 
     // Returns the default LAN bypass set (RFC1918 ranges + connected subnets outside them) as newline-
-    // separated CIDRs, so the "add local networks" button installs the full set — including what used to be
-    // the hidden floor — into a profile's exclusions list.
+    // separated CIDRs, so the "add local networks" button installs the full set - including what used to be
+    // the hidden floor - into a profile's exclusions list.
     private IpcAck ListLocalSubnets()
     {
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
@@ -1263,7 +1263,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     }
 
     /// <summary>
-    /// IPC handler for a manual "check all sources" — runs the sweep and returns a human-readable summary.
+    /// IPC handler for a manual "check all sources" - runs the sweep and returns a human-readable summary.
     /// </summary>
     private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
     {
@@ -1388,7 +1388,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
                 // Stop the percentage broadcaster before re-materializing: there is no percent to show
                 // while applying, and the spinner keeps running client-side from the broadcast "applying"
-                // state — so the ticker's reads need not contend with the re-materialize writes.
+                // state - so the ticker's reads need not contend with the re-materialize writes.
                 pump.Cancel();
                 await ticker;
                 await BroadcastIfChangedAsync(CancellationToken.None);
@@ -1421,7 +1421,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     /// Broadcasts the snapshot on a steady cadence while a download is in flight, so the spinner and
     /// percentage advance smoothly. A single pump (rather than a broadcast per progress callback) keeps
     /// snapshot rebuilds bounded; the change-dedup in <see cref="BroadcastIfChangedAsync"/> drops ticks
-    /// that did not move the visible percent. Never throws — a store hiccup must not down the update.
+    /// that did not move the visible percent. Never throws - a store hiccup must not down the update.
     /// </summary>
     private async Task ProgressPumpAsync(CancellationToken ct)
     {

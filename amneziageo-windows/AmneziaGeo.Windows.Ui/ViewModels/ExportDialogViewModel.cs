@@ -69,7 +69,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
 
     /// <summary>
     /// Whether the payload is loaded but no QR could be produced (the config is too large to encode) and we
-    /// are not editing — the UI shows a "doesn't fit in a QR" notice in the QR's place.
+    /// are not editing - the UI shows a "doesn't fit in a QR" notice in the QR's place.
     /// </summary>
     public bool QrUnavailable => IsReady && !IsEditing && QrImage is null;
 
@@ -113,7 +113,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
         }
         catch (Exception)
         {
-            // Too large to encode as a QR. Leave the status line clean — the QrUnavailable notice in the
+            // Too large to encode as a QR. Leave the status line clean - the QrUnavailable notice in the
             // QR's place tells the user the config doesn't fit and to use a file or the vpn:// link.
             QrImage = null;
             StatusMessage = string.Empty;
@@ -132,7 +132,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
         AsLink = true;
     }
 
-    // "Изменить": unlock the text for editing. Force the raw .conf form first — editing applies to the
+    // "Изменить": unlock the text for editing. Force the raw .conf form first - editing applies to the
     // config text, not the vpn:// link.
     [RelayCommand]
     private void BeginEdit()

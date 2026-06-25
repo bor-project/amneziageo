@@ -16,7 +16,7 @@ namespace AmneziaGeo.Windows.Ui;
 /// </summary>
 public sealed partial class App : Application
 {
-    // Brand accent — the static window / taskbar icon disc (the big power button's look, on-brand colour).
+    // Brand accent - the static window / taskbar icon disc (the big power button's look, on-brand colour).
     private static readonly Color _accent = Color.FromRgb(0x2a, 0x6f, 0xdb);
 
     private IClassicDesktopStyleApplicationLifetime? _desktop;
@@ -39,7 +39,7 @@ public sealed partial class App : Application
         {
             _desktop = desktop;
             // Don't auto-quit when the window closes: the close box always hides to the tray (the app
-            // keeps running in the background — agent link and any active tunnel stay up), and the tray
+            // keeps running in the background - agent link and any active tunnel stay up), and the tray
             // "Выход" exits explicitly. Either way the lifetime must not quit on its own when the last
             // window closes.
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -137,7 +137,7 @@ public sealed partial class App : Application
         _desktop?.Shutdown();
     }
 
-    // The "power" glyph of the big on-screen connection button (AgPowerGeometry — a 24x24 Material path),
+    // The "power" glyph of the big on-screen connection button (AgPowerGeometry - a 24x24 Material path),
     // shared so the icon matches the control.
     private static readonly Geometry _powerGlyph = Geometry.Parse(
         "M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z");

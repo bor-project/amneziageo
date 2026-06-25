@@ -11,7 +11,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// <summary>
 /// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs). Edits stay in
 /// memory and are persisted on an explicit "Сохранить"; that same action (re)builds the share QR. Nothing is
-/// regenerated while typing — auto-saving each keystroke churned the list catalogue (renaming → snapshot →
+/// regenerated while typing - auto-saving each keystroke churned the list catalogue (renaming → snapshot →
 /// rebuilt picker) and the live QR swapped the Image, both of which stole focus from the inputs.
 /// </summary>
 internal sealed partial class RoutingListEditorViewModel : ViewModelBase
@@ -124,7 +124,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 
     /// <summary>
     /// "Сохранить": persists the list (insert or update) through the agent and, on success, (re)builds the
-    /// share QR. The QR is produced here only — never live while typing.
+    /// share QR. The QR is produced here only - never live while typing.
     /// </summary>
     [RelayCommand]
     private async Task Save()
@@ -232,7 +232,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     public string SuggestedFileName => string.IsNullOrWhiteSpace(Name) ? "routing.txt" : $"{Name.Trim()}-routing.txt";
 
     /// <summary>
-    /// Serialises this list (name + rules) to a portable blob for copy / save — the same share flow a
+    /// Serialises this list (name + rules) to a portable blob for copy / save - the same share flow a
     /// config has.
     /// </summary>
     public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, Rules);

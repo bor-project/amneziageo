@@ -38,7 +38,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     }
 
     /// <summary>
-    /// The loopback UDP port the WG engine should dial — written into the config's Endpoint in place of
+    /// The loopback UDP port the WG engine should dial - written into the config's Endpoint in place of
     /// the blocked public endpoint.
     /// </summary>
     public int LocalPort { get; }

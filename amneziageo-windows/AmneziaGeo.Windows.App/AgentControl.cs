@@ -30,7 +30,7 @@ internal sealed class AgentControl
     /// <summary>
     /// Set when a setting that only applies on a fresh tunnel (e.g. the routing toggle) changed while
     /// the bound target is connected. The UI surfaces this as a "reconnect to apply" notice. We do not
-    /// re-apply such changes in place — that left a half-applied split/full state — so the user
+    /// re-apply such changes in place - that left a half-applied split/full state - so the user
     /// reconnects to apply. Cleared on any connect / disconnect.
     /// </summary>
     public bool RestartRequired => _restartRequired;
@@ -42,7 +42,7 @@ internal sealed class AgentControl
     public string? Target => _target;
 
     /// <summary>
-    /// The profile the running tunnel is actually bound to — latched from <see cref="Target"/> on each
+    /// The profile the running tunnel is actually bound to - latched from <see cref="Target"/> on each
     /// connect. Differs from <see cref="Target"/> when the user has selected another profile but not yet
     /// reconnected: the connection status reflects this one, the radio reflects <see cref="Target"/>.
     /// </summary>

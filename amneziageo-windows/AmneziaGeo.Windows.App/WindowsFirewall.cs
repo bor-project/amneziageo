@@ -103,7 +103,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 CreateSublayer(engine);
 
                 // Always: block QUIC (UDP/443) egressing the tunnel so HTTP/3 falls back to TCP, which is
-                // reliable over the obfuscated tunnel (QUIC stalls — e.g. some YouTube videos). Weighted
+                // reliable over the obfuscated tunnel (QUIC stalls - e.g. some YouTube videos). Weighted
                 // above the tunnel permit so it still wins when the kill-switch's permit-tun is present.
                 BlockTunnelQuic(engine, luid);
 
@@ -113,7 +113,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitApp(engine);
 
                     // The WebSocket transport carries the encrypted underlay to the server over a SEPARATE
-                    // child process (wstunnel.exe), not this app — so permit it too, or the block-all below
+                    // child process (wstunnel.exe), not this app - so permit it too, or the block-all below
                     // severs the tunnel's TCP/TLS lifeline and the full tunnel connects but passes no data.
                     if (!string.IsNullOrEmpty(underlayAppPath) && File.Exists(underlayAppPath))
                     {
@@ -123,7 +123,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitTunInterface(engine, luid);
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
-                    PermitLan(engine, extraLanCidrs ?? []); // bypass CIDRs (runtime default set or user's list) — permitted under the kill-switch
+                    PermitLan(engine, extraLanCidrs ?? []); // bypass CIDRs (runtime default set or user's list) - permitted under the kill-switch
                     if (dualStack)
                     {
                         PermitLanV6(engine); // v6 LAN bypass (ULA + NDP) on a dual-stack tunnel
@@ -294,17 +294,17 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs)
     {
-        // Infrastructure ranges (link-local / multicast / broadcast) are always permitted — not user-
+        // Infrastructure ranges (link-local / multicast / broadcast) are always permitted - not user-
         // controllable bypass, but mDNS/SSDP/LLMNR and broadcast must survive the kill-switch regardless.
         foreach (var cidr in LanInfraCidrsV4)
         {
             PermitV4Cidr(engine, cidr);
         }
 
-        // The bypass CIDRs (the runtime default set — RFC1918 ranges + connected subnets — when the config
+        // The bypass CIDRs (the runtime default set - RFC1918 ranges + connected subnets - when the config
         // has no exclusions row, otherwise the user's saved list); without the permit the block-all severs
         // them despite their exclusion route. A single malformed entry must NEVER abort arming the kill-switch
-        // — that would leave the full tunnel with no firewall at all (no block-all, no QUIC block) and a leak
+        // - that would leave the full tunnel with no firewall at all (no block-all, no QUIC block) and a leak
         // on drop. PermitV4Cidr validates and skips invalid/v6 CIDRs; the try/catch is belt-and-suspenders.
         foreach (var cidr in extraCidrs)
         {
@@ -402,7 +402,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private void BlockTunnelQuic(IntPtr engine, ulong luid)
     {
         // Match: traffic egressing the tunnel adapter AND UDP AND remote port 443 (= QUIC / HTTP-3).
-        // Different field keys are AND-ed, so this is exactly "QUIC over the tunnel". IPv4 only — this is
+        // Different field keys are AND-ed, so this is exactly "QUIC over the tunnel". IPv4 only - this is
         // a v4-only tunnel and AAAA is denied at the proxy, so there is no v6 QUIC to route.
         var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
         try
@@ -652,7 +652,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         public ushort weight;
     }
 
-    // Explicit layout mirrors FWPM_FILTER0 exactly (x64, 200 bytes) — see amneziawg-windows
+    // Explicit layout mirrors FWPM_FILTER0 exactly (x64, 200 bytes) - see amneziawg-windows
     // tunnel/firewall/types_windows_64.go. The 4-byte gap before providerContextKey is the union
     // { UINT64 rawContext; GUID providerContextKey } 8-byte alignment.
     [StructLayout(LayoutKind.Explicit, Size = 200)]

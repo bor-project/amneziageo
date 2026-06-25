@@ -8,7 +8,7 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Manages tunnel route-table entries and the tunnel adapter's IPv6 resolvers entirely through the
-/// IP Helper API (iphlpapi) — no process spawns. IPv4 routes (endpoint-exclusion host route and the
+/// IP Helper API (iphlpapi) - no process spawns. IPv4 routes (endpoint-exclusion host route and the
 /// per-domain /32 routes injected for geo split tunneling) go through CreateIpForwardEntry2 /
 /// DeleteIpForwardEntry2 / GetIpForwardTable2, the same modern API the reference daemon uses. These
 /// tunnels are IPv4-only (AAAA is denied at the proxy), so IPv6 routes are vestigial and are a no-op.
@@ -20,10 +20,10 @@ internal sealed partial class RouteManager
     private const ushort AfInet6 = 23;
     private const uint NoError = 0;
     private const uint ErrorObjectAlreadyExists = 5010;
-    private const uint MibIpProtoNetMgmt = 3; // NL_ROUTE_PROTOCOL RouteProtocolNetMgmt — tags our routes
+    private const uint MibIpProtoNetMgmt = 3; // NL_ROUTE_PROTOCOL RouteProtocolNetMgmt - tags our routes
 
-    // Routable private IPv4 ranges kept OFF the tunnel in full-tunnel mode so the local network — RDP,
-    // SSH, printers, including hosts one hop away in another local subnet — stays reachable in parallel
+    // Routable private IPv4 ranges kept OFF the tunnel in full-tunnel mode so the local network - RDP,
+    // SSH, printers, including hosts one hop away in another local subnet - stays reachable in parallel
     // with the tunnel. Link-local / multicast / broadcast are on-link or special and need no exclusion
     // route (mirrors the reference's excludeLocalNetworks, which silently skips those).
     private static readonly (string Network, byte Prefix)[] LanExclusions =
@@ -109,10 +109,10 @@ internal sealed partial class RouteManager
     {
         var any = false;
 
-        // Bypass entries — the runtime default set (RFC1918 ranges + connected subnets, see
+        // Bypass entries - the runtime default set (RFC1918 ranges + connected subnets, see
         // DefaultExclusionEntries) when the config has no exclusions row, otherwise the user's saved list.
         // Route each straight out the physical gateway so the chosen hosts/subnets stay direct in full
-        // tunnel, persisted so they are reverted together. IPv4 only — the common LAN/bypass case.
+        // tunnel, persisted so they are reverted together. IPv4 only - the common LAN/bypass case.
         foreach (var cidr in extraCidrs)
         {
             var slash = cidr.IndexOf('/');
@@ -183,7 +183,7 @@ internal sealed partial class RouteManager
                 continue;
             }
 
-            // Never harvest our own tunnel adapter's subnet — excluding it would break the tunnel.
+            // Never harvest our own tunnel adapter's subnet - excluding it would break the tunnel.
             if (ni.Name.StartsWith("AmneziaGeo", StringComparison.OrdinalIgnoreCase)
                 || ni.Description.Contains("WireGuard", StringComparison.OrdinalIgnoreCase)
                 || ni.Description.Contains("AmneziaWG", StringComparison.OrdinalIgnoreCase)
@@ -202,13 +202,13 @@ internal sealed partial class RouteManager
                 var prefix = ua.PrefixLength;
                 if (prefix is <= 0 or >= 31)
                 {
-                    continue; // /31-/32 is a point-to-point/host, /0 a default — none describe a LAN
+                    continue; // /31-/32 is a point-to-point/host, /0 a default - none describe a LAN
                 }
 
                 var network = NetworkAddress(ua.Address, prefix);
                 if (IsLinkLocal(network, prefix))
                 {
-                    continue; // APIPA auto-config address — no real LAN behind it, not worth listing
+                    continue; // APIPA auto-config address - no real LAN behind it, not worth listing
                 }
 
                 var cidr = $"{network}/{prefix}";
@@ -254,7 +254,7 @@ internal sealed partial class RouteManager
         return LanExclusions.Any(r => InRange(addr, IPAddress.Parse(r.Network), r.Prefix));
     }
 
-    // True for an APIPA link-local 169.254/16 network — a DHCP-failed auto-config address with no real LAN
+    // True for an APIPA link-local 169.254/16 network - a DHCP-failed auto-config address with no real LAN
     // behind it, so listing it as a "local subnet" would only be noise.
     private static bool IsLinkLocal(IPAddress network, int prefix)
         => prefix >= 16 && InRange(network, IPAddress.Parse("169.254.0.0"), 16);
@@ -481,7 +481,7 @@ internal sealed partial class RouteManager
     /// <summary>
     /// Asks the kernel for the best (longest-prefix-match) route to an IPv6 destination and returns its
     /// outgoing interface and next-hop, or null if there is no v6 route. Called before the tunnel comes
-    /// up, so the result is the physical path — used to pin a v6 LAN exclusion off the tunnel.
+    /// up, so the result is the physical path - used to pin a v6 LAN exclusion off the tunnel.
     /// </summary>
     private static (uint InterfaceIndex, SOCKADDR_INET NextHop)? FindBestV6Route(IPAddress destination)
     {
@@ -672,7 +672,7 @@ internal sealed partial class RouteManager
 
     // SOCKADDR_INET is the v4/v6 union (28 bytes). The native struct is 4-byte aligned (its address is a
     // UCHAR[16]); holding the v6 address as ulong fields would give THIS struct 8-byte alignment, which
-    // shifts every field after InterfaceIndex in the embedding MIB_IPFORWARD_ROW2 — iphlpapi then gets a
+    // shifts every field after InterfaceIndex in the embedding MIB_IPFORWARD_ROW2 - iphlpapi then gets a
     // misaligned row and CreateIpForwardEntry2 fails (breaking the per-domain /32 routes). Represent the
     // v6 address as four uints (4-aligned) so the layout matches native byte-for-byte.
     [StructLayout(LayoutKind.Explicit, Size = 28)]

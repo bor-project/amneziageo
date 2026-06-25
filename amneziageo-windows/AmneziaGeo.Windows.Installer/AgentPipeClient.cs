@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 namespace AmneziaGeo.Windows.Installer;
 
 /// <summary>
-/// A tiny client for the AmneziaGeo agent's status/control pipe — just enough to send one command and
+/// A tiny client for the AmneziaGeo agent's status/control pipe - just enough to send one command and
 /// read its ack. The installer (net8) can't reference the app's net10 IPC library, so the minimal
 /// newline-delimited JSON protocol (camelCase, one envelope per line) is reproduced here. The agent
 /// runs as LocalSystem and does the privileged geo download the unprivileged bootstrapper cannot.
@@ -19,7 +19,7 @@ internal static class AgentPipeClient
 
     /// <summary>The agent's reply to a command, plus what its status snapshots revealed while we waited.
     /// <paramref name="GeoUpdatesAvailable"/> is the number of geo sources flagged "update available" in the
-    /// last snapshot seen (-1 if none seen) — used to decide whether a download is worth offering.</summary>
+    /// last snapshot seen (-1 if none seen) - used to decide whether a download is worth offering.</summary>
     public readonly record struct AgentReply(bool Ok, string Message, int GeoUpdatesAvailable);
 
     /// <summary>

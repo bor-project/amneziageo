@@ -24,7 +24,7 @@ internal sealed class AgentBackgroundService(
 
         // Prefer the persisted user selection (survives restarts) over the launch argument; the launch
         // arg is only a seed for the preconfigured installer's "main". On a clean install both are empty,
-        // so the service serves the pipe and idles — no phantom binding — until the GUI creates a profile
+        // so the service serves the pipe and idles - no phantom binding - until the GUI creates a profile
         // and selects it. A persisted selection that no longer resolves is a broken binding: drop it.
         var stored = await store.GetSettingAsync(AgentControl.SelectedTargetKey, stoppingToken);
         var launch = !string.IsNullOrWhiteSpace(stored) ? stored! : target.Name;

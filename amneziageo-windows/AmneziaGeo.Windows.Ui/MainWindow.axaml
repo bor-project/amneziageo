@@ -722,6 +722,8 @@
                                     Click="OnRoutingExportCopy" ToolTip.Tip="Скопировать список в буфер обмена" />
                             <Button Classes="softbtn" Content="Сохранить в файл…" Margin="0,0,6,6"
                                     Click="OnRoutingExportSave" />
+                            <Button Classes="softbtn" Content="Показать QR" Margin="0,0,6,6"
+                                    Click="OnRoutingShowQr" ToolTip.Tip="Показать QR-код списка для переноса" />
                             <Button Classes="softbtn" Content="Вставить" Margin="0,0,6,6"
                                     Click="OnRoutingImportPaste" ToolTip.Tip="Импортировать список из буфера обмена" />
                             <Button Classes="softbtn" Content="Загрузить файл…" Margin="0,0,6,6"
@@ -729,25 +731,15 @@
                           </WrapPanel>
                         </StackPanel>
 
-                        <!-- Save persists the list and builds the share QR below; the QR is produced only
-                             here, never live while typing (that swapped the Image and stole input focus).
-                             Close collapses the editor back to the picker (window VM command). -->
+                        <!-- Edits auto-save (a short debounce after the last change); there is no Save button.
+                             The share QR is shown on demand via «Показать QR» above (a dialog), never live in
+                             the editor - a live QR swapped the Image and stole input focus. Close collapses the
+                             editor back to the picker (window VM command). -->
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                          <Button Classes="accent" Content="Сохранить" Command="{Binding SaveCommand}"
-                                  IsEnabled="{Binding !IsBusy}" ToolTip.Tip="Сохранить список и обновить QR" />
                           <Button Classes="softbtn" Content="Закрыть"
                                   Command="{Binding $parent[Window].DataContext.CloseRoutingEditCommand}"
                                   ToolTip.Tip="Закрыть редактор" />
                         </StackPanel>
-
-                        <!-- shareable QR of the list (name + rules); hidden when it does not fit -->
-                        <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
-                                IsVisible="{Binding HasQr}">
-                          <Image Source="{Binding QrImage}" Width="200" Height="200" />
-                        </Border>
-                        <TextBlock IsVisible="{Binding QrUnavailable}" Classes="muted" FontSize="11.5"
-                                   HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
-                                   Text="Список слишком большой для QR - используйте «Сохранить в файл…»." />
                       </StackPanel>
                     </Border>
 

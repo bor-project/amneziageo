@@ -8,7 +8,7 @@
     <OutputName>AmneziaGeoSetup</OutputName>
     <Platform>x64</Platform>
     <!-- Preprocessor variables consumed by Bundle.wxs as $(var.*). -->
-    <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath)</DefineConstants>
+    <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath);IconFile=$(MSBuildProjectDirectory)\..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</DefineConstants>
   </PropertyGroup>
 
   <Target Name="EnsureBundleInputs" BeforeTargets="Build"

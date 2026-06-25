@@ -14,6 +14,7 @@
           Manufacturer="AmneziaGeo"
           Version="$(var.Version)"
           UpgradeCode="A7E1C4F2-9B3D-4E6A-8C15-2F7D9A0B6E34"
+          IconSourceFile="$(var.IconFile)"
           Compressed="yes">
 
     <!-- Custom out-of-proc BA: the .exe is named directly; every other file from its self-contained

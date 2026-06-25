@@ -895,11 +895,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         HasBalancers = Balancers.Count > 0;
         HasRoutingLists = RoutingLists.Count > 0;
 
+        // The agent stores the selected/bound target as EITHER a profile name or the bare config name the
+        // profile wraps (a legacy `set-profile <config>`, a preconfigured "main" seed, or a target set out
+        // of band). A profile's name and its config name never coincide — they share one namespace — so we
+        // match on either; otherwise the current target lights up no row at all (the reported bug).
+        var selected = snapshot.SelectedTarget ?? snapshot.BoundTarget;
         foreach (var item in Balancers)
         {
-            item.IsActive = string.Equals(item.Name, snapshot.SelectedTarget ?? snapshot.BoundTarget, StringComparison.Ordinal);
+            item.IsActive = ProfileMatchesTarget(item, selected);
             // A DIFFERENT profile is the live tunnel: this profile's connect button reads "Переключить".
-            item.OtherActive = snapshot.Active && !string.Equals(item.Name, snapshot.BoundTarget, StringComparison.Ordinal);
+            item.OtherActive = snapshot.Active && !ProfileMatchesTarget(item, snapshot.BoundTarget);
         }
 
         // Top-center notice (auto-hides after 5s, dismissable): a different profile is selected while a
@@ -918,8 +923,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 ? $"Профиль «{snapshot.SelectedTarget}» пуст — добавьте конфигурацию."
                 : "Не удалось подключиться — сервер не ответил.";
         }
-        else if (snapshot.Active && snapshot.SelectedTarget is not null
-            && !string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal))
+        else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
         {
             notice = $"Выбран профиль «{snapshot.SelectedTarget}». Переподключитесь, чтобы применить.";
         }
@@ -942,6 +946,35 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _logLines = snapshot.Logs ?? [];
         HasLogs = _logLines.Count > 0;
         RebuildLogText();
+    }
+
+    // A profile "is" the given target when the target equals its name or the config it wraps. The agent's
+    // selected/bound target can be stored as either form, so the UI resolves both to the same profile row.
+    private static bool ProfileMatchesTarget(BalancerItemViewModel item, string? target)
+    {
+        if (string.IsNullOrEmpty(target))
+        {
+            return false;
+        }
+
+        return string.Equals(item.Name, target, StringComparison.Ordinal)
+            || (item.Config.Length > 0 && string.Equals(item.Config, target, StringComparison.Ordinal));
+    }
+
+    // True only when the selected target and the running (bound) target denote DIFFERENT profiles. When one
+    // is a profile name and the other is that same profile's config name they resolve to the same row, so
+    // selecting the profile that is already live raises no stray "reconnect to apply" notice.
+    private bool SelectedDiffersFromBound(StatusSnapshot snapshot)
+    {
+        if (snapshot.SelectedTarget is null
+            || string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var selectedProfile = Balancers.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.SelectedTarget));
+        var boundProfile = Balancers.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.BoundTarget));
+        return !(selectedProfile is not null && ReferenceEquals(selectedProfile, boundProfile));
     }
 
     partial void OnLogSeverityChanged(int value)

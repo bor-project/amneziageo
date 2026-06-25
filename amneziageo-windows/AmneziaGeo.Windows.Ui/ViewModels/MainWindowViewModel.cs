@@ -108,6 +108,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAspectConfig))]
     [NotifyPropertyChangedFor(nameof(IsAspectRouting))]
+    [NotifyPropertyChangedFor(nameof(IsAspectExclusions))]
     [NotifyPropertyChangedFor(nameof(IsAspectProxy))]
     [NotifyPropertyChangedFor(nameof(IsAspectDns))]
     [NotifyPropertyChangedFor(nameof(IsAspectName))]
@@ -491,6 +492,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Whether the opened profile's routing aspect is selected.</summary>
     public bool IsAspectRouting => ProfileAspect == "routing";
+
+    /// <summary>Whether the opened profile's exclusions (direct-access) aspect is selected.</summary>
+    public bool IsAspectExclusions => ProfileAspect == "exclusions";
 
     /// <summary>Whether the opened profile's proxy (WebSocket) aspect is selected.</summary>
     public bool IsAspectProxy => ProfileAspect == "proxy";
@@ -1656,18 +1660,25 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Stop a queued auto-save on the editor being replaced/closed so it can't fire after the fact.
-    partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
-    {
-        oldValue?.CancelPendingSave();
-    }
-
     // "Редактировать": open the inline rule editor for the selected saved list (collapsed by default so the
     // routing page is just the picker until the user opts in).
     [RelayCommand]
     private void BeginRoutingEdit()
     {
         IsRoutingEditing = true;
+    }
+
+    // "Закрыть": collapse the inline rule editor back to just the picker. An in-progress NEW list is dropped
+    // (a real, saved list stays in the catalogue and reopens via "Редактировать"); nothing persists here, so
+    // unsaved edits are discarded — saving is now always explicit (the "Сохранить" button in the editor).
+    [RelayCommand]
+    private void CloseRoutingEdit()
+    {
+        IsRoutingEditing = false;
+        if (RoutingEditor is { IsNew: true })
+        {
+            RoutingEditor = null;
+        }
     }
 
     // "Удалить список" in the inline editor: delete the shared list, then clear the open profile's

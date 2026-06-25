@@ -3,26 +3,26 @@ using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Ui.Services;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs).
-/// Changes auto-save (debounced) through the agent — there is no explicit save button.
+/// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs). Edits stay in
+/// memory and are persisted on an explicit "Сохранить"; that same action (re)builds the share QR. Nothing is
+/// regenerated while typing — auto-saving each keystroke churned the list catalogue (renaming → snapshot →
+/// rebuilt picker) and the live QR swapped the Image, both of which stole focus from the inputs.
 /// </summary>
 internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
     private readonly Action<long>? _onSaved;
-    private readonly DispatcherTimer _saveTimer;
     private long _id;
 
-    // Suppresses auto-save while the editor is being populated (ctor + LoadAsync), so loading a list
-    // doesn't immediately re-save it.
-    private bool _suppressAutoSave = true;
+    // The share QR is built only on Save. _qrFresh marks that the shown QR (or its absence) reflects the
+    // last Save, so editing hides a now-stale QR / "too large" note until the user saves again.
+    private bool _qrFresh;
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -50,8 +50,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _onSaved = onSaved;
         _id = 0;
         IsNew = true;
-        _saveTimer = CreateSaveTimer();
-        Rules.CollectionChanged += (_, _) => RefreshQr();
+        Rules.CollectionChanged += (_, _) => InvalidateQr();
     }
 
     /// <summary>
@@ -62,21 +61,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _connection = connection;
         _onSaved = onSaved;
         _id = id;
-        _saveTimer = CreateSaveTimer();
-        Rules.CollectionChanged += (_, _) => RefreshQr();
+        Rules.CollectionChanged += (_, _) => InvalidateQr();
         Name = name;
         IsNew = false;
-    }
-
-    private DispatcherTimer CreateSaveTimer()
-    {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        timer.Tick += (_, _) =>
-        {
-            timer.Stop();
-            _ = AutoSaveAsync();
-        };
-        return timer;
     }
 
     /// <summary>
@@ -99,11 +86,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<string> GeoSuggestions { get; } = [];
 
-    /// <summary>Whether a QR code was rendered for this list's share payload.</summary>
+    /// <summary>Whether a QR code is currently shown (built by the last Save).</summary>
     public bool HasQr => QrImage is not null;
 
-    /// <summary>Whether the list has content but is too large to encode as a QR.</summary>
-    public bool QrUnavailable => QrImage is null && (Name.Trim().Length > 0 || Rules.Count > 0);
+    /// <summary>
+    /// Whether the last Save could not encode the list as a QR (too large). Only meaningful right after a
+    /// Save; cleared as soon as the user edits.
+    /// </summary>
+    public bool QrUnavailable => _qrFresh && QrImage is null;
 
     /// <summary>
     /// Fetches geo category suggestions and (for existing lists) the current rules.
@@ -130,9 +120,24 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
                 }
             }
         }
+    }
 
-        // Loading is complete: let subsequent edits auto-save.
-        _suppressAutoSave = false;
+    /// <summary>
+    /// "Сохранить": persists the list (insert or update) through the agent and, on success, (re)builds the
+    /// share QR. The QR is produced here only — never live while typing.
+    /// </summary>
+    [RelayCommand]
+    private async Task Save()
+    {
+        if (!await SaveAsync())
+        {
+            return;
+        }
+
+        _onSaved?.Invoke(_id);
+        RefreshQr();
+        _qrFresh = true;
+        OnPropertyChanged(nameof(QrUnavailable));
     }
 
     /// <summary>
@@ -190,15 +195,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// Stops a pending auto-save; called when this editor is discarded so a queued save does not fire
-    /// against a closed editor.
-    /// </summary>
-    public void CancelPendingSave()
-    {
-        _saveTimer.Stop();
-    }
-
     [RelayCommand]
     private void AddRule()
     {
@@ -212,7 +208,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         if (!Rules.Contains(rule))
         {
             Rules.Add(rule);
-            ScheduleSave();
         }
 
         RuleInput = string.Empty;
@@ -221,25 +216,16 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     [RelayCommand]
     private void RemoveRule(string rule)
     {
-        if (Rules.Remove(rule))
-        {
-            ScheduleSave();
-        }
+        Rules.Remove(rule);
     }
 
     /// <summary>
-    /// Clears all entries of this list at once (then auto-saves), for rebuilding a large list from scratch.
+    /// Clears all entries of this list at once, for rebuilding a large list from scratch (persist with Save).
     /// </summary>
     [RelayCommand]
     private void ClearRules()
     {
-        if (Rules.Count == 0)
-        {
-            return;
-        }
-
         Rules.Clear();
-        ScheduleSave();
     }
 
     /// <summary>A suggested file name when exporting this list.</summary>
@@ -252,8 +238,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, Rules);
 
     /// <summary>
-    /// Replaces this list's name + rules from an imported blob (auto-saves through the agent). Returns
-    /// whether the text was a recognisable routing-list blob.
+    /// Replaces this list's name + rules from an imported blob. Returns whether the text was a recognisable
+    /// routing-list blob; persist the result with Save.
     /// </summary>
     public bool ApplyImport(string text)
     {
@@ -274,31 +260,24 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             Rules.Add(rule);
         }
 
-        ScheduleSave();
-        StatusMessage = $"Импортировано правил: {importedRules.Count}.";
+        StatusMessage = $"Импортировано правил: {importedRules.Count}. Нажмите «Сохранить».";
         return true;
     }
 
     partial void OnNameChanged(string value)
     {
-        ScheduleSave();
-        RefreshQr();
+        InvalidateQr();
     }
 
-    // Debounce edits into a single save: each change restarts the timer, so rapid typing / multiple
-    // rule edits collapse into one persist + re-materialize once the user pauses.
-    private void ScheduleSave()
+    // Editing invalidates the shown QR: drop it (and the "too large" note) until the next explicit Save.
+    private void InvalidateQr()
     {
-        if (_suppressAutoSave)
-        {
-            return;
-        }
-
-        _saveTimer.Stop();
-        _saveTimer.Start();
+        _qrFresh = false;
+        QrImage = null;
+        OnPropertyChanged(nameof(QrUnavailable));
     }
 
-    // Regenerate the share QR from the current name + rules; null when the payload is too large to encode.
+    // Build the share QR from the current name + rules; null when the payload is too large to encode.
     private void RefreshQr()
     {
         try
@@ -308,21 +287,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         catch
         {
             QrImage = null;
-        }
-    }
-
-    private async Task AutoSaveAsync()
-    {
-        if (IsBusy)
-        {
-            // A save is already in flight; try again after it settles.
-            ScheduleSave();
-            return;
-        }
-
-        if (await SaveAsync())
-        {
-            _onSaved?.Invoke(_id);
         }
     }
 

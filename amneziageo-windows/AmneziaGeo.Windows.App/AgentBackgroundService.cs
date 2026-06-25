@@ -14,7 +14,6 @@ internal sealed class AgentBackgroundService(
     BalancerRunner runner,
     AgentControl control,
     NetworkReconciler reconciler,
-    RouteManager routes,
     ILogger<AgentBackgroundService> logger) : BackgroundService
 {
     /// <inheritdoc/>
@@ -22,28 +21,6 @@ internal sealed class AgentBackgroundService(
     {
         // Heal any DNS/route state a crashed or severed predecessor left behind before doing anything.
         reconciler.Reconcile();
-
-        // Migrate the formerly-hidden LAN exclusions into a visible/editable per-config list: seed any config
-        // with no exclusions row yet with the default set (RFC1918 ranges + connected subnets outside them).
-        // After this the row is authoritative and the agent applies it with the built-in floor off; existing
-        // configs keep equivalent protection because the seed materialises the same ranges. Best-effort — a
-        // failure must never block the agent from coming up.
-        try
-        {
-            foreach (var config in configRepo.List())
-            {
-                if (await store.GetConfigExclusionsAsync(config, stoppingToken) is null)
-                {
-                    await store.SetConfigExclusionsAsync(
-                        new ConfigExclusions(config, string.Join('\n', routes.DefaultExclusionEntries())), stoppingToken);
-                    logger.LogInformation("seeded default exclusions for config {Config}", config);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "seeding default exclusions failed");
-        }
 
         // Prefer the persisted user selection (survives restarts) over the launch argument; the launch
         // arg is only a seed for the preconfigured installer's "main". On a clean install both are empty,

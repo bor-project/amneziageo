@@ -34,13 +34,12 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const byte WeightApp = 14;
     private const byte WeightHyperV = 14;
 
-    // Private/local IPv4 ranges permitted as the LAN bypass: RFC1918, link-local, multicast, and the
-    // limited broadcast address. This is what keeps host/Hyper-V SSH (e.g. 192.168.x) alive.
-    private static readonly string[] LanCidrsV4 =
+    // Infrastructure IPv4 ranges always permitted under the kill-switch (NOT user-controllable LAN bypass):
+    // link-local, multicast (mDNS/SSDP/LLMNR), and the limited broadcast. The RFC1918 LAN bypass that keeps
+    // host/Hyper-V SSH (e.g. 192.168.x) alive comes from the per-config bypass list (extraCidrs) instead, so
+    // it is visible and editable; the default set materialises the same RFC1918 ranges at runtime.
+    private static readonly string[] LanInfraCidrsV4 =
     [
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16",
         "169.254.0.0/16",
         "224.0.0.0/4",
         "255.255.255.255/32",
@@ -79,7 +78,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// carve-out present. Returns false and installs nothing on any failure. Thread-safe with respect
     /// to <see cref="Disable"/> so a tunnel teardown racing the arming cannot leave a stray engine.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, bool applyBuiltinFloor = true)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
     {
         lock (_gate)
         {
@@ -124,7 +123,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitTunInterface(engine, luid);
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
-                    PermitLan(engine, extraLanCidrs ?? [], applyBuiltinFloor); // LAN bypass (built-in floor when no row) + user exclusion CIDRs
+                    PermitLan(engine, extraLanCidrs ?? []); // bypass CIDRs (runtime default set or user's list) — permitted under the kill-switch
                     if (dualStack)
                     {
                         PermitLanV6(engine); // v6 LAN bypass (ULA + NDP) on a dual-stack tunnel
@@ -293,23 +292,20 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         Add(engine, LayerAleAuthRecvAcceptV4, WeightDhcp, ActionPermit, 0, cond, "Permit inbound DHCP");
     }
 
-    private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs, bool applyBuiltinFloor)
+    private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs)
     {
-        // The built-in RFC1918 LAN permit is the floor for configs with no exclusions row. Once a row exists
-        // the list (extraCidrs) is authoritative, so a user who drops a range has the kill-switch block it.
-        if (applyBuiltinFloor)
+        // Infrastructure ranges (link-local / multicast / broadcast) are always permitted — not user-
+        // controllable bypass, but mDNS/SSDP/LLMNR and broadcast must survive the kill-switch regardless.
+        foreach (var cidr in LanInfraCidrsV4)
         {
-            foreach (var cidr in LanCidrsV4)
-            {
-                PermitV4Cidr(engine, cidr);
-            }
+            PermitV4Cidr(engine, cidr);
         }
 
-        // User exclusion CIDRs (e.g. a CGNAT 100.64.0.0/10 or a corporate subnet) must be permitted too,
-        // or the block-all severs them despite their exclusion route. A single malformed entry must NEVER
-        // abort arming the kill-switch — that would leave the full tunnel with no firewall at all (no
-        // block-all, no QUIC block) and a leak on drop. PermitV4Cidr validates and skips invalid/v6 CIDRs;
-        // the try/catch is belt-and-suspenders for this security-critical path.
+        // The bypass CIDRs (the runtime default set — RFC1918 ranges + connected subnets — when the config
+        // has no exclusions row, otherwise the user's saved list); without the permit the block-all severs
+        // them despite their exclusion route. A single malformed entry must NEVER abort arming the kill-switch
+        // — that would leave the full tunnel with no firewall at all (no block-all, no QUIC block) and a leak
+        // on drop. PermitV4Cidr validates and skips invalid/v6 CIDRs; the try/catch is belt-and-suspenders.
         foreach (var cidr in extraCidrs)
         {
             try

@@ -249,7 +249,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         {
             return command.Op switch
             {
-                IpcContract.OpAddConfig => await AddConfigAsync(command.Args, ct),
+                IpcContract.OpAddConfig => AddConfig(command.Args),
                 IpcContract.OpAddBalancer => await AddBalancerAsync(command.Args, ct),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
@@ -271,7 +271,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpCheckSources => await CheckSourcesAsync(ct),
                 IpcContract.OpCheckSource => await CheckSourceAsync(command.Args, ct),
                 IpcContract.OpGetConfig => GetConfig(command.Args),
-                IpcContract.OpImportConfig => await ImportConfigAsync(command.Args, ct),
+                IpcContract.OpImportConfig => ImportConfig(command.Args),
                 IpcContract.OpEditConfig => EditConfig(command.Args),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
@@ -291,7 +291,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    private async Task<IpcAck> AddConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
+    private IpcAck AddConfig(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
         {
@@ -299,7 +299,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         configRepo.Add(args[0], args[1]);
-        await SeedExclusionsAsync(args[0], ct);
         logger.LogInformation("added config {Name}", args[0]);
         return new IpcAck(true, $"added config {args[0]}");
     }
@@ -319,7 +318,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, configRepo.ReadText(args[0]));
     }
 
-    private async Task<IpcAck> ImportConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
+    private IpcAck ImportConfig(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
         {
@@ -327,7 +326,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         configRepo.AddFromText(args[0], args[1]);
-        await SeedExclusionsAsync(args[0], ct);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, $"импортирован {args[0]}");
     }
@@ -662,10 +660,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             {
                 await store.SetConfigExclusionsAsync(new ConfigExclusions(configName, ex.List.Trim()), ct);
             }
-
-            // No exclusions carried in the bundle → seed the defaults so the imported config still starts
-            // with its local networks visible (idempotent: skips if the line above already wrote a row).
-            await SeedExclusionsAsync(configName, ct);
         }
 
         var profileBase = string.IsNullOrWhiteSpace(bundle.Profile)
@@ -898,20 +892,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private IpcAck ListLocalSubnets()
     {
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
-    }
-
-    // Materialises the default exclusions (the formerly-hidden LAN floor) into a freshly-created config so
-    // they are visible and editable. Idempotent: only writes when the config has no row yet, so it never
-    // overrides a user's edits, and once a row exists the agent applies it with the built-in floor off.
-    private async Task SeedExclusionsAsync(string config, CancellationToken ct)
-    {
-        if (string.IsNullOrEmpty(config) || await store.GetConfigExclusionsAsync(config, ct) is not null)
-        {
-            return;
-        }
-
-        await store.SetConfigExclusionsAsync(
-            new ConfigExclusions(config, string.Join('\n', routes.DefaultExclusionEntries())), ct);
     }
 
     /// <summary>
@@ -1556,11 +1536,15 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var transport = await store.GetConfigTransportAsync(name, ct);
             var configDns = await store.GetConfigDnsAsync(name, ct);
             var configEx = await store.GetConfigExclusionsAsync(name, ct);
+            // No stored row → show the runtime default set (RFC1918 ranges + connected subnets) so the user
+            // sees what currently keeps the LAN direct and can edit it; saving from the UI then creates the
+            // row, which the tunnel applies verbatim (the default is never frozen into storage on its own).
+            var exclusions = configEx?.Exclusions ?? string.Join('\n', routes.DefaultExclusionEntries());
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, configEx?.Exclusions ?? string.Empty));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions));
         }
 
         var balancers = new List<BalancerEntry>();

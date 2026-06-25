@@ -767,8 +767,16 @@
                   <TextBlock IsVisible="{Binding !IsConfigManage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                              Text="Сначала добавьте конфигурацию в разделе «Конфигурация»." />
                   <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="8" DataContext="{Binding ConfigExclusions}">
-                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="Что НЕ заворачивать в туннель: домены (резолвятся локальным DNS) или IP/подсети (идут напрямую). По одному в строке. Локалхост, локальная сеть (10.x, 172.16-31.x, 192.168.x), .local/.lan и подобные уже исключены по умолчанию." />
+                    <StackPanel Spacing="3">
+                      <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                                 Text="Адреса, которые не заворачивать в VPN. По одному в строке. Два вида записей работают по-разному:" />
+                      <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                                 Text="• IP или подсеть (напр. 1.2.3.4, 10.50.0.0/16) — идут напрямую, мимо туннеля. Это надёжный способ увести адрес из VPN." />
+                      <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                                 Text="• Домен (напр. corp.local, nas) — имя резолвится локальным DNS, а не DNS туннеля. Напрямую уходит, только если его адрес и так локальный (внутренние / корпоративные имена). Публичный сайт по имени мимо туннеля НЕ обойдёт — чтобы увести его напрямую, добавьте его IP/подсеть." />
+                      <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                 Text="Локалхост, локальная сеть (10.x, 172.16–31.x, 192.168.x), .local/.lan и подобные уже исключены по умолчанию." />
+                    </StackPanel>
                     <StackPanel Spacing="4" Margin="0,2">
                       <Button Classes="softbtn" HorizontalAlignment="Left" Content="Добавить локальные сети"
                               Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}" />
@@ -780,7 +788,7 @@
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
                              Text="{Binding Exclusions, Mode=TwoWay}"
-                             Watermark=".ddns.example.net&#x0a;corp.local&#x0a;10.50.0.0/16&#x0a;example.ru" />
+                             Watermark="corp.local&#x0a;nas&#x0a;10.50.0.0/16&#x0a;192.168.10.5" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Button Classes="accent" HorizontalAlignment="Left" Content="Сохранить"
                               Command="{Binding SaveCommand}" IsEnabled="{Binding !IsBusy}" />

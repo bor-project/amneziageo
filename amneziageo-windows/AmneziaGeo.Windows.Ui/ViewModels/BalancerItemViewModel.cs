@@ -254,9 +254,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             return;
         }
 
-        var name = !string.IsNullOrWhiteSpace(NewConfigName) ? NewConfigName.Trim()
-            : !string.IsNullOrWhiteSpace(imported.Name) ? imported.Name!.Trim()
-            : "config";
+        var name = !string.IsNullOrWhiteSpace(NewConfigName) ? NewConfigName.Trim() : DefaultConfigName(imported);
 
         var ack = await _importConfig(name, imported.ConfText);
         if (!ack.Ok)
@@ -282,6 +280,46 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         NewConfigName = string.Empty;
         NewConfigText = string.Empty;
         NewConfigStatus = string.Empty;
+    }
+
+    // The default name for an imported config when the user typed none and no file name was carried in (a
+    // pasted vpn:// link or bare text): the tunnel Address from the config, then any name the share link
+    // described, then a generic placeholder. A file import already pre-fills NewConfigName with the file name.
+    private static string DefaultConfigName(VpnLinkCodec.Imported imported)
+    {
+        var address = ParseInterfaceAddress(imported.ConfText);
+        if (!string.IsNullOrWhiteSpace(address))
+        {
+            return address!;
+        }
+
+        return !string.IsNullOrWhiteSpace(imported.Name) ? imported.Name!.Trim() : "config";
+    }
+
+    // Extracts the [Interface] Address value (first entry, mask stripped) from wg-quick text, e.g.
+    // "Address = 10.8.0.2/32, fd00::2/128" -> "10.8.0.2"; null when there is no Address line.
+    private static string? ParseInterfaceAddress(string confText)
+    {
+        foreach (var raw in confText.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith("Address", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var eq = line.IndexOf('=');
+            if (eq < 0)
+            {
+                continue;
+            }
+
+            var first = line[(eq + 1)..].Split(',')[0].Trim();
+            var slash = first.IndexOf('/');
+            return slash > 0 ? first[..slash] : first;
+        }
+
+        return null;
     }
 
     /// <summary>

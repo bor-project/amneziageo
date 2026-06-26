@@ -92,14 +92,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// </summary>
     public async Task LoadAsync()
     {
-        var suggestions = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListGeo, []));
-        if (suggestions.Ok)
-        {
-            foreach (var token in suggestions.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                GeoSuggestions.Add(token);
-            }
-        }
+        await RefreshSuggestionsAsync();
 
         if (_id != 0)
         {
@@ -115,6 +108,29 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 
         // Seeding done; edits from here on auto-save.
         _suppressAutoSave = false;
+    }
+
+    /// <summary>
+    /// Re-fetches the geo category suggestions from the agent, replacing the current set. Called when the
+    /// set of geo sources changes (a source finished downloading, was added or removed) so the rule search
+    /// reflects the new categories without reopening the editor.
+    /// </summary>
+    public async Task RefreshSuggestionsAsync()
+    {
+        var response = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListGeo, []));
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        // Build the new set first, then swap in one go: never leave the suggestion list momentarily empty
+        // across the await, and avoid interleaving if two refreshes overlap.
+        var tokens = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        GeoSuggestions.Clear();
+        foreach (var token in tokens)
+        {
+            GeoSuggestions.Add(token);
+        }
     }
 
     /// <summary>

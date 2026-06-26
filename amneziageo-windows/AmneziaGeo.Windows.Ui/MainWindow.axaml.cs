@@ -39,6 +39,17 @@ public sealed partial class MainWindow : Window
         }, DispatcherPriority.Background);
     }
 
+    // Same as OnBeginProfileNameEdit but for the config header's inline name editor.
+    private void OnBeginConfigNameEdit(object? sender, RoutedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var box = this.FindControl<TextBox>("ConfigNameBox");
+            box?.Focus();
+            box?.SelectAll();
+        }, DispatcherPriority.Background);
+    }
+
     private async void OnNewConfigBrowse(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: BalancerItemViewModel vm })

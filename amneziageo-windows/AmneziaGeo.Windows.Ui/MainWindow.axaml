@@ -550,6 +550,31 @@
                   <!-- the config's .conf text + export, file location, delete (window VM context; shown once a
                        configuration is set). -->
                   <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="14" Margin="0,12,0,0">
+                    <!-- config name + pencil (mirrors the profile-name editor); the default name is set on
+                         import from the file name or the config's Address. -->
+                    <StackPanel Spacing="2">
+                      <TextBlock Classes="label" Text="ИМЯ КОНФИГУРАЦИИ" />
+                      <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditingConfigName}">
+                        <TextBlock Grid.Column="0" Text="{Binding OpenConfig}" FontWeight="SemiBold" FontSize="14"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <Button Grid.Column="1" Classes="icon" Content="✎" FontSize="14"
+                                Command="{Binding BeginConfigNameEditCommand}" Click="OnBeginConfigNameEdit"
+                                ToolTip.Tip="Переименовать" />
+                      </Grid>
+                      <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding IsEditingConfigName}">
+                        <TextBox Grid.Column="0" x:Name="ConfigNameBox" Classes="field"
+                                 Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="icon" Content="💾" FontSize="14" Margin="6,0,0,0"
+                                Command="{Binding RenameConfigCommand}" IsEnabled="{Binding CanSaveConfigName}"
+                                ToolTip.Tip="Сохранить имя" />
+                        <Button Grid.Column="2" Classes="icon" Content="✕" FontSize="14" Margin="4,0,0,0"
+                                Command="{Binding CancelConfigNameEditCommand}"
+                                ToolTip.Tip="Отменить переименование" />
+                      </Grid>
+                      <TextBlock Text="{Binding ConfigRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                 IsVisible="{Binding IsEditingConfigName}" />
+                    </StackPanel>
+
                     <StackPanel Spacing="10" DataContext="{Binding ConfigExport}">
                       <Border Background="{DynamicResource AgInsetBrush}"
                               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"

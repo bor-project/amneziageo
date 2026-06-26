@@ -54,7 +54,7 @@ internal sealed class GeoIndex
         IReadOnlyList<string> result = [];
         foreach (var bytes in _geoip)
         {
-            var cidrs = GeoIpDatabase.Cidrs(bytes, country);
+            var cidrs = Safe(() => GeoIpDatabase.Cidrs(bytes, country), []);
             if (cidrs.Count > 0)
             {
                 result = cidrs;
@@ -72,7 +72,7 @@ internal sealed class GeoIndex
         IReadOnlyList<GeoDomain> result = [];
         foreach (var bytes in _geosite)
         {
-            var domains = GeoSiteDatabase.Domains(bytes, category);
+            var domains = Safe(() => GeoSiteDatabase.Domains(bytes, category), []);
             if (domains.Count > 0)
             {
                 result = domains;
@@ -90,7 +90,7 @@ internal sealed class GeoIndex
         var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var bytes in _geosite)
         {
-            foreach (var category in GeoSiteDatabase.Categories(bytes))
+            foreach (var category in Safe(() => GeoSiteDatabase.Categories(bytes), []))
             {
                 set.Add(category);
             }
@@ -107,12 +107,28 @@ internal sealed class GeoIndex
         var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var bytes in _geoip)
         {
-            foreach (var country in GeoIpDatabase.Countries(bytes))
+            foreach (var country in Safe(() => GeoIpDatabase.Countries(bytes), []))
             {
                 set.Add(country);
             }
         }
 
         return [.. set];
+    }
+
+    // Defence in depth: even though GeoFileUpdater now validates a source before persisting it, a file
+    // saved by an older build (or corrupted on disk) must not break index-wide queries. Tolerate a single
+    // unparseable file by skipping it rather than letting the parse error escape and fail list-geo,
+    // save-routing-list, materialization, etc. for every source at once.
+    private static T Safe<T>(Func<T> parse, T fallback)
+    {
+        try
+        {
+            return parse();
+        }
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException)
+        {
+            return fallback;
+        }
     }
 }

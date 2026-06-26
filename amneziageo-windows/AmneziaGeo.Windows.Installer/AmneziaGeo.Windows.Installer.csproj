@@ -1,12 +1,13 @@
 <!-- AmneziaGeo installer UI: a WiX v5 out-of-process managed (WPF) Bootstrapper Application.
      Plain Microsoft.NET.Sdk (NOT the WiX SDK) producing a WinExe; the only package is the v5
-     BA API. Self-contained publish (-p:SelfContained=true on the publish command) so the target
-     needs no .NET runtime to show the installer UI. -->
+     BA API. Targets net10.0-windows like the rest of the product, so a self-contained build needs
+     no runtime on the target, and a framework-dependent build needs only the .NET 10 Desktop
+     Runtime (the build picks self-contained vs framework-dependent from installer.config.json). -->
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PlatformTarget>x64</PlatformTarget>
     <UseWPF>true</UseWPF>

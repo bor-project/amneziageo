@@ -121,6 +121,27 @@ function Invoke-SignLibraries([string]$dir) {
     if ($ours) { Invoke-Sign @ours }
 }
 
+# Sign a Burn bundle the WiX-correct way: detach the engine, sign it, reattach, then sign the whole
+# bundle. Signing the bundle .exe DIRECTLY shifts the file so Burn's recorded attached-container offset
+# goes stale, and at runtime Burn fails to extract its own payloads ("failed to resolve source for
+# WixAttachedContainer", 0x80070002 - the install dies right after the BA appears). detach/reattach
+# rewrites the .wixburn section so the attached container stays locatable after the signature is added.
+function Invoke-SignBundle([string]$bundle) {
+    if (-not ($cfg -and $cfg.signingCert)) { return }
+    if (-not (Get-Command wix -ErrorAction SilentlyContinue)) { throw 'wix CLI not found - needed to sign the Burn bundle (detach/reattach).' }
+    $engine = Join-Path ([System.IO.Path]::GetDirectoryName($bundle)) 'burnengine.exe'
+    $out    = "$bundle.signed"
+    Write-Host '== sign bundle (detach engine -> sign -> reattach -> sign bundle) =='
+    & wix burn detach $bundle -engine $engine
+    if ($LASTEXITCODE -ne 0) { throw "wix burn detach failed ($LASTEXITCODE)" }
+    Invoke-Sign $engine
+    & wix burn reattach $bundle -engine $engine -o $out
+    if ($LASTEXITCODE -ne 0) { throw "wix burn reattach failed ($LASTEXITCODE)" }
+    Move-Item -Force $out $bundle
+    Remove-Item -Force $engine
+    Invoke-Sign $bundle
+}
+
 Assert-SigningCert
 
 # ---- version: 1.0.1.<commit count> (4th field always increasing) ----
@@ -195,9 +216,7 @@ if ($LASTEXITCODE -ne 0) { throw "Bundle build failed ($LASTEXITCODE)" }
 
 $setupExe = Get-ChildItem -Recurse (Join-Path $bundleDir 'bin') -Filter AmneziaGeoSetup.exe -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
-# Direct signtool over the bundle exe (good enough for a self-signed dev build). A real release should
-# instead detach the Burn engine, sign it, reattach, then sign the bundle (insignia / `wix burn`).
-if ($setupExe) { Invoke-Sign $setupExe.FullName }
+if ($setupExe) { Invoke-SignBundle $setupExe.FullName }
 
 Write-Host '== result =='
 Get-ChildItem -Recurse $bundleDir -Filter AmneziaGeoSetup.exe |

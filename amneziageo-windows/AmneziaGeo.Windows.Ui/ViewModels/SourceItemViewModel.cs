@@ -44,6 +44,14 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowUpdateBadge))]
     private bool _updating;
 
+    /// <summary>
+    /// The last download/parse failure for this source (e.g. a wrong URL), or null when the last attempt
+    /// succeeded. Folded into <see cref="Detail"/> so the row explains why a source has no categories.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Detail))]
+    private string? _error;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowProgress))]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
@@ -61,11 +69,14 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     public bool ShowUpdateBadge => UpdateAvailable && !Updating;
 
     /// <summary>
-    /// A short label like "geosite · 1240 категорий · 2026-06-16 19:40" or "geoip · не загружен".
+    /// A short label like "geosite · 1240 категорий · 2026-06-16 19:40", "geoip · не загружен", or
+    /// "geoip · ошибка: …" when the last download/parse failed.
     /// </summary>
-    public string Detail => Updated is null
-        ? $"{Kind} · не загружен"
-        : $"{Kind} · {CategoryCount} категорий · {Updated}";
+    public string Detail => Error is { Length: > 0 }
+        ? $"{Kind} · ошибка: {Error}"
+        : Updated is null
+            ? $"{Kind} · не загружен"
+            : $"{Kind} · {CategoryCount} категорий · {Updated}";
 
     /// <summary>
     /// True while a download percentage should be shown (downloading); false once the file is in hand

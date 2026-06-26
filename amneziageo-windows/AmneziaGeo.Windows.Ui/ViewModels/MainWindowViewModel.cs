@@ -148,10 +148,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // The editable name field for the open config (seeded with its current name) and a one-line status
     // for a rejected rename (e.g. the name is taken, or the config is in use by the running tunnel).
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveConfigName))]
     private string _configRename = string.Empty;
 
     [ObservableProperty]
     private string _configRenameStatus = string.Empty;
+
+    // Inline name-edit mode for the config header (mirrors the profile header): while true the name shows
+    // as a text box with save/cancel buttons; otherwise as text with a pencil.
+    [ObservableProperty]
+    private bool _isEditingConfigName;
 
     // The editable name field for the open profile (seeded with its current name) and its rename status.
     [ObservableProperty]
@@ -265,6 +271,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _hasSources;
+
+    // Signature of the geo category surface (each source's name + its category count) from the last
+    // snapshot. When it changes - a source finished downloading, was added or removed - the open routing
+    // editor's category suggestions are refreshed, so newly added geo data shows up in the rule search
+    // without reopening the editor (previously it only appeared after an app restart).
+    private string _geoCategorySignature = string.Empty;
 
     // The agent activity journal shown on the home screen: newest line first, joined into one string so
     // the view is a single (selectable) text block - no per-line controls to regenerate each push.
@@ -488,6 +500,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Whether the inline name editor can save (the typed name is not blank).</summary>
     public bool CanSaveProfileName => !string.IsNullOrWhiteSpace(ProfileRename);
 
+    /// <summary>Whether the inline config-name editor has a non-blank name to save.</summary>
+    public bool CanSaveConfigName => !string.IsNullOrWhiteSpace(ConfigRename);
+
     /// <summary>Whether the opened profile's configuration aspect is selected.</summary>
     public bool IsAspectConfig => ProfileAspect == "config";
 
@@ -676,12 +691,31 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // "✎" in the config header: switch the name to an inline editor seeded with the current name.
+    [RelayCommand]
+    private void BeginConfigNameEdit()
+    {
+        ConfigRename = OpenConfig ?? string.Empty;
+        ConfigRenameStatus = string.Empty;
+        IsEditingConfigName = true;
+    }
+
+    // "✕" next to the inline config-name editor: leave rename mode without saving, restoring the name.
+    [RelayCommand]
+    private void CancelConfigNameEdit()
+    {
+        ConfigRename = OpenConfig ?? string.Empty;
+        ConfigRenameStatus = string.Empty;
+        IsEditingConfigName = false;
+    }
+
     // Build the config page's view model when a config is opened; null it out when the page closes.
     partial void OnOpenConfigChanged(string? value)
     {
         ConfigDeleteStatus = string.Empty;
         ConfigRename = value ?? string.Empty;
         ConfigRenameStatus = string.Empty;
+        IsEditingConfigName = false;
         if (value is null)
         {
             ConfigExport = null;
@@ -1384,9 +1418,22 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.Updating = entry.Updating;
             existing.Progress = entry.Progress;
             existing.UpdateAvailable = entry.UpdateAvailable;
+            existing.Error = entry.Error;
         }
 
         HasSources = Sources.Count > 0;
+
+        // Refresh the open routing editor's category suggestions when the set of available categories
+        // actually changed (a source finished downloading, or one was added / removed). Gated on a
+        // signature so an unrelated snapshot tick (progress %, update badge) does not re-fetch list-geo.
+        var signature = string.Join('|', entries
+            .Select(e => $"{e.Name}={e.CategoryCount}")
+            .OrderBy(s => s, StringComparer.Ordinal));
+        if (signature != _geoCategorySignature)
+        {
+            _geoCategorySignature = signature;
+            _ = RoutingEditor?.RefreshSuggestionsAsync();
+        }
     }
 
     private void SyncBalancers(IReadOnlyList<BalancerEntry> entries, IReadOnlyList<RoutingListEntry> routingLists)

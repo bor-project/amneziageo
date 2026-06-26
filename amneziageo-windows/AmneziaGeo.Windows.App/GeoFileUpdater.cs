@@ -33,18 +33,49 @@ internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
 
         var (data, etag, lastModified) = fresh.Value;
 
+        // Validate BEFORE writing anything to disk: a wrong URL (e.g. a GitHub repo page that returns
+        // HTML, a 404 body, or a geosite file given as geoip) must never be persisted, or every later
+        // index build - list-geo, routing-list materialization - would hit a parse error and the whole
+        // geo subsystem would stop working until the source is removed. Parsing here turns a bad source
+        // into a clear, isolated failure for just that source.
+        var count = CountEntries(source, data);
+
         var path = TunnelPaths.GeoDataFile(source.Name);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await File.WriteAllBytesAsync(path, data, ct);
 
         var sha = Convert.ToHexStringLower(SHA256.HashData(data));
-        var count = source.Kind.Equals("geoip", StringComparison.OrdinalIgnoreCase)
-            ? GeoIpDatabase.Countries(data).Count
-            : GeoSiteDatabase.Categories(data).Count;
-
         var metadata = new GeoFileMetadata(source.Name, source.Url, DateTimeOffset.UtcNow, sha, count, etag, lastModified);
         await store.SaveGeoFileAsync(metadata, ct);
         return metadata;
+    }
+
+    /// <summary>
+    /// Parses the downloaded bytes as the source's declared kind and returns the entry count, throwing a
+    /// clear <see cref="InvalidDataException"/> when the content is not a usable v2ray .dat (unparseable,
+    /// or zero entries - the typical signature of an HTML page or a 404 body served for a bad URL).
+    /// </summary>
+    private static int CountEntries(GeoSource source, byte[] data)
+    {
+        var isGeoip = source.Kind.Equals("geoip", StringComparison.OrdinalIgnoreCase);
+        int count;
+        try
+        {
+            count = isGeoip ? GeoIpDatabase.Countries(data).Count : GeoSiteDatabase.Categories(data).Count;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException)
+        {
+            throw new InvalidDataException(
+                $"«{source.Url}» не похож на файл {source.Kind}.dat — не удалось разобрать. Укажите прямую ссылку на .dat (raw), а не на страницу репозитория.", ex);
+        }
+
+        if (count == 0)
+        {
+            throw new InvalidDataException(
+                $"«{source.Url}» не содержит ни одной категории {source.Kind}. Похоже, это не .dat-файл — нужна прямая (raw) ссылка на geoip.dat / geosite.dat.");
+        }
+
+        return count;
     }
 
     /// <summary>

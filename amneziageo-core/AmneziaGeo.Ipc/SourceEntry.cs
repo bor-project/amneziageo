@@ -8,6 +8,9 @@ namespace AmneziaGeo.Ipc;
 /// in hand and the routing lists are being re-materialized (indeterminate, spinner only).
 /// <paramref name="UpdateAvailable"/> is true when the last update-check found a newer remote file;
 /// it is cleared once the source is re-downloaded.
+/// <paramref name="Error"/> is the last download/parse failure for this source (e.g. a wrong URL that
+/// returned an HTML page), or null when the last attempt succeeded; the row shows it so the user knows
+/// why a freshly added source has no categories.
 /// </summary>
 public sealed record SourceEntry(
     string Name,
@@ -17,4 +20,5 @@ public sealed record SourceEntry(
     int CategoryCount,
     bool Updating = false,
     int Progress = 0,
-    bool UpdateAvailable = false);
+    bool UpdateAvailable = false,
+    string? Error = null);

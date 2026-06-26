@@ -61,6 +61,16 @@ public ref struct ProtoReader
     public ReadOnlySpan<byte> ReadBytes()
     {
         var length = (int)ReadVarint();
+        // A field length that runs past the buffer means the bytes are not a valid v2ray .dat (a wrong
+        // URL that returned an HTML page, a truncated download, etc.). Surface a clear, typed error
+        // instead of the raw ArgumentOutOfRangeException that Slice would throw, so callers can reject
+        // the file with a meaningful message rather than letting a cryptic exception break the whole
+        // geo subsystem.
+        if (length < 0 || length > _data.Length - _position)
+        {
+            throw new InvalidDataException("Malformed protobuf: length-delimited field runs past the buffer.");
+        }
+
         var slice = _data.Slice(_position, length);
         _position += length;
         return slice;
@@ -90,7 +100,11 @@ public ref struct ProtoReader
             case 2:
             {
                 var length = (int)ReadVarint();
-                _position += length;
+                // Give up cleanly on a bogus length (End becomes true) rather than letting a later read
+                // index past the buffer; a malformed/over-long skip means the file is not parseable anyway.
+                _position = length < 0 || length > _data.Length - _position
+                    ? _data.Length
+                    : _position + length;
                 break;
             }
             case 5:

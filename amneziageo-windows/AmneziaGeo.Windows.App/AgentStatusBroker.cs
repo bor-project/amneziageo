@@ -40,6 +40,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     // is re-downloaded. Surfaced on each SourceEntry so the UI can badge the row.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
+    // Per-source last download/parse failure (e.g. a wrong URL that returned an HTML page), set when an
+    // update fails and cleared on a successful download. Surfaced on each SourceEntry so the row can tell
+    // the user why a freshly added source has no categories instead of silently showing "не загружен".
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastError = new(StringComparer.Ordinal);
+
     /// <summary>
     /// The profile whose live status the connection card reflects: the running target while connected,
     /// otherwise the selected target. The radio uses the selected target (snapshot SelectedTarget).
@@ -1190,6 +1195,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var name = args[0];
         await store.RemoveGeoSourceAsync(name, ct);
         _updateAvailable.TryRemove(name, out _);
+        _lastError.TryRemove(name, out _);
         try
         {
             var path = TunnelPaths.GeoDataFile(name);
@@ -1344,6 +1350,23 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     }
 
     /// <summary>
+    /// A short, single-line message for a source's download/parse failure, suitable for the row. Our own
+    /// validation failures (InvalidDataException) already carry a user-facing Russian message; for other
+    /// errors (network, etc.) the exception text is used, capped so a long message can't blow up the row.
+    /// </summary>
+    private static string ShortError(Exception ex)
+    {
+        var inner = ex is AggregateException agg && agg.InnerException is not null ? agg.InnerException : ex;
+        var message = (inner.Message ?? string.Empty).Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (message.Length == 0)
+        {
+            message = inner.GetType().Name;
+        }
+
+        return message.Length > 200 ? message[..200] + "…" : message;
+    }
+
+    /// <summary>
     /// Re-downloads the given sources and re-materializes the routing lists on a background task, then
     /// pushes a fresh snapshot. Kept off the IPC command path so a slow download never blocks the pipe
     /// or overruns the client's command timeout. A lightweight ticker broadcasts in-flight progress so
@@ -1374,14 +1397,17 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                     try
                     {
                         await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
-                        // Downloaded: the local file is now current, so any pending update flag is stale.
+                        // Downloaded: the local file is now current, so any pending update flag is stale and
+                        // any prior failure is resolved.
                         _updateAvailable[source.Name] = false;
+                        _lastError.TryRemove(source.Name, out _);
                         // Switch to indeterminate while the re-materialize runs below.
                         _updating[source.Name] = -1;
                     }
                     catch (Exception ex)
                     {
                         logger.LogWarning(ex, "geo source download failed: {Name}", source.Name);
+                        _lastError[source.Name] = ShortError(ex);
                         _updating.TryRemove(source.Name, out _);
                     }
                 }));
@@ -1540,10 +1566,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 {
                     await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name), ct);
                     _updateAvailable[source.Name] = false;
+                    _lastError.TryRemove(source.Name, out _);
                 }
                 catch (Exception ex)
                 {
                     failed.Add(source.Name);
+                    _lastError[source.Name] = ShortError(ex);
                     logger.LogWarning(ex, "geo download failed: {Name}", source.Name);
                 }
                 finally
@@ -1655,7 +1683,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
             var updating = _updating.TryGetValue(source.Name, out var percent);
             var updateAvailable = _updateAvailable.TryGetValue(source.Name, out var avail) && avail;
-            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable));
+            // A stale error is hidden while a retry is in flight so the row shows the spinner, not the old
+            // failure.
+            var error = !updating && _lastError.TryGetValue(source.Name, out var err) ? err : null;
+            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable, error));
         }
 
         var update = updateState.Latest;

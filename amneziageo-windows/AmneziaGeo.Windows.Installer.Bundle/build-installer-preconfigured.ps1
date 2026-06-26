@@ -66,7 +66,11 @@ if ($cfg -and $cfg.iconPath) {
 }
 $hasIcon = if ($iconAbs) { 'true' } else { 'false' }
 $iconProps = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$iconAbs") } else { @('-p:HasIcon=false') }
-Write-Host "== config: icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+
+# Payload type: self-contained bundles the .NET runtime (installs anywhere, large); framework-dependent
+# is much lighter but needs .NET 10 already on the target. Default (absent/false) = framework-dependent.
+$selfContained = if ($cfg -and $cfg.selfContained) { 'true' } else { 'false' }
+Write-Host "== config: type=$(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' }); icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
 
 # signtool is not on PATH; resolve it once (PATH first, then the newest x64 build under the Windows SDK).
 $script:Signtool = $null
@@ -139,8 +143,8 @@ Write-Host "== preconfigured bundle version $version =="
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-Write-Host '== publish launcher (AmneziaGeo.exe, self-contained) =='
-dotnet publish $launcherProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps $iconProps -o $stage
+Write-Host "== publish launcher (AmneziaGeo.exe, $(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' })) =="
+dotnet publish $launcherProj -c $Configuration -r $rid --self-contained $selfContained -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps $iconProps -o $stage
 if ($LASTEXITCODE -ne 0) { throw "launcher publish failed ($LASTEXITCODE)" }
 
 # ---- 2. stage the seed (appsettings.json + seed\<conf>) ----

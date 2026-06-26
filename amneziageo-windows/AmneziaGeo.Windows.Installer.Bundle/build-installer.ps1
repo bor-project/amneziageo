@@ -55,20 +55,67 @@ $iconProps   = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$ico
 $updateProps = if ($updateUrl) { @("-p:UpdateUrl=$updateUrl") } else { @() }
 Write-Host "== config: icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
 
-# signtool sign (best-effort point for the future): no-op unless installer.config.json sets a signingCert.
-function Invoke-Sign([string]$file) {
+# ---- Authenticode signing (installer.config.json -> signingCert). Off unless signingCert is set. ----
+# signtool is not on PATH; resolve it once (PATH first, then the newest x64 build under the Windows SDK).
+$script:Signtool = $null
+function Resolve-Signtool {
+    if ($script:Signtool) { return $script:Signtool }
+    $c = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($c) { $script:Signtool = $c.Source; return $script:Signtool }
+    $found = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+             Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending
+    if (-not $found) { throw 'signtool.exe not found - install the Windows SDK or add signtool to PATH.' }
+    $script:Signtool = $found[0].FullName
+    return $script:Signtool
+}
+
+# Fail fast (before the long publishes) if signing is configured but the cert is missing.
+function Assert-SigningCert {
     if (-not ($cfg -and $cfg.signingCert)) { return }
     $sc = $cfg.signingCert
-    $a = @('sign', '/fd', 'SHA256')
-    if ($sc.timestampUrl) { $a += @('/tr', [string]$sc.timestampUrl, '/td', 'SHA256') }
-    if ($sc.thumbprint) { $a += @('/sha1', [string]$sc.thumbprint) }
-    elseif ($sc.pfxPath) { $a += @('/f', [string]$sc.pfxPath); if ($sc.password) { $a += @('/p', [string]$sc.password) } }
-    else { Write-Host '   signingCert set but neither thumbprint nor pfxPath given - skipping signing'; return }
-    $a += $file
-    Write-Host "== sign $([System.IO.Path]::GetFileName($file)) =="
-    & signtool.exe @a
-    if ($LASTEXITCODE -ne 0) { throw "signtool failed on $file ($LASTEXITCODE)" }
+    if ($sc.pfxPath) {
+        if (-not (Test-Path $sc.pfxPath)) { throw "signingCert.pfxPath '$($sc.pfxPath)' not found." }
+        return
+    }
+    $store = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue
+    $match = if ($sc.thumbprint) { $store | Where-Object { $_.Thumbprint -eq $sc.thumbprint -and $_.HasPrivateKey } }
+             elseif ($sc.subject) { $store | Where-Object { $_.Subject -like "*$($sc.subject)*" -and $_.HasPrivateKey } }
+             else { $null }
+    if (-not $match) {
+        throw "installer.config.json enables signingCert but no matching code-signing certificate is installed. " +
+              "Run dev-signing-cert.ps1 to create a self-signed dev cert, or point signingCert at a real one."
+    }
 }
+
+# Sign one or more files in a single signtool call (one timestamp round-trip). No-op when signing is off.
+function Invoke-Sign {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Files)
+    if (-not ($cfg -and $cfg.signingCert)) { return }
+    $Files = @($Files | Where-Object { $_ -and (Test-Path $_) })
+    if (-not $Files) { return }
+    $sc = $cfg.signingCert
+    $a = @('sign', '/fd', 'SHA256')
+    if     ($sc.subject)    { $a += @('/n', [string]$sc.subject) }       # pick from the store by subject
+    elseif ($sc.thumbprint) { $a += @('/sha1', [string]$sc.thumbprint) } # ... or by thumbprint
+    elseif ($sc.pfxPath)    { $a += @('/f', [string]$sc.pfxPath); if ($sc.password) { $a += @('/p', [string]$sc.password) } }
+    else   { Write-Host '   signingCert set but none of subject/thumbprint/pfxPath given - skipping signing'; return }
+    if ($sc.timestampUrl)   { $a += @('/tr', [string]$sc.timestampUrl, '/td', 'SHA256') }
+    $a += $Files
+    Write-Host "== sign $($Files.Count) file(s): $((($Files | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')) =="
+    & (Resolve-Signtool) @a
+    if ($LASTEXITCODE -ne 0) { throw "signtool failed ($LASTEXITCODE)" }
+}
+
+# Sign OUR OWN binaries (everything named AmneziaGeo.*) under a publish folder. Third-party and .NET
+# runtime assemblies keep their original publisher signatures - we never re-sign them with our cert.
+function Invoke-SignLibraries([string]$dir) {
+    if (-not ($cfg -and $cfg.signingCert)) { return }
+    $ours = @(Get-ChildItem -Recurse -File $dir -Include 'AmneziaGeo*.dll', 'AmneziaGeo*.exe' -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName)
+    if ($ours) { Invoke-Sign @ours }
+}
+
+Assert-SigningCert
 
 # ---- version: 1.0.1.<commit count> (4th field always increasing) ----
 $build = (& git -C $win rev-list --count HEAD).Trim()
@@ -87,6 +134,9 @@ if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
 Write-Host '== publish GUI (AmneziaGeo.Windows.Ui, self-contained) =='
 dotnet publish $uiProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $iconProps -o $stage
 if ($LASTEXITCODE -ne 0) { throw "UI publish failed ($LASTEXITCODE)" }
+
+# Sign our libraries/exes in the stage BEFORE the MSI packs them, so the installed files are signed.
+Invoke-SignLibraries $stage
 
 # ---- 2. build the MSI from the stage ----
 Write-Host '== build MSI =='
@@ -108,6 +158,9 @@ if ($LASTEXITCODE -ne 0) { throw "BA publish failed ($LASTEXITCODE)" }
 
 $baExe = Join-Path $baPublish $baExeName
 if (-not (Test-Path $baExe)) { throw "BA exe not found: $baExe" }
+
+# Sign our bootstrapper binaries before Burn embeds them as payloads (incl. the BA exe itself).
+Invoke-SignLibraries $baPublish
 
 # ---- 4. generate the PayloadGroup over the BA publish folder (every file except the BA exe) ----
 Write-Host '== generate BA payload group =='
@@ -136,6 +189,8 @@ if ($LASTEXITCODE -ne 0) { throw "Bundle build failed ($LASTEXITCODE)" }
 
 $setupExe = Get-ChildItem -Recurse (Join-Path $bundleDir 'bin') -Filter AmneziaGeoSetup.exe -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
+# Direct signtool over the bundle exe (good enough for a self-signed dev build). A real release should
+# instead detach the Burn engine, sign it, reattach, then sign the bundle (insignia / `wix burn`).
 if ($setupExe) { Invoke-Sign $setupExe.FullName }
 
 Write-Host '== result =='

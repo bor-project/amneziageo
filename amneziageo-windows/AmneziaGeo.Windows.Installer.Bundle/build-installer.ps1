@@ -53,7 +53,13 @@ $hasIcon = if ($iconAbs) { 'true' } else { 'false' }
 # Props appended to the relevant dotnet invocations (arrays expand to separate native args; empty = nothing).
 $iconProps   = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$iconAbs") } else { @('-p:HasIcon=false') }
 $updateProps = if ($updateUrl) { @("-p:UpdateUrl=$updateUrl") } else { @() }
-Write-Host "== config: icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+
+# Payload type: self-contained bundles the .NET runtime (installs on any machine, but large);
+# framework-dependent is much lighter but needs the matching .NET runtime already on the target
+# (App/Ui -> .NET 10, the WPF bootstrapper -> .NET 8 Desktop). Default (absent/false) = framework-
+# dependent - lighter to build, copy and test. Set "selfContained": true for distribution.
+$selfContained = if ($cfg -and $cfg.selfContained) { 'true' } else { 'false' }
+Write-Host "== config: type=$(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' }); icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
 
 # ---- Authenticode signing (installer.config.json -> signingCert). Off unless signingCert is set. ----
 # signtool is not on PATH; resolve it once (PATH first, then the newest x64 build under the Windows SDK).
@@ -127,12 +133,12 @@ Write-Host "== bundle version $version =="
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-Write-Host '== publish backend (AmneziaGeo.Windows.App, self-contained) =='
-dotnet publish $appProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps -o $stage
+Write-Host "== publish backend (AmneziaGeo.Windows.App, $(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' })) =="
+dotnet publish $appProj -c $Configuration -r $rid --self-contained $selfContained -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps -o $stage
 if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
 
-Write-Host '== publish GUI (AmneziaGeo.Windows.Ui, self-contained) =='
-dotnet publish $uiProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $iconProps -o $stage
+Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' })) =="
+dotnet publish $uiProj -c $Configuration -r $rid --self-contained $selfContained -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $iconProps -o $stage
 if ($LASTEXITCODE -ne 0) { throw "UI publish failed ($LASTEXITCODE)" }
 
 # Sign our libraries/exes in the stage BEFORE the MSI packs them, so the installed files are signed.
@@ -152,8 +158,8 @@ Invoke-Sign $msi.FullName
 
 # ---- 3. publish the bootstrapper application (self-contained, so no .NET needed to show the UI) ----
 if (Test-Path $baPublish) { Remove-Item -Recurse -Force $baPublish }
-Write-Host '== publish bootstrapper application (self-contained) =='
-dotnet publish $baProj -c $Configuration -r $rid --self-contained true -p:PublishTrimmed=false -p:PublishSingleFile=false -o $baPublish
+Write-Host "== publish bootstrapper application ($(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' })) =="
+dotnet publish $baProj -c $Configuration -r $rid --self-contained $selfContained -p:PublishTrimmed=false -p:PublishSingleFile=false -o $baPublish
 if ($LASTEXITCODE -ne 0) { throw "BA publish failed ($LASTEXITCODE)" }
 
 $baExe = Join-Path $baPublish $baExeName

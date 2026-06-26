@@ -55,8 +55,8 @@ $iconProps   = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$ico
 $updateProps = if ($updateUrl) { @("-p:UpdateUrl=$updateUrl") } else { @() }
 
 # Payload type: self-contained bundles the .NET runtime (installs on any machine, but large);
-# framework-dependent is much lighter but needs the matching .NET runtime already on the target
-# (App/Ui -> .NET 10, the WPF bootstrapper -> .NET 8 Desktop). Default (absent/false) = framework-
+# framework-dependent is much lighter but needs the .NET 10 Desktop Runtime already on the target
+# (App, Ui and the WPF bootstrapper all target .NET 10). Default (absent/false) = framework-
 # dependent - lighter to build, copy and test. Set "selfContained": true for distribution.
 $selfContained = if ($cfg -and $cfg.selfContained) { 'true' } else { 'false' }
 Write-Host "== config: type=$(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' }); icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="

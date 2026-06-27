@@ -31,6 +31,10 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     // in _savedNewListId, and the hold is released only when a snapshot reports THAT list assigned.
     private bool _creatingNewList;
     private long? _savedNewListId;
+    // One-shot flag: set before RoutingListOptions.Clear() so the deferred Avalonia binding
+    // event (SelectedItem → None) that arrives after _suppress=false is consumed and ignored.
+    // Same root cause as the ConfigOptions/OnSelectedConfigChanged issue fixed for #57.
+    private bool _suppressNextRoutingNone;
     // Optimistic running override: set the instant the user taps connect/disconnect on this profile so the
     // button flips immediately; cleared once a snapshot's real status agrees with the requested state.
     private bool? _pendingRunning;
@@ -250,6 +254,10 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             // when nothing changed.
             if (!RoutingListOptions.SequenceEqual(routingOptions))
             {
+                // Arm the one-shot flag before Clear() so the deferred Avalonia ComboBox
+                // SelectedItem→None event that arrives after _suppress=false is swallowed.
+                // Only arm when the current selection has something worth protecting.
+                _suppressNextRoutingNone = SelectedRoutingList.IsReal || SelectedRoutingList.IsNewSentinel;
                 RoutingListOptions.Clear();
                 foreach (var option in routingOptions)
                 {
@@ -506,6 +514,17 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         {
             return;
         }
+
+        // RoutingListOptions.Clear() inside ApplyFromEntry posts a deferred SelectedItem→None event
+        // that the Avalonia binding dispatcher delivers after _suppress=false. Without this guard it
+        // would call _assignRouting(null) and unassign the routing list mid-edit, closing the editor.
+        // The one-shot flag is armed only when there is an active real/new-sentinel selection to protect.
+        if (!value.IsReal && !value.IsNewSentinel && _suppressNextRoutingNone)
+        {
+            _suppressNextRoutingNone = false;
+            return;
+        }
+        _suppressNextRoutingNone = false;
 
         _creatingNewList = value.IsNewSentinel;
         if (!value.IsNewSentinel)

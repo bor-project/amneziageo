@@ -31,6 +31,7 @@
 
     <Variable Name="HasDefaultDb" Value="$(var.HasDefaultDb)" />
     <Variable Name="REPLACEDB" Value="" />
+    <Variable Name="SEEDDBPATH" Value="" />
 
     <!-- Custom out-of-proc BA: the .exe is named directly; every other file from its self-contained
          publish is supplied via the generated BaPayloads PayloadGroup. -->
@@ -45,6 +46,7 @@
                   Vital="yes"
                   Compressed="yes">
         <MsiProperty Name="SEEDREPLACE" Value="[REPLACEDB]" />
+        <MsiProperty Name="SEEDDBPATH" Value="[SEEDDBPATH]" />
       </MsiPackage>
     </Chain>
   </Bundle>
@@ -57,6 +59,7 @@
 
     <Variable Name="HasDefaultDb" Value="$(var.HasDefaultDb)" />
     <Variable Name="REPLACEDB" Value="" />
+    <Variable Name="SEEDDBPATH" Value="" />
 
     <BootstrapperApplication SourceFile="$(var.BaExe)">
       <PayloadGroupRef Id="BaPayloads" />
@@ -68,6 +71,7 @@
                   Vital="yes"
                   Compressed="yes">
         <MsiProperty Name="SEEDREPLACE" Value="[REPLACEDB]" />
+        <MsiProperty Name="SEEDDBPATH" Value="[SEEDDBPATH]" />
       </MsiPackage>
     </Chain>
   </Bundle>

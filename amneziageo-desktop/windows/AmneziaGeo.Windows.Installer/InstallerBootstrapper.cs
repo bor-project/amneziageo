@@ -264,6 +264,14 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         if (action is InstallerAction.Install or InstallerAction.Update)
         {
             ResolveSeedReplace();
+
+            // #55: a default-settings DB the user picked in the BA takes priority over a bundled default and
+            // is recorded by the MSI as the seed source. A SEEDDBPATH=... command-line argument is left as
+            // given when the user picked nothing.
+            if (!string.IsNullOrEmpty(_vm.SeedDbPath))
+            {
+                engine.SetVariableString("SEEDDBPATH", _vm.SeedDbPath, false);
+            }
         }
 
         _vm.BeginApply(action);

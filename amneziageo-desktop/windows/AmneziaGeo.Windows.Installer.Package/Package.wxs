@@ -45,6 +45,12 @@
          sequence. Only meaningful when a default DB is bundled (HasDefaultDb). -->
     <Property Id="SEEDREPLACE" Value="0" Secure="yes" />
 
+    <!-- User-selected default-DB path (#55): the BA file-picker or a SEEDDBPATH=... command-line argument,
+         passed by the bundle. Recorded in the registry (below) so the agent prefers it over the bundled
+         state.db.seed. Empty (the default) => no override, use the bundled seed. Secure so it survives into
+         the elevated execute sequence. -->
+    <Property Id="SEEDDBPATH" Secure="yes" />
+
     <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="AmneziaGeo" />
@@ -140,6 +146,9 @@
                       Stop="both"
                       Remove="uninstall"
                       Wait="yes" />
+      <!-- #55: record the user-selected default-DB path so the agent (SeedImporter.ResolveSeedSource) prefers
+           it over the bundled state.db.seed on first run. Empty => no override. Removed on uninstall. -->
+      <RegistryValue Root="HKLM" Key="Software\AmneziaGeo" Name="SeedSource" Type="string" Value="[SEEDDBPATH]" />
     </Component>
 
     <!-- Shortcuts to the unprivileged GUI (Ui.exe itself is harvested with the payload): one on the

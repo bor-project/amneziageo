@@ -60,6 +60,13 @@
         <!-- Actions (ready phase): optional list-download checkbox + the mode buttons. -->
         <StackPanel DockPanel.Dock="Bottom"
                     Visibility="{Binding ShowActions, Converter={StaticResource B2V}}">
+          <!-- Optional user-selected default-settings database (#55): takes priority over a bundled default. -->
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,12"
+                      Visibility="{Binding ShowSeedDbOption, Converter={StaticResource B2V}}">
+            <Button Content="Файл настроек…" Command="{Binding PickSeedDbCommand}" Margin="0,0,10,0" />
+            <TextBlock Text="{Binding SeedDbLabel}" Style="{StaticResource MutedTextBlock}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
           <CheckBox Content="Скачать обновления файлов баз гео"
                     IsChecked="{Binding DownloadLists}"
                     Margin="0,0,0,12"

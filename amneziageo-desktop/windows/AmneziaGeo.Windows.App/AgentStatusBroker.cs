@@ -281,6 +281,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
                 IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
+                IpcContract.OpCopyConfig => await CopyConfigAsync(command.Args, ct),
                 IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
                 IpcContract.OpExportProfile => await ExportProfileAsync(command.Args, ct),
                 IpcContract.OpImportProfile => await ImportProfileAsync(command.Args, ct),
@@ -421,6 +422,30 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             control.ClearTarget();
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
         }
+    }
+
+    private async Task<IpcAck> CopyConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
+        {
+            return new IpcAck(false, "copy-config requires the source and destination name");
+        }
+
+        var source = args[0];
+        var destination = args[1].Trim();
+        if (!await configRepo.ExistsAsync(source, ct))
+        {
+            return new IpcAck(false, $"unknown config: {source}");
+        }
+
+        if (await configRepo.ExistsAsync(destination, ct) || await store.GetBalancerAsync(destination, ct) is not null)
+        {
+            return new IpcAck(false, $"имя {destination} уже занято");
+        }
+
+        await configRepo.CopyAsync(source, destination, ct);
+        logger.LogInformation("copied config {Source} -> {Dest}", source, destination);
+        return new IpcAck(true, $"конфигурация скопирована: {destination}");
     }
 
     private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args, CancellationToken ct)

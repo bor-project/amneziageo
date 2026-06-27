@@ -134,6 +134,28 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // Text first: vpn:// links, .conf text, bare Amnezia JSON.
+        var text = await clipboard.TryGetTextAsync();
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            var imported = VpnLinkCodec.TryDecode(text);
+            if (imported is not null)
+            {
+                vm.NewConfigText = imported.ConfText;
+                if (string.IsNullOrWhiteSpace(vm.NewConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
+                {
+                    vm.NewConfigName = imported.Name!;
+                }
+                vm.NewConfigStatus = "Распознано — нажмите «Сохранить».";
+            }
+            else
+            {
+                vm.NewConfigStatus = "Текст в буфере не распознан как конфигурация (.conf, vpn://, JSON).";
+            }
+            return;
+        }
+
+        // Fall back to QR image in the clipboard.
         try
         {
 #pragma warning disable CS0618
@@ -151,7 +173,7 @@ public sealed partial class MainWindow : Window
 
             if (bytes is null)
             {
-                vm.NewConfigStatus = "В буфере обмена нет картинки - используйте файл или камеру";
+                vm.NewConfigStatus = "В буфере нет конфигурации (текст, vpn://) и нет QR-изображения.";
                 return;
             }
 

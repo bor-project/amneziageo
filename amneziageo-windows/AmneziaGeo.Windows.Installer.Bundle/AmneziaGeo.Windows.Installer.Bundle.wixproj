@@ -13,7 +13,10 @@
          overrides the source. Defaults keep the bundled UI icon for a plain build. -->
     <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
     <IconFile Condition="'$(IconFile)' == ''">$(MSBuildProjectDirectory)\..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</IconFile>
-    <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath);HasIcon=$(HasIcon);IconFile=$(IconFile)</DefineConstants>
+    <!-- HasDefaultDb (build-installer.ps1, from installer.config.json -> defaultConfigDb, #54) exposes to
+         the BA whether this bundle carries a default config DB, via the HasDefaultDb bundle variable. -->
+    <HasDefaultDb Condition="'$(HasDefaultDb)' == ''">false</HasDefaultDb>
+    <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath);HasIcon=$(HasIcon);IconFile=$(IconFile);HasDefaultDb=$(HasDefaultDb)</DefineConstants>
   </PropertyGroup>
 
   <Target Name="EnsureBundleInputs" BeforeTargets="Build"

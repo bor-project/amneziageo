@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -260,8 +261,63 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             _ => LaunchAction.Install,
         };
 
+        if (action is InstallerAction.Install or InstallerAction.Update)
+        {
+            ResolveSeedReplace();
+        }
+
         _vm.BeginApply(action);
         engine.Plan(_launch);
+    }
+
+    /// <summary>
+    /// Resolves the replace-on-conflict choice for a bundled default config DB (#54) before planning, by
+    /// setting the REPLACEDB engine variable (it flows into the MSI as the SEEDREPLACE property). Only
+    /// relevant when this bundle carries a default DB AND a state.db already exists at the destination - a
+    /// fresh machine is just seeded by the agent. An explicit command-line REPLACEDB=1/0 is honored as-is
+    /// (no dialog); otherwise an interactive run asks the user, and a silent run keeps the existing DB.
+    /// </summary>
+    private void ResolveSeedReplace()
+    {
+        if (!string.Equals(engine.GetVariableString("HasDefaultDb"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var target = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "AmneziaGeo", "state.db");
+        if (!File.Exists(target))
+        {
+            return; // nothing to overwrite - the agent just seeds the default DB
+        }
+
+        // An explicit REPLACEDB=1/0 on the command line pre-answers the conflict: leave it as given (it
+        // already drives [REPLACEDB] -> SEEDREPLACE) and show no dialog.
+        if (!string.IsNullOrEmpty(engine.GetVariableString("REPLACEDB")))
+        {
+            return;
+        }
+
+        // Silent / non-interactive with no parameter: keep the existing database (skip).
+        if (!_interactive)
+        {
+            engine.SetVariableString("REPLACEDB", "0", false);
+            return;
+        }
+
+        // Interactive: ask whether to replace the existing settings with the bundled defaults.
+        var answer = MessageBox.Show(
+            Application.Current?.MainWindow!,
+            "В системе уже есть сохранённые настройки AmneziaGeo (state.db).\n\n" +
+            "Заменить их рекомендованными настройками из установщика?\n\n" +
+            "Да - заменить (текущие настройки будут потеряны).\n" +
+            "Нет - оставить текущие настройки.",
+            "AmneziaGeo",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        engine.SetVariableString("REPLACEDB", answer == MessageBoxResult.Yes ? "1" : "0", false);
     }
 
     private void OnUserClose()

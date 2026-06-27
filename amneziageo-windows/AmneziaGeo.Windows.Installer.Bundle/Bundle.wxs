@@ -12,6 +12,12 @@
   installer config). A preprocessor <?if?> cannot wrap a single attribute (it only works between
   elements/content) and a <Bundle> cannot be split, so the whole element is duplicated under <?if?>:
   the HasIcon branch carries IconSourceFile, the other omits it (no icon). Only one branch compiles.
+
+  #54 (default config DB): HasDefaultDb tells the BA whether this bundle carries a prebuilt state.db.
+  REPLACEDB is the replace-on-conflict choice - overridable from the command line (REPLACEDB=1 replace
+  / 0 skip); empty (the default) means "ask in the GUI, skip when silent". The BA resolves it before
+  planning and it flows into the MSI as the SEEDREPLACE property. These two <Variable>s and the
+  <MsiProperty> are duplicated into both <?if?> branches along with the rest of the <Bundle>.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
@@ -22,6 +28,9 @@
           UpgradeCode="A7E1C4F2-9B3D-4E6A-8C15-2F7D9A0B6E34"
           IconSourceFile="$(var.IconFile)"
           Compressed="yes">
+
+    <Variable Name="HasDefaultDb" Value="$(var.HasDefaultDb)" />
+    <Variable Name="REPLACEDB" Value="" />
 
     <!-- Custom out-of-proc BA: the .exe is named directly; every other file from its self-contained
          publish is supplied via the generated BaPayloads PayloadGroup. -->
@@ -34,7 +43,9 @@
       <MsiPackage Id="AmneziaGeoMsi"
                   SourceFile="$(var.MsiPath)"
                   Vital="yes"
-                  Compressed="yes" />
+                  Compressed="yes">
+        <MsiProperty Name="SEEDREPLACE" Value="[REPLACEDB]" />
+      </MsiPackage>
     </Chain>
   </Bundle>
 <?else?>
@@ -44,6 +55,9 @@
           UpgradeCode="A7E1C4F2-9B3D-4E6A-8C15-2F7D9A0B6E34"
           Compressed="yes">
 
+    <Variable Name="HasDefaultDb" Value="$(var.HasDefaultDb)" />
+    <Variable Name="REPLACEDB" Value="" />
+
     <BootstrapperApplication SourceFile="$(var.BaExe)">
       <PayloadGroupRef Id="BaPayloads" />
     </BootstrapperApplication>
@@ -52,7 +66,9 @@
       <MsiPackage Id="AmneziaGeoMsi"
                   SourceFile="$(var.MsiPath)"
                   Vital="yes"
-                  Compressed="yes" />
+                  Compressed="yes">
+        <MsiProperty Name="SEEDREPLACE" Value="[REPLACEDB]" />
+      </MsiPackage>
     </Chain>
   </Bundle>
 <?endif?>

@@ -39,6 +39,12 @@
     <MajorUpgrade AllowDowngrades="yes" />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Replace-on-conflict choice for a bundled default config DB (#54), passed by the Burn bundle
+         (REPLACEDB -> SEEDREPLACE). "1" => lay state.db.seed.replace so the agent overwrites an existing
+         state.db; anything else => keep the existing DB. Secure so it survives into the elevated execute
+         sequence. Only meaningful when a default DB is bundled (HasDefaultDb). -->
+    <Property Id="SEEDREPLACE" Value="0" Secure="yes" />
+
     <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="AmneziaGeo" />
@@ -52,6 +58,10 @@
       <ComponentGroupRef Id="Payload" />
       <ComponentRef Id="AgentServiceExe" />
       <ComponentRef Id="GuiShortcut" />
+<?if $(var.HasDefaultDb) = "true" ?>
+      <ComponentRef Id="DefaultDbSeed" />
+      <ComponentRef Id="DefaultDbReplaceFlag" />
+<?endif?>
     </Feature>
 
     <!-- App icon (same .ico embedded into Ui.exe) for the shortcuts and the Add/Remove Programs entry.
@@ -92,6 +102,20 @@
         <Exclude Files="$(var.StageDir)\**\*.pdb" />
       </Files>
     </ComponentGroup>
+
+<?if $(var.HasDefaultDb) = "true" ?>
+    <!-- Optional prebuilt default-configuration database (installer.config.json -> defaultConfigDb, #54).
+         Laid next to the agent as state.db.seed; the agent (SYSTEM, first run) copies it into
+         ProgramData\AmneziaGeo\state.db when none exists (SeedImporter). state.db.seed.replace is laid
+         ONLY when SEEDREPLACE=1 (the replace-on-conflict choice from the bundle); its presence tells the
+         agent to overwrite an existing DB instead of keeping it. -->
+    <Component Id="DefaultDbSeed" Directory="INSTALLFOLDER">
+      <File Id="DefaultDbSeedFile" Source="$(var.DefaultDbFile)" Name="state.db.seed" KeyPath="yes" />
+    </Component>
+    <Component Id="DefaultDbReplaceFlag" Directory="INSTALLFOLDER" Condition="SEEDREPLACE = &quot;1&quot;">
+      <File Id="DefaultDbReplaceFlagFile" Source="$(var.ReplaceFlagFile)" Name="state.db.seed.replace" KeyPath="yes" />
+    </Component>
+<?endif?>
 
     <!-- The backend agent, registered as the LocalSystem auto-start service the GUI talks to.
          Service name MUST match TunnelPaths.AgentServiceName() ("AmneziaGeoAgent") so the in-app

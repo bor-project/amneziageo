@@ -26,6 +26,15 @@ public static class AppEntry
         };
         using (var host = AppHost.Build(agentTarget))
         {
+            // The bundled default-config DB (#54) is deployed only by the privileged agent (SYSTEM) on
+            // first start - never by a CLI invocation - so it lands with SYSTEM ownership and a single
+            // writer. Runs before the store opens so the seeded DB is what InitializeAsync sees.
+            if (agentTarget is not null)
+            {
+                SeedImporter.TryApply(
+                    host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SeedImporter"));
+            }
+
             await EnsureStoreAsync(host.Services);
             if (agentTarget is not null)
             {

@@ -73,6 +73,26 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the bundled default-configuration database laid next to the agent by the installer when
+    /// installer.config.json supplies a defaultConfigDb (#54). Consumed once by <see cref="SeedImporter"/>
+    /// into <see cref="StateDbFile"/>. Lives in the install directory, not ProgramData.
+    /// </summary>
+    public static string SeedDbFile()
+    {
+        return Path.Combine(AppContext.BaseDirectory, "state.db.seed");
+    }
+
+    /// <summary>
+    /// Marker laid next to the agent (by the installer) when the bundled default DB should overwrite an
+    /// existing <see cref="StateDbFile"/> on conflict (the replace-on-conflict choice, #54). Its mere
+    /// presence means "replace"; absence means "keep the existing database".
+    /// </summary>
+    public static string SeedReplaceFlagFile()
+    {
+        return Path.Combine(AppContext.BaseDirectory, "state.db.seed.replace");
+    }
+
+    /// <summary>
     /// Path to a tunnel's persisted DNS-redirect state used to revert NIC DNS after a stop.
     /// </summary>
     public static string DnsStateFile(string name)

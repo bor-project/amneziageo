@@ -7,7 +7,7 @@
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}/../amneziageo-desktop.slnx",
+        "${workspaceFolder}/../../amneziageo-desktop.slnx",
         "-v",
         "q",
         "-nologo"

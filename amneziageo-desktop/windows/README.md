@@ -12,7 +12,7 @@ Windows implementation of [AmneziaGeo](../README.md). **First implementation tar
 
 ## Build (planned)
 
-1. `git submodule update --init amneziageo-windows/amneziawg-windows`
+1. `git submodule update --init amneziageo-desktop/windows/amneziawg-windows`
 2. Build `tunnel.dll` via the submodule's `build.cmd` (first run downloads pinned Go + llvm-mingw + wintun into `.deps`).
 3. Build the C# host/UI; ship `tunnel.dll` + `wintun.dll` alongside the service binary.
 

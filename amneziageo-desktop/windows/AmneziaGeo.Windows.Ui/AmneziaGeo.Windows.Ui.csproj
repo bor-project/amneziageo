@@ -35,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\amneziageo-core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\..\core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
   </ItemGroup>
 
 </Project>

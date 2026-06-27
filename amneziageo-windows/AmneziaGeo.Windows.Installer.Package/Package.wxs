@@ -97,8 +97,7 @@
          Service name MUST match TunnelPaths.AgentServiceName() ("AmneziaGeoAgent") so the in-app
          service controls line up. The agent flag with no launch target (see Arguments below) ships a
          clean install with NO phantom binding: the agent idles (serves the pipe) and picks up the
-         user's persisted profile selection once one is created and selected. (The preconfigured
-         installer instead seeds an explicit "main" target.) -->
+         user's persisted profile selection once one is created and selected. -->
     <Component Id="AgentServiceExe" Directory="INSTALLFOLDER">
       <File Id="AppExe" Source="$(var.StageDir)\AmneziaGeo.Windows.App.exe" KeyPath="yes" />
       <ServiceInstall Id="AgentSvcInstall"

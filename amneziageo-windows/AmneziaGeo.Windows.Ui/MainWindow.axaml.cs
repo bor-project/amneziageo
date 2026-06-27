@@ -552,10 +552,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Opens the per-source context menu (delete) on a right-click of a source row. The menu is built
-    /// here, with the command assigned directly from the row's view model, because a MenuItem hosted in a
-    /// flyout popup does not reliably inherit the row's DataContext for a {Binding}-based command in
-    /// Avalonia 11.
+    /// Opens the per-source action menu (update / delete) on a right-click of a source row.
     /// </summary>
     private void OnSourceRowContext(object? sender, ContextRequestedEventArgs e)
     {
@@ -564,15 +561,44 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        ShowSourceMenu(target, source, atPointer: true);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Opens the same per-source action menu from the row's "⋮" (kebab) button, anchored to the button.
+    /// </summary>
+    private void OnSourceKebab(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: SourceItemViewModel source } button)
+        {
+            return;
+        }
+
+        ShowSourceMenu(button, source, atPointer: false);
+        e.Handled = true;
+    }
+
+    // Builds the per-source action menu (update / delete) and shows it at the given target. The menu is
+    // built here, with each command assigned directly from the row's view model, because a MenuItem hosted
+    // in a flyout popup does not reliably inherit the row's DataContext for a {Binding}-based command in
+    // Avalonia 11. Sources cannot be edited (only added / removed / refreshed), so the menu has no "edit".
+    private static void ShowSourceMenu(Control target, SourceItemViewModel source, bool atPointer)
+    {
+        var update = new MenuItem
+        {
+            Header = "Обновить базу",
+            Command = source.UpdateCommand,
+        };
         var delete = new MenuItem
         {
             Header = "Удалить базу",
             Command = source.RemoveCommand,
         };
         var flyout = new MenuFlyout();
+        flyout.Items.Add(update);
         flyout.Items.Add(delete);
-        flyout.ShowAt(target, showAtPointer: true);
-        e.Handled = true;
+        flyout.ShowAt(target, showAtPointer: atPointer);
     }
 
 }

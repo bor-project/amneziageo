@@ -346,10 +346,19 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             return;
         }
 
+        // Capture before the save: _onSaved must fire exactly once, when a new list (id=0) is first
+        // persisted. Subsequent auto-saves for name or rule edits on an already-persisted list must
+        // not call _onSaved — the callback triggers profile assignment / snapshot sync on the host
+        // side, which can re-create the editor and close the inline name field while the user types.
+        var wasNew = _id == 0;
+
         if (await SaveAsync())
         {
             _saveFailures = 0;
-            _onSaved?.Invoke(_id);
+            if (wasNew && _id != 0)
+            {
+                _onSaved?.Invoke(_id);
+            }
         }
         else if (++_saveFailures <= 2)
         {

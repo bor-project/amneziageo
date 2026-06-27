@@ -1,5 +1,8 @@
 {
-  "selfContained": false,
+  "build": {
+    "arch": ["x64"],
+    "selfContained": [false]
+  },
   "iconPath": "../AmneziaGeo.Windows.Ui/Assets/AmneziaGeo.ico",
   "updateUrl": null,
   "signingCert": {

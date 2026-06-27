@@ -6,7 +6,8 @@
   <PropertyGroup>
     <OutputType>Bundle</OutputType>
     <OutputName>AmneziaGeoSetup</OutputName>
-    <Platform>x64</Platform>
+    <!-- arch supplied by build-installer.ps1 (-p:Platform=x64|arm64); defaults to x64 for a plain build. -->
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
     <!-- Preprocessor variables consumed by Bundle.wxs as $(var.*). HasIcon / IconFile come from
          build-installer.ps1 (installer.config.json): HasIcon=false omits the bundle ARP icon, IconFile
          overrides the source. Defaults keep the bundled UI icon for a plain build. -->

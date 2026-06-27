@@ -3,5 +3,6 @@ bin/
 obj/
 stage/
 ba-publish/
+dist/
 BaPayloads.generated.wxs
 *.wixpdb

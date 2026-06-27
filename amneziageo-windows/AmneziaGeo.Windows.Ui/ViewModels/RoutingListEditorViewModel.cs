@@ -23,6 +23,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     private readonly DispatcherTimer _autoSaveTimer;
     private long _id;
 
+    // All geo category tokens from the agent's last list-geo response, unfiltered. GeoSuggestions is derived
+    // from this set minus the rules already in the list, sorted by name - recomputed locally (no extra IPC)
+    // whenever Rules changes, so an added rule drops out of the suggestions immediately and a removed one
+    // comes back.
+    private readonly List<string> _allGeoTokens = [];
+
     // Auto-save is suppressed while the editor is constructed and its initial rules are loaded, so seeding
     // Name/Rules does not immediately re-save unchanged data (and churn the snapshot). Cleared when LoadAsync
     // finishes; user edits after that schedule a debounced save.
@@ -63,7 +69,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _id = id;
         _autoSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         _autoSaveTimer.Tick += OnAutoSaveTick;
-        Rules.CollectionChanged += (_, _) => ScheduleAutoSave();
+        Rules.CollectionChanged += (_, _) =>
+        {
+            // Re-derive the suggestions (the rule just added/removed should disappear from / reappear in the
+            // dropdown) and queue the debounced save.
+            ApplySuggestionFilter();
+            ScheduleAutoSave();
+        };
         Name = name;
     }
 
@@ -123,11 +135,26 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             return;
         }
 
-        // Build the new set first, then swap in one go: never leave the suggestion list momentarily empty
-        // across the await, and avoid interleaving if two refreshes overlap.
+        // Cache the full set, then derive the visible suggestions. ApplySuggestionFilter swaps GeoSuggestions
+        // in one go, so the list is never momentarily empty across the await and overlapping refreshes do not
+        // interleave a half-built set.
         var tokens = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        _allGeoTokens.Clear();
+        _allGeoTokens.AddRange(tokens);
+        ApplySuggestionFilter();
+    }
+
+    /// <summary>
+    /// Rebuilds <see cref="GeoSuggestions"/> from the cached geo tokens: drops the rules already in the list
+    /// and sorts by name. Runs locally (no IPC), so it is cheap to re-apply on every Rules change.
+    /// </summary>
+    private void ApplySuggestionFilter()
+    {
+        var selected = new HashSet<string>(Rules, StringComparer.Ordinal);
         GeoSuggestions.Clear();
-        foreach (var token in tokens)
+        foreach (var token in _allGeoTokens
+                     .Where(token => !selected.Contains(token))
+                     .OrderBy(token => token, StringComparer.OrdinalIgnoreCase))
         {
             GeoSuggestions.Add(token);
         }

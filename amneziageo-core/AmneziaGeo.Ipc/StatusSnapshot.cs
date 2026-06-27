@@ -23,4 +23,8 @@ public sealed record StatusSnapshot(
     string UpdateDescription = "",
     bool GeoAutoCheck = true,
     int GeoCheckIntervalHours = 24,
-    bool ConnectFailed = false);
+    bool ConnectFailed = false,
+    // AmneziaWG engine version (git describe of the bundled amneziawg-windows submodule, baked at
+    // build time). tunnel.dll carries no version resource, so this is the authoritative engine
+    // version. Empty when the build could not resolve it.
+    string EngineVersion = "");

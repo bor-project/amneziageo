@@ -1699,7 +1699,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             update?.Description ?? string.Empty,
             settings.GeoAutoCheck,
             settings.GeoCheckIntervalHours,
-            control.ConnectFailed);
+            control.ConnectFailed,
+            AppSettings.EngineVersion);
     }
 
     /// <summary>

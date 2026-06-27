@@ -43,6 +43,41 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- Bake the AmneziaWG engine version into this assembly so the agent can report it over IPC:
+       tunnel.dll carries no version resource, so this build-time value (read back via AssemblyMetadata
+       "AmneziaGeo.EngineVersion" in AppSettings) is the authoritative engine version. The value is the
+       git-describe tag of the bundled amneziawg-windows submodule (e.g. v0.1.9), i.e. the engine this
+       build is built against; keep x64\tunnel.dll in sync with that submodule checkout.
+
+       build-installer.ps1 passes -p:AmneziaEngineVersion=... to bake it deterministically without
+       depending on git/submodule state at publish time. We accept git's output ONLY on a clean exit
+       and a single whitespace-free token: git describe's stderr (e.g. "fatal: not a git repository")
+       is also captured by ConsoleToMSBuild, and the "always" fallback would surface a bare commit SHA
+       on a tag-less checkout; both must fall through to empty so the UI shows "н/д" rather than
+       garbage. Emitted as an AssemblyAttribute through the SDK's assembly-info generation, so it only
+       forces a recompile when the value actually changes. -->
+  <Target Name="BakeEngineVersion" BeforeTargets="GetAssemblyAttributes;CoreGenerateAssemblyInfo">
+    <Exec Condition="'$(AmneziaEngineVersion)' == ''"
+          Command="git -C &quot;$(MSBuildProjectDirectory)\..\amneziawg-windows&quot; describe --tags"
+          ConsoleToMSBuild="true" ContinueOnError="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_AwgDescribe" />
+      <Output TaskParameter="ExitCode" PropertyName="_AwgDescribeExit" />
+    </Exec>
+    <PropertyGroup>
+      <!-- Explicit override wins; otherwise take git's output only when it exited 0 and is a single
+           token (git's multi-word error text is rejected even if it leaks into ConsoleOutput). -->
+      <_AmneziaEngineVersion>$(AmneziaEngineVersion)</_AmneziaEngineVersion>
+      <_AmneziaEngineVersion Condition="'$(_AmneziaEngineVersion)' == '' and '$(_AwgDescribeExit)' == '0' and '$(_AwgDescribe.Trim())' != '' and !$(_AwgDescribe.Trim().Contains(' '))">$(_AwgDescribe.Trim())</_AmneziaEngineVersion>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(_AmneziaEngineVersion)' != ''">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+        <_Parameter1>AmneziaGeo.EngineVersion</_Parameter1>
+        <_Parameter2>$(_AmneziaEngineVersion)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

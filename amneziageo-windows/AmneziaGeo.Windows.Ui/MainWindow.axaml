@@ -23,11 +23,19 @@
   <DockPanel LastChildFill="True">
 
     <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
-    <Grid ColumnDefinitions="Auto,*" Background="{DynamicResource AgSidebarBrush}">
+    <Grid Background="{DynamicResource AgSidebarBrush}">
+      <Grid.ColumnDefinitions>
+        <!-- LEFT RAIL: fixed default but drag-resizable via the GridSplitter; clamped so it can
+             neither collapse nor starve the right pane. -->
+        <ColumnDefinition Width="377" MinWidth="320" MaxWidth="520" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
 
       <!-- LEFT SIDEBAR (always visible; its content swaps per tab - profiles / settings). Holds only
-           lists / rails (editors live in the right pane), so it stays narrow. -->
-      <DockPanel Grid.Column="0" Width="377"
+           lists / rails (editors live in the right pane), so it stays narrow. Width comes from the
+           column above so the splitter can drive it. -->
+      <DockPanel Grid.Column="0"
                  Background="{DynamicResource AgSidebarBrush}" LastChildFill="True">
 
         <!-- one left card mirroring the right one: the nav is its header bar (white + bottom divider),
@@ -352,8 +360,15 @@
         </Border>
       </DockPanel>
 
-      <!-- RIGHT CONTENT (12px gutter on its left → consistent in both docked and full-width modes) -->
-      <Border Grid.Column="1" Classes="card" Margin="12,12,12,12" Padding="0">
+      <!-- DRAG HANDLE between the rail and the content: resizes the left column (clamped by its
+           Min/MaxWidth above). Sits in the gutter; the cursor turns to a horizontal resize arrow. -->
+      <GridSplitter Grid.Column="1" Width="6"
+                    ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    Background="Transparent" />
+
+      <!-- RIGHT CONTENT (6px gutter on its left + 6px splitter → same ~12px gap as before) -->
+      <Border Grid.Column="2" Classes="card" Margin="6,12,12,12" Padding="0">
         <DockPanel LastChildFill="True">
 
           <!-- persistent header (shown on every tab): the round power control toggles the ACTIVE profile;

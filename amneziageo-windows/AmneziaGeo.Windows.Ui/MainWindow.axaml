@@ -1079,7 +1079,7 @@
                                       BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                                       CornerRadius="9" Padding="11,9" Margin="0,3"
                                       ContextRequested="OnSourceRowContext"
-                                      ToolTip.Tip="Правый клик - удалить базу">
+                                      ToolTip.Tip="Правый клик или ⋮ — обновить / удалить базу">
                                 <Grid ColumnDefinitions="*,Auto">
                                   <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                     <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
@@ -1089,16 +1089,23 @@
                                                Foreground="{DynamicResource AgAccentBrush}" Margin="0,3,0,0"
                                                IsVisible="{Binding ShowUpdateBadge}" />
                                   </StackPanel>
-                                  <Button Grid.Column="1" Classes="icon" VerticalAlignment="Center" Margin="8,0,0,0"
-                                          Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
-                                          ToolTip.Tip="Обновить базу">
-                                    <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                                      <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
-                                                 FontSize="11.5" VerticalAlignment="Center" />
-                                      <PathIcon Classes.spin="{Binding Updating}" Data="{DynamicResource AgRefreshGeometry}"
-                                                Width="14" Height="14" />
-                                    </StackPanel>
-                                  </Button>
+                                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2"
+                                              VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <Button Classes="icon" VerticalAlignment="Center"
+                                            Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
+                                            ToolTip.Tip="Обновить базу">
+                                      <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
+                                                   FontSize="11.5" VerticalAlignment="Center" />
+                                        <PathIcon Classes.spin="{Binding Updating}" Data="{DynamicResource AgRefreshGeometry}"
+                                                  Width="14" Height="14" />
+                                      </StackPanel>
+                                    </Button>
+                                    <Button Classes="icon" VerticalAlignment="Center"
+                                            Click="OnSourceKebab" ToolTip.Tip="Действия">
+                                      <TextBlock Text="⋮" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                                    </Button>
+                                  </StackPanel>
                                 </Grid>
                               </Border>
                             </DataTemplate>

@@ -1,10 +1,11 @@
 <Project Sdk="WixToolset.Sdk/5.0.2">
 
   <PropertyGroup>
-    <!-- x64 package: the bundled payload is a win-x64 self-contained publish, installed under
-         ProgramFiles64Folder. -->
-    <Platform>x64</Platform>
-    <OutputName>AmneziaGeo-1.0.1-win-x64</OutputName>
+    <!-- The bundled payload is a per-arch publish installed under ProgramFiles64Folder. Platform/arch
+         is supplied by build-installer.ps1 (-p:Platform=x64|arm64) and defaults to x64 for a plain
+         `dotnet build`; the output name follows the arch so per-arch MSIs do not collide. -->
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <OutputName>AmneziaGeo-1.0.1-win-$(Platform)</OutputName>
 
     <!-- StageDir (the staged self-contained publish to harvest) is supplied by build-installer.ps1
          via -p:StageDir=...; expose it to the WXS preprocessor as $(var.StageDir). HasIcon (also from

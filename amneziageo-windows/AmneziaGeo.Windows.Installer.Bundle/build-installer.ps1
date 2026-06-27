@@ -1,21 +1,43 @@
 <#
-  Builds the AmneziaGeo setup bundle (AmneziaGeoSetup.exe):
-    1. publishes the backend (App) and GUI (Ui) as ONE self-contained win-x64 folder (stage),
+  Builds the AmneziaGeo setup bundle(s) (AmneziaGeoSetup.exe). For each requested variant it:
+    1. publishes the backend (App) and GUI (Ui) as ONE per-arch publish folder (stage),
     2. builds the per-machine MSI from that stage (AmneziaGeo.Windows.Installer.Package),
-    3. publishes the WPF bootstrapper application self-contained (AmneziaGeo.Windows.Installer),
+    3. publishes the WPF bootstrapper application (AmneziaGeo.Windows.Installer),
     4. generates a PayloadGroup over the BA publish folder (Burn does not auto-harvest it),
-    5. builds the Burn bundle that hosts the BA and chains the MSI.
+    5. builds the Burn bundle that hosts the BA and chains the MSI,
+  then copies the signed bundle into dist\ under an arch/payload-tagged name.
+
+  BUILD MATRIX (#49) - which variants to build is the cross product of:
+    * arch          : x64 and/or arm64                         (-> dotnet -r win-<arch>, WiX -p:Platform)
+    * selfContained : true (bundles the .NET runtime, installs anywhere, large) and/or
+                      false (framework-dependent: needs the .NET 10 Desktop Runtime on the target, light)
+  Defaults come from installer.config.json -> build.{arch,selfContained} (arrays). Script flags override:
+    -Arch x64,arm64           build only these arches
+    -SelfContained true,false build only these payload kinds
+    -All                      the full 2x2 matrix (x64/arm64 x fdd/scd)
+    -ListOnly                 print the resolved matrix and exit (build nothing)
+  With no flags and no config, the default is a single x64 framework-dependent build (the prior behaviour).
+
+  NOTE: arm64 publishes the managed code for win-arm64, but the bundled NATIVE deps (tunnel.dll,
+  wintun.dll, wstunnel.exe) currently ship x64-only - an arm64 build is wired end-to-end but is not
+  runtime-correct until arm64 natives are added. x64 is the supported target today.
 
   The bundle Version is 1.0.1.<git-commit-count> so every build is strictly newer to Burn; combined
   with the MSI MajorUpgrade/@AllowDowngrades this makes reinstall-same-code, update and downgrade all
   work.
 
-  Usage (on the build machine):  pwsh -File build-installer.ps1 [-Configuration Release]
+  Usage (on the build machine):
+    pwsh -File build-installer.ps1 [-Configuration Release] [-Arch x64,arm64] [-SelfContained true,false] [-All] [-ListOnly]
 #>
-param([string]$Configuration = 'Release')
+param(
+    [string]$Configuration = 'Release',
+    [string[]]$Arch,
+    [string[]]$SelfContained,
+    [switch]$All,
+    [switch]$ListOnly
+)
 
 $ErrorActionPreference = 'Stop'
-$rid = 'win-x64'
 
 $bundleDir = $PSScriptRoot
 $win       = Split-Path $bundleDir -Parent                       # ...\amneziageo-windows
@@ -29,6 +51,7 @@ $bundleProj = Join-Path $bundleDir 'AmneziaGeo.Windows.Installer.Bundle.wixproj'
 $stage     = Join-Path $bundleDir 'stage'
 $baPublish = Join-Path $bundleDir 'ba-publish'
 $genWxs    = Join-Path $bundleDir 'BaPayloads.generated.wxs'
+$dist      = Join-Path $bundleDir 'dist'
 $baExeName = 'AmneziaGeo.Windows.Installer.exe'
 
 # ---- installer config (installer.config.json): a real file the build honors. Every field is optional -
@@ -54,12 +77,33 @@ $hasIcon = if ($iconAbs) { 'true' } else { 'false' }
 $iconProps   = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$iconAbs") } else { @('-p:HasIcon=false') }
 $updateProps = if ($updateUrl) { @("-p:UpdateUrl=$updateUrl") } else { @() }
 
-# Payload type: self-contained bundles the .NET runtime (installs on any machine, but large);
-# framework-dependent is much lighter but needs the .NET 10 Desktop Runtime already on the target
-# (App, Ui and the WPF bootstrapper all target .NET 10). Default (absent/false) = framework-
-# dependent - lighter to build, copy and test. Set "selfContained": true for distribution.
-$selfContained = if ($cfg -and $cfg.selfContained) { 'true' } else { 'false' }
-Write-Host "== config: type=$(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' }); icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+# ---- build matrix (arch x selfContained). Flags override installer.config.json -> build.* ----
+$cfgArch = if ($cfg -and $cfg.build -and $cfg.build.arch) { @($cfg.build.arch | ForEach-Object { [string]$_ }) } else { @('x64') }
+$cfgSc   = if ($cfg -and $cfg.build -and $null -ne $cfg.build.selfContained) { @($cfg.build.selfContained | ForEach-Object { [bool]$_ }) } else { @($false) }
+
+# normalise flag inputs: accept comma- or space-separated (e.g. -Arch x64,arm64 or -Arch x64 arm64),
+# tolerant of how `powershell -File` passes them, then validate against the allowed sets.
+$archIn = @($Arch | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$scIn   = @($SelfContained | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+foreach ($a in $archIn) { if ($a -notin @('x64', 'arm64')) { throw "Invalid -Arch '$a' (expected x64 or arm64)." } }
+foreach ($s in $scIn)   { if ($s -notin @('true', 'false')) { throw "Invalid -SelfContained '$s' (expected true or false)." } }
+
+$archList = if ($All) { @('x64', 'arm64') } elseif ($archIn) { $archIn } else { $cfgArch }
+$scList   = if ($All) { @($true, $false) } elseif ($scIn) { @($scIn | ForEach-Object { $_ -eq 'true' }) } else { $cfgSc }
+
+$archList = @($archList | Select-Object -Unique)
+$scList   = @($scList | Select-Object -Unique)
+
+$variants = @(foreach ($a in $archList) {
+    foreach ($s in $scList) { [pscustomobject]@{ Arch = $a; SelfContained = [bool]$s } }
+})
+
+Write-Host "== build matrix: $($variants.Count) variant(s) =="
+foreach ($v in $variants) {
+    Write-Host ("   - win-{0} {1}" -f $v.Arch, $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
+}
+Write-Host "== config: icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+if ($ListOnly) { return }
 
 # ---- Authenticode signing (installer.config.json -> signingCert). Off unless signingCert is set. ----
 # signtool is not on PATH; resolve it once (PATH first, then the newest x64 build under the Windows SDK).
@@ -142,6 +186,93 @@ function Invoke-SignBundle([string]$bundle) {
     Invoke-Sign $bundle
 }
 
+# Build one matrix variant end-to-end (steps 1-5) and drop the signed bundle into dist\.
+function Build-Variant {
+    param([string]$Arch, [bool]$SelfContained)
+
+    $rid   = "win-$Arch"
+    $scStr = if ($SelfContained) { 'true' } else { 'false' }
+    $tag   = if ($SelfContained) { 'scd' } else { 'fdd' }
+    $kind  = if ($SelfContained) { 'self-contained' } else { 'framework-dependent' }
+    Write-Host ''
+    Write-Host "########## variant win-$Arch ($kind) ##########"
+
+    # ---- 1. stage the publish (App first, UI second, same folder) ----
+    if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+    Write-Host "== publish backend (AmneziaGeo.Windows.App, $rid, $kind) =="
+    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps -o $stage
+    if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
+
+    Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $rid, $kind) =="
+    dotnet publish $uiProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $iconProps -o $stage
+    if ($LASTEXITCODE -ne 0) { throw "UI publish failed ($LASTEXITCODE)" }
+
+    # Sign our libraries/exes in the stage BEFORE the MSI packs them, so the installed files are signed.
+    Invoke-SignLibraries $stage
+
+    # ---- 2. build the MSI from the stage (per-arch Platform => per-arch bin\ and output name) ----
+    Write-Host '== build MSI =='
+    dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:StageDir=$stage "-p:HasIcon=$hasIcon"
+    if ($LASTEXITCODE -ne 0) { throw "MSI build failed ($LASTEXITCODE)" }
+
+    $msiBin = Join-Path (Split-Path $msiProj -Parent) (Join-Path 'bin' $Arch)
+    $msi = Get-ChildItem -Recurse $msiBin -Filter *.msi -ErrorAction SilentlyContinue |
+           Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $msi) { throw "MSI not found under $msiBin after build." }
+    Write-Host "   MSI: $($msi.FullName)"
+    Invoke-Sign $msi.FullName
+
+    # ---- 3. publish the bootstrapper application ----
+    if (Test-Path $baPublish) { Remove-Item -Recurse -Force $baPublish }
+    Write-Host "== publish bootstrapper application ($rid, $kind) =="
+    dotnet publish $baProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -o $baPublish
+    if ($LASTEXITCODE -ne 0) { throw "BA publish failed ($LASTEXITCODE)" }
+
+    $baExe = Join-Path $baPublish $baExeName
+    if (-not (Test-Path $baExe)) { throw "BA exe not found: $baExe" }
+
+    # Sign our bootstrapper binaries before Burn embeds them as payloads (incl. the BA exe itself).
+    Invoke-SignLibraries $baPublish
+
+    # ---- 4. generate the PayloadGroup over the BA publish folder (every file except the BA exe) ----
+    Write-Host '== generate BA payload group =='
+    $prefix = $baPublish.TrimEnd('\') + '\'
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add('<?xml version="1.0" encoding="utf-8"?>')
+    $lines.Add('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">')
+    $lines.Add('  <Fragment>')
+    $lines.Add('    <PayloadGroup Id="BaPayloads">')
+    foreach ($f in Get-ChildItem -Recurse -File $baPublish) {
+        $rel = $f.FullName.Substring($prefix.Length)
+        if ($rel -ieq $baExeName) { continue }
+        $name = [System.Security.SecurityElement]::Escape($rel)
+        $src  = [System.Security.SecurityElement]::Escape($f.FullName)
+        $lines.Add("      <Payload Name=`"$name`" SourceFile=`"$src`" />")
+    }
+    $lines.Add('    </PayloadGroup>')
+    $lines.Add('  </Fragment>')
+    $lines.Add('</Wix>')
+    Set-Content -Path $genWxs -Value $lines -Encoding UTF8
+
+    # ---- 5. build the bundle (per-arch Platform => per-arch bin\) ----
+    Write-Host '== build bundle =='
+    dotnet build $bundleProj -c $Configuration -p:Platform=$Arch -p:BundleVersion=$version -p:BaExe=$baExe -p:MsiPath=$($msi.FullName) $iconProps
+    if ($LASTEXITCODE -ne 0) { throw "Bundle build failed ($LASTEXITCODE)" }
+
+    $bundleBin = Join-Path $bundleDir (Join-Path 'bin' $Arch)
+    $setupExe = Get-ChildItem -Recurse $bundleBin -Filter AmneziaGeoSetup.exe -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $setupExe) { throw "AmneziaGeoSetup.exe not found under $bundleBin after build." }
+    Invoke-SignBundle $setupExe.FullName
+
+    # ---- collect into dist\ under an arch/payload-tagged, version-stamped name ----
+    $distName = "AmneziaGeo-$version-win-$Arch-$tag.exe"
+    Copy-Item -Force $setupExe.FullName (Join-Path $dist $distName)
+    Write-Host "   -> dist\$distName"
+}
+
 Assert-SigningCert
 
 # ---- version: 1.0.1.<commit count> (4th field always increasing) ----
@@ -150,74 +281,14 @@ if (-not $build) { $build = '0' }
 $version = "1.0.1.$build"
 Write-Host "== bundle version $version =="
 
-# ---- 1. stage the self-contained app (App first, UI second, same folder) ----
-if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
+if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
+New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-Write-Host "== publish backend (AmneziaGeo.Windows.App, $(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' })) =="
-dotnet publish $appProj -c $Configuration -r $rid --self-contained $selfContained -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps -o $stage
-if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
-
-Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' })) =="
-dotnet publish $uiProj -c $Configuration -r $rid --self-contained $selfContained -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $iconProps -o $stage
-if ($LASTEXITCODE -ne 0) { throw "UI publish failed ($LASTEXITCODE)" }
-
-# Sign our libraries/exes in the stage BEFORE the MSI packs them, so the installed files are signed.
-Invoke-SignLibraries $stage
-
-# ---- 2. build the MSI from the stage ----
-Write-Host '== build MSI =='
-dotnet build $msiProj -c $Configuration -p:StageDir=$stage "-p:HasIcon=$hasIcon"
-if ($LASTEXITCODE -ne 0) { throw "MSI build failed ($LASTEXITCODE)" }
-
-$msiBin = Join-Path (Split-Path $msiProj -Parent) 'bin'
-$msi = Get-ChildItem -Recurse $msiBin -Filter *.msi -ErrorAction SilentlyContinue |
-       Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $msi) { throw 'MSI not found under bin after build.' }
-Write-Host "   MSI: $($msi.FullName)"
-Invoke-Sign $msi.FullName
-
-# ---- 3. publish the bootstrapper application (self-contained, so no .NET needed to show the UI) ----
-if (Test-Path $baPublish) { Remove-Item -Recurse -Force $baPublish }
-Write-Host "== publish bootstrapper application ($(if ($selfContained -eq 'true') { 'self-contained' } else { 'framework-dependent' })) =="
-dotnet publish $baProj -c $Configuration -r $rid --self-contained $selfContained -p:PublishTrimmed=false -p:PublishSingleFile=false -o $baPublish
-if ($LASTEXITCODE -ne 0) { throw "BA publish failed ($LASTEXITCODE)" }
-
-$baExe = Join-Path $baPublish $baExeName
-if (-not (Test-Path $baExe)) { throw "BA exe not found: $baExe" }
-
-# Sign our bootstrapper binaries before Burn embeds them as payloads (incl. the BA exe itself).
-Invoke-SignLibraries $baPublish
-
-# ---- 4. generate the PayloadGroup over the BA publish folder (every file except the BA exe) ----
-Write-Host '== generate BA payload group =='
-$prefix = $baPublish.TrimEnd('\') + '\'
-$lines = [System.Collections.Generic.List[string]]::new()
-$lines.Add('<?xml version="1.0" encoding="utf-8"?>')
-$lines.Add('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">')
-$lines.Add('  <Fragment>')
-$lines.Add('    <PayloadGroup Id="BaPayloads">')
-foreach ($f in Get-ChildItem -Recurse -File $baPublish) {
-    $rel = $f.FullName.Substring($prefix.Length)
-    if ($rel -ieq $baExeName) { continue }
-    $name = [System.Security.SecurityElement]::Escape($rel)
-    $src  = [System.Security.SecurityElement]::Escape($f.FullName)
-    $lines.Add("      <Payload Name=`"$name`" SourceFile=`"$src`" />")
+foreach ($v in $variants) {
+    Build-Variant -Arch $v.Arch -SelfContained $v.SelfContained
 }
-$lines.Add('    </PayloadGroup>')
-$lines.Add('  </Fragment>')
-$lines.Add('</Wix>')
-Set-Content -Path $genWxs -Value $lines -Encoding UTF8
 
-# ---- 5. build the bundle ----
-Write-Host '== build bundle =='
-dotnet build $bundleProj -c $Configuration -p:Platform=x64 -p:BundleVersion=$version -p:BaExe=$baExe -p:MsiPath=$($msi.FullName) $iconProps
-if ($LASTEXITCODE -ne 0) { throw "Bundle build failed ($LASTEXITCODE)" }
-
-$setupExe = Get-ChildItem -Recurse (Join-Path $bundleDir 'bin') -Filter AmneziaGeoSetup.exe -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if ($setupExe) { Invoke-SignBundle $setupExe.FullName }
-
-Write-Host '== result =='
-Get-ChildItem -Recurse $bundleDir -Filter AmneziaGeoSetup.exe |
-    Select-Object FullName, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}
+Write-Host ''
+Write-Host '== result (dist) =='
+Get-ChildItem $dist -Filter *.exe |
+    Select-Object Name, @{N = 'MB'; E = { [math]::Round($_.Length / 1MB, 1) } }

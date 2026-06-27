@@ -14,6 +14,7 @@ internal static class GeoDefaults
     [
         ("geosite", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"),
         ("geoip", "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"),
+        ("geoip", "https://raw.githubusercontent.com/123jjck/cdn-ip-ranges/main/discord-voice/discord-voice_geoip_ipv4.dat"),
     ];
 
     /// <summary>Seeds the default sources only when none are configured. Returns true if it seeded.</summary>

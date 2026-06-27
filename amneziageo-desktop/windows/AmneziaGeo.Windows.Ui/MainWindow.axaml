@@ -22,8 +22,9 @@
   <Grid>
   <DockPanel LastChildFill="True">
 
-    <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card). -->
-    <Grid Background="{DynamicResource AgSidebarBrush}">
+    <!-- BODY : single uniform gutter colour (no separate-coloured container around the right card).
+         x:Name lets the code-behind read/restore the left-rail column width (the splitter position, #51). -->
+    <Grid x:Name="BodyGrid" Background="{DynamicResource AgSidebarBrush}">
       <Grid.ColumnDefinitions>
         <!-- LEFT RAIL: fixed default but drag-resizable via the GridSplitter; clamped so it can
              neither collapse nor starve the right pane. -->

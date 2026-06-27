@@ -601,4 +601,24 @@ public sealed partial class MainWindow : Window
         flyout.ShowAt(target, showAtPointer: atPointer);
     }
 
+    // The left rail is the BodyGrid's first column (x:Name on a ColumnDefinition does not generate a field
+    // in Avalonia, so reach it via the named Grid).
+    private ColumnDefinition RailColumn => BodyGrid.ColumnDefinitions[0];
+
+    /// <summary>
+    /// The left rail's current pixel width (the #50 splitter position), for persisting it (#51). The
+    /// GridSplitter keeps the rail column absolute, so its GridLength value is the pixel width; a star
+    /// length (unexpected) falls back to the default.
+    /// </summary>
+    public double RailWidth => RailColumn.Width.IsAbsolute ? RailColumn.Width.Value : 377;
+
+    /// <summary>Restores the left rail to a saved pixel width; the column's Min/Max still clamp it (#51).</summary>
+    public void SetRailWidth(double pixels)
+    {
+        if (pixels > 0)
+        {
+            RailColumn.Width = new GridLength(pixels);
+        }
+    }
+
 }

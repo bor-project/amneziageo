@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/core/">
+    <Project Path="amneziageo-core/AmneziaGeo.Dal/AmneziaGeo.Dal.csproj" />
+    <Project Path="amneziageo-core/AmneziaGeo.Decl/AmneziaGeo.Decl.csproj" />
+    <Project Path="amneziageo-core/AmneziaGeo.Geo/AmneziaGeo.Geo.csproj" />
+    <Project Path="amneziageo-core/AmneziaGeo.Ipc/AmneziaGeo.Ipc.csproj" />
+  </Folder>
+  <Folder Name="/windows/">
+    <Project Path="amneziageo-windows/AmneziaGeo.Windows.App/AmneziaGeo.Windows.App.csproj" />
+    <Project Path="amneziageo-windows/AmneziaGeo.Windows.Engine/AmneziaGeo.Windows.Engine.csproj" />
+    <Project Path="amneziageo-windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj" />
+    <Project Path="amneziageo-windows/tools/AmneziaGeo.Windows.Launcher/AmneziaGeo.Windows.Launcher.csproj" />
+  </Folder>
+</Solution>

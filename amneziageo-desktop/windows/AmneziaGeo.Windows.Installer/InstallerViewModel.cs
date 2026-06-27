@@ -48,6 +48,7 @@ public sealed class InstallerViewModel : ObservableObject
     private bool _downloadLists = true;
     private bool _indeterminate;
     private string _geoResult = string.Empty;
+    private string _seedDbPath = string.Empty;
 
     public InstallerViewModel(Action<InstallerAction> invoke, Action close)
     {
@@ -59,6 +60,7 @@ public sealed class InstallerViewModel : ObservableObject
         RepairCommand = new RelayCommand(() => _invoke(InstallerAction.Repair));
         RemoveCommand = new RelayCommand(() => _invoke(InstallerAction.Remove));
         CloseCommand = new RelayCommand(() => _close());
+        PickSeedDbCommand = new RelayCommand(PickSeedDb);
     }
 
     public ICommand InstallCommand { get; }
@@ -255,6 +257,45 @@ public sealed class InstallerViewModel : ObservableObject
         Complete(true, message);
     }
 
+    /// <summary>Opens a file picker for a default-settings database (#55); the BA writes the chosen path
+    /// into the bundle's SEEDDBPATH variable before planning.</summary>
+    public ICommand PickSeedDbCommand { get; }
+
+    /// <summary>The user-selected default-settings DB path (empty = none), read by the BA on install.</summary>
+    public string SeedDbPath
+    {
+        get => _seedDbPath;
+        private set
+        {
+            if (Set(ref _seedDbPath, value))
+            {
+                Raise(nameof(SeedDbLabel));
+            }
+        }
+    }
+
+    /// <summary>Caption next to the picker: the chosen file name, or a "none selected" hint.</summary>
+    public string SeedDbLabel => string.IsNullOrEmpty(SeedDbPath)
+        ? "Файл настроек по умолчанию не выбран."
+        : $"Файл настроек: {System.IO.Path.GetFileName(SeedDbPath)}";
+
+    /// <summary>Whether to offer the default-settings-DB picker (install / update only, like the geo option).</summary>
+    public bool ShowSeedDbOption => Phase == Phase.Ready && (ShowInstall || ShowUpdate);
+
+    private void PickSeedDb()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Выберите файл настроек (state.db)",
+            Filter = "База настроек SQLite (*.db)|*.db|Все файлы (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            SeedDbPath = dialog.FileName;
+        }
+    }
+
     private void RaiseVisibility()
     {
         Raise(nameof(ShowActions));
@@ -265,5 +306,6 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowProgress));
         Raise(nameof(ShowDone));
         Raise(nameof(ShowDownloadOption));
+        Raise(nameof(ShowSeedDbOption));
     }
 }

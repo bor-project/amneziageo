@@ -50,7 +50,35 @@ internal enum SeedOutcome
 internal static class SeedImporter
 {
     public static SeedOutcome TryApply(ILogger log) =>
-        Apply(TunnelPaths.SeedDbFile(), TunnelPaths.StateDbFile(), TunnelPaths.SeedReplaceFlagFile(), log);
+        Apply(ResolveSeedSource(), TunnelPaths.StateDbFile(), TunnelPaths.SeedReplaceFlagFile(), log);
+
+    /// <summary>
+    /// The seed database to deploy. A user-selected file recorded by the installer (HKLM\Software\AmneziaGeo
+    /// value SeedSource - the BA file-picker or the SEEDDBPATH command-line argument, #55) takes priority over
+    /// the bundled <c>state.db.seed</c> (#54). Falls back to the bundled path; Apply() no-ops if neither file
+    /// exists. Best-effort: a missing key / unreadable registry just uses the bundled seed.
+    /// </summary>
+    private static string ResolveSeedSource()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"Software\AmneziaGeo");
+            if (key?.GetValue("SeedSource") is string picked)
+            {
+                var path = picked.Trim();
+                if (path.Length > 0 && File.Exists(path))
+                {
+                    return path;
+                }
+            }
+        }
+        catch
+        {
+            // fall through to the bundled seed
+        }
+
+        return TunnelPaths.SeedDbFile();
+    }
 
     /// <summary>
     /// Testable core: applies <paramref name="seed"/> into <paramref name="db"/> using the explicit paths,

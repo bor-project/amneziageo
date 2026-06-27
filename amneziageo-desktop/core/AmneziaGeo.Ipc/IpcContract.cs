@@ -187,6 +187,12 @@ public static class IpcContract
     public const string OpRenameConfig = "rename-config";
 
     /// <summary>
+    /// Command to duplicate a config into an independent copy. Args: source name, destination name. Copies
+    /// the config text plus its geo settings and cached resolutions; the destination must be a free name.
+    /// </summary>
+    public const string OpCopyConfig = "copy-config";
+
+    /// <summary>
     /// Command to rename a profile (balancer). Args: current name, new name. Carries the profile's
     /// routing assignment and selection/binding across. Refused if it is the running profile.
     /// </summary>

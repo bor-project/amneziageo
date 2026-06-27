@@ -19,7 +19,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private readonly Func<string, string, Task<IpcAck>> _importConfig;
     private readonly Func<string, bool, Task> _setProfileConnection;
     private readonly Func<string, Task<IpcAck>> _removeConfig;
+    private readonly Func<string, string, Task<IpcAck>> _copyConfig;
     private bool _suppress;
+    // True while the user is composing a brand-new config via the "+ Новая конфигурация" combo pick; held
+    // across snapshots (like _creatingNewList) so the periodic reconcile does not snap the config combo back
+    // to the config the agent still has assigned while the inline import form is open.
+    private bool _creatingNewConfig;
     // True while the user is building a brand-new routing list ("+ Новый список"). Set by the combo pick,
     // cleared when another option is chosen; snapshots honour it so the periodic reconcile does not snap the
     // selection back to the list the agent still has assigned. Once the new list is saved its id is recorded
@@ -37,6 +42,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(Detail))]
     [NotifyPropertyChangedFor(nameof(HasConfig))]
     private string _config = string.Empty;
+
+    // The config selected in the profile's config combo. Picking a real config assigns it to this profile
+    // (configs are shared across profiles by name); picking "+ Новая конфигурация" reveals the import form.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDuplicateConfig))]
+    private ConfigChoice _selectedConfig = ConfigChoice.None;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
@@ -81,7 +92,8 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         Func<string, Task> selectProfile,
         Func<string, string, Task<IpcAck>> importConfig,
         Func<string, bool, Task> setProfileConnection,
-        Func<string, Task<IpcAck>> removeConfig)
+        Func<string, Task<IpcAck>> removeConfig,
+        Func<string, string, Task<IpcAck>> copyConfig)
     {
         _saveProfile = saveProfile;
         _assignRouting = assignRouting;
@@ -89,7 +101,15 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         _importConfig = importConfig;
         _setProfileConnection = setProfileConnection;
         _removeConfig = removeConfig;
+        _copyConfig = copyConfig;
     }
+
+    /// <summary>
+    /// The config options available in the profile's config combo: the synthetic "- не задан -",
+    /// every config in the shared catalogue (selectable / reusable across profiles), then the trailing
+    /// "+ Новая конфигурация" sentinel. Rebuilt from the snapshot in <see cref="ApplyFromEntry"/>.
+    /// </summary>
+    public ObservableCollection<ConfigChoice> ConfigOptions { get; } = [];
 
     /// <summary>
     /// The routing-list options available in the combo box.
@@ -128,6 +148,9 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// </summary>
     public bool HasConfig => Config.Length > 0;
 
+    /// <summary>True when a real config is selected and "Дублировать" can fork an independent copy.</summary>
+    public bool CanDuplicateConfig => SelectedConfig.IsReal;
+
     /// <summary>
     /// Collapsed-row summary: the configuration name, or a hint when none is set yet.
     /// </summary>
@@ -165,7 +188,10 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// <summary>
     /// Populates view-model state from the agent-side entry without firing change-driven IPC calls.
     /// </summary>
-    public void ApplyFromEntry(BalancerEntry entry, IReadOnlyList<RoutingListChoice> routingOptions)
+    public void ApplyFromEntry(
+        BalancerEntry entry,
+        IReadOnlyList<RoutingListChoice> routingOptions,
+        IReadOnlyList<ConfigChoice> configOptions)
     {
         _suppress = true;
         try
@@ -173,6 +199,45 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             Name = entry.Name;
             Status = entry.Status;
             Config = entry.Config;
+
+            // The profile's assigned config must always be selectable, even if it is momentarily absent from
+            // the shared catalogue (e.g. a config it reuses was renamed/removed via another profile). Surface
+            // it as a transient real choice so the combo shows the real name instead of misrepresenting a set
+            // config as "- не задан -" - a divergence a later combo touch could otherwise turn into an
+            // accidental unassign.
+            var effectiveOptions = configOptions;
+            if (entry.Config.Length > 0
+                && !configOptions.Any(option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal)))
+            {
+                var augmented = configOptions.ToList();
+                augmented.Insert(Math.Max(0, augmented.Count - 1), new ConfigChoice(entry.Config));
+                effectiveOptions = augmented;
+            }
+
+            // Rebuild config options only when the catalogue changed (same reasoning as routing below).
+            if (!ConfigOptions.SequenceEqual(effectiveOptions))
+            {
+                ConfigOptions.Clear();
+                foreach (var option in effectiveOptions)
+                {
+                    ConfigOptions.Add(option);
+                }
+            }
+
+            // While composing a new config (the inline import form is open), hold the "+ Новая
+            // конфигурация" pick across snapshots; otherwise resolve the combo to the profile's assigned
+            // config, or "- не задан -" when it has none.
+            if (_creatingNewConfig && IsCreatingConfig)
+            {
+                SelectedConfig = ConfigChoice.NewConfig;
+            }
+            else
+            {
+                _creatingNewConfig = false;
+                SelectedConfig = ConfigOptions.FirstOrDefault(
+                        option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal))
+                    ?? ConfigChoice.None;
+            }
 
             // Rebuild the options only when the catalogue actually changed. A Clear()+Add() on every
             // snapshot would null the ComboBox's selection (which then churns the inline editor) even
@@ -272,6 +337,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private void CancelNewConfig()
     {
         ResetNewConfig();
+        // Snap the combo off the "+ Новая конфигурация" pick back to the profile's current config: a pure
+        // cancel issues no command, so no snapshot follows to resolve the selection on its own.
+        _creatingNewConfig = false;
+        SelectedConfig = ConfigOptions.FirstOrDefault(
+                option => option.IsReal && string.Equals(option.Name, Config, StringComparison.Ordinal))
+            ?? ConfigChoice.None;
     }
 
     private void ResetNewConfig()
@@ -329,6 +400,87 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     public void NotifyNewListSaved(long id)
     {
         _savedNewListId = id;
+    }
+
+    partial void OnSelectedConfigChanged(ConfigChoice value)
+    {
+        // value can momentarily be null: clearing the bound options nulls the ComboBox's SelectedItem.
+        if (_suppress || value is null)
+        {
+            return;
+        }
+
+        _creatingNewConfig = value.IsNewSentinel;
+
+        if (value.IsNewSentinel)
+        {
+            // Reveal the inline import form; the hold keeps this pick across snapshots until the new config
+            // is imported and assigned (SaveNewConfig), after which a snapshot resolves the combo to it.
+            IsCreatingConfig = true;
+            return;
+        }
+
+        // Leaving the "+ Новая конфигурация" pick collapses the inline import form.
+        if (IsCreatingConfig)
+        {
+            ResetNewConfig();
+        }
+
+        if (value.IsReal && !string.Equals(value.Name, Config, StringComparison.Ordinal))
+        {
+            // Picking an existing config (re)assigns it to this profile - the same config can back several
+            // profiles, since balancers reference a config by name.
+            Config = value.Name;
+            _ = _saveProfile(Name, value.Name);
+        }
+        else if (value.IsNone && Config.Length > 0)
+        {
+            Config = string.Empty;
+            _ = _saveProfile(Name, string.Empty);
+        }
+    }
+
+    // Fork an independent copy of the profile's current config (text + geo + resolutions) under a fresh
+    // name and switch this profile to the copy, so it can be edited without touching the shared original.
+    [RelayCommand]
+    private async Task DuplicateConfig()
+    {
+        if (!SelectedConfig.IsReal)
+        {
+            return;
+        }
+
+        var source = SelectedConfig.Name;
+        var destination = UniqueCopyName(source);
+        var ack = await _copyConfig(source, destination);
+        if (!ack.Ok)
+        {
+            NewConfigStatus = ack.Message;
+            return;
+        }
+
+        Config = destination;
+        await _saveProfile(Name, destination);
+    }
+
+    // "<name> (копия)", then " (копия 2)", ... avoiding any name already in the catalogue.
+    private string UniqueCopyName(string source)
+    {
+        var taken = ConfigOptions.Where(option => option.IsReal).Select(option => option.Name).ToHashSet(StringComparer.Ordinal);
+        var baseName = $"{source} (копия)";
+        if (!taken.Contains(baseName))
+        {
+            return baseName;
+        }
+
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{source} (копия {i})";
+            if (!taken.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
     }
 
     partial void OnSelectedRoutingListChanged(RoutingListChoice value)

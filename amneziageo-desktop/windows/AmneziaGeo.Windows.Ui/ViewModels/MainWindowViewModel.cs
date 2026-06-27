@@ -525,7 +525,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsAspectName => ProfileAspect == "name";
 
     /// <summary>Whether a member config is opened for management (the full config page shows on the right).</summary>
-    public bool IsConfigManage => OpenConfig is not null;
+    // The config-management block (name/export/delete) shows once a config is open, but is hidden while the
+    // inline "+ Новая конфигурация" import form is up so the two do not render at once (#45).
+    public bool IsConfigManage => OpenConfig is not null && !(OpenProfile?.IsCreatingConfig ?? false);
 
     /// <summary>
     /// Whether the profile's aspect editors (right pane) show: whenever a profile is open. Each aspect
@@ -640,7 +642,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         ConfigDeleteStatus = string.Empty;
-        var ack = await OpenProfile.DeleteConfigAsync(OpenConfig);
+        var config = OpenConfig;
+
+        // Configs are a shared catalogue (#45): a config can back several profiles. Only remove it from the
+        // catalogue when NO OTHER profile still uses it; if it is shared, just unbind it from THIS profile
+        // and leave the others' bindings intact (otherwise deleting from one profile would silently strip
+        // the config from the rest).
+        var sharedByOthers = Balancers.Any(b =>
+            !ReferenceEquals(b, OpenProfile) && string.Equals(b.Config, config, StringComparison.Ordinal));
+        if (sharedByOthers)
+        {
+            await SaveBalancerAsync(OpenProfile.Name, string.Empty);
+            OpenConfig = null;
+            return;
+        }
+
+        // Last user: delete it from the catalogue (and unbind this profile). The agent still refuses while
+        // the config is in use by the running profile, so on a non-OK ack the view stays put and shows why.
+        var ack = await OpenProfile.DeleteConfigAsync(config);
         if (ack.Ok)
         {
             OpenConfig = null;
@@ -773,6 +792,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         else if (e.PropertyName == nameof(BalancerItemViewModel.Config))
         {
             OpenConfig = string.IsNullOrEmpty(OpenProfile?.Config) ? null : OpenProfile!.Config;
+        }
+        else if (e.PropertyName == nameof(BalancerItemViewModel.IsCreatingConfig))
+        {
+            // The inline new-config form opened/closed: re-evaluate whether the config-management block shows.
+            OnPropertyChanged(nameof(IsConfigManage));
         }
     }
 
@@ -1430,6 +1454,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void SyncBalancers(IReadOnlyList<BalancerEntry> entries, IReadOnlyList<RoutingListEntry> routingLists)
     {
         var options = BuildRoutingOptions(routingLists);
+        var configOptions = BuildConfigOptions();
 
         // Reconcile in place, matching rows by name, so transient view state (the expanded
         // editor, combo selection) survives the snapshot pushes that follow every edit.
@@ -1448,13 +1473,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
-                existing.ApplyFromEntry(entry, options);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync, RemoveConfigAsync, CopyConfigAsync);
+                existing.ApplyFromEntry(entry, options, configOptions);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
             }
 
-            existing.ApplyFromEntry(entry, options);
+            existing.ApplyFromEntry(entry, options, configOptions);
             var index = Balancers.IndexOf(existing);
             if (index != i)
             {
@@ -1493,6 +1518,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // The trailing "+ Новый список" sentinel reveals the inline new-list editor, mirroring the
         // "+ Новая конфигурация" sentinel in the config combo.
         options.Add(RoutingListChoice.NewList);
+        return options;
+    }
+
+    // The config catalogue for a profile's combo: "- не задан -", every config (shared / reusable across
+    // profiles), then the trailing "+ Новая конфигурация" sentinel that reveals the inline import form.
+    private IReadOnlyList<ConfigChoice> BuildConfigOptions()
+    {
+        var options = new List<ConfigChoice> { ConfigChoice.None };
+        foreach (var name in _configNames)
+        {
+            options.Add(new ConfigChoice(name));
+        }
+
+        options.Add(ConfigChoice.NewConfig);
         return options;
     }
 
@@ -1541,6 +1580,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task<IpcAck> RemoveConfigAsync(string name)
     {
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));
+    }
+
+    private async Task<IpcAck> CopyConfigAsync(string source, string destination)
+    {
+        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCopyConfig, [source, destination]));
     }
 
     // Delete the profile currently open in the detail view, then fall back to the profiles list. The

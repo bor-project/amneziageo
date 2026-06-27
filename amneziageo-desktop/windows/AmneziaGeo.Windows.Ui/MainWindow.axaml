@@ -513,14 +513,29 @@
                 <!-- Конфигурация : the profile's single configuration -->
                 <StackPanel IsVisible="{Binding IsAspectConfig}">
                   <StackPanel DataContext="{Binding OpenProfile}" Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Grid.Column="0" Classes="label" Text="КОНФИГУРАЦИЯ" VerticalAlignment="Center" />
-                      <Button Grid.Column="1" Classes="softbtn" Command="{Binding BeginAddConfigCommand}"
-                              IsVisible="{Binding !IsCreatingConfig}"
-                              Content="Импорт" ToolTip.Tip="Импортировать сервер (.conf / vpn:// / QR / буфер)" />
+                    <TextBlock Classes="label" Text="КОНФИГУРАЦИЯ" VerticalAlignment="Center" />
+
+                    <!-- Config picker (hidden while the inline new-config form is open). Configs are a shared
+                         catalogue: picking an existing one (re)assigns it to this profile and the same config
+                         can back several profiles; "+ Новая конфигурация" reveals the import form below;
+                         "Дублировать" forks an independent copy for this profile. -->
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsCreatingConfig}">
+                      <ComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+                                ItemsSource="{Binding ConfigOptions}"
+                                SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding Name}" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <Button Grid.Column="1" Classes="softbtn" Content="Дублировать" Margin="6,0,0,0"
+                              IsVisible="{Binding CanDuplicateConfig}"
+                              Command="{Binding DuplicateConfigCommand}"
+                              ToolTip.Tip="Создать независимую копию конфигурации для этого профиля" />
                     </Grid>
                     <TextBlock IsVisible="{Binding !HasConfig}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="У профиля пока нет конфигурации. Нажмите «Импорт»." />
+                               Text="У профиля пока нет конфигурации. Выберите из списка или «+ Новая конфигурация»." />
 
                     <!-- inline "new config" form: shown when the combo's "+ Новая конфигурация" is picked -->
                     <Border IsVisible="{Binding IsCreatingConfig}"
@@ -647,8 +662,8 @@
 
                     <StackPanel Spacing="10">
                       <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                                 Text="Удалить конфигурацию из профиля. Запущенный профиль сначала отключите." />
-                      <Button Classes="danger" Content="Удалить конфигурацию" HorizontalAlignment="Left"
+                                 Text="Убрать конфигурацию из этого профиля. Если её не использует ни один другой профиль — она удалится из каталога. Запущенный профиль сначала отключите." />
+                      <Button Classes="danger" Content="Убрать из профиля" HorizontalAlignment="Left"
                               Command="{Binding DeleteOpenConfigCommand}" />
                       <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                     </StackPanel>

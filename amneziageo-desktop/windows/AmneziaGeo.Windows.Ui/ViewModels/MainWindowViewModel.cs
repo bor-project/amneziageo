@@ -840,7 +840,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             // Null is a mid-update artifact: Avalonia's ComboBox momentarily clears SelectedItem during
             // RoutingListOptions.Clear(). IsRoutingListRebuildPending is true while the deferred None
             // event from that rebuild is still in flight. Neither is a real user deselection — skip.
-            if (choice is null || profile.IsRoutingListRebuildPending) return;
+            if (choice is null || profile.IsRoutingListRebuildPending)
+            {
+                return;
+            }
             RoutingEditor = null;
             return;
         }

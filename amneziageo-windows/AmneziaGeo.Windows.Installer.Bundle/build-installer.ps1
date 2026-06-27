@@ -202,7 +202,7 @@ function Build-Variant {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
     Write-Host "== publish backend (AmneziaGeo.Windows.App, $rid, $kind) =="
-    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps -o $stage
+    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps $engineProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
 
     Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $rid, $kind) =="
@@ -280,6 +280,19 @@ $build = (& git -C $win rev-list --count HEAD).Trim()
 if (-not $build) { $build = '0' }
 $version = "1.0.1.$build"
 Write-Host "== bundle version $version =="
+
+# ---- AmneziaWG engine version: `git describe --tags` of the bundled amneziawg-windows submodule,
+# baked into the agent (App.csproj reads -p:AmneziaEngineVersion) so the UI can show it (tunnel.dll has
+# no version resource). Passed explicitly so the published App.dll gets it regardless of the build host's
+# submodule/git state. Unresolved (no tag / no submodule) => not passed => the UI shows "н/д". ----
+$submodule = Join-Path $win 'amneziawg-windows'
+$engineVersion = ''
+try {
+    $engineVersion = (& git -C $submodule describe --tags 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { $engineVersion = '' }
+} catch { $engineVersion = '' }
+$engineProps = if ($engineVersion) { @("-p:AmneziaEngineVersion=$engineVersion") } else { @() }
+Write-Host "== engine version $(if ($engineVersion) { $engineVersion } else { '(unresolved)' }) =="
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 New-Item -ItemType Directory -Force -Path $dist | Out-Null

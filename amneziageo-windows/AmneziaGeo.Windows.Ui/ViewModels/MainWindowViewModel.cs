@@ -257,6 +257,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
 
+    // AmneziaWG engine (tunnel.dll) version reported by the agent; "н/д" until known / if unresolved.
+    [ObservableProperty]
+    private string _amneziaVersion = "н/д";
+
     [ObservableProperty]
     private string _newSourceKind = "geosite";
 
@@ -1130,6 +1134,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void ApplyUpdateState(StatusSnapshot snapshot)
     {
         AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
+        AmneziaVersion = string.IsNullOrEmpty(snapshot.EngineVersion) ? "н/д" : snapshot.EngineVersion;
 
         UpdateUrl = snapshot.UpdateUrl;
 

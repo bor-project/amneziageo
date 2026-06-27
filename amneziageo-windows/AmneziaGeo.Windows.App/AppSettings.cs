@@ -15,6 +15,21 @@ internal sealed record AppSettings
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "AmneziaGeo.UpdateUrl")?.Value ?? string.Empty;
 
+    // The AmneziaWG engine version baked into the assembly at build time (App.csproj runs `git describe`
+    // on the bundled amneziawg-windows submodule). tunnel.dll has no version resource, so this is the
+    // authoritative engine version. Empty when the build could not resolve it (no git / no submodule).
+    private static readonly string BakedEngineVersion =
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "AmneziaGeo.EngineVersion")?.Value?.Trim() ?? string.Empty;
+
+    /// <summary>
+    /// AmneziaWG engine (tunnel.dll) version, baked from the amneziawg-windows submodule at build time.
+    /// A build constant (not persisted), exposed next to the other baked-in value (the update URL).
+    /// Empty if the build could not resolve it.
+    /// </summary>
+    public static string EngineVersion => BakedEngineVersion;
+
     /// <summary>
     /// How often tunneled domains are re-resolved, in seconds.
     /// </summary>

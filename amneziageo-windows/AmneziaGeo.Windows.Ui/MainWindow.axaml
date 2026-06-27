@@ -1136,8 +1136,14 @@
                     <TextBlock Text="О ПРИЛОЖЕНИИ" Classes="section" />
                   </Border>
                   <Grid ColumnDefinitions="*,Auto" Margin="15,11">
-                    <TextBlock Text="Версия" FontSize="13.5" VerticalAlignment="Center" />
+                    <TextBlock Text="Версия приложения" FontSize="13.5" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
+                  </Grid>
+
+                  <!-- AmneziaWG engine (tunnel.dll) version, reported by the agent over IPC (#53). -->
+                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
+                    <TextBlock Text="Версия движка Amnezia" FontSize="13.5" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
                   </Grid>
 
                   <!-- Update: manual check + download/install. The metadata URL is baked into the build

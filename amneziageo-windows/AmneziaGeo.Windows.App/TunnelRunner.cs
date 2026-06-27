@@ -52,7 +52,8 @@ internal sealed class TunnelRunner(
         // Start from a clean slate: revert any DNS/route leftovers from a previous tunnel.
         reconciler.Reconcile();
 
-        var config = await File.ReadAllTextAsync(TunnelPaths.ConfigFile(name));
+        var config = await store.GetConfigTextAsync(name)
+            ?? throw new InvalidOperationException($"configuration '{name}' is not stored");
 
         // Resolve the WebSocket (UDP-over-TCP) transport plan up front from the ORIGINAL endpoint, but
         // start the wstunnel child last (just before the engine) so a setup failure cannot orphan it.

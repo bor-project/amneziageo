@@ -120,7 +120,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConfigManage))]
     [NotifyPropertyChangedFor(nameof(ShowProfileAspects))]
-    [NotifyPropertyChangedFor(nameof(ConfigFilePath))]
     private string? _openConfig;
 
     // The config page's view model, built when a config is opened. It reuses the export dialog VM, which
@@ -530,9 +529,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool ShowProfileAspects => IsProfileDetail;
 
-    /// <summary>Full path to the opened config's .conf file (shown in the location section).</summary>
-    public string ConfigFilePath => OpenConfig is null ? string.Empty : ConfigPaths.ConfigFile(OpenConfig);
-
     /// <summary>Whether the General settings section is selected.</summary>
     public bool IsSettingsGeneral => SettingsSection == "general";
 
@@ -626,16 +622,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void OpenConfigManage(string configName)
     {
         OpenConfig = configName;
-    }
-
-    // Reveal the opened config's .conf in Explorer (the location action's button).
-    [RelayCommand]
-    private void RevealConfig()
-    {
-        if (OpenConfig is not null)
-        {
-            ConfigPaths.RevealInExplorer(OpenConfig);
-        }
     }
 
     // Delete the opened config from the catalogue (and the open profile's members), then return to the

@@ -35,7 +35,7 @@ internal sealed class Cli(
                 await tunnelRunner.RunAsync(name);
                 return 0;
             case ["install", var name, var configPath]:
-                return serviceManager.Install(name, configPath);
+                return await InstallTunnelAsync(name, configPath);
             case ["uninstall", var name]:
                 return serviceManager.Uninstall(name);
             case ["start", var name]:
@@ -58,7 +58,7 @@ internal sealed class Cli(
                 Console.WriteLine(uapi.Get(name));
                 return 0;
             case ["tunnel-ip", var name, var ip]:
-                return DebugTunnelIp(name, ip);
+                return await DebugTunnelIpAsync(name, ip);
             case ["add-source", var kind, var url]:
                 return await AddSourceAsync(kind, url);
             case ["list-sources"]:
@@ -82,15 +82,15 @@ internal sealed class Cli(
             case ["domains", var name]:
                 return await ListDomainsAsync(name);
             case ["config-add", var name, var path]:
-                return ConfigAdd(name, path);
+                return await ConfigAddAsync(name, path);
             case ["config-list"]:
-                return ConfigList();
+                return await ConfigListAsync();
             case ["config-show", var name]:
                 return await ConfigShowAsync(name);
             case ["config-copy", var source, var destination]:
                 return await ConfigCopyAsync(source, destination);
             case ["config-edit", var name, var path]:
-                return ConfigEdit(name, path);
+                return await ConfigEditAsync(name, path);
             case ["config-remove", var name]:
                 return await ConfigRemoveAsync(name);
             case ["balancer-add", var name]:
@@ -291,11 +291,34 @@ internal sealed class Cli(
         return 0;
     }
 
-    private int ConfigAdd(string name, string path)
+    // Stores a config from a wg-quick file (overwriting an existing one) then creates its tunnel service.
+    private async Task<int> InstallTunnelAsync(string name, string configPath)
     {
         try
         {
-            configRepo.Add(name, path);
+            if (await configRepo.ExistsAsync(name))
+            {
+                await configRepo.EditAsync(name, configPath);
+            }
+            else
+            {
+                await configRepo.AddAsync(name, configPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            return 1;
+        }
+
+        return serviceManager.CreateService(name);
+    }
+
+    private async Task<int> ConfigAddAsync(string name, string path)
+    {
+        try
+        {
+            await configRepo.AddAsync(name, path);
             Console.WriteLine($"added config {name}");
             return 0;
         }
@@ -306,11 +329,11 @@ internal sealed class Cli(
         }
     }
 
-    private int ConfigList()
+    private async Task<int> ConfigListAsync()
     {
-        foreach (var name in configRepo.List())
+        foreach (var name in await configRepo.ListAsync())
         {
-            var endpoint = EndpointLabel(File.ReadAllText(TunnelPaths.ConfigFile(name)));
+            var endpoint = EndpointLabel(await configRepo.ReadTextAsync(name));
             Console.WriteLine($"{name}\t{endpoint}\t{serviceManager.QueryState(name)}");
         }
 
@@ -319,13 +342,13 @@ internal sealed class Cli(
 
     private async Task<int> ConfigShowAsync(string name)
     {
-        if (!configRepo.Exists(name))
+        if (!await configRepo.ExistsAsync(name))
         {
             Console.WriteLine($"unknown config: {name}");
             return 1;
         }
 
-        var config = await File.ReadAllTextAsync(TunnelPaths.ConfigFile(name));
+        var config = await configRepo.ReadTextAsync(name);
         Console.WriteLine($"config {name}");
         Console.WriteLine($"  endpoint: {EndpointLabel(config)}");
         Console.WriteLine($"  allowed:  {string.Join(", ", WgConfigEditor.GetAllowedIps(config))}");
@@ -355,11 +378,11 @@ internal sealed class Cli(
         }
     }
 
-    private int ConfigEdit(string name, string path)
+    private async Task<int> ConfigEditAsync(string name, string path)
     {
         try
         {
-            configRepo.Edit(name, path);
+            await configRepo.EditAsync(name, path);
             Console.WriteLine($"updated config {name} (restart its tunnel to apply)");
             return 0;
         }
@@ -379,7 +402,7 @@ internal sealed class Cli(
 
     private async Task<int> BalancerAddAsync(string name, string config)
     {
-        if (!string.IsNullOrEmpty(config) && !configRepo.Exists(config))
+        if (!string.IsNullOrEmpty(config) && !await configRepo.ExistsAsync(config))
         {
             Console.WriteLine($"unknown config: {config}");
             return 1;
@@ -420,7 +443,7 @@ internal sealed class Cli(
             return 0;
         }
 
-        var state = configRepo.Exists(config) ? serviceManager.QueryState(config) : "MISSING";
+        var state = await configRepo.ExistsAsync(config) ? serviceManager.QueryState(config) : "MISSING";
         Console.WriteLine($"profile {name}\t{config}\t{state}");
         return 0;
     }
@@ -590,9 +613,9 @@ internal sealed class Cli(
         }
     }
 
-    private int DebugTunnelIp(string name, string ip)
+    private async Task<int> DebugTunnelIpAsync(string name, string ip)
     {
-        var config = File.ReadAllText(TunnelPaths.ConfigFile(name));
+        var config = await configRepo.ReadTextAsync(name);
         var peer = WgConfigEditor.GetPeerPublicKey(config);
         var index = routes.FindInterfaceIndex(name);
         if (peer is null || index is null)
@@ -646,7 +669,7 @@ internal sealed class Cli(
     // (reuse the config's Endpoint host) or a full wss://[user:pass@]host:port[/token] URL carrying auth.
     private async Task<int> SetWebSocketAsync(string name, string toggle, string portText, string host)
     {
-        if (!configRepo.Exists(name))
+        if (!await configRepo.ExistsAsync(name))
         {
             Console.WriteLine($"unknown config: {name}");
             return 1;

@@ -65,7 +65,7 @@ internal sealed class AgentBackgroundService(
             return balancer;
         }
 
-        if (configRepo.Exists(target))
+        if (await configRepo.ExistsAsync(target, ct))
         {
             return new BalancerGroup(target, target);
         }

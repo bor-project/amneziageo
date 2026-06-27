@@ -35,6 +35,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     // event (SelectedItem → None) that arrives after _suppress=false is consumed and ignored.
     // Same root cause as the ConfigOptions/OnSelectedConfigChanged issue fixed for #57.
     private bool _suppressNextRoutingNone;
+
+    /// <summary>True while the deferred Avalonia ComboBox None/null event from a RoutingListOptions
+    /// rebuild (Clear + repopulate) is still in flight. Read by MainWindowViewModel.SyncProfileRoutingEditor
+    /// to avoid closing the inline rule editor during a snapshot reconcile — the deferred None is an
+    /// artifact, not a real user deselection.</summary>
+    public bool IsRoutingListRebuildPending => _suppressNextRoutingNone;
     // Optimistic running override: set the instant the user taps connect/disconnect on this profile so the
     // button flips immediately; cleared once a snapshot's real status agrees with the requested state.
     private bool? _pendingRunning;

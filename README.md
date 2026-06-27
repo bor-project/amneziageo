@@ -22,13 +22,13 @@ AmneziaGeo fixes this with **live DNS interception**: a local DNS proxy observes
 
 | Directory | Platform | Engine packaging | Status |
 |---|---|---|---|
-| [`amneziageo-core`](amneziageo-core/) | shared (C#) | .NET class library — geo parsing, config, DNS proxy, UAPI client | 📋 planned |
-| [`amneziageo-windows`](amneziageo-windows/) | Windows | C# host + `tunnel.dll` (c-shared) via P/Invoke | 🚧 first target |
-| [`amneziageo-linux`](amneziageo-linux/) | Linux | C# + `amneziawg-go` userspace daemon (UAPI) | 📋 planned |
+| [`amneziageo-desktop/core`](amneziageo-desktop/core/) | shared (C#) | .NET class library — geo parsing, config, DNS proxy, UAPI client | 📋 planned |
+| [`amneziageo-desktop/windows`](amneziageo-desktop/windows/) | Windows | C# host + `tunnel.dll` (c-shared) via P/Invoke | 🚧 first target |
+| [`amneziageo-desktop/linux`](amneziageo-desktop/linux/) | Linux | C# + `amneziawg-go` userspace daemon (UAPI) | 📋 planned |
 | [`amneziageo-android`](amneziageo-android/) | Android | C# (.NET) `VpnService` + gomobile `.aar` | 📋 planned |
 | [`amneziageo-apple`](amneziageo-apple/) | macOS + iOS | native Swift — one Xcode project, shared `AmneziaGeoKit`, over `libwg-go.a` | 📋 planned |
 
-Shared code is per-language: [`amneziageo-core`](amneziageo-core/) — a .NET class library referenced by the Windows / Linux / Android heads via a `<ProjectReference>` (**not** a submodule); each head keeps its own `.sln`, so there is no mega-solution — and `AmneziaGeoKit` (Swift) shared across the two Apple platforms. Git submodules are reserved for the external upstream engines (`amneziawg-windows`, `amneziawg-apple`).
+Shared code is per-language: [`amneziageo-desktop/core`](amneziageo-desktop/core/) — a .NET class library referenced by the Windows / Linux / Android heads via a `<ProjectReference>` (**not** a submodule); each head keeps its own `.sln`, so there is no mega-solution — and `AmneziaGeoKit` (Swift) shared across the two Apple platforms. Git submodules are reserved for the external upstream engines (`amneziawg-windows`, `amneziawg-apple`).
 
 ## Status
 

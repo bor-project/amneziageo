@@ -31,5 +31,5 @@ dotnet_naming_style.underscore_camel_case.capitalization = camel_case
 [*.{xml,csproj,props,targets,slnx,json}]
 indent_size = 2
 
-[amneziageo-core/**/*.cs]
+[amneziageo-desktop/core/**/*.cs]
 dotnet_diagnostic.CA2007.severity = warning

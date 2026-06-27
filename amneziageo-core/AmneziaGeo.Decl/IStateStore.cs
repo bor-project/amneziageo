@@ -115,6 +115,36 @@ public interface IStateStore
     Task RemoveConfigExclusionsAsync(string name, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns whether a stored configuration (wg-quick text) with the given name exists.
+    /// </summary>
+    Task<bool> ConfigExistsAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the stored wg-quick text of a configuration, or null if absent.
+    /// </summary>
+    Task<string?> GetConfigTextAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the names of all stored configurations, ordered by name.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListConfigNamesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserts or updates the wg-quick text of a configuration.
+    /// </summary>
+    Task SaveConfigAsync(string name, string text, CancellationToken ct = default);
+
+    /// <summary>
+    /// Renames a stored configuration's row. The destination name must be free.
+    /// </summary>
+    Task RenameConfigAsync(string oldName, string newName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a stored configuration by name.
+    /// </summary>
+    Task RemoveConfigAsync(string name, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates a geo download source.
     /// </summary>
     Task SaveGeoSourceAsync(GeoSource source, CancellationToken ct = default);

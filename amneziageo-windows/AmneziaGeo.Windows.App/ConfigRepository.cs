@@ -3,123 +3,97 @@ using AmneziaGeo.Decl;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Manages stored tunnel configurations and their associated geo and resolution state.
+/// Manages stored tunnel configurations and their associated geo and resolution state. The wg-quick text
+/// of every configuration lives in the state database (the configs table) - the single place all
+/// configuration is kept, so a backup is just a copy of the database. There are no on-disk .conf files;
+/// the tunnel service reads a config's text straight from the database when it connects.
 /// </summary>
 internal sealed class ConfigRepository(IStateStore store, ServiceManager serviceManager)
 {
     /// <summary>
     /// Returns whether a configuration with the given name is stored.
     /// </summary>
-    public bool Exists(string name)
+    public Task<bool> ExistsAsync(string name, CancellationToken ct = default)
     {
-        return File.Exists(TunnelPaths.ConfigFile(name));
+        return store.ConfigExistsAsync(name, ct);
     }
 
     /// <summary>
     /// Returns the names of all stored configurations.
     /// </summary>
-    public IReadOnlyList<string> List()
+    public Task<IReadOnlyList<string>> ListAsync(CancellationToken ct = default)
     {
-        var directory = TunnelPaths.ConfigurationsDirectory();
-        if (!Directory.Exists(directory))
-        {
-            return [];
-        }
-
-        var names = new List<string>();
-        foreach (var path in Directory.EnumerateFiles(directory, "*.conf"))
-        {
-            names.Add(Path.GetFileNameWithoutExtension(path));
-        }
-
-        names.Sort(StringComparer.Ordinal);
-        return names;
+        return store.ListConfigNamesAsync(ct);
     }
 
     /// <summary>
     /// Imports a new configuration from a wg-quick file.
     /// </summary>
-    public void Add(string name, string sourcePath)
+    public async Task AddAsync(string name, string sourcePath, CancellationToken ct = default)
     {
         EnsureValidName(name);
-        if (Exists(name))
+        if (await store.ConfigExistsAsync(name, ct))
         {
             throw new InvalidOperationException($"configuration {name} already exists");
         }
 
-        var stored = TunnelPaths.ConfigFile(name);
-        Directory.CreateDirectory(Path.GetDirectoryName(stored)!);
-        File.Copy(sourcePath, stored, overwrite: false);
+        var text = await File.ReadAllTextAsync(sourcePath, ct);
+        EnsureValidConfig(text);
+        await store.SaveConfigAsync(name, text, ct);
     }
 
     /// <summary>
-    /// Returns the stored wg-quick text of a configuration (for export).
+    /// Returns the stored wg-quick text of a configuration (for export / connect).
     /// </summary>
-    public string ReadText(string name)
+    public async Task<string> ReadTextAsync(string name, CancellationToken ct = default)
     {
-        if (!Exists(name))
-        {
-            throw new InvalidOperationException($"configuration {name} does not exist");
-        }
-
-        return File.ReadAllText(TunnelPaths.ConfigFile(name));
+        return await store.GetConfigTextAsync(name, ct)
+            ?? throw new InvalidOperationException($"configuration {name} does not exist");
     }
 
     /// <summary>
     /// Imports a new configuration from raw wg-quick text (parsed UI-side from a file, link, or QR).
     /// </summary>
-    public void AddFromText(string name, string text)
+    public async Task AddFromTextAsync(string name, string text, CancellationToken ct = default)
     {
         EnsureValidName(name);
-        if (Exists(name))
+        if (await store.ConfigExistsAsync(name, ct))
         {
             throw new InvalidOperationException($"configuration {name} already exists");
         }
 
-        if (string.IsNullOrWhiteSpace(text)
-            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
-            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("not a valid WireGuard/AmneziaWG configuration");
-        }
-
-        var stored = TunnelPaths.ConfigFile(name);
-        Directory.CreateDirectory(Path.GetDirectoryName(stored)!);
-        File.WriteAllText(stored, text);
+        EnsureValidConfig(text);
+        await store.SaveConfigAsync(name, text, ct);
     }
 
     /// <summary>
-    /// Replaces the wg-quick text of an existing configuration.
+    /// Replaces the wg-quick text of an existing configuration from a file.
     /// </summary>
-    public void Edit(string name, string sourcePath)
+    public async Task EditAsync(string name, string sourcePath, CancellationToken ct = default)
     {
-        if (!Exists(name))
+        if (!await store.ConfigExistsAsync(name, ct))
         {
             throw new InvalidOperationException($"configuration {name} does not exist");
         }
 
-        File.Copy(sourcePath, TunnelPaths.ConfigFile(name), overwrite: true);
+        var text = await File.ReadAllTextAsync(sourcePath, ct);
+        EnsureValidConfig(text);
+        await store.SaveConfigAsync(name, text, ct);
     }
 
     /// <summary>
-    /// Overwrites an existing configuration's wg-quick text in place (manual edit). The file (and thus the
-    /// config's profile memberships, geo, and routing state) is preserved - only its contents change.
+    /// Overwrites an existing configuration's wg-quick text in place (manual edit). The config's profile
+    /// memberships, geo, and routing state are preserved - only its text changes.
     /// </summary>
-    public void EditFromText(string name, string text)
+    public async Task EditFromTextAsync(string name, string text, CancellationToken ct = default)
     {
-        if (!Exists(name))
+        if (!await store.ConfigExistsAsync(name, ct))
         {
             throw new InvalidOperationException($"configuration {name} does not exist");
         }
 
-        if (string.IsNullOrWhiteSpace(text)
-            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
-            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("not a valid WireGuard/AmneziaWG configuration");
-        }
-
-        File.WriteAllText(TunnelPaths.ConfigFile(name), text);
+        EnsureValidConfig(text);
+        await store.SaveConfigAsync(name, text, ct);
     }
 
     /// <summary>
@@ -128,17 +102,15 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     public async Task CopyAsync(string source, string destination, CancellationToken ct = default)
     {
         EnsureValidName(destination);
-        if (!Exists(source))
-        {
-            throw new InvalidOperationException($"configuration {source} does not exist");
-        }
+        var text = await store.GetConfigTextAsync(source, ct)
+            ?? throw new InvalidOperationException($"configuration {source} does not exist");
 
-        if (Exists(destination))
+        if (await store.ConfigExistsAsync(destination, ct))
         {
             throw new InvalidOperationException($"configuration {destination} already exists");
         }
 
-        File.Copy(TunnelPaths.ConfigFile(source), TunnelPaths.ConfigFile(destination), overwrite: false);
+        await store.SaveConfigAsync(destination, text, ct);
 
         var geo = await store.GetTunnelGeoAsync(source, ct);
         if (geo is not null)
@@ -153,8 +125,8 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
-    /// Renames a configuration: moves the .conf and carries its geo settings, transport settings, saved
-    /// resolutions, and balancer memberships over to the new name. The destination must be free.
+    /// Renames a configuration: moves its stored text and carries its geo settings, transport settings,
+    /// saved resolutions, and balancer memberships over to the new name. The destination must be free.
     /// </summary>
     public async Task RenameAsync(string oldName, string newName, CancellationToken ct = default)
     {
@@ -164,17 +136,17 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
             return;
         }
 
-        if (!Exists(oldName))
+        if (!await store.ConfigExistsAsync(oldName, ct))
         {
             throw new InvalidOperationException($"configuration {oldName} does not exist");
         }
 
-        if (Exists(newName))
+        if (await store.ConfigExistsAsync(newName, ct))
         {
             throw new InvalidOperationException($"configuration {newName} already exists");
         }
 
-        File.Move(TunnelPaths.ConfigFile(oldName), TunnelPaths.ConfigFile(newName));
+        await store.RenameConfigAsync(oldName, newName, ct);
 
         var geo = await store.GetTunnelGeoAsync(oldName, ct);
         if (geo is not null)
@@ -233,11 +205,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
             serviceManager.Uninstall(name);
         }
 
-        var stored = TunnelPaths.ConfigFile(name);
-        if (File.Exists(stored))
-        {
-            File.Delete(stored);
-        }
+        await store.RemoveConfigAsync(name, ct);
 
         await store.RemoveTunnelGeoAsync(name, ct);
         await store.RemoveConfigTransportAsync(name, ct);
@@ -257,11 +225,60 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         }
     }
 
+    /// <summary>
+    /// One-time migration: imports any legacy on-disk wg-quick files (Configurations\*.conf, from before
+    /// configs lived in the database) into the state database. The files are left in place as a safety
+    /// copy but are no longer read. Idempotent - a config already in the database is left untouched, so a
+    /// later edit in the database is never clobbered by the stale file.
+    /// </summary>
+    public async Task MigrateLegacyConfigsAsync(CancellationToken ct = default)
+    {
+        var directory = TunnelPaths.ConfigurationsDirectory();
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(directory, "*.conf"))
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            if (string.IsNullOrEmpty(name) || await store.ConfigExistsAsync(name, ct))
+            {
+                continue;
+            }
+
+            try
+            {
+                var text = await File.ReadAllTextAsync(path, ct);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    await store.SaveConfigAsync(name, text, ct);
+                }
+            }
+            catch (IOException)
+            {
+                // Skip an unreadable legacy file; the rest still migrate.
+            }
+        }
+    }
+
     private static void EnsureValidName(string name)
     {
+        // The name is the config's identity and is also used as the Windows tunnel service name, so keep
+        // the conservative filesystem-safe character guard even though configs are no longer files.
         if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
             throw new ArgumentException($"invalid configuration name: {name}");
+        }
+    }
+
+    private static void EnsureValidConfig(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)
+            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
+            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("not a valid WireGuard/AmneziaWG configuration");
         }
     }
 }

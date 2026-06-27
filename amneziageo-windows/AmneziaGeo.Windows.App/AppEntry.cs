@@ -49,5 +49,9 @@ public static class AppEntry
     {
         Directory.CreateDirectory(Path.GetDirectoryName(TunnelPaths.StateDbFile())!);
         await services.GetRequiredService<IStateStore>().InitializeAsync();
+
+        // One-time: pull any legacy on-disk wg-quick files (Configurations\*.conf, from before configs
+        // lived in the database) into the database. Idempotent and cheap once everything is migrated.
+        await services.GetRequiredService<ConfigRepository>().MigrateLegacyConfigsAsync();
     }
 }

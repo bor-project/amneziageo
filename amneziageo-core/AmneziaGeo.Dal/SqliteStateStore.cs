@@ -86,6 +86,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at       TEXT NOT NULL
                     );
 
+                    CREATE TABLE IF NOT EXISTS configs (
+                        name       TEXT PRIMARY KEY,
+                        text       TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+
                     CREATE TABLE IF NOT EXISTS domain_ips (
                         id         INTEGER PRIMARY KEY AUTOINCREMENT,
                         tunnel     TEXT NOT NULL,
@@ -1234,6 +1241,136 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$key", key);
                 command.Parameters.AddWithValue("$value", value);
                 command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> ConfigExistsAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT 1 FROM configs WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                return await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<string?> GetConfigTextAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT text FROM configs WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
+                return await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<string>> ListConfigNamesAsync(CancellationToken ct = default)
+    {
+        var names = new List<string>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT name FROM configs ORDER BY name;";
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        names.Add(reader.GetString(0));
+                    }
+                }
+            }
+        }
+
+        return names;
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveConfigAsync(string name, string text, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO configs (name, text, created_at, updated_at)
+                    VALUES ($name, $text, $now, $now)
+                    ON CONFLICT(name) DO UPDATE SET
+                        text       = excluded.text,
+                        updated_at = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$text", text);
+                command.Parameters.AddWithValue("$now", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RenameConfigAsync(string oldName, string newName, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "UPDATE configs SET name = $new, updated_at = $now WHERE name = $old;";
+                command.Parameters.AddWithValue("$new", newName);
+                command.Parameters.AddWithValue("$old", oldName);
+                command.Parameters.AddWithValue("$now", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveConfigAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM configs WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", name);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }

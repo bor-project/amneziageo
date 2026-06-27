@@ -8,17 +8,6 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class ServiceManager
 {
     /// <summary>
-    /// Installs a tunnel service from a wg-quick config file.
-    /// </summary>
-    public int Install(string name, string configPath)
-    {
-        var stored = TunnelPaths.ConfigFile(name);
-        Directory.CreateDirectory(Path.GetDirectoryName(stored)!);
-        File.Copy(configPath, stored, overwrite: true);
-        return CreateService(name);
-    }
-
-    /// <summary>
     /// Creates the tunnel service for an already-stored config, doing nothing if it already exists.
     /// </summary>
     public int CreateService(string name)

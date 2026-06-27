@@ -254,7 +254,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         {
             return command.Op switch
             {
-                IpcContract.OpAddConfig => AddConfig(command.Args),
+                IpcContract.OpAddConfig => await AddConfigAsync(command.Args, ct),
                 IpcContract.OpAddBalancer => await AddBalancerAsync(command.Args, ct),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
@@ -275,9 +275,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
                 IpcContract.OpCheckSources => await CheckSourcesAsync(ct),
                 IpcContract.OpCheckSource => await CheckSourceAsync(command.Args, ct),
-                IpcContract.OpGetConfig => GetConfig(command.Args),
-                IpcContract.OpImportConfig => ImportConfig(command.Args),
-                IpcContract.OpEditConfig => EditConfig(command.Args),
+                IpcContract.OpGetConfig => await GetConfigAsync(command.Args, ct),
+                IpcContract.OpImportConfig => await ImportConfigAsync(command.Args, ct),
+                IpcContract.OpEditConfig => await EditConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
                 IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
@@ -296,61 +296,61 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    private IpcAck AddConfig(IReadOnlyList<string> args)
+    private async Task<IpcAck> AddConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 2)
         {
             return new IpcAck(false, "add-config requires a name and a file path");
         }
 
-        configRepo.Add(args[0], args[1]);
+        await configRepo.AddAsync(args[0], args[1], ct);
         logger.LogInformation("added config {Name}", args[0]);
         return new IpcAck(true, $"added config {args[0]}");
     }
 
-    private IpcAck GetConfig(IReadOnlyList<string> args)
+    private async Task<IpcAck> GetConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
             return new IpcAck(false, "get-config requires a name");
         }
 
-        if (!configRepo.Exists(args[0]))
+        if (!await configRepo.ExistsAsync(args[0], ct))
         {
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
 
-        return new IpcAck(true, configRepo.ReadText(args[0]));
+        return new IpcAck(true, await configRepo.ReadTextAsync(args[0], ct));
     }
 
-    private IpcAck ImportConfig(IReadOnlyList<string> args)
+    private async Task<IpcAck> ImportConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 2)
         {
             return new IpcAck(false, "import-config requires a name and config text");
         }
 
-        configRepo.AddFromText(args[0], args[1]);
+        await configRepo.AddFromTextAsync(args[0], args[1], ct);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, $"импортирован {args[0]}");
     }
 
-    private IpcAck EditConfig(IReadOnlyList<string> args)
+    private async Task<IpcAck> EditConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 2)
         {
             return new IpcAck(false, "edit-config requires a name and config text");
         }
 
-        if (!configRepo.Exists(args[0]))
+        if (!await configRepo.ExistsAsync(args[0], ct))
         {
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
 
-        // Overwrites the .conf in place; membership/geo/routing are untouched. A thrown validation error
-        // is turned into a failed ack by ExecuteCommandAsync's catch. A running member uses the new text
-        // only after the next reconnect.
-        configRepo.EditFromText(args[0], args[1]);
+        // Overwrites the stored text in place; membership/geo/routing are untouched. A thrown validation
+        // error is turned into a failed ack by ExecuteCommandAsync's catch. A running member uses the new
+        // text only after the next reconnect.
+        await configRepo.EditFromTextAsync(args[0], args[1], ct);
         logger.LogInformation("edited config {Name}", args[0]);
         return new IpcAck(true, $"сохранён {args[0]}");
     }
@@ -363,7 +363,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var name = args[0];
-        if (!configRepo.Exists(name))
+        if (!await configRepo.ExistsAsync(name, ct))
         {
             return new IpcAck(false, $"unknown config: {name}");
         }
@@ -437,12 +437,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(true, "имя не изменилось");
         }
 
-        if (!configRepo.Exists(oldName))
+        if (!await configRepo.ExistsAsync(oldName, ct))
         {
             return new IpcAck(false, $"unknown config: {oldName}");
         }
 
-        if (configRepo.Exists(newName) || await store.GetBalancerAsync(newName, ct) is not null)
+        if (await configRepo.ExistsAsync(newName, ct) || await store.GetBalancerAsync(newName, ct) is not null)
         {
             return new IpcAck(false, $"имя {newName} уже занято");
         }
@@ -487,7 +487,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown profile: {oldName}");
         }
 
-        if (await store.GetBalancerAsync(newName, ct) is not null || configRepo.Exists(newName))
+        if (await store.GetBalancerAsync(newName, ct) is not null || await configRepo.ExistsAsync(newName, ct))
         {
             return new IpcAck(false, $"имя {newName} уже занято");
         }
@@ -540,9 +540,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         string? dns = null;
         ProfilePortable.ExclusionsBlock? exclusions = null;
         var config = balancer.Config;
-        if (!string.IsNullOrEmpty(config) && configRepo.Exists(config))
+        if (!string.IsNullOrEmpty(config) && await configRepo.ExistsAsync(config, ct))
         {
-            configText = configRepo.ReadText(config);
+            configText = await configRepo.ReadTextAsync(config, ct);
 
             var tr = await store.GetConfigTransportAsync(config, ct);
             if (tr is not null && (tr.UseWebSocket || tr.WebSocketHost.Length > 0))
@@ -638,7 +638,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // Config and profile names live in one global namespace (rename refuses a name used by either), so
         // de-duplicate the imported names against both. Routing-list names are a separate space.
         var taken = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var existing in configRepo.List())
+        foreach (var existing in await configRepo.ListAsync(ct))
         {
             taken.Add(existing);
         }
@@ -657,7 +657,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
             // Validates [Interface]/[Peer]; a malformed bundle throws here and aborts the import before any
             // profile/routing rows are written.
-            configRepo.AddFromText(configName, bundle.ConfigText);
+            await configRepo.AddFromTextAsync(configName, bundle.ConfigText, ct);
 
             if (bundle.Transport is { } tr)
             {
@@ -731,7 +731,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // the in-use check sits immediately before the removal so the window for a concurrent rebind is minimal.
         if (!string.IsNullOrEmpty(oldConfigToRemove)
             && !string.Equals(oldConfigToRemove, configName, StringComparison.Ordinal)
-            && configRepo.Exists(oldConfigToRemove)
+            && await configRepo.ExistsAsync(oldConfigToRemove, ct)
             && !await ConfigInUseAsync(oldConfigToRemove, ct))
         {
             await configRepo.RemoveAsync(oldConfigToRemove, ct);
@@ -820,7 +820,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         var name = args[0];
         var config = args.Count > 1 ? args[1] : string.Empty;
-        if (!string.IsNullOrEmpty(config) && !configRepo.Exists(config))
+        if (!string.IsNullOrEmpty(config) && !await configRepo.ExistsAsync(config, ct))
         {
             return new IpcAck(false, $"unknown config: {config}");
         }
@@ -849,7 +849,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "set-geo requires a config name and on/off");
         }
 
-        if (!configRepo.Exists(args[0]))
+        if (!await configRepo.ExistsAsync(args[0], ct))
         {
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
@@ -867,7 +867,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "set-websocket requires a config name, on/off, and a port");
         }
 
-        if (!configRepo.Exists(args[0]))
+        if (!await configRepo.ExistsAsync(args[0], ct))
         {
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
@@ -903,7 +903,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "set-config-dns requires a config name");
         }
 
-        if (!configRepo.Exists(args[0]))
+        if (!await configRepo.ExistsAsync(args[0], ct))
         {
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
@@ -941,7 +941,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "set-config-exclusions requires a config name");
         }
 
-        if (!configRepo.Exists(args[0]))
+        if (!await configRepo.ExistsAsync(args[0], ct))
         {
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
@@ -1135,7 +1135,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var name = args[0];
-        if (await store.GetBalancerAsync(name, ct) is null && !configRepo.Exists(name))
+        if (await store.GetBalancerAsync(name, ct) is null && !await configRepo.ExistsAsync(name, ct))
         {
             return new IpcAck(false, $"unknown profile: {name}");
         }
@@ -1629,8 +1629,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
 
         var configs = new List<ConfigEntry>();
-        foreach (var name in configRepo.List())
+        foreach (var name in await configRepo.ListAsync(ct))
         {
+            var configText = await configRepo.ReadTextAsync(name, ct);
             var geoSettings = await store.GetTunnelGeoAsync(name, ct);
             var transport = await store.GetConfigTransportAsync(name, ct);
             var configDns = await store.GetConfigDnsAsync(name, ct);
@@ -1643,7 +1644,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(name), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions));
         }
 
         var balancers = new List<BalancerEntry>();
@@ -1716,21 +1717,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         };
     }
 
-    private static string ReadEndpoint(string name)
+    // Extracts the Endpoint value from a config's wg-quick text (for the connection card label).
+    private static string ReadEndpoint(string config)
     {
-        try
+        foreach (var line in config.Split('\n'))
         {
-            foreach (var line in File.ReadLines(TunnelPaths.ConfigFile(name)))
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("Endpoint", StringComparison.OrdinalIgnoreCase))
             {
-                var trimmed = line.Trim();
-                if (trimmed.StartsWith("Endpoint", StringComparison.OrdinalIgnoreCase))
-                {
-                    return trimmed[(trimmed.IndexOf('=') + 1)..].Trim();
-                }
+                return trimmed[(trimmed.IndexOf('=') + 1)..].Trim();
             }
-        }
-        catch (IOException)
-        {
         }
 
         return string.Empty;

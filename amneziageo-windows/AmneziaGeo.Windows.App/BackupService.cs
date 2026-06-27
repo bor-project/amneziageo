@@ -22,7 +22,9 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
         {
             await store.BackupToAsync(snapshot);
 
-            var configs = ConfigNames();
+            // Configs live in the database now, so the snapshot already contains them - the archive is just
+            // the database plus a manifest. A plain copy of state.db is itself a complete backup.
+            var configs = await store.ListConfigNamesAsync();
             if (File.Exists(path))
             {
                 File.Delete(path);
@@ -31,10 +33,6 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
             using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
             {
                 zip.CreateEntryFromFile(snapshot, "state.db", CompressionLevel.Optimal);
-                foreach (var name in configs)
-                {
-                    zip.CreateEntryFromFile(TunnelPaths.ConfigFile(name), $"Configurations/{name}.conf", CompressionLevel.Optimal);
-                }
 
                 var manifest = new BackupManifest(_format, 1, DateTimeOffset.UtcNow, AppVersion(), true, configs);
                 var entry = zip.CreateEntry("manifest.json", CompressionLevel.Optimal);
@@ -46,8 +44,8 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
 
             logger.LogInformation("backup written to {Path} ({Count} configs)", path, configs.Count);
             Console.WriteLine($"backup written: {path}");
-            Console.WriteLine($"  {configs.Count} config(s) + state.db");
-            Console.WriteLine("WARNING: this archive contains real private keys (in the .conf files and the database). Store and transfer it securely.");
+            Console.WriteLine($"  state.db ({configs.Count} config(s) inside) - a copy of state.db alone is a full backup");
+            Console.WriteLine("WARNING: this archive contains real private keys (the configs stored in the database). Store and transfer it securely.");
             return 0;
         }
         finally
@@ -132,6 +130,8 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
                 zip.GetEntry("state.db")?.ExtractToFile(dbPath, overwrite: true);
 
+                // New backups carry configs inside state.db. Older archives kept them as Configurations\*.conf
+                // entries; still extract those so the startup migration can absorb them into the configs table.
                 Directory.CreateDirectory(configsDir);
                 foreach (var entry in zip.Entries)
                 {
@@ -167,22 +167,6 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
             Console.WriteLine("next: run 'update-sources' to re-download geo data, then 'agent-install <target>' to recreate the agent");
             return 0;
         }
-    }
-
-    private static List<string> ConfigNames()
-    {
-        var configs = new List<string>();
-        var directory = TunnelPaths.ConfigurationsDirectory();
-        if (Directory.Exists(directory))
-        {
-            foreach (var file in Directory.EnumerateFiles(directory, "*.conf"))
-            {
-                configs.Add(Path.GetFileNameWithoutExtension(file));
-            }
-        }
-
-        configs.Sort(StringComparer.Ordinal);
-        return configs;
     }
 
     private static string AppVersion()

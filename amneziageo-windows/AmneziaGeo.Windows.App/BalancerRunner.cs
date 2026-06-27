@@ -98,7 +98,7 @@ internal sealed class BalancerRunner(
             return balancer;
         }
 
-        if (configRepo.Exists(name))
+        if (await configRepo.ExistsAsync(name, ct))
         {
             return new BalancerGroup(name, name);
         }
@@ -163,7 +163,7 @@ internal sealed class BalancerRunner(
             return;
         }
 
-        if (!configRepo.Exists(config))
+        if (!await configRepo.ExistsAsync(config, ct))
         {
             logger.LogError("missing config: {Config}", config);
             await SetStateAsync("disconnected", null);

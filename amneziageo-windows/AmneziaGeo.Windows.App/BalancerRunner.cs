@@ -321,8 +321,8 @@ internal sealed class BalancerRunner(
         var started = serviceManager.StartQuiet(member);
         if (created != 0 || started != 0)
         {
-            logger.LogWarning("tunnel service {Member} did not start cleanly: sc create={Create}, sc start={Start}",
-                member, created, started);
+            logger.LogWarning("tunnel service {Member} did not start cleanly: sc create={Create} ({CreateMsg}), sc start={Start} ({StartMsg})",
+                member, created, ScError(created), started, ScError(started));
         }
 
         var start = DateTimeOffset.UtcNow;
@@ -374,9 +374,37 @@ internal sealed class BalancerRunner(
             await DelayAsync(TimeSpan.FromSeconds(1), ct);
         }
 
+        // Timed out. Make the reason explicit: a service that never answered over UAPI almost certainly never
+        // ran its engine (a bad start, e.g. sc start=1053), as opposed to one that ran but the server stayed
+        // silent (already logged above as "server did not answer"). Surface any reason the per-tunnel service
+        // forwarded before it died, since its own log is not shown in the agent journal.
+        if (!sawService)
+        {
+            var reason = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(member), ct);
+            logger.LogWarning(
+                "{Member}: tunnel service never responded over UAPI within {Sec}s - it likely failed to launch (sc start={Start}: {StartMsg}){Reason}",
+                member, _settings.ConnectTimeoutSeconds, started, ScError(started),
+                string.IsNullOrWhiteSpace(reason) ? string.Empty : $"; reason: {reason}");
+        }
+
         Stop(member);
         return false;
     }
+
+    // Human-readable meaning for the sc.exe / Win32 service error codes seen during connect, so the journal
+    // explains a failed start instead of just printing a number.
+    private static string ScError(int code) => code switch
+    {
+        0 => "ok",
+        2 => "file not found",
+        5 => "access denied",
+        1053 => "service did not report running in time (timeout)",
+        1056 => "service already running",
+        1060 => "service does not exist",
+        1072 => "service marked for deletion",
+        1073 => "service already exists",
+        _ => $"code {code}",
+    };
 
     private bool IsAlive(string member)
     {

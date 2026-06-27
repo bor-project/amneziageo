@@ -229,7 +229,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             // config, or "- не задан -" when it has none.
             if (_creatingNewConfig && IsCreatingConfig)
             {
-                SelectedConfig = ConfigChoice.NewConfig;
+                // Avoid a redundant assignment: setting the same sentinel fires a property-changed
+                // notification that Avalonia can deliver asynchronously, becoming the spurious event
+                // OnSelectedConfigChanged now guards against. Skip if already correct.
+                if (SelectedConfig != ConfigChoice.NewConfig)
+                {
+                    SelectedConfig = ConfigChoice.NewConfig;
+                }
             }
             else
             {
@@ -406,6 +412,16 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     {
         // value can momentarily be null: clearing the bound options nulls the ComboBox's SelectedItem.
         if (_suppress || value is null)
+        {
+            return;
+        }
+
+        // The config combo is hidden while the new-config form is open (IsVisible=!IsCreatingConfig).
+        // Any non-sentinel value arriving here while the form is open is a spurious Avalonia binding
+        // event from the ObservableCollection Clear/Add in ApplyFromEntry: the dispatcher delivers
+        // SelectedItem-changed notifications AFTER _suppress is released, momentarily resolving to
+        // None. Block it so the form stays open and the typed name is preserved.
+        if (_creatingNewConfig && IsCreatingConfig && !value.IsNewSentinel)
         {
             return;
         }

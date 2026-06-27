@@ -302,12 +302,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // bounce straight back as a set-setting command.
     private bool _suppressSettingPush;
 
+    // Persisted per-user UI preferences (#51): theme + window size + splitter width + settings section.
+    private readonly UiPreferences _prefs;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public MainWindowViewModel(AgentConnection connection)
+    public MainWindowViewModel(AgentConnection connection, UiPreferences prefs)
     {
         _connection = connection;
+        _prefs = prefs;
+        // Seed the persisted theme flag and selected settings section. Assign the backing fields directly so
+        // initialising from prefs does not echo back as a redundant save.
+        _isDark = prefs.IsDark;
+        _settingsSection = prefs.SettingsSection;
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
         _connection.SnapshotReceived += OnSnapshot;
@@ -877,6 +885,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             Application.Current.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
         }
+
+        _prefs.IsDark = IsDark;
+        _prefs.Save();
+    }
+
+    // Persist the selected settings section (#51) whenever it changes.
+    partial void OnSettingsSectionChanged(string value)
+    {
+        _prefs.SettingsSection = value;
+        _prefs.Save();
     }
 
     [RelayCommand(CanExecute = nameof(CanToggleConnection))]

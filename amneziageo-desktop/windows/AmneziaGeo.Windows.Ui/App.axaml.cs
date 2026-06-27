@@ -6,6 +6,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 using AmneziaGeo.Windows.Ui.Services;
 using AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -24,6 +25,7 @@ public sealed partial class App : Application
     private MainWindowViewModel? _viewModel;
     private AgentConnection? _connection;
     private TrayIcon? _trayIcon;
+    private UiPreferences? _prefs;
     private bool _exiting;
 
     /// <inheritdoc/>
@@ -38,6 +40,13 @@ public sealed partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             _desktop = desktop;
+
+            // Restore per-user UI preferences (#51) before any window shows, so the saved theme and window
+            // size apply with no light->dark / resize flicker.
+            var prefs = UiPreferences.Load();
+            _prefs = prefs;
+            RequestedThemeVariant = prefs.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+
             // Don't auto-quit when the window closes: the close box always hides to the tray (the app
             // keeps running in the background - agent link and any active tunnel stay up), and the tray
             // "Выход" exits explicitly. Either way the lifetime must not quit on its own when the last
@@ -46,9 +55,16 @@ public sealed partial class App : Application
 
             var connection = new AgentConnection();
             _connection = connection;
-            var viewModel = new MainWindowViewModel(connection);
+            var viewModel = new MainWindowViewModel(connection, prefs);
             _viewModel = viewModel;
-            var window = new MainWindow { DataContext = viewModel, Icon = BuildIcon(_accent) };
+            var window = new MainWindow
+            {
+                DataContext = viewModel,
+                Icon = BuildIcon(_accent),
+                Width = prefs.Width,
+                Height = prefs.Height,
+            };
+            window.SetRailWidth(prefs.RailWidth);
             _window = window;
             desktop.MainWindow = window;
 
@@ -75,6 +91,18 @@ public sealed partial class App : Application
     // the tray "Выход", which goes via ExitApp and sets _exiting so the genuine close is allowed through.
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
     {
+        // Persist the final window size + splitter width (#51) on every close - whether hiding to the tray
+        // or a genuine exit. (Theme and the selected settings section are saved as they change in the VM.)
+        if (_window is not null && _prefs is not null)
+        {
+            // ClientSize tracks the user's actual resize (Window.Width does not reliably write back); for an
+            // Avalonia top-level it equals the value set via Width, so save/restore stays consistent.
+            _prefs.Width = _window.ClientSize.Width;
+            _prefs.Height = _window.ClientSize.Height;
+            _prefs.RailWidth = _window.RailWidth;
+            _prefs.Save();
+        }
+
         if (_exiting)
         {
             return;

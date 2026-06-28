@@ -21,6 +21,12 @@ internal sealed class DomainTracker(
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
+    // Remote IPs discovered by the per-app route watcher (#68). Kept separate from the domain map so the
+    // re-resolve loop never touches them (they have no domain), but unioned into the allowed-ips so they
+    // share the single authority - otherwise the app watcher and the DNS path would clobber each other's
+    // SetAllowedIps. Accumulates for the life of the tunnel; capped so a chatty app cannot grow it without
+    // bound.
+    private readonly HashSet<string> _appIps = [];
     private uint? _interfaceIndex;
 
     /// <summary>
@@ -120,6 +126,53 @@ internal sealed class DomainTracker(
         }
     }
 
+    /// <summary>
+    /// Routes a set of remote IPs discovered by the per-app route watcher (#68) through the tunnel: adds a
+    /// /32 for each newly seen IP and folds them into the allowed-ips. Caller passes the IPs matched this
+    /// poll; only previously unseen ones install a route, so it is cheap to call every tick. No-op until the
+    /// tunnel adapter exists.
+    /// </summary>
+    public void UpdateAppIps(IReadOnlyList<string> ips)
+    {
+        lock (_lock)
+        {
+            var index = EnsureIndex();
+            if (index is null)
+            {
+                return;
+            }
+
+            var added = false;
+            foreach (var ip in ips)
+            {
+                // v4-only tunnel: never route IPv6 (no transit). The watcher already enumerates IPv4 only,
+                // but guard so a future v6 path cannot leak dead routes onto a stripV6 tunnel.
+                if (stripV6 && ip.Contains(':'))
+                {
+                    continue;
+                }
+
+                // Bound the set so a chatty app (many short-lived endpoints) cannot grow it without limit.
+                if (_appIps.Count >= 8192)
+                {
+                    break;
+                }
+
+                if (_appIps.Add(ip))
+                {
+                    var ok = routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
+                    logger.LogInformation("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
+                    added = true;
+                }
+            }
+
+            if (added)
+            {
+                uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
+            }
+        }
+    }
+
     private List<string> BuildAllowedIps()
     {
         var all = new List<string>(staticRoutes);
@@ -130,6 +183,13 @@ internal sealed class DomainTracker(
                 var prefix = IPAddress.Parse(ip).AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
                 all.Add($"{ip}/{prefix}");
             }
+        }
+
+        // App-discovered IPs share the same allowed-ips authority (single SetAllowedIps owner).
+        foreach (var ip in _appIps)
+        {
+            var prefix = IPAddress.Parse(ip).AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
+            all.Add($"{ip}/{prefix}");
         }
 
         return all;

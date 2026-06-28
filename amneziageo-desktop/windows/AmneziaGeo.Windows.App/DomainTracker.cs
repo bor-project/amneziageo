@@ -37,7 +37,7 @@ internal sealed class DomainTracker(
         lock (_lock)
         {
             var index = EnsureIndex();
-            logger.LogInformation("DIAG track {Domain} ips=[{Ips}] index={Index} stripV6={StripV6}", domain, string.Join(",", ips), index, stripV6);
+            logger.LogDebug("DIAG track {Domain} ips=[{Ips}] index={Index} stripV6={StripV6}", domain, string.Join(",", ips), index, stripV6);
             if (index is null)
             {
                 return;
@@ -52,7 +52,7 @@ internal sealed class DomainTracker(
             old ??= [];
             if (fresh.SetEquals(old))
             {
-                logger.LogInformation("DIAG track {Domain} unchanged ({N} ips)", domain, fresh.Count);
+                logger.LogDebug("DIAG track {Domain} unchanged ({N} ips)", domain, fresh.Count);
                 return;
             }
 
@@ -61,7 +61,7 @@ internal sealed class DomainTracker(
                 if (!old.Contains(ip))
                 {
                     var ok = routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
-                    logger.LogInformation("DIAG track add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
+                    logger.LogDebug("DIAG track add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
                 }
             }
 
@@ -161,7 +161,7 @@ internal sealed class DomainTracker(
                 if (_appIps.Add(ip))
                 {
                     var ok = routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
-                    logger.LogInformation("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
+                    logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
                     added = true;
                 }
             }

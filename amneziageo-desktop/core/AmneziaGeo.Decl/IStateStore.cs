@@ -48,7 +48,7 @@ public interface IStateStore
     /// Stores a balancer routing projection for a tunnel and marks it live. Written only by the
     /// balancer; never touches the config's own set-geo columns.
     /// </summary>
-    Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, CancellationToken ct = default);
+    Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, CancellationToken ct = default);
 
     /// <summary>
     /// Drops the live balancer routing projection for a tunnel, reverting it to its own set-geo

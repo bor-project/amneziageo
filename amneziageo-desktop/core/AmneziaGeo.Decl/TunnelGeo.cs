@@ -8,4 +8,5 @@ public sealed record TunnelGeo(
     bool GeoSplit,
     IReadOnlyList<GeoRule> Rules,
     IReadOnlyList<string> Routes,
-    IReadOnlyList<GeoDomain> Domains);
+    IReadOnlyList<GeoDomain> Domains,
+    IReadOnlyList<string> Apps);

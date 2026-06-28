@@ -285,7 +285,7 @@ internal sealed class BalancerRunner(
             return;
         }
 
-        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, ct);
+        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, ct);
         logger.LogInformation("projected routing list '{List}' to {Config}", list.Name, config);
     }
 
@@ -295,7 +295,7 @@ internal sealed class BalancerRunner(
         // AllowedIpsResolver falls back to the config's own AllowedIPs (0.0.0.0/0, ::/0) = full tunnel.
         // Making the projection authoritative means the routing toggle overrides any config set-geo,
         // so turning routing off reliably switches to full tunnel instead of a leftover split.
-        await store.SaveTunnelProjectionAsync(config, false, [], [], ct);
+        await store.SaveTunnelProjectionAsync(config, false, [], [], [], ct);
         logger.LogInformation("projected full tunnel to {Config} (routing off)", config);
     }
 

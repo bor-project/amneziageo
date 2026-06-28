@@ -24,4 +24,11 @@ public enum GeoRuleKind
     /// A single IP range in CIDR notation.
     /// </summary>
     Cidr,
+
+    /// <summary>
+    /// An application matcher (per-app tunneling). The value is a sub-typed token:
+    /// "path=&lt;exe&gt;", "dir=&lt;folder&gt;", "svc=&lt;service&gt;", "pkg=&lt;sid&gt;" or "name=&lt;exe&gt;".
+    /// Appended last so existing persisted enum ordinals (0..3) stay stable.
+    /// </summary>
+    App,
 }

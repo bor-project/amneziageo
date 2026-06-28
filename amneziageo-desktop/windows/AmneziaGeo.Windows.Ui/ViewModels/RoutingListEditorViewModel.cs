@@ -50,6 +50,22 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBusy;
 
+    // Per-app tunneling add-row (#68). The source mode is chosen from a dropdown: "running" turns the input
+    // into an autocomplete over the agent's running app/service list; "folder"/"file" are one-shot dialogs
+    // raised from the view. App entries are stored as app: rule tokens in the same Rules collection as geo.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAppRunningMode))]
+    private string _appMode = "running";
+
+    [ObservableProperty]
+    private string _appInput = string.Empty;
+
+    [ObservableProperty]
+    private AppCandidate? _appSelected;
+
+    [ObservableProperty]
+    private string _appHint = string.Empty;
+
     /// <summary>
     /// ctor used when creating a fresh routing list.
     /// </summary>
@@ -98,6 +114,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// Geo category suggestions for the rule input, fetched from the agent.
     /// </summary>
     public ObservableCollection<string> GeoSuggestions { get; } = [];
+
+    /// <summary>
+    /// App/service matches for the per-app add-row's autocomplete (running mode), fetched from the agent.
+    /// </summary>
+    public ObservableCollection<AppCandidate> AppSuggestions { get; } = [];
+
+    /// <summary>Whether the per-app add-row is in "running" mode (autocomplete active, hint shown).</summary>
+    public bool IsAppRunningMode => string.Equals(AppMode, "running", StringComparison.Ordinal);
 
     /// <summary>
     /// Fetches geo category suggestions and (for existing lists) the current rules.
@@ -270,6 +294,126 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         Rules.Clear();
     }
 
+    // --- Per-app tunneling (#68): the add-row's "running" autocomplete + the shared token-add path ---
+
+    /// <summary>Switches the add-row to "running" mode and (re)loads the running app/service matches.</summary>
+    public async Task EnterRunningModeAsync()
+    {
+        AppMode = "running";
+        AppHint = "Начните вводить имя — выберите запущенное приложение или службу из списка.";
+        await LoadRunningAsync();
+    }
+
+    private async Task LoadRunningAsync()
+    {
+        var response = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListProcesses, []));
+        AppSuggestions.Clear();
+        if (!response.Ok)
+        {
+            return;
+        }
+
+        foreach (var line in response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fields = line.Split('\t');
+            if (fields.Length < 3)
+            {
+                continue;
+            }
+
+            var kind = fields[0];
+            var label = fields[1];
+            var value = fields[2];
+            string token;
+            string display;
+            if (string.Equals(kind, "service", StringComparison.Ordinal))
+            {
+                token = $"app:svc={value}";
+                display = $"{label} · служба";
+            }
+            else
+            {
+                // Default an app to its containing folder so sibling helpers and versioned subfolders match.
+                var dir = System.IO.Path.GetDirectoryName(value);
+                token = !string.IsNullOrEmpty(dir) ? $"app:dir={dir}" : $"app:path={value}";
+                display = $"{label} · приложение";
+            }
+
+            AppSuggestions.Add(new AppCandidate(display, token));
+        }
+    }
+
+    /// <summary>Adds the app/service picked in the running-mode autocomplete as an app: rule.</summary>
+    [RelayCommand]
+    private void AddApp()
+    {
+        var token = AppSelected?.Token;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            StatusMessage = "Выберите приложение или службу из списка.";
+            return;
+        }
+
+        AddAppToken(token);
+        AppInput = string.Empty;
+        AppSelected = null;
+    }
+
+    /// <summary>
+    /// Adds an app matcher token (app:path=/dir=/svc=) after a safety check. Called by the view for folder
+    /// and file picks, and by <see cref="AddApp"/> for a running-mode pick.
+    /// </summary>
+    public void AddAppToken(string token)
+    {
+        if (!IsAppMatcherSafe(token, out var reason))
+        {
+            StatusMessage = reason;
+            return;
+        }
+
+        if (!Rules.Contains(token))
+        {
+            Rules.Add(token);
+        }
+    }
+
+    // Rejects matchers that would tunnel far more than one app: a shared service host (svchost.exe) or a
+    // path so broad (a drive root, the Windows / System32 tree) it would capture much of the system.
+    private static bool IsAppMatcherSafe(string token, out string reason)
+    {
+        reason = string.Empty;
+        if (token.StartsWith("app:svc=", StringComparison.OrdinalIgnoreCase))
+        {
+            return true; // a single named service
+        }
+
+        var eq = token.IndexOf('=');
+        var value = (eq >= 0 ? token[(eq + 1)..] : string.Empty).Trim();
+        var norm = value.Replace('/', '\\').TrimEnd('\\').ToLowerInvariant();
+        if (norm.Length == 0)
+        {
+            reason = "Пустой путь.";
+            return false;
+        }
+
+        if (System.IO.Path.GetFileName(norm) == "svchost.exe")
+        {
+            reason = "svchost.exe — общий хост служб, затуннелит много чужого. Выберите службу из списка.";
+            return false;
+        }
+
+        if (norm.Length <= 2
+            || norm.EndsWith("\\windows", StringComparison.Ordinal)
+            || norm.Contains("\\windows\\system32", StringComparison.Ordinal)
+            || norm.Contains("\\windows\\syswow64", StringComparison.Ordinal))
+        {
+            reason = "Слишком широкий путь — выберите конкретную папку приложения.";
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>A suggested file name when exporting this list.</summary>
     public string SuggestedFileName => string.IsNullOrWhiteSpace(Name) ? "routing.txt" : $"{Name.Trim()}-routing.txt";
 
@@ -377,4 +521,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 
         return text.Contains('/') ? $"cidr:{text}" : $"domain:{text}";
     }
+}
+
+/// <summary>
+/// A running-app or service match shown in the per-app add-row autocomplete (#68). The display string is
+/// what the box shows and filters on; the token is the app: rule added when picked.
+/// </summary>
+internal sealed record AppCandidate(string Display, string Token)
+{
+    public override string ToString() => Display;
 }

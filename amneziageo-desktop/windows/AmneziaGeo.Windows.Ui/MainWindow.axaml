@@ -742,6 +742,40 @@
                           </Grid>
                         </StackPanel>
 
+                        <!-- Per-app tunneling (#68): pick a source (running app/service, or a folder/file)
+                             from the dropdown; the pick is added as an app: rule into the same list. The
+                             autocomplete is active in "running" mode; «Папка…»/«Файл…» open an OS dialog. -->
+                        <StackPanel Spacing="6">
+                          <TextBlock Classes="label" Text="ПРИЛОЖЕНИЯ В ТУННЕЛЬ" />
+                          <TextBlock Text="{Binding AppHint}" Classes="muted" FontSize="11"
+                                     TextWrapping="Wrap" IsVisible="{Binding IsAppRunningMode}" />
+                          <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Button Grid.Column="0" Classes="softbtn" Margin="0,0,8,0" Content="Источник ▾">
+                              <Button.Flyout>
+                                <MenuFlyout>
+                                  <MenuItem Header="Запущенное" Click="OnAppSourceRunning" />
+                                  <MenuItem Header="Папка…" Click="OnAppSourceFolder" />
+                                  <MenuItem Header="Файл…" Click="OnAppSourceFile" />
+                                </MenuFlyout>
+                              </Button.Flyout>
+                            </Button>
+                            <AutoCompleteBox Grid.Column="1" Margin="0,0,8,0"
+                                             Watermark="имя запущенного приложения или службы"
+                                             Text="{Binding AppInput, Mode=TwoWay}"
+                                             SelectedItem="{Binding AppSelected, Mode=TwoWay}"
+                                             ItemsSource="{Binding AppSuggestions}"
+                                             FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
+                                             IsEnabled="{Binding IsAppRunningMode}" />
+                            <Button Grid.Column="2" Classes="accent" Command="{Binding AddAppCommand}"
+                                    IsEnabled="{Binding IsAppRunningMode}">
+                              <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="+" />
+                                <TextBlock Text="Добавить" />
+                              </StackPanel>
+                            </Button>
+                          </Grid>
+                        </StackPanel>
+
                         <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
 
                         <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">

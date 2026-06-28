@@ -473,6 +473,49 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // Per-app tunneling source picks (#68). The editor VM is resolved via the window VM's RoutingEditor
+    // because a MenuFlyout item lives in its own visual tree and does not inherit the editor's DataContext.
+    private async void OnAppSourceRunning(object? sender, RoutedEventArgs e)
+    {
+        if ((DataContext as MainWindowViewModel)?.RoutingEditor is { } vm)
+        {
+            await vm.EnterRunningModeAsync();
+        }
+    }
+
+    private async void OnAppSourceFolder(object? sender, RoutedEventArgs e)
+    {
+        if ((DataContext as MainWindowViewModel)?.RoutingEditor is not { } vm)
+        {
+            return;
+        }
+
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Папка приложения",
+            AllowMultiple = false,
+        });
+        var path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
+        if (!string.IsNullOrEmpty(path))
+        {
+            vm.AddAppToken($"app:dir={path}");
+        }
+    }
+
+    private async void OnAppSourceFile(object? sender, RoutedEventArgs e)
+    {
+        if ((DataContext as MainWindowViewModel)?.RoutingEditor is not { } vm)
+        {
+            return;
+        }
+
+        var path = await PickFileAsync("Приложение", "exe");
+        if (!string.IsNullOrEmpty(path))
+        {
+            vm.AddAppToken($"app:path={path}");
+        }
+    }
+
     // Profile export/import (the Импорт/экспорт aspect): the whole profile as a portable JSON bundle.
     // Clipboard and file access are window concerns (like the config / WebSocket / routing share above), so
     // these live here; the export/import IPC round-trip belongs to the window VM and this just moves the

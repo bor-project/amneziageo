@@ -196,7 +196,7 @@ internal sealed class DnsProxy
             // "X not routed" report can be localised, without logging every name the system resolves.
             if (matched && name is not null)
             {
-                _logger.LogInformation("DIAG dns matched {Name} type={Type} -> tunnel {Up}", name, type, _tunnelUpstream);
+                _logger.LogDebug("DIAG dns matched {Name} type={Type} -> tunnel {Up}", name, type, _tunnelUpstream);
             }
 
             byte[] response;

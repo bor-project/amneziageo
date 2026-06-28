@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
@@ -257,6 +258,15 @@ internal sealed class AppRouteWatcher
 
                 // dwRemoteAddr is a network-byte-order DWORD; its in-memory bytes are the address octets.
                 var remote = new IPAddress(BitConverter.GetBytes(row.dwRemoteAddr));
+                if (!IsTunnelableRemote(remote))
+                {
+                    // A marked app also opens loopback/LAN connections (its own IPC, the router, a NAS).
+                    // Those must never be pulled into the tunnel — folding 127.0.0.1 into a /32 tunnel
+                    // route stole the system DNS the agent serves on 127.0.0.1 and broke the app's own
+                    // loopback IPC. Only routable public remotes belong in the per-app route set.
+                    continue;
+                }
+
                 yield return (remote, row.dwOwningPid);
             }
         }
@@ -264,6 +274,55 @@ internal sealed class AppRouteWatcher
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    // Only routable public remotes belong in the tunnel. A process opens connections to many non-public
+    // peers — loopback (its own IPC/RPC, and the agent's DNS proxy on 127.0.0.1), the LAN (router, NAS,
+    // the local DNS upstream), link-local and multicast. Routing any of those into the tunnel is wrong and
+    // actively harmful, so they are filtered out before a /32 route or allowed-ip is ever created for them.
+    // The table is queried AF_INET only; the v6 arms are kept for a future AF_INET6 pass.
+    private static bool IsTunnelableRemote(IPAddress addr)
+    {
+        if (addr.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var b = addr.GetAddressBytes(); // network order: b[0] is the high octet
+            return b[0] switch
+            {
+                0 => false,                                  // 0.0.0.0/8   "this network"
+                10 => false,                                 // 10.0.0.0/8  private
+                127 => false,                                // 127.0.0.0/8 loopback
+                100 when b[1] is >= 64 and <= 127 => false,  // 100.64.0.0/10 CGNAT
+                169 when b[1] == 254 => false,               // 169.254.0.0/16 link-local
+                172 when b[1] is >= 16 and <= 31 => false,   // 172.16.0.0/12 private
+                192 when b[1] == 168 => false,               // 192.168.0.0/16 private
+                >= 224 => false,                             // 224.0.0.0/4 multicast + 240/4 reserved + 255.255.255.255
+                _ => true,
+            };
+        }
+
+        // IPv6: skip loopback (::1), unspecified (::), link-local (fe80::/10), ULA (fc00::/7), multicast (ff00::/8).
+        if (IPAddress.IsLoopback(addr) || addr.Equals(IPAddress.IPv6Any))
+        {
+            return false;
+        }
+
+        var v6 = addr.GetAddressBytes();
+        if (v6[0] == 0xff)
+        {
+            return false; // multicast ff00::/8
+        }
+
+        if (v6[0] == 0xfe && (v6[1] & 0xc0) == 0x80)
+        {
+            return false; // link-local fe80::/10
+        }
+
+        if ((v6[0] & 0xfe) == 0xfc)
+        {
+            return false; // ULA fc00::/7
+        }
+
+        return true;
     }
 
     private static string? QueryImagePath(uint pid)

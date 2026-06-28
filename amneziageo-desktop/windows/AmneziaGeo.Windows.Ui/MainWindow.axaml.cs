@@ -483,6 +483,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void OnAppSourceInstalled(object? sender, RoutedEventArgs e)
+    {
+        if ((DataContext as MainWindowViewModel)?.RoutingEditor is { } vm)
+        {
+            await vm.EnterInstalledModeAsync();
+        }
+    }
+
     private async void OnAppSourceFolder(object? sender, RoutedEventArgs e)
     {
         if ((DataContext as MainWindowViewModel)?.RoutingEditor is not { } vm)

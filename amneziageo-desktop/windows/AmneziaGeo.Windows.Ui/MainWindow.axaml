@@ -748,12 +748,13 @@
                         <StackPanel Spacing="6">
                           <TextBlock Classes="label" Text="ПРИЛОЖЕНИЯ В ТУННЕЛЬ" />
                           <TextBlock Text="{Binding AppHint}" Classes="muted" FontSize="11"
-                                     TextWrapping="Wrap" IsVisible="{Binding IsAppRunningMode}" />
+                                     TextWrapping="Wrap" IsVisible="{Binding IsAppPickerActive}" />
                           <Grid ColumnDefinitions="Auto,*,Auto">
                             <Button Grid.Column="0" Classes="softbtn" Margin="0,0,8,0" Content="Источник ▾">
                               <Button.Flyout>
                                 <MenuFlyout>
                                   <MenuItem Header="Запущенное" Click="OnAppSourceRunning" />
+                                  <MenuItem Header="Установленное" Click="OnAppSourceInstalled" />
                                   <MenuItem Header="Папка…" Click="OnAppSourceFolder" />
                                   <MenuItem Header="Файл…" Click="OnAppSourceFile" />
                                 </MenuFlyout>
@@ -765,9 +766,9 @@
                                              SelectedItem="{Binding AppSelected, Mode=TwoWay}"
                                              ItemsSource="{Binding AppSuggestions}"
                                              FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                                             IsEnabled="{Binding IsAppRunningMode}" />
+                                             IsEnabled="{Binding IsAppPickerActive}" />
                             <Button Grid.Column="2" Classes="accent" Command="{Binding AddAppCommand}"
-                                    IsEnabled="{Binding IsAppRunningMode}">
+                                    IsEnabled="{Binding IsAppPickerActive}">
                               <StackPanel Orientation="Horizontal" Spacing="4">
                                 <TextBlock Text="+" />
                                 <TextBlock Text="Добавить" />

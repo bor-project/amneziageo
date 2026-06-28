@@ -54,7 +54,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     // into an autocomplete over the agent's running app/service list; "folder"/"file" are one-shot dialogs
     // raised from the view. App entries are stored as app: rule tokens in the same Rules collection as geo.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAppRunningMode))]
+    [NotifyPropertyChangedFor(nameof(IsAppPickerActive))]
     private string _appMode = "running";
 
     [ObservableProperty]
@@ -120,8 +120,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<AppCandidate> AppSuggestions { get; } = [];
 
-    /// <summary>Whether the per-app add-row is in "running" mode (autocomplete active, hint shown).</summary>
-    public bool IsAppRunningMode => string.Equals(AppMode, "running", StringComparison.Ordinal);
+    /// <summary>Whether the per-app add-row is in a list-pick mode (running or installed): the autocomplete
+    /// and «Добавить» are active and the hint is shown. Folder/file picks are one-shot dialogs instead.</summary>
+    public bool IsAppPickerActive => AppMode is "running" or "installed";
 
     /// <summary>
     /// Fetches geo category suggestions and (for existing lists) the current rules.
@@ -302,6 +303,22 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         AppMode = "running";
         AppHint = "Начните вводить имя — выберите запущенное приложение или службу из списка.";
         await LoadRunningAsync();
+    }
+
+    /// <summary>Switches the add-row to "installed" mode and loads installed apps from the Uninstall registry.</summary>
+    public async Task EnterInstalledModeAsync()
+    {
+        AppMode = "installed";
+        AppHint = "Начните вводить имя — выберите установленное приложение из списка.";
+        AppInput = string.Empty;
+        AppSelected = null;
+        // Registry enumeration is synchronous I/O; run it off the UI thread, then publish on return.
+        var candidates = await Task.Run(InstalledApps.List);
+        AppSuggestions.Clear();
+        foreach (var candidate in candidates)
+        {
+            AppSuggestions.Add(candidate);
+        }
     }
 
     private async Task LoadRunningAsync()

@@ -38,4 +38,12 @@
     <ProjectReference Include="..\..\core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
   </ItemGroup>
 
+  <!-- This is a Windows-only WinExe; declaring it so satisfies the platform-compat analyzer (CA1416) for
+       the Windows-only APIs it uses (the Uninstall registry read for the per-app picker, #71). -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatform">
+      <_Parameter1>windows</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

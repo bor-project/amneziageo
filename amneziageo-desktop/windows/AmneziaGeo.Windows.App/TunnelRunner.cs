@@ -101,6 +101,7 @@ internal sealed class TunnelRunner(
         var geoSplit = geo?.GeoSplit ?? false;
         var geoRoutes = new List<string>(geo?.Routes ?? []);
         var domains = geo?.Domains ?? [];
+        var apps = geo?.Apps ?? [];
 
         // This tunnel adapter is IPv4-only when the config declares no IPv6 Address.
         var stripV6 = !HasIpv6Address(config);
@@ -108,6 +109,10 @@ internal sealed class TunnelRunner(
         // The proxy tracks matched domains only in split mode (in full tunnel everything is already
         // routed; tracking would replace 0.0.0.0/0 with a few /32s).
         var trackDomains = geoSplit && domains.Count > 0;
+
+        // Per-app tunneling (#68) is also a split-only concept: the app route watcher feeds matched apps'
+        // remote IPs into the shared domain tracker. In full tunnel everything is already routed.
+        var trackApps = geoSplit && apps.Count > 0;
 
         // Clean resolver for TUNNELED (matched) names = the config's own DNS, reached THROUGH the tunnel.
         // A geo-blocked domain must resolve here, not via the local network resolver, which hands back a
@@ -194,7 +199,21 @@ internal sealed class TunnelRunner(
             ? (upstream.Count > 0 ? upstream : tunnelResolver)
             : tunnelResolver;
 
-        var proxy = StartProxy(name, config, trackDomains ? domains : [], geoRoutes, appSettings.RefreshSeconds, stripV6, tunnelResolver, localResolver, lanResolvers, exclusionDomains, trackDomains);
+        // The domain tracker owns the dynamic /32 routes and the single allowed-ips authority. It is shared
+        // by the DNS path (matched domains) and the app route watcher (matched apps), so create it once when
+        // either is active and hand it to both - two independent SetAllowedIps owners would clobber.
+        DomainTracker? tracker = null;
+        if (trackDomains || trackApps)
+        {
+            var peer = WgConfigEditor.GetPeerPublicKey(config);
+            if (peer is not null)
+            {
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, appSettings.RefreshSeconds, stripV6);
+                _ = Task.Run(tracker.RunAsync);
+            }
+        }
+
+        var proxy = StartProxy(trackDomains ? domains : [], stripV6, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
         if (proxy?.BoundV4 is not null)
         {
             redirectServers = [proxy.BoundV4.ToString()];
@@ -269,6 +288,18 @@ internal sealed class TunnelRunner(
             _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, proxy, sessionCts.Token));
         }
 
+        // Per-app tunneling (#68): watch which processes own which connections and route the matched apps'
+        // remote IPs through the tunnel (DNS-path-independent, so it covers DoH/DoT apps). Feeds the shared
+        // tracker created above; cancelled with the session on teardown.
+        if (trackApps && tracker is not null)
+        {
+            var watcher = new AppRouteWatcher(tracker, apps, loggerFactory.CreateLogger<AppRouteWatcher>());
+            if (watcher.HasMatchers)
+            {
+                _ = Task.Run(() => watcher.RunAsync(sessionCts.Token));
+            }
+        }
+
         // Start the WebSocket transport last and redirect the endpoint to its loopback port. Done here,
         // with nothing between it and the engine start, so a started child is always reached by the
         // finally below (no orphaned wstunnel process). A start failure aborts the connect.
@@ -318,21 +349,8 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(string name, string config, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> geoRoutes, int refreshSeconds, bool stripV6, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, bool trackDomains)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, bool stripV6, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker)
     {
-        DomainTracker? tracker = null;
-        if (trackDomains)
-        {
-            var peer = WgConfigEditor.GetPeerPublicKey(config);
-            if (peer is null)
-            {
-                return null;
-            }
-
-            tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, refreshSeconds, stripV6);
-            _ = Task.Run(tracker.RunAsync);
-        }
-
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var localIp = ParseFirst(localUpstream, tunnelIp);
         IPAddress? lanIp = lanUpstream.Count > 0 && IPAddress.TryParse(lanUpstream[0], out var li) ? li : null;

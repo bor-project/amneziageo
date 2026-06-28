@@ -262,6 +262,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpSetConfigExclusions => await SetConfigExclusionsAsync(command.Args, ct),
                 IpcContract.OpListLocalSubnets => ListLocalSubnets(),
                 IpcContract.OpListGeo => await ListGeoAsync(ct),
+                IpcContract.OpListProcesses => ListProcesses(),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
                 IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
@@ -1019,6 +1020,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     {
         var tokens = await geo.CategoriesAsync(ct);
         return new IpcAck(true, string.Join('\n', tokens));
+    }
+
+    // Running applications + services for the per-app tunneling picker (#68). Enumerated in the agent
+    // (SYSTEM) so image paths and service hosting PIDs the user-mode UI cannot read are available. Each row
+    // is tab-separated: kind, label, value, detail (see IpcContract.OpListProcesses).
+    private static IpcAck ListProcesses()
+    {
+        var lines = ProcessCatalog.List()
+            .Select(e => string.Join('\t', e.Kind, e.Label, e.Value, e.Detail));
+        return new IpcAck(true, string.Join('\n', lines));
     }
 
     private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)

@@ -81,6 +81,13 @@ public static class IpcContract
     public const string OpListGeo = "list-geo";
 
     /// <summary>
+    /// Command to list running applications and services for the per-app tunneling picker (#68). The ack
+    /// message holds newline-separated rows, each tab-separated: kind ("app"/"service"), label, value
+    /// (exe path for an app, service name for a service), detail (host exe path for a service, else empty).
+    /// </summary>
+    public const string OpListProcesses = "list-processes";
+
+    /// <summary>
     /// Command to add or update a routing list. Args: id (0 to insert), name, then rule tokens.
     /// The ack message holds the resulting id.
     /// </summary>

@@ -62,4 +62,12 @@ internal sealed record AppSettings
     /// How often the periodic geo-source update-check runs, in hours.
     /// </summary>
     public int GeoCheckIntervalHours { get; init; } = 24;
+
+    /// <summary>
+    /// When set, the agent neutralizes encrypted DNS (DoT, and DoH to known public resolvers) while a
+    /// tunnel is up, forcing apps to fall back to plain DNS through the loopback proxy so geo/domain
+    /// routing sees their lookups (#69). Off by default - it reduces privacy of DIRECT (non-tunneled)
+    /// DNS and can break apps with no Do53 fallback, so it is an explicit opt-in.
+    /// </summary>
+    public bool BlockEncryptedDns { get; init; }
 }

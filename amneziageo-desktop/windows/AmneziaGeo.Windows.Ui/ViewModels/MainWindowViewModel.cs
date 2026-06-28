@@ -246,6 +246,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _geoAutoCheck = true;
 
+    // #69: neutralize encrypted DNS (DoT/DoH to known resolvers) while a tunnel is up so apps fall back to
+    // plain DNS through the proxy. Off by default (privacy/compat trade-off; explained in the settings UI).
+    [ObservableProperty]
+    private bool _blockEncryptedDns;
+
 
     [ObservableProperty]
     private int _geoCheckIntervalHours = 24;
@@ -1022,6 +1027,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         _suppressSettingPush = true;
         GeoAutoCheck = snapshot.GeoAutoCheck;
+        BlockEncryptedDns = snapshot.BlockEncryptedDns;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         _suppressSettingPush = false;
@@ -1136,6 +1142,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("geo-auto-check", value);
+        }
+    }
+
+    partial void OnBlockEncryptedDnsChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("block-encrypted-dns", value);
         }
     }
 

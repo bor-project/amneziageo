@@ -27,4 +27,6 @@ public sealed record StatusSnapshot(
     // AmneziaWG engine version (git describe of the bundled amneziawg-windows submodule, baked at
     // build time). tunnel.dll carries no version resource, so this is the authoritative engine
     // version. Empty when the build could not resolve it.
-    string EngineVersion = "");
+    string EngineVersion = "",
+    // When set, the agent neutralizes encrypted DNS (DoT/DoH) while a tunnel is up (#69).
+    bool BlockEncryptedDns = false);

@@ -31,6 +31,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     // QUIC block sits ABOVE the tunnel permit (10) but below the app hard-permit (14): it must override
     // "permit everything on the tunnel interface" for UDP/443 while never touching this process's underlay.
     private const byte WeightQuicBlock = 12;
+    // Encrypted-DNS blocks (#69) sit at the same band as the QUIC block: above permit-tun (10) so they win
+    // over "permit everything on the tunnel" in full tunnel, below the app hard-permit (14) so this
+    // process's own underlay is never touched.
+    private const byte WeightEncryptedDns = 12;
     private const byte WeightApp = 14;
     private const byte WeightHyperV = 14;
 
@@ -78,7 +82,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// carve-out present. Returns false and installs nothing on any failure. Thread-safe with respect
     /// to <see cref="Disable"/> so a tunnel teardown racing the arming cannot leave a stray engine.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, bool blockEncryptedDns = false)
     {
         lock (_gate)
         {
@@ -106,6 +110,15 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 // reliable over the obfuscated tunnel (QUIC stalls - e.g. some YouTube videos). Weighted
                 // above the tunnel permit so it still wins when the kill-switch's permit-tun is present.
                 BlockTunnelQuic(engine, luid);
+
+                // Optional (#69): neutralize encrypted DNS so apps fall back to plain Do53 through the
+                // loopback proxy. Added before the kill-switch permits so it is in place in both split and
+                // full tunnel. Global (no interface condition) - it must catch the lookup whichever path it
+                // would take - and torn down with this dynamic session when the tunnel stops.
+                if (blockEncryptedDns)
+                {
+                    BlockEncryptedDns(engine);
+                }
 
                 if (killSwitch)
                 {
@@ -423,6 +436,41 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
     }
 
+    // Neutralize encrypted DNS (#69) so apps fall back to plain Do53, which the loopback proxy intercepts
+    // and the geo/app routing can then see. DoT owns a dedicated port, so block 853 outright; DoH shares
+    // 443 with all HTTPS, so block it only to known public resolver IPs (the UDP rule also covers DoH3/QUIC
+    // to those IPs). Global (no interface condition): the lookup must be caught whichever way it would
+    // egress. A curated IP set, not exhaustive - an obscure resolver may slip through.
+    private void BlockEncryptedDns(IntPtr engine)
+    {
+        FWPM_FILTER_CONDITION0[] DotConditions(byte protocol) =>
+        [
+            Condition(CondIpProtocol, MatchEqual, FwpUint8, protocol),
+            Condition(CondIpRemotePort, MatchEqual, FwpUint16, 853),
+        ];
+
+        Add(engine, LayerAleAuthConnectV4, WeightEncryptedDns, ActionBlock, 0, DotConditions(ProtocolTcp), "Block DoT (TCP/853)");
+        Add(engine, LayerAleAuthConnectV4, WeightEncryptedDns, ActionBlock, 0, DotConditions(ProtocolUdp), "Block DoT (UDP/853)");
+
+        foreach (var ip in DohResolverIps)
+        {
+            if (!TryParseV4Cidr($"{ip}/32", out var addr, out _))
+            {
+                continue;
+            }
+
+            FWPM_FILTER_CONDITION0[] DohConditions(byte protocol) =>
+            [
+                Condition(CondIpProtocol, MatchEqual, FwpUint8, protocol),
+                Condition(CondIpRemotePort, MatchEqual, FwpUint16, 443),
+                Condition(CondIpRemoteAddress, MatchEqual, FwpUint32, addr),
+            ];
+
+            Add(engine, LayerAleAuthConnectV4, WeightEncryptedDns, ActionBlock, 0, DohConditions(ProtocolTcp), $"Block DoH TCP {ip}");
+            Add(engine, LayerAleAuthConnectV4, WeightEncryptedDns, ActionBlock, 0, DohConditions(ProtocolUdp), $"Block DoH UDP {ip}");
+        }
+    }
+
     private void BlockAll(IntPtr engine)
     {
         // Zero-condition terminating block at the lowest weight on all four ALE layers; every permit
@@ -591,6 +639,20 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const uint ConditionFlagIsLoopback = 0x00000001;
     private const uint ConditionL2IsVm2Vm = 0x00000010;
     private const byte ProtocolUdp = 17;
+    private const byte ProtocolTcp = 6;
+
+    // Known public DoH/DoT resolver IPs - the addresses the well-known DoH/DoT hostnames resolve to.
+    // Blocking 443/853 to these forces apps onto plain Do53 (#69). Curated, not exhaustive; mirrors the
+    // sets DNS-control tools (AdGuard/pfBlocker) use.
+    private static readonly string[] DohResolverIps =
+    [
+        "1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3", // Cloudflare
+        "8.8.8.8", "8.8.4.4",                                             // Google
+        "9.9.9.9", "149.112.112.112", "9.9.9.11", "149.112.112.11",       // Quad9
+        "94.140.14.14", "94.140.15.15",                                   // AdGuard
+        "208.67.222.222", "208.67.220.220",                               // OpenDNS
+        "185.228.168.9", "185.228.169.9",                                 // CleanBrowsing
+    ];
 
     [StructLayout(LayoutKind.Sequential)]
     private struct FWP_VALUE0

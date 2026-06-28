@@ -23,8 +23,8 @@ internal sealed class GeoConfigurator(IStateStore store)
         }
 
         var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
-        var (routes, domains) = GeoMaterializer.Materialize(rules, index);
-        await store.SaveTunnelGeoAsync(new TunnelGeo(name, on, rules, routes, domains), ct);
+        var (routes, domains, apps) = GeoMaterializer.Materialize(rules, index);
+        await store.SaveTunnelGeoAsync(new TunnelGeo(name, on, rules, routes, domains, apps), ct);
         return (rules.Count, routes.Count, domains.Count);
     }
 
@@ -45,8 +45,8 @@ internal sealed class GeoConfigurator(IStateStore store)
         }
 
         var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
-        var (routes, domains) = GeoMaterializer.Materialize(rules, index);
-        return await store.SaveRoutingListAsync(new RoutingList(listId, name, rules, routes, domains), ct);
+        var (routes, domains, apps) = GeoMaterializer.Materialize(rules, index);
+        return await store.SaveRoutingListAsync(new RoutingList(listId, name, rules, routes, domains, apps), ct);
     }
 
     /// <summary>
@@ -59,8 +59,8 @@ internal sealed class GeoConfigurator(IStateStore store)
         var lists = await store.ListRoutingListsAsync(ct);
         foreach (var list in lists)
         {
-            var (routes, domains) = GeoMaterializer.Materialize(list.Rules, index);
-            await store.SaveRoutingListAsync(list with { Routes = routes, Domains = domains }, ct);
+            var (routes, domains, apps) = GeoMaterializer.Materialize(list.Rules, index);
+            await store.SaveRoutingListAsync(list with { Routes = routes, Domains = domains, Apps = apps }, ct);
         }
     }
 
@@ -102,6 +102,7 @@ internal sealed class GeoConfigurator(IStateStore store)
             "geoip" => GeoRuleKind.GeoIp,
             "domain" => GeoRuleKind.Domain,
             "cidr" => GeoRuleKind.Cidr,
+            "app" => GeoRuleKind.App,
             _ => (GeoRuleKind?)null,
         };
         return kind is null ? null : new GeoRule(kind.Value, value);
@@ -117,6 +118,7 @@ internal sealed class GeoConfigurator(IStateStore store)
             GeoRuleKind.GeoSite => "geosite",
             GeoRuleKind.GeoIp => "geoip",
             GeoRuleKind.Domain => "domain",
+            GeoRuleKind.App => "app",
             _ => "cidr",
         };
         return $"{prefix}:{rule.Value}";

@@ -10,4 +10,5 @@ public sealed record RoutingList(
     string Name,
     IReadOnlyList<GeoRule> Rules,
     IReadOnlyList<string> Routes,
-    IReadOnlyList<GeoDomain> Domains);
+    IReadOnlyList<GeoDomain> Domains,
+    IReadOnlyList<string> Apps);

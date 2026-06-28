@@ -62,6 +62,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         proj_split        INTEGER NOT NULL DEFAULT 0,
                         proj_routes_json  TEXT NOT NULL DEFAULT '[]',
                         proj_domains_json TEXT NOT NULL DEFAULT '[]',
+                        proj_apps_json    TEXT NOT NULL DEFAULT '[]',
                         updated_at        TEXT NOT NULL
                     );
 
@@ -175,6 +176,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_split INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            // Per-app tunneling (#68): the materialized app matchers ("dir=...", "svc=...", etc.) for the
+            // active projection. The own set-geo path derives apps from rules_json, so only the projection
+            // (which carries no rules) needs its own column.
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_apps_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
 
             // HTTP validators for the geo-list update-check: captured at download time so a later check
             // can issue a conditional request and learn whether the remote file changed without re-fetching it.
@@ -361,7 +366,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     var rules = JsonSerializer.Deserialize<List<GeoRule>>(reader.GetString(1)) ?? [];
                     var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(2)) ?? [];
                     var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(3)) ?? [];
-                    return new TunnelGeo(name, reader.GetInt32(0) != 0, rules, routes, domains);
+                    return new TunnelGeo(name, reader.GetInt32(0) != 0, rules, routes, domains, ExtractApps(rules));
                 }
             }
         }
@@ -381,7 +386,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     SELECT projected, geo_split, rules_json, routes_json, domains_json,
-                           proj_split, proj_routes_json, proj_domains_json
+                           proj_split, proj_routes_json, proj_domains_json, proj_apps_json
                     FROM tunnel_geo
                     WHERE name = $name;
                     """;
@@ -402,20 +407,21 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     {
                         var projRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [];
                         var projDomains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(7)) ?? [];
-                        return new TunnelGeo(name, reader.GetInt32(5) != 0, [], projRoutes, projDomains);
+                        var projApps = JsonSerializer.Deserialize<List<string>>(reader.GetString(8)) ?? [];
+                        return new TunnelGeo(name, reader.GetInt32(5) != 0, [], projRoutes, projDomains, projApps);
                     }
 
                     var rules = JsonSerializer.Deserialize<List<GeoRule>>(reader.GetString(2)) ?? [];
                     var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(3)) ?? [];
                     var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(4)) ?? [];
-                    return new TunnelGeo(name, reader.GetInt32(1) != 0, rules, routes, domains);
+                    return new TunnelGeo(name, reader.GetInt32(1) != 0, rules, routes, domains, ExtractApps(rules));
                 }
             }
         }
     }
 
     /// <inheritdoc/>
-    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, CancellationToken ct = default)
+    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -429,19 +435,21 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 // never lists them, so a config's own set-geo split is preserved untouched.
                 command.CommandText =
                     """
-                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, updated_at)
-                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $updated)
+                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, updated_at)
+                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $apps, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         projected         = 1,
                         proj_split        = excluded.proj_split,
                         proj_routes_json  = excluded.proj_routes_json,
                         proj_domains_json = excluded.proj_domains_json,
+                        proj_apps_json    = excluded.proj_apps_json,
                         updated_at        = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", name);
                 command.Parameters.AddWithValue("$split", split ? 1 : 0);
                 command.Parameters.AddWithValue("$routes", JsonSerializer.Serialize(routes));
                 command.Parameters.AddWithValue("$domains", JsonSerializer.Serialize(domains));
+                command.Parameters.AddWithValue("$apps", JsonSerializer.Serialize(apps));
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -468,6 +476,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         proj_split        = 0,
                         proj_routes_json  = '[]',
                         proj_domains_json = '[]',
+                        proj_apps_json    = '[]',
                         updated_at        = $updated
                     WHERE name = $name;
                     """;
@@ -1652,7 +1661,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 var rules = await ReadRoutingListRulesAsync(connection, row.Id, ct).ConfigureAwait(false);
                 var routes = JsonSerializer.Deserialize<List<string>>(row.Routes) ?? [];
                 var domains = JsonSerializer.Deserialize<List<GeoDomain>>(row.Domains) ?? [];
-                result.Add(new RoutingList(row.Id, row.Name, rules, routes, domains));
+                result.Add(new RoutingList(row.Id, row.Name, rules, routes, domains, ExtractApps(rules)));
             }
 
             return result;
@@ -1795,7 +1804,24 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var rules = await ReadRoutingListRulesAsync(connection, id, ct).ConfigureAwait(false);
         var routes = JsonSerializer.Deserialize<List<string>>(routesJson) ?? [];
         var domains = JsonSerializer.Deserialize<List<GeoDomain>>(domainsJson) ?? [];
-        return new RoutingList(id, name, rules, routes, domains);
+        return new RoutingList(id, name, rules, routes, domains, ExtractApps(rules));
+    }
+
+    // The materialized app matchers for a rule set: App-kind rules carry their matcher token verbatim
+    // ("dir=...", "path=...", "svc=...", "pkg=...", "name=..."). Derived from rules so the own set-geo and
+    // routing-list paths need no separate column; only the rules-less balancer projection persists its own.
+    private static List<string> ExtractApps(IReadOnlyList<GeoRule> rules)
+    {
+        var apps = new List<string>();
+        foreach (var rule in rules)
+        {
+            if (rule.Kind == GeoRuleKind.App)
+            {
+                apps.Add(rule.Value);
+            }
+        }
+
+        return apps;
     }
 
     private static async Task<IReadOnlyList<GeoRule>> ReadRoutingListRulesAsync(SqliteConnection connection, long listId, CancellationToken ct)

@@ -242,9 +242,9 @@ internal sealed class Cli(
         }
 
         var index = GeoIndex.Load(await store.ListGeoSourcesAsync());
-        var (materializedRoutes, domains) = GeoMaterializer.Materialize(rules, index);
-        await store.SaveTunnelGeoAsync(new TunnelGeo(name, split, rules, materializedRoutes, domains));
-        Console.WriteLine($"set-geo {name}: split={split}, {rules.Count} rules -> {materializedRoutes.Count} routes, {domains.Count} domains");
+        var (materializedRoutes, domains, apps) = GeoMaterializer.Materialize(rules, index);
+        await store.SaveTunnelGeoAsync(new TunnelGeo(name, split, rules, materializedRoutes, domains, apps));
+        Console.WriteLine($"set-geo {name}: split={split}, {rules.Count} rules -> {materializedRoutes.Count} routes, {domains.Count} domains, {apps.Count} apps");
         if (materializedRoutes.Count > 10000)
         {
             Console.WriteLine($"warning: {materializedRoutes.Count} routes is large (e.g. full-country geoip) and may strain the OS route table");
@@ -698,8 +698,8 @@ internal sealed class Cli(
                 continue;
             }
 
-            var (materializedRoutes, domains) = GeoMaterializer.Materialize(geo.Rules, index);
-            await store.SaveTunnelGeoAsync(geo with { Routes = materializedRoutes, Domains = domains });
+            var (materializedRoutes, domains, apps) = GeoMaterializer.Materialize(geo.Rules, index);
+            await store.SaveTunnelGeoAsync(geo with { Routes = materializedRoutes, Domains = domains, Apps = apps });
         }
     }
 

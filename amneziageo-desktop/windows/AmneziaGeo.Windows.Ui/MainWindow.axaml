@@ -51,8 +51,10 @@
                    view the gear is replaced by a "Настройки" label so it is clear which section is open
                    (#56). The back control for Settings lives in the RIGHT pane header. -->
               <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                <TextBlock Grid.Column="0" Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
-                           VerticalAlignment="Center" />
+                <Button Grid.Column="0" Classes="brand" VerticalAlignment="Center"
+                        Command="{Binding NavHomeCommand}" ToolTip.Tip="К профилям">
+                  <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" />
+                </Button>
                 <Button Grid.Column="1" Classes="icon" Padding="6,4" IsVisible="{Binding !IsSettings}"
                         Command="{Binding NavSettingsCommand}" ToolTip.Tip="Настройки">
                   <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"

@@ -597,6 +597,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void NavHome()
     {
         Nav = "home";
+        OpenProfile = null;
     }
 
     [RelayCommand]

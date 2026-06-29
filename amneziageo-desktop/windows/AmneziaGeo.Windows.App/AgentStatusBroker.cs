@@ -771,8 +771,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, profileName);
     }
 
-    // Duplicate a profile into an independent copy: export the source's bundle, then import it with no replace
-    // target so it lands as a fresh profile under a de-duplicated name (config, transport, geo, routing cloned).
+    // Duplicate a profile into an independent copy.
     private async Task<IpcAck> DuplicateProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))

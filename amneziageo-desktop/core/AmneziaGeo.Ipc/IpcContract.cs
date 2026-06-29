@@ -220,9 +220,8 @@ public static class IpcContract
     public const string OpImportProfile = "import-profile";
 
     /// <summary>
-    /// Command to duplicate a profile into an independent copy: the source's portable bundle is rebuilt and
-    /// applied as a fresh profile, so its config, transport, geo and routing are recreated under de-duplicated
-    /// names. Args: source profile name. The ack message holds the new profile name.
+    /// Duplicate a profile into an independent copy: recreate its config, transport, geo and routing under
+    /// fresh (de-duplicated) names. Args: source profile name. The ack message holds the new profile name.
     /// </summary>
     public const string OpDuplicateProfile = "duplicate-profile";
 

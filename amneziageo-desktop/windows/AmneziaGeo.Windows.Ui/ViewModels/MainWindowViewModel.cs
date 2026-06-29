@@ -111,7 +111,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsAspectProxy))]
     [NotifyPropertyChangedFor(nameof(IsAspectDns))]
     [NotifyPropertyChangedFor(nameof(IsAspectName))]
-    private string _profileAspect = "config";
+    private string _profileAspect = "name";
 
     // Config management (one level below a profile's Конфигурация aspect): the member config opened for
     // actions (null = the member list is shown). The right pane shows one full page with every action
@@ -166,15 +166,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _profileRenameStatus = string.Empty;
 
-    // One-line status for the profile export/import (the Импорт/экспорт aspect): "скопировано",
+    // One-line status for the profile export/import (the Профиль aspect): "скопировано",
     // "импортирован <name>", or an error from the agent.
     [ObservableProperty]
     private string _profilePortStatus = string.Empty;
-
-    // Inline name-edit mode for the profile header: while true the name shows as a text box with a save
-    // (diskette) button; otherwise as text with a pencil button.
-    [ObservableProperty]
-    private bool _isEditingProfileName;
 
     // Which settings section the left rail has selected while on the Settings tab.
     [ObservableProperty]
@@ -617,7 +612,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void OpenProfileDetail(BalancerItemViewModel profile)
     {
         OpenProfile = profile;
-        ProfileAspect = "config";
+        ProfileAspect = "name";
     }
 
     // Header back control (one button, always labelled "Назад"): from the config page back to the member
@@ -767,16 +762,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // Open the profile's single configuration so its editors (text / proxy) are available on the rail.
         OpenConfig = string.IsNullOrEmpty(newValue?.Config) ? null : newValue!.Config;
 
-        // Reset the inline rename editor only when the profile identity actually changes. A background
-        // snapshot can re-assign the open profile to a refreshed instance of the SAME profile; without this
-        // guard that would wipe the half-typed name and close the editor mid-edit (the reported focus loss).
+        // Reset the rename field only when the profile identity actually changes. A background snapshot can
+        // re-assign the open profile to a refreshed instance of the SAME profile; without this guard that
+        // would wipe the half-typed name mid-edit.
         var sameProfile = oldValue is not null && newValue is not null
             && string.Equals(oldValue.Name, newValue.Name, StringComparison.Ordinal);
         if (!sameProfile)
         {
             ProfileRename = newValue?.Name ?? string.Empty;
             ProfileRenameStatus = string.Empty;
-            IsEditingProfileName = false;
         }
         ProfilePortStatus = string.Empty;
 
@@ -1541,7 +1535,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             if (created is not null)
             {
                 OpenProfile = created;
-                ProfileAspect = "config";
+                ProfileAspect = "name";
                 _pendingOpenProfile = null;
             }
         }
@@ -1640,26 +1634,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Rename the open profile. On success the detail closes; the rebroadcast list shows the new name. On a
-    // "✎" in the profile header: switch the name to an inline editor seeded with the current name.
-    [RelayCommand]
-    private void BeginProfileNameEdit()
-    {
-        ProfileRename = OpenProfileName;
-        ProfileRenameStatus = string.Empty;
-        IsEditingProfileName = true;
-    }
-
-    // "✕" next to the inline name editor: leave rename mode without saving, restoring the current name.
-    [RelayCommand]
-    private void CancelProfileNameEdit()
-    {
-        ProfileRename = OpenProfileName;
-        ProfileRenameStatus = string.Empty;
-        IsEditingProfileName = false;
-    }
-
-    // refused rename (name taken, or it is the running profile) the view stays put and shows why.
+    // Rename the open profile from the Профиль aspect. On success the detail closes; the rebroadcast list
+    // shows the new name. On a refused rename (name taken, or it is the running profile) the view stays put
+    // and shows why.
     [RelayCommand]
     private async Task RenameProfile()
     {
@@ -1672,7 +1649,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var next = (ProfileRename ?? string.Empty).Trim();
         if (next.Length == 0 || string.Equals(next, profile.Name, StringComparison.Ordinal))
         {
-            IsEditingProfileName = false;
             return;
         }
 

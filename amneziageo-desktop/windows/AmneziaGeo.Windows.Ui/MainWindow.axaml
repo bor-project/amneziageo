@@ -137,32 +137,32 @@
             <!-- open profile: its aspect rail (Конфигурация / Маршрутизация / Балансировщик / Название).
                  Stays visible while a member config is managed; only the right pane swaps to the config page. -->
             <DockPanel IsVisible="{Binding IsProfileDetail}" LastChildFill="True">
-              <!-- the open profile's name (the back-to-list navigation now lives in the right pane header) -->
+              <!-- the open profile's name (rename lives in the Профиль aspect, the first rail item). -->
               <StackPanel DockPanel.Dock="Top" Margin="14,11,14,8">
                 <TextBlock Classes="section" Text="ПРОФИЛЬ" />
-                <!-- name + pencil; tapping the pencil swaps to an inline editor with a diskette save button -->
-                <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0" IsVisible="{Binding !IsEditingProfileName}">
-                  <TextBlock Grid.Column="0" Text="{Binding OpenProfileName}" FontWeight="SemiBold" FontSize="14"
-                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                  <Button Grid.Column="1" Classes="icon" Content="✎" FontSize="14"
-                          Command="{Binding BeginProfileNameEditCommand}" Click="OnBeginProfileNameEdit"
-                          ToolTip.Tip="Переименовать" />
-                </Grid>
-                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2,0,0" IsVisible="{Binding IsEditingProfileName}">
-                  <TextBox Grid.Column="0" x:Name="ProfileNameBox" Classes="field"
-                           Text="{Binding ProfileRename, Mode=TwoWay}" VerticalAlignment="Center" />
-                  <Button Grid.Column="1" Classes="icon" Content="💾" FontSize="14" Margin="6,0,0,0"
-                          Command="{Binding RenameProfileCommand}" IsEnabled="{Binding CanSaveProfileName}"
-                          ToolTip.Tip="Сохранить имя" />
-                  <Button Grid.Column="2" Classes="icon" Content="✕" FontSize="14" Margin="4,0,0,0"
-                          Command="{Binding CancelProfileNameEditCommand}"
-                          ToolTip.Tip="Отменить переименование" />
-                </Grid>
-                <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap"
-                           IsVisible="{Binding IsEditingProfileName}" />
+                <TextBlock Text="{Binding OpenProfileName}" FontWeight="SemiBold" FontSize="14"
+                           Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
               </StackPanel>
 
               <StackPanel Margin="12,2,12,12">
+                <Button Classes="rowselect" Classes.active="{Binding IsAspectName}" Margin="0,3"
+                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="name">
+                  <Grid ColumnDefinitions="Auto,*" Margin="12,7">
+                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                      <Ellipse Width="16" Height="16" StrokeThickness="2"
+                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
+                               IsVisible="{Binding IsAspectName}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                      <TextBlock Text="Профиль" FontWeight="SemiBold" FontSize="13.5" />
+                      <TextBlock Text="Импорт, экспорт, копия, переименование" FontSize="11.5" Classes="muted"
+                                 TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Grid>
+                </Button>
                 <Button Classes="rowselect" Classes.active="{Binding IsAspectConfig}" Margin="0,3"
                         Command="{Binding SelectProfileAspectCommand}" CommandParameter="config">
                   <Grid ColumnDefinitions="Auto,*" Margin="12,7">
@@ -249,24 +249,6 @@
                     <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                       <TextBlock Text="DNS" FontWeight="SemiBold" FontSize="13.5" />
                       <TextBlock Text="DNS для не-туннельного трафика" FontSize="11.5" Classes="muted"
-                                 TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
-                  </Grid>
-                </Button>
-                <Button Classes="rowselect" Classes.active="{Binding IsAspectName}" Margin="0,3"
-                        Command="{Binding SelectProfileAspectCommand}" CommandParameter="name">
-                  <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                    <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
-                      <Ellipse Width="16" Height="16" StrokeThickness="2"
-                               Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                               IsVisible="{Binding IsAspectName}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Grid>
-                    <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                      <TextBlock Text="Импорт/экспорт" FontWeight="SemiBold" FontSize="13.5" />
-                      <TextBlock Text="Перенос и удаление профиля" FontSize="11.5" Classes="muted"
                                  TextTrimming="CharacterEllipsis" />
                     </StackPanel>
                   </Grid>
@@ -956,10 +938,23 @@
                   </StackPanel>
                 </StackPanel>
 
-                <!-- Импорт/экспорт : the whole profile as a portable bundle, plus delete. Renaming moved to
-                     the profile header (inline pencil). The export/import buttons are wired in code-behind
-                     (clipboard/file are window concerns); delete binds the window VM's DeleteOpenProfileCommand. -->
+                <!-- Профиль : rename, duplicate, the whole profile as a portable bundle, and delete. The
+                     export/import buttons are wired in code-behind (clipboard/file are window concerns);
+                     delete binds the window VM's DeleteOpenProfileCommand. -->
                 <StackPanel IsVisible="{Binding IsAspectName}" Spacing="16">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="НАЗВАНИЕ" />
+                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Новое имя для этого профиля. Запущенный профиль переименовать нельзя." />
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBox Grid.Column="0" Classes="field"
+                               Text="{Binding ProfileRename, Mode=TwoWay}" />
+                      <Button Grid.Column="1" Classes="softbtn" Content="Сохранить" Margin="6,0,0,0"
+                              Command="{Binding RenameProfileCommand}" IsEnabled="{Binding CanSaveProfileName}"
+                              ToolTip.Tip="Переименовать профиль" />
+                    </Grid>
+                    <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                  </StackPanel>
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="ЭКСПОРТ" />
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
@@ -968,17 +963,12 @@
                       <Button Classes="softbtn" Content="Копировать" Margin="0,0,6,6"
                               Click="OnProfileExportCopy" ToolTip.Tip="Скопировать профиль в буфер обмена" />
                       <Button Classes="softbtn" Content="Сохранить в файл…" Margin="0,0,6,6" Click="OnProfileExportSave" />
+                      <Button Classes="softbtn" Content="Дублировать" Margin="0,0,6,6"
+                              Command="{Binding DuplicateOpenProfileCommand}"
+                              ToolTip.Tip="Создать независимую копию профиля" />
                     </WrapPanel>
                     <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
                                Text="⚠ Файл содержит приватные ключи. Храните и передавайте его безопасно." />
-                  </StackPanel>
-                  <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="ДУБЛИРОВАНИЕ" />
-                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="Создать независимую копию этого профиля - конфигурацию, прокси, гео и маршруты - под новым именем." />
-                    <Button Classes="softbtn" Content="Дублировать профиль" HorizontalAlignment="Left"
-                            Command="{Binding DuplicateOpenProfileCommand}"
-                            ToolTip.Tip="Создать копию профиля" />
                   </StackPanel>
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="ИМПОРТ" />

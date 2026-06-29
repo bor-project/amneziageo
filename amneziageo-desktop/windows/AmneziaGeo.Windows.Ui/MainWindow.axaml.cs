@@ -26,20 +26,9 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
     }
 
-    // After the ✎ command flips the profile header into its inline name editor, move keyboard focus into the
+    // After the ✎ command flips the config header into its inline name editor, move keyboard focus into the
     // box and select its text so the user can type immediately - the editor is otherwise only made visible,
     // not focused. Deferred to Background priority so it runs after the IsVisible binding has applied.
-    private void OnBeginProfileNameEdit(object? sender, RoutedEventArgs e)
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            var box = this.FindControl<TextBox>("ProfileNameBox");
-            box?.Focus();
-            box?.SelectAll();
-        }, DispatcherPriority.Background);
-    }
-
-    // Same as OnBeginProfileNameEdit but for the config header's inline name editor.
     private void OnBeginConfigNameEdit(object? sender, RoutedEventArgs e)
     {
         Dispatcher.UIThread.Post(() =>

@@ -56,12 +56,18 @@ internal sealed class DomainTracker(
                 return;
             }
 
+            var addedCidrs = new List<string>();
             foreach (var ip in fresh)
             {
                 if (!old.Contains(ip))
                 {
-                    var ok = routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
+                    var parsed = IPAddress.Parse(ip);
+                    var ok = routes.AddTunnelRoute(parsed, index.Value);
                     logger.LogDebug("DIAG track add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
+                    if (ok)
+                    {
+                        addedCidrs.Add(Cidr(parsed));
+                    }
                 }
             }
 
@@ -71,16 +77,32 @@ internal sealed class DomainTracker(
             // advertises it in allowed-ips - desyncs routing from allowed-ips: the IP stays tunnel-eligible
             // but has no route, so its packets fall off the tunnel until a later refresh happens to re-add
             // it. Remove the route only when nothing else still needs the IP (#73).
+            var removedAny = false;
             foreach (var ip in old)
             {
                 if (!fresh.Contains(ip) && !IsStillReferenced(ip, key))
                 {
                     routes.RemoveTunnelRoute(IPAddress.Parse(ip), index.Value);
+                    removedAny = true;
                 }
             }
 
             _current[key] = fresh;
-            uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
+
+            // A removal can only be expressed by replacing the whole peer set (the UAPI has no delete-one-
+            // allowed-ip), so churn from the background re-resolve still pays the full O(total) push. But the
+            // live DNS answer path only ever ADDS a freshly matched domain's IPs - advertise just those, in a
+            // single incremental exchange, so route-before-answer stays O(new) instead of waiting on a
+            // multi-thousand-entry replace that grows with every domain browsed (the cause of every newly
+            // resolved domain hanging before its answer).
+            if (removedAny)
+            {
+                uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
+            }
+            else
+            {
+                uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+            }
 
             // Persistence is only a warm-start cache; it must not block the caller, which on the live
             // DNS path now runs before the answer is sent (route-before-answer). A synchronous SQLite
@@ -148,7 +170,7 @@ internal sealed class DomainTracker(
                 return;
             }
 
-            var added = false;
+            var addedCidrs = new List<string>();
             foreach (var ip in ips)
             {
                 // v4-only tunnel: never route IPv6 (no transit). The watcher already enumerates IPv4 only,
@@ -169,20 +191,20 @@ internal sealed class DomainTracker(
                     // Advertise the IP in allowed-ips only once its /32 route is actually installed, so the
                     // route set and allowed-ips never diverge (#73). AddTunnelRoute treats AlreadyExists as
                     // success; a genuine failure leaves the IP unseen so the next poll retries it.
-                    var ok = routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
+                    var parsed = IPAddress.Parse(ip);
+                    var ok = routes.AddTunnelRoute(parsed, index.Value);
                     logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
                     if (ok)
                     {
                         _appIps.Add(ip);
-                        added = true;
+                        addedCidrs.Add(Cidr(parsed));
                     }
                 }
             }
 
-            if (added)
-            {
-                uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
-            }
+            // The app set only ever grows within a session, so advertise the new IPs incrementally rather
+            // than re-pushing the whole peer set on every poll that discovers one (no-op when none were added).
+            uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
         }
     }
 
@@ -208,6 +230,14 @@ internal sealed class DomainTracker(
         return false;
     }
 
+    // Host CIDR for an address: /32 for IPv4, /128 for IPv6. Single source of truth for the prefix so the
+    // incremental add path and the full BuildAllowedIps() replace never disagree on how an IP is advertised.
+    private static string Cidr(IPAddress ip)
+    {
+        var prefix = ip.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
+        return $"{ip}/{prefix}";
+    }
+
     private List<string> BuildAllowedIps()
     {
         var all = new List<string>(staticRoutes);
@@ -215,16 +245,14 @@ internal sealed class DomainTracker(
         {
             foreach (var ip in set)
             {
-                var prefix = IPAddress.Parse(ip).AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
-                all.Add($"{ip}/{prefix}");
+                all.Add(Cidr(IPAddress.Parse(ip)));
             }
         }
 
         // App-discovered IPs share the same allowed-ips authority (single SetAllowedIps owner).
         foreach (var ip in _appIps)
         {
-            var prefix = IPAddress.Parse(ip).AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
-            all.Add($"{ip}/{prefix}");
+            all.Add(Cidr(IPAddress.Parse(ip)));
         }
 
         return all;

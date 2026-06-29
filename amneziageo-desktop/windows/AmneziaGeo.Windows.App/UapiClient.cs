@@ -19,6 +19,32 @@ internal sealed class UapiClient
     }
 
     /// <summary>
+    /// Adds several allowed IPs to the peer in one UAPI exchange without clearing the existing set (no
+    /// replace_allowed_ips). Cost is O(new) rather than the O(total) of a full <see cref="SetAllowedIps"/>
+    /// replace, so the live DNS path can advertise a freshly resolved domain's IPs without re-pushing the
+    /// entire multi-thousand-entry set on every resolution. Empty input is a no-op.
+    /// </summary>
+    public bool AddAllowedIps(string tunnelName, string peerPublicKeyBase64, IReadOnlyList<string> cidrs)
+    {
+        if (cidrs.Count == 0)
+        {
+            return true;
+        }
+
+        var peerHex = Convert.ToHexStringLower(Convert.FromBase64String(peerPublicKeyBase64));
+        var request = new StringBuilder();
+        request.Append("set=1\n");
+        request.Append($"public_key={peerHex}\n");
+        foreach (var cidr in cidrs)
+        {
+            request.Append($"allowed_ip={cidr}\n");
+        }
+
+        request.Append('\n');
+        return Exchange(tunnelName, request.ToString()).Contains("errno=0", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Replaces the peer's allowed IPs with exactly the given set.
     /// </summary>
     public bool SetAllowedIps(string tunnelName, string peerPublicKeyBase64, IReadOnlyList<string> cidrs)

@@ -21,6 +21,12 @@ internal sealed class TunnelRunner(
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
+    // Tunnel MTU forced while the WSS (wstunnel) transport is active. 1280 is the IPv6 minimum and
+    // leaves headroom for the WG (~80B) + TLS/WebSocket/TCP (~90B) overhead the WSS underlay adds, so an
+    // inner full-size segment still fits one physical 1500-byte segment and a single underlay loss does
+    // not stall a two-segment inner packet (#77).
+    private const int WsTunnelMtu = 1280;
+
     /// <summary>
     /// Loads the tunnel config and materialized geo set, then hands control to the native service loop. On
     /// a setup failure it forwards the reason to the shared store so the agent can surface it in the UI
@@ -317,7 +323,17 @@ internal sealed class TunnelRunner(
             }
 
             config = WgConfigEditor.SetEndpoint(config, $"127.0.0.1:{wsTransport.LocalPort}");
-            logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}", name, wsTransport.LocalPort);
+
+            // WSS carries the AmneziaWG UDP datagrams over TCP/TLS/WebSocket, adding ~90 bytes of
+            // framing on top of WG's own ~80-byte overhead, and the TCP underlay cannot fragment. At
+            // the default 1420 MTU an inner full-size segment (~1420) becomes ~1590 on the wire and
+            // spans two physical 1500-byte segments, so a single underlay loss stalls/retransmits the
+            // whole inner packet - the uncompensated-overhead gap behind the slow handshakes, choppy
+            // media and stalled sends measured over WSS (#77). Clamp the tunnel MTU to 1280 (the IPv6
+            // minimum, universally safe) while WSS is active so each inner segment fits one underlay
+            // segment; with WSS off the config keeps its own MTU (default 1420).
+            config = WgConfigEditor.SetMtu(config, WsTunnelMtu);
+            logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}, mtu -> {Mtu}", name, wsTransport.LocalPort, WsTunnelMtu);
         }
 
         try

@@ -1512,7 +1512,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync, RemoveConfigAsync, CopyConfigAsync);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
                 existing.ApplyFromEntry(entry, options, configOptions);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
@@ -1619,11 +1619,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task<IpcAck> RemoveConfigAsync(string name)
     {
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));
-    }
-
-    private async Task<IpcAck> CopyConfigAsync(string source, string destination)
-    {
-        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCopyConfig, [source, destination]));
     }
 
     // Delete the profile currently open in the detail view, then fall back to the profiles list. The

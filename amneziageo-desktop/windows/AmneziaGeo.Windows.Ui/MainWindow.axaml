@@ -522,23 +522,16 @@
 
                     <!-- Config picker (hidden while the inline new-config form is open). Configs are a shared
                          catalogue: picking an existing one (re)assigns it to this profile and the same config
-                         can back several profiles; "+ Новая конфигурация" reveals the import form below;
-                         "Дублировать" forks an independent copy for this profile. -->
-                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsCreatingConfig}">
-                      <ComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
-                                ItemsSource="{Binding ConfigOptions}"
-                                SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                          <DataTemplate>
-                            <TextBlock Text="{Binding Name}" />
-                          </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                      </ComboBox>
-                      <Button Grid.Column="1" Classes="softbtn" Content="Дублировать" Margin="6,0,0,0"
-                              IsVisible="{Binding CanDuplicateConfig}"
-                              Command="{Binding DuplicateConfigCommand}"
-                              ToolTip.Tip="Создать независимую копию конфигурации для этого профиля" />
-                    </Grid>
+                         can back several profiles; "+ Новая конфигурация" reveals the import form below. -->
+                    <ComboBox Classes="field" HorizontalAlignment="Stretch" IsVisible="{Binding !IsCreatingConfig}"
+                              ItemsSource="{Binding ConfigOptions}"
+                              SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <TextBlock IsVisible="{Binding !HasConfig}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                                Text="У профиля пока нет конфигурации. Выберите из списка или «+ Новая конфигурация»." />
 

@@ -13,15 +13,18 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class UdpFlowTracker : IDisposable
 {
-    // Microsoft-Windows-Kernel-Network – kernel-mode per-datagram events.
+    // Microsoft-Windows-Kernel-Network - per-datagram network events.
     private static readonly Guid KernelNetworkProvider = new("7DD42A49-5329-4832-8DFD-43D979153A88");
-    // KERNEL_NETWORK_KEYWORD_IPV4: restricts events to IPv4 only.
+    // KERNEL_NETWORK_KEYWORD_IPV4 (0x10): IPv4 TCP and UDP datagram events from this provider.
     private const ulong IPv4Keyword = 0x10UL;
-    // EventId 10 = UDPv4 datagram sent; present on Win10 1803+ from this provider.
-    private const int UdpV4SendId = 10;
-    // UDPv4 Send payload: LocalAddr(4) LocalPort(2) RemoteAddr(4) RemotePort(2) Size(4).
-    // Remote address sits at byte offset 6.
-    private const int RemoteAddrOffset = 6;
+    // EventId 42 = KNetEvt_SendIPV4Udp (UDPv4 datagram sent). NB: id 10 is TCPv4 send, which the TCP watcher
+    // already covers - real-time media (Discord voice) is UDP, so the UDP send event (42) is the one we want.
+    private const int UdpV4SendId = 42;
+    // KNetEvt_SendIPV4Udp payload (little-endian): PID(4) size(4) daddr(4) saddr(4) dport(2) sport(2) ...
+    // The owning process is an explicit payload field at offset 0 - more reliable than the ETW header PID,
+    // which this provider can log under a system worker thread. daddr (the remote/destination IPv4) is at 8.
+    private const int PidOffset = 0;
+    private const int RemoteAddrOffset = 8;
     private const int MinPayloadBytes = RemoteAddrOffset + 4;
 
     private readonly AppRouteWatcher _watcher;
@@ -45,11 +48,12 @@ internal sealed class UdpFlowTracker : IDisposable
             {
                 ct.Register(Stop);
 
-                var ok = _session.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, IPv4Keyword);
-                if (!ok)
+                // EnableProvider returns true only when it RESTARTED a pre-existing session; false is the
+                // normal first-enable path, and a genuine failure throws (caught below). Treating false as
+                // "unavailable" disabled the tracker on every clean start - so do not gate on the result.
+                if (_session.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, IPv4Keyword))
                 {
-                    _logger.LogWarning("UdpFlowTracker: kernel-network ETW provider unavailable; UDP app routing disabled");
-                    return;
+                    _logger.LogDebug("UdpFlowTracker: restarted a pre-existing ETW session {Name}", sessionName);
                 }
 
                 _session.Source.AllEvents += evt => Handle(evt, ct);
@@ -81,12 +85,6 @@ internal sealed class UdpFlowTracker : IDisposable
             return;
         }
 
-        var pid = (uint)evt.ProcessID;
-        if (!_watcher.MatchesPid(pid))
-        {
-            return;
-        }
-
         try
         {
             var data = evt.EventData();
@@ -95,8 +93,16 @@ internal sealed class UdpFlowTracker : IDisposable
                 return;
             }
 
-            var remoteIp = new IPAddress(new ReadOnlySpan<byte>(data, RemoteAddrOffset, 4).ToArray());
+            // Owning process is the payload PID field (offset 0), not the ETW header PID.
+            var pid = BitConverter.ToUInt32(data, PidOffset);
+            if (!_watcher.MatchesPid(pid))
+            {
+                return;
+            }
 
+            // daddr is the IPv4 destination in network byte order - read the 4 bytes straight into IPAddress
+            // (do not BitConverter it, which would byte-swap on a little-endian host).
+            var remoteIp = new IPAddress(new ReadOnlySpan<byte>(data, RemoteAddrOffset, 4).ToArray());
             if (!AppRouteWatcher.IsTunnelableRemote(remoteIp))
             {
                 return;
@@ -106,7 +112,7 @@ internal sealed class UdpFlowTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "UdpFlowTracker: parse error pid={Pid}", pid);
+            _logger.LogDebug(ex, "UdpFlowTracker: parse error");
         }
     }
 

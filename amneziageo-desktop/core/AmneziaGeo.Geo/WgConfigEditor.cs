@@ -1,7 +1,7 @@
 namespace AmneziaGeo.Geo;
 
 /// <summary>
-/// Reads and rewrites the AllowedIPs and DNS of a wg-quick config.
+/// Reads and rewrites the AllowedIPs, DNS, Endpoint and MTU of a wg-quick config.
 /// </summary>
 public static class WgConfigEditor
 {
@@ -183,6 +183,32 @@ public static class WgConfigEditor
             if (line.Trim().Equals("[Interface]", StringComparison.OrdinalIgnoreCase))
             {
                 kept.Add($"DNS = {string.Join(", ", servers)}");
+            }
+        }
+
+        return string.Join('\n', kept);
+    }
+
+    /// <summary>
+    /// Returns the config with its [Interface] MTU set to the given value (any existing MTU lines are
+    /// dropped and a single line is inserted into the [Interface] section). Used to shrink the tunnel
+    /// MTU when the underlay adds per-packet overhead that cannot be fragmented (the WSS/wstunnel
+    /// transport), so inner segments fit the encapsulated path instead of stalling on it.
+    /// </summary>
+    public static string SetMtu(string config, int mtu)
+    {
+        var kept = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            if (line.Trim().StartsWith("MTU", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            kept.Add(line);
+            if (line.Trim().Equals("[Interface]", StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add($"MTU = {mtu}");
             }
         }
 

@@ -286,6 +286,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
                 IpcContract.OpExportProfile => await ExportProfileAsync(command.Args, ct),
                 IpcContract.OpImportProfile => await ImportProfileAsync(command.Args, ct),
+                IpcContract.OpDuplicateProfile => await DuplicateProfileAsync(command.Args, ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
@@ -768,6 +769,24 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             profileName,
             configName);
         return new IpcAck(true, profileName);
+    }
+
+    // Duplicate a profile into an independent copy: export the source's bundle, then import it with no replace
+    // target so it lands as a fresh profile under a de-duplicated name (config, transport, geo, routing cloned).
+    private async Task<IpcAck> DuplicateProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "duplicate-profile requires a profile name");
+        }
+
+        var exported = await ExportProfileAsync([args[0]], ct);
+        if (!exported.Ok)
+        {
+            return exported;
+        }
+
+        return await ImportProfileAsync([exported.Message], ct);
     }
 
     // True when any profile still binds the given config, so removing the config would unbind that profile too.

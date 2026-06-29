@@ -1738,6 +1738,30 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // Duplicate the open profile into an independent copy (config + transport + geo + routing cloned under
+    // fresh names). On success the copy opens on the next snapshot, mirroring the "+ Профиль" create flow.
+    [RelayCommand]
+    private async Task DuplicateOpenProfile()
+    {
+        var profile = OpenProfile;
+        if (profile is null)
+        {
+            return;
+        }
+
+        ProfilePortStatus = string.Empty;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpDuplicateProfile, [profile.Name]));
+        if (ack.Ok)
+        {
+            _pendingOpenProfile = ack.Message;
+            ProfilePortStatus = $"Создана копия: {ack.Message}";
+        }
+        else
+        {
+            ProfilePortStatus = ack.Message;
+        }
+    }
+
     private async Task AssignRoutingAsync(string profile, long? listId, bool useRouting)
     {
         var args = new[]

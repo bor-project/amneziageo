@@ -19,7 +19,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private readonly Func<string, string, Task<IpcAck>> _importConfig;
     private readonly Func<string, bool, Task> _setProfileConnection;
     private readonly Func<string, Task<IpcAck>> _removeConfig;
-    private readonly Func<string, string, Task<IpcAck>> _copyConfig;
     private bool _suppress;
     // True while the user is composing a brand-new config via the "+ Новая конфигурация" combo pick; held
     // across snapshots (like _creatingNewList) so the periodic reconcile does not snap the config combo back
@@ -56,7 +55,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     // The config selected in the profile's config combo. Picking a real config assigns it to this profile
     // (configs are shared across profiles by name); picking "+ Новая конфигурация" reveals the import form.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanDuplicateConfig))]
     private ConfigChoice _selectedConfig = ConfigChoice.None;
 
     [ObservableProperty]
@@ -102,8 +100,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         Func<string, Task> selectProfile,
         Func<string, string, Task<IpcAck>> importConfig,
         Func<string, bool, Task> setProfileConnection,
-        Func<string, Task<IpcAck>> removeConfig,
-        Func<string, string, Task<IpcAck>> copyConfig)
+        Func<string, Task<IpcAck>> removeConfig)
     {
         _saveProfile = saveProfile;
         _assignRouting = assignRouting;
@@ -111,7 +108,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         _importConfig = importConfig;
         _setProfileConnection = setProfileConnection;
         _removeConfig = removeConfig;
-        _copyConfig = copyConfig;
     }
 
     /// <summary>
@@ -157,9 +153,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// Whether the profile has a configuration assigned.
     /// </summary>
     public bool HasConfig => Config.Length > 0;
-
-    /// <summary>True when a real config is selected and "Дублировать" can fork an independent copy.</summary>
-    public bool CanDuplicateConfig => SelectedConfig.IsReal;
 
     /// <summary>
     /// Collapsed-row summary: the configuration name, or a hint when none is set yet.
@@ -467,49 +460,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         {
             Config = string.Empty;
             _ = _saveProfile(Name, string.Empty);
-        }
-    }
-
-    // Fork an independent copy of the profile's current config (text + geo + resolutions) under a fresh
-    // name and switch this profile to the copy, so it can be edited without touching the shared original.
-    [RelayCommand]
-    private async Task DuplicateConfig()
-    {
-        if (!SelectedConfig.IsReal)
-        {
-            return;
-        }
-
-        var source = SelectedConfig.Name;
-        var destination = UniqueCopyName(source);
-        var ack = await _copyConfig(source, destination);
-        if (!ack.Ok)
-        {
-            NewConfigStatus = ack.Message;
-            return;
-        }
-
-        Config = destination;
-        await _saveProfile(Name, destination);
-    }
-
-    // "<name> (копия)", then " (копия 2)", ... avoiding any name already in the catalogue.
-    private string UniqueCopyName(string source)
-    {
-        var taken = ConfigOptions.Where(option => option.IsReal).Select(option => option.Name).ToHashSet(StringComparer.Ordinal);
-        var baseName = $"{source} (копия)";
-        if (!taken.Contains(baseName))
-        {
-            return baseName;
-        }
-
-        for (var i = 2; ; i++)
-        {
-            var candidate = $"{source} (копия {i})";
-            if (!taken.Contains(candidate))
-            {
-                return candidate;
-            }
         }
     }
 

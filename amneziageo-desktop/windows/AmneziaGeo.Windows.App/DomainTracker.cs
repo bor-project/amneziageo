@@ -65,9 +65,15 @@ internal sealed class DomainTracker(
                 }
             }
 
+            // A resolved IP is frequently shared: CDN/anycast edges resolve for many hostnames, and the
+            // per-app watcher (#68) pins IPs in _appIps. BuildAllowedIps() unions ALL of those, so dropping
+            // a /32 route just because it left THIS domain's set - while another domain or _appIps still
+            // advertises it in allowed-ips - desyncs routing from allowed-ips: the IP stays tunnel-eligible
+            // but has no route, so its packets fall off the tunnel until a later refresh happens to re-add
+            // it. Remove the route only when nothing else still needs the IP (#73).
             foreach (var ip in old)
             {
-                if (!fresh.Contains(ip))
+                if (!fresh.Contains(ip) && !IsStillReferenced(ip, key))
                 {
                     routes.RemoveTunnelRoute(IPAddress.Parse(ip), index.Value);
                 }
@@ -158,11 +164,18 @@ internal sealed class DomainTracker(
                     break;
                 }
 
-                if (_appIps.Add(ip))
+                if (!_appIps.Contains(ip))
                 {
+                    // Advertise the IP in allowed-ips only once its /32 route is actually installed, so the
+                    // route set and allowed-ips never diverge (#73). AddTunnelRoute treats AlreadyExists as
+                    // success; a genuine failure leaves the IP unseen so the next poll retries it.
                     var ok = routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
                     logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
-                    added = true;
+                    if (ok)
+                    {
+                        _appIps.Add(ip);
+                        added = true;
+                    }
                 }
             }
 
@@ -171,6 +184,28 @@ internal sealed class DomainTracker(
                 uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
             }
         }
+    }
+
+    // True when an IP - other than via <paramref name="excludeKey"/>'s just-applied fresh set - is still
+    // advertised in allowed-ips: held by another tracked domain or by the per-app watcher's set. Used to
+    // keep the /32 route set in lockstep with BuildAllowedIps() so a shared IP is never left in allowed-ips
+    // without a backing route (#73). Caller holds _lock.
+    private bool IsStillReferenced(string ip, string excludeKey)
+    {
+        if (_appIps.Contains(ip))
+        {
+            return true;
+        }
+
+        foreach (var (k, set) in _current)
+        {
+            if (k != excludeKey && set.Contains(ip))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private List<string> BuildAllowedIps()

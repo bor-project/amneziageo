@@ -154,7 +154,8 @@
     <!-- Shortcuts to the unprivileged GUI (Ui.exe itself is harvested with the payload): one on the
          (all-users) Desktop and one in the Start menu. Own component in the menu folder, with an HKCU
          keypath (the per-user shortcut data) so the non-advertised shortcuts pass ICE43/ICE57; both
-         target the exe by path. -->
+         target the exe by path. System.AppUserModel.ID matches the ID the Ui process sets at startup, so
+         a taskbar pin keeps grouping with the running window across a major-upgrade file swap. -->
     <Component Id="GuiShortcut" Directory="AgMenuFolder">
 <?if $(var.HasIcon) = "true" ?>
       <Shortcut Id="UiStartMenuShortcut"
@@ -162,26 +163,34 @@
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
                 Icon="AgIcon.ico" IconIndex="0"
-                WorkingDirectory="INSTALLFOLDER" />
+                WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
+      </Shortcut>
       <Shortcut Id="UiDesktopShortcut"
                 Directory="DesktopFolder"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
                 Icon="AgIcon.ico" IconIndex="0"
-                WorkingDirectory="INSTALLFOLDER" />
+                WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
+      </Shortcut>
 <?else?>
       <Shortcut Id="UiStartMenuShortcut"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
-                WorkingDirectory="INSTALLFOLDER" />
+                WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
+      </Shortcut>
       <Shortcut Id="UiDesktopShortcut"
                 Directory="DesktopFolder"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
-                WorkingDirectory="INSTALLFOLDER" />
+                WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
+      </Shortcut>
 <?endif?>
       <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"

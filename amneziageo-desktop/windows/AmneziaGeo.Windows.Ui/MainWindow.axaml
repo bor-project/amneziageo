@@ -724,7 +724,7 @@
                           <TextBlock Classes="label" Text="ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)" />
                           <Grid ColumnDefinitions="*,Auto">
                             <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
-                                             Watermark="напр. geosite:категория, geoip:страна, example.com, 1.2.3.0/24"
+                                             Watermark="напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24"
                                              Text="{Binding RuleInput, Mode=TwoWay}"
                                              ItemsSource="{Binding GeoSuggestions}"
                                              FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />

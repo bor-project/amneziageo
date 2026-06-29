@@ -286,6 +286,11 @@ internal sealed class TunnelRunner(
         if (applied)
         {
             _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, proxy, sessionCts.Token));
+            // Pre-install routes for the rule's hostnames so an app with a pre-tunnel cached IP is tunnelled without a DNS query (#67).
+            if (trackDomains && proxy is not null)
+            {
+                _ = Task.Run(() => SeedDomainRoutesAsync(name, proxy, sessionCts.Token));
+            }
         }
 
         // Per-app tunneling (#68): watch which processes own which connections and route the matched apps'
@@ -588,6 +593,32 @@ internal sealed class TunnelRunner(
         catch (OperationCanceledException)
         {
             // Tunnel went down before it came up; nothing to flush.
+        }
+    }
+
+    /// <summary>
+    /// Waits for the tunnel adapter, then proactively resolves the rule's hostnames through the tunnel
+    /// resolver and installs their /32 routes. Cancelled with the session if the tunnel is torn down first.
+    /// </summary>
+    private async Task SeedDomainRoutesAsync(string name, DnsProxy proxy, CancellationToken ct)
+    {
+        try
+        {
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (routes.FindInterfaceIndex(name) is not null)
+                {
+                    await proxy.SeedRoutesAsync(ct);
+                    return;
+                }
+
+                await Task.Delay(500, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using Microsoft.Extensions.Logging;
@@ -380,6 +381,89 @@ internal sealed class DnsProxy
         if (ips.Count > 0)
         {
             _tracker?.Update(name, ips);
+        }
+    }
+
+    /// <summary>
+    /// Proactively resolves the rule's resolvable hostnames through the tunnel resolver and installs their
+    /// routes, so an app holding a pre-tunnel cached IP is tunnelled without a DNS query reaching the proxy.
+    /// </summary>
+    public async Task SeedRoutesAsync(CancellationToken ct)
+    {
+        if (_tracker is null)
+        {
+            return;
+        }
+
+        var tracker = _tracker;
+        var hosts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in _domains)
+        {
+            if (entry.Kind is GeoDomainKind.Full or GeoDomainKind.Domain)
+            {
+                var host = entry.Value.Trim().Trim('.').ToLowerInvariant();
+                if (host.Length > 0)
+                {
+                    hosts.Add(host);
+                }
+            }
+        }
+
+        using var gate = new SemaphoreSlim(8);
+        await Task.WhenAll(hosts.Select(h => ResolveOneAsync(gate, tracker, h, ct)));
+    }
+
+    private async Task ResolveOneAsync(SemaphoreSlim gate, DomainTracker tracker, string host, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            for (var attempt = 0; attempt < 3 && !ct.IsCancellationRequested; attempt++)
+            {
+                if (attempt > 0)
+                {
+                    try
+                    {
+                        await Task.Delay(2000, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                }
+
+                try
+                {
+                    var ips = new List<IPAddress>();
+                    CollectAddresses(host, 1, ips);
+                    if (!_stripV6)
+                    {
+                        CollectAddresses(host, 28, ips);
+                    }
+
+                    if (ips.Count > 0)
+                    {
+                        tracker.Update(host, ips.Select(a => a.ToString()).ToList());
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private void CollectAddresses(string host, int type, List<IPAddress> ips)
+    {
+        var response = Forward(DnsMessage.BuildQuery(host, type), _tunnelUpstream);
+        foreach (var ip in DnsMessage.Addresses(response))
+        {
+            ips.Add(ip);
         }
     }
 }

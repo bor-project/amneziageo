@@ -38,6 +38,38 @@ internal static class DnsMessage
     }
 
     /// <summary>
+    /// Builds a minimal DNS A/AAAA query for <paramref name="name"/> (recursion desired), big-endian wire
+    /// format. Used to proactively resolve rule domains through the tunnel resolver.
+    /// </summary>
+    public static byte[] BuildQuery(string name, int type)
+    {
+        var labels = name.TrimEnd('.').Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var body = new List<byte>
+        {
+            0x12, 0x34, // id
+            0x01, 0x00, // flags: RD
+            0x00, 0x01, // qdcount
+            0x00, 0x00, // ancount
+            0x00, 0x00, // nscount
+            0x00, 0x00, // arcount
+        };
+
+        foreach (var label in labels)
+        {
+            var bytes = Encoding.ASCII.GetBytes(label);
+            body.Add((byte)bytes.Length);
+            body.AddRange(bytes);
+        }
+
+        body.Add(0);                       // root label
+        body.Add((byte)(type >> 8));
+        body.Add((byte)(type & 0xFF));
+        body.Add(0);
+        body.Add(1);                       // class IN
+        return [.. body];
+    }
+
+    /// <summary>
     /// Builds an empty NOERROR/NODATA response for a query (header + question only, no answers).
     /// Used to deny AAAA on an IPv4-only tunnel so clients never attempt dead IPv6 addresses.
     /// </summary>

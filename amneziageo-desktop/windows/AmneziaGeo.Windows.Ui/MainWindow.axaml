@@ -971,6 +971,14 @@
                                Text="⚠ Файл содержит приватные ключи. Храните и передавайте его безопасно." />
                   </StackPanel>
                   <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="ДУБЛИРОВАНИЕ" />
+                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                               Text="Создать независимую копию этого профиля - конфигурацию, прокси, гео и маршруты - под новым именем." />
+                    <Button Classes="softbtn" Content="Дублировать профиль" HorizontalAlignment="Left"
+                            Command="{Binding DuplicateOpenProfileCommand}"
+                            ToolTip.Tip="Создать копию профиля" />
+                  </StackPanel>
+                  <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="ИМПОРТ" />
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                                Text="Восстановить этот профиль из файла или буфера обмена. Импорт заменит текущий профиль целиком - его конфигурацию, прокси, гео и маршруты." />

@@ -91,6 +91,8 @@ internal sealed class AppRouteWatcher
         }
     }
 
+    internal bool MatchesPid(uint pid) => ResolveServicePids().Contains(pid) || MatchesByImage(pid);
+
     /// <summary>True when there is at least one matcher this watcher can act on.</summary>
     public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0;
 
@@ -281,7 +283,7 @@ internal sealed class AppRouteWatcher
     // the local DNS upstream), link-local and multicast. Routing any of those into the tunnel is wrong and
     // actively harmful, so they are filtered out before a /32 route or allowed-ip is ever created for them.
     // The table is queried AF_INET only; the v6 arms are kept for a future AF_INET6 pass.
-    private static bool IsTunnelableRemote(IPAddress addr)
+    internal static bool IsTunnelableRemote(IPAddress addr)
     {
         if (addr.AddressFamily == AddressFamily.InterNetwork)
         {

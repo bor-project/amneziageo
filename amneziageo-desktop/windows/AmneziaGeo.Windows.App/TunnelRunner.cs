@@ -308,6 +308,11 @@ internal sealed class TunnelRunner(
             if (watcher.HasMatchers)
             {
                 _ = Task.Run(() => watcher.RunAsync(sessionCts.Token));
+        // UDP complement (#77-udp): route matched apps' UDP datagrams through the tunnel so
+        // real-time media flows (e.g. Discord voice) whose server IPs arrive via signaling
+        // rather than DNS also land inside the split tunnel.
+        using var udpTracker = new UdpFlowTracker(watcher, tracker, loggerFactory.CreateLogger<UdpFlowTracker>());
+        _ = Task.Run(() => udpTracker.RunAsync(sessionCts.Token));
             }
         }
 

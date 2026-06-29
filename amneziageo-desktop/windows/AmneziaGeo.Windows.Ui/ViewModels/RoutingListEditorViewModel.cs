@@ -529,14 +529,58 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
     }
 
+    private static readonly string[] KnownPrefixes = ["geosite:", "geoip:", "domain:", "cidr:", "app:"];
+
     private static string Normalize(string text)
     {
-        if (text.Contains(':'))
+        var t = text.Trim();
+        if (t.Length == 0)
         {
-            return text;
+            return t;
         }
 
-        return text.Contains('/') ? $"cidr:{text}" : $"domain:{text}";
+        // A URL (scheme://...) is stripped to its host and routed as a domain. A bare "word:" without
+        // "//" is a known rule prefix (geosite:/geoip:/domain:/cidr:/app:) and is left untouched - the
+        // old "contains ':' -> already prefixed" check misread "https://..." as a prefixed token.
+        var schemeIdx = t.IndexOf("://", StringComparison.Ordinal);
+        if (schemeIdx >= 0)
+        {
+            return $"domain:{StripHost(t[(schemeIdx + 3)..])}";
+        }
+
+        if (HasKnownPrefix(t))
+        {
+            return t;
+        }
+
+        // A bare CIDR/IP keeps its "/" and goes to cidr:; anything else is a host -> domain:.
+        return t.Contains('/') ? $"cidr:{t}" : $"domain:{StripHost(t)}";
+    }
+
+    // Drops the leading "www." label and anything past the host (path, query, fragment, port) so a
+    // pasted URL or "www.example.com" becomes the bare registrable host.
+    private static string StripHost(string s)
+    {
+        if (s.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            s = s[4..];
+        }
+
+        var cut = s.AsSpan().IndexOfAny("/?#:".AsSpan());
+        return cut < 0 ? s : s[..cut];
+    }
+
+    private static bool HasKnownPrefix(string t)
+    {
+        foreach (var prefix in KnownPrefixes)
+        {
+            if (t.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

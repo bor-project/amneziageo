@@ -1738,8 +1738,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Duplicate the open profile into an independent copy (config + transport + geo + routing cloned under
-    // fresh names). On success the copy opens on the next snapshot, mirroring the "+ Профиль" create flow.
+    // Duplicate the open profile into an independent copy.
     [RelayCommand]
     private async Task DuplicateOpenProfile()
     {

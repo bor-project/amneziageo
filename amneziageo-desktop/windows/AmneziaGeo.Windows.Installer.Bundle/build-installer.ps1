@@ -27,13 +27,14 @@
   work.
 
   Usage (on the build machine):
-    pwsh -File build-installer.ps1 [-Configuration Release] [-Arch x64,arm64] [-SelfContained true,false] [-All] [-ListOnly]
+    pwsh -File build-installer.ps1 [-Configuration Release] [-Arch x64,arm64] [-SelfContained true,false] [-All] [-Rebuild] [-ListOnly]
 #>
 param(
-    [string]$Configuration = 'Release',
+    [string]$Configuration,
     [string[]]$Arch,
     [string[]]$SelfContained,
     [switch]$All,
+    [switch]$Rebuild,
     [switch]$ListOnly
 )
 
@@ -59,6 +60,14 @@ $baExeName = 'AmneziaGeo.Windows.Installer.exe'
 # their UI hidden); no signingCert => the outputs are left unsigned. ----
 $cfgPath = Join-Path $bundleDir 'installer.config.json'
 $cfg = if (Test-Path $cfgPath) { Get-Content $cfgPath -Raw | ConvertFrom-Json } else { $null }
+
+# ---- configuration (Debug/Release) and rebuild flag: config -> build.{configuration,rebuild},
+# overridden by -Configuration / -Rebuild. ----
+$cfgConfig = if ($cfg -and $cfg.build -and $cfg.build.configuration) { [string]$cfg.build.configuration } else { 'Release' }
+$cfgRebuild = if ($cfg -and $cfg.build -and $null -ne $cfg.build.rebuild) { [bool]$cfg.build.rebuild } else { $false }
+$Configuration = if ($Configuration) { $Configuration } else { $cfgConfig }
+$rebuild = [bool]$Rebuild -or $cfgRebuild
+if ($Configuration -notin @('Debug', 'Release')) { throw "Invalid Configuration '$Configuration' (expected Debug or Release)." }
 
 $updateUrl = if ($cfg -and $cfg.updateUrl) { [string]$cfg.updateUrl } else { '' }
 
@@ -127,7 +136,7 @@ Write-Host "== build matrix: $($variants.Count) variant(s) =="
 foreach ($v in $variants) {
     Write-Host ("   - win-{0} {1}" -f $v.Arch, $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
 }
-Write-Host "== config: icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); defaultDb=$(if ($hasDb -eq 'true') { $dbAbs } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+Write-Host "== config: configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); defaultDb=$(if ($hasDb -eq 'true') { $dbAbs } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
 if ($ListOnly) { return }
 
 # ---- Authenticode signing (installer.config.json -> signingCert). Off unless signingCert is set. ----
@@ -221,6 +230,14 @@ function Build-Variant {
     $kind  = if ($SelfContained) { 'self-contained' } else { 'framework-dependent' }
     Write-Host ''
     Write-Host "########## variant win-$Arch ($kind) ##########"
+
+    # ---- 0. clean all projects before building (rebuild flag) ----
+    if ($rebuild) {
+        Write-Host "== clean projects (rebuild) =="
+        foreach ($p in @($appProj, $uiProj, $baProj, $msiProj, $bundleProj)) {
+            dotnet clean $p -c $Configuration -p:Platform=$Arch -v q -nologo 2>$null
+        }
+    }
 
     # ---- 1. stage the publish (App first, UI second, same folder) ----
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }

@@ -1118,6 +1118,16 @@
                     </Grid>
                     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
+                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
+                        <TextBlock Text="Весь UDP через туннель (при выборочной маршрутизации)" FontSize="13.5" />
+                        <TextBlock Text="Заворачивает в туннель назначения ВСЕХ исходящих UDP-датаграмм, пока активна выборочная маршрутизация. Нужно для real-time медиа (например, голос Discord), чьи адреса серверов приходят сигналингом, а не через DNS, поэтому правила их не ловят. Локальная сеть и сам канал туннеля исключаются. По умолчанию выключено."
+                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding TunnelAllUdp, Mode=TwoWay}" />
+                    </Grid>
+                    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
                     <TextBlock Classes="label" Text="ДОБАВИТЬ БАЗУ" />
                     <Grid ColumnDefinitions="Auto,*,Auto">
                       <ComboBox Grid.Column="0" Classes="field" Width="118" Margin="0,0,8,0"

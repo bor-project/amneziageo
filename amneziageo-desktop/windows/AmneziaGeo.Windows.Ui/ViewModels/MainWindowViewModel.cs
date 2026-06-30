@@ -246,6 +246,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _blockEncryptedDns;
 
+    // #77-udp: route ALL UDP through the tunnel while in split mode - a catch-all for real-time media
+    // (e.g. Discord voice) whose server IPs arrive via signaling, not DNS. Off by default.
+    [ObservableProperty]
+    private bool _tunnelAllUdp;
+
 
     [ObservableProperty]
     private int _geoCheckIntervalHours = 24;
@@ -1023,6 +1028,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _suppressSettingPush = true;
         GeoAutoCheck = snapshot.GeoAutoCheck;
         BlockEncryptedDns = snapshot.BlockEncryptedDns;
+        TunnelAllUdp = snapshot.TunnelAllUdp;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         _suppressSettingPush = false;
@@ -1145,6 +1151,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("block-encrypted-dns", value);
+        }
+    }
+
+    partial void OnTunnelAllUdpChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("tunnel-all-udp", value);
         }
     }
 

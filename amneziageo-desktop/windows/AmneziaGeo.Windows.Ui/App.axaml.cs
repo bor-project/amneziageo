@@ -78,7 +78,7 @@ public sealed partial class App : Application
             };
 
             SetUpTrayIcon();
-            // Recolour the tray icon whenever the connection state changes (green/amber/grey).
+            // Recolour the tray icon whenever the connection state changes (blue/amber/grey).
             viewModel.PropertyChanged += OnViewModelPropertyChanged;
             viewModel.Start();
         }

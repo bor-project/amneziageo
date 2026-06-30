@@ -8,7 +8,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// </summary>
 internal static class StatusLabels
 {
-    private static readonly IBrush _green = new SolidColorBrush(Color.FromRgb(0x2E, 0xA0, 0x43));
+    private static readonly IBrush _blue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _amber = new SolidColorBrush(Color.FromRgb(0xC8, 0x7A, 0x00));
     private static readonly IBrush _red = new SolidColorBrush(Color.FromRgb(0xC0, 0x39, 0x2B));
     private static readonly IBrush _gray = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
@@ -37,7 +37,7 @@ internal static class StatusLabels
     {
         return status switch
         {
-            ConnectionStatus.Connected => _green,
+            ConnectionStatus.Connected => _blue,
             ConnectionStatus.Connecting or ConnectionStatus.Disconnecting => _amber,
             ConnectionStatus.Failed => _red,
             _ => _gray,

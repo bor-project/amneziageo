@@ -70,4 +70,13 @@ internal sealed record AppSettings
     /// DNS and can break apps with no Do53 fallback, so it is an explicit opt-in.
     /// </summary>
     public bool BlockEncryptedDns { get; init; }
+
+    /// <summary>
+    /// When set (and the tunnel is in split mode), every outbound UDP datagram's destination is routed
+    /// through the tunnel - a catch-all for real-time media (e.g. Discord voice) whose server IPs arrive via
+    /// app-layer signaling, not DNS, so split rules never capture them. Off by default. Implemented by the
+    /// ETW UDP tracker running WITHOUT its per-app PID filter; the tunnel's own underlay endpoint is excluded
+    /// so the WG transport never loops back into the tunnel.
+    /// </summary>
+    public bool TunnelAllUdp { get; init; }
 }

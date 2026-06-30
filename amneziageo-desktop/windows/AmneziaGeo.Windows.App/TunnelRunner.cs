@@ -158,6 +158,11 @@ internal sealed class TunnelRunner(
 
         var appSettings = await settings.LoadAsync();
 
+        // Wrap ALL UDP through the tunnel (#77-udp): split-only catch-all for real-time media whose server
+        // IPs arrive via signaling, not DNS. Drives the ETW UDP tracker's no-PID-filter mode below. In full
+        // tunnel everything is already routed, so it is a no-op there.
+        var allUdp = geoSplit && appSettings.TunnelAllUdp;
+
         // Capture the resolvers the system uses now, before redirecting, so the proxy can forward
         // NON-tunneled queries to them - keeps corporate/existing name resolution working alongside
         // another VPN. The loopback proxy always runs (split AND full): on this IPv4-only tunnel it
@@ -209,7 +214,7 @@ internal sealed class TunnelRunner(
         // by the DNS path (matched domains) and the app route watcher (matched apps), so create it once when
         // either is active and hand it to both - two independent SetAllowedIps owners would clobber.
         DomainTracker? tracker = null;
-        if (trackDomains || trackApps)
+        if (trackDomains || trackApps || allUdp)
         {
             var peer = WgConfigEditor.GetPeerPublicKey(config);
             if (peer is not null)
@@ -302,21 +307,29 @@ internal sealed class TunnelRunner(
         // Per-app tunneling (#68): watch which processes own which connections and route the matched apps'
         // remote IPs through the tunnel (DNS-path-independent, so it covers DoH/DoT apps). Feeds the shared
         // tracker created above; cancelled with the session on teardown.
+        // App route watcher (TCP table) only when there are app matchers - it pins matched apps' TCP remote
+        // IPs; the ETW UDP tracker below complements it for UDP.
+        AppRouteWatcher? watcher = null;
         if (trackApps && tracker is not null)
         {
-            var watcher = new AppRouteWatcher(tracker, apps, loggerFactory.CreateLogger<AppRouteWatcher>());
-            if (watcher.HasMatchers)
+            var candidate = new AppRouteWatcher(tracker, apps, loggerFactory.CreateLogger<AppRouteWatcher>());
+            if (candidate.HasMatchers)
             {
+                watcher = candidate;
                 _ = Task.Run(() => watcher.RunAsync(sessionCts.Token));
-
-                // UDP complement (#77-udp): route matched apps' UDP datagrams through the tunnel so
-                // real-time media flows (e.g. Discord voice) whose server IPs arrive via signaling rather
-                // than DNS also land inside the split tunnel. Its lifetime is the session (stopped via
-                // sessionCts on teardown) - NOT a `using` here, which would dispose the tracker at the end
-                // of this if-block and race the Task.Run that has only just scheduled it.
-                var udpTracker = new UdpFlowTracker(watcher, tracker, loggerFactory.CreateLogger<UdpFlowTracker>());
-                _ = Task.Run(() => udpTracker.RunAsync(sessionCts.Token));
             }
+        }
+
+        // UDP complement (#77-udp): route UDP datagrams through the tunnel whose server IPs arrive via
+        // signaling rather than DNS (e.g. Discord voice). Needed when tunneling matched apps' UDP (uses the
+        // watcher's PID match) OR when wrapping ALL UDP (allUdp, no watcher). Its lifetime is the session
+        // (stopped via sessionCts on teardown) - NOT a `using`, which would dispose it at end of scope and
+        // race the Task.Run that has only just scheduled it. The underlay endpoint is excluded so the WG
+        // transport never loops into the tunnel.
+        if (tracker is not null && (watcher is not null || allUdp))
+        {
+            var udpTracker = new UdpFlowTracker(watcher, tracker, allUdp, endpoint, loggerFactory.CreateLogger<UdpFlowTracker>());
+            _ = Task.Run(() => udpTracker.RunAsync(sessionCts.Token));
         }
 
         // Start the WebSocket transport last and redirect the endpoint to its loopback port. Done here,

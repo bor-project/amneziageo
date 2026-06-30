@@ -1755,7 +1755,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.GeoCheckIntervalHours,
             control.ConnectFailed,
             AppSettings.EngineVersion,
-            settings.BlockEncryptedDns);
+            settings.BlockEncryptedDns,
+            settings.TunnelAllUdp);
     }
 
     /// <summary>

@@ -26,16 +26,26 @@ internal sealed class UdpFlowTracker : IDisposable
     private const int PidOffset = 0;
     private const int RemoteAddrOffset = 8;
     private const int MinPayloadBytes = RemoteAddrOffset + 4;
+    // Our own service process - the in-process WG engine's underlay UDP (and the loopback DNS proxy's
+    // upstream queries) come from here and must never be tunneled in all-UDP mode (would loop the transport).
+    private static readonly uint OwnProcessId = (uint)Environment.ProcessId;
 
-    private readonly AppRouteWatcher _watcher;
+    private readonly AppRouteWatcher? _watcher;
     private readonly DomainTracker _tracker;
+    private readonly bool _allUdp;
+    private readonly IPAddress? _excludeEndpoint;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
 
-    public UdpFlowTracker(AppRouteWatcher watcher, DomainTracker tracker, ILogger logger)
+    /// <param name="watcher">Per-app PID matcher; may be null in all-UDP mode (the PID gate is bypassed).</param>
+    /// <param name="allUdp">When true, tunnel EVERY process's UDP destinations, not just matched apps' (#77-udp).</param>
+    /// <param name="excludeEndpoint">The tunnel's own underlay server IP, never tunneled (avoids a transport loop).</param>
+    public UdpFlowTracker(AppRouteWatcher? watcher, DomainTracker tracker, bool allUdp, IPAddress? excludeEndpoint, ILogger logger)
     {
         _watcher = watcher;
         _tracker = tracker;
+        _allUdp = allUdp;
+        _excludeEndpoint = excludeEndpoint;
         _logger = logger;
     }
 
@@ -93,9 +103,21 @@ internal sealed class UdpFlowTracker : IDisposable
                 return;
             }
 
-            // Owning process is the payload PID field (offset 0), not the ETW header PID.
+            // Owning process is the payload PID field (offset 0), not the ETW header PID. In all-UDP mode
+            // every process's UDP is tunneled EXCEPT our own; otherwise only matched apps' (by PID).
             var pid = BitConverter.ToUInt32(data, PidOffset);
-            if (!_watcher.MatchesPid(pid))
+            if (_allUdp)
+            {
+                // Never tunnel our OWN process's UDP. The in-process WG engine sends the plain-UDP underlay
+                // to the server; pinning that to the tunnel it carries is a fatal loop - and keying on the PID
+                // (not the endpoint IP) is robust against a round-robin endpoint that resolves to several IPs.
+                // The loopback DNS proxy's upstream queries run from here too and need no tunneling.
+                if (pid == OwnProcessId)
+                {
+                    return;
+                }
+            }
+            else if (_watcher is null || !_watcher.MatchesPid(pid))
             {
                 return;
             }
@@ -103,6 +125,15 @@ internal sealed class UdpFlowTracker : IDisposable
             // daddr is the IPv4 destination in network byte order - read the 4 bytes straight into IPAddress
             // (do not BitConverter it, which would byte-swap on a little-endian host).
             var remoteIp = new IPAddress(new ReadOnlySpan<byte>(data, RemoteAddrOffset, 4).ToArray());
+
+            // Never tunnel the WG underlay's own datagrams to the server endpoint: that would route the
+            // transport into the tunnel it carries (a loop). Matters in all-UDP mode, where the engine's
+            // plain-UDP send to the real server would otherwise be captured and pinned to the tunnel.
+            if (_excludeEndpoint is not null && remoteIp.Equals(_excludeEndpoint))
+            {
+                return;
+            }
+
             if (!AppRouteWatcher.IsTunnelableRemote(remoteIp))
             {
                 return;

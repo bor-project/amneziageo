@@ -29,4 +29,6 @@ public sealed record StatusSnapshot(
     // version. Empty when the build could not resolve it.
     string EngineVersion = "",
     // When set, the agent neutralizes encrypted DNS (DoT/DoH) while a tunnel is up (#69).
-    bool BlockEncryptedDns = false);
+    bool BlockEncryptedDns = false,
+    // When set, all UDP is routed through the tunnel while in split mode (#77-udp).
+    bool TunnelAllUdp = false);

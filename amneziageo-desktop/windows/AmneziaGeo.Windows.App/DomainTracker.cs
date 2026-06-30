@@ -28,6 +28,24 @@ internal sealed class DomainTracker(
     // bound.
     private readonly HashSet<string> _appIps = [];
     private uint? _interfaceIndex;
+    private readonly TaskCompletionSource _warmStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Completes once the DB-cache warm start has been applied. The eager route seeder awaits this and then
+    /// resolves ONLY domains the cache did not already restore, so a reconnect with a warm cache issues no
+    /// up-front DNS at all.
+    /// </summary>
+    public Task WarmStartCompleted => _warmStart.Task;
+
+    /// <summary>True when a domain's resolution is already known (restored from cache or resolved before).</summary>
+    public bool IsTracked(string domain)
+    {
+        var key = domain.TrimEnd('.').ToLowerInvariant();
+        lock (_lock)
+        {
+            return _current.ContainsKey(key);
+        }
+    }
 
     /// <summary>
     /// Applies a domain's resolved IPs: routes new ones, drops stale ones, replaces allowed IPs, and persists.
@@ -126,7 +144,10 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Waits for the tunnel adapter, applies saved resolutions, then re-resolves periodically.
+    /// Waits for the tunnel adapter, applies the cached resolutions in one push (warm start), then
+    /// re-resolves periodically. Eager up-front resolution of the whole rule set is intentionally NOT done
+    /// here - the warm cache covers known domains, the live DNS path covers visited ones on demand, and
+    /// <see cref="DnsProxy.SeedRoutesAsync"/> (after <see cref="WarmStartCompleted"/>) resolves only the rest.
     /// </summary>
     public async Task RunAsync()
     {
@@ -137,9 +158,13 @@ internal sealed class DomainTracker(
                 await Task.Delay(500);
             }
 
-            foreach (var resolution in await store.ListDomainResolutionsAsync(tunnelName))
+            try
             {
-                Update(resolution.Domain, resolution.Ips);
+                SeedFromCache(await store.ListDomainResolutionsAsync(tunnelName));
+            }
+            finally
+            {
+                _warmStart.TrySetResult();
             }
 
             while (true)
@@ -150,7 +175,47 @@ internal sealed class DomainTracker(
         }
         catch (Exception ex)
         {
+            _warmStart.TrySetResult();
             logger.LogError(ex, "domain tracker for {Tunnel} stopped", tunnelName);
+        }
+    }
+
+    /// <summary>
+    /// Warm-start application of the DB cache: installs the /32 route for every cached IP and advertises the
+    /// whole set to the peer in a SINGLE allowed-ips replace - O(1) UAPI round-trips instead of one per
+    /// cached domain - and populates <c>_current</c> so the on-demand path and the route seeder can tell
+    /// which domains are already known. No-op when the cache is empty (the static set is already on the
+    /// device from the engine's initial config).
+    /// </summary>
+    public void SeedFromCache(IReadOnlyList<DomainResolution> cached)
+    {
+        if (cached.Count == 0)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var index = EnsureIndex();
+            if (index is null)
+            {
+                return;
+            }
+
+            foreach (var resolution in cached)
+            {
+                var key = resolution.Domain.TrimEnd('.').ToLowerInvariant();
+                var effective = stripV6 ? resolution.Ips.Where(ip => !ip.Contains(':')) : resolution.Ips;
+                var set = new HashSet<string>(effective);
+                foreach (var ip in set)
+                {
+                    routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value);
+                }
+
+                _current[key] = set;
+            }
+
+            uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
         }
     }
 

@@ -396,17 +396,30 @@ internal sealed class DnsProxy
         }
 
         var tracker = _tracker;
+
+        // Wait for the DB-cache warm start, then resolve ONLY the rule hosts it did not already restore. A
+        // reconnect with a populated cache thus issues no eager DNS at all; a cold cache resolves each host
+        // once, which repopulates the cache for next time. Domains the user actually visits are resolved on
+        // demand by the live proxy path regardless, so this is purely a best-effort pre-seed for apps that
+        // hold a pre-tunnel cached IP and never re-query (#67).
+        await tracker.WarmStartCompleted.WaitAsync(ct);
+
         var hosts = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in _domains)
         {
             if (entry.Kind is GeoDomainKind.Full or GeoDomainKind.Domain)
             {
                 var host = entry.Value.Trim().Trim('.').ToLowerInvariant();
-                if (host.Length > 0)
+                if (host.Length > 0 && !tracker.IsTracked(host))
                 {
                     hosts.Add(host);
                 }
             }
+        }
+
+        if (hosts.Count == 0)
+        {
+            return;
         }
 
         using var gate = new SemaphoreSlim(8);

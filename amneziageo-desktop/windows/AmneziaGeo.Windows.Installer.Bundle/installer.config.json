@@ -1,7 +1,9 @@
 {
   "build": {
     "arch": ["x64"],
-    "selfContained": [false]
+    "selfContained": [false],
+    "configuration": "Release",
+    "rebuild": true
   },
   "iconPath": "../AmneziaGeo.Windows.Ui/Assets/AmneziaGeo.ico",
   "updateUrl": null,

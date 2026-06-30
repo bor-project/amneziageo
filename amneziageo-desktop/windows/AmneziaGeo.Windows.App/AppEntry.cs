@@ -57,10 +57,16 @@ public static class AppEntry
     private static async Task EnsureStoreAsync(IServiceProvider services)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(TunnelPaths.StateDbFile())!);
-        await services.GetRequiredService<IStateStore>().InitializeAsync();
+        var store = services.GetRequiredService<IStateStore>();
+        await store.InitializeAsync();
 
         // One-time: pull any legacy on-disk wg-quick files (Configurations\*.conf, from before configs
         // lived in the database) into the database. Idempotent and cheap once everything is migrated.
         await services.GetRequiredService<ConfigRepository>().MigrateLegacyConfigsAsync();
+
+        // One-time (#87): move per-config DNS/exclusions and the global all-UDP onto the routing list each
+        // profile is assigned, so the routing preset owns its traffic settings. Idempotent (skips lists that
+        // already carry settings) and behaviour-neutral (the tunnel reads the same values).
+        await store.MigrateConfigSettingsToRoutingAsync();
     }
 }

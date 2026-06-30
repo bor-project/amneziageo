@@ -63,6 +63,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         proj_routes_json  TEXT NOT NULL DEFAULT '[]',
                         proj_domains_json TEXT NOT NULL DEFAULT '[]',
                         proj_apps_json    TEXT NOT NULL DEFAULT '[]',
+                        proj_routing_list_id INTEGER,
                         updated_at        TEXT NOT NULL
                     );
 
@@ -159,6 +160,15 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at TEXT NOT NULL,
                         UNIQUE (list_id, position)
                     );
+
+                    CREATE TABLE IF NOT EXISTS routing_settings (
+                        list_id    INTEGER PRIMARY KEY REFERENCES routing_lists(id) ON DELETE CASCADE,
+                        local_dns  TEXT NOT NULL DEFAULT '',
+                        exclusions TEXT NOT NULL DEFAULT '',
+                        all_udp    INTEGER NOT NULL DEFAULT 0,
+                        mode       TEXT NOT NULL DEFAULT 'split',
+                        updated_at TEXT NOT NULL
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -184,6 +194,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // active projection. The own set-geo path derives apps from rules_json, so only the projection
             // (which carries no rules) needs its own column.
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_apps_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+
+            // The routing list a live projection came from (#87/#89), so the running tunnel can resolve the
+            // list's traffic settings (local DNS / exclusions / all-UDP). NULL for full-tunnel / no-list.
+            await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routing_list_id INTEGER;", ct).ConfigureAwait(false);
 
             // HTTP validators for the geo-list update-check: captured at download time so a later check
             // can issue a conditional request and learn whether the remote file changed without re-fetching it.
@@ -428,7 +442,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, CancellationToken ct = default)
+    public async Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -442,21 +456,23 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 // never lists them, so a config's own set-geo split is preserved untouched.
                 command.CommandText =
                     """
-                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, updated_at)
-                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $apps, $updated)
+                    INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, proj_routing_list_id, updated_at)
+                    VALUES ($name, 0, '[]', '[]', '[]', 1, $split, $routes, $domains, $apps, $list, $updated)
                     ON CONFLICT(name) DO UPDATE SET
-                        projected         = 1,
-                        proj_split        = excluded.proj_split,
-                        proj_routes_json  = excluded.proj_routes_json,
-                        proj_domains_json = excluded.proj_domains_json,
-                        proj_apps_json    = excluded.proj_apps_json,
-                        updated_at        = excluded.updated_at;
+                        projected            = 1,
+                        proj_split           = excluded.proj_split,
+                        proj_routes_json     = excluded.proj_routes_json,
+                        proj_domains_json    = excluded.proj_domains_json,
+                        proj_apps_json       = excluded.proj_apps_json,
+                        proj_routing_list_id = excluded.proj_routing_list_id,
+                        updated_at           = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", name);
                 command.Parameters.AddWithValue("$split", split ? 1 : 0);
                 command.Parameters.AddWithValue("$routes", JsonSerializer.Serialize(routes));
                 command.Parameters.AddWithValue("$domains", JsonSerializer.Serialize(domains));
                 command.Parameters.AddWithValue("$apps", JsonSerializer.Serialize(apps));
+                command.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -479,17 +495,40 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     UPDATE tunnel_geo
-                    SET projected         = 0,
-                        proj_split        = 0,
-                        proj_routes_json  = '[]',
-                        proj_domains_json = '[]',
-                        proj_apps_json    = '[]',
-                        updated_at        = $updated
+                    SET projected            = 0,
+                        proj_split           = 0,
+                        proj_routes_json     = '[]',
+                        proj_domains_json    = '[]',
+                        proj_apps_json       = '[]',
+                        proj_routing_list_id = NULL,
+                        updated_at           = $updated
                     WHERE name = $name;
                     """;
                 command.Parameters.AddWithValue("$name", name);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<long?> GetActiveRoutingListIdAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                // Only a LIVE projection (projected = 1) names an active routing list; the config's own
+                // set-geo split has no list. NULL proj_routing_list_id = full-tunnel / no-list projection.
+                command.CommandText = "SELECT proj_routing_list_id FROM tunnel_geo WHERE name = $name AND projected = 1;";
+                command.Parameters.AddWithValue("$name", name);
+
+                var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                return result is null or DBNull ? null : Convert.ToInt64(result, CultureInfo.InvariantCulture);
             }
         }
     }
@@ -1706,6 +1745,15 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     await deleteRules.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
+                var deleteSettings = connection.CreateCommand();
+                await using (deleteSettings.ConfigureAwait(false))
+                {
+                    deleteSettings.Transaction = transaction;
+                    deleteSettings.CommandText = "DELETE FROM routing_settings WHERE list_id = $id;";
+                    deleteSettings.Parameters.AddWithValue("$id", id);
+                    await deleteSettings.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
                 var deleteList = connection.CreateCommand();
                 await using (deleteList.ConfigureAwait(false))
                 {
@@ -1716,6 +1764,138 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 }
 
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoutingSettings?> GetRoutingSettingsAsync(long routingListId, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT local_dns, exclusions, all_udp, mode FROM routing_settings WHERE list_id = $id;";
+                command.Parameters.AddWithValue("$id", routingListId);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    return new RoutingSettings(routingListId, reader.GetString(0), reader.GetString(1), reader.GetInt32(2) != 0, reader.GetString(3));
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetRoutingSettingsAsync(RoutingSettings settings, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    INSERT INTO routing_settings (list_id, local_dns, exclusions, all_udp, mode, updated_at)
+                    VALUES ($id, $dns, $excl, $udp, $mode, $updated)
+                    ON CONFLICT(list_id) DO UPDATE SET
+                        local_dns  = excluded.local_dns,
+                        exclusions = excluded.exclusions,
+                        all_udp    = excluded.all_udp,
+                        mode       = excluded.mode,
+                        updated_at = excluded.updated_at;
+                    """;
+                command.Parameters.AddWithValue("$id", settings.ListId);
+                command.Parameters.AddWithValue("$dns", settings.LocalDns);
+                command.Parameters.AddWithValue("$excl", settings.Exclusions);
+                command.Parameters.AddWithValue("$udp", settings.AllUdp ? 1 : 0);
+                command.Parameters.AddWithValue("$mode", settings.Mode);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM routing_settings WHERE list_id = $id;";
+                command.Parameters.AddWithValue("$id", routingListId);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task MigrateConfigSettingsToRoutingAsync(CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            // The legacy global all-UDP flag (now per-routing-list). Default off.
+            var globalAllUdp = 0;
+            var readUdp = connection.CreateCommand();
+            await using (readUdp.ConfigureAwait(false))
+            {
+                readUdp.CommandText = "SELECT value FROM settings WHERE key = 'tunnel-all-udp';";
+                if (await readUdp.ExecuteScalarAsync(ct).ConfigureAwait(false) is string v
+                    && (v.Equals("true", StringComparison.OrdinalIgnoreCase) || v == "1"
+                        || v.Equals("on", StringComparison.OrdinalIgnoreCase) || v.Equals("yes", StringComparison.OrdinalIgnoreCase)))
+                {
+                    globalAllUdp = 1;
+                }
+            }
+
+            // Seed each assigned routing list's settings from its member config's DNS/exclusions plus the
+            // global all-UDP, but only for lists that have no settings row yet (NOT EXISTS) - so re-running is
+            // a no-op. One member per list (GROUP BY routing_list_id; first wins on a list shared across
+            // configs). An all-default tuple inserts nothing, keeping "no row = defaults".
+            var migrate = connection.CreateCommand();
+            await using (migrate.ConfigureAwait(false))
+            {
+                migrate.CommandText =
+                    """
+                    INSERT INTO routing_settings (list_id, local_dns, exclusions, all_udp, mode, updated_at)
+                    SELECT b.routing_list_id,
+                           COALESCE(d.servers, ''),
+                           COALESCE(x.exclusions, ''),
+                           $udp,
+                           'split',
+                           $now
+                    FROM (SELECT routing_list_id, member FROM balancers
+                          WHERE routing_list_id IS NOT NULL
+                          GROUP BY routing_list_id) b
+                    LEFT JOIN config_dns d ON d.name = b.member
+                    LEFT JOIN config_exclusions x ON x.name = b.member
+                    WHERE NOT EXISTS (SELECT 1 FROM routing_settings rs WHERE rs.list_id = b.routing_list_id)
+                      AND (COALESCE(d.servers, '') <> '' OR COALESCE(x.exclusions, '') <> '' OR $udp = 1);
+                    """;
+                migrate.Parameters.AddWithValue("$udp", globalAllUdp);
+                migrate.Parameters.AddWithValue("$now", Timestamp());
+                await migrate.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
     }

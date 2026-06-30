@@ -264,6 +264,11 @@ internal sealed class BalancerRunner(
     {
         if (await store.GetBalancerAsync(profile, ct) is null)
         {
+            // No profile drives this connect (a bare-config target: legacy set-profile <config> / a seed
+            // --agent target). Clear any projection a previous connect left on this config so it reverts to
+            // its own set-geo and a stale proj_routing_list_id does not leak a dead routing list's DNS /
+            // exclusions / all-UDP into this tunnel (#89).
+            await store.ClearTunnelProjectionAsync(config, ct);
             return;
         }
 
@@ -285,7 +290,7 @@ internal sealed class BalancerRunner(
             return;
         }
 
-        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, ct);
+        await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, list.Id, ct);
         logger.LogInformation("projected routing list '{List}' to {Config}", list.Name, config);
     }
 
@@ -295,7 +300,7 @@ internal sealed class BalancerRunner(
         // AllowedIpsResolver falls back to the config's own AllowedIPs (0.0.0.0/0, ::/0) = full tunnel.
         // Making the projection authoritative means the routing toggle overrides any config set-geo,
         // so turning routing off reliably switches to full tunnel instead of a leftover split.
-        await store.SaveTunnelProjectionAsync(config, false, [], [], [], ct);
+        await store.SaveTunnelProjectionAsync(config, false, [], [], [], null, ct);
         logger.LogInformation("projected full tunnel to {Config} (routing off)", config);
     }
 

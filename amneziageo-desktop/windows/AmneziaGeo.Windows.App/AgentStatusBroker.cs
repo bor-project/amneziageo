@@ -924,7 +924,18 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         // Optional 4th arg: the wstunnel host. Empty reuses the config's own Endpoint host.
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
-        await store.SetConfigTransportAsync(new ConfigTransport(args[0], on, host, port), ct);
+
+        // Optional 5th arg: the tunnel MTU (default 1420). Valid range: 576-1500.
+        var mtu = 1420;
+        if (args.Count > 4 && args[4].Trim().Length > 0)
+        {
+            if (!int.TryParse(args[4].Trim(), System.Globalization.CultureInfo.InvariantCulture, out mtu) || mtu is < 576 or > 1500)
+            {
+                return new IpcAck(false, "invalid MTU (576-1500)");
+            }
+        }
+
+        await store.SetConfigTransportAsync(new ConfigTransport(args[0], on, host, port, mtu), ct);
 
         // Transport rewrites the dial path (UDP -> loopback wstunnel); like a routing change it only
         // applies cleanly on a fresh tunnel. If the changed config is in the running target, flag a
@@ -1698,7 +1709,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0));
         }
 
         var balancers = new List<BalancerEntry>();

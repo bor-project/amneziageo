@@ -49,6 +49,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     private string _webSocketToken = string.Empty;
 
     [ObservableProperty]
+    private string _mtu = string.Empty;
+
+    [ObservableProperty]
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
@@ -57,12 +60,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(AgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort)
+    public ConfigTransportViewModel(AgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu)
     {
         _connection = connection;
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
+        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1420";
 
         // Split the stored address into the host plus its auth mode / inputs. Default the host field to
         // the config's own Endpoint host so the common case (wstunnel on the same server) needs no input.
@@ -142,13 +146,22 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
             }
 
             var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
+
+            // MTU: empty = default 1420. Validate 576-1500 before sending.
+            var mtuVal = Mtu.Trim();
+            if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
+            {
+                StatusMessage = "MTU: 576-1500 (пусто = 1420).";
+                return;
+            }
+
             // Fold the host + auth mode / inputs into the single stored address string. An empty value
             // means "reuse the Endpoint host" on the agent side, so collapse a bare host that equals the
             // config's own Endpoint host to empty; a URL form (auth present) is always sent verbatim.
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal]));
             StatusMessage = ack.Message;
         }
         finally

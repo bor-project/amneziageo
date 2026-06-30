@@ -416,13 +416,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // status and a hint beside it, tinted by state (disconnected / connecting / connected). ---
     private static readonly IBrush _stageOff = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xF7));
     private static readonly IBrush _stageConnecting = new SolidColorBrush(Color.FromRgb(0xFD, 0xF6, 0xEC));
-    private static readonly IBrush _stageConnected = new SolidColorBrush(Color.FromRgb(0xF0, 0xFA, 0xF4));
-    private static readonly IBrush _circleGreen = new SolidColorBrush(Color.FromRgb(0x1F, 0x9D, 0x57));
+    private static readonly IBrush _stageConnected = new SolidColorBrush(Color.FromRgb(0xF0, 0xF5, 0xFC));
+    private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
     private static readonly IBrush _circleBorderAmber = new SolidColorBrush(Color.FromRgb(0xF0, 0xD3, 0xA8));
     private static readonly IBrush _glyphGray = new SolidColorBrush(Color.FromRgb(0x7B, 0x81, 0x8D));
     private static readonly IBrush _glyphAmber = new SolidColorBrush(Color.FromRgb(0xE0, 0x90, 0x2F));
-    private static readonly IBrush _textGreen = new SolidColorBrush(Color.FromRgb(0x16, 0x7A, 0x44));
+    private static readonly IBrush _textBlue = new SolidColorBrush(Color.FromRgb(0x1A, 0x50, 0xB0));
     private static readonly IBrush _textAmber = new SolidColorBrush(Color.FromRgb(0xB8, 0x72, 0x1F));
     private static readonly IBrush _textGray = new SolidColorBrush(Color.FromRgb(0x5B, 0x61, 0x6E));
     private static readonly IBrush _hintBrush = new SolidColorBrush(Color.FromRgb(0x9A, 0xA0, 0xAB));
@@ -464,7 +464,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public IBrush ConnectStageBrush => ConnState switch { 2 => _stageConnected, 1 => _stageConnecting, _ => _stageOff };
 
     /// <summary>Power circle fill.</summary>
-    public IBrush ConnectCircleBrush => ConnState == 2 ? _circleGreen : Brushes.White;
+    public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
 
     /// <summary>Power circle border.</summary>
     public IBrush ConnectCircleBorderBrush => ConnState switch { 2 => Brushes.Transparent, 1 => _circleBorderAmber, _ => _circleBorderGray };
@@ -473,16 +473,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public IBrush ConnectCircleForeground => ConnState switch { 2 => Brushes.White, 1 => _glyphAmber, _ => _glyphGray };
 
     /// <summary>Status label colour in the power control.</summary>
-    public IBrush ConnectStatusBrush => ConnState switch { 2 => _textGreen, 1 => _textAmber, _ => _textGray };
+    public IBrush ConnectStatusBrush => ConnState switch { 2 => _textBlue, 1 => _textAmber, _ => _textGray };
 
     /// <summary>Hint label colour in the power control.</summary>
     public IBrush ConnectHintBrush => _hintBrush;
 
-    /// <summary>Disc colour for the tray icon: green connected, amber connecting/transient, grey off.
+    /// <summary>Disc colour for the tray icon: blue connected, amber connecting/transient, grey off.
     /// Single source for the tray tint so it tracks the on-screen power control's three states.</summary>
     public Color TrayStatusColor => ConnState switch
     {
-        2 => Color.FromRgb(0x1F, 0x9D, 0x57),
+        2 => Color.FromRgb(0x2A, 0x6F, 0xDB),
         1 => Color.FromRgb(0xE0, 0x90, 0x2F),
         _ => Color.FromRgb(0x7B, 0x81, 0x8D),
     };

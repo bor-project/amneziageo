@@ -159,13 +159,51 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnPlanComplete(object? sender, PlanCompleteEventArgs e)
     {
-        if (e.Status >= 0)
-        {
-            engine.Apply(WindowHandle);
-        }
-        else
+        if (e.Status < 0)
         {
             Finish(false, "Не удалось спланировать операцию.");
+            return;
+        }
+        if (!StopRunningApp())
+        {
+            Finish(false, "Не удалось остановить запущенное приложение AmneziaGeo. Закройте его и повторите.");
+            return;
+        }
+        engine.Apply(WindowHandle);
+    }
+
+    /// <summary>Kills any running AmneziaGeo.Windows.Ui.exe so the MSI can replace the file.
+    /// Returns true if no process is running or it was stopped; false if it could not be killed.</summary>
+    private static bool StopRunningApp()
+    {
+        try
+        {
+            var procs = Process.GetProcessesByName("AmneziaGeo.Windows.Ui");
+            if (procs.Length == 0)
+            {
+                return true;
+            }
+            foreach (var p in procs)
+            {
+                try
+                {
+                    p.CloseMainWindow();
+                    if (!p.WaitForExit(5000))
+                    {
+                        p.Kill();
+                        p.WaitForExit(5000);
+                    }
+                }
+                catch
+                {
+                    // best effort
+                }
+            }
+            return Process.GetProcessesByName("AmneziaGeo.Windows.Ui").Length == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 

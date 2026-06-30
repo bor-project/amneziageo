@@ -875,6 +875,12 @@
                         <TextBlock Text="Порт сервера (TLS):" VerticalAlignment="Center" />
                         <TextBox Width="90" Text="{Binding WebSocketPort}" />
                       </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="MTU туннеля:" VerticalAlignment="Center" />
+                        <TextBox Width="90" Text="{Binding Mtu}" />
+                        <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+                                   Text="576-1500. По умолчанию 1420. Понизить до 1280 при использовании WSS-прокси." />
+                      </StackPanel>
                       <StackPanel Spacing="2">
                         <TextBlock Text="Авторизация:" />
                         <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">

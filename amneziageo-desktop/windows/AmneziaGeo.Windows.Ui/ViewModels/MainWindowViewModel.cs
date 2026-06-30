@@ -755,7 +755,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // Seed the WebSocket (UDP-over-TCP) transport, preferred-DNS, and bypass-exclusions editors from the
         // opened config's current snapshot values.
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
-        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443);
+        ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0);
         ConfigDns = new ConfigDnsViewModel(_connection, value, item?.Dns ?? string.Empty);
         ConfigExclusions = new ConfigExclusionsViewModel(_connection, value, item?.Exclusions ?? string.Empty);
     }
@@ -1399,6 +1399,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.WebSocketPort = entry.WebSocketPort;
             existing.Dns = entry.Dns;
             existing.Exclusions = entry.Exclusions;
+            existing.Mtu = entry.Mtu;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];

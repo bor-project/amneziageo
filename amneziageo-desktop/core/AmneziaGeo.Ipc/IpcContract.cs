@@ -48,8 +48,9 @@ public static class IpcContract
 
     /// <summary>
     /// Command to set a config's WebSocket transport (carry the AmneziaWG UDP over TCP/TLS via wstunnel,
-    /// for networks that block UDP). Args: name, on/off, port (the wstunnel server's TLS port, e.g. 443),
-    /// and optional host (the wstunnel server hostname; empty reuses the config's own Endpoint host).
+    /// for networks that block UDP) and tunnel MTU override. Args: name, on/off, port (the wstunnel
+    /// server's TLS port, e.g. 443), optional host (the wstunnel server hostname; empty reuses the
+    /// config's own Endpoint host), optional mtu (integer; 0 = auto/driver default, or 1280 for WSS).
     /// Applies on the next connect.
     /// </summary>
     public const string OpSetWebSocket = "set-websocket";

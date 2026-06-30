@@ -21,11 +21,10 @@ internal sealed class TunnelRunner(
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
-    // Tunnel MTU forced while the WSS (wstunnel) transport is active. 1280 is the IPv6 minimum and
-    // leaves headroom for the WG (~80B) + TLS/WebSocket/TCP (~90B) overhead the WSS underlay adds, so an
-    // inner full-size segment still fits one physical 1500-byte segment and a single underlay loss does
-    // not stall a two-segment inner packet (#77).
-    private const int WsTunnelMtu = 1280;
+    // Tunnel MTU default: 1420 (the AmneziaWG driver default). When WSS is active and no per-config
+    // override is set, this value is used as-is - the user can lower it (e.g. 1280) if the WSS overhead
+    // causes fragmentation/loss (#77, #80).
+    private const int DefaultMtu = 1420;
 
     /// <summary>
     /// Loads the tunnel config and materialized geo set, then hands control to the native service loop. On
@@ -68,6 +67,9 @@ internal sealed class TunnelRunner(
         // loopback.
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
+
+        // Per-config MTU (#80): stored value is written to [Interface] MTU. Default 1420.
+        var effectiveMtu = transport?.Mtu > 0 ? transport.Mtu : DefaultMtu;
         string? wsHost = null;            // the wstunnel server host the WSS connection dials
         var wsPort = 0;                   // the wstunnel server TLS port
         var wsTargetPort = 0;             // server-side AmneziaWG UDP port = the original Endpoint's port
@@ -362,18 +364,12 @@ internal sealed class TunnelRunner(
             }
 
             config = WgConfigEditor.SetEndpoint(config, $"127.0.0.1:{wsTransport.LocalPort}");
-
-            // WSS carries the AmneziaWG UDP datagrams over TCP/TLS/WebSocket, adding ~90 bytes of
-            // framing on top of WG's own ~80-byte overhead, and the TCP underlay cannot fragment. At
-            // the default 1420 MTU an inner full-size segment (~1420) becomes ~1590 on the wire and
-            // spans two physical 1500-byte segments, so a single underlay loss stalls/retransmits the
-            // whole inner packet - the uncompensated-overhead gap behind the slow handshakes, choppy
-            // media and stalled sends measured over WSS (#77). Clamp the tunnel MTU to 1280 (the IPv6
-            // minimum, universally safe) while WSS is active so each inner segment fits one underlay
-            // segment; with WSS off the config keeps its own MTU (default 1420).
-            config = WgConfigEditor.SetMtu(config, WsTunnelMtu);
-            logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}, mtu -> {Mtu}", name, wsTransport.LocalPort, WsTunnelMtu);
+            logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}", name, wsTransport.LocalPort);
         }
+
+        // Apply the effective MTU (per-config override or the 1420 default) to the wg-quick config.
+        config = WgConfigEditor.SetMtu(config, effectiveMtu);
+        logger.LogInformation("mtu for {Name}: {Mtu}", name, effectiveMtu);
 
         try
         {

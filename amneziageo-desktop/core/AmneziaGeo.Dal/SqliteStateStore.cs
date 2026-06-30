@@ -67,21 +67,25 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     );
 
                     CREATE TABLE IF NOT EXISTS config_transport (
-                        name       TEXT PRIMARY KEY,
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name       TEXT NOT NULL UNIQUE,
                         use_ws     INTEGER NOT NULL DEFAULT 0,
                         ws_host    TEXT NOT NULL DEFAULT '',
                         ws_port    INTEGER NOT NULL DEFAULT 443,
+                        mtu        INTEGER NOT NULL DEFAULT 1420,
                         updated_at TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS config_dns (
-                        name       TEXT PRIMARY KEY,
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name       TEXT NOT NULL UNIQUE,
                         servers    TEXT NOT NULL DEFAULT '',
                         updated_at TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS config_exclusions (
-                        name             TEXT PRIMARY KEY,
+                        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name             TEXT NOT NULL UNIQUE,
                         exclusions       TEXT NOT NULL DEFAULT '',
                         auto_exclude_lan INTEGER NOT NULL DEFAULT 1,
                         updated_at       TEXT NOT NULL
@@ -188,6 +192,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // WebSocket transport host, added after the table shipped with only use_ws/ws_port.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
+
+            // Tunnel MTU (#80): default 1420, valid 576-1500. Written to [Interface] MTU.
+            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1420;", ct).ConfigureAwait(false);
         }
     }
 
@@ -545,7 +552,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT use_ws, ws_host, ws_port FROM config_transport WHERE name = $name;";
+                command.CommandText = "SELECT use_ws, ws_host, ws_port, mtu FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -556,7 +563,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2));
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3));
                 }
             }
         }
@@ -575,18 +582,20 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, updated_at)
-                    VALUES ($name, $use, $host, $port, $updated)
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, updated_at)
+                    VALUES ($name, $use, $host, $port, $mtu, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         use_ws     = excluded.use_ws,
                         ws_host    = excluded.ws_host,
                         ws_port    = excluded.ws_port,
+                        mtu        = excluded.mtu,
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", transport.Name);
                 command.Parameters.AddWithValue("$use", transport.UseWebSocket ? 1 : 0);
                 command.Parameters.AddWithValue("$host", transport.WebSocketHost);
                 command.Parameters.AddWithValue("$port", transport.WebSocketPort);
+                command.Parameters.AddWithValue("$mtu", transport.Mtu);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

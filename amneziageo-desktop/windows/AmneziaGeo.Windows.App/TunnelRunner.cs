@@ -160,10 +160,21 @@ internal sealed class TunnelRunner(
 
         var appSettings = await settings.LoadAsync();
 
+        // Routing-list settings (#87/#89): when an assigned routing list drives this connect (projected
+        // above with its id), the list's own DNS / exclusions / all-UDP are authoritative - the routing
+        // preset owns them. With no active list (full tunnel / config's own geo) or no settings row stored
+        // for it, fall back to the per-config values, i.e. the prior behaviour. So existing setups (no
+        // routing_settings rows yet) are unchanged; the list path engages only once settings are saved.
+        var activeRoutingListId = await store.GetActiveRoutingListIdAsync(name);
+        var routingSettings = activeRoutingListId is long activeListId
+            ? await store.GetRoutingSettingsAsync(activeListId)
+            : null;
+
         // Wrap ALL UDP through the tunnel (#77-udp): split-only catch-all for real-time media whose server
         // IPs arrive via signaling, not DNS. Drives the ETW UDP tracker's no-PID-filter mode below. In full
-        // tunnel everything is already routed, so it is a no-op there.
-        var allUdp = geoSplit && appSettings.TunnelAllUdp;
+        // tunnel everything is already routed, so it is a no-op there. Sourced from the active routing list
+        // when one is set, else the global app setting (legacy).
+        var allUdp = geoSplit && (routingSettings?.AllUdp ?? appSettings.TunnelAllUdp);
 
         // Capture the resolvers the system uses now, before redirecting, so the proxy can forward
         // NON-tunneled queries to them - keeps corporate/existing name resolution working alongside
@@ -174,18 +185,36 @@ internal sealed class TunnelRunner(
         // NON-tunneled names; empty falls back to what the system uses now. Tunneled (geo-matched) names keep
         // the clean tunnelResolver above, so this never weakens geo resolution. Per-config (moved off the
         // former global app setting) so each profile carries its own DNS.
-        var dnsOverride = await store.GetConfigDnsAsync(name);
-        var preferredDns = ParseDnsServers(dnsOverride?.Servers ?? string.Empty);
+        // Active routing list's local DNS wins; otherwise the per-config preferred DNS (empty = auto-detect).
+        var preferredDnsServers = routingSettings is not null
+            ? routingSettings.LocalDns
+            : (await store.GetConfigDnsAsync(name))?.Servers ?? string.Empty;
+        var preferredDns = ParseDnsServers(preferredDnsServers);
         // The real system/LAN resolver, captured regardless of any preferred-DNS override: LOCAL names
         // (the LAN, corporate, and user exclusion-list domains) must keep resolving HERE, not offshore -
         // this is what keeps the local network alive in full tunnel and fixes a preferred-DNS set to a
         // public resolver from swallowing local lookups.
         var lanResolvers = dns.CaptureUpstream();
         var upstream = preferredDns.Count > 0 ? preferredDns : lanResolvers;
-        // Per-config bypass list (moved off the former global setting), with the same defaulting as the old
-        // global: an empty list and auto-exclude-LAN on when the config has no stored exclusions yet.
-        var configExclusions = await store.GetConfigExclusionsAsync(name);
-        var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(configExclusions?.Exclusions ?? string.Empty);
+        // Bypass list: the active routing list's exclusions when one drives this connect (it owns them),
+        // else the per-config list. "No stored row" keeps the old defaulting (runtime default LAN floor);
+        // a stored row is authoritative (the user may pare it down). Routing lists are split, so the
+        // full-tunnel-only LAN floor below never engages for them - the floor matters on the config path.
+        string? storedExclusions;
+        bool hasStoredExclusions;
+        if (routingSettings is not null)
+        {
+            storedExclusions = routingSettings.Exclusions;
+            hasStoredExclusions = true;
+        }
+        else
+        {
+            var configExclusions = await store.GetConfigExclusionsAsync(name);
+            storedExclusions = configExclusions?.Exclusions;
+            hasStoredExclusions = configExclusions is not null;
+        }
+
+        var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(storedExclusions ?? string.Empty);
         var exclusionDomains = new List<string>(parsedExclusionDomains);
         // Treat the network's own DNS suffix(es) - the corp/LAN domain DHCP advertises - as local, so a
         // corporate host published under a public-looking FQDN via split-horizon DNS (mail.company.com -> an
@@ -217,7 +246,7 @@ internal sealed class TunnelRunner(
         // at runtime, never stored: with no exclusions row it is what keeps the LAN direct in full tunnel, so
         // it always matches the network the host is on right now. Once the user saves a row, that list is
         // authoritative (they can pare it down - even drop the LAN ranges - or extend it).
-        var exclusionCidrs = configExclusions is null
+        var exclusionCidrs = !hasStoredExclusions
             ? new List<string>(routes.DefaultExclusionEntries())
             : new List<string>(parsedCidrs);
 

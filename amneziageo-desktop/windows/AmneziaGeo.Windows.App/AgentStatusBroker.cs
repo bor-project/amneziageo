@@ -266,6 +266,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
                 IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
+                IpcContract.OpSetRoutingSettings => await SetRoutingSettingsAsync(command.Args, ct),
+                IpcContract.OpGetRoutingSettings => await GetRoutingSettingsAsync(command.Args, ct),
                 IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
                 IpcContract.OpSetConnection => SetConnection(command.Args),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
@@ -1124,6 +1126,79 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         var tokens = list.Rules.Select(GeoConfigurator.Format);
         return new IpcAck(true, string.Join('\n', tokens));
+    }
+
+    private async Task<IpcAck> SetRoutingSettingsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || !long.TryParse(args[0], out var id) || id <= 0)
+        {
+            return new IpcAck(false, "set-routing-settings requires a positive routing list id");
+        }
+
+        if (await store.GetRoutingListAsync(id, ct) is null)
+        {
+            return new IpcAck(false, $"unknown routing list: {id}");
+        }
+
+        // Args after the id: local DNS, exclusions, all-UDP (on/off), mode (split/full). All optional; an
+        // all-default tuple clears the row so "no row = defaults" holds (split mode, runtime-default
+        // exclusions, system resolvers, no all-UDP).
+        var localDns = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var exclusions = args.Count > 2 ? args[2].Trim() : string.Empty;
+        var udpArg = args.Count > 3 ? args[3].Trim().ToLowerInvariant() : "off";
+        var allUdp = udpArg is "on" or "1" or "true" or "yes";
+        var mode = args.Count > 4 ? args[4].Trim().ToLowerInvariant() : "split";
+        if (mode != "full")
+        {
+            mode = "split";
+        }
+
+        if (localDns.Length == 0 && exclusions.Length == 0 && !allUdp && mode == "split")
+        {
+            await store.RemoveRoutingSettingsAsync(id, ct);
+        }
+        else
+        {
+            await store.SetRoutingSettingsAsync(new RoutingSettings(id, localDns, exclusions, allUdp, mode), ct);
+        }
+
+        // These settings reshape AllowedIPs / split-DNS / UDP routing, decided at connect time. If the
+        // running profile routes through this list, flag a reconnect so the UI prompts; the settings are
+        // persisted and take effect on the next connect. (The agent does not consume them yet — wired in #89.)
+        if (control.Running && BoundTarget is not null)
+        {
+            var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
+            if (useRouting && listId == id)
+            {
+                control.SetRestartRequired();
+            }
+        }
+
+        logger.LogInformation("set-routing-settings {Id}: dns='{Dns}', excl={Len} chars, allUdp={Udp}, mode={Mode}", id, localDns, exclusions.Length, allUdp, mode);
+        return new IpcAck(true, "Настройки маршрутизации сохранены (применятся при переподключении)");
+    }
+
+    private async Task<IpcAck> GetRoutingSettingsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || !long.TryParse(args[0], out var id) || id <= 0)
+        {
+            return new IpcAck(false, "get-routing-settings requires a positive id");
+        }
+
+        if (await store.GetRoutingListAsync(id, ct) is null)
+        {
+            return new IpcAck(false, $"unknown routing list: {id}");
+        }
+
+        var settings = await store.GetRoutingSettingsAsync(id, ct);
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            localDns = settings?.LocalDns ?? string.Empty,
+            exclusions = settings?.Exclusions ?? string.Empty,
+            allUdp = settings?.AllUdp ?? false,
+            mode = settings?.Mode ?? "split",
+        });
+        return new IpcAck(true, json);
     }
 
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args, CancellationToken ct)

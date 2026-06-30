@@ -112,6 +112,20 @@ public static class IpcContract
     public const string OpAssignRouting = "assign-routing";
 
     /// <summary>
+    /// Command to set a routing list's traffic settings (consolidated onto the routing preset, #87). Args:
+    /// routing list id, then optional local DNS (comma/space-separated; empty = auto-detect), exclusions
+    /// (one entry per line / comma-separated), all-UDP ("on"/"off": wrap every outbound UDP through the
+    /// tunnel), mode ("split"/"full"). An all-default tuple clears the row. Applies on the next connect.
+    /// </summary>
+    public const string OpSetRoutingSettings = "set-routing-settings";
+
+    /// <summary>
+    /// Command to fetch a routing list's traffic settings. Args: routing list id. The ack message holds a
+    /// JSON object { localDns, exclusions, allUdp, mode } (defaults when no row is stored).
+    /// </summary>
+    public const string OpGetRoutingSettings = "get-routing-settings";
+
+    /// <summary>
     /// Command to set the agent's desired connection state. Args: "connect" or "disconnect".
     /// </summary>
     public const string OpSetConnection = "set-connection";

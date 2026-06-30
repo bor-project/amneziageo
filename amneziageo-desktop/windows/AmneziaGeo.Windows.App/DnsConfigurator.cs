@@ -54,6 +54,41 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     }
 
     /// <summary>
+    /// Reads the connection-specific DNS suffix(es) the system currently advertises - the corp/LAN domain
+    /// pushed by DHCP (DNSDomain) plus any suffix search list (DNSDomainSuffixSearchOrder). The proxy treats
+    /// names under these as LOCAL and resolves them via the LAN resolver, so a corporate host published under
+    /// a public-looking FQDN via split-horizon DNS (e.g. mail.company.com -> an internal IP) is NOT forced
+    /// offshore through the tunnel in full-tunnel mode (which breaks it). Read-only; loopback/empty skipped.
+    /// </summary>
+    public IReadOnlyList<string> CaptureLocalDnsSuffixes()
+    {
+        var suffixes = new List<string>();
+
+        void Add(string? raw)
+        {
+            var v = raw?.Trim().Trim('.').ToLowerInvariant();
+            if (!string.IsNullOrEmpty(v) && v.Length > 1 && !suffixes.Contains(v))
+            {
+                suffixes.Add(v);
+            }
+        }
+
+        foreach (var adapter in Adapters())
+        {
+            using (adapter)
+            {
+                Add(adapter["DNSDomain"] as string);
+                foreach (var s in adapter["DNSDomainSuffixSearchOrder"] as string[] ?? [])
+                {
+                    Add(s);
+                }
+            }
+        }
+
+        return suffixes;
+    }
+
+    /// <summary>
     /// Sets every IP-enabled adapter's DNS to the proxy servers, persisting the prior per-adapter
     /// servers so they can be restored (here or by a reconciler after a crash).
     /// </summary>

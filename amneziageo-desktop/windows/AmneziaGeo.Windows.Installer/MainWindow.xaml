@@ -54,6 +54,11 @@
         <!-- Done -->
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
                     Visibility="{Binding ShowDone, Converter={StaticResource B2V}}">
+          <CheckBox Content="Запустить AmneziaGeo"
+                    IsChecked="{Binding LaunchOnClose}"
+                    Margin="0,0,12,0"
+                    VerticalAlignment="Center"
+                    Visibility="{Binding ShowLaunchOption, Converter={StaticResource B2V}}" />
           <Button Content="Закрыть" Style="{StaticResource AccentButton}" Command="{Binding CloseCommand}" />
         </StackPanel>
 

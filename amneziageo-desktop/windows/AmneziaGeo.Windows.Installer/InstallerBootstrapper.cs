@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Interop;
@@ -334,7 +335,31 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnUserClose()
     {
+        if (_vm.LaunchOnClose && _vm.ShowLaunchOption)
+        {
+            LaunchApp();
+        }
         Application.Current?.Shutdown();
+    }
+
+    /// <summary>Starts AmneziaGeo.UI.exe from the install folder as the current user.</summary>
+    private static void LaunchApp()
+    {
+        try
+        {
+            var baseDir = Environment.GetEnvironmentVariable("ProgramW6432")
+                ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var dir = Path.Combine(baseDir, "AmneziaGeo");
+            var exe = Path.Combine(dir, "AmneziaGeo.Windows.Ui.exe");
+            if (File.Exists(exe))
+            {
+                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = dir });
+            }
+        }
+        catch
+        {
+            // best effort - the install already succeeded
+        }
     }
 
     private void Finish(bool ok, string message)

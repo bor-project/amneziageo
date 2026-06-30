@@ -212,7 +212,17 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private void OnApplyBegin(object? sender, ApplyBeginEventArgs e)
     {
         // UAC elevation happens before apply; the prompt can push our window behind others.
-        _dispatcher.BeginInvoke(() => _mainWindow?.Activate());
+        _dispatcher.BeginInvoke(() =>
+        {
+            if (_mainWindow is null)
+            {
+                return;
+            }
+
+            _mainWindow.Topmost = true;
+            _mainWindow.Activate();
+            _mainWindow.Topmost = false;
+        });
     }
 
     private void OnProgress(object? sender, ProgressEventArgs e)

@@ -21,6 +21,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private Dispatcher _dispatcher = null!;
     private InstallerViewModel _vm = null!;
     private IBootstrapperCommand _command = null!;
+    private Window? _mainWindow;
 
     private bool _interactive;
     private bool _msiPresent;
@@ -70,6 +71,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
         var window = new MainWindow { DataContext = _vm };
         new WindowInteropHelper(window).EnsureHandle();   // realise the HWND for engine.Apply
+        _mainWindow = window;
 
         engine.Detect();
 
@@ -170,6 +172,8 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnApplyBegin(object? sender, ApplyBeginEventArgs e)
     {
+        // UAC elevation happens before apply; the prompt can push our window behind others.
+        _dispatcher.BeginInvoke(() => _mainWindow?.Activate());
     }
 
     private void OnProgress(object? sender, ProgressEventArgs e)

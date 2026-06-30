@@ -185,6 +185,24 @@ internal sealed class TunnelRunner(
         var configExclusions = await store.GetConfigExclusionsAsync(name);
         var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(configExclusions?.Exclusions ?? string.Empty);
         var exclusionDomains = new List<string>(parsedExclusionDomains);
+        // Treat the network's own DNS suffix(es) - the corp/LAN domain DHCP advertises - as local, so a
+        // corporate host published under a public-looking FQDN via split-horizon DNS (mail.company.com -> an
+        // internal IP) resolves via the LAN resolver and stays off the tunnel. Without this, full tunnel
+        // sends such names to the offshore resolver (a public/empty answer) and corp services break. Captured
+        // before the DNS redirect; applies in both modes (harmless in split, where these already resolve via
+        // the system resolver).
+        foreach (var suffix in dns.CaptureLocalDnsSuffixes())
+        {
+            if (!exclusionDomains.Contains(suffix))
+            {
+                exclusionDomains.Add(suffix);
+            }
+        }
+
+        if (exclusionDomains.Count > parsedExclusionDomains.Count)
+        {
+            logger.LogInformation("local DNS suffixes kept on-LAN: {Suffixes}", string.Join(", ", exclusionDomains.Skip(parsedExclusionDomains.Count)));
+        }
         // The WebSocket underlay server's hostname must resolve via the LAN resolver, never through the
         // tunnel: in full tunnel non-matched names go to the tunnel resolver, but the tunnel is not up yet
         // and cannot come up until wstunnel reaches the server, whose name it must resolve first. Treat it

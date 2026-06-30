@@ -41,12 +41,14 @@ public sealed class InstallerViewModel : ObservableObject
 
     private Phase _phase = Phase.Detecting;
     private InstallState _state = InstallState.Unknown;
+    private InstallerAction _action;
     private string _subText = "Проверка установки…";
     private string _versionText = string.Empty;
     private int _progress;
     private bool _success;
     private bool _downloadLists = true;
     private bool _indeterminate;
+    private bool _launchOnClose = true;
     private string _geoResult = string.Empty;
     private string _seedDbPath = string.Empty;
 
@@ -145,6 +147,16 @@ public sealed class InstallerViewModel : ObservableObject
 
     public bool ShowDownloadOption => Phase == Phase.Ready && (ShowInstall || ShowUpdate);
 
+    /// <summary>Whether to launch AmneziaGeo.UI after the installer closes (checkbox on the done screen).</summary>
+    public bool LaunchOnClose
+    {
+        get => _launchOnClose;
+        set => Set(ref _launchOnClose, value);
+    }
+
+    /// <summary>Show the launch checkbox only after a successful install or update.</summary>
+    public bool ShowLaunchOption => Phase == Phase.Done && _success && _action is InstallerAction.Install or InstallerAction.Update;
+
     /// <summary>True while the list download runs (no percentage available) - spins the progress bar.</summary>
     public bool IsIndeterminate
     {
@@ -193,6 +205,7 @@ public sealed class InstallerViewModel : ObservableObject
     /// <summary>Switch the window to the live-progress view.</summary>
     public void BeginApply(InstallerAction action)
     {
+        _action = action;
         Progress = 0;
         IsIndeterminate = false;
         SubText = action switch
@@ -248,6 +261,7 @@ public sealed class InstallerViewModel : ObservableObject
         IsIndeterminate = false;
         Phase = Phase.Done;
         Raise(nameof(DoneSucceeded));
+        Raise(nameof(ShowLaunchOption));
     }
 
     /// <summary>Finishes with the MSI result plus a second line carrying the geo-download outcome.</summary>
@@ -307,5 +321,6 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowDone));
         Raise(nameof(ShowDownloadOption));
         Raise(nameof(ShowSeedDbOption));
+        Raise(nameof(ShowLaunchOption));
     }
 }

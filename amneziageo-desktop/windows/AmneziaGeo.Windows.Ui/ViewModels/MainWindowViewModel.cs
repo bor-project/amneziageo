@@ -273,6 +273,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<int> GeoCheckIntervals { get; } = [6, 12, 24, 48, 168];
 
     [ObservableProperty]
+    private int _geoCacheValidityHours = 24;
+
+    /// <summary>Preset options (hours) for how long the geo address cache stays current before a background
+    /// refresh re-validates it (#83); an out-of-band value is inserted so the combo always shows the agent's
+    /// actual setting.</summary>
+    public ObservableCollection<int> GeoCacheValidities { get; } = [6, 12, 24, 48, 72, 168];
+
+    [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
 
     // AmneziaWG engine (tunnel.dll) version reported by the agent; "н/д" until known / if unresolved.
@@ -1331,6 +1339,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         GeoAutoCheck = snapshot.GeoAutoCheck;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
+        EnsureGeoValidity(snapshot.GeoCacheValidityHours);
+        GeoCacheValidityHours = snapshot.GeoCacheValidityHours;
         _suppressSettingPush = false;
 
         ApplyUpdateState(snapshot);
@@ -1453,6 +1463,33 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
                 ["geo-check-interval-hours", value.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
         }
+    }
+
+    partial void OnGeoCacheValidityHoursChanged(int value)
+    {
+        if (!_suppressSettingPush && value > 0)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
+                ["geo-cache-validity-hours", value.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
+        }
+    }
+
+    // Keeps the validity combo able to display whatever the agent reports (an out-of-band value set via CLI),
+    // mirroring EnsureGeoInterval, so the ComboBox SelectedItem never goes null and writes 0 back.
+    private void EnsureGeoValidity(int hours)
+    {
+        if (hours <= 0 || GeoCacheValidities.Contains(hours))
+        {
+            return;
+        }
+
+        var index = 0;
+        while (index < GeoCacheValidities.Count && GeoCacheValidities[index] < hours)
+        {
+            index++;
+        }
+
+        GeoCacheValidities.Insert(index, hours);
     }
 
     // Keeps the interval combo able to display whatever the agent reports: an out-of-band value (e.g. set

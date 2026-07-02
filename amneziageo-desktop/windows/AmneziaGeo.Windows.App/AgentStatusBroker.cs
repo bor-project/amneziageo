@@ -45,6 +45,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     // the user why a freshly added source has no categories instead of silently showing "не загружен".
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastError = new(StringComparer.Ordinal);
 
+    // Coalesced geo-refresh coordinator (#83): at most one download/re-materialize session runs at a time.
+    // A trigger that arrives while a session is in flight is neither dropped nor run in parallel - it is
+    // queued (its sources unioned, its force-resolve flag OR-ed) and runs once the current session finishes,
+    // so a user "Обновить" during an auto-refresh takes effect without two sessions clobbering each other.
+    private readonly object _geoSessionGate = new();
+    private bool _geoRunning;
+    private bool _geoQueued;
+    private bool _geoQueuedForce;
+    private readonly HashSet<string> _geoQueuedNames = new(StringComparer.Ordinal);
+
     /// <summary>
     /// The profile whose live status the connection card reflects: the running target while connected,
     /// otherwise the selected target. The radio uses the selected target (snapshot SelectedTarget).
@@ -1361,8 +1371,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         // Download + re-materialize off the command path so the ack returns immediately: a large file
         // over a slow link must not block the pipe or overrun the client's command timeout. The result
-        // (categories / updated time) lands in the next status snapshot.
-        DownloadAndRematerialize([source]);
+        // (categories / updated time) lands in the next status snapshot. Not "forced" - a brand-new source
+        // always downloads (its file changes), which advances the resolve epoch on its own.
+        EnqueueGeoRefresh([source], forceResolve: false);
         return new IpcAck(true, $"добавлен {name}, загрузка…");
     }
 
@@ -1396,8 +1407,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
     private async Task<IpcAck> UpdateSourcesAsync(CancellationToken ct)
     {
+        // A user-initiated "Обновить все" is a full validation: re-resolve even sources the server reports
+        // unchanged (their domains' IPs may still have moved), so force the resolve.
         var sources = await store.ListGeoSourcesAsync(ct);
-        DownloadAndRematerialize(sources);
+        EnqueueGeoRefresh(sources, forceResolve: true);
         return new IpcAck(true, $"обновление запущено ({sources.Count})");
     }
 
@@ -1415,7 +1428,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown source: {args[0]}");
         }
 
-        DownloadAndRematerialize([source]);
+        // A user-initiated per-source update is also a full validation - force the resolve.
+        EnqueueGeoRefresh([source], forceResolve: true);
         return new IpcAck(true, $"обновление {source.Name} запущено");
     }
 
@@ -1553,17 +1567,92 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     /// or overruns the client's command timeout. A lightweight ticker broadcasts in-flight progress so
     /// the UI can spin the refresh icon and show a live percentage.
     /// </summary>
-    private void DownloadAndRematerialize(IReadOnlyList<GeoSource> sources)
+    // Queues a geo refresh for the given sources, coalesced through the single-session coordinator. When
+    // <paramref name="forceResolve"/> is set the session re-validates even if nothing downloaded (a user
+    // "Обновить" or the TTL-driven background refresh: the IPs behind unchanged domains still drift). Returns
+    // immediately - the work runs off the command path so the ack is not blocked by a multi-megabyte download.
+    private void EnqueueGeoRefresh(IReadOnlyList<GeoSource> sources, bool forceResolve)
     {
-        // Claim only the sources not already in flight (TryAdd is atomic), so a repeated update of the
-        // same source doesn't start a duplicate download / re-materialize.
-        var pending = sources.Where(source => _updating.TryAdd(source.Name, 0)).ToList();
-        if (pending.Count == 0)
+        lock (_geoSessionGate)
         {
-            return;
+            if (_geoRunning)
+            {
+                _geoQueued = true;
+                _geoQueuedForce |= forceResolve;
+                foreach (var source in sources)
+                {
+                    _geoQueuedNames.Add(source.Name);
+                }
+
+                return;
+            }
+
+            _geoRunning = true;
         }
 
-        _ = Task.Run(async () =>
+        _ = RunGeoSessionChainAsync(sources, forceResolve);
+    }
+
+    // Runs geo sessions one at a time, draining any request queued while a session was in flight. The
+    // _geoRunning flag flips under the same lock that queues work, so a trigger racing the end of a session
+    // is never lost: it is either queued (running still true) or starts a fresh chain (running false).
+    private async Task RunGeoSessionChainAsync(IReadOnlyList<GeoSource> sources, bool forceResolve)
+    {
+        while (true)
+        {
+            try
+            {
+                await RunGeoSessionAsync(sources, forceResolve);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "geo refresh session failed");
+            }
+
+            HashSet<string> queuedNames;
+            lock (_geoSessionGate)
+            {
+                if (!_geoQueued)
+                {
+                    _geoRunning = false;
+                    return;
+                }
+
+                queuedNames = new HashSet<string>(_geoQueuedNames, StringComparer.Ordinal);
+                forceResolve = _geoQueuedForce;
+                _geoQueued = false;
+                _geoQueuedForce = false;
+                _geoQueuedNames.Clear();
+            }
+
+            // Re-read the stored sources so a source added or removed between the trigger and this run is
+            // reflected; a queued name whose source is gone is simply dropped. A store failure here must not
+            // escape the chain (that would leave _geoRunning stuck true and wedge all future refreshes) - fall
+            // back to an empty set, which still runs a forced re-validate and loops to drain any further queue.
+            try
+            {
+                var all = await store.ListGeoSourcesAsync(CancellationToken.None);
+                sources = all.Where(source => queuedNames.Contains(source.Name)).ToList();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "geo refresh: could not re-read sources for queued run");
+                sources = [];
+            }
+        }
+    }
+
+    // One geo refresh session: download the changed sources, re-materialize the routing lists, then stamp the
+    // refresh time and - when forced or a file actually changed - bump the resolve epoch so any live tunnel
+    // re-resolves its domains (#83). Safe to call with an empty source set (a forced re-validate with no
+    // pending download still advances the epoch).
+    private async Task RunGeoSessionAsync(IReadOnlyList<GeoSource> sources, bool forceResolve)
+    {
+        // Claim only the sources not already in flight (TryAdd is atomic), so an overlapping run does not
+        // start a duplicate download / re-materialize of the same source.
+        var pending = sources.Where(source => _updating.TryAdd(source.Name, 0)).ToList();
+        var changed = false;
+        if (pending.Count > 0)
         {
             var pump = new CancellationTokenSource();
             var ticker = ProgressPumpAsync(pump.Token);
@@ -1577,7 +1666,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 {
                     try
                     {
-                        await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
+                        var before = await store.GetGeoFileAsync(source.Name);
+                        var after = await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
+                        // Content-hash comparison, not a timestamp: a conditional GET that returns 304 hands
+                        // back the same metadata, so an unchanged file leaves the hash equal and does not force
+                        // a re-resolve. Written only to true from multiple tasks, so the race is benign.
+                        if (before is null || !string.Equals(before.Sha256, after.Sha256, StringComparison.Ordinal))
+                        {
+                            changed = true;
+                        }
+
                         // Downloaded: the local file is now current, so any pending update flag is stale and
                         // any prior failure is resolved.
                         _updateAvailable[source.Name] = false;
@@ -1621,7 +1719,63 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 pump.Dispose();
                 await BroadcastIfChangedAsync(CancellationToken.None);
             }
-        });
+        }
+
+        // A forced (user / TTL) refresh re-validates even when nothing downloaded; a changed download likewise
+        // needs the running tunnel to re-resolve. Either way, advance the resolve epoch so any live
+        // DomainTracker re-resolves its domains on its next poll. Then stamp the refresh time for the TTL gate.
+        if (forceResolve || changed)
+        {
+            await BumpResolveEpochAsync();
+        }
+
+        await store.SetSettingAsync("geo-last-refresh", DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    // Internal counters (not user settings): the resolve epoch a running tunnel polls to know it must
+    // re-resolve its tracked domains, and the last-refresh stamp the TTL background gate reads. Kept as raw
+    // key/value rows so they never surface in the user-facing settings surface.
+    private async Task BumpResolveEpochAsync()
+    {
+        var current = await store.GetSettingAsync("geo-resolve-epoch");
+        var next = (long.TryParse(current, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : 0) + 1;
+        await store.SetSettingAsync("geo-resolve-epoch", next.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Triggers a background geo refresh when the address cache is older than its validity window, so the
+    /// in-use lists stay current without the user pressing "Обновить". A no-op when there are no sources, or
+    /// when nothing uses geo routing (no assigned list and no running tunnel), or when the cache is still
+    /// fresh. The work is coalesced through the shared session coordinator, so it never overlaps a manual
+    /// update. Called by the periodic <see cref="GeoUpdateCheckService"/> (and so also on startup) (#83).
+    /// </summary>
+    public async Task RefreshStaleGeoAsync(CancellationToken ct)
+    {
+        var sources = await store.ListGeoSourcesAsync(ct);
+        if (sources.Count == 0)
+        {
+            return;
+        }
+
+        // Only refresh when something actually consumes geo routing; otherwise there is nothing to keep fresh
+        // and no reason to hit the network.
+        var assigned = await store.ListAssignedRoutingListIdsAsync(ct);
+        if (assigned.Count == 0 && !control.Running)
+        {
+            return;
+        }
+
+        var settings = await settingsStore.LoadAsync(ct);
+        var validity = TimeSpan.FromHours(Math.Clamp(settings.GeoCacheValidityHours, 1, 24 * 30));
+        var last = await store.GetSettingAsync("geo-last-refresh", ct);
+        if (last is not null
+            && DateTimeOffset.TryParse(last, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var when)
+            && DateTimeOffset.UtcNow - when < validity)
+        {
+            return;   // still within the validity window
+        }
+
+        EnqueueGeoRefresh(sources, forceResolve: true);
     }
 
     /// <summary>
@@ -1880,6 +2034,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             update?.Description ?? string.Empty,
             settings.GeoAutoCheck,
             settings.GeoCheckIntervalHours,
+            settings.GeoCacheValidityHours,
             control.ConnectFailed,
             AppSettings.EngineVersion,
             settings.TunnelAllUdp);

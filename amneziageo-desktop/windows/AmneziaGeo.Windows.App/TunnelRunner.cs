@@ -267,8 +267,11 @@ internal sealed class TunnelRunner(
         // background task, instead of running on against a torn-down adapter.
         using var sessionCts = new CancellationTokenSource();
 
+        // Create the tracker when it has live work: matched domains, matched apps, all-UDP catch-all, OR a
+        // routing list drives this split tunnel (so a source refresh that grows the list's geoip ranges is
+        // applied live without a reconnect - the tracker polls the list's materialization generation) (#83).
         DomainTracker? tracker = null;
-        if (trackDomains || trackApps || allUdp)
+        if (trackDomains || trackApps || allUdp || (geoSplit && activeRoutingListId is not null))
         {
             var peer = WgConfigEditor.GetPeerPublicKey(config);
             if (peer is not null)

@@ -886,6 +886,22 @@
                         <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
                       </StackPanel>
                     </Grid>
+                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
+                        <TextBlock Text="Актуальность кэша адресов" FontSize="13.5" />
+                        <TextBlock Text="Через сколько данные считаются устаревшими и обновляются в фоне. Ручное «Обновить все» проверяет всегда."
+                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                      </StackPanel>
+                      <ComboBox Grid.Column="1" Classes="field" Width="92" VerticalAlignment="Center"
+                                ItemsSource="{Binding GeoCacheValidities}"
+                                SelectedItem="{Binding GeoCacheValidityHours, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate x:DataType="x:Int32">
+                            <TextBlock Text="{Binding StringFormat='{}{0} ч'}" />
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                    </Grid>
                     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
                     <TextBlock Classes="label" Text="ДОБАВИТЬ БАЗУ" />

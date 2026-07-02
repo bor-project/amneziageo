@@ -36,6 +36,10 @@ internal sealed class UdpFlowTracker : IDisposable
     private readonly IPAddress? _excludeEndpoint;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
+    // Destinations already routed (or already found non-tunnelable) this session, keyed by the raw 4-byte
+    // daddr. Handle runs on a single ETW processing thread, so this needs no lock; it lets the common
+    // repeat-datagram case skip the per-packet IPAddress/string allocation and the shared tracker lock.
+    private readonly HashSet<uint> _seen = [];
 
     /// <param name="watcher">Per-app PID matcher; may be null in all-UDP mode (the PID gate is bypassed).</param>
     /// <param name="allUdp">When true, tunnel EVERY process's UDP destinations, not just matched apps' (#77-udp).</param>
@@ -122,6 +126,15 @@ internal sealed class UdpFlowTracker : IDisposable
                 return;
             }
 
+            // Cheap per-packet dedupe BEFORE any allocation or the shared tracker lock: the raw 4 bytes as
+            // a hash key (endianness is irrelevant for a key). A destination already routed - or already
+            // rejected below - is the overwhelmingly common case under a live call and is skipped here.
+            var daddr = BitConverter.ToUInt32(data, RemoteAddrOffset);
+            if (_seen.Contains(daddr))
+            {
+                return;
+            }
+
             // daddr is the IPv4 destination in network byte order - read the 4 bytes straight into IPAddress
             // (do not BitConverter it, which would byte-swap on a little-endian host).
             var remoteIp = new IPAddress(new ReadOnlySpan<byte>(data, RemoteAddrOffset, 4).ToArray());
@@ -131,20 +144,39 @@ internal sealed class UdpFlowTracker : IDisposable
             // plain-UDP send to the real server would otherwise be captured and pinned to the tunnel.
             if (_excludeEndpoint is not null && remoteIp.Equals(_excludeEndpoint))
             {
+                MarkSeen(daddr);
                 return;
             }
 
             if (!AppRouteWatcher.IsTunnelableRemote(remoteIp))
             {
+                MarkSeen(daddr);
                 return;
             }
 
-            _tracker.UpdateAppIps([remoteIp.ToString()]);
+            // Remember the destination only once the tracker actually routed it; a failure (adapter not up
+            // yet, route add error) leaves it unseen so a later datagram retries it.
+            if (_tracker.UpdateAppIps([remoteIp.ToString()]))
+            {
+                MarkSeen(daddr);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "UdpFlowTracker: parse error");
         }
+    }
+
+    // Records a destination as handled. Bounded so a long session cannot grow it without limit; on overflow
+    // the whole set is dropped (each live destination is simply re-evaluated once on its next datagram).
+    private void MarkSeen(uint daddr)
+    {
+        if (_seen.Count >= 65536)
+        {
+            _seen.Clear();
+        }
+
+        _seen.Add(daddr);
     }
 
     private void Stop()

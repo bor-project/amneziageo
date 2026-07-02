@@ -47,6 +47,7 @@ public sealed class InstallerViewModel : ObservableObject
     private int _progress;
     private bool _success;
     private bool _downloadLists = true;
+    private bool _deleteConfig;
     private bool _indeterminate;
     private bool _launchOnClose = true;
     private string _geoResult = string.Empty;
@@ -146,6 +147,17 @@ public sealed class InstallerViewModel : ObservableObject
     }
 
     public bool ShowDownloadOption => Phase == Phase.Ready && (ShowInstall || ShowUpdate);
+
+    /// <summary>Whether to also delete the runtime configuration (ProgramData\AmneziaGeo: profiles, settings,
+    /// caches) on removal. Off by default so a reinstall keeps the user's data.</summary>
+    public bool DeleteConfig
+    {
+        get => _deleteConfig;
+        set => Set(ref _deleteConfig, value);
+    }
+
+    /// <summary>Offer the "delete configuration" checkbox only when removal is an available action.</summary>
+    public bool ShowDeleteConfigOption => ShowRemove;
 
     /// <summary>Whether to launch AmneziaGeo.UI after the installer closes (checkbox on the done screen).</summary>
     public bool LaunchOnClose
@@ -320,6 +332,7 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowProgress));
         Raise(nameof(ShowDone));
         Raise(nameof(ShowDownloadOption));
+        Raise(nameof(ShowDeleteConfigOption));
         Raise(nameof(ShowSeedDbOption));
         Raise(nameof(ShowLaunchOption));
     }

@@ -51,6 +51,12 @@
          the elevated execute sequence. -->
     <Property Id="SEEDDBPATH" Secure="yes" />
 
+    <!-- "Delete configuration on removal" choice (#105), passed by the Burn bundle from the BA checkbox
+         (DELETECONFIG). "1" => wipe the runtime data tree on full removal (AgWipeConfig below); anything else
+         (incl. the default 0) => keep it, so a reinstall preserves the user's profiles/settings. Secure so it
+         survives into the elevated execute sequence. -->
+    <Property Id="DELETECONFIG" Value="0" Secure="yes" />
+
     <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="AmneziaGeo" />
@@ -93,8 +99,26 @@
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
+
+    <!-- #105: on full removal, optionally wipe the runtime data tree (ProgramData\AmneziaGeo: state.db,
+         Configurations\, geo\, logs\) when the user ticked "delete configuration" in the BA (DELETECONFIG=1,
+         passed by the bundle). Off by default, so a plain uninstall keeps profiles/settings. The WHOLE tree is
+         removed, not just state.db: leaving legacy Configurations\*.conf behind would let them migrate back into
+         a fresh DB on a later reinstall. Deferred + Impersonate="no" so it runs as SYSTEM (the data is owned by
+         the service account) and AFTER StopServices has stopped the agent (its process exit unlocks state.db).
+         $env:ProgramData is resolved by the child process, so no CustomActionData is needed. Best-effort
+         (Return="ignore"): a hiccup never blocks uninstall. The retry loop (up to ~3s) rides out the narrow
+         window where the service is already SCM-stopped but its process has not yet fully released state.db /
+         the current log file, so the wipe does not silently leave those two behind. -->
+    <CustomAction Id="AgWipeConfig"
+                  Directory="SystemFolder"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command &quot;$d = Join-Path $env:ProgramData 'AmneziaGeo'; for ($i = 0; $i -lt 10 -and (Test-Path $d); $i++) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path $d) { Start-Sleep -Milliseconds 300 } }&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="AgCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
+      <Custom Action="AgWipeConfig" After="RemoveFiles" Condition="DELETECONFIG=&quot;1&quot; AND REMOVE=&quot;ALL&quot;" />
     </InstallExecuteSequence>
   </Package>
 

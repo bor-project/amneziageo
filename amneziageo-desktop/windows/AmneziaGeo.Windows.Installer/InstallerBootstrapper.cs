@@ -61,6 +61,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         PlanRelatedBundle += OnPlanRelatedBundle;
         PlanComplete += OnPlanComplete;
         ApplyBegin += OnApplyBegin;
+        ElevateComplete += OnElevateComplete;
         Progress += OnProgress;
         ApplyComplete += OnApplyComplete;
 
@@ -211,7 +212,28 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnApplyBegin(object? sender, ApplyBeginEventArgs e)
     {
-        // UAC elevation happens before apply; the prompt can push our window behind others.
+        // Covers the no-elevation path (already elevated / silent): there is no UAC prompt to steal
+        // focus, so raising here is enough. When elevation IS required the prompt appears after this,
+        // so the effective raise happens in OnElevateComplete once the UAC dialog has closed.
+        RaiseMainWindow();
+    }
+
+    private void OnElevateComplete(object? sender, ElevateCompleteEventArgs e)
+    {
+        // The UAC prompt runs on the secure desktop and, on dismissal, leaves our window behind others -
+        // the user then sees no progress and may think the install hung. Once elevation has succeeded,
+        // bring the installer window back to the front.
+        if (e.Status >= 0)
+        {
+            RaiseMainWindow();
+        }
+    }
+
+    /// <summary>Brings the installer window to the top of the z-order and gives it foreground. Toggling
+    /// Topmost forces the z-order change even when SetForegroundWindow is blocked by the foreground lock
+    /// (as it is right after the UAC secure-desktop transition), without leaving the window always-on-top.</summary>
+    private void RaiseMainWindow()
+    {
         _dispatcher.BeginInvoke(() =>
         {
             if (_mainWindow is null)

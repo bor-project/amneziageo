@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Decl;
@@ -39,6 +40,10 @@ internal sealed class TunnelRunner(
         }
         catch (Exception ex)
         {
+            // Log the failure with its stack into this process's own log (always visible, even at "Обычный"),
+            // so a collected diagnostics bundle carries the reason a connect never came up (#82).
+            logger.LogError(ex, "connect {Name}: bring-up failed - {Reason}", name, ex.Message);
+
             // Best-effort: persist the failure reason for the agent to re-log; never mask the original.
             try
             {
@@ -54,11 +59,21 @@ internal sealed class TunnelRunner(
 
     private async Task RunInnerAsync(string name)
     {
+        // Time the whole bring-up so each milestone below carries a cumulative "[N ms]": a support engineer
+        // reading a Debug/Trace log sees exactly which step a slow connect stalled on (#82).
+        var connectSw = Stopwatch.StartNew();
+        logger.LogInformation("connect {Name}: bring-up starting", name);
+
         // Start from a clean slate: revert any DNS/route leftovers from a previous tunnel.
-        reconciler.Reconcile();
+        using (logger.Step("reconcile leftovers"))
+        {
+            reconciler.Reconcile();
+        }
 
         var config = await store.GetConfigTextAsync(name)
             ?? throw new InvalidOperationException($"configuration '{name}' is not stored");
+        // Only the length is logged - the config text carries private keys and must never reach the log.
+        logger.LogTrace("connect {Name}: config loaded ({Length} chars) [{Elapsed} ms]", name, config.Length, connectSw.ElapsedMilliseconds);
 
         // Resolve the WebSocket (UDP-over-TCP) transport plan up front from the ORIGINAL endpoint, but
         // start the wstunnel child last (just before the engine) so a setup failure cannot orphan it.
@@ -101,6 +116,15 @@ internal sealed class TunnelRunner(
             }
         }
 
+        if (useWebSocket)
+        {
+            // The underlay plan - host/port only. The path prefix is an anti-probe auth token and the
+            // credentials are basic-auth, so both are secrets: log only whether a path token is set, never
+            // its value (they must not reach the log or a collected diagnostics bundle).
+            logger.LogDebug("connect {Name}: websocket underlay -> {Host}:{Port} pathToken={HasPath} targetPort={Target}",
+                name, wsHost, wsPort, !string.IsNullOrEmpty(wsPathPrefix), wsTargetPort);
+        }
+
         WsTunnelTransport? wsTransport = null;
 
         // Prefer the live balancer routing projection; fall back to the config's own set-geo split.
@@ -110,6 +134,9 @@ internal sealed class TunnelRunner(
         var geoRoutes = new List<string>(geo?.Routes ?? []);
         var domains = geo?.Domains ?? [];
         var apps = geo?.Apps ?? [];
+
+        logger.LogDebug("connect {Name}: geo loaded - split={Split} routes={Routes} domains={Domains} apps={Apps} [{Elapsed} ms]",
+            name, geoSplit, geoRoutes.Count, domains.Count, apps.Count, connectSw.ElapsedMilliseconds);
 
         // This tunnel adapter is IPv4-only when the config declares no IPv6 Address.
         var stripV6 = !HasIpv6Address(config);
@@ -157,6 +184,8 @@ internal sealed class TunnelRunner(
         allowedIps = SplitDefaultRoutes(allowedIps);
 
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
+        logger.LogDebug("connect {Name}: allowed-ips resolved - {Count} entries, mtu={Mtu}, websocket={Ws} [{Elapsed} ms]",
+            name, allowedIps.Count, effectiveMtu, useWebSocket, connectSw.ElapsedMilliseconds);
 
         var appSettings = await settings.LoadAsync();
 
@@ -294,6 +323,9 @@ internal sealed class TunnelRunner(
             logger.LogWarning("DNS proxy unavailable (loopback :53 busy); using direct resolvers");
         }
 
+        logger.LogDebug("connect {Name}: dns proxy {State}, tracker={Tracker} [{Elapsed} ms]",
+            name, proxy?.BoundV4 is not null ? $"bound {proxy.BoundV4}" : "unavailable", tracker is not null, connectSw.ElapsedMilliseconds);
+
         // We set DNS on the adapters ourselves (via WMI); strip it from the config so the engine does
         // not also try to (it only applies DNS for full tunnel anyway).
         config = WgConfigEditor.RemoveDns(config);
@@ -301,12 +333,18 @@ internal sealed class TunnelRunner(
         var applied = false;
         if (redirectServers.Count > 0)
         {
-            dns.Apply(name, redirectServers);
-            // Drop entries resolved before the redirect so already-cached domains (e.g. a popular
-            // youtube.com) are re-queried through the proxy and can be matched and routed, instead of
-            // being served stale from the OS cache and silently bypassing split routing.
-            dns.FlushCache();
+            using (logger.Step("apply DNS + flush cache"))
+            {
+                dns.Apply(name, redirectServers);
+                // Drop entries resolved before the redirect so already-cached domains (e.g. a popular
+                // youtube.com) are re-queried through the proxy and can be matched and routed, instead of
+                // being served stale from the OS cache and silently bypassing split routing.
+                dns.FlushCache();
+            }
+
             applied = true;
+            logger.LogDebug("connect {Name}: dns redirected to {Servers} [{Elapsed} ms]",
+                name, string.Join(",", redirectServers), connectSw.ElapsedMilliseconds);
         }
 
         if (stripV6 && redirectServers.Count > 0)
@@ -327,6 +365,8 @@ internal sealed class TunnelRunner(
         // tunnels the default, so the LAN is already direct and needs no exclusion. Added before the
         // adapter comes up so the next-hop resolves to the physical gateway, not the tunnel.
         var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs);
+        logger.LogDebug("connect {Name}: routes - endpoint {Endpoint} excluded={Excluded}, lan-exclusions={Lan} [{Elapsed} ms]",
+            name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
         // The engine no longer arms its own kill-switch (we split the default route above), so when the
         // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
@@ -407,12 +447,17 @@ internal sealed class TunnelRunner(
         config = WgConfigEditor.SetMtu(config, effectiveMtu);
         logger.LogInformation("mtu for {Name}: {Mtu}", name, effectiveMtu);
 
+        // The single most useful line for "why is connecting slow": how long every step above took before
+        // the engine (and therefore the handshake) even started.
+        logger.LogInformation("connect {Name}: bring-up complete in {Elapsed} ms, starting engine", name, connectSw.ElapsedMilliseconds);
+
         try
         {
             WireGuardEngine.RunTunnelService(config, name);
         }
         finally
         {
+            logger.LogInformation("connect {Name}: session ended after {Elapsed} ms, tearing down", name, connectSw.ElapsedMilliseconds);
             sessionCts.Cancel();
             firewall.Disable();
 

@@ -515,6 +515,46 @@ public sealed partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
+    // "Собрать логи" (#82): ask the agent for a redacted diagnostics zip, then let the user save a copy where
+    // they want. The bundle is built agent-side (only SYSTEM can read both processes' logs) under ProgramData,
+    // which this UI can read; we copy it to the picked file.
+    private async void OnCollectLogs(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        var sourcePath = await vm.RequestDiagnosticsAsync();
+        if (sourcePath is null)
+        {
+            return;
+        }
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Сохранить логи для поддержки",
+            SuggestedFileName = Path.GetFileName(sourcePath),
+            FileTypeChoices = [new FilePickerFileType("ZIP-архив") { Patterns = ["*.zip"] }],
+        });
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await using var input = File.OpenRead(sourcePath);
+            await using var output = await file.OpenWriteAsync();
+            await input.CopyToAsync(output);
+            vm.ShowTransientNotice("Логи собраны и сохранены.");
+        }
+        catch (Exception ex)
+        {
+            vm.ShowTransientNotice($"Не удалось сохранить логи: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Opens the per-source action menu (update / delete) on a right-click of a source row.
     /// </summary>

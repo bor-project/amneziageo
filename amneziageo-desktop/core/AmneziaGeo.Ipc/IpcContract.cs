@@ -250,6 +250,13 @@ public static class IpcContract
     public const string OpDownloadGeo = "download-geo";
 
     /// <summary>
+    /// Command to build a redacted diagnostics bundle for support (#82). No args. The agent zips the log
+    /// files from both processes plus a summary and the live journal (secrets scrubbed) and returns the full
+    /// path to the written .zip in the ack message; Ok=false with the reason on failure.
+    /// </summary>
+    public const string OpCollectDiagnostics = "collect-diagnostics";
+
+    /// <summary>
     /// Sent once by the UI right after connecting to mark its pipe connection as a presence-holding
     /// session. No args. The agent ties the tunnel's lifetime to UI presence: when the last attached UI
     /// session drops (window closed or the process crashed) and a tunnel is up, the agent disconnects it

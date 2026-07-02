@@ -159,6 +159,15 @@ internal static class TunnelPaths
         return Path.Combine(LogDirectory(), "agent.log");
     }
 
+    /// <summary>
+    /// Directory where collected diagnostics bundles are written (#82). Under ProgramData, so a bundle the
+    /// SYSTEM agent writes is readable by the unprivileged UI, which copies it to the user's chosen location.
+    /// </summary>
+    public static string DiagnosticsDirectory()
+    {
+        return Path.Combine(RootDirectory(), "diagnostics");
+    }
+
     private static IEnumerable<string> EnumerateState(string pattern)
     {
         var dir = RootDirectory();

@@ -44,6 +44,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // chosen by the user, so the programmatic assignment does not re-enter the pick handler and echo back.
     private bool _suppressActiveChoice;
     private bool _suppressOpenChoice;
+    // Guard the Config/Routing section combos against echoing a pick back while we mirror their state
+    // (open config / create form / selected list) into the wrapped selection - same idea as the profile combos.
+    private bool _suppressCatalogueConfig;
+    private bool _suppressCatalogueRouting;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -126,6 +130,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // editor (RoutingEditor) and per-routing settings (RoutingSettings) are (re)built for that list.
     [ObservableProperty]
     private RoutingListSummaryViewModel? _editRoutingList;
+
+    // The Config / Routing section combos' wrapped selection, mirroring the profile combos: «— не выбрано —»,
+    // «+ Новая конфигурация» / «+ Новый список», then the saved entries. Picking a sentinel opens the create
+    // form / editor in place; a redirect from a profile's picker lands here on the "+ new" item.
+    [ObservableProperty]
+    private ConfigChoice? _selectedCatalogueConfig = ConfigChoice.None;
+
+    [ObservableProperty]
+    private RoutingListChoice? _selectedCatalogueRouting = RoutingListChoice.None;
 
     // The per-routing traffic editor (local DNS, exclusions, all-UDP) for the routing list open in the
     // Routing settings section; null until a real (saved) list is selected.
@@ -362,6 +375,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None, ProfileChoice.New];
 
     /// <summary>
+    /// Config-section catalogue combo: «— не выбрано —», «+ Новая конфигурация», then the saved configs.
+    /// Reconciled in place from <see cref="Configs"/> so a snapshot push does not null the combo's selection.
+    /// </summary>
+    public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [ConfigChoice.None, ConfigChoice.NewConfig];
+
+    /// <summary>
+    /// Routing-section catalogue combo: «— не выбрано —», «+ Новый список», then the saved lists. Reconciled
+    /// in place from <see cref="RoutingLists"/> so a snapshot push does not null the combo's selection.
+    /// </summary>
+    public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [RoutingListChoice.None, RoutingListChoice.NewList];
+
+    /// <summary>
     /// Routing-list catalogue.
     /// </summary>
     public ObservableCollection<RoutingListSummaryViewModel> RoutingLists { get; } = [];
@@ -552,6 +577,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void NavSettings()
     {
+        // Gearing into Settings lands on the active profile: open it so the Profile section shows it and its
+        // configuration (OnOpenProfileChanged) + routing follow into those sections.
+        if (ActiveProfile is not null)
+        {
+            OpenProfile = ActiveProfile;
+        }
+
         Nav = "settings";
     }
 
@@ -673,6 +705,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigRename = value ?? string.Empty;
         ConfigRenameStatus = string.Empty;
         IsEditingConfigName = false;
+        SyncCatalogueConfig();
         if (value is null)
         {
             ConfigExport = null;
@@ -689,6 +722,86 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // (see RoutingSettingsViewModel), so they are no longer constructed or bound here.
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0);
+    }
+
+    // The Config section combo pick: «— не выбрано —» closes the open config / create form; «+ Новая
+    // конфигурация» opens the import form (also how a profile's "+ Новая конфигурация" redirect lands here);
+    // a real config opens it for editing.
+    partial void OnSelectedCatalogueConfigChanged(ConfigChoice? value)
+    {
+        if (_suppressCatalogueConfig || value is null)
+        {
+            return;
+        }
+
+        if (value.IsNewSentinel)
+        {
+            OpenConfig = null; // hide the editor; the create form is the only thing shown
+            BeginSectionConfig();
+            return;
+        }
+
+        // «— не выбрано —» or a real config: leave the create form and open (or clear) the selection.
+        if (IsCreatingSectionConfig)
+        {
+            CancelSectionConfig();
+        }
+
+        OpenConfig = value.IsReal ? value.Name : null;
+    }
+
+    // Opening / closing the create form re-mirrors the combo (BeginSectionConfig -> «+ Новая конфигурация»,
+    // Cancel/Save -> «— не выбрано —» or the config just opened).
+    partial void OnIsCreatingSectionConfigChanged(bool value)
+    {
+        SyncCatalogueConfig();
+    }
+
+    // Mirror the Config section's state (create form open / a config open / neither) into its combo without
+    // echoing the pick back.
+    private void SyncCatalogueConfig()
+    {
+        _suppressCatalogueConfig = true;
+        SelectedCatalogueConfig = IsCreatingSectionConfig
+            ? ConfigChoice.NewConfig
+            : OpenConfig is null
+                ? ConfigChoice.None
+                : ConfigCatalogueOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, OpenConfig, StringComparison.Ordinal)) ?? ConfigChoice.None;
+        _suppressCatalogueConfig = false;
+    }
+
+    // Reconcile ConfigCatalogueOptions in place from the config names: keep «— не выбрано —» at [0] and
+    // «+ Новая конфигурация» at [1], reconcile the real (name) choices after them - the same in-place scheme
+    // as ReconcileProfileOptions, so a snapshot push does not reset the combo's selection.
+    private void ReconcileConfigCatalogueOptions()
+    {
+        const int head = 2; // None + NewConfig occupy [0] and [1].
+        var present = _configNames.ToHashSet(StringComparer.Ordinal);
+        for (var i = ConfigCatalogueOptions.Count - 1; i >= head; i--)
+        {
+            if (!present.Contains(ConfigCatalogueOptions[i].Name))
+            {
+                ConfigCatalogueOptions.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < _configNames.Count; i++)
+        {
+            var name = _configNames[i];
+            var slot = head + i;
+            var existing = ConfigCatalogueOptions.Skip(head).FirstOrDefault(o => string.Equals(o.Name, name, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                ConfigCatalogueOptions.Insert(Math.Min(slot, ConfigCatalogueOptions.Count), new ConfigChoice(name));
+                continue;
+            }
+
+            var index = ConfigCatalogueOptions.IndexOf(existing);
+            if (index != slot)
+            {
+                ConfigCatalogueOptions.Move(index, slot);
+            }
+        }
     }
 
     // The main-window profile combo changed. A real user pick selects that profile on the agent and persists
@@ -814,6 +927,99 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         BuildSectionRoutingEditor(value.Id, value.Name);
+        // Selecting the just-saved list (or re-selecting the open one) short-circuits BuildSectionRoutingEditor,
+        // so RoutingEditor does not change and OnRoutingEditorChanged will not fire - mirror the combo here.
+        SyncCatalogueRouting();
+    }
+
+    // The Routing section combo pick: «— не выбрано —» closes the editor; «+ Новый список» opens a new-list
+    // draft (also how a profile's "+ Новый список" redirect lands here); a real list opens it for editing.
+    partial void OnSelectedCatalogueRoutingChanged(RoutingListChoice? value)
+    {
+        if (_suppressCatalogueRouting || value is null)
+        {
+            return;
+        }
+
+        if (value.IsNewSentinel)
+        {
+            CreateRoutingList();
+            return;
+        }
+
+        if (value.IsNone)
+        {
+            EditRoutingList = null;
+            RoutingEditor = null;
+            RoutingSettings = null;
+            return;
+        }
+
+        var row = RoutingLists.FirstOrDefault(r => r.Id == value.Id);
+        if (row is not null)
+        {
+            EditRoutingList = row;
+        }
+    }
+
+    // The section rule-editor instance changed (new draft created, real list opened, or closed): re-mirror
+    // the combo. An IsNew draft shows «+ Новый список»; a real editor is reflected via EditRoutingList.
+    partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
+    {
+        SyncCatalogueRouting();
+    }
+
+    // Mirror the Routing section's state into its combo without echoing the pick back: a new-list draft shows
+    // «+ Новый список», a selected real list shows its row, otherwise «— не выбрано —».
+    private void SyncCatalogueRouting()
+    {
+        _suppressCatalogueRouting = true;
+        SelectedCatalogueRouting = RoutingEditor is { IsNew: true }
+            ? RoutingListChoice.NewList
+            : EditRoutingList is null
+                ? RoutingListChoice.None
+                : RoutingCatalogueOptions.FirstOrDefault(o => o.IsReal && o.Id == EditRoutingList.Id) ?? RoutingListChoice.None;
+        _suppressCatalogueRouting = false;
+    }
+
+    // Reconcile RoutingCatalogueOptions in place from RoutingLists: keep «— не выбрано —» at [0] and «+ Новый
+    // список» at [1], reconcile the real (id) choices after them - replacing a renamed row so its label
+    // updates. A following SyncCatalogueRouting re-selects by id, so a replace never strands the selection.
+    private void ReconcileRoutingCatalogueOptions()
+    {
+        const int head = 2; // None + NewList occupy [0] and [1].
+        var present = RoutingLists.Select(r => r.Id).ToHashSet();
+        for (var i = RoutingCatalogueOptions.Count - 1; i >= head; i--)
+        {
+            if (RoutingCatalogueOptions[i].Id is not long id || !present.Contains(id))
+            {
+                RoutingCatalogueOptions.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < RoutingLists.Count; i++)
+        {
+            var row = RoutingLists[i];
+            var slot = head + i;
+            var existing = RoutingCatalogueOptions.Skip(head).FirstOrDefault(o => o.Id == row.Id);
+            if (existing is null)
+            {
+                RoutingCatalogueOptions.Insert(Math.Min(slot, RoutingCatalogueOptions.Count), new RoutingListChoice(row.Id, row.Name));
+                continue;
+            }
+
+            if (!string.Equals(existing.Name, row.Name, StringComparison.Ordinal))
+            {
+                RoutingCatalogueOptions[RoutingCatalogueOptions.IndexOf(existing)] = new RoutingListChoice(row.Id, row.Name);
+                existing = RoutingCatalogueOptions.Skip(head).First(o => o.Id == row.Id);
+            }
+
+            var index = RoutingCatalogueOptions.IndexOf(existing);
+            if (index != slot)
+            {
+                RoutingCatalogueOptions.Move(index, slot);
+            }
+        }
     }
 
     // Builds the Routing section's rule editor + per-routing settings for a real (saved) list. Independent of
@@ -873,6 +1079,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             ProfileRename = newValue?.Name ?? string.Empty;
             ProfileRenameStatus = string.Empty;
+            // Reflect the profile's routing list into the Routing section too (mirrors OpenConfig above), so
+            // opening a profile - or gearing into Settings on the active one - lands the Routing section on the
+            // list this profile actually uses. Guarded to real identity changes so a background snapshot re-bind
+            // of the SAME profile does not yank a routing list the user is editing.
+            OpenProfileRouting(newValue);
         }
 
         if (oldValue is not null)
@@ -898,6 +1109,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             OpenConfig = string.IsNullOrEmpty(OpenProfile?.Config) ? null : OpenProfile!.Config;
         }
+    }
+
+    // Reflect a profile's assigned routing list into the standalone Routing section: a real list opens there
+    // (its rule / per-routing settings editors build via OnEditRoutingListChanged), while no list clears the
+    // section. Mirrors how OnOpenProfileChanged opens the profile's configuration.
+    private void OpenProfileRouting(BalancerItemViewModel? profile)
+    {
+        var choice = profile?.SelectedRoutingList;
+        if (choice is { IsReal: true } && RoutingLists.FirstOrDefault(r => r.Id == choice.Id) is { } row)
+        {
+            EditRoutingList = row;
+            return;
+        }
+
+        EditRoutingList = null;
+        RoutingEditor = null;
+        RoutingSettings = null;
+        SyncCatalogueRouting();
     }
 
     // When the routing editor is swapped out (list switch, close, profile change, disconnect), detach its
@@ -1004,6 +1233,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             _pendingOpenConfig = null;
             _pendingEditRoutingListId = null;
             _configNames = [];
+            // Drop the stale catalogue rows from the section combos and re-mirror them to «— не выбрано —».
+            IsCreatingSectionConfig = false;
+            ReconcileConfigCatalogueOptions();
+            ReconcileRoutingCatalogueOptions();
+            SyncCatalogueConfig();
+            SyncCatalogueRouting();
             _noticeTimer.Stop();
             _lastNotice = null;
             NoticeVisible = false;
@@ -1452,6 +1687,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
+        ReconcileConfigCatalogueOptions();
 
         // A config just imported in the Config section: open it once its row arrives so OnOpenConfigChanged
         // seeds the transport editor from the real snapshot row instead of all-defaults.
@@ -1461,6 +1697,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             _pendingOpenConfig = null;
             OpenConfig = name;
         }
+
+        // Re-select the section combo now that the option list is current: an OpenConfig set above (or a
+        // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
+        SyncCatalogueConfig();
     }
 
     private void SyncRoutingLists(IReadOnlyList<RoutingListEntry> entries)
@@ -1500,6 +1740,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.DomainCount = entry.DomainCount;
         }
 
+        ReconcileRoutingCatalogueOptions();
+
         // Reconcile the Routing section's selected list: if it was removed elsewhere, drop the section editor;
         // if its instance was replaced by a fresh row of the same id, re-point at the surviving instance so
         // the combo stays selected. The reconcile above keeps instances in place, so this only fires on a
@@ -1531,6 +1773,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 EditRoutingList = row;
             }
         }
+
+        // Re-select the section combo now that the option list is current (a just-created list's real choice
+        // only now exists; a renamed row was replaced above).
+        SyncCatalogueRouting();
     }
 
     private void SyncSources(IReadOnlyList<SourceEntry> entries)
@@ -1787,6 +2033,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void BeginSectionConfig()
     {
+        // Close any open config first so only the create form shows (the redirect from a profile's picker can
+        // arrive with a config still open), and so the combo lands on «+ Новая конфигурация», not a real row.
+        OpenConfig = null;
         SectionConfigName = string.Empty;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;

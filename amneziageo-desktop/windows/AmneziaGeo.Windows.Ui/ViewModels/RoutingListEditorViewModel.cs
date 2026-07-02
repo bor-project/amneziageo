@@ -55,6 +55,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     // raised from the view. App entries are stored as app: rule tokens in the same Rules collection as geo.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAppPickerActive))]
+    [NotifyPropertyChangedFor(nameof(AppWatermark))]
     private string _appMode = "running";
 
     [ObservableProperty]
@@ -62,9 +63,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 
     [ObservableProperty]
     private AppCandidate? _appSelected;
-
-    [ObservableProperty]
-    private string _appHint = string.Empty;
 
     /// <summary>
     /// ctor used when creating a fresh routing list.
@@ -124,8 +122,16 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     public ObservableCollection<AppCandidate> AppSuggestions { get; } = [];
 
     /// <summary>Whether the per-app add-row is in a list-pick mode (running or installed): the autocomplete
-    /// and «Добавить» are active and the hint is shown. Folder/file picks are one-shot dialogs instead.</summary>
+    /// and «Добавить» are active. Folder/file picks are one-shot dialogs instead.</summary>
     public bool IsAppPickerActive => AppMode is "running" or "installed";
+
+    /// <summary>Watermark for the app add-row input, reflecting the selected source mode
+    /// (running vs installed). Folder/file modes disable the input, so their value is moot.</summary>
+    public string AppWatermark => AppMode switch
+    {
+        "installed" => "имя установленного приложения",
+        _ => "имя запущенного приложения или службы",
+    };
 
     /// <summary>
     /// Fetches geo category suggestions and (for existing lists) the current rules.
@@ -305,7 +311,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     public async Task EnterRunningModeAsync()
     {
         AppMode = "running";
-        AppHint = "Начните вводить имя — выберите запущенное приложение или службу из списка.";
         await LoadRunningAsync();
     }
 
@@ -313,7 +318,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     public async Task EnterInstalledModeAsync()
     {
         AppMode = "installed";
-        AppHint = "Начните вводить имя — выберите установленное приложение из списка.";
         AppInput = string.Empty;
         AppSelected = null;
         // Registry enumeration is synchronous I/O; run it off the UI thread, then publish on return.

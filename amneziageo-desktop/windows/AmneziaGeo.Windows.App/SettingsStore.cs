@@ -23,7 +23,6 @@ internal sealed class SettingsStore(IStateStore store)
             UpdateUrl = defaults.UpdateUrl,
             GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
             GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
-            BlockEncryptedDns = await ReadBoolAsync("block-encrypted-dns", defaults.BlockEncryptedDns, ct),
             TunnelAllUdp = await ReadBoolAsync("tunnel-all-udp", defaults.TunnelAllUdp, ct),
         };
     }
@@ -77,7 +76,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] IntKeys =
         ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds", "geo-check-interval-hours"];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "block-encrypted-dns", "tunnel-all-udp"];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp"];
 
     // No user-settable string settings: the update URL used to live here but is now baked into the build.
     private static readonly string[] StringKeys = [];

@@ -286,9 +286,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
                 IpcContract.OpCopyConfig => await CopyConfigAsync(command.Args, ct),
                 IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
-                IpcContract.OpExportProfile => await ExportProfileAsync(command.Args, ct),
-                IpcContract.OpImportProfile => await ImportProfileAsync(command.Args, ct),
-                IpcContract.OpDuplicateProfile => await DuplicateProfileAsync(command.Args, ct),
+                IpcContract.OpExportBundle => await ExportBundleAsync(command.Args, ct),
+                IpcContract.OpImportBundle => await ImportBundleAsync(command.Args, ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
@@ -549,123 +548,191 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, $"переименован в {newName}");
     }
 
-    private async Task<IpcAck> ExportProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
+    // The selective export selection, parsed from OpExportBundle's arg0 JSON. All three arrays are optional.
+    private sealed record SelectionRequest(string[]? Profiles, string[]? Configs, string[]? RoutingLists);
+
+    // Exports a SELECTIVE bundle (#91): the caller picks which configs, routing lists, and profiles to
+    // include, by name, via a tree of checkboxes - any combination, not just a single profile.
+    private async Task<IpcAck> ExportBundleAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
-            return new IpcAck(false, "export-profile requires a profile name");
+            return new IpcAck(false, "export-bundle requires a selection json");
         }
 
-        var name = args[0];
-        var balancer = await store.GetBalancerAsync(name, ct);
-        if (balancer is null)
-        {
-            return new IpcAck(false, $"unknown profile: {name}");
-        }
-
-        string? configText = null;
-        ProfilePortable.TransportBlock? transport = null;
-        ProfilePortable.GeoBlock? geoBlock = null;
-        string? dns = null;
-        ProfilePortable.ExclusionsBlock? exclusions = null;
-        var config = balancer.Config;
-        if (!string.IsNullOrEmpty(config) && await configRepo.ExistsAsync(config, ct))
-        {
-            configText = await configRepo.ReadTextAsync(config, ct);
-
-            var tr = await store.GetConfigTransportAsync(config, ct);
-            if (tr is not null && (tr.UseWebSocket || tr.WebSocketHost.Length > 0))
-            {
-                transport = new ProfilePortable.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort);
-            }
-
-            var ownGeo = await store.GetTunnelGeoAsync(config, ct);
-            if (ownGeo is not null && (ownGeo.GeoSplit || ownGeo.Rules.Count > 0))
-            {
-                geoBlock = new ProfilePortable.GeoBlock(ownGeo.GeoSplit, ownGeo.Rules.Select(GeoConfigurator.Format).ToList());
-            }
-
-            var configDns = await store.GetConfigDnsAsync(config, ct);
-            if (configDns is not null && configDns.Servers.Length > 0)
-            {
-                dns = configDns.Servers;
-            }
-
-            // Carry exclusions only when the config has a stored row (i.e. the user customized the list); an
-            // absent row means just the built-in defaults, which need not travel.
-            var configEx = await store.GetConfigExclusionsAsync(config, ct);
-            if (configEx is not null && configEx.Exclusions.Length > 0)
-            {
-                exclusions = new ProfilePortable.ExclusionsBlock(configEx.Exclusions);
-            }
-        }
-
-        ProfilePortable.RoutingBlock? routing = null;
-        var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
-        if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct) is { } list)
-        {
-            routing = new ProfilePortable.RoutingBlock(useRouting, list.Name, list.Rules.Select(GeoConfigurator.Format).ToList());
-        }
-
-        var bundle = new ProfilePortable.Bundle(
-            ProfilePortable.FormatTag,
-            ProfilePortable.CurrentVersion,
-            name,
-            config,
-            configText,
-            transport,
-            geoBlock,
-            routing,
-            dns,
-            exclusions);
-
-        logger.LogInformation("exported profile {Name}", name);
-        return new IpcAck(true, ProfilePortable.Serialize(bundle));
-    }
-
-    private async Task<IpcAck> ImportProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
-        {
-            return new IpcAck(false, "import-profile requires the bundle json");
-        }
-
-        ProfilePortable.Bundle? bundle;
+        SelectionRequest? selection;
         try
         {
-            bundle = ProfilePortable.Deserialize(args[0]);
+            selection = JsonSerializer.Deserialize<SelectionRequest>(
+                args[0],
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException)
+        {
+            selection = null;
+        }
+
+        if (selection is null)
+        {
+            return new IpcAck(false, "не удалось разобрать выбор для экспорта");
+        }
+
+        // Resolve the EFFECTIVE set of config/routing-list names: the explicitly picked entries, plus
+        // (for every selected profile) the config and routing list it binds - so picking a profile travels
+        // with what it needs to reconnect, without the caller having to also tick its dependencies by hand.
+        var configNames = new HashSet<string>(selection.Configs ?? [], StringComparer.Ordinal);
+        var routingNames = new HashSet<string>(selection.RoutingLists ?? [], StringComparer.Ordinal);
+        var profileNames = new HashSet<string>(selection.Profiles ?? [], StringComparer.Ordinal);
+
+        foreach (var profileName in profileNames)
+        {
+            var balancer = await store.GetBalancerAsync(profileName, ct);
+            if (balancer is null)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(balancer.Config))
+            {
+                configNames.Add(balancer.Config);
+            }
+
+            var (listId, _) = await store.GetProfileRoutingAsync(profileName, ct);
+            if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct) is { } boundList)
+            {
+                routingNames.Add(boundList.Name);
+            }
+        }
+
+        if (configNames.Count == 0 && routingNames.Count == 0 && profileNames.Count == 0)
+        {
+            return new IpcAck(false, "Не выбрано ничего для экспорта");
+        }
+
+        var configBlocks = new List<PortableBundle.ConfigBlock>();
+        foreach (var name in configNames)
+        {
+            // Skip silently if a named config vanished between selection and export.
+            if (!await configRepo.ExistsAsync(name, ct))
+            {
+                continue;
+            }
+
+            var configText = await configRepo.ReadTextAsync(name, ct);
+
+            PortableBundle.TransportBlock? transport = null;
+            var tr = await store.GetConfigTransportAsync(name, ct);
+            if (tr is not null)
+            {
+                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu);
+            }
+
+            PortableBundle.GeoBlock? geoBlock = null;
+            var ownGeo = await store.GetTunnelGeoAsync(name, ct);
+            if (ownGeo is not null && (ownGeo.GeoSplit || ownGeo.Rules.Count > 0))
+            {
+                geoBlock = new PortableBundle.GeoBlock(ownGeo.GeoSplit, ownGeo.Rules.Select(GeoConfigurator.Format).ToList());
+            }
+
+            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock));
+        }
+
+        var routingBlocks = new List<PortableBundle.RoutingBlock>();
+        if (routingNames.Count > 0)
+        {
+            var allLists = await store.ListRoutingListsAsync(ct);
+            foreach (var name in routingNames)
+            {
+                var list = allLists.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.Ordinal));
+                if (list is null)
+                {
+                    continue;
+                }
+
+                var rules = list.Rules.Select(GeoConfigurator.Format).ToList();
+                PortableBundle.RoutingSettingsBlock? settingsBlock = null;
+                var settings = await store.GetRoutingSettingsAsync(list.Id, ct);
+                if (settings is not null)
+                {
+                    settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.LocalDns, settings.Exclusions, settings.AllUdp);
+                }
+
+                routingBlocks.Add(new PortableBundle.RoutingBlock(name, rules, settingsBlock));
+            }
+        }
+
+        var profileBlocks = new List<PortableBundle.ProfileBlock>();
+        foreach (var name in profileNames)
+        {
+            var balancer = await store.GetBalancerAsync(name, ct);
+            if (balancer is null)
+            {
+                continue;
+            }
+
+            var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
+            string? routingListName = null;
+            if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct) is { } list)
+            {
+                routingListName = list.Name;
+            }
+
+            profileBlocks.Add(new PortableBundle.ProfileBlock(
+                name,
+                string.IsNullOrEmpty(balancer.Config) ? null : balancer.Config,
+                routingListName,
+                useRouting));
+        }
+
+        var bundle = new PortableBundle.Bundle(
+            PortableBundle.FormatTag,
+            PortableBundle.CurrentVersion,
+            configBlocks,
+            routingBlocks,
+            profileBlocks);
+
+        logger.LogInformation(
+            "exported bundle: {Configs} configs, {Routing} routing lists, {Profiles} profiles",
+            configBlocks.Count,
+            routingBlocks.Count,
+            profileBlocks.Count);
+        return new IpcAck(true, PortableBundle.Serialize(bundle));
+    }
+
+    // Imports a SELECTIVE bundle (#91), recreating every carried config, routing list, and profile as new,
+    // independent entities under fresh (de-duplicated) names using the FreeName/SanitizeFileName policy
+    // below. All-or-nothing per call: a single malformed config's text throws and aborts the whole import
+    // (the outer command dispatch's catch turns it into a failed ack); already-written rows from the same
+    // call are not rolled back.
+    private async Task<IpcAck> ImportBundleAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "import-bundle requires the bundle json");
+        }
+
+        PortableBundle.Bundle? bundle;
+        try
+        {
+            bundle = PortableBundle.Deserialize(args[0]);
         }
         catch (JsonException ex)
         {
-            return new IpcAck(false, $"не удалось разобрать профиль: {ex.Message}");
+            return new IpcAck(false, $"не удалось разобрать файл: {ex.Message}");
         }
 
-        if (bundle is null || !string.Equals(bundle.Format, ProfilePortable.FormatTag, StringComparison.Ordinal))
+        if (bundle is null || !string.Equals(bundle.Format, PortableBundle.FormatTag, StringComparison.Ordinal))
         {
-            return new IpcAck(false, "это не файл профиля AmneziaGeo");
+            return new IpcAck(false, "это не файл AmneziaGeo");
         }
 
-        if (bundle.Version > ProfilePortable.CurrentVersion)
+        if (bundle.Version > PortableBundle.CurrentVersion)
         {
-            return new IpcAck(false, $"файл профиля новее (v{bundle.Version}); обновите приложение");
+            return new IpcAck(false, $"файл новее (v{bundle.Version}); обновите приложение");
         }
 
-        // Import is offered only from inside a profile's settings, so it restores *into* that open profile:
-        // the bundle replaces the open profile in place. Its name stays, so the connection target (which keys
-        // on the name) keeps pointing at it and now carries the imported config - this is what makes a restore
-        // onto a fresh "+ Профиль" placeholder connectable. The target name is args[1]; when it is absent or
-        // unknown (e.g. a CLI import with no open profile) we fall back to creating a fresh, independent profile.
-        var replaceTarget = args.Count > 1 ? args[1] : string.Empty;
-        var replacing = string.IsNullOrWhiteSpace(replaceTarget) ? null : await store.GetBalancerAsync(replaceTarget, ct);
-
-        // Swapping the config out from under a live tunnel would orphan the running member; make the user disconnect.
-        if (replacing is not null && control.Running && string.Equals(replaceTarget, BoundTarget, StringComparison.Ordinal))
-        {
-            return new IpcAck(false, $"профиль {replaceTarget} подключён; отключитесь перед импортом");
-        }
-
-        // Config and profile names live in one global namespace (rename refuses a name used by either), so
-        // de-duplicate the imported names against both. Routing-list names are a separate space.
+        // Config and profile names live in one global namespace (rename refuses a name used by either);
+        // routing-list names are a separate space.
         var taken = new HashSet<string>(StringComparer.Ordinal);
         foreach (var existing in await configRepo.ListAsync(ct))
         {
@@ -677,117 +744,91 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             taken.Add(existing);
         }
 
-        var configName = string.Empty;
-        if (!string.IsNullOrWhiteSpace(bundle.ConfigText))
+        var listNames = new HashSet<string>(
+            (await store.ListRoutingListsAsync(ct)).Select(l => l.Name),
+            StringComparer.Ordinal);
+
+        var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var routingMap = new Dictionary<string, (string Name, long Id)>(StringComparer.Ordinal);
+        var renames = new List<string>();
+
+        foreach (var block in bundle.Configs)
         {
-            var desired = SanitizeFileName(string.IsNullOrWhiteSpace(bundle.Config) ? bundle.Profile : bundle.Config);
-            configName = FreeName(desired, taken);
-            taken.Add(configName);
-
-            // Validates [Interface]/[Peer]; a malformed bundle throws here and aborts the import before any
-            // profile/routing rows are written.
-            await configRepo.AddFromTextAsync(configName, bundle.ConfigText, ct);
-
-            if (bundle.Transport is { } tr)
+            var finalName = FreeName(SanitizeFileName(block.Name), taken);
+            taken.Add(finalName);
+            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
             {
-                await store.SetConfigTransportAsync(new ConfigTransport(configName, tr.UseWebSocket, tr.Host, tr.Port), ct);
+                renames.Add($"«{block.Name}» → «{finalName}»");
             }
 
-            if (bundle.Geo is { } g)
+            // Validates [Interface]/[Peer]; a malformed bundle throws here and aborts the import.
+            await configRepo.AddFromTextAsync(finalName, block.ConfigText, ct);
+
+            if (block.Transport is { } tr)
+            {
+                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu), ct);
+            }
+
+            if (block.Geo is { } g)
             {
                 // Re-materializes the rule tokens against this machine's geo data (empty until downloaded).
-                await geo.ApplyAsync(configName, g.Split, g.Rules, ct);
+                await geo.ApplyAsync(finalName, g.Split, g.Rules, ct);
             }
 
-            if (!string.IsNullOrWhiteSpace(bundle.Dns))
+            configNameMap[block.Name] = finalName;
+        }
+
+        foreach (var block in bundle.RoutingLists)
+        {
+            var finalName = FreeName(block.Name, listNames);
+            listNames.Add(finalName);
+            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
             {
-                await store.SetConfigDnsAsync(new ConfigDns(configName, bundle.Dns.Trim()), ct);
+                renames.Add($"«{block.Name}» → «{finalName}»");
             }
 
-            if (bundle.Exclusions is { } ex && !string.IsNullOrWhiteSpace(ex.List))
+            var newId = await geo.ApplyToRoutingListAsync(0, finalName, block.Rules, ct);
+            if (block.Settings is { } s)
             {
-                await store.SetConfigExclusionsAsync(new ConfigExclusions(configName, ex.List.Trim()), ct);
+                await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.LocalDns, s.Exclusions, s.AllUdp, "split"), ct);
             }
+
+            routingMap[block.Name] = (finalName, newId);
         }
 
-        string profileName;
-        var oldConfigToRemove = string.Empty;
-        if (replacing is not null)
+        foreach (var block in bundle.Profiles)
         {
-            // A restore must carry a config: rebinding the open profile to an empty config (and then deleting
-            // the one it had) would blank a working profile - the very "конфиг пустой" failure this fixes. So a
-            // config-less bundle is refused here rather than allowed to overwrite-then-delete.
-            if (string.IsNullOrEmpty(configName))
+            var finalName = FreeName(block.Name, taken);
+            taken.Add(finalName);
+            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
             {
-                return new IpcAck(false, "файл профиля не содержит конфигурацию для восстановления");
+                renames.Add($"«{block.Name}» → «{finalName}»");
             }
 
-            // Restore in place: keep the open profile's name, point it at the freshly imported config. The
-            // config it used to hold is removed only at the very end (after routing is applied), so a late
-            // failure leaves the old config recoverable rather than the profile half-overwritten.
-            profileName = replacing.Name;
-            oldConfigToRemove = replacing.Config;
-            await store.SaveBalancerAsync(new BalancerGroup(profileName, configName), ct);
-        }
-        else
-        {
-            var profileBase = string.IsNullOrWhiteSpace(bundle.Profile)
-                ? (configName.Length > 0 ? configName : "Профиль")
-                : bundle.Profile;
-            profileName = FreeName(profileBase, taken);
-            await store.SaveBalancerAsync(new BalancerGroup(profileName, configName), ct);
+            var config = block.Config is not null && configNameMap.TryGetValue(block.Config, out var cn) ? cn : string.Empty;
+            await store.SaveBalancerAsync(new BalancerGroup(finalName, config), ct);
+
+            // No EnsureDefaultTargetAsync here: a bulk import must not silently steal the connection target.
+            if (block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rl))
+            {
+                await store.SetProfileRoutingAsync(finalName, rl.Id, block.UseRouting, ct);
+            }
         }
 
-        await EnsureDefaultTargetAsync(profileName, ct);
-
-        if (bundle.Routing is { } r)
+        var summary = $"Импортировано: конфигураций {bundle.Configs.Count}, списков маршрутизации {bundle.RoutingLists.Count}, профилей {bundle.Profiles.Count}.";
+        if (renames.Count > 0)
         {
-            var listNames = new HashSet<string>(
-                (await store.ListRoutingListsAsync(ct)).Select(l => l.Name),
-                StringComparer.Ordinal);
-            var listName = FreeName(string.IsNullOrWhiteSpace(r.ListName) ? profileName : r.ListName, listNames);
-            var newListId = await geo.ApplyToRoutingListAsync(0, listName, r.Rules, ct);
-            await store.SetProfileRoutingAsync(profileName, newListId, r.Use, ct);
-        }
-        else if (replacing is not null)
-        {
-            // The bundle carries no routing; a restore must not leave the replaced profile's old assignment in place.
-            await store.SetProfileRoutingAsync(profileName, null, false, ct);
-        }
-
-        // Drop the replaced profile's previous config now that the new binding and routing are fully in place.
-        // Removed only when no other profile still binds it (RemoveAsync would otherwise unbind that profile too);
-        // the in-use check sits immediately before the removal so the window for a concurrent rebind is minimal.
-        if (!string.IsNullOrEmpty(oldConfigToRemove)
-            && !string.Equals(oldConfigToRemove, configName, StringComparison.Ordinal)
-            && await configRepo.ExistsAsync(oldConfigToRemove, ct)
-            && !await ConfigInUseAsync(oldConfigToRemove, ct))
-        {
-            await configRepo.RemoveAsync(oldConfigToRemove, ct);
+            summary += renames.Count <= 5
+                ? "\nПереименовано при импорте: " + string.Join(", ", renames) + "."
+                : "\nПереименовано при импорте: несколько имён совпали с уже существующими.";
         }
 
         logger.LogInformation(
-            replacing is not null ? "restored profile {Profile} from import (config '{Config}')" : "imported profile {Profile} (config '{Config}')",
-            profileName,
-            configName);
-        return new IpcAck(true, profileName);
-    }
-
-    // Duplicate a profile into an independent copy.
-    private async Task<IpcAck> DuplicateProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
-        {
-            return new IpcAck(false, "duplicate-profile requires a profile name");
-        }
-
-        var exported = await ExportProfileAsync([args[0]], ct);
-        if (!exported.Ok)
-        {
-            return exported;
-        }
-
-        return await ImportProfileAsync([exported.Message], ct);
+            "imported bundle: {Configs} configs, {Routing} routing lists, {Profiles} profiles",
+            bundle.Configs.Count,
+            bundle.RoutingLists.Count,
+            bundle.Profiles.Count);
+        return new IpcAck(true, summary);
     }
 
     // True when any profile still binds the given config, so removing the config would unbind that profile too.
@@ -1841,7 +1882,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.GeoCheckIntervalHours,
             control.ConnectFailed,
             AppSettings.EngineVersion,
-            settings.BlockEncryptedDns,
             settings.TunnelAllUdp);
     }
 

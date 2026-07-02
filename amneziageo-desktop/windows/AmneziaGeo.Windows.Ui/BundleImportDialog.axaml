@@ -1,0 +1,47 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
+        x:Class="AmneziaGeo.Windows.Ui.BundleImportDialog"
+        x:CompileBindings="True"
+        x:DataType="vm:BundleImportDialogViewModel"
+        Title="Импорт"
+        Width="480" Height="520"
+        MinWidth="380" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AgBgBrush}"
+        Foreground="{DynamicResource AgFgBrush}">
+
+  <DockPanel Margin="16">
+
+    <TextBlock DockPanel.Dock="Top" Text="Импорт профилей, конфигураций и списков маршрутизации"
+               FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+
+    <TextBlock DockPanel.Dock="Top" Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
+               Foreground="{DynamicResource AgWarnBrush}"
+               Text="⚠ Импортируемый файл может содержать приватные ключи конфигураций — используйте файлы из доверенных источников." />
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0">
+      <Button Classes="softbtn" Content="Вставить" Click="OnPaste" />
+      <Button Classes="softbtn" Content="Загрузить файл…" Click="OnLoadFile" />
+      <Button Classes="accent" Content="Импортировать" Command="{Binding ImportCommand}" IsEnabled="{Binding !IsBusy}" />
+      <Button Classes="softbtn" Content="Закрыть" Click="OnClose" IsDefault="True" />
+    </StackPanel>
+
+    <!-- Muted, not error-tinted: unlike the other small dialogs' StatusMessage (error-only there), this one
+         also carries the success summary ("Импортировано: …") - painting that red would read as a failure. -->
+    <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
+               TextWrapping="Wrap" Margin="0,10,0,0" />
+
+    <Border Margin="0,12,0,0" BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+            CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
+      <TextBox Text="{Binding Payload, Mode=TwoWay}" AcceptsReturn="True" AcceptsTab="True"
+               TextWrapping="NoWrap" VerticalContentAlignment="Top"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+               BorderThickness="0" Background="Transparent"
+               FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
+               Watermark="Вставьте JSON файла бандла или загрузите его кнопкой «Загрузить файл…»" />
+    </Border>
+
+  </DockPanel>
+</Window>

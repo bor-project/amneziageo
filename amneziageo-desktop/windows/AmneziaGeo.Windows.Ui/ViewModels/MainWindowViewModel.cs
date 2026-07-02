@@ -30,45 +30,53 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // so a persistent "update available" state isn't re-raised on every snapshot and a dismissed banner
     // stays dismissed until the set of outdated sources changes.
     private string? _geoBannerSignature;
+    // Set while the main-window profile combo is assigned from a snapshot reconcile (Apply), so the
+    // programmatic selection does not echo back an OpSelectProfile to the agent. Mirrors the per-row
+    // _suppress flags already used in BalancerItemViewModel.
+    private bool _suppressActivePush;
+    // A routing list just created in the Routing section, whose summary row has not yet arrived in a
+    // snapshot. SyncRoutingLists selects it (EditRoutingList) once the row is present, then clears this.
+    private long? _pendingEditRoutingListId;
+    // A config just imported in the Config section, whose row has not yet arrived in a snapshot.
+    // SyncConfigs opens it (OpenConfig) once present, so its transport editor seeds from the real row.
+    private string? _pendingOpenConfig;
+    // Set while a profile combo's selection is mirrored from state (ActiveProfile / OpenProfile) rather than
+    // chosen by the user, so the programmatic assignment does not re-enter the pick handler and echo back.
+    private bool _suppressActiveChoice;
+    private bool _suppressOpenChoice;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
-    [NotifyPropertyChangedFor(nameof(AgentStatusBrush))]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     private bool _isConnected;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ConnectButtonText))]
-    [NotifyPropertyChangedFor(nameof(ConnectButtonBrush))]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(IsConnecting))]
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
-    [NotifyPropertyChangedFor(nameof(ConnectGlyph))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
-    [NotifyPropertyChangedFor(nameof(ConnectStageBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
+    [NotifyPropertyChangedFor(nameof(ConnectPillContent))]
+    [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     private bool _isTunnelActive;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
-    [NotifyPropertyChangedFor(nameof(ActiveProfileName))]
     private string? _boundTarget;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
-    [NotifyPropertyChangedFor(nameof(AgentStatusBrush))]
     [NotifyPropertyChangedFor(nameof(IsConnecting))]
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
-    [NotifyPropertyChangedFor(nameof(ConnectGlyph))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
-    [NotifyPropertyChangedFor(nameof(ConnectStageBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
@@ -77,41 +85,52 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private bool _hasConfigs;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private bool _hasBalancers;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsEmpty))]
     private bool _hasRoutingLists;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHome))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderPower))]
     private string _nav = "home";
 
-    // Profile master-detail: the profile opened for editing (null = the profiles list is shown), and
-    // which of its aspect pages the left rail has selected.
+    // The profile opened for editing in the Profile settings section (null = none opened).
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsProfileList))]
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
-    [NotifyPropertyChangedFor(nameof(OpenProfileName))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderPower))]
-    [NotifyPropertyChangedFor(nameof(ShowProfileAspects))]
     private BalancerItemViewModel? _openProfile;
 
+    // The Profile-section combo's selection, wrapped as a ProfileChoice so the combo also offers
+    // «— не выбрано —» and «+ Новый профиль». Mirrors OpenProfile; the pick handler translates it.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAspectConfig))]
-    [NotifyPropertyChangedFor(nameof(IsAspectRouting))]
-    [NotifyPropertyChangedFor(nameof(IsAspectExclusions))]
-    [NotifyPropertyChangedFor(nameof(IsAspectProxy))]
-    [NotifyPropertyChangedFor(nameof(IsAspectDns))]
-    [NotifyPropertyChangedFor(nameof(IsAspectName))]
-    private string _profileAspect = "name";
+    private ProfileChoice? _openProfileChoice = ProfileChoice.None;
+
+    // The profile chosen in the main-window profile combo: the agent's selected target. Picking one selects
+    // it on the agent (OpSelectProfile) and persists its name so the same profile is restored on next launch.
+    // Connect is gated on this being non-null. Assigned from the snapshot inside a suppression flag so the
+    // reconcile that follows does not echo a redundant select back to the agent.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    private BalancerItemViewModel? _activeProfile;
+
+    // The main-window combo's selection, wrapped as a ProfileChoice (see OpenProfileChoice). Picking
+    // «+ Новый профиль» redirects into the Profile section and creates a profile there.
+    [ObservableProperty]
+    private ProfileChoice? _activeProfileChoice = ProfileChoice.None;
+
+    // The routing list chosen in the Routing settings section for editing. On change the section's rule
+    // editor (RoutingEditor) and per-routing settings (RoutingSettings) are (re)built for that list.
+    [ObservableProperty]
+    private RoutingListSummaryViewModel? _editRoutingList;
+
+    // The per-routing traffic editor (local DNS, exclusions, all-UDP) for the routing list open in the
+    // Routing settings section; null until a real (saved) list is selected.
+    [ObservableProperty]
+    private RoutingSettingsViewModel? _routingSettings;
 
     // Config management (one level below a profile's Конфигурация aspect): the member config opened for
     // actions (null = the member list is shown). The right pane shows one full page with every action
@@ -119,7 +138,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // pane returns to the member list.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConfigManage))]
-    [NotifyPropertyChangedFor(nameof(ShowProfileAspects))]
     private string? _openConfig;
 
     // The config page's view model, built when a config is opened. It reuses the export dialog VM, which
@@ -130,16 +148,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // The open config's WebSocket (UDP-over-TCP) transport settings, shown on its management page.
     [ObservableProperty]
     private ConfigTransportViewModel? _configTransport;
-
-    // The open config's preferred-DNS editor, shown on the profile's DNS aspect (per-config, moved off the
-    // former global setting). Built when a config opens, alongside ConfigTransport.
-    [ObservableProperty]
-    private ConfigDnsViewModel? _configDns;
-
-    // The open config's bypass-exclusions editor, shown on the profile's Маршрутизация aspect (per-config,
-    // moved off the former global settings). Built when a config opens.
-    [ObservableProperty]
-    private ConfigExclusionsViewModel? _configExclusions;
 
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
@@ -166,18 +174,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _profileRenameStatus = string.Empty;
 
-    // One-line status for the profile export/import (the Профиль aspect): "скопировано",
-    // "импортирован <name>", or an error from the agent.
+    // Which settings section the section rail has selected on the Settings surface.
     [ObservableProperty]
-    private string _profilePortStatus = string.Empty;
-
-    // Which settings section the left rail has selected while on the Settings tab.
-    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSettingsProfile))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsRouting))]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
     [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
-    [NotifyPropertyChangedFor(nameof(IsSettingsAbout))]
-    private string _settingsSection = "general";
+    private string _settingsSection = "profile";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ThemeLabel))]
@@ -189,21 +194,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string? _noticeText;
 
-    // The rule editor for the OPEN profile's selected routing list, shown inline under the profile's
-    // Маршрутизация aspect. Driven by the open profile's SelectedRoutingList (built/rebuilt by
-    // SyncProfileRoutingEditor); null when no real list is selected.
+    // The rule editor for the routing list open in the Routing settings section; null when none is selected.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRoutingEditor))]
-    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
-    [NotifyPropertyChangedFor(nameof(CanEditRouting))]
     private RoutingListEditorViewModel? _routingEditor;
-
-    // The routing page is collapsed to just the picker by default; the rule editor opens on "Редактировать"
-    // (an existing list) or by picking "+ Новый список" (a new one).
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowRoutingEditor))]
-    [NotifyPropertyChangedFor(nameof(CanEditRouting))]
-    private bool _isRoutingEditing;
 
     // App self-update (#54): the metadata URL (baked into the build, surfaced read-only via the snapshot to
     // gate the update UI), the latest check result, and download state.
@@ -241,15 +235,21 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _geoAutoCheck = true;
 
-    // #69: neutralize encrypted DNS (DoT/DoH to known resolvers) while a tunnel is up so apps fall back to
-    // plain DNS through the proxy. Off by default (privacy/compat trade-off; explained in the settings UI).
+    // Standalone "+ Новая конфигурация" import form on the Config settings section: adds a config to the
+    // shared catalogue without going through a profile. Mirrors the per-profile inline form, but the import
+    // is dispatched straight to the catalogue (ImportConfigAsync) rather than assigned to any profile.
     [ObservableProperty]
-    private bool _blockEncryptedDns;
+    private bool _isCreatingSectionConfig;
 
-    // #77-udp: route ALL UDP through the tunnel while in split mode - a catch-all for real-time media
-    // (e.g. Discord voice) whose server IPs arrive via signaling, not DNS. Off by default.
     [ObservableProperty]
-    private bool _tunnelAllUdp;
+    private string _sectionConfigName = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSectionConfig))]
+    private string _sectionConfigText = string.Empty;
+
+    [ObservableProperty]
+    private string _sectionConfigStatus = string.Empty;
 
 
     [ObservableProperty]
@@ -348,6 +348,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<BalancerItemViewModel> Balancers { get; } = [];
 
     /// <summary>
+    /// The same profile rows under the name the new shell uses (a profile = a reusable config × routing
+    /// pair). Aliases <see cref="Balancers"/> so the main-window profile combo and the Profile settings
+    /// section bind to one collection without duplicating the reconcile.
+    /// </summary>
+    public ObservableCollection<BalancerItemViewModel> Profiles => Balancers;
+
+    /// <summary>
+    /// The options shown in both profile combos: «— не выбрано —», «+ Новый профиль», then every saved
+    /// profile by name. Reconciled in place from <see cref="Balancers"/> so a snapshot push does not null
+    /// the combos' selection.
+    /// </summary>
+    public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None, ProfileChoice.New];
+
+    /// <summary>
     /// Routing-list catalogue.
     /// </summary>
     public ObservableCollection<RoutingListSummaryViewModel> RoutingLists { get; } = [];
@@ -378,45 +392,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         : "Нет связи с агентом";
 
     /// <summary>
-    /// Connection-card status indicator color.
+    /// Whether the connect / disconnect button is actionable: the agent pipe is up AND a complete profile is
+    /// chosen in the main-window combo (a configuration must be assigned - there is nothing to dial without
+    /// one; routing defaults to «Полный туннель» and is always valid). Disconnect is always allowed once a
+    /// tunnel is up, so an in-flight/active tunnel keeps the button live even if the row briefly reads
+    /// incomplete during a reconcile.
     /// </summary>
-    public IBrush AgentStatusBrush => StatusLabels.Brush(IsConnected ? BoundStatus : ConnectionStatus.Disconnected);
-
-    /// <summary>
-    /// Name shown under the status banner in the connection card.
-    /// </summary>
-    public string ActiveProfileName => BoundTarget ?? "-";
-
-    /// <summary>
-    /// Whether nothing is configured yet.
-    /// </summary>
-    public bool IsEmpty => !HasConfigs && !HasBalancers && !HasRoutingLists;
-
-    /// <summary>
-    /// The hint shown when nothing is configured.
-    /// </summary>
-    public string EmptyHint => "Нет конфигураций. Нажмите «+ Профиль» или «Добавить».";
-
-    /// <summary>
-    /// Big connect / disconnect button label, reflecting the agent's desired tunnel state.
-    /// </summary>
-    public string ConnectButtonText => IsTunnelActive ? "Остановить" : "Запустить";
-
-    /// <summary>
-    /// Big connect / disconnect button color.
-    /// </summary>
-    public IBrush ConnectButtonBrush => StatusLabels.Brush(IsTunnelActive ? ConnectionStatus.Disconnected : ConnectionStatus.Connected);
-
-    /// <summary>
-    /// Whether the connect / disconnect button is actionable (the agent pipe is up).
-    /// </summary>
-    public bool CanToggleConnection => IsConnected;
+    public bool CanToggleConnection => IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
 
     // --- Power-button connection control (design "Кнопка-питание"): a round on/off circle with the
     // status and a hint beside it, tinted by state (disconnected / connecting / connected). ---
-    private static readonly IBrush _stageOff = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xF7));
-    private static readonly IBrush _stageConnecting = new SolidColorBrush(Color.FromRgb(0xFD, 0xF6, 0xEC));
-    private static readonly IBrush _stageConnected = new SolidColorBrush(Color.FromRgb(0xF0, 0xF5, 0xFC));
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
     private static readonly IBrush _circleBorderAmber = new SolidColorBrush(Color.FromRgb(0xF0, 0xD3, 0xA8));
@@ -449,19 +434,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Transient disconnect (intent off): the power-button ring wave travels inward.</summary>
     public bool IsConnectingIn => IsConnecting && !IsTunnelActive;
 
-    /// <summary>Glyph in the power circle: ▶ to connect, ■ to stop, empty while connecting (spinner).</summary>
-    public string ConnectGlyph => ConnState switch { 1 => string.Empty, 2 => "■", _ => "▶" };
-
-    /// <summary>Hint line under the status in the power control.</summary>
+    /// <summary>Hint line under the status in the power control. When disconnected, it explains why Connect
+    /// may be disabled: no profile chosen, or the chosen profile has no configuration yet.</summary>
     public string ConnectHint => ConnState switch
     {
         1 => "Устанавливается соединение…",
         2 => "Нажмите, чтобы отключиться",
+        _ when ActiveProfile is null => "Выберите профиль",
+        _ when ActiveProfile is { IsComplete: false } => "У профиля нет конфигурации — задайте её в настройках",
         _ => "Нажмите, чтобы подключиться",
     };
 
-    /// <summary>Tinted background of the power-control stage.</summary>
-    public IBrush ConnectStageBrush => ConnState switch { 2 => _stageConnected, 1 => _stageConnecting, _ => _stageOff };
+    /// <summary>Label on the connect/disconnect pill button in the settings header.</summary>
+    public string ConnectPillContent => IsTunnelActive ? "Отключить" : "Подключить";
 
     /// <summary>Power circle fill.</summary>
     public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
@@ -497,21 +482,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool IsSettings => Nav == "settings";
 
-    /// <summary>Whether the profiles list is shown (no profile opened for detail).</summary>
-    public bool IsProfileList => OpenProfile is null;
-
-    /// <summary>
-    /// Whether the header power control is shown. Hidden on the Home profiles-list, where the large
-    /// power button in the right pane takes over (the header control would only duplicate it); shown
-    /// on a profile's detail and on the Routing / Settings tabs.
-    /// </summary>
-    public bool ShowHeaderPower => !(IsHome && IsProfileList);
-
-    /// <summary>Whether a profile is opened: the left rail shows its aspects, the right pane the editor.</summary>
+    /// <summary>Whether a profile is opened for editing in the Profile settings section.</summary>
     public bool IsProfileDetail => OpenProfile is not null;
-
-    /// <summary>Name of the opened profile, shown atop its aspect rail.</summary>
-    public string OpenProfileName => OpenProfile?.Name ?? string.Empty;
 
     /// <summary>Whether the inline name editor can save (the typed name is not blank).</summary>
     public bool CanSaveProfileName => !string.IsNullOrWhiteSpace(ProfileRename);
@@ -519,40 +491,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Whether the inline config-name editor has a non-blank name to save.</summary>
     public bool CanSaveConfigName => !string.IsNullOrWhiteSpace(ConfigRename);
 
-    /// <summary>Whether the opened profile's configuration aspect is selected.</summary>
-    public bool IsAspectConfig => ProfileAspect == "config";
-
-    /// <summary>Whether the opened profile's routing aspect is selected.</summary>
-    public bool IsAspectRouting => ProfileAspect == "routing";
-
-    /// <summary>Whether the opened profile's exclusions (direct-access) aspect is selected.</summary>
-    public bool IsAspectExclusions => ProfileAspect == "exclusions";
-
-    /// <summary>Whether the opened profile's proxy (WebSocket) aspect is selected.</summary>
-    public bool IsAspectProxy => ProfileAspect == "proxy";
-
-    /// <summary>Whether the opened profile's DNS aspect is selected.</summary>
-    public bool IsAspectDns => ProfileAspect == "dns";
-
-    /// <summary>Whether the opened profile's name aspect is selected.</summary>
-    public bool IsAspectName => ProfileAspect == "name";
+    /// <summary>Whether the Config-section import form can save: its text parses as a config (.conf / vpn://).
+    /// A name is optional (auto-derived on import), so only the config text is required.</summary>
+    public bool CanSaveSectionConfig => VpnLinkCodec.TryDecode(SectionConfigText) is not null;
 
     /// <summary>Whether a member config is opened for management (the full config page shows on the right).</summary>
-    // The config-management block (name/export/delete) shows once a config is open, but is hidden while the
-    // inline "+ Новая конфигурация" import form is up so the two do not render at once (#45).
-    public bool IsConfigManage => OpenConfig is not null && !(OpenProfile?.IsCreatingConfig ?? false);
+    public bool IsConfigManage => OpenConfig is not null;
 
-    /// <summary>
-    /// Whether the profile's aspect editors (right pane) show: whenever a profile is open. Each aspect
-    /// renders a slice of the profile's single configuration (text / proxy) or its routing / name.
-    /// </summary>
-    public bool ShowProfileAspects => IsProfileDetail;
+    /// <summary>Whether the Profile settings section is selected (pick / edit a profile = config × routing pair).</summary>
+    public bool IsSettingsProfile => SettingsSection == "profile";
 
-    /// <summary>Whether the General settings section is selected.</summary>
+    /// <summary>Whether the Config settings section is selected (the standalone config catalogue).</summary>
+    public bool IsSettingsConfig => SettingsSection == "config";
+
+    /// <summary>Whether the Routing settings section is selected (the standalone routing-list catalogue).</summary>
+    public bool IsSettingsRouting => SettingsSection == "routing";
+
+    /// <summary>Whether the General settings section is selected (About is folded into this section).</summary>
     public bool IsSettingsGeneral => SettingsSection == "general";
-
-    /// <summary>Whether the About settings section is selected.</summary>
-    public bool IsSettingsAbout => SettingsSection == "about";
 
     /// <summary>Whether the Logs settings section is selected (the agent journal lives here now).</summary>
     public bool IsSettingsLogs => SettingsSection == "logs";
@@ -561,16 +517,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsSettingsSources => SettingsSection == "sources";
 
     /// <summary>
-    /// Whether the inline rule editor is shown under the open profile's Маршрутизация aspect (a real
-    /// or freshly-created list is selected).
+    /// Whether the rule editor is shown in the Routing settings section (a list is selected).
     /// </summary>
     public bool HasRoutingEditor => RoutingEditor is not null;
-
-    /// <summary>Whether the inline rule editor is shown - it is open for editing, or it is a brand-new list.</summary>
-    public bool ShowRoutingEditor => RoutingEditor is not null && (IsRoutingEditing || RoutingEditor.IsNew);
-
-    /// <summary>Whether to offer "Редактировать": a saved list is selected and the editor is still collapsed.</summary>
-    public bool CanEditRouting => RoutingEditor is not null && !RoutingEditor.IsNew && !IsRoutingEditing;
 
     /// <summary>
     /// Current theme label shown on the toggle button.
@@ -612,51 +561,36 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SettingsSection = section;
     }
 
-    // Open a profile into its detail view (aspect rail + right-pane editor), starting on the overview.
-    [RelayCommand]
-    private void OpenProfileDetail(BalancerItemViewModel profile)
-    {
-        OpenProfile = profile;
-        ProfileAspect = "name";
-    }
-
-    // Header back control (one button, always labelled "Назад"): from the config page back to the member
-    // list, otherwise from a profile's detail back to the profiles list.
-    [RelayCommand]
-    private void Back()
-    {
-        OpenProfile = null;
-    }
-
-    // Switch which aspect page (overview / config / routing / balancer / name) the right pane shows. A rail
-    // click always returns to the aspect's list (never resumes a config that was open for management),
-    // even when the same aspect is re-selected - so coming back never lands mid-edit.
-    [RelayCommand]
-    private void SelectProfileAspect(string aspect)
-    {
-        ProfileAspect = aspect;
-    }
-
-    // Open a member config into its full management page (right pane). The aspect rail stays put.
-    [RelayCommand]
-    private void OpenConfigManage(string configName)
-    {
-        OpenConfig = configName;
-    }
-
     // Delete the opened config from the catalogue (and the open profile's members), then return to the
     // config list. The agent refuses while the config is in use by the running profile, so on a non-OK
     // ack the view stays put and shows why.
     [RelayCommand]
     private async Task DeleteOpenConfig()
     {
-        if (OpenConfig is null || OpenProfile is null)
+        if (OpenConfig is null)
         {
             return;
         }
 
         ConfigDeleteStatus = string.Empty;
         var config = OpenConfig;
+
+        // Config settings section (no open profile): just remove from the shared catalogue. The agent refuses
+        // while the config backs any profile / the running tunnel, so on a non-OK ack the view stays put.
+        if (OpenProfile is null)
+        {
+            var catalogueAck = await RemoveConfigAsync(config);
+            if (catalogueAck.Ok)
+            {
+                OpenConfig = null;
+            }
+            else
+            {
+                ConfigDeleteStatus = catalogueAck.Message;
+            }
+
+            return;
+        }
 
         // Configs are a shared catalogue (#45): a config can back several profiles. Only remove it from the
         // catalogue when NO OTHER profile still uses it; if it is shared, just unbind it from THIS profile
@@ -743,8 +677,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             ConfigExport = null;
             ConfigTransport = null;
-            ConfigDns = null;
-            ConfigExclusions = null;
             return;
         }
 
@@ -752,12 +684,177 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigExport = export;
         _ = export.LoadAsync();
 
-        // Seed the WebSocket (UDP-over-TCP) transport, preferred-DNS, and bypass-exclusions editors from the
-        // opened config's current snapshot values.
+        // Seed the WebSocket (UDP-over-TCP) transport editor from the opened config's current snapshot
+        // values. The per-config DNS / exclusions editors are retired: DNS + exclusions are now per-routing
+        // (see RoutingSettingsViewModel), so they are no longer constructed or bound here.
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0);
-        ConfigDns = new ConfigDnsViewModel(_connection, value, item?.Dns ?? string.Empty);
-        ConfigExclusions = new ConfigExclusionsViewModel(_connection, value, item?.Exclusions ?? string.Empty);
+    }
+
+    // The main-window profile combo changed. A real user pick selects that profile on the agent and persists
+    // its name; a programmatic assignment during a snapshot reconcile (guarded by _suppressActivePush) only
+    // updates the combo so it mirrors the agent's selected target without echoing OpSelectProfile back.
+    partial void OnActiveProfileChanged(BalancerItemViewModel? oldValue, BalancerItemViewModel? newValue)
+    {
+        // Follow the active profile's completeness (a config must be assigned before it can be dialed), so
+        // the power button re-gates the moment its config is set or cleared under it.
+        if (oldValue is not null)
+        {
+            oldValue.PropertyChanged -= OnActiveProfilePropertyChanged;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.PropertyChanged += OnActiveProfilePropertyChanged;
+        }
+
+        // Always mirror the wrapped selection so the combo shows «— не выбрано —» / the profile name,
+        // whether the change came from a user pick or a snapshot reconcile.
+        SyncActiveProfileChoice();
+        NotifyCanToggleConnection();
+
+        if (_suppressActivePush || newValue is null)
+        {
+            return;
+        }
+
+        _ = SelectProfileAsync(newValue.Name);
+        _prefs.LastProfile = newValue.Name;
+        _prefs.Save();
+    }
+
+    // Re-gate the power button when the active profile's assigned config changes (completeness depends on it).
+    private void OnActiveProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(BalancerItemViewModel.Config) or nameof(BalancerItemViewModel.IsComplete))
+        {
+            NotifyCanToggleConnection();
+        }
+    }
+
+    private void NotifyCanToggleConnection()
+    {
+        OnPropertyChanged(nameof(CanToggleConnection));
+        OnPropertyChanged(nameof(ConnectHint));
+        ToggleConnectionCommand.NotifyCanExecuteChanged();
+    }
+
+    // The main-window profile combo's wrapped selection changed. Translate the pick: a real profile becomes
+    // the active target, «— не выбрано —» clears it, and «+ Новый профиль» redirects into the Profile section
+    // to create one there (the combo itself is reverted first so it does not stick on the sentinel).
+    partial void OnActiveProfileChoiceChanged(ProfileChoice? value)
+    {
+        if (_suppressActiveChoice || value is null)
+        {
+            return;
+        }
+
+        if (value.IsNew)
+        {
+            SyncActiveProfileChoice();
+            Nav = "settings";
+            SettingsSection = "profile";
+            _ = CreateProfile();
+            return;
+        }
+
+        ActiveProfile = value.IsReal
+            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal))
+            : null;
+    }
+
+    // The Profile-section combo's wrapped selection changed: a real profile opens in the editor, «— не
+    // выбрано —» closes it, «+ Новый профиль» creates one (we are already in the section) and opens it.
+    partial void OnOpenProfileChoiceChanged(ProfileChoice? value)
+    {
+        if (_suppressOpenChoice || value is null)
+        {
+            return;
+        }
+
+        if (value.IsNew)
+        {
+            SyncOpenProfileChoice();
+            _ = CreateProfile();
+            return;
+        }
+
+        OpenProfile = value.IsReal
+            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal))
+            : null;
+    }
+
+    // Mirror ActiveProfile into the main-window combo's wrapped selection without echoing back a pick.
+    private void SyncActiveProfileChoice()
+    {
+        _suppressActiveChoice = true;
+        ActiveProfileChoice = ActiveProfile is null
+            ? ProfileChoice.None
+            : ProfileOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, ActiveProfile.Name, StringComparison.Ordinal)) ?? ProfileChoice.None;
+        _suppressActiveChoice = false;
+    }
+
+    // Mirror OpenProfile into the Profile-section combo's wrapped selection without echoing back a pick.
+    private void SyncOpenProfileChoice()
+    {
+        _suppressOpenChoice = true;
+        OpenProfileChoice = OpenProfile is null
+            ? ProfileChoice.None
+            : ProfileOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, OpenProfile.Name, StringComparison.Ordinal)) ?? ProfileChoice.None;
+        _suppressOpenChoice = false;
+    }
+
+    // The Routing section's edit combo changed: build the rule editor and per-routing settings for the
+    // selected list. A null pick is ignored (combo-rebuild artifact); the create-new path is a command.
+    partial void OnEditRoutingListChanged(RoutingListSummaryViewModel? value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        BuildSectionRoutingEditor(value.Id, value.Name);
+    }
+
+    // Builds the Routing section's rule editor + per-routing settings for a real (saved) list. Independent of
+    // any open profile - the section catalogue is standalone.
+    private void BuildSectionRoutingEditor(long id, string name)
+    {
+        if (RoutingEditor is not null && RoutingEditor.Id == id && !RoutingEditor.IsNew)
+        {
+            return;
+        }
+
+        var editor = new RoutingListEditorViewModel(_connection, id, name, OnSectionRoutingEditorSaved);
+        RoutingEditor = editor;
+        _ = editor.LoadAsync();
+
+        var settings = new RoutingSettingsViewModel(_connection, id);
+        RoutingSettings = settings;
+        _ = settings.LoadAsync();
+    }
+
+    // When the Routing section's new (id=0) list is first saved it gets a real id: build its per-routing
+    // settings and pin the selection to the freshly-created list. The list's summary row is not in
+    // RoutingLists yet (it arrives on the next snapshot), so remember the id and let SyncRoutingLists select
+    // it once present; if it is already there, select it now. The editor has already cleared its IsNew flag,
+    // so re-selecting it will not rebuild it (BuildSectionRoutingEditor short-circuits on the same real id).
+    private void OnSectionRoutingEditorSaved(long id)
+    {
+        var settings = new RoutingSettingsViewModel(_connection, id);
+        RoutingSettings = settings;
+        _ = settings.LoadAsync();
+
+        var created = RoutingLists.FirstOrDefault(r => r.Id == id);
+        if (created is not null)
+        {
+            _pendingEditRoutingListId = null;
+            EditRoutingList = created;
+        }
+        else
+        {
+            _pendingEditRoutingListId = id;
+        }
     }
 
     // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the
@@ -777,7 +874,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             ProfileRename = newValue?.Name ?? string.Empty;
             ProfileRenameStatus = string.Empty;
         }
-        ProfilePortStatus = string.Empty;
 
         if (oldValue is not null)
         {
@@ -788,36 +884,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             newValue.PropertyChanged += OnOpenProfilePropertyChanged;
         }
-        else
-        {
-            RoutingEditor = null;
-        }
 
-        SyncProfileRoutingEditor();
+        // Mirror the open profile into the Profile-section combo so it shows «— не выбрано —» / the name.
+        SyncOpenProfileChoice();
+
+        // The rule editor / per-routing settings belong to the standalone Routing section now, not to a
+        // profile, so opening/closing a profile no longer touches RoutingEditor.
     }
 
     private void OnOpenProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BalancerItemViewModel.SelectedRoutingList))
-        {
-            SyncProfileRoutingEditor();
-        }
-        else if (e.PropertyName == nameof(BalancerItemViewModel.Config))
+        if (e.PropertyName == nameof(BalancerItemViewModel.Config))
         {
             OpenConfig = string.IsNullOrEmpty(OpenProfile?.Config) ? null : OpenProfile!.Config;
-        }
-        else if (e.PropertyName == nameof(BalancerItemViewModel.IsCreatingConfig))
-        {
-            // The inline new-config form opened/closed: re-evaluate whether the config-management block shows.
-            OnPropertyChanged(nameof(IsConfigManage));
-        }
-    }
-
-    partial void OnProfileAspectChanged(string value)
-    {
-        if (value == "routing")
-        {
-            SyncProfileRoutingEditor();
         }
     }
 
@@ -829,63 +908,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         oldValue?.DetachAutoSave();
     }
 
-    // Build (or keep) the inline rule editor for the open profile's selected routing list. Only runs on
-    // the Маршрутизация aspect so opening a profile does not fetch rules the user may never look at.
-    private void SyncProfileRoutingEditor()
+    // The rule editor auto-saves (DetachAutoSave above flushes it), but the per-routing settings (DNS /
+    // exclusions / all-UDP) save only on «Сохранить». Flush a dirty settings editor before swapping it out
+    // (list switch / create / delete / disconnect) so navigating away does not silently drop those edits.
+    partial void OnRoutingSettingsChanging(RoutingSettingsViewModel? oldValue, RoutingSettingsViewModel? newValue)
     {
-        var profile = OpenProfile;
-        if (profile is null || ProfileAspect != "routing")
+        if (oldValue is { Dirty: true })
         {
-            return;
-        }
-
-        var choice = profile.SelectedRoutingList;
-        if (choice is null || choice.IsNone)
-        {
-            // Null is a mid-update artifact: Avalonia's ComboBox momentarily clears SelectedItem during
-            // RoutingListOptions.Clear(). IsRoutingListRebuildPending is true while the deferred None
-            // event from that rebuild is still in flight. Neither is a real user deselection — skip.
-            if (choice is null || profile.IsRoutingListRebuildPending)
-            {
-                return;
-            }
-            RoutingEditor = null;
-            return;
-        }
-
-        if (choice.IsNewSentinel)
-        {
-            // Picking "+ Новый список": show a fresh create-editor (keep the one in progress, don't rebuild).
-            if (RoutingEditor is not { IsNew: true })
-            {
-                var editor = new RoutingListEditorViewModel(_connection, OnProfileRoutingEditorSaved);
-                RoutingEditor = editor;
-                _ = editor.LoadAsync();
-            }
-
-            return;
-        }
-
-        // A real, existing list: build its editor unless it is already the one being shown.
-        if (RoutingEditor is null || RoutingEditor.Id != choice.Id)
-        {
-            var editor = new RoutingListEditorViewModel(_connection, choice.Id!.Value, choice.Name, OnProfileRoutingEditorSaved);
-            RoutingEditor = editor;
-            IsRoutingEditing = false;
-            _ = editor.LoadAsync();
-        }
-    }
-
-    // When a freshly-created inline list is first saved (gets a real id), bind it to the open profile so
-    // the profile starts using it; the next snapshot resolves SelectedRoutingList to the new list.
-    private void OnProfileRoutingEditorSaved(long id)
-    {
-        if (OpenProfile is { SelectedRoutingList.IsNewSentinel: true } profile)
-        {
-            // The new list now has a real id: record it so the "+ Новый список" hold releases to this list
-            // (not the previously-assigned one) on the next snapshot, then bind it to the profile.
-            profile.NotifyNewListSaved(id);
-            _ = AssignRoutingAsync(profile.Name, id, false);
+            _ = oldValue.SaveAsync();
         }
     }
 
@@ -918,6 +948,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _toggleInFlight = true;
         try
         {
+            // Select the profile shown in the combo BEFORE dialing, so the agent's target is the one the user
+            // sees - not its previously-latched/persisted target (which may be empty, a different profile, or
+            // a deleted one). Idempotent if already selected. Mirrors ToggleProfileConnectionAsync.
+            if (connect && ActiveProfile is not null)
+            {
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [ActiveProfile.Name]));
+            }
+
             var ack = await _connection.SendCommandAsync(
                 new IpcCommand(IpcContract.OpSetConnection, [connect ? "connect" : "disconnect"]));
             if (!ack.Ok)
@@ -951,11 +989,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             HasRoutingLists = false;
             HasSources = false;
             RoutingEditor = null;
-            // Drop the open profile too: its BalancerItemViewModel is about to be cleared, and the Home
-            // detail pane would otherwise keep editing a vanished profile (firing IPC at a dead pipe)
-            // until the next reconnect snapshot rebuilds the list.
+            // Tear down all the section editing state too: their backing rows are about to be cleared, so a
+            // stale editor would keep firing IPC at a dead pipe until the next reconnect snapshot rebuilds the
+            // lists. The combos null out with their cleared sources; clearing the targets here is explicit.
             OpenProfile = null;
-            ProfileAspect = "config";
+            ActiveProfile = null;
+            // Drop the stale profile names from the combos (Balancers is now empty), leaving «— не выбрано —»
+            // and «+ Новый профиль»; the selections already re-mirrored to None via the nulls above.
+            ReconcileProfileOptions();
+            OpenConfig = null;
+            EditRoutingList = null;
+            RoutingSettings = null;
+            BoundTarget = null;
+            _pendingOpenConfig = null;
+            _pendingEditRoutingListId = null;
             _configNames = [];
             _noticeTimer.Stop();
             _lastNotice = null;
@@ -998,6 +1045,26 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             item.OtherActive = snapshot.Active && !ProfileMatchesTarget(item, snapshot.BoundTarget);
         }
 
+        // Mirror the agent's selected target into the main-window profile combo without echoing a select
+        // back. Prefer the agent's active/selected target; fall back to the last profile the user had
+        // chosen (restored from prefs) so the window opens on it with connect still gated until present.
+        _suppressActivePush = true;
+        var active = Balancers.FirstOrDefault(b => ProfileMatchesTarget(b, selected));
+        if (active is null && !string.IsNullOrEmpty(_prefs.LastProfile))
+        {
+            active = Balancers.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastProfile, StringComparison.Ordinal));
+        }
+        if (active is not null)
+        {
+            ActiveProfile = active;
+        }
+        else if (ActiveProfile is not null && !Balancers.Contains(ActiveProfile))
+        {
+            // The chosen profile was removed elsewhere: drop the selection so connect re-gates.
+            ActiveProfile = null;
+        }
+        _suppressActivePush = false;
+
         // Top-center notice (auto-hides after 5s, dismissable): a different profile is selected while a
         // tunnel is up (reconnect to apply - no auto-switch), settings changed on a live tunnel, or a
         // better member is available on a backup. Shown once per distinct notice, not re-armed while
@@ -1027,8 +1094,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         _suppressSettingPush = true;
         GeoAutoCheck = snapshot.GeoAutoCheck;
-        BlockEncryptedDns = snapshot.BlockEncryptedDns;
-        TunnelAllUdp = snapshot.TunnelAllUdp;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         _suppressSettingPush = false;
@@ -1143,22 +1208,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("geo-auto-check", value);
-        }
-    }
-
-    partial void OnBlockEncryptedDnsChanged(bool value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync("block-encrypted-dns", value);
-        }
-    }
-
-    partial void OnTunnelAllUdpChanged(bool value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync("tunnel-all-udp", value);
         }
     }
 
@@ -1403,6 +1452,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
+
+        // A config just imported in the Config section: open it once its row arrives so OnOpenConfigChanged
+        // seeds the transport editor from the real snapshot row instead of all-defaults.
+        if (_pendingOpenConfig is not null && present.Contains(_pendingOpenConfig))
+        {
+            var name = _pendingOpenConfig;
+            _pendingOpenConfig = null;
+            OpenConfig = name;
+        }
     }
 
     private void SyncRoutingLists(IReadOnlyList<RoutingListEntry> entries)
@@ -1440,6 +1498,38 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             existing.RuleCount = entry.RuleCount;
             existing.RouteCount = entry.RouteCount;
             existing.DomainCount = entry.DomainCount;
+        }
+
+        // Reconcile the Routing section's selected list: if it was removed elsewhere, drop the section editor;
+        // if its instance was replaced by a fresh row of the same id, re-point at the surviving instance so
+        // the combo stays selected. The reconcile above keeps instances in place, so this only fires on a
+        // genuine removal. A pending new-list draft (RoutingEditor.IsNew) is left alone.
+        if (EditRoutingList is not null && !RoutingLists.Contains(EditRoutingList))
+        {
+            var same = RoutingLists.FirstOrDefault(r => r.Id == EditRoutingList.Id);
+            if (same is not null)
+            {
+                EditRoutingList = same;
+            }
+            else if (RoutingEditor is not { IsNew: true })
+            {
+                EditRoutingList = null;
+                RoutingEditor = null;
+                RoutingSettings = null;
+            }
+        }
+
+        // A list just created in the Routing section: once its summary row arrives, select it so the combo
+        // shows it and «Удалить» becomes available. The editor already cleared IsNew on its first save, so
+        // selecting it short-circuits BuildSectionRoutingEditor (no rebuild, no re-fetch, no lost edits).
+        if (_pendingEditRoutingListId is long pendingId)
+        {
+            var row = RoutingLists.FirstOrDefault(r => r.Id == pendingId);
+            if (row is not null)
+            {
+                _pendingEditRoutingListId = null;
+                EditRoutingList = row;
+            }
         }
     }
 
@@ -1522,7 +1612,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ImportConfigAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ToggleProfileConnectionAsync, RemoveConfigAsync, RequestNewConfigForProfile, RequestNewRoutingList);
                 existing.ApplyFromEntry(entry, options, configOptions);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
@@ -1536,52 +1626,108 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             }
         }
 
+        // Keep the shared combo options in step with the profile rows (reconciled in place so neither combo's
+        // selection is nulled), then re-mirror both selections onto the refreshed option instances.
+        ReconcileProfileOptions();
+
         // If the profile opened in the detail view was removed elsewhere, fall back to the list.
         if (OpenProfile is not null && !Balancers.Contains(OpenProfile))
         {
             OpenProfile = null;
         }
 
-        // Open a profile just created via "+ Профиль" straight into its detail (on the configuration
-        // aspect) so configs can be added immediately.
+        // Open a profile just created via "+ Профиль" straight into its editor so a config/routing can be
+        // picked immediately.
         if (_pendingOpenProfile is not null)
         {
             var created = Balancers.FirstOrDefault(b => string.Equals(b.Name, _pendingOpenProfile, StringComparison.Ordinal));
             if (created is not null)
             {
                 OpenProfile = created;
-                ProfileAspect = "name";
                 _pendingOpenProfile = null;
+            }
+        }
+
+        SyncActiveProfileChoice();
+        SyncOpenProfileChoice();
+    }
+
+    // Reconcile ProfileOptions in place from Balancers: keep «— не выбрано —» at [0] and «+ Новый профиль»
+    // at [1], and reconcile the real (name) choices after them by name - dropping removed profiles, adding
+    // new ones, and reordering to match. Editing in place (rather than Clear + rebuild) keeps the None/New/
+    // existing choice instances alive so a bound ComboBox's selection is not reset by the refresh.
+    private void ReconcileProfileOptions()
+    {
+        const int head = 2; // None + New occupy [0] and [1].
+        var present = Balancers.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
+        for (var i = ProfileOptions.Count - 1; i >= head; i--)
+        {
+            if (!present.Contains(ProfileOptions[i].Name))
+            {
+                ProfileOptions.RemoveAt(i);
+            }
+        }
+
+        for (var i = 0; i < Balancers.Count; i++)
+        {
+            var name = Balancers[i].Name;
+            var slot = head + i;
+            var existing = ProfileOptions.Skip(head).FirstOrDefault(o => string.Equals(o.Name, name, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                ProfileOptions.Insert(Math.Min(slot, ProfileOptions.Count), new ProfileChoice(name));
+                continue;
+            }
+
+            var index = ProfileOptions.IndexOf(existing);
+            if (index != slot)
+            {
+                ProfileOptions.Move(index, slot);
             }
         }
     }
 
     private static IReadOnlyList<RoutingListChoice> BuildRoutingOptions(IReadOnlyList<RoutingListEntry> entries)
     {
-        var options = new List<RoutingListChoice> { RoutingListChoice.None };
+        // Order: «Полный туннель» (None), «+ Новый список» (redirect to the Routing section), then the saved
+        // lists - the same «не выбрано / добавить / сохранённые» shape as the config and profile combos.
+        var options = new List<RoutingListChoice> { RoutingListChoice.None, RoutingListChoice.NewList };
         foreach (var entry in entries)
         {
             options.Add(new RoutingListChoice(entry.Id, entry.Name));
         }
 
-        // The trailing "+ Новый список" sentinel reveals the inline new-list editor, mirroring the
-        // "+ Новая конфигурация" sentinel in the config combo.
-        options.Add(RoutingListChoice.NewList);
         return options;
     }
 
-    // The config catalogue for a profile's combo: "- не задан -", every config (shared / reusable across
-    // profiles), then the trailing "+ Новая конфигурация" sentinel that reveals the inline import form.
+    // The config catalogue for a profile's combo. Order: «— не выбрано —» (None), «+ Новая конфигурация»
+    // (redirect to the Config section), then every config (shared / reusable across profiles) - the same
+    // «не выбрано / добавить / сохранённые» shape as the routing and profile combos.
     private IReadOnlyList<ConfigChoice> BuildConfigOptions()
     {
-        var options = new List<ConfigChoice> { ConfigChoice.None };
+        var options = new List<ConfigChoice> { ConfigChoice.None, ConfigChoice.NewConfig };
         foreach (var name in _configNames)
         {
             options.Add(new ConfigChoice(name));
         }
 
-        options.Add(ConfigChoice.NewConfig);
         return options;
+    }
+
+    // Redirect targets for a profile's config / routing combos when the user picks the "+ Новая
+    // конфигурация" / "+ Новый список" sentinel: jump to the matching settings section with its create UI
+    // opened, rather than an inline form inside the profile. The open profile stays put, so returning to the
+    // Profile section re-shows it with the freshly-created entry now selectable in the combo.
+    private void RequestNewConfigForProfile()
+    {
+        SettingsSection = "config";
+        BeginSectionConfig();
+    }
+
+    private void RequestNewRoutingList()
+    {
+        SettingsSection = "routing";
+        CreateRoutingList();
     }
 
     // "+ Профиль": create an empty profile (no dialog), then auto-expand it so configs can be added.
@@ -1631,6 +1777,91 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));
     }
 
+    // --- Config settings section: standalone "+ Новая конфигурация" import (adds to the shared catalogue
+    // without a profile). The clipboard/QR/camera/file pickers are window concerns; here a name + pasted
+    // text + «Сохранить» is the minimum, and the code-behind file picker fills SectionConfigText. ---
+
+    /// <summary>Public so the section import form's code-behind file picker can also import to the catalogue.</summary>
+    public Task<IpcAck> ImportSectionConfigAsync(string name, string confText) => ImportConfigAsync(name, confText);
+
+    [RelayCommand]
+    private void BeginSectionConfig()
+    {
+        SectionConfigName = string.Empty;
+        SectionConfigText = string.Empty;
+        SectionConfigStatus = string.Empty;
+        IsCreatingSectionConfig = true;
+    }
+
+    [RelayCommand]
+    private void CancelSectionConfig()
+    {
+        IsCreatingSectionConfig = false;
+        SectionConfigName = string.Empty;
+        SectionConfigText = string.Empty;
+        SectionConfigStatus = string.Empty;
+    }
+
+    [RelayCommand]
+    private async Task SaveSectionConfig()
+    {
+        var imported = VpnLinkCodec.TryDecode(SectionConfigText);
+        if (imported is null)
+        {
+            SectionConfigStatus = "Не распознано (.conf или vpn://)";
+            return;
+        }
+
+        var name = !string.IsNullOrWhiteSpace(SectionConfigName)
+            ? SectionConfigName.Trim()
+            : (string.IsNullOrWhiteSpace(imported.Name) ? "config" : imported.Name!.Trim());
+
+        var ack = await ImportConfigAsync(name, imported.ConfText);
+        if (!ack.Ok)
+        {
+            SectionConfigStatus = ack.Message;
+            return;
+        }
+
+        IsCreatingSectionConfig = false;
+        SectionConfigName = string.Empty;
+        SectionConfigText = string.Empty;
+        SectionConfigStatus = string.Empty;
+        // Open the just-imported config once its row lands in the next snapshot, so the transport editor seeds
+        // from the real config row rather than all-defaults (the row is not in Configs yet at this point).
+        _pendingOpenConfig = name;
+    }
+
+    // --- Routing settings section: standalone list CRUD (independent of any profile). ---
+
+    // "+ Новый список": show a fresh create-editor; per-routing settings are built once it is first saved.
+    [RelayCommand]
+    private void CreateRoutingList()
+    {
+        var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
+        RoutingEditor = editor;
+        RoutingSettings = null;
+        EditRoutingList = null;
+        _ = editor.LoadAsync();
+    }
+
+    // "Удалить список" in the Routing section: delete the shared list, then clear the section editor.
+    [RelayCommand]
+    private async Task DeleteSectionRoutingList()
+    {
+        if (RoutingEditor is null)
+        {
+            return;
+        }
+
+        if (await RoutingEditor.DeleteAsync())
+        {
+            RoutingEditor = null;
+            RoutingSettings = null;
+            EditRoutingList = null;
+        }
+    }
+
     // Delete the profile currently open in the detail view, then fall back to the profiles list. The
     // agent refuses while the profile is the running tunnel, so on a non-OK ack the view stays put.
     [RelayCommand]
@@ -1676,80 +1907,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         else
         {
             ProfileRenameStatus = ack.Message;
-        }
-    }
-
-    // Export the open profile as a portable JSON bundle (config with keys, transport, geo, routing). The
-    // window code-behind moves the returned text to the clipboard or a file; null means there was nothing
-    // to export (no open profile) or the agent refused (the status carries why).
-    public async Task<string?> ExportOpenProfileAsync()
-    {
-        var profile = OpenProfile;
-        if (profile is null)
-        {
-            return null;
-        }
-
-        ProfilePortStatus = string.Empty;
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpExportProfile, [profile.Name]));
-        if (!ack.Ok)
-        {
-            ProfilePortStatus = ack.Message;
-            return null;
-        }
-
-        return ack.Message;
-    }
-
-    // Import a profile from a portable JSON bundle (clipboard or file). Import is offered only from inside an
-    // open profile's settings, so the bundle restores *into* that profile - replacing its config, transport,
-    // geo, routing and exclusions in place while keeping its name (and thus its connection-target selection).
-    // On success the (same) profile re-opens once the next snapshot lands.
-    public async Task ImportProfileBundleAsync(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            ProfilePortStatus = "Нет данных для импорта.";
-            return;
-        }
-
-        var target = OpenProfile?.Name;
-        ProfilePortStatus = string.Empty;
-        var args = string.IsNullOrEmpty(target) ? new[] { json } : new[] { json, target };
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportProfile, args));
-        if (ack.Ok)
-        {
-            _pendingOpenProfile = ack.Message;
-            ProfilePortStatus = string.IsNullOrEmpty(target)
-                ? $"Профиль импортирован: {ack.Message}"
-                : "Профиль восстановлен из файла.";
-        }
-        else
-        {
-            ProfilePortStatus = ack.Message;
-        }
-    }
-
-    // Duplicate the open profile into an independent copy.
-    [RelayCommand]
-    private async Task DuplicateOpenProfile()
-    {
-        var profile = OpenProfile;
-        if (profile is null)
-        {
-            return;
-        }
-
-        ProfilePortStatus = string.Empty;
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpDuplicateProfile, [profile.Name]));
-        if (ack.Ok)
-        {
-            _pendingOpenProfile = ack.Message;
-            ProfilePortStatus = $"Создана копия: {ack.Message}";
-        }
-        else
-        {
-            ProfilePortStatus = ack.Message;
         }
     }
 
@@ -1803,47 +1960,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         finally
         {
             _toggleInFlight = false;
-        }
-    }
-
-    // "Редактировать": open the inline rule editor for the selected saved list (collapsed by default so the
-    // routing page is just the picker until the user opts in).
-    [RelayCommand]
-    private void BeginRoutingEdit()
-    {
-        IsRoutingEditing = true;
-    }
-
-    // "Закрыть": collapse the inline rule editor back to just the picker. Edits auto-save (debounced), so a
-    // real (already-saved) list's pending change is flushed when the editor is detached; an in-progress NEW
-    // list that was never named/saved is simply dropped (there is no Save button anymore).
-    [RelayCommand]
-    private void CloseRoutingEdit()
-    {
-        IsRoutingEditing = false;
-        if (RoutingEditor is { IsNew: true })
-        {
-            RoutingEditor = null;
-        }
-    }
-
-    // "Удалить список" in the inline editor: delete the shared list, then clear the open profile's
-    // routing. The snapshot resolves SelectedRoutingList back to "none" once the list is gone.
-    [RelayCommand]
-    private async Task DeleteRoutingListEdit()
-    {
-        if (RoutingEditor is null)
-        {
-            return;
-        }
-
-        if (await RoutingEditor.DeleteAsync())
-        {
-            RoutingEditor = null;
-            if (OpenProfile is not null)
-            {
-                await AssignRoutingAsync(OpenProfile.Name, null, false);
-            }
         }
     }
 

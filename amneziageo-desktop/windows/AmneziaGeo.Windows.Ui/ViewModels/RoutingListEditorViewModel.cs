@@ -96,9 +96,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// True when this editor is creating a new list rather than editing an existing one.
+    /// True when this editor is creating a new list rather than editing an existing one. Cleared once the new
+    /// list is first saved and gets a real id, so the host stops treating it as a draft - «Удалить» appears
+    /// and selecting the now-real list does not rebuild this editor.
     /// </summary>
-    public bool IsNew { get; }
+    [ObservableProperty]
+    private bool _isNew;
 
     /// <summary>
     /// The persisted list id (0 until a new list is first saved).
@@ -255,9 +258,10 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     {
         var hadPending = _autoSaveTimer.IsEnabled;
         _autoSaveTimer.Stop();
-        if (hadPending && _id != 0 && Name.Trim().Length != 0)
+        if (hadPending && _id != 0 && Name.Trim().Length != 0 && Rules.Count != 0)
         {
             // Persist the last edit (fire-and-forget). The list is already bound, so no _onSaved is needed.
+            // An emptied list (no rules) is not flushed - saving without rules is disallowed.
             _ = SaveAsync();
         }
     }
@@ -500,6 +504,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             return;
         }
 
+        // A list with no rules routes nothing: do not save an empty list. Once a name is typed, hint what is
+        // still missing rather than persisting a useless list.
+        if (Rules.Count == 0)
+        {
+            StatusMessage = "Добавьте хотя бы одну запись, чтобы сохранить список.";
+            return;
+        }
+
         // A save is still in flight: retry after the debounce so the latest edit is not dropped.
         if (IsBusy)
         {
@@ -518,6 +530,10 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             _saveFailures = 0;
             if (wasNew && _id != 0)
             {
+                // No longer a draft: clear IsNew before notifying the host so that when it selects the newly
+                // created list, BuildSectionRoutingEditor short-circuits (same real id) instead of rebuilding
+                // and re-fetching this editor mid-edit, and «Удалить» becomes visible.
+                IsNew = false;
                 _onSaved?.Invoke(_id);
             }
         }

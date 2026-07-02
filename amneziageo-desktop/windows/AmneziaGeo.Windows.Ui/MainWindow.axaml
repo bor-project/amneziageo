@@ -615,8 +615,8 @@
                       <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="пароль" />
                     </StackPanel>
                     <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
-                      <TextBlock Text="Токен:" />
-                      <TextBox Text="{Binding WebSocketToken}" Watermark="секретный-путь" />
+                      <TextBlock Text="Токен доступа:" />
+                      <TextBox Text="{Binding WebSocketToken}" Watermark="токен доступа" />
                     </StackPanel>
                     <Border Background="{DynamicResource AgInsetBrush}" CornerRadius="6" Padding="8">
                       <SelectableTextBlock Text="{Binding ServerHint}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"

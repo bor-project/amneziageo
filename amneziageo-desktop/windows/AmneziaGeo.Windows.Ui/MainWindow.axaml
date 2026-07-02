@@ -19,6 +19,8 @@
     <StreamGeometry x:Key="AgPowerGeometry">M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z</StreamGeometry>
     <!-- "gear" glyph: the Settings button icon. -->
     <StreamGeometry x:Key="AgGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
+    <!-- "back" glyph (left arrow): the Settings header back-to-home control. -->
+    <StreamGeometry x:Key="AgBackGeometry">M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z</StreamGeometry>
   </Window.Resources>
 
   <Grid>
@@ -31,19 +33,18 @@
     <Border Classes="card" Margin="12" Padding="0" IsVisible="{Binding IsHome}">
       <DockPanel LastChildFill="True">
 
-        <!-- top row: gear (→ Settings) at the left edge -->
-        <Border DockPanel.Dock="Top" Height="55" Padding="12,0"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1">
-          <Grid ColumnDefinitions="Auto,*">
-            <Button Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                    HorizontalAlignment="Left"
+        <!-- top row: gear (→ Settings) pinned to the left edge; title centered across the whole bar.
+             No bottom divider - it read as a stray curved line where it met the card's rounded corners. -->
+        <Border DockPanel.Dock="Top" Height="48" Padding="12,0">
+          <Grid>
+            <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
+                       VerticalAlignment="Center" HorizontalAlignment="Center"
+                       Foreground="{DynamicResource AgMutedBrush}" />
+            <Button Classes="icon" Padding="6,4" VerticalAlignment="Center" HorizontalAlignment="Left"
                     Command="{Binding NavSettingsCommand}" ToolTip.Tip="Настройки">
               <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"
                         Foreground="{DynamicResource AgMutedBrush}" />
             </Button>
-            <TextBlock Grid.Column="1" Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
-                       VerticalAlignment="Center" HorizontalAlignment="Center"
-                       Foreground="{DynamicResource AgMutedBrush}" />
           </Grid>
         </Border>
 
@@ -127,33 +128,66 @@
     <!-- the content switches on IsSettingsXxx.                                                     -->
     <!-- ===================================================================================== -->
 
-      <!-- Top header bar: logo (home) on the left, connect control on the right. -->
-      <Border Classes="card" Height="48" Margin="12,12,12,0" Padding="12,0" VerticalAlignment="Top">
-        <Grid ColumnDefinitions="Auto,*,Auto">
-          <!-- Logo → Home -->
-          <Button Grid.Column="0" Classes="brand" VerticalAlignment="Center"
-                  Command="{Binding NavHomeCommand}" ToolTip.Tip="К профилям">
-            <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" />
+      <!-- Top header bar (SETTINGS only): back → home (left), title centered, animated connect control
+           (right). Gated on IsSettings so it never overlays the Home screen, whose own gear row + big
+           centre button own the connection there. Square bottom corners so it reads as a top bar. -->
+      <Border Classes="card" CornerRadius="0" Height="48" Margin="12,12,12,0" Padding="12,0"
+              VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
+        <Grid>
+          <!-- title centered across the whole bar -->
+          <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     Foreground="{DynamicResource AgMutedBrush}" />
+
+          <!-- back → Home -->
+          <Button Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
+                  Command="{Binding NavHomeCommand}" ToolTip.Tip="Назад к профилям">
+            <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
+                      Foreground="{DynamicResource AgMutedBrush}" />
           </Button>
 
-          <!-- Connect status + pill (mirrors the right pane of the profiles view) -->
-          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <TextBlock Text="{Binding AgentStatusText}" FontSize="13" FontWeight="Medium"
-                       Foreground="{Binding ConnectStatusBrush}" VerticalAlignment="Center" />
-            <Button Classes="connectpill" VerticalAlignment="Center"
-                    Background="{Binding ConnectCircleBrush}"
-                    Command="{Binding ToggleConnectionCommand}"
-                    IsEnabled="{Binding CanToggleConnection}"
-                    ToolTip.Tip="{Binding ConnectHint}"
-                    Content="{Binding ConnectPillContent}" />
-          </StackPanel>
+          <!-- animated connect / disconnect control: the round circle reflects connection state and an
+               accent arc spins while connecting / disconnecting (the control used here before the flat pill). -->
+          <Button Classes="powerctl" HorizontalAlignment="Right" VerticalAlignment="Center"
+                  MinWidth="150" HorizontalContentAlignment="Left"
+                  Command="{Binding ToggleConnectionCommand}"
+                  IsEnabled="{Binding CanToggleConnection}"
+                  ToolTip.Tip="{Binding ConnectHint}">
+            <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
+              <Panel Width="28" Height="28">
+                <Ellipse Classes="connspin" Classes.spinning="{Binding IsConnecting}"
+                         Width="26" Height="26" Stroke="{Binding ConnectCircleForeground}"
+                         StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border Width="22" Height="22" CornerRadius="11"
+                        Background="{Binding ConnectCircleBrush}"
+                        BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="1"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
+                            Foreground="{Binding ConnectCircleForeground}"
+                            IsVisible="{Binding !IsConnecting}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+              </Panel>
+              <!-- short status only (e.g. «Отключено»); the full hint lives on the Home screen, so the
+                   control stays compact and never stretches to the length of a sentence. -->
+              <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
+                         Foreground="{Binding ConnectStatusBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
         </Grid>
       </Border>
 
-    <Grid IsVisible="{Binding IsSettings}" Margin="12,0,12,12" ColumnDefinitions="260,*" RowDefinitions="48,*">
+    <Grid IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
+      <Grid.ColumnDefinitions>
+        <!-- section rail: drag-resizable via the GridSplitter, clamped so it can neither collapse nor starve the content pane -->
+        <ColumnDefinition Width="260" MinWidth="210" MaxWidth="460" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
 
       <!-- section rail -->
-      <Border Grid.Column="0" Grid.Row="1" Classes="card" Margin="0,12,6,0" Padding="0">
+      <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
         <ScrollViewer>
           <StackPanel Margin="12,12">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
@@ -273,8 +307,14 @@
           </ScrollViewer>
       </Border>
 
+      <!-- draggable divider: resize the section rail vs. the content pane (restored #50) -->
+      <GridSplitter Grid.Column="1" Grid.Row="1" Width="5"
+                    ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    Background="Transparent" Margin="0,12,0,0" />
+
       <!-- content pane -->
-      <Border Grid.Column="1" Grid.Row="1" Classes="card" Margin="6,0,0,0" Padding="0">
+      <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
         <ScrollViewer>
           <Grid Margin="18,16">
 
@@ -405,6 +445,24 @@
                 </Button>
               </Grid>
 
+              <!-- config catalogue combo: «— не выбрано —», «+ Новая конфигурация», then saved configs.
+                   «+ Новая конфигурация» opens the import form below; a saved config opens its editor. A
+                   profile's «+ Новая конфигурация» redirect lands here with this combo on that item. -->
+              <StackPanel Spacing="6">
+                <TextBlock Classes="label" Text="ВЫБЕРИТЕ КОНФИГУРАЦИЮ" />
+                <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding ConfigCatalogueOptions}"
+                          SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ConfigChoice">
+                      <TextBlock Text="{Binding Name}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                           Text="Конфигураций пока нет. Выберите «+ Новая конфигурация», чтобы добавить сервер в каталог." />
+              </StackPanel>
+
               <!-- standalone import form (window VM SectionConfig* fields) -->
               <Border IsVisible="{Binding IsCreatingSectionConfig}"
                       Background="{DynamicResource AgInsetBrush}"
@@ -442,23 +500,6 @@
                   </UniformGrid>
                 </StackPanel>
               </Border>
-
-              <!-- config picker (the catalogue) -->
-              <StackPanel Spacing="6" IsVisible="{Binding !IsCreatingSectionConfig}">
-                <TextBlock Classes="label" Text="ВЫБЕРИТЕ КОНФИГУРАЦИЮ" />
-                <ComboBox Classes="field" HorizontalAlignment="Stretch" x:Name="ConfigCatalogueCombo"
-                          ItemsSource="{Binding Configs}"
-                          SelectionChanged="OnConfigCatalogueSelected"
-                          PlaceholderText="— конфигурация не выбрана —">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ConfigItemViewModel">
-                      <TextBlock Text="{Binding Name}" />
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-                <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="Конфигураций пока нет. Нажмите «+ Новая конфигурация», чтобы добавить сервер в каталог." />
-              </StackPanel>
 
               <!-- the open config: name editor + .conf export/editor + proxy (WebSocket) + delete -->
               <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="14">
@@ -632,12 +673,15 @@
               <StackPanel Spacing="6">
                 <TextBlock Classes="label" Text="ВЫБЕРИТЕ СПИСОК" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                          ItemsSource="{Binding RoutingLists}"
-                          SelectedItem="{Binding EditRoutingList, Mode=TwoWay}"
-                          PlaceholderText="— список не выбран —">
+                          ItemsSource="{Binding RoutingCatalogueOptions}"
+                          SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
                   <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
-                      <TextBlock Text="{Binding Name}" />
+                    <DataTemplate x:DataType="vm:RoutingListChoice">
+                      <!-- «— не выбрано —» for the none sentinel; saved lists and «+ Новый список» keep their names. -->
+                      <Panel>
+                        <TextBlock Text="— не выбрано —" IsVisible="{Binding IsNone}" />
+                        <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
+                      </Panel>
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>

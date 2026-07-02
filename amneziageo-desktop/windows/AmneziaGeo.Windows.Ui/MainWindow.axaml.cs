@@ -453,17 +453,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // The Config settings section's catalogue combo lists ConfigItemViewModel rows but the window VM keys the
-    // open config by NAME (OpenConfig is a string), so selection is wired here instead of a SelectedItem
-    // binding (which would be a type mismatch under compiled bindings). Picking a row opens that config.
-    private void OnConfigCatalogueSelected(object? sender, SelectionChangedEventArgs e)
-    {
-        if (DataContext is MainWindowViewModel vm && sender is ComboBox { SelectedItem: ConfigItemViewModel config })
-        {
-            vm.OpenConfig = config.Name;
-        }
-    }
-
     private async void OnSectionConfigClipboard(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)

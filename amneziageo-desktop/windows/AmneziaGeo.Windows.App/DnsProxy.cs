@@ -39,7 +39,11 @@ internal sealed class DnsProxy
 
     private readonly List<UdpClient> _servers = [];
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
+    // Coalesces concurrent identical (name,type) misses onto a single upstream query, so N simultaneous
+    // lookups for the same not-yet-cached name resolve ONCE instead of each issuing its own Forward.
+    private readonly ConcurrentDictionary<string, Lazy<byte[]>> _inflight = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<GeoDomain> _domains;
+    private readonly DomainMatcher _matcher;
     private readonly IPAddress _tunnelUpstream;
     private readonly IPAddress _localUpstream;
     private readonly IPAddress? _lanUpstream;
@@ -59,6 +63,7 @@ internal sealed class DnsProxy
     public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6)
     {
         _domains = domains;
+        _matcher = new DomainMatcher(domains);
         _tunnelUpstream = tunnelUpstream;
         _localUpstream = localUpstream;
         _lanUpstream = lanUpstream;
@@ -191,7 +196,7 @@ internal sealed class DnsProxy
             // A matched (to-be-tunneled) name resolves via the clean tunnel resolver so a geo-blocked
             // domain gets its real IPs instead of the local network's poisoned/blocked answer; everything
             // else uses the local resolver so coexisting / corporate names keep resolving.
-            var matched = !isLocal && name is not null && DomainMatcher.IsTunneled(name, _domains);
+            var matched = !isLocal && name is not null && _matcher.IsTunneled(name);
 
             // DIAG: log only geo-MATCHED queries (the domains the user configured to route) so a
             // "X not routed" report can be localised, without logging every name the system resolves.
@@ -201,6 +206,7 @@ internal sealed class DnsProxy
             }
 
             byte[] response;
+            var fromCache = false;
             if (!isLocal && _stripV6 && type == TypeAaaa)
             {
                 // IPv4-only tunnel: return NODATA for AAAA so clients use IPv4 instead of stalling
@@ -219,20 +225,25 @@ internal sealed class DnsProxy
             else if (TryGetCached(name, type, query, out var cached))
             {
                 response = cached;
+                fromCache = true;
             }
             else
             {
                 var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
-                response = Forward(query, upstream);
-                StoreInCache(name, type, response);
+                var shared = ForwardCoalesced(name, type, query, upstream);
+                StoreInCache(name, type, shared);
+                // Coalesced followers share the leader's response buffer (and thus its transaction id),
+                // so answer each client with a copy carrying its OWN id.
+                response = ApplyTransactionId(shared, query);
             }
 
             // Install routing for a matched domain BEFORE answering. Otherwise the client receives the
             // IP and opens a connection before the tunnel route + allowed-ip exist, so its first SYN
             // egresses off-tunnel and (for a blocked destination) is dropped - costing a multi-second
             // TCP retransmit on every freshly resolved domain. A tracking failure must never withhold
-            // the answer, so it is isolated.
-            if (matched)
+            // the answer, so it is isolated. A cache hit was already tracked by the miss that populated
+            // it, so re-running the tracker (its lock + a re-parse that only no-ops) is skipped.
+            if (matched && !fromCache)
             {
                 try
                 {
@@ -322,16 +333,24 @@ internal sealed class DnsProxy
             return false;
         }
 
-        if (_cache.TryGetValue(CacheKey(name, type), out var entry) && entry.Expiry > DateTime.UtcNow)
+        var key = CacheKey(name, type);
+        if (_cache.TryGetValue(key, out var entry))
         {
-            response = (byte[])entry.Response.Clone();
-            if (response.Length >= 2 && query.Length >= 2)
+            if (entry.Expiry > DateTime.UtcNow)
             {
-                response[0] = query[0];
-                response[1] = query[1]; // match the caller's transaction id
+                response = (byte[])entry.Response.Clone();
+                if (response.Length >= 2 && query.Length >= 2)
+                {
+                    response[0] = query[0];
+                    response[1] = query[1]; // match the caller's transaction id
+                }
+
+                return true;
             }
 
-            return true;
+            // Drop the expired entry so the cache cannot grow without bound over the tunnel's lifetime;
+            // the key/value overload leaves a concurrently-refreshed newer entry for this key intact.
+            _cache.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry));
         }
 
         return false;
@@ -368,6 +387,45 @@ internal sealed class DnsProxy
             var remote = new IPEndPoint(IPAddress.Any, 0);
             return client.Receive(ref remote);
         }
+    }
+
+    // Runs the upstream query once per in-flight (name,type): the first caller creates the shared Lazy and
+    // performs the Forward; concurrent callers for the same key await that single result instead of each
+    // issuing their own upstream round-trip (and each then re-tracking). A null name cannot be keyed, so it
+    // bypasses coalescing. On failure the Lazy caches the exception for the current waiters and the finally
+    // drops it, so a later query retries cleanly.
+    private byte[] ForwardCoalesced(string? name, int type, byte[] query, IPAddress upstream)
+    {
+        if (name is null)
+        {
+            return Forward(query, upstream);
+        }
+
+        var key = CacheKey(name, type);
+        var lazy = _inflight.GetOrAdd(key, _ => new Lazy<byte[]>(() => Forward(query, upstream), LazyThreadSafetyMode.ExecutionAndPublication));
+        try
+        {
+            return lazy.Value;
+        }
+        finally
+        {
+            // Remove only our own entry so a racing newcomer's fresh Lazy is left intact.
+            _inflight.TryRemove(new KeyValuePair<string, Lazy<byte[]>>(key, lazy));
+        }
+    }
+
+    // Returns a copy of the upstream response carrying the caller's transaction id. Callers that share a
+    // coalesced buffer must not mutate it in place (other waiters read the same instance), so this clones.
+    private static byte[] ApplyTransactionId(byte[] response, byte[] query)
+    {
+        var copy = (byte[])response.Clone();
+        if (copy.Length >= 2 && query.Length >= 2)
+        {
+            copy[0] = query[0];
+            copy[1] = query[1];
+        }
+
+        return copy;
     }
 
     private void Track(string name, byte[] response)

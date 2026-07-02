@@ -262,6 +262,11 @@ internal sealed class TunnelRunner(
         // The domain tracker owns the dynamic /32 routes and the single allowed-ips authority. It is shared
         // by the DNS path (matched domains) and the app route watcher (matched apps), so create it once when
         // either is active and hand it to both - two independent SetAllowedIps owners would clobber.
+        // Session lifetime token, cancelled in the finally below on teardown. Created here - before the
+        // domain tracker starts - so the tracker's refresh loop stops with the session like every other
+        // background task, instead of running on against a torn-down adapter.
+        using var sessionCts = new CancellationTokenSource();
+
         DomainTracker? tracker = null;
         if (trackDomains || trackApps || allUdp)
         {
@@ -269,7 +274,7 @@ internal sealed class TunnelRunner(
             if (peer is not null)
             {
                 tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, appSettings.RefreshSeconds, stripV6);
-                _ = Task.Run(tracker.RunAsync);
+                _ = Task.Run(() => tracker.RunAsync(sessionCts.Token));
             }
         }
 
@@ -322,9 +327,8 @@ internal sealed class TunnelRunner(
 
         // The engine no longer arms its own kill-switch (we split the default route above), so when the
         // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
-        // token lets teardown cancel a still-pending arm and guarantees the filters come down with the
-        // tunnel.
-        using var sessionCts = new CancellationTokenSource();
+        // token (declared above) lets teardown cancel a still-pending arm and guarantees the filters come
+        // down with the tunnel.
 
         // Always arm the WFP firewall once the tunnel adapter appears: it blocks QUIC (UDP/443) egressing
         // the tunnel so HTTP/3 falls back to TCP, which is reliable over the obfuscated tunnel (raw QUIC

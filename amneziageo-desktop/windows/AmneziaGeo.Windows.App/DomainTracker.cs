@@ -95,14 +95,21 @@ internal sealed class DomainTracker(
             // advertises it in allowed-ips - desyncs routing from allowed-ips: the IP stays tunnel-eligible
             // but has no route, so its packets fall off the tunnel until a later refresh happens to re-add
             // it. Remove the route only when nothing else still needs the IP (#73).
-            var removedAny = false;
+            List<IPAddress>? stale = null;
             foreach (var ip in old)
             {
                 if (!fresh.Contains(ip) && !IsStillReferenced(ip, key))
                 {
-                    routes.RemoveTunnelRoute(IPAddress.Parse(ip), index.Value);
-                    removedAny = true;
+                    (stale ??= []).Add(IPAddress.Parse(ip));
                 }
+            }
+
+            var removedAny = stale is not null;
+            if (removedAny)
+            {
+                // Delete all stale routes with a single forwarding-table read instead of one full-table
+                // scan per IP - the per-IP path in a loop is O(stale * table) under this lock.
+                routes.RemoveTunnelRoutes(stale!, index.Value);
             }
 
             _current[key] = fresh;
@@ -149,13 +156,13 @@ internal sealed class DomainTracker(
     /// here - the warm cache covers known domains, the live DNS path covers visited ones on demand, and
     /// <see cref="DnsProxy.SeedRoutesAsync"/> (after <see cref="WarmStartCompleted"/>) resolves only the rest.
     /// </summary>
-    public async Task RunAsync()
+    public async Task RunAsync(CancellationToken ct)
     {
         try
         {
             while (routes.FindInterfaceIndex(tunnelName) is null)
             {
-                await Task.Delay(500);
+                await Task.Delay(500, ct);
             }
 
             try
@@ -169,9 +176,15 @@ internal sealed class DomainTracker(
 
             while (true)
             {
-                await Task.Delay(TimeSpan.FromSeconds(refreshSeconds));
+                await Task.Delay(TimeSpan.FromSeconds(refreshSeconds), ct);
                 await RefreshAsync();
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Tunnel torn down: stop the refresh loop with the session (the warm-start waiter must still
+            // be released so DnsProxy.SeedRoutesAsync never hangs).
+            _warmStart.TrySetResult();
         }
         catch (Exception ex)
         {
@@ -225,17 +238,18 @@ internal sealed class DomainTracker(
     /// poll; only previously unseen ones install a route, so it is cheap to call every tick. No-op until the
     /// tunnel adapter exists.
     /// </summary>
-    public void UpdateAppIps(IReadOnlyList<string> ips)
+    public bool UpdateAppIps(IReadOnlyList<string> ips)
     {
         lock (_lock)
         {
             var index = EnsureIndex();
             if (index is null)
             {
-                return;
+                return false; // tunnel adapter not up yet - let the caller retry later
             }
 
             var addedCidrs = new List<string>();
+            var allHandled = true;
             foreach (var ip in ips)
             {
                 // v4-only tunnel: never route IPv6 (no transit). The watcher already enumerates IPv4 only,
@@ -245,31 +259,39 @@ internal sealed class DomainTracker(
                     continue;
                 }
 
+                if (_appIps.Contains(ip))
+                {
+                    continue; // already tracked
+                }
+
                 // Bound the set so a chatty app (many short-lived endpoints) cannot grow it without limit.
                 if (_appIps.Count >= 8192)
                 {
+                    allHandled = false; // not recorded, so the caller does not mark it done
                     break;
                 }
 
-                if (!_appIps.Contains(ip))
+                // Advertise the IP in allowed-ips only once its /32 route is actually installed, so the
+                // route set and allowed-ips never diverge (#73). AddTunnelRoute treats AlreadyExists as
+                // success; a genuine failure leaves the IP unseen so the next poll retries it.
+                var parsed = IPAddress.Parse(ip);
+                var ok = routes.AddTunnelRoute(parsed, index.Value);
+                logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
+                if (ok)
                 {
-                    // Advertise the IP in allowed-ips only once its /32 route is actually installed, so the
-                    // route set and allowed-ips never diverge (#73). AddTunnelRoute treats AlreadyExists as
-                    // success; a genuine failure leaves the IP unseen so the next poll retries it.
-                    var parsed = IPAddress.Parse(ip);
-                    var ok = routes.AddTunnelRoute(parsed, index.Value);
-                    logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
-                    if (ok)
-                    {
-                        _appIps.Add(ip);
-                        addedCidrs.Add(Cidr(parsed));
-                    }
+                    _appIps.Add(ip);
+                    addedCidrs.Add(Cidr(parsed));
+                }
+                else
+                {
+                    allHandled = false; // route add failed - allow a retry on the next event/poll
                 }
             }
 
             // The app set only ever grows within a session, so advertise the new IPs incrementally rather
             // than re-pushing the whole peer set on every poll that discovers one (no-op when none were added).
             uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+            return allHandled;
         }
     }
 

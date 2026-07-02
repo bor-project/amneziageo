@@ -381,6 +381,54 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Removes host routes for many IPs with a SINGLE forwarding-table read, instead of one full-table
+    /// scan per IP: the per-IP <see cref="RemoveTunnelRoute"/> called in a loop is O(count * table), which
+    /// on a split tunnel with thousands of /32s stalls the caller (the domain tracker holds its lock across
+    /// it). IPv6 addresses fall back to the per-IP path (rare on these v4-only tunnels).
+    /// </summary>
+    public void RemoveTunnelRoutes(IReadOnlyCollection<IPAddress> ips, uint tunnelInterfaceIndex)
+    {
+        if (ips.Count == 0)
+        {
+            return;
+        }
+
+        var v4 = new HashSet<uint>();
+        foreach (var ip in ips)
+        {
+            if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+            {
+                DeleteManagedV6Routes(ip, 128);
+            }
+            else
+            {
+                v4.Add(ToRouteAddress(ip));
+            }
+        }
+
+        if (v4.Count == 0)
+        {
+            return;
+        }
+
+        // One table read, then delete every managed route on this interface whose destination is in the
+        // set - the same criteria as DeleteManagedRoutes(ip, ifIndex): family + our protocol tag + ifIndex.
+        foreach (var row in ReadForwardTable(AfInet))
+        {
+            if (row.DestinationPrefix.Prefix.si_family != AfInet
+                || row.Protocol != MibIpProtoNetMgmt
+                || row.InterfaceIndex != tunnelInterfaceIndex
+                || !v4.Contains(row.DestinationPrefix.Prefix.sin_addr))
+            {
+                continue;
+            }
+
+            var copy = row;
+            DeleteIpForwardEntry2(ref copy);
+        }
+    }
+
+    /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
     public uint? FindInterfaceIndex(string adapterName)

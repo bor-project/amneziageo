@@ -159,6 +159,11 @@ internal static class DnsMessage
         for (var i = 0; i < answerCount && offset + 10 <= message.Length; i++)
         {
             SkipName(message, ref offset);
+            if (offset + 10 > message.Length)
+            {
+                break; // a compressed/truncated RR name can leave < 10 bytes for the fixed record header
+            }
+
             var type = (message[offset] << 8) | message[offset + 1];
             var dataLength = (message[offset + 8] << 8) | message[offset + 9];
             offset += 10;

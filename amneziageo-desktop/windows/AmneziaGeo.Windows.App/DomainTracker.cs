@@ -27,6 +27,19 @@ internal sealed class DomainTracker(
     // SetAllowedIps. Accumulates for the life of the tunnel; capped so a chatty app cannot grow it without
     // bound.
     private readonly HashSet<string> _appIps = [];
+
+    // The list-materialized static route set (geoip CIDRs, plus the tunnel resolver's /32s when domains are
+    // tracked), captured at connect and grown live when a source refresh adds ranges (#83). Add-only: a range
+    // dropped from the list keeps its route until reconnect, since removing an engine-installed route live
+    // would blackhole traffic to it (the peer would still reject a since-removed allowed-ip). Guarded by _lock.
+    private readonly HashSet<string> _staticRoutes = new(staticRoutes, StringComparer.Ordinal);
+
+    // Baselines for the signals a running tunnel polls over the shared store: the active routing list's
+    // materialization generation (a change = re-apply geoip ranges) and the global resolve epoch (a change =
+    // re-resolve all tracked domains now). Captured once the tracker starts, after the warm-start cache load.
+    private long? _knownGeneration;
+    private long _knownResolveEpoch;
+
     private uint? _interfaceIndex;
     private readonly TaskCompletionSource _warmStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -174,10 +187,52 @@ internal sealed class DomainTracker(
                 _warmStart.TrySetResult();
             }
 
+            // Leave _knownGeneration null so the FIRST poll reconciles the geoip set against the live routing
+            // list: if a source refresh re-materialized the list during the connect window (the projection
+            // captured at connect held the old set), ApplyStaticAdditions adds the delta on that first poll;
+            // when nothing changed it is a no-op (the set already matches), so connect stays behaviour-neutral.
+            // The resolve epoch IS baselined to the current value, so an unchanged epoch does not force a
+            // spurious re-resolve on the first poll.
+            _knownResolveEpoch = await ReadResolveEpochAsync();
+
+            // Poll the signals more often than a full re-resolve so a user "Обновить" (which bumps the resolve
+            // epoch) takes effect promptly, without re-resolving every domain on each short poll. A full
+            // periodic re-resolve still runs every refreshSeconds - domain IPs drift on their own TTLs.
+            var pollInterval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 15), 1, 60));
+            var fullRefresh = TimeSpan.FromSeconds(refreshSeconds);
+            var sinceFullRefresh = TimeSpan.Zero;
             while (true)
             {
-                await Task.Delay(TimeSpan.FromSeconds(refreshSeconds), ct);
-                await RefreshAsync();
+                await Task.Delay(pollInterval, ct);
+                sinceFullRefresh += pollInterval;
+
+                var forceResolve = false;
+                try
+                {
+                    var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName);
+                    if (current is not null && current.Generation != _knownGeneration)
+                    {
+                        ApplyStaticAdditions(current.Routes);
+                        _knownGeneration = current.Generation;
+                    }
+
+                    var epoch = await ReadResolveEpochAsync();
+                    if (epoch != _knownResolveEpoch)
+                    {
+                        _knownResolveEpoch = epoch;
+                        forceResolve = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "geo cache signal poll failed for {Tunnel}", tunnelName);
+                }
+
+                if (forceResolve || sinceFullRefresh >= fullRefresh)
+                {
+                    await RefreshAsync();
+                    sinceFullRefresh = TimeSpan.Zero;
+                }
             }
         }
         catch (OperationCanceledException)
@@ -327,7 +382,7 @@ internal sealed class DomainTracker(
 
     private List<string> BuildAllowedIps()
     {
-        var all = new List<string>(staticRoutes);
+        var all = new List<string>(_staticRoutes);
         foreach (var set in _current.Values)
         {
             foreach (var ip in set)
@@ -343,6 +398,62 @@ internal sealed class DomainTracker(
         }
 
         return all;
+    }
+
+    /// <summary>
+    /// Applies geoip ranges that appeared in the active routing list since connect (a source refresh grew a
+    /// category): installs a tunnel route for each newly present CIDR and advertises it to the peer in one
+    /// incremental exchange. Add-only - a range dropped from the list keeps its route until reconnect, so a
+    /// stale range is over-tunnelled (harmless) rather than blackholed. No-op until the adapter is up.
+    /// </summary>
+    private void ApplyStaticAdditions(IReadOnlyList<string> freshRoutes)
+    {
+        lock (_lock)
+        {
+            var index = EnsureIndex();
+            if (index is null)
+            {
+                return;
+            }
+
+            var addedCidrs = new List<string>();
+            foreach (var cidr in freshRoutes)
+            {
+                // v4-only tunnel: never route IPv6 (no transit), matching the connect-time stripV6 filter.
+                if (stripV6 && cidr.Contains(':'))
+                {
+                    continue;
+                }
+
+                if (!_staticRoutes.Add(cidr))
+                {
+                    continue; // already present
+                }
+
+                // Advertise the range only once its route is installed, so the route set and allowed-ips never
+                // diverge (#73). A failed install is rolled back out of the set so a later poll retries it.
+                if (routes.AddTunnelCidr(cidr, index.Value))
+                {
+                    addedCidrs.Add(cidr);
+                }
+                else
+                {
+                    _staticRoutes.Remove(cidr);
+                }
+            }
+
+            if (addedCidrs.Count > 0)
+            {
+                logger.LogInformation("geo cache: applied {Count} new range(s) live to {Tunnel}", addedCidrs.Count, tunnelName);
+                uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+            }
+        }
+    }
+
+    private async Task<long> ReadResolveEpochAsync()
+    {
+        var value = await store.GetSettingAsync("geo-resolve-epoch");
+        return long.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var epoch) ? epoch : 0;
     }
 
     private async Task RefreshAsync()

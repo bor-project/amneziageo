@@ -209,6 +209,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // Tunnel MTU (#80): default 1420, valid 576-1500. Written to [Interface] MTU.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1420;", ct).ConfigureAwait(false);
+
+            // Generation counter bumped whenever a routing list's materialized set (routes/domains) changes,
+            // so a running tunnel can cheaply detect its geo address set went stale and re-apply it (#83).
+            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
         }
     }
 
@@ -942,7 +946,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT domain, ip FROM domain_ips WHERE tunnel = $tunnel ORDER BY domain, ip;";
+                command.CommandText = "SELECT domain, ip, updated_at FROM domain_ips WHERE tunnel = $tunnel ORDER BY domain, ip;";
                 command.Parameters.AddWithValue("$tunnel", tunnel);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -950,6 +954,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 {
                     string? currentDomain = null;
                     var currentIps = new List<string>();
+                    DateTimeOffset? currentResolvedAt = null;
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         var domain = reader.GetString(0);
@@ -957,19 +962,27 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         {
                             if (currentDomain is not null)
                             {
-                                resolutions.Add(new DomainResolution(currentDomain, currentIps));
+                                resolutions.Add(new DomainResolution(currentDomain, currentIps, currentResolvedAt));
                             }
 
                             currentDomain = domain;
                             currentIps = [];
+                            currentResolvedAt = null;
                         }
 
                         currentIps.Add(reader.GetString(1));
+                        // The domain's resolved-at is the freshest write across its IP rows, so a partially
+                        // refreshed set still reports a recent age rather than an old one.
+                        var rowResolvedAt = DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+                        if (currentResolvedAt is null || rowResolvedAt > currentResolvedAt)
+                        {
+                            currentResolvedAt = rowResolvedAt;
+                        }
                     }
 
                     if (currentDomain is not null)
                     {
-                        resolutions.Add(new DomainResolution(currentDomain, currentIps));
+                        resolutions.Add(new DomainResolution(currentDomain, currentIps, currentResolvedAt));
                     }
                 }
             }
@@ -1588,8 +1601,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         insert.Transaction = transaction;
                         insert.CommandText =
                             """
-                            INSERT INTO routing_lists (name, routes_json, domains_json, updated_at)
-                            VALUES ($name, $routes, $domains, $updated)
+                            INSERT INTO routing_lists (name, routes_json, domains_json, generation, updated_at)
+                            VALUES ($name, $routes, $domains, 1, $updated)
                             RETURNING id;
                             """;
                         insert.Parameters.AddWithValue("$name", list.Name);
@@ -1602,6 +1615,29 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 }
                 else
                 {
+                    // Bump the generation only when the materialized set actually changes: a rename, or a
+                    // re-materialize that produced the same routes/domains, must not force the running tunnel
+                    // to re-push its allowed-ips (#83). The JSON is produced deterministically from the rules,
+                    // so byte-equality is a safe "unchanged" test (a false miss only costs one no-op re-apply).
+                    long generation = 1;
+                    var current = connection.CreateCommand();
+                    await using (current.ConfigureAwait(false))
+                    {
+                        current.Transaction = transaction;
+                        current.CommandText = "SELECT routes_json, domains_json, generation FROM routing_lists WHERE id = $id;";
+                        current.Parameters.AddWithValue("$id", id);
+                        var reader = await current.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                        await using (reader.ConfigureAwait(false))
+                        {
+                            if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                            {
+                                var unchanged = reader.GetString(0) == routesJson && reader.GetString(1) == domainsJson;
+                                var oldGeneration = reader.GetInt64(2);
+                                generation = unchanged ? oldGeneration : oldGeneration + 1;
+                            }
+                        }
+                    }
+
                     var update = connection.CreateCommand();
                     await using (update.ConfigureAwait(false))
                     {
@@ -1609,13 +1645,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         update.CommandText =
                             """
                             UPDATE routing_lists
-                            SET name = $name, routes_json = $routes, domains_json = $domains, updated_at = $updated
+                            SET name = $name, routes_json = $routes, domains_json = $domains, generation = $generation, updated_at = $updated
                             WHERE id = $id;
                             """;
                         update.Parameters.AddWithValue("$id", id);
                         update.Parameters.AddWithValue("$name", list.Name);
                         update.Parameters.AddWithValue("$routes", routesJson);
                         update.Parameters.AddWithValue("$domains", domainsJson);
+                        update.Parameters.AddWithValue("$generation", generation);
                         update.Parameters.AddWithValue("$updated", timestamp);
                         await update.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                     }
@@ -1766,6 +1803,73 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task<ActiveRoutingListMaterialization?> GetActiveRoutingListMaterializationAsync(string tunnel, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                // Join the live projection to the routing list itself so the caller sees the list's CURRENT
+                // materialized set and generation - not the snapshot captured into proj_* at connect time.
+                command.CommandText =
+                    """
+                    SELECT rl.id, rl.generation, rl.routes_json, rl.domains_json
+                    FROM tunnel_geo tg
+                    JOIN routing_lists rl ON rl.id = tg.proj_routing_list_id
+                    WHERE tg.name = $name AND tg.projected = 1;
+                    """;
+                command.Parameters.AddWithValue("$name", tunnel);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return null;
+                    }
+
+                    var listId = reader.GetInt64(0);
+                    var generation = reader.GetInt64(1);
+                    var routes = JsonSerializer.Deserialize<List<string>>(reader.GetString(2)) ?? [];
+                    var domains = JsonSerializer.Deserialize<List<GeoDomain>>(reader.GetString(3)) ?? [];
+                    return new ActiveRoutingListMaterialization(listId, generation, routes, domains);
+                }
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<long>> ListAssignedRoutingListIdsAsync(CancellationToken ct = default)
+    {
+        var ids = new List<long>();
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT DISTINCT routing_list_id FROM balancers WHERE routing_list_id IS NOT NULL;";
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        ids.Add(reader.GetInt64(0));
+                    }
+                }
+            }
+        }
+
+        return ids;
     }
 
     /// <inheritdoc/>

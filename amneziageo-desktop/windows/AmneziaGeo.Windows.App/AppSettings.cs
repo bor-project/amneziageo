@@ -64,6 +64,13 @@ internal sealed record AppSettings
     public int GeoCheckIntervalHours { get; init; } = 24;
 
     /// <summary>
+    /// How long the materialized geo address cache (resolved domain IPs and the geoip route set) is
+    /// considered current, in hours. Past this age a background refresh re-validates the in-use lists and
+    /// re-resolves their domains; a user-initiated update always re-validates regardless of age (#83).
+    /// </summary>
+    public int GeoCacheValidityHours { get; init; } = 24;
+
+    /// <summary>
     /// When set (and the tunnel is in split mode), every outbound UDP datagram's destination is routed
     /// through the tunnel - a catch-all for real-time media (e.g. Discord voice) whose server IPs arrive via
     /// app-layer signaling, not DNS, so split rules never capture them. Off by default. Implemented by the

@@ -42,6 +42,11 @@ internal sealed class GeoUpdateCheckService(
                 {
                     var (available, total) = await broker.CheckAllSourcesAsync(ct);
                     logger.LogInformation("geo auto-check: {Available}/{Total} sources have updates", available, total);
+                    // Beyond badging available updates, keep the address cache itself current (#83): when it is
+                    // older than its validity window this downloads any changed sources and re-resolves the
+                    // in-use lists. The first sweep runs shortly after startup, so a stale cache is refreshed
+                    // without the user pressing "Обновить". Coalesced with manual updates by the broker.
+                    await broker.RefreshStaleGeoAsync(ct);
                     delay = TimeSpan.FromHours(Math.Clamp(settings.GeoCheckIntervalHours, MinIntervalHours, MaxIntervalHours));
                 }
                 else

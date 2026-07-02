@@ -367,6 +367,40 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Adds an on-link prefix route for a CIDR through the tunnel interface, so a geo range materialized
+    /// after connect (a source refresh grew a geoip category) is carried by the running tunnel without a
+    /// reconnect (#83). The prefix length is parsed from the CIDR; a bare address is treated as a host route.
+    /// Returns true when the route was created or already exists.
+    /// </summary>
+    public bool AddTunnelCidr(string cidr, uint tunnelInterfaceIndex)
+    {
+        var slash = cidr.IndexOf('/');
+        var network = slash >= 0 ? cidr[..slash] : cidr;
+        if (!IPAddress.TryParse(network, out var ip))
+        {
+            return false;
+        }
+
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var prefixV6 = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var pv6) ? pv6 : (byte)128;
+            var rowV6 = NewRowV6(ip, prefixV6, tunnelInterfaceIndex, nextHop: null);
+            var resultV6 = CreateIpForwardEntry2(ref rowV6);
+            return resultV6 is NoError or ErrorObjectAlreadyExists;
+        }
+
+        if (ip.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return false;
+        }
+
+        var prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : (byte)32;
+        var row = NewRow(ip, prefix, tunnelInterfaceIndex, nextHop: null);
+        var result = CreateIpForwardEntry2(ref row);
+        return result is NoError or ErrorObjectAlreadyExists;
+    }
+
+    /// <summary>
     /// Removes a host route for an IP from the tunnel interface (v4 /32 or v6 /128).
     /// </summary>
     public void RemoveTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)

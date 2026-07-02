@@ -230,6 +230,20 @@ public interface IStateStore
     Task RemoveRoutingListAsync(long id, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns the current materialized set and generation of the routing list actively projected onto the
+    /// given tunnel, or null when the tunnel has no live routing-list projection (full tunnel / no list /
+    /// not connected). Read live from the routing list itself - not the projection snapshot - so a running
+    /// tunnel can detect when a source refresh or rule edit re-materialized its list and re-apply it (#83).
+    /// </summary>
+    Task<ActiveRoutingListMaterialization?> GetActiveRoutingListMaterializationAsync(string tunnel, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the ids of routing lists assigned to at least one profile (in use). Refreshing only these -
+    /// rather than every stored list - keeps a geo re-materialization bounded to what a tunnel could apply (#83).
+    /// </summary>
+    Task<IReadOnlyList<long>> ListAssignedRoutingListIdsAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Returns a routing list's traffic settings (local DNS, exclusions, all-UDP, mode), or null when
     /// none are stored (the list uses defaults: split mode, runtime-default exclusions, no all-UDP).
     /// </summary>

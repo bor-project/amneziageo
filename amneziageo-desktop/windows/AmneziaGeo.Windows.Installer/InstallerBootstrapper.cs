@@ -348,6 +348,18 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 engine.SetVariableString("SEEDDBPATH", _vm.SeedDbPath, false);
             }
         }
+        else if (action is InstallerAction.Remove)
+        {
+            // #105: pass the "delete configuration" choice to the MSI (DELETECONFIG -> the AgWipeConfig deferred
+            // action wipes ProgramData\AmneziaGeo). An explicit DELETECONFIG=1/0 on the command line wins (the
+            // variable is then already non-empty); otherwise take the checkbox, which defaults off. A headless
+            // ARP uninstall reaches this with the default-off checkbox and no command-line value, so it keeps the
+            // configuration.
+            if (string.IsNullOrEmpty(engine.GetVariableString("DELETECONFIG")))
+            {
+                engine.SetVariableString("DELETECONFIG", _vm.DeleteConfig ? "1" : "0", false);
+            }
+        }
 
         _vm.BeginApply(action);
         engine.Plan(_launch);

@@ -76,6 +76,12 @@
                     IsChecked="{Binding DownloadLists}"
                     Margin="0,0,0,12"
                     Visibility="{Binding ShowDownloadOption, Converter={StaticResource B2V}}" />
+          <!-- #105: on removal, optionally wipe the runtime configuration (ProgramData\AmneziaGeo). Off by
+               default so a reinstall keeps the user's profiles and settings. -->
+          <CheckBox Content="Удалить конфигурацию (профили и настройки)"
+                    IsChecked="{Binding DeleteConfig}"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ShowDeleteConfigOption, Converter={StaticResource B2V}}" />
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Удалить" Style="{StaticResource DangerButton}"
                     Command="{Binding RemoveCommand}" Margin="0,0,10,0"

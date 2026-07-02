@@ -993,6 +993,34 @@
                       </StackPanel>
                     </Grid>
                   </Border>
+                  <!-- Capture verbosity (#82): the minimum level WRITTEN to the log in both processes -
+                       distinct from the display filter above. Raise to "Трасса" to record every connect
+                       step and timing for support diagnosis; applies live, no reconnect needed. -->
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="Подробность записи" FontSize="13.5" />
+                        <TextBlock Text="«Трасса» фиксирует каждый шаг подключения и тайминги - для диагностики в поддержке."
+                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
+                      </StackPanel>
+                      <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="150"
+                                ItemsSource="{Binding LogLevels}"
+                                SelectedItem="{Binding LogLevelLabel, Mode=TwoWay}" />
+                    </Grid>
+                  </Border>
+                  <!-- Support export (#82): one redacted zip (both processes' logs + summary + journal) to
+                       send to support. -->
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="Логи для поддержки" FontSize="13.5" />
+                        <TextBlock Text="Собрать логи обоих процессов в один архив (секреты вырезаны) для отправки в поддержку."
+                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
+                      </StackPanel>
+                      <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
+                              Content="Собрать логи…" Click="OnCollectLogs" />
+                    </Grid>
+                  </Border>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                           Background="{DynamicResource AgInsetBrush}" Margin="15,12,15,15"
                           CornerRadius="12" MaxHeight="520">

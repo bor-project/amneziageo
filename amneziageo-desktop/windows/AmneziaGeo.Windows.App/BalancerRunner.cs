@@ -344,6 +344,10 @@ internal sealed class BalancerRunner(
             if (uapi.TryGetPeerStatus(member) is { } status)
             {
                 var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalSeconds;
+                // Full per-poll resolution of the handshake progression (the Info heartbeat below is every 4s):
+                // at Debug/Trace a support engineer sees exactly when rx starts moving, or that it never does.
+                logger.LogDebug("{Member}: poll - handshake={Hs}s tx={Tx}B rx={Rx}B elapsed={Sec}s",
+                    member, status.HandshakeSec, status.TxBytes, status.RxBytes, elapsed);
                 if (status.HandshakeSec > 0)
                 {
                     logger.LogInformation("{Member}: handshake received in {Sec}s", member, elapsed);
@@ -374,6 +378,13 @@ internal sealed class BalancerRunner(
                         member, (int)_noResponseWindow.TotalSeconds, status.TxBytes);
                     break;
                 }
+            }
+            else
+            {
+                // The per-tunnel service has not answered UAPI yet (still starting its engine). Visible only
+                // at Trace so "waiting for the service to come up" is part of the every-action trace.
+                logger.LogTrace("{Member}: tunnel service not responding over UAPI yet ({Sec}s)",
+                    member, (int)(DateTimeOffset.UtcNow - start).TotalSeconds);
             }
 
             await DelayAsync(TimeSpan.FromSeconds(1), ct);

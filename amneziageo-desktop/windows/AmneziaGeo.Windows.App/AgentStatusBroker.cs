@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds status snapshots and pushes them to connected UI clients over the status pipe.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogRingBuffer logBuffer, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogRingBuffer logBuffer, LogLevelController logLevel, DiagnosticsCollector diagnostics, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -300,6 +300,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpImportBundle => await ImportBundleAsync(command.Args, ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
+                IpcContract.OpCollectDiagnostics => await CollectDiagnosticsAsync(ct),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -1648,6 +1649,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     // pending download still advances the epoch).
     private async Task RunGeoSessionAsync(IReadOnlyList<GeoSource> sources, bool forceResolve)
     {
+        // Time the whole session so a slow geo update ("медленная загрузка" of the lists) is diagnosable from
+        // the log: which source was slow, and how long the re-materialize took (#82).
+        var geoSw = System.Diagnostics.Stopwatch.StartNew();
+        logger.LogDebug("geo refresh session: {Count} source(s) [{Names}], forceResolve={Force}",
+            sources.Count, string.Join(",", sources.Select(source => source.Name)), forceResolve);
+
         // Claim only the sources not already in flight (TryAdd is atomic), so an overlapping run does not
         // start a duplicate download / re-materialize of the same source.
         var pending = sources.Where(source => _updating.TryAdd(source.Name, 0)).ToList();
@@ -1666,15 +1673,20 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 {
                     try
                     {
+                        var srcSw = System.Diagnostics.Stopwatch.StartNew();
                         var before = await store.GetGeoFileAsync(source.Name);
                         var after = await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
                         // Content-hash comparison, not a timestamp: a conditional GET that returns 304 hands
                         // back the same metadata, so an unchanged file leaves the hash equal and does not force
                         // a re-resolve. Written only to true from multiple tasks, so the race is benign.
-                        if (before is null || !string.Equals(before.Sha256, after.Sha256, StringComparison.Ordinal))
+                        var srcChanged = before is null || !string.Equals(before.Sha256, after.Sha256, StringComparison.Ordinal);
+                        if (srcChanged)
                         {
                             changed = true;
                         }
+
+                        logger.LogDebug("geo source {Name}: {State} in {Ms} ms",
+                            source.Name, srcChanged ? "changed" : "unchanged (304/same hash)", srcSw.ElapsedMilliseconds);
 
                         // Downloaded: the local file is now current, so any pending update flag is stale and
                         // any prior failure is resolved.
@@ -1700,7 +1712,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
                 try
                 {
-                    await geo.RematerializeAllRoutingListsAsync();
+                    using (logger.Step("re-materialize routing lists"))
+                    {
+                        await geo.RematerializeAllRoutingListsAsync();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1730,6 +1745,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         await store.SetSettingAsync("geo-last-refresh", DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+        logger.LogDebug("geo refresh session done: changed={Changed}, re-resolve triggered={Bumped} [{Ms} ms]",
+            changed, forceResolve || changed, geoSw.ElapsedMilliseconds);
     }
 
     // Internal counters (not user settings): the resolve epoch a running tunnel polls to know it must
@@ -1829,8 +1846,35 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"invalid setting or value; keys: {string.Join(", ", SettingsStore.Keys())}");
         }
 
+        // The log level applies live (#82): push it to this process's switch immediately (the poll and the
+        // tunnel process would pick it up within seconds, but the instant push makes the UI feel responsive).
+        if (key == LogLevelWatcher.SettingKey)
+        {
+            logLevel.Set(args[1]);
+            logger.LogInformation("log level set to {Level}", logLevel.Current);
+            return new IpcAck(true, $"log level = {logLevel.Current}");
+        }
+
         logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
+    }
+
+    /// <summary>
+    /// Builds a redacted diagnostics bundle and returns its path in the ack (#82). The agent, running as
+    /// SYSTEM, is the only party that can read both processes' logs, so the collection happens here.
+    /// </summary>
+    private async Task<IpcAck> CollectDiagnosticsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var path = await diagnostics.CollectAsync(ct);
+            return new IpcAck(true, path);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "diagnostics collection failed");
+            return new IpcAck(false, $"Не удалось собрать логи: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -2037,7 +2081,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.GeoCacheValidityHours,
             control.ConnectFailed,
             AppSettings.EngineVersion,
-            settings.TunnelAllUdp);
+            settings.TunnelAllUdp,
+            settings.LogLevel);
     }
 
     /// <summary>

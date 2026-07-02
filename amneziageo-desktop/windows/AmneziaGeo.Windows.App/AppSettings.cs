@@ -78,4 +78,10 @@ internal sealed record AppSettings
     /// so the WG transport never loops back into the tunnel.
     /// </summary>
     public bool TunnelAllUdp { get; init; }
+
+    /// <summary>
+    /// Log verbosity token (#82): "info" (default), "debug", or "trace". Drives the live Serilog level switch
+    /// in both processes. Raised to "trace" to capture every connect step and timing for support diagnosis.
+    /// </summary>
+    public string LogLevel { get; init; } = "info";
 }

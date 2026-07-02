@@ -22,7 +22,8 @@ internal sealed class Cli(
     TunnelRunner tunnelRunner,
     BalancerRunner balancerRunner,
     BackupService backupService,
-    GeoConfigurator geoConfigurator)
+    GeoConfigurator geoConfigurator,
+    LogLevelController logLevel)
 {
     /// <summary>
     /// Runs the subcommand matching the given arguments.
@@ -32,7 +33,31 @@ internal sealed class Cli(
         switch (args)
         {
             case ["--service", var name]:
-                await tunnelRunner.RunAsync(name);
+                // This is the per-tunnel service process (no host, so no hosted LogLevelBackgroundWatcher).
+                // Apply the persisted level before the tunnel bring-up starts so its trace is captured at the
+                // right verbosity from the first line, then poll so a support-requested change (agent writes
+                // the setting) takes hold on the running tunnel without a reconnect (#82).
+                await LogLevelWatcher.ApplyAsync(store, logLevel);
+                using (var levelCts = new CancellationTokenSource())
+                {
+                    var levelPoll = Task.Run(() => LogLevelWatcher.RunAsync(store, logLevel, levelCts.Token));
+                    try
+                    {
+                        await tunnelRunner.RunAsync(name);
+                    }
+                    finally
+                    {
+                        levelCts.Cancel();
+                        try
+                        {
+                            await levelPoll;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                        }
+                    }
+                }
+
                 return 0;
             case ["install", var name, var configPath]:
                 return await InstallTunnelAsync(name, configPath);

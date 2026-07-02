@@ -280,6 +280,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// actual setting.</summary>
     public ObservableCollection<int> GeoCacheValidities { get; } = [6, 12, 24, 48, 72, 168];
 
+    /// <summary>Log verbosity options shown in settings (#82). "Обычный" is the default; "Трасса" captures
+    /// every connect step and timing for support diagnosis.</summary>
+    public ObservableCollection<string> LogLevels { get; } = ["Обычный", "Отладка", "Трасса"];
+
+    // Selected verbosity label; two-way bound to the combo. Mapped to/from the persisted token (info/debug/
+    // trace) so raising it writes a live set-setting the agent and tunnel apply without a reconnect.
+    [ObservableProperty]
+    private string _logLevelLabel = "Обычный";
+
     [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
 
@@ -1341,6 +1350,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         EnsureGeoValidity(snapshot.GeoCacheValidityHours);
         GeoCacheValidityHours = snapshot.GeoCacheValidityHours;
+        LogLevelLabel = LabelForLogToken(snapshot.LogLevel);
         _suppressSettingPush = false;
 
         ApplyUpdateState(snapshot);
@@ -1474,6 +1484,37 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    partial void OnLogLevelLabelChanged(string value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
+                ["log-level", TokenForLogLabel(value)]));
+        }
+    }
+
+    // Maps the persisted verbosity token to its display label and back. An unknown token shows as "Обычный"
+    // so the combo never goes null (which, two-way bound, would push an empty value back).
+    private static string LabelForLogToken(string token)
+    {
+        return token switch
+        {
+            "trace" => "Трасса",
+            "debug" => "Отладка",
+            _ => "Обычный",
+        };
+    }
+
+    private static string TokenForLogLabel(string label)
+    {
+        return label switch
+        {
+            "Трасса" => "trace",
+            "Отладка" => "debug",
+            _ => "info",
+        };
+    }
+
     // Keeps the validity combo able to display whatever the agent reports (an out-of-band value set via CLI),
     // mirroring EnsureGeoInterval, so the ComboBox SelectedItem never goes null and writes 0 back.
     private void EnsureGeoValidity(int hours)
@@ -1514,6 +1555,32 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private async Task SetSettingAsync(string key, bool value)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value ? "on" : "off"]));
+    }
+
+    /// <summary>
+    /// Asks the agent to build a redacted diagnostics bundle (#82) and returns the agent-side zip path (under
+    /// ProgramData, readable by this UI) so the window can copy it to a user-chosen file. Returns null on
+    /// failure, after showing a notice. The build runs agent-side because only SYSTEM can read both
+    /// processes' logs.
+    /// </summary>
+    public async Task<string?> RequestDiagnosticsAsync()
+    {
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCollectDiagnostics, []));
+        if (!ack.Ok)
+        {
+            ShowNotice(string.IsNullOrWhiteSpace(ack.Message) ? "Не удалось собрать логи." : ack.Message);
+            return null;
+        }
+
+        return ack.Message;
+    }
+
+    /// <summary>
+    /// Shows a transient notice on behalf of the window code-behind (e.g. after saving the diagnostics bundle).
+    /// </summary>
+    public void ShowTransientNotice(string message)
+    {
+        ShowNotice(message);
     }
 
     /// <summary>

@@ -27,14 +27,26 @@ internal static class AppHost
         var logBuffer = new LogRingBuffer();
         builder.Services.AddSingleton(logBuffer);
 
+        // The live verbosity switch (#82): the minimum level is not hardcoded but obeys a switch the user can
+        // raise to Debug/Trace to diagnose a failing or slow connect. Shared by both processes and kept in
+        // sync with the persisted "log-level" setting by LogLevelWatcher; the broker also pushes it instantly.
+        var logLevel = new LogLevelController();
+        builder.Services.AddSingleton(logLevel);
+
         builder.Logging.ClearProviders();
         builder.Services.AddSerilog(config => config
-            .MinimumLevel.Information()
+            .MinimumLevel.ControlledBy(logLevel.Switch)
             .Enrich.FromLogContext()
             .WriteTo.Console()
             .WriteTo.File(
                 Path.Combine(TunnelPaths.LogDirectory(), "ageo-.log"),
-                rollingInterval: RollingInterval.Day)
+                rollingInterval: RollingInterval.Day,
+                // Bound the on-disk footprint so a long Trace session cannot fill the disk: roll at 25 MB and
+                // keep at most 10 files per process. Trace is verbose, so this cap is what makes it safe to
+                // leave on while reproducing an issue.
+                fileSizeLimitBytes: 25_000_000,
+                rollOnFileSizeLimit: true,
+                retainedFileCountLimit: 10)
             .WriteTo.Sink(new RingBufferSink(logBuffer)));
 
         RegisterServices(builder.Services);
@@ -48,6 +60,7 @@ internal static class AppHost
             builder.Services.AddHostedService<UpdateCheckService>();
             builder.Services.AddHostedService<GeoUpdateCheckService>();
             builder.Services.AddHostedService<GeoBootstrapService>();
+            builder.Services.AddHostedService<LogLevelBackgroundWatcher>();
         }
 
         return builder.Build();
@@ -75,6 +88,7 @@ internal static class AppHost
         services.AddSingleton<TunnelRunner>();
         services.AddSingleton<BalancerRunner>();
         services.AddSingleton<BackupService>();
+        services.AddSingleton<DiagnosticsCollector>();
         services.AddSingleton<AgentStatusBroker>();
         services.AddSingleton<Cli>();
     }

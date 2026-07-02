@@ -25,6 +25,7 @@ internal sealed class SettingsStore(IStateStore store)
             GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
             GeoCacheValidityHours = await ReadIntAsync("geo-cache-validity-hours", defaults.GeoCacheValidityHours, ct),
             TunnelAllUdp = await ReadBoolAsync("tunnel-all-udp", defaults.TunnelAllUdp, ct),
+            LogLevel = await ReadLogLevelAsync(defaults.LogLevel, ct),
         };
     }
 
@@ -58,8 +59,23 @@ internal sealed class SettingsStore(IStateStore store)
 
         if (StringKeys.Contains(key))
         {
-            // Free-form string settings (currently none); an empty value clears it.
-            await store.SetSettingAsync(key, value.Trim(), ct);
+            var trimmed = value.Trim();
+            // The log level accepts only the three exposed tokens; a bad value is rejected so the live switch
+            // never lands in an unknown state. Stored lowercase-canonical.
+            if (key == LogLevelWatcher.SettingKey)
+            {
+                var token = trimmed.ToLowerInvariant();
+                if (!LogLevelController.IsValid(token))
+                {
+                    return false;
+                }
+
+                await store.SetSettingAsync(key, token, ct);
+                return true;
+            }
+
+            // Other free-form string settings; an empty value clears it.
+            await store.SetSettingAsync(key, trimmed, ct);
             return true;
         }
 
@@ -79,8 +95,8 @@ internal sealed class SettingsStore(IStateStore store)
 
     private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp"];
 
-    // No user-settable string settings: the update URL used to live here but is now baked into the build.
-    private static readonly string[] StringKeys = [];
+    // Validated string settings. "log-level" (#82) is constrained to the three exposed verbosity tokens.
+    private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey];
 
     private async Task<int> ReadIntAsync(string key, int fallback, CancellationToken ct)
     {
@@ -92,6 +108,12 @@ internal sealed class SettingsStore(IStateStore store)
     {
         var value = await store.GetSettingAsync(key, ct);
         return value is not null && TryParseBool(value, out var parsed) ? parsed : fallback;
+    }
+
+    private async Task<string> ReadLogLevelAsync(string fallback, CancellationToken ct)
+    {
+        var value = await store.GetSettingAsync(LogLevelWatcher.SettingKey, ct);
+        return LogLevelController.IsValid(value) ? value! : fallback;
     }
 
     private static bool TryParseBool(string value, out bool result)

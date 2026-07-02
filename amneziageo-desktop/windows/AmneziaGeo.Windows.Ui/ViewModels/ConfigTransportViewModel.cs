@@ -122,7 +122,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
             else if (IsTokenAuth && token.Length > 0)
             {
                 hint +=
-                    "\n\nАвторизация «токен»: секретный путь в URL должен ТОЧНО совпадать с " +
+                    "\n\nАвторизация «токен»: токен доступа в URL должен ТОЧНО совпадать с " +
                     "--restrict-http-upgrade-path-prefix на сервере (и заодно отсекает слепое сканирование).";
             }
 

@@ -700,28 +700,9 @@
                       <TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}" Watermark="напр. мой-список" />
                     </StackPanel>
 
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)" />
-                      <Grid ColumnDefinitions="*,Auto">
-                        <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
-                                         Watermark="напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24"
-                                         Text="{Binding RuleInput, Mode=TwoWay}"
-                                         ItemsSource="{Binding GeoSuggestions}"
-                                         FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
-                        <Button Grid.Column="1" Classes="accent" Command="{Binding AddRuleCommand}">
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <TextBlock Text="+" />
-                            <TextBlock Text="Добавить" />
-                          </StackPanel>
-                        </Button>
-                      </Grid>
-                    </StackPanel>
-
                     <!-- Per-app tunneling (#68) -->
                     <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="ПРИЛОЖЕНИЯ В ТУННЕЛЬ" />
-                      <TextBlock Text="{Binding AppHint}" Classes="muted" FontSize="11"
-                                 TextWrapping="Wrap" IsVisible="{Binding IsAppPickerActive}" />
+                      <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ СЕТЕВЫХ ЗАПРОСОВ ПРИЛОЖЕНИЯ" />
                       <Grid ColumnDefinitions="Auto,*,Auto">
                         <Button Grid.Column="0" Classes="softbtn" Margin="0,0,8,0" Content="Источник ▾">
                           <Button.Flyout>
@@ -734,7 +715,7 @@
                           </Button.Flyout>
                         </Button>
                         <AutoCompleteBox Grid.Column="1" Margin="0,0,8,0"
-                                         Watermark="имя запущенного приложения или службы"
+                                         Watermark="{Binding AppWatermark}"
                                          Text="{Binding AppInput, Mode=TwoWay}"
                                          SelectedItem="{Binding AppSelected, Mode=TwoWay}"
                                          ItemsSource="{Binding AppSuggestions}"
@@ -742,6 +723,23 @@
                                          IsEnabled="{Binding IsAppPickerActive}" />
                         <Button Grid.Column="2" Classes="accent" Command="{Binding AddAppCommand}"
                                 IsEnabled="{Binding IsAppPickerActive}">
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="+" />
+                            <TextBlock Text="Добавить" />
+                          </StackPanel>
+                        </Button>
+                      </Grid>
+                    </StackPanel>
+
+                    <StackPanel Spacing="6">
+                      <TextBlock Classes="label" Text="ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)" />
+                      <Grid ColumnDefinitions="*,Auto">
+                        <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
+                                         Watermark="напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24"
+                                         Text="{Binding RuleInput, Mode=TwoWay}"
+                                         ItemsSource="{Binding GeoSuggestions}"
+                                         FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
+                        <Button Grid.Column="1" Classes="accent" Command="{Binding AddRuleCommand}">
                           <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="+" />
                             <TextBlock Text="Добавить" />

@@ -1,0 +1,107 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
+        x:Class="AmneziaGeo.Windows.Ui.BundleExportDialog"
+        x:CompileBindings="True"
+        x:DataType="vm:BundleExportDialogViewModel"
+        Title="Экспорт"
+        Width="480" Height="620"
+        MinWidth="380" MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource AgBgBrush}"
+        Foreground="{DynamicResource AgFgBrush}">
+
+  <DockPanel Margin="16">
+
+    <TextBlock DockPanel.Dock="Top" Text="Экспорт профилей, конфигураций и списков маршрутизации"
+               FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+
+    <TextBlock DockPanel.Dock="Top" Margin="0,6,0,0" FontSize="12" TextWrapping="Wrap"
+               Foreground="{DynamicResource AgWarnBrush}"
+               Text="⚠ Экспортированный файл содержит приватные ключи конфигураций. Храните и передавайте его безопасно." />
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0" IsVisible="{Binding !IsExported}">
+      <Button Classes="softbtn" Content="Отмена" Click="OnCancel" />
+      <Button Classes="accent" Content="Экспортировать" Command="{Binding ExportCommand}" IsEnabled="{Binding !IsBusy}" />
+    </StackPanel>
+
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0" IsVisible="{Binding IsExported}">
+      <Button Classes="softbtn" Content="Копировать" Click="OnCopy" />
+      <Button Classes="softbtn" Content="Сохранить в файл…" Click="OnSaveFile" />
+      <Button Classes="accent" Content="Готово" Click="OnDone" IsDefault="True" />
+    </StackPanel>
+
+    <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}"
+               Foreground="{DynamicResource AgDownBrush}" FontSize="12"
+               TextWrapping="Wrap" Margin="0,10,0,0" />
+
+    <!-- PHASE 1: the selection tree (hidden once exported). -->
+    <ScrollViewer DockPanel.Dock="Top" IsVisible="{Binding !IsExported}" Margin="0,12,0,0">
+      <StackPanel Spacing="16">
+
+        <StackPanel Spacing="6">
+          <TextBlock Text="ПРОФИЛИ" Classes="section" FontSize="12" />
+          <ItemsControl ItemsSource="{Binding ProfileItems}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:BundleItem">
+                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding !IsLocked}" Margin="0,3">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Name}" FontSize="13.5" />
+                    <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" />
+                  </StackPanel>
+                </CheckBox>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock Text="КОНФИГУРАЦИИ" Classes="section" FontSize="12" />
+          <ItemsControl ItemsSource="{Binding ConfigItems}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:BundleItem">
+                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding !IsLocked}" Margin="0,3">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Name}" FontSize="13.5" />
+                    <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" />
+                  </StackPanel>
+                </CheckBox>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+          <TextBlock Text="МАРШРУТИЗАЦИЯ" Classes="section" FontSize="12" />
+          <ItemsControl ItemsSource="{Binding RoutingItems}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:BundleItem">
+                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding !IsLocked}" Margin="0,3">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Name}" FontSize="13.5" />
+                    <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" />
+                  </StackPanel>
+                </CheckBox>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- PHASE 2: the resulting bundle JSON, ready to copy/save. -->
+    <Border DockPanel.Dock="Top" IsVisible="{Binding IsExported}" Margin="0,12,0,0"
+            BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+            CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
+      <TextBox Text="{Binding Payload}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+               VerticalContentAlignment="Top"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+               BorderThickness="0" Background="Transparent" Height="380"
+               FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11" />
+    </Border>
+
+  </DockPanel>
+</Window>

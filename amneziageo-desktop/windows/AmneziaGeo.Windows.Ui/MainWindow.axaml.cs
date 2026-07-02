@@ -39,36 +39,12 @@ public sealed partial class MainWindow : Window
         }, DispatcherPriority.Background);
     }
 
-    private async void OnNewConfigBrowse(object? sender, RoutedEventArgs e)
+    // The Config section's import form uses the window VM's SectionConfig* fields. The file / clipboard picks
+    // live further down (OnSectionConfigBrowse / OnSectionConfigClipboard); QR-image, camera and manual-edit
+    // mirror them here so the section importer has the same rich options the old inline profile form had.
+    private async void OnSectionConfigQrImage(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: BalancerItemViewModel vm })
-        {
-            return;
-        }
-
-        var path = await PickFileAsync("Конфигурация", "conf");
-        if (path is null)
-        {
-            return;
-        }
-
-        try
-        {
-            vm.NewConfigText = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(vm.NewConfigName))
-            {
-                vm.NewConfigName = Path.GetFileNameWithoutExtension(path);
-            }
-        }
-        catch (Exception ex)
-        {
-            vm.NewConfigStatus = ex.Message;
-        }
-    }
-
-    private async void OnNewConfigQrImage(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { DataContext: BalancerItemViewModel vm })
+        if (DataContext is not MainWindowViewModel vm)
         {
             return;
         }
@@ -82,17 +58,17 @@ public sealed partial class MainWindow : Window
         try
         {
             using var bitmap = new Bitmap(path);
-            ApplyQrToNewConfig(vm, bitmap);
+            ApplyQrToSectionConfig(vm, bitmap);
         }
         catch (Exception ex)
         {
-            vm.NewConfigStatus = ex.Message;
+            vm.SectionConfigStatus = ex.Message;
         }
     }
 
-    private async void OnNewConfigCamera(object? sender, RoutedEventArgs e)
+    private async void OnSectionConfigCamera(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: BalancerItemViewModel vm })
+        if (DataContext is not MainWindowViewModel vm)
         {
             return;
         }
@@ -102,121 +78,55 @@ public sealed partial class MainWindow : Window
         var ok = await dialog.ShowDialog<bool>(this);
         if (ok && scan.Result is not null)
         {
-            vm.NewConfigText = scan.Result.ConfText;
-            if (string.IsNullOrWhiteSpace(vm.NewConfigName) && !string.IsNullOrWhiteSpace(scan.Result.Name))
+            vm.SectionConfigText = scan.Result.ConfText;
+            if (string.IsNullOrWhiteSpace(vm.SectionConfigName) && !string.IsNullOrWhiteSpace(scan.Result.Name))
             {
-                vm.NewConfigName = scan.Result.Name!;
+                vm.SectionConfigName = scan.Result.Name!;
             }
-        }
-    }
-
-    private async void OnNewConfigClipboard(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { DataContext: BalancerItemViewModel vm })
-        {
-            return;
-        }
-
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is null)
-        {
-            return;
-        }
-
-        // Text first: vpn:// links, .conf text, bare Amnezia JSON.
-        var text = await clipboard.TryGetTextAsync();
-        if (!string.IsNullOrWhiteSpace(text))
-        {
-            var imported = VpnLinkCodec.TryDecode(text);
-            if (imported is not null)
-            {
-                vm.NewConfigText = imported.ConfText;
-                if (string.IsNullOrWhiteSpace(vm.NewConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
-                {
-                    vm.NewConfigName = imported.Name!;
-                }
-                vm.NewConfigStatus = "Распознано — нажмите «Сохранить».";
-            }
-            else
-            {
-                vm.NewConfigStatus = "Текст в буфере не распознан как конфигурация (.conf, vpn://, JSON).";
-            }
-            return;
-        }
-
-        // Fall back to QR image in the clipboard.
-        try
-        {
-#pragma warning disable CS0618
-            var formats = await clipboard.GetFormatsAsync();
-            byte[]? bytes = null;
-            foreach (var format in new[] { "PNG", "image/png", "public.png", "image/bmp", "Bitmap", "DeviceIndependentBitmap" })
-            {
-                if (formats.Contains(format) && await clipboard.GetDataAsync(format) is byte[] data && data.Length > 0)
-                {
-                    bytes = data;
-                    break;
-                }
-            }
-#pragma warning restore CS0618
-
-            if (bytes is null)
-            {
-                vm.NewConfigStatus = "В буфере нет конфигурации (текст, vpn://) и нет QR-изображения.";
-                return;
-            }
-
-            using var stream = new MemoryStream(bytes);
-            using var bitmap = new Bitmap(stream);
-            ApplyQrToNewConfig(vm, bitmap);
-        }
-        catch (Exception ex)
-        {
-            vm.NewConfigStatus = ex.Message;
         }
     }
 
     // "Вручную": open the large editor seeded with the current draft text; on OK write it back so the
     // normal Save (import) flow picks it up.
-    private async void OnNewConfigManual(object? sender, RoutedEventArgs e)
+    private async void OnSectionConfigManual(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: BalancerItemViewModel vm })
+        if (DataContext is not MainWindowViewModel vm)
         {
             return;
         }
 
-        var editor = new ConfigEditorViewModel { Text = vm.NewConfigText };
+        var editor = new ConfigEditorViewModel { Text = vm.SectionConfigText };
         var dialog = new ConfigEditorDialog { DataContext = editor };
         if (await dialog.ShowDialog<bool>(this))
         {
-            vm.NewConfigText = editor.Text;
-            vm.NewConfigStatus = "Готово - нажмите «Сохранить».";
+            vm.SectionConfigText = editor.Text;
+            vm.SectionConfigStatus = "Готово - нажмите «Сохранить».";
         }
     }
 
-    private static void ApplyQrToNewConfig(BalancerItemViewModel vm, Bitmap bitmap)
+    private static void ApplyQrToSectionConfig(MainWindowViewModel vm, Bitmap bitmap)
     {
         var text = QrCodec.Decode(bitmap);
         if (text is null)
         {
-            vm.NewConfigStatus = "QR-код не найден на картинке";
+            vm.SectionConfigStatus = "QR-код не найден на картинке";
             return;
         }
 
         var imported = VpnLinkCodec.TryDecodeQr(text);
         if (imported is null)
         {
-            vm.NewConfigStatus = "QR распознан, но это не конфигурация";
+            vm.SectionConfigStatus = "QR распознан, но это не конфигурация";
             return;
         }
 
-        vm.NewConfigText = imported.ConfText;
-        if (string.IsNullOrWhiteSpace(vm.NewConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
+        vm.SectionConfigText = imported.ConfText;
+        if (string.IsNullOrWhiteSpace(vm.SectionConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
         {
-            vm.NewConfigName = imported.Name!;
+            vm.SectionConfigName = imported.Name!;
         }
 
-        vm.NewConfigStatus = "QR распознан - нажмите «Сохранить»";
+        vm.SectionConfigStatus = "QR распознан - нажмите «Сохранить»";
     }
 
     private async System.Threading.Tasks.Task<string?> PickFileAsync(string title, params string[] extensions)
@@ -513,61 +423,48 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Profile export/import (the Импорт/экспорт aspect): the whole profile as a portable JSON bundle.
-    // Clipboard and file access are window concerns (like the config / WebSocket / routing share above), so
-    // these live here; the export/import IPC round-trip belongs to the window VM and this just moves the
-    // resulting text to/from the clipboard or a file.
-    private async void OnProfileExportCopy(object? sender, RoutedEventArgs e)
+    // Standalone config-import (the Config settings section): adds a config to the shared catalogue without a
+    // profile. The form binds the window VM's SectionConfig* fields, so unlike the per-profile import these
+    // handlers read/write the MainWindowViewModel rather than a row's BalancerItemViewModel.
+    private async void OnSectionConfigBrowse(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
         {
             return;
         }
 
-        var json = await vm.ExportOpenProfileAsync();
-        if (json is null)
+        var path = await PickFileAsync("Конфигурация", "conf");
+        if (path is null)
         {
             return;
         }
 
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is not null)
+        try
         {
-            await clipboard.SetTextAsync(json);
-            vm.ProfilePortStatus = "Профиль скопирован в буфер обмена.";
+            vm.SectionConfigText = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(vm.SectionConfigName))
+            {
+                vm.SectionConfigName = Path.GetFileNameWithoutExtension(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            vm.SectionConfigStatus = ex.Message;
         }
     }
 
-    private async void OnProfileExportSave(object? sender, RoutedEventArgs e)
+    // The Config settings section's catalogue combo lists ConfigItemViewModel rows but the window VM keys the
+    // open config by NAME (OpenConfig is a string), so selection is wired here instead of a SelectedItem
+    // binding (which would be a type mismatch under compiled bindings). Picking a row opens that config.
+    private void OnConfigCatalogueSelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (DataContext is not MainWindowViewModel vm)
+        if (DataContext is MainWindowViewModel vm && sender is ComboBox { SelectedItem: ConfigItemViewModel config })
         {
-            return;
+            vm.OpenConfig = config.Name;
         }
-
-        var json = await vm.ExportOpenProfileAsync();
-        if (json is null)
-        {
-            return;
-        }
-
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Сохранить профиль",
-            SuggestedFileName = $"{vm.OpenProfileName}.agprofile.json",
-        });
-        if (file is null)
-        {
-            return;
-        }
-
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(json);
-        vm.ProfilePortStatus = "Профиль сохранён.";
     }
 
-    private async void OnProfileImportPaste(object? sender, RoutedEventArgs e)
+    private async void OnSectionConfigClipboard(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
         {
@@ -583,34 +480,50 @@ public sealed partial class MainWindow : Window
         var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            vm.ProfilePortStatus = "В буфере обмена нет текста.";
+            vm.SectionConfigStatus = "В буфере обмена нет текста.";
             return;
         }
 
-        await vm.ImportProfileBundleAsync(text);
+        var imported = VpnLinkCodec.TryDecode(text);
+        if (imported is not null)
+        {
+            vm.SectionConfigText = imported.ConfText;
+            if (string.IsNullOrWhiteSpace(vm.SectionConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
+            {
+                vm.SectionConfigName = imported.Name!;
+            }
+            vm.SectionConfigStatus = "Распознано — нажмите «Сохранить».";
+        }
+        else
+        {
+            vm.SectionConfigStatus = "Текст в буфере не распознан как конфигурация (.conf, vpn://, JSON).";
+        }
     }
 
-    private async void OnProfileImportFile(object? sender, RoutedEventArgs e)
+    // Selective export/import (#91): the General settings section's "Экспорт…" / "Импорт…" buttons. The
+    // export dialog is built straight from the window VM's already-loaded snapshot collections - opening it
+    // needs no extra IPC round trip - plus the connection it uses for the eventual export/import call.
+    private async void OnOpenBundleExport(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
         {
             return;
         }
 
-        var path = await PickFileAsync("Профиль AmneziaGeo", "json");
-        if (path is null)
+        var dialogVm = new BundleExportDialogViewModel(vm.Connection, vm.Balancers, vm.Configs, vm.RoutingLists);
+        var dialog = new BundleExportDialog { DataContext = dialogVm };
+        await dialog.ShowDialog(this);
+    }
+
+    private async void OnOpenBundleImport(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel vm)
         {
             return;
         }
 
-        try
-        {
-            await vm.ImportProfileBundleAsync(await File.ReadAllTextAsync(path));
-        }
-        catch (Exception ex)
-        {
-            vm.ProfilePortStatus = ex.Message;
-        }
+        var dialog = new BundleImportDialog { DataContext = new BundleImportDialogViewModel(vm.Connection) };
+        await dialog.ShowDialog(this);
     }
 
     /// <summary>
@@ -662,25 +575,4 @@ public sealed partial class MainWindow : Window
         flyout.Items.Add(delete);
         flyout.ShowAt(target, showAtPointer: atPointer);
     }
-
-    // The left rail is the BodyGrid's first column (x:Name on a ColumnDefinition does not generate a field
-    // in Avalonia, so reach it via the named Grid).
-    private ColumnDefinition RailColumn => BodyGrid.ColumnDefinitions[0];
-
-    /// <summary>
-    /// The left rail's current pixel width (the #50 splitter position), for persisting it (#51). The
-    /// GridSplitter keeps the rail column absolute, so its GridLength value is the pixel width; a star
-    /// length (unexpected) falls back to the default.
-    /// </summary>
-    public double RailWidth => RailColumn.Width.IsAbsolute ? RailColumn.Width.Value : 377;
-
-    /// <summary>Restores the left rail to a saved pixel width; the column's Min/Max still clamp it (#51).</summary>
-    public void SetRailWidth(double pixels)
-    {
-        if (pixels > 0)
-        {
-            RailColumn.Width = new GridLength(pixels);
-        }
-    }
-
 }

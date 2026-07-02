@@ -336,7 +336,7 @@ internal sealed class TunnelRunner(
         // Under the kill-switch the WebSocket underlay (wstunnel.exe child) must be whitelisted by app-id,
         // or the block-all severs its TCP/TLS lifeline and the full tunnel passes no data.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, appSettings.BlockEncryptedDns, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, sessionCts.Token));
 
         // Re-flush the OS DNS cache once the tunnel is up. The connect-time flush above runs before the
         // adapter and its routes exist, so a name resolved in the window before the clean resolver's /32
@@ -708,7 +708,7 @@ internal sealed class TunnelRunner(
     /// arming (the session token is cancelled), nothing is left armed: the post-arm re-check disables it,
     /// and teardown's own Disable() is idempotent.
     /// </summary>
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, bool blockEncryptedDns, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
     {
         try
         {
@@ -718,7 +718,7 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is { } index)
                 {
-                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockEncryptedDns);
+                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs);
                     if (ct.IsCancellationRequested)
                     {
                         firewall.Disable();

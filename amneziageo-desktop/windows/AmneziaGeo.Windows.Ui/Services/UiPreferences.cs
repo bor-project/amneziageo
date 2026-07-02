@@ -24,11 +24,20 @@ internal sealed class UiPreferences
     /// <summary>Window height; the #22 golden-ratio default.</summary>
     public double Height { get; set; } = 610;
 
-    /// <summary>The left rail's pixel width (the #50 splitter position); the rail column default.</summary>
+    /// <summary>
+    /// Legacy: the left-rail splitter width. The sidebar was removed in the profile-presets shell refactor,
+    /// so this is no longer read; kept only so older ui-prefs.json round-trips without losing other keys.
+    /// </summary>
     public double RailWidth { get; set; } = 377;
 
-    /// <summary>The selected settings section: "general" | "sources" | "logs" | "about".</summary>
-    public string SettingsSection { get; set; } = "general";
+    /// <summary>The selected settings section: "profile" | "config" | "routing" | "sources" | "logs" | "general".</summary>
+    public string SettingsSection { get; set; } = "profile";
+
+    /// <summary>
+    /// The name of the last profile the user had active, restored on launch so the main window opens on the
+    /// same profile (the connect button stays disabled until a profile is selected). Empty when none.
+    /// </summary>
+    public string LastProfile { get; set; } = string.Empty;
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

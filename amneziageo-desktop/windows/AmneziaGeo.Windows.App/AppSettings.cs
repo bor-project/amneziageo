@@ -64,14 +64,6 @@ internal sealed record AppSettings
     public int GeoCheckIntervalHours { get; init; } = 24;
 
     /// <summary>
-    /// When set, the agent neutralizes encrypted DNS (DoT, and DoH to known public resolvers) while a
-    /// tunnel is up, forcing apps to fall back to plain DNS through the loopback proxy so geo/domain
-    /// routing sees their lookups (#69). Off by default - it reduces privacy of DIRECT (non-tunneled)
-    /// DNS and can break apps with no Do53 fallback, so it is an explicit opt-in.
-    /// </summary>
-    public bool BlockEncryptedDns { get; init; }
-
-    /// <summary>
     /// When set (and the tunnel is in split mode), every outbound UDP datagram's destination is routed
     /// through the tunnel - a catch-all for real-time media (e.g. Discord voice) whose server IPs arrive via
     /// app-layer signaling, not DNS, so split rules never capture them. Off by default. Implemented by the

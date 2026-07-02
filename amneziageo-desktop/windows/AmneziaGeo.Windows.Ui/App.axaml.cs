@@ -64,7 +64,6 @@ public sealed partial class App : Application
                 Width = prefs.Width,
                 Height = prefs.Height,
             };
-            window.SetRailWidth(prefs.RailWidth);
             _window = window;
             desktop.MainWindow = window;
 
@@ -91,15 +90,14 @@ public sealed partial class App : Application
     // the tray "Выход", which goes via ExitApp and sets _exiting so the genuine close is allowed through.
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
     {
-        // Persist the final window size + splitter width (#51) on every close - whether hiding to the tray
-        // or a genuine exit. (Theme and the selected settings section are saved as they change in the VM.)
+        // Persist the final window size (#51) on every close - whether hiding to the tray or a genuine
+        // exit. (Theme and the selected settings section are saved as they change in the VM.)
         if (_window is not null && _prefs is not null)
         {
             // ClientSize tracks the user's actual resize (Window.Width does not reliably write back); for an
             // Avalonia top-level it equals the value set via Width, so save/restore stays consistent.
             _prefs.Width = _window.ClientSize.Width;
             _prefs.Height = _window.ClientSize.Height;
-            _prefs.RailWidth = _window.RailWidth;
             _prefs.Save();
         }
 

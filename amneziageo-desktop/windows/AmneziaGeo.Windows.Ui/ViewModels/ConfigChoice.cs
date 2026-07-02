@@ -22,10 +22,10 @@ internal enum ConfigChoiceKind
 internal sealed record ConfigChoice(string Name, ConfigChoiceKind Kind = ConfigChoiceKind.Real)
 {
     /// <summary>The synthetic "no config" choice.</summary>
-    public static ConfigChoice None { get; } = new("- не задан -", ConfigChoiceKind.None);
+    public static ConfigChoice None { get; } = new("— не выбрано —", ConfigChoiceKind.None);
 
     /// <summary>
-    /// The synthetic "create a new config" choice: picking it reveals the inline new-config import form,
+    /// The synthetic "create a new config" choice: picking it redirects to the Config section to add one,
     /// mirroring the "+ Новый список" sentinel in the routing-list combo.
     /// </summary>
     public static ConfigChoice NewConfig { get; } = new("+ Новая конфигурация", ConfigChoiceKind.New);

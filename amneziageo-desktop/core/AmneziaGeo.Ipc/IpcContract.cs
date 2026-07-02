@@ -221,24 +221,20 @@ public static class IpcContract
     public const string OpRenameProfile = "rename-profile";
 
     /// <summary>
-    /// Command to export a profile as a portable, self-contained JSON bundle: its config (.conf text with
-    /// keys), transport, the config's own geo split, and its routing list. Args: profile name. The ack
-    /// message holds the JSON.
+    /// Command to export a SELECTIVE bundle of configs, routing lists, and profiles as a portable JSON file
+    /// (#91): the user picks which catalogue entries and profiles to include via a tree of checkboxes. Args:
+    /// a selection JSON object <c>{ "profiles": [...], "configs": [...], "routingLists": [...] }</c> (each
+    /// array optional; a selected profile pulls in its bound config and routing list automatically). The
+    /// ack message holds the bundle JSON.
     /// </summary>
-    public const string OpExportProfile = "export-profile";
+    public const string OpExportBundle = "export-bundle";
 
     /// <summary>
-    /// Command to import a profile from a portable JSON bundle, recreating its config, transport, geo, and
-    /// routing list as new, independent entities under fresh (de-duplicated) names. Args: bundle json. The
-    /// ack message holds the new profile name.
+    /// Command to import a selective bundle (#91), recreating its configs, routing lists, and profiles as
+    /// new, independent entities under fresh (de-duplicated) names on any name collision. Args: bundle json.
+    /// The ack message holds a human-readable summary.
     /// </summary>
-    public const string OpImportProfile = "import-profile";
-
-    /// <summary>
-    /// Duplicate a profile into an independent copy: recreate its config, transport, geo and routing under
-    /// fresh (de-duplicated) names. Args: source profile name. The ack message holds the new profile name.
-    /// </summary>
-    public const string OpDuplicateProfile = "duplicate-profile";
+    public const string OpImportBundle = "import-bundle";
 
     /// <summary>
     /// Command to check for an application update against the configured update URL. No args. The ack

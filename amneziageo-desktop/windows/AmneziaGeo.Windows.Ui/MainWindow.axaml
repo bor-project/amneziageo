@@ -584,6 +584,16 @@
                   <TextBlock Classes="label" Text="ПРОКСИ (WEBSOCKET)" />
                   <CheckBox Content="Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)"
                             IsChecked="{Binding UseWebSocket}" />
+                  <!-- MTU applies to any transport (plain WG too), not just WSS: on a path whose real MTU is
+                       below ~1500 (mobile, PPPoE, a nested tunnel, double-NAT) the 1420 default black-holes the
+                       large TLS-handshake packets, so every HTTPS connection stalls. Kept OUTSIDE the WebSocket
+                       block so it can be lowered on a plain-WG config too. -->
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="MTU туннеля:" VerticalAlignment="Center" />
+                    <TextBox Width="90" Text="{Binding Mtu}" />
+                    <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
+                               Text="576-1500, по умолчанию 1420. Если сайты открываются с задержкой и зависает TLS-хендшейк - понизьте (например, 1280)." />
+                  </StackPanel>
                   <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
                     <StackPanel Spacing="2">
                       <TextBlock Text="Адрес сервера (host):" />
@@ -593,12 +603,6 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <TextBlock Text="Порт сервера (TLS):" VerticalAlignment="Center" />
                       <TextBox Width="90" Text="{Binding WebSocketPort}" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <TextBlock Text="MTU туннеля:" VerticalAlignment="Center" />
-                      <TextBox Width="90" Text="{Binding Mtu}" />
-                      <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
-                                 Text="576-1500. По умолчанию 1420. Понизить до 1280 при использовании WSS-прокси." />
                     </StackPanel>
                     <StackPanel Spacing="2">
                       <TextBlock Text="Авторизация:" />

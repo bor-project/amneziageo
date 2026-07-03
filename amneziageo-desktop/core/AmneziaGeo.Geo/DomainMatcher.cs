@@ -53,22 +53,35 @@ public sealed class DomainMatcher
     }
 
     /// <summary>
-    /// Returns true when the domain matches any configured geo rule. The host is lower-cased once; exact
-    /// and suffix rules are hash lookups, so the common cases never touch the plain/regex lists.
+    /// Returns true when the domain matches any configured geo rule. Delegates to <see cref="Match"/> so
+    /// there is a single matching implementation; <see cref="GeoMatch"/> is a stack-only struct, so the
+    /// common (bool) path allocates nothing beyond the one lower-cased host that matching already needs.
     /// </summary>
-    public bool IsTunneled(string domain)
+    public bool IsTunneled(string domain) => Match(domain) is not null;
+
+    /// <summary>
+    /// Returns the geo rule that matches the domain - its kind and the value it matched on - or null when
+    /// nothing matches, so a caller (e.g. the routing log) can report WHY a name was tunneled. Same order
+    /// and semantics as before: full (exact), then exact/suffix domain, then substring plain, then regex.
+    /// </summary>
+    public GeoMatch? Match(string domain)
     {
         var host = domain.TrimEnd('.').ToLowerInvariant();
         if (host.Length == 0)
         {
-            return false;
+            return null;
         }
 
         // Full: exact host. Domain: exact host, or any parent label-boundary suffix ("x.example.com"
         // matches "example.com") - the same semantics as host == value || host.EndsWith("." + value).
-        if (_full.Contains(host) || _domain.Contains(host))
+        if (_full.Contains(host))
         {
-            return true;
+            return new GeoMatch(GeoDomainKind.Full, host);
+        }
+
+        if (_domain.Contains(host))
+        {
+            return new GeoMatch(GeoDomainKind.Domain, host);
         }
 
         if (_domain.Count > 0)
@@ -77,7 +90,7 @@ public sealed class DomainMatcher
             {
                 if (host[i] == '.' && _domain.Contains(host[(i + 1)..]))
                 {
-                    return true;
+                    return new GeoMatch(GeoDomainKind.Domain, host[(i + 1)..]);
                 }
             }
         }
@@ -86,7 +99,7 @@ public sealed class DomainMatcher
         {
             if (host.Contains(value, StringComparison.Ordinal))
             {
-                return true;
+                return new GeoMatch(GeoDomainKind.Plain, value);
             }
         }
 
@@ -94,12 +107,15 @@ public sealed class DomainMatcher
         {
             if (regex.IsMatch(host))
             {
-                return true;
+                return new GeoMatch(GeoDomainKind.Regex, regex.ToString());
             }
         }
 
-        return false;
+        return null;
     }
+
+    /// <summary>The geo rule that matched a domain: which kind of rule, and the value it matched on.</summary>
+    public readonly record struct GeoMatch(GeoDomainKind Kind, string Value);
 
     private static string Normalize(string value)
     {

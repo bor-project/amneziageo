@@ -18,6 +18,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
     private readonly string _endpoint;
+    private readonly Debouncer _saveDebounce;
 
     [ObservableProperty]
     private bool _useWebSocket;
@@ -64,6 +65,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     public ConfigTransportViewModel(AgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu)
     {
         _connection = connection;
+        _saveDebounce = new Debouncer(700, SaveAsync);
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
@@ -79,6 +81,41 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         _webSocketToken = token;
         _webSocketPort = (port > 0 ? port : webSocketPort).ToString(CultureInfo.InvariantCulture);
     }
+
+    // Auto-save (#116): any field change persists through the agent - there is no «Сохранить» button. Fields
+    // bind per keystroke so the VM always holds the latest value; only the (network) persist is debounced
+    // ~700ms (_saveDebounce) and flushed on teardown (FlushPendingSave), so a fast config switch never strands
+    // a typed edit. The ctor seeds via the backing fields (no change events fire), so merely opening a config
+    // never saves. _applying suppresses the per-field saves while ApplyImport sets a batch, which saves once.
+    private bool _applying;
+
+    partial void OnUseWebSocketChanged(bool value) => AutoSave();
+
+    partial void OnWebSocketHostChanged(string value) => AutoSave();
+
+    partial void OnWebSocketPortChanged(string value) => AutoSave();
+
+    partial void OnAuthModeChanged(int value) => AutoSave();
+
+    partial void OnWebSocketUserChanged(string value) => AutoSave();
+
+    partial void OnWebSocketPasswordChanged(string value) => AutoSave();
+
+    partial void OnWebSocketTokenChanged(string value) => AutoSave();
+
+    partial void OnMtuChanged(string value) => AutoSave();
+
+    private void AutoSave()
+    {
+        if (!_applying)
+        {
+            _saveDebounce.Schedule();
+        }
+    }
+
+    /// <summary>Persist a still-pending debounced edit at once - the host calls this before this editor is
+    /// replaced (a config switch / rename / delete) so an edit typed just before it is not lost (#116).</summary>
+    public void FlushPendingSave() => _saveDebounce.Flush();
 
     /// <summary>The configuration name being edited.</summary>
     public string ConfigName { get; }
@@ -180,8 +217,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Applies an imported WebSocket blob to the editable fields (the user still presses «Сохранить» to
-    /// persist). Returns whether the text was a recognisable blob.
+    /// Applies an imported WebSocket blob to the editable fields; auto-save (#116) then persists it (one save,
+    /// not one per field). Returns whether the text was a recognisable blob.
     /// </summary>
     public bool ApplyImport(string text)
     {
@@ -191,15 +228,25 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
             return false;
         }
 
-        UseWebSocket = enabled;
-        var (parsedHost, parsedPort, user, password, token, mode) = ParseStored(host);
-        WebSocketHost = string.IsNullOrWhiteSpace(parsedHost) ? EndpointHost(_endpoint) : parsedHost;
-        WebSocketPort = (parsedPort > 0 ? parsedPort : port).ToString(CultureInfo.InvariantCulture);
-        AuthMode = mode;
-        WebSocketUser = user;
-        WebSocketPassword = password;
-        WebSocketToken = token;
+        _applying = true;
+        try
+        {
+            UseWebSocket = enabled;
+            var (parsedHost, parsedPort, user, password, token, mode) = ParseStored(host);
+            WebSocketHost = string.IsNullOrWhiteSpace(parsedHost) ? EndpointHost(_endpoint) : parsedHost;
+            WebSocketPort = (parsedPort > 0 ? parsedPort : port).ToString(CultureInfo.InvariantCulture);
+            AuthMode = mode;
+            WebSocketUser = user;
+            WebSocketPassword = password;
+            WebSocketToken = token;
+        }
+        finally
+        {
+            _applying = false;
+        }
+
         StatusMessage = Loc.Instance.Get("Transport_Imported");
+        _ = SaveAsync();
         return true;
     }
 

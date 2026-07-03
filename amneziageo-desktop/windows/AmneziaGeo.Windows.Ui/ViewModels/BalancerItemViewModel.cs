@@ -19,11 +19,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private readonly Func<string, Task> _selectProfile;
     private readonly Func<string, bool, Task> _setProfileConnection;
     private readonly Func<string, Task<IpcAck>> _removeConfig;
-    // Picking the "+ Новая конфигурация" / "+ Новый список" sentinel in this profile's combos does not open
-    // an inline form; it redirects the host to the Config / Routing settings section with the create UI
-    // opened there (the combo snaps back to the profile's current selection). Supplied by the host.
-    private readonly Action _onRequestNewConfig;
-    private readonly Action _onRequestNewList;
     private bool _suppress;
     // One-shot flag: set before RoutingListOptions.Clear() so the deferred Avalonia binding
     // event (SelectedItem → None) that arrives after _suppress=false is consumed and ignored.
@@ -42,8 +37,8 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private string _config = string.Empty;
 
     // The config selected in the profile's config combo. Picking a real config assigns it to this profile
-    // (configs are shared across profiles by name); picking "+ Новая конфигурация" redirects to the Config
-    // section to add one there.
+    // (configs are shared across profiles by name); the "— не выбрано —" choice clears it. Configs are added
+    // from the Config section's «+ Новая конфигурация» button, not from this combo (#111).
     [ObservableProperty]
     private ConfigChoice _selectedConfig = ConfigChoice.None;
 
@@ -76,23 +71,19 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         Func<string, long?, bool, Task> assignRouting,
         Func<string, Task> selectProfile,
         Func<string, bool, Task> setProfileConnection,
-        Func<string, Task<IpcAck>> removeConfig,
-        Action onRequestNewConfig,
-        Action onRequestNewList)
+        Func<string, Task<IpcAck>> removeConfig)
     {
         _saveProfile = saveProfile;
         _assignRouting = assignRouting;
         _selectProfile = selectProfile;
         _setProfileConnection = setProfileConnection;
         _removeConfig = removeConfig;
-        _onRequestNewConfig = onRequestNewConfig;
-        _onRequestNewList = onRequestNewList;
     }
 
     /// <summary>
-    /// The config options available in the profile's config combo: the synthetic "- не задан -",
-    /// every config in the shared catalogue (selectable / reusable across profiles), then the trailing
-    /// "+ Новая конфигурация" sentinel. Rebuilt from the snapshot in <see cref="ApplyFromEntry"/>.
+    /// The config options available in the profile's config combo: the synthetic "— не выбрано —" followed by
+    /// every config in the shared catalogue (selectable / reusable across profiles). Rebuilt from the snapshot
+    /// in <see cref="ApplyFromEntry"/>.
     /// </summary>
     public ObservableCollection<ConfigChoice> ConfigOptions { get; } = [];
 
@@ -226,7 +217,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
                 // Arm the one-shot flag before Clear() so the deferred Avalonia ComboBox
                 // SelectedItem→None event that arrives after _suppress=false is swallowed.
                 // Only arm when the current selection has something worth protecting.
-                _suppressNextRoutingNone = SelectedRoutingList.IsReal || SelectedRoutingList.IsNewSentinel;
+                _suppressNextRoutingNone = SelectedRoutingList.IsReal;
                 RoutingListOptions.Clear();
                 foreach (var option in routingOptions)
                 {
@@ -235,8 +226,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             }
 
             // Resolve the combo to the profile's assigned list, or «Полный туннель» (the None sentinel) when
-            // it has none. The "+ Новый список" pick is never held across snapshots now - it redirects to the
-            // Routing section instead of opening an inline editor.
+            // it has none. Lists are created from the Routing section's «+ Новый список» button, not this combo.
             SelectedRoutingList = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
 
             UseRouting = entry.UseRouting && SelectedRoutingList.IsReal;
@@ -283,16 +273,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             return;
         }
 
-        if (newValue.IsNewSentinel)
-        {
-            // "+ Новая конфигурация" is a redirect, not an inline form: send the host to the Config section
-            // to add one there, then snap this combo back to whatever the profile currently has (guarded so
-            // the revert issues no redundant IPC). The user re-selects the new config here once it exists.
-            _onRequestNewConfig();
-            RevertSelectedConfig();
-            return;
-        }
-
         if (newValue.IsReal && !string.Equals(newValue.Name, Config, StringComparison.Ordinal))
         {
             // Picking an existing config (re)assigns it to this profile - the same config can back several
@@ -307,17 +287,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         }
     }
 
-    // Snap the config combo back to the profile's current config (or «— не выбрано —»), under _suppress so
-    // the re-selection does not re-enter the assign path.
-    private void RevertSelectedConfig()
-    {
-        _suppress = true;
-        SelectedConfig = ConfigOptions.FirstOrDefault(
-                option => option.IsReal && string.Equals(option.Name, Config, StringComparison.Ordinal))
-            ?? ConfigChoice.None;
-        _suppress = false;
-    }
-
     partial void OnSelectedRoutingListChanged(RoutingListChoice? oldValue, RoutingListChoice newValue)
     {
         // newValue can momentarily be null: clearing the bound options nulls the ComboBox's SelectedItem.
@@ -329,25 +298,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         // RoutingListOptions.Clear() inside ApplyFromEntry posts a deferred SelectedItem→None event
         // that the Avalonia binding dispatcher delivers after _suppress=false. Without this guard it
         // would call _assignRouting(null) and unassign the routing list mid-edit. The one-shot flag is
-        // armed only when there is an active real/new-sentinel selection to protect.
-        if (!newValue.IsReal && !newValue.IsNewSentinel && _suppressNextRoutingNone)
+        // armed only when there is an active real selection to protect.
+        if (!newValue.IsReal && _suppressNextRoutingNone)
         {
             _suppressNextRoutingNone = false;
             return;
         }
         _suppressNextRoutingNone = false;
-
-        if (newValue.IsNewSentinel)
-        {
-            // "+ Новый список" is a redirect, not an inline editor: send the host to the Routing section to
-            // create one there, then snap this combo back to the profile's current list (guarded), so the
-            // sentinel does not stick. The user re-selects the new list here once it exists.
-            _onRequestNewList();
-            _suppress = true;
-            SelectedRoutingList = oldValue ?? RoutingListChoice.None;
-            _suppress = false;
-            return;
-        }
 
         if (!newValue.IsReal && UseRouting)
         {

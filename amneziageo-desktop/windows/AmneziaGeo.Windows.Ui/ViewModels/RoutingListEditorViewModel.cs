@@ -40,6 +40,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     private int _saveFailures;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsNameMissing))]
     private string _name = string.Empty;
 
     [ObservableProperty]
@@ -106,6 +107,10 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// The persisted list id (0 until a new list is first saved).
     /// </summary>
     public long Id => _id;
+
+    /// <summary>The name is a required field (#117): an emptied name box turns red and warns, because a list
+    /// with no name is not saved (<see cref="AutoSaveAsync"/> returns early while the name is blank).</summary>
+    public bool IsNameMissing => string.IsNullOrWhiteSpace(Name);
 
     /// <summary>
     /// The rules of this list as rule tokens (geosite:openai etc).

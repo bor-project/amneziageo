@@ -1,4 +1,5 @@
 using AmneziaGeo.Localization;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -10,34 +11,45 @@ internal enum ProfileChoiceKind
 
     /// <summary>The synthetic "no profile" choice (nothing selected yet).</summary>
     None,
-
-    /// <summary>The synthetic "+ Новый профиль" sentinel that creates a profile and opens its editor.</summary>
-    New,
 }
 
 /// <summary>
 /// A profile pick exposed to the main-window and Profile-section combo boxes, mirroring
-/// <see cref="ConfigChoice"/> / <see cref="RoutingListChoice"/>. A profile's identity is its NAME, so real
-/// choices carry the profile name; the two synthetic choices ("none" / "new") are distinguished by
-/// <see cref="Kind"/> rather than by name, so a real profile named like a sentinel label is never confused
-/// for one. The host resolves a real choice to its <c>BalancerItemViewModel</c> by name.
+/// <see cref="ConfigChoice"/> / <see cref="RoutingListChoice"/>. A profile's identity is its NAME, carried by
+/// <see cref="Identity"/> and kept stable across an in-place rename; the displayed <see cref="Name"/> is
+/// observable so the Profile section's combo can preview a name being typed in the editor live (#110) before
+/// it is saved. The synthetic "none" choice is distinguished by <see cref="Kind"/> rather than by name, so a
+/// real profile named like the sentinel label is never confused for one. Creating a profile is a button
+/// («+ Профиль»), no longer a synthetic combo entry (#111). The host resolves a real choice to its
+/// <c>BalancerItemViewModel</c> by <see cref="Identity"/>.
 /// </summary>
-internal sealed record ProfileChoice(string Name, ProfileChoiceKind Kind = ProfileChoiceKind.Real)
+internal sealed partial class ProfileChoice : ObservableObject
 {
+    public ProfileChoice(string identity, ProfileChoiceKind kind = ProfileChoiceKind.Real)
+    {
+        Identity = identity;
+        Kind = kind;
+        _name = identity;
+    }
+
+    /// <summary>The stable key: the real profile name for a real choice, unchanged by a live-typed rename.</summary>
+    public string Identity { get; }
+
+    /// <summary>Whether this is a real profile or the synthetic "none" choice.</summary>
+    public ProfileChoiceKind Kind { get; }
+
+    /// <summary>
+    /// The label shown in the combo. For a real choice it tracks the Profile editor's name field live while a
+    /// rename is being typed (#110); it snaps back to the persisted name once the rename is saved (or dropped).
+    /// </summary>
+    [ObservableProperty]
+    private string _name;
+
     /// <summary>The synthetic "no profile" choice (shown, and selectable, when nothing is picked).</summary>
     public static ProfileChoice None { get; } = new(Loc.Instance.Get("ProfileChoice_NoneLabel"), ProfileChoiceKind.None);
 
-    /// <summary>
-    /// The synthetic "create a new profile" choice: picking it creates a profile and opens it in the
-    /// Profile section editor (redirecting there from the home combo).
-    /// </summary>
-    public static ProfileChoice New { get; } = new(Loc.Instance.Get("ProfileChoice_NewLabel"), ProfileChoiceKind.New);
-
     /// <summary>True for the synthetic "no profile" choice.</summary>
     public bool IsNone => Kind == ProfileChoiceKind.None;
-
-    /// <summary>True for the synthetic "+ Новый профиль" sentinel.</summary>
-    public bool IsNew => Kind == ProfileChoiceKind.New;
 
     /// <summary>True for a real, saved profile.</summary>
     public bool IsReal => Kind == ProfileChoiceKind.Real;

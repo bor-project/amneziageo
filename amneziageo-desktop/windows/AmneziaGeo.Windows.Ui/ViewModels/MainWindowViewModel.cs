@@ -25,6 +25,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _toggleInFlight;
     private string? _lastNotice;
     private string? _pendingOpenProfile;
+    // Debounce for the profile-name auto-rename (#116): a keystroke cancels the previous timer; the rename
+    // fires ~700ms after the user pauses. Kept in the VM (not the XAML Binding.Delay) so the #110 live combo
+    // preview still updates per keystroke while only the persist is debounced.
+    private System.Threading.CancellationTokenSource? _profileRenameDebounce;
+    // Debounce for the config-name auto-rename (#117): the name box binds per keystroke (so the red required-
+    // field border reacts at once when it is cleared), and the persist is debounced here, ~700ms after the
+    // user pauses - the same split the profile name uses, replacing the old Binding.Delay on the box.
+    private System.Threading.CancellationTokenSource? _configRenameDebounce;
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
     // Signature (sorted names) of the geo sources that had updates the last time the banner was shown,
@@ -41,6 +49,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // A config just imported in the Config section, whose row has not yet arrived in a snapshot.
     // SyncConfigs opens it (OpenConfig) once present, so its transport editor seeds from the real row.
     private string? _pendingOpenConfig;
+    // The auto-generated default name last put in the new-config form's name box (#117). An import
+    // (paste / QR / file) overwrites the name only while it still equals this default (or is blank), so an
+    // imported config's own name still wins over the generic default, but a name the user typed is kept.
+    private string _sectionConfigDefaultName = string.Empty;
+    // Debounces the Config-section import auto-save (#118). The config text box is read-only, so its text only
+    // changes atomically (file / QR / camera / editor dialog); setting it - or editing the name - schedules a
+    // save ~400ms later so the text+name pair settles first. A recognised config with a (required) name then
+    // auto-saves and opens for management; there is no «Сохранить» button.
+    private System.Threading.CancellationTokenSource? _sectionConfigAutoSaveDebounce;
+    // Guards the debounced import against re-entry: it awaits the import IPC while the form state is still
+    // populated, so a change during that await could schedule a second save and import the config twice
+    // (#118 review). Set/cleared on the single UI thread, so a plain bool suffices.
+    private bool _sectionConfigSaving;
     // Set while a profile combo's selection is mirrored from state (ActiveProfile / OpenProfile) rather than
     // chosen by the user, so the programmatic assignment does not re-enter the pick handler and echo back.
     private bool _suppressActiveChoice;
@@ -62,6 +83,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
+    [NotifyPropertyChangedFor(nameof(ShowSelectConfigHint))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
@@ -82,6 +104,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
+    [NotifyPropertyChangedFor(nameof(ShowSelectConfigHint))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
@@ -90,9 +113,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CreateProfileCommand))]
+    [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
     private bool _hasConfigs;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSelectConfigHint))]
+    [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
     private bool _hasBalancers;
 
     [ObservableProperty]
@@ -169,20 +196,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // The editable name field for the open config (seeded with its current name) and a one-line status
     // for a rejected rename (e.g. the name is taken, or the config is in use by the running tunnel).
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanSaveConfigName))]
+    [NotifyPropertyChangedFor(nameof(ConfigNameMissing))]
     private string _configRename = string.Empty;
 
     [ObservableProperty]
     private string _configRenameStatus = string.Empty;
 
-    // Inline name-edit mode for the config header (mirrors the profile header): while true the name shows
-    // as a text box with save/cancel buttons; otherwise as text with a pencil.
-    [ObservableProperty]
-    private bool _isEditingConfigName;
-
     // The editable name field for the open profile (seeded with its current name) and its rename status.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanSaveProfileName))]
+    [NotifyPropertyChangedFor(nameof(ProfileNameMissing))]
     private string _profileRename = string.Empty;
 
     [ObservableProperty]
@@ -259,6 +281,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _isCreatingSectionConfig;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSaveSectionConfig))]
+    [NotifyPropertyChangedFor(nameof(SectionConfigNameMissing))]
     private string _sectionConfigName = string.Empty;
 
     [ObservableProperty]
@@ -407,23 +431,25 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<BalancerItemViewModel> Profiles => Balancers;
 
     /// <summary>
-    /// The options shown in both profile combos: «— не выбрано —», «+ Новый профиль», then every saved
-    /// profile by name. Reconciled in place from <see cref="Balancers"/> so a snapshot push does not null
-    /// the combos' selection.
+    /// The options shown in both profile combos: «— не выбрано —» then every saved profile by name. Reconciled
+    /// in place from <see cref="Balancers"/> so a snapshot push does not null the combos' selection. Creating a
+    /// profile is the «+ Профиль» button, not a combo entry (#111).
     /// </summary>
-    public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None, ProfileChoice.New];
+    public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None];
 
     /// <summary>
-    /// Config-section catalogue combo: «— не выбрано —», «+ Новая конфигурация», then the saved configs.
-    /// Reconciled in place from <see cref="Configs"/> so a snapshot push does not null the combo's selection.
+    /// Config-section catalogue combo: «— не выбрано —» then the saved configs. Reconciled in place from
+    /// <see cref="Configs"/> so a snapshot push does not null the combo's selection. Creating a config is the
+    /// «+ Новая конфигурация» button, not a combo entry (#111).
     /// </summary>
-    public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [ConfigChoice.None, ConfigChoice.NewConfig];
+    public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [ConfigChoice.None];
 
     /// <summary>
-    /// Routing-section catalogue combo: «— не выбрано —», «+ Новый список», then the saved lists. Reconciled
-    /// in place from <see cref="RoutingLists"/> so a snapshot push does not null the combo's selection.
+    /// Routing-section catalogue combo: «— не выбрано —» then the saved lists. Reconciled in place from
+    /// <see cref="RoutingLists"/> so a snapshot push does not null the combo's selection. Creating a list is
+    /// the «+ Новый список» button, not a combo entry (#111).
     /// </summary>
-    public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [RoutingListChoice.None, RoutingListChoice.NewList];
+    public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [RoutingListChoice.None];
 
     /// <summary>
     /// Routing-list catalogue.
@@ -509,6 +535,21 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _ => Loc.Instance.Get("MainVm_ConnectHintClickToConnect"),
     };
 
+    /// <summary>
+    /// Whether the home screen shows the «Выберите конфигурацию для подключения» hint under the picker: there
+    /// are profiles to pick from, but none is selected (or the selected one has no configuration) and the
+    /// tunnel is down (#112). When there are no profiles at all, the «add a profile and configuration» hint
+    /// shows instead (bound to !HasBalancers in XAML).
+    /// </summary>
+    public bool ShowSelectConfigHint => ConnState == 0 && HasBalancers && ActiveProfile is not { IsComplete: true };
+
+    /// <summary>
+    /// Whether the Profile section shows its «no profiles yet» hint: configurations exist (so a profile can be
+    /// created with the «+ Профиль» button) but none has been created yet. When no configurations exist the
+    /// «add a configuration first» hint shows instead and the button is disabled (#113).
+    /// </summary>
+    public bool ShowNoProfilesYetHint => HasConfigs && !HasBalancers;
+
     /// <summary>Label on the connect/disconnect pill button in the settings header.</summary>
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
@@ -549,15 +590,31 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>Whether a profile is opened for editing in the Profile settings section.</summary>
     public bool IsProfileDetail => OpenProfile is not null;
 
-    /// <summary>Whether the inline name editor can save (the typed name is not blank).</summary>
-    public bool CanSaveProfileName => !string.IsNullOrWhiteSpace(ProfileRename);
+    /// <summary>The name is a required field: when the open profile's name box is cleared the rename is a
+    /// no-op (the persisted name is kept), so the box turns red and warns that the edit will not be saved.</summary>
+    public bool ProfileNameMissing => string.IsNullOrWhiteSpace(ProfileRename);
 
-    /// <summary>Whether the inline config-name editor has a non-blank name to save.</summary>
-    public bool CanSaveConfigName => !string.IsNullOrWhiteSpace(ConfigRename);
+    /// <summary>The name is a required field: an emptied open-config name box does not rename (it turns red
+    /// and warns), so the config keeps its persisted name rather than being renamed to blank.</summary>
+    public bool ConfigNameMissing => string.IsNullOrWhiteSpace(ConfigRename);
 
-    /// <summary>Whether the Config-section import form can save: its text parses as a config (.conf / vpn://).
-    /// A name is optional (auto-derived on import), so only the config text is required.</summary>
-    public bool CanSaveSectionConfig => VpnLinkCodec.TryDecode(SectionConfigText) is not null;
+    /// <summary>The name is a required field on the «+ New configuration» form: an emptied name box turns red,
+    /// warns, and disables «Save» (<see cref="CanSaveSectionConfig"/>), so a nameless config cannot be added.</summary>
+    public bool SectionConfigNameMissing => string.IsNullOrWhiteSpace(SectionConfigName);
+
+    /// <summary>Whether the new-config name box still holds its auto-generated default (or is blank) - i.e. the
+    /// user has not typed their own name. The import handlers (paste / QR / camera / file) overwrite the name
+    /// only in this case, so a config's own embedded name still populates the field over the generic default,
+    /// while a name the user typed by hand is preserved (#117).</summary>
+    public bool SectionConfigNameIsDefault =>
+        string.IsNullOrWhiteSpace(SectionConfigName)
+        || string.Equals(SectionConfigName, _sectionConfigDefaultName, StringComparison.Ordinal);
+
+    /// <summary>Whether the Config-section import form can save: its text parses as a config (.conf / vpn://)
+    /// AND a name is present. The name is pre-filled with a default and is required (a config needs a name to
+    /// be addressable in the catalogue), so clearing it blocks the save.</summary>
+    public bool CanSaveSectionConfig =>
+        VpnLinkCodec.TryDecode(SectionConfigText) is not null && !string.IsNullOrWhiteSpace(SectionConfigName);
 
     /// <summary>Whether a member config is opened for management (the full config page shows on the right).</summary>
     public bool IsConfigManage => OpenConfig is not null;
@@ -739,9 +796,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Rename the open config. On success the page closes; the rebroadcast list shows the new name, under
-    // which the user can reopen it. On a refused rename (name taken, or in use by the running tunnel) the
-    // page stays put and shows why.
+    // Auto-rename the open config (#116): the name field debounces via Binding.Delay and OnConfigRenameChanged
+    // calls this when it settles. On success the page re-opens on the renamed config once its row arrives in
+    // the next snapshot (via _pendingOpenConfig), so the transport editor seeds from the REAL renamed row
+    // rather than the stale local snapshot (which still carries the old name) - an immediate open would seed
+    // all-defaults and later clobber the real WebSocket/MTU settings. On a refused rename (name taken, or in
+    // use by the running tunnel) the page stays put and shows why.
     [RelayCommand]
     private async Task RenameConfig()
     {
@@ -761,7 +821,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRenameConfig, [current, next]));
         if (ack.Ok)
         {
-            OpenConfig = null;
+            _pendingOpenConfig = next;
         }
         else
         {
@@ -769,22 +829,56 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // "✎" in the config header: switch the name to an inline editor seeded with the current name.
-    [RelayCommand]
-    private void BeginConfigNameEdit()
+    // Debounced auto-rename trigger (#117): the name box now binds per keystroke (no Binding.Delay), so the
+    // required-field red border reacts immediately when the box is cleared. A keystroke cancels the previous
+    // timer and the persist fires ~700ms after the user pauses - the same VM-side split the profile name uses.
+    // The seed (ConfigRename set to the current name when a config opens) and blanks are no-ops; only a real
+    // change schedules a rename.
+    partial void OnConfigRenameChanged(string value)
     {
-        ConfigRename = OpenConfig ?? string.Empty;
-        ConfigRenameStatus = string.Empty;
-        IsEditingConfigName = true;
+        // A fresh keystroke restarts the auto-rename debounce.
+        _configRenameDebounce?.Cancel();
+
+        if (OpenConfig is null)
+        {
+            return;
+        }
+
+        // Don't auto-rename while the raw .conf editor holds an unsaved Edit-mode buffer: re-opening the config
+        // under the new name rebuilds that editor and would drop the buffer. The user finishes / cancels the
+        // .conf edit first (it keeps its own explicit Save/Cancel, out of scope here).
+        if (ConfigExport is { IsEditing: true })
+        {
+            return;
+        }
+
+        var next = (value ?? string.Empty).Trim();
+        if (next.Length == 0 || string.Equals(next, OpenConfig, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var cts = new System.Threading.CancellationTokenSource();
+        _configRenameDebounce = cts;
+        _ = DebounceRenameConfigAsync(cts.Token);
     }
 
-    // "✕" next to the inline config-name editor: leave rename mode without saving, restoring the name.
-    [RelayCommand]
-    private void CancelConfigNameEdit()
+    // Wait out the debounce, then auto-rename the open config unless a newer keystroke cancelled this timer.
+    private async Task DebounceRenameConfigAsync(System.Threading.CancellationToken token)
     {
-        ConfigRename = OpenConfig ?? string.Empty;
-        ConfigRenameStatus = string.Empty;
-        IsEditingConfigName = false;
+        try
+        {
+            await Task.Delay(700, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (!token.IsCancellationRequested)
+        {
+            await RenameConfig();
+        }
     }
 
     // Build the config page's view model when a config is opened; null it out when the page closes.
@@ -793,7 +887,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigDeleteStatus = string.Empty;
         ConfigRename = value ?? string.Empty;
         ConfigRenameStatus = string.Empty;
-        IsEditingConfigName = false;
         SyncCatalogueConfig();
         if (value is null)
         {
@@ -813,20 +906,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0);
     }
 
-    // The Config section combo pick: «— не выбрано —» closes the open config / create form; «+ Новая
-    // конфигурация» opens the import form (also how a profile's "+ Новая конфигурация" redirect lands here);
-    // a real config opens it for editing.
+    // The Config section combo pick: «— не выбрано —» closes the open config / create form; a real config
+    // opens it for editing. The create form is opened by the «+ Новая конфигурация» button (#111).
     partial void OnSelectedCatalogueConfigChanged(ConfigChoice? value)
     {
         if (_suppressCatalogueConfig || value is null)
         {
-            return;
-        }
-
-        if (value.IsNewSentinel)
-        {
-            OpenConfig = null; // hide the editor; the create form is the only thing shown
-            BeginSectionConfig();
             return;
         }
 
@@ -839,32 +924,29 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         OpenConfig = value.IsReal ? value.Name : null;
     }
 
-    // Opening / closing the create form re-mirrors the combo (BeginSectionConfig -> «+ Новая конфигурация»,
-    // Cancel/Save -> «— не выбрано —» or the config just opened).
+    // Opening / closing the create form re-mirrors the combo. The create form has no combo entry now (#111),
+    // so while it is open the combo simply reads «— не выбрано —».
     partial void OnIsCreatingSectionConfigChanged(bool value)
     {
         SyncCatalogueConfig();
     }
 
-    // Mirror the Config section's state (create form open / a config open / neither) into its combo without
-    // echoing the pick back.
+    // Mirror the Config section's state (a config open / neither) into its combo without echoing the pick back.
     private void SyncCatalogueConfig()
     {
         _suppressCatalogueConfig = true;
-        SelectedCatalogueConfig = IsCreatingSectionConfig
-            ? ConfigChoice.NewConfig
-            : OpenConfig is null
-                ? ConfigChoice.None
-                : ConfigCatalogueOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, OpenConfig, StringComparison.Ordinal)) ?? ConfigChoice.None;
+        SelectedCatalogueConfig = OpenConfig is null
+            ? ConfigChoice.None
+            : ConfigCatalogueOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, OpenConfig, StringComparison.Ordinal)) ?? ConfigChoice.None;
         _suppressCatalogueConfig = false;
     }
 
     // Reconcile ConfigCatalogueOptions in place from the config names: keep «— не выбрано —» at [0] and
-    // «+ Новая конфигурация» at [1], reconcile the real (name) choices after them - the same in-place scheme
-    // as ReconcileProfileOptions, so a snapshot push does not reset the combo's selection.
+    // reconcile the real (name) choices after it - the same in-place scheme as ReconcileProfileOptions, so a
+    // snapshot push does not reset the combo's selection.
     private void ReconcileConfigCatalogueOptions()
     {
-        const int head = 2; // None + NewConfig occupy [0] and [1].
+        const int head = 1; // None occupies [0].
         var present = _configNames.ToHashSet(StringComparer.Ordinal);
         for (var i = ConfigCatalogueOptions.Count - 1; i >= head; i--)
         {
@@ -938,12 +1020,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(CanToggleConnection));
         OnPropertyChanged(nameof(ConnectHint));
+        OnPropertyChanged(nameof(ShowSelectConfigHint));
         ToggleConnectionCommand.NotifyCanExecuteChanged();
     }
 
-    // The main-window profile combo's wrapped selection changed. Translate the pick: a real profile becomes
-    // the active target, «— не выбрано —» clears it, and «+ Новый профиль» redirects into the Profile section
-    // to create one there (the combo itself is reverted first so it does not stick on the sentinel).
+    // The main-window profile combo's wrapped selection changed: a real profile becomes the active target and
+    // «— не выбрано —» clears it. Creating a profile is the «+ Профиль» button in the Profile section (#111).
     partial void OnActiveProfileChoiceChanged(ProfileChoice? value)
     {
         if (_suppressActiveChoice || value is null)
@@ -951,22 +1033,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        if (value.IsNew)
-        {
-            SyncActiveProfileChoice();
-            Nav = "settings";
-            SettingsSection = "profile";
-            _ = CreateProfile();
-            return;
-        }
-
         ActiveProfile = value.IsReal
-            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal))
+            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Identity, StringComparison.Ordinal))
             : null;
     }
 
-    // The Profile-section combo's wrapped selection changed: a real profile opens in the editor, «— не
-    // выбрано —» closes it, «+ Новый профиль» creates one (we are already in the section) and opens it.
+    // The Profile-section combo's wrapped selection changed: a real profile opens in the editor and
+    // «— не выбрано —» closes it. Creating a profile is the «+ Профиль» button (#111).
     partial void OnOpenProfileChoiceChanged(ProfileChoice? value)
     {
         if (_suppressOpenChoice || value is null)
@@ -974,15 +1047,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        if (value.IsNew)
-        {
-            SyncOpenProfileChoice();
-            _ = CreateProfile();
-            return;
-        }
-
         OpenProfile = value.IsReal
-            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal))
+            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Identity, StringComparison.Ordinal))
             : null;
     }
 
@@ -992,7 +1058,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _suppressActiveChoice = true;
         ActiveProfileChoice = ActiveProfile is null
             ? ProfileChoice.None
-            : ProfileOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, ActiveProfile.Name, StringComparison.Ordinal)) ?? ProfileChoice.None;
+            : ProfileOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Identity, ActiveProfile.Name, StringComparison.Ordinal)) ?? ProfileChoice.None;
         _suppressActiveChoice = false;
     }
 
@@ -1002,8 +1068,68 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _suppressOpenChoice = true;
         OpenProfileChoice = OpenProfile is null
             ? ProfileChoice.None
-            : ProfileOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, OpenProfile.Name, StringComparison.Ordinal)) ?? ProfileChoice.None;
+            : ProfileOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Identity, OpenProfile.Name, StringComparison.Ordinal)) ?? ProfileChoice.None;
         _suppressOpenChoice = false;
+    }
+
+    // Live-preview a profile rename in the combos: while the user types a new name in the Profile editor, the
+    // open profile's option label tracks the field so the picker shows the name-in-progress (#110). The
+    // option's Identity (the persisted name) is untouched, so the selection and the snapshot reconcile still
+    // key off it; the label snaps back to the saved name once the rename is saved (or another profile opens).
+    // An empty field falls back to the persisted name so the combo never reads blank.
+    partial void OnProfileRenameChanged(string value)
+    {
+        // A fresh keystroke restarts the auto-rename debounce (#116).
+        _profileRenameDebounce?.Cancel();
+
+        if (OpenProfile is null)
+        {
+            return;
+        }
+
+        // #110 live preview: the open profile's combo label tracks the field as the user types.
+        var identity = OpenProfile.Name;
+        var display = string.IsNullOrWhiteSpace(value) ? identity : value;
+        var option = ProfileOptions.FirstOrDefault(
+            o => o.IsReal && string.Equals(o.Identity, identity, StringComparison.Ordinal));
+        if (option is not null)
+        {
+            option.Name = display;
+        }
+
+        // #116 auto-save: persist the rename ~700ms after the user pauses (there is no «Сохранить» button).
+        var cts = new System.Threading.CancellationTokenSource();
+        _profileRenameDebounce = cts;
+        _ = DebounceRenameProfileAsync(cts.Token);
+    }
+
+    private async Task DebounceRenameProfileAsync(System.Threading.CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(700, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (!token.IsCancellationRequested)
+        {
+            await RenameProfile();
+        }
+    }
+
+    // Snap a profile's combo option label back to its persisted name (its Identity), discarding any live
+    // rename preview (#110). Used when leaving a profile whose rename was not saved.
+    private void ResetProfileOptionLabel(string identity)
+    {
+        var option = ProfileOptions.FirstOrDefault(
+            o => o.IsReal && string.Equals(o.Identity, identity, StringComparison.Ordinal));
+        if (option is not null && !string.Equals(option.Name, option.Identity, StringComparison.Ordinal))
+        {
+            option.Name = option.Identity;
+        }
     }
 
     // The Routing section's edit combo changed: build the rule editor and per-routing settings for the
@@ -1021,18 +1147,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SyncCatalogueRouting();
     }
 
-    // The Routing section combo pick: «— не выбрано —» closes the editor; «+ Новый список» opens a new-list
-    // draft (also how a profile's "+ Новый список" redirect lands here); a real list opens it for editing.
+    // The Routing section combo pick: «— не выбрано —» closes the editor; a real list opens it for editing. A
+    // new-list draft is opened by the «+ Новый список» button (#111), not from this combo.
     partial void OnSelectedCatalogueRoutingChanged(RoutingListChoice? value)
     {
         if (_suppressCatalogueRouting || value is null)
         {
-            return;
-        }
-
-        if (value.IsNewSentinel)
-        {
-            CreateRoutingList();
             return;
         }
 
@@ -1052,31 +1172,30 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // The section rule-editor instance changed (new draft created, real list opened, or closed): re-mirror
-    // the combo. An IsNew draft shows «+ Новый список»; a real editor is reflected via EditRoutingList.
+    // the combo. A selected real list is reflected via EditRoutingList; a new-list draft has no combo entry
+    // now (#111), so the combo reads «— не выбрано —» while it is being created below.
     partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
     {
         SyncCatalogueRouting();
     }
 
-    // Mirror the Routing section's state into its combo without echoing the pick back: a new-list draft shows
-    // «+ Новый список», a selected real list shows its row, otherwise «— не выбрано —».
+    // Mirror the Routing section's state into its combo without echoing the pick back: a selected real list
+    // shows its row, otherwise «— не выбрано —» (including while a new-list draft is being created).
     private void SyncCatalogueRouting()
     {
         _suppressCatalogueRouting = true;
-        SelectedCatalogueRouting = RoutingEditor is { IsNew: true }
-            ? RoutingListChoice.NewList
-            : EditRoutingList is null
-                ? RoutingListChoice.None
-                : RoutingCatalogueOptions.FirstOrDefault(o => o.IsReal && o.Id == EditRoutingList.Id) ?? RoutingListChoice.None;
+        SelectedCatalogueRouting = EditRoutingList is null
+            ? RoutingListChoice.None
+            : RoutingCatalogueOptions.FirstOrDefault(o => o.IsReal && o.Id == EditRoutingList.Id) ?? RoutingListChoice.None;
         _suppressCatalogueRouting = false;
     }
 
-    // Reconcile RoutingCatalogueOptions in place from RoutingLists: keep «— не выбрано —» at [0] and «+ Новый
-    // список» at [1], reconcile the real (id) choices after them - replacing a renamed row so its label
-    // updates. A following SyncCatalogueRouting re-selects by id, so a replace never strands the selection.
+    // Reconcile RoutingCatalogueOptions in place from RoutingLists: keep «— не выбрано —» at [0] and reconcile
+    // the real (id) choices after it - replacing a renamed row so its label updates. A following
+    // SyncCatalogueRouting re-selects by id, so a replace never strands the selection.
     private void ReconcileRoutingCatalogueOptions()
     {
-        const int head = 2; // None + NewList occupy [0] and [1].
+        const int head = 1; // None occupies [0].
         var present = RoutingLists.Select(r => r.Id).ToHashSet();
         for (var i = RoutingCatalogueOptions.Count - 1; i >= head; i--)
         {
@@ -1166,6 +1285,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             && string.Equals(oldValue.Name, newValue.Name, StringComparison.Ordinal);
         if (!sameProfile)
         {
+            // Discard any live rename preview on the profile we are leaving: snap its combo label back to the
+            // persisted name so an unsaved (or agent-rejected) edit does not linger in the picker (#110). Only
+            // on a real identity change - a background re-bind of the same profile keeps the in-progress name.
+            if (oldValue is not null)
+            {
+                ResetProfileOptionLabel(oldValue.Name);
+            }
+
             ProfileRename = newValue?.Name ?? string.Empty;
             ProfileRenameStatus = string.Empty;
             // Reflect the profile's routing list into the Routing section too (mirrors OpenConfig above), so
@@ -1226,15 +1353,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         oldValue?.DetachAutoSave();
     }
 
-    // The rule editor auto-saves (DetachAutoSave above flushes it), but the per-routing settings (DNS /
-    // exclusions / all-UDP) save only on «Сохранить». Flush a dirty settings editor before swapping it out
-    // (list switch / create / delete / disconnect) so navigating away does not silently drop those edits.
+    // The per-routing settings (DNS / exclusions / all-UDP) auto-save on a ~700ms debounce (#116). Flush a
+    // still-pending edit before swapping this editor out (list switch / create / delete / disconnect) so an
+    // edit typed just before navigating away is persisted rather than lost to the debounce window.
     partial void OnRoutingSettingsChanging(RoutingSettingsViewModel? oldValue, RoutingSettingsViewModel? newValue)
     {
-        if (oldValue is { Dirty: true })
-        {
-            _ = oldValue.SaveAsync();
-        }
+        oldValue?.FlushPendingSave();
+    }
+
+    // Same for the config's transport editor: flush a still-pending WebSocket/MTU edit before the editor is
+    // replaced (config switch / rename / delete), so it is persisted rather than dropped by the debounce (#116).
+    partial void OnConfigTransportChanging(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
+    {
+        oldValue?.FlushPendingSave();
     }
 
     [RelayCommand]
@@ -2048,7 +2179,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ToggleProfileConnectionAsync, RemoveConfigAsync, RequestNewConfigForProfile, RequestNewRoutingList);
+                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
                 existing.ApplyFromEntry(entry, options, configOptions);
                 Balancers.Insert(Math.Min(i, Balancers.Count), existing);
                 continue;
@@ -2088,17 +2219,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SyncOpenProfileChoice();
     }
 
-    // Reconcile ProfileOptions in place from Balancers: keep «— не выбрано —» at [0] and «+ Новый профиль»
-    // at [1], and reconcile the real (name) choices after them by name - dropping removed profiles, adding
-    // new ones, and reordering to match. Editing in place (rather than Clear + rebuild) keeps the None/New/
-    // existing choice instances alive so a bound ComboBox's selection is not reset by the refresh.
+    // Reconcile ProfileOptions in place from Balancers: keep «— не выбрано —» at [0] and reconcile the real
+    // choices after it - dropping removed profiles, adding new ones, and reordering to match. Options are
+    // matched by Identity (the persisted profile name), which stays stable across a live-typed rename, so an
+    // in-progress rename preview (#110) is not clobbered by a snapshot push. Editing in place (rather than
+    // Clear + rebuild) keeps the None / existing choice instances alive so a bound ComboBox's selection is not
+    // reset by the refresh.
     private void ReconcileProfileOptions()
     {
-        const int head = 2; // None + New occupy [0] and [1].
+        const int head = 1; // None occupies [0].
         var present = Balancers.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
         for (var i = ProfileOptions.Count - 1; i >= head; i--)
         {
-            if (!present.Contains(ProfileOptions[i].Name))
+            if (!present.Contains(ProfileOptions[i].Identity))
             {
                 ProfileOptions.RemoveAt(i);
             }
@@ -2108,7 +2241,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             var name = Balancers[i].Name;
             var slot = head + i;
-            var existing = ProfileOptions.Skip(head).FirstOrDefault(o => string.Equals(o.Name, name, StringComparison.Ordinal));
+            var existing = ProfileOptions.Skip(head).FirstOrDefault(o => string.Equals(o.Identity, name, StringComparison.Ordinal));
             if (existing is null)
             {
                 ProfileOptions.Insert(Math.Min(slot, ProfileOptions.Count), new ProfileChoice(name));
@@ -2125,9 +2258,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private static IReadOnlyList<RoutingListChoice> BuildRoutingOptions(IReadOnlyList<RoutingListEntry> entries)
     {
-        // Order: «Полный туннель» (None), «+ Новый список» (redirect to the Routing section), then the saved
-        // lists - the same «не выбрано / добавить / сохранённые» shape as the config and profile combos.
-        var options = new List<RoutingListChoice> { RoutingListChoice.None, RoutingListChoice.NewList };
+        // Order: «Полный туннель» (None) then the saved lists. Creating a list is the «+ Новый список» button
+        // in the Routing section, not a combo entry (#111).
+        var options = new List<RoutingListChoice> { RoutingListChoice.None };
         foreach (var entry in entries)
         {
             options.Add(new RoutingListChoice(entry.Id, entry.Name));
@@ -2136,12 +2269,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return options;
     }
 
-    // The config catalogue for a profile's combo. Order: «— не выбрано —» (None), «+ Новая конфигурация»
-    // (redirect to the Config section), then every config (shared / reusable across profiles) - the same
-    // «не выбрано / добавить / сохранённые» shape as the routing and profile combos.
+    // The config catalogue for a profile's combo. Order: «— не выбрано —» (None) then every config (shared /
+    // reusable across profiles). Creating a config is the «+ Новая конфигурация» button in the Config section,
+    // not a combo entry (#111).
     private IReadOnlyList<ConfigChoice> BuildConfigOptions()
     {
-        var options = new List<ConfigChoice> { ConfigChoice.None, ConfigChoice.NewConfig };
+        var options = new List<ConfigChoice> { ConfigChoice.None };
         foreach (var name in _configNames)
         {
             options.Add(new ConfigChoice(name));
@@ -2150,29 +2283,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return options;
     }
 
-    // Redirect targets for a profile's config / routing combos when the user picks the "+ Новая
-    // конфигурация" / "+ Новый список" sentinel: jump to the matching settings section with its create UI
-    // opened, rather than an inline form inside the profile. The open profile stays put, so returning to the
-    // Profile section re-shows it with the freshly-created entry now selectable in the combo.
-    private void RequestNewConfigForProfile()
-    {
-        SettingsSection = "config";
-        BeginSectionConfig();
-    }
-
-    private void RequestNewRoutingList()
-    {
-        SettingsSection = "routing";
-        CreateRoutingList();
-    }
-
-    // "+ Профиль": create an empty profile (no dialog), then auto-expand it so configs can be added.
-    [RelayCommand]
+    // "+ Профиль": create a profile pre-assigned a configuration (#113), then auto-open it so it can be tuned.
+    // The button is disabled while the catalogue is empty (a profile needs a config to dial), so there is
+    // always a config to assign here: prefer the current working profile's config, else the first in the
+    // catalogue.
+    [RelayCommand(CanExecute = nameof(HasConfigs))]
     private async Task CreateProfile()
     {
+        var config = ActiveProfile is { Config.Length: > 0 } active
+            ? active.Config
+            : _configNames.FirstOrDefault() ?? string.Empty;
+
         var name = UniqueProfileName();
-        var ack = await _connection.SendCommandAsync(
-            new IpcCommand(IpcContract.OpAddBalancer, [name]));
+        string[] args = config.Length > 0 ? [name, config] : [name];
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, args));
         if (ack.Ok)
         {
             _pendingOpenProfile = name;
@@ -2198,6 +2322,49 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // A unique default name for a new config / routing list, mirroring UniqueProfileName (#117): a new item is
+    // pre-named so the required-name field is never empty on open; "<base>", then "<base> 2", "<base> 3"…
+    private static string UniqueDefaultName(string baseName, IEnumerable<string> taken)
+    {
+        var existing = taken.ToHashSet(StringComparer.Ordinal);
+        if (!existing.Contains(baseName))
+        {
+            return baseName;
+        }
+
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{baseName} {i}";
+            if (!existing.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private string UniqueConfigName()
+    {
+        // Include a just-imported config that has not yet landed in _configNames (it arrives on the next
+        // snapshot via _pendingOpenConfig), so re-opening the create form before the snapshot does not
+        // propose the same default a second time (#117 review).
+        var taken = _pendingOpenConfig is { } pending ? _configNames.Append(pending) : _configNames;
+        return UniqueDefaultName(Loc.Instance.Get("MainVm_NewConfigDefaultName"), taken);
+    }
+
+    private string UniqueRoutingListName()
+    {
+        // Include the name still held by the open editor: a just-saved new list lags RoutingLists by one
+        // snapshot, so without this a rapid second «+ Новый список» would propose the same default again
+        // and persist two identically-named lists (#117 review).
+        var taken = RoutingLists.Select(r => r.Name);
+        if (RoutingEditor is { } editor)
+        {
+            taken = taken.Append(editor.Name);
+        }
+
+        return UniqueDefaultName(Loc.Instance.Get("MainVm_NewListDefaultName"), taken);
+    }
+
     private async Task SaveBalancerAsync(string name, string config)
     {
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, [name, config]));
@@ -2214,36 +2381,90 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // --- Config settings section: standalone "+ Новая конфигурация" import (adds to the shared catalogue
-    // without a profile). The clipboard/QR/camera/file pickers are window concerns; here a name + pasted
-    // text + «Сохранить» is the minimum, and the code-behind file picker fills SectionConfigText. ---
-
-    /// <summary>Public so the section import form's code-behind file picker can also import to the catalogue.</summary>
-    public Task<IpcAck> ImportSectionConfigAsync(string name, string confText) => ImportConfigAsync(name, confText);
+    // without a profile). The file / QR / camera pickers and the editor dialog are window concerns that fill
+    // SectionConfigText; there is no «Сохранить» - a recognised config with a (required) name auto-saves
+    // (debounced) and opens for management (#118). ---
 
     [RelayCommand]
     private void BeginSectionConfig()
     {
+        _sectionConfigAutoSaveDebounce?.Cancel();
         // Close any open config first so only the create form shows (the redirect from a profile's picker can
         // arrive with a config still open), and so the combo lands on «+ Новая конфигурация», not a real row.
         OpenConfig = null;
-        SectionConfigName = string.Empty;
+        // Pre-fill a unique default name (like a new profile, #117) so the required-name field is never empty
+        // on open; the user can accept it or type over it. Clearing it turns the box red and blocks the save.
+        // Remember the default so an import can still overwrite it with the config's own name (SectionConfigNameIsDefault).
+        _sectionConfigDefaultName = UniqueConfigName();
+        SectionConfigName = _sectionConfigDefaultName;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
         IsCreatingSectionConfig = true;
     }
 
-    [RelayCommand]
+    // Not a command any more (the «Отмена» button is gone, #118); still called when the catalogue combo leaves
+    // the create form (OnSelectedCatalogueConfigChanged).
     private void CancelSectionConfig()
     {
+        _sectionConfigAutoSaveDebounce?.Cancel();
         IsCreatingSectionConfig = false;
         SectionConfigName = string.Empty;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
     }
 
-    [RelayCommand]
+    // The config text is read-only, so it only changes atomically (file / QR / camera / editor dialog); it and
+    // the name each schedule a debounced auto-save. Once the text parses and the (required) name is set the
+    // config is imported and opened - replacing the old «Сохранить» button (#118).
+    partial void OnSectionConfigTextChanged(string value) => ScheduleSectionConfigAutoSave();
+
+    partial void OnSectionConfigNameChanged(string value) => ScheduleSectionConfigAutoSave();
+
+    private void ScheduleSectionConfigAutoSave()
+    {
+        _sectionConfigAutoSaveDebounce?.Cancel();
+        if (!IsCreatingSectionConfig || !CanSaveSectionConfig)
+        {
+            return;
+        }
+
+        var cts = new System.Threading.CancellationTokenSource();
+        _sectionConfigAutoSaveDebounce = cts;
+        _ = DebounceAutoSaveSectionConfigAsync(cts.Token);
+    }
+
+    // Wait out the debounce, then import the config unless a newer change cancelled this timer, emptied the
+    // (required) name, or the save already ran (it flips IsCreatingSectionConfig off).
+    private async Task DebounceAutoSaveSectionConfigAsync(System.Threading.CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(400, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (!token.IsCancellationRequested && IsCreatingSectionConfig && CanSaveSectionConfig)
+        {
+            await SaveSectionConfig();
+        }
+    }
+
+    // Adds the recognised config to the catalogue and opens it. No longer a command (the «Сохранить» button is
+    // gone, #118); invoked by the debounced auto-save above.
     private async Task SaveSectionConfig()
     {
+        // Re-entrancy guard: the import below is awaited while the form is still open and populated, so a change
+        // during that await can schedule a second debounce that re-enters here and imports the config twice
+        // (#118 review). Only the first save runs; a re-entry no-ops until it completes. UI-thread only.
+        if (_sectionConfigSaving)
+        {
+            return;
+        }
+
+        _sectionConfigAutoSaveDebounce?.Cancel();
         var imported = VpnLinkCodec.TryDecode(SectionConfigText);
         if (imported is null)
         {
@@ -2255,20 +2476,28 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             ? SectionConfigName.Trim()
             : (string.IsNullOrWhiteSpace(imported.Name) ? "config" : imported.Name!.Trim());
 
-        var ack = await ImportConfigAsync(name, imported.ConfText);
-        if (!ack.Ok)
+        _sectionConfigSaving = true;
+        try
         {
-            SectionConfigStatus = ack.Message;
-            return;
-        }
+            var ack = await ImportConfigAsync(name, imported.ConfText);
+            if (!ack.Ok)
+            {
+                SectionConfigStatus = ack.Message;
+                return;
+            }
 
-        IsCreatingSectionConfig = false;
-        SectionConfigName = string.Empty;
-        SectionConfigText = string.Empty;
-        SectionConfigStatus = string.Empty;
-        // Open the just-imported config once its row lands in the next snapshot, so the transport editor seeds
-        // from the real config row rather than all-defaults (the row is not in Configs yet at this point).
-        _pendingOpenConfig = name;
+            IsCreatingSectionConfig = false;
+            SectionConfigName = string.Empty;
+            SectionConfigText = string.Empty;
+            SectionConfigStatus = string.Empty;
+            // Open the just-imported config once its row lands in the next snapshot, so the transport editor
+            // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
+            _pendingOpenConfig = name;
+        }
+        finally
+        {
+            _sectionConfigSaving = false;
+        }
     }
 
     // --- Routing settings section: standalone list CRUD (independent of any profile). ---
@@ -2277,10 +2506,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void CreateRoutingList()
     {
-        var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
-        RoutingEditor = editor;
+        // Clear the selected list first: setting RoutingEditor below fires OnRoutingEditorChanged ->
+        // SyncCatalogueRouting, which mirrors EditRoutingList into the combo, so it must already be null for
+        // the combo to read «— не выбрано —» while the new draft is being created (rather than the list that
+        // was open before).
         RoutingSettings = null;
         EditRoutingList = null;
+        var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
+        // Pre-fill a unique default name (like a new profile, #117) so the required-name field is never empty
+        // on open. Set before LoadAsync, while the editor still suppresses auto-save, so seeding the name does
+        // not schedule a save (a nameless-or-ruleless list is not persisted anyway); clearing it later turns
+        // the box red and warns that changes will not be saved.
+        editor.Name = UniqueRoutingListName();
+        RoutingEditor = editor;
         _ = editor.LoadAsync();
     }
 
@@ -2319,9 +2557,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Rename the open profile from the Профиль aspect. On success the detail closes; the rebroadcast list
-    // shows the new name. On a refused rename (name taken, or it is the running profile) the view stays put
-    // and shows why.
+    // Auto-rename the open profile (#116): called from the debounce when the name field settles. On success
+    // the editor stays open on the renamed profile - adopting the new name on the live instance lets the next
+    // snapshot reconcile it in place (SyncBalancers matches by name) instead of dropping the row and closing
+    // the page, so the user can keep typing. On a refused rename (name taken, or it is the running profile)
+    // the view stays put, shows why, and the live combo preview reverts to the persisted name.
     [RelayCommand]
     private async Task RenameProfile()
     {
@@ -2341,11 +2581,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRenameProfile, [profile.Name, next]));
         if (ack.Ok)
         {
-            OpenProfile = null;
+            profile.Name = next;
         }
         else
         {
             ProfileRenameStatus = ack.Message;
+            ResetProfileOptionLabel(profile.Name);
         }
     }
 

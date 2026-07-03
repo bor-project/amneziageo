@@ -18,6 +18,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 internal sealed partial class RoutingSettingsViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
+    private readonly Debouncer _saveDebounce;
 
     [ObservableProperty]
     private string _localDns = string.Empty;
@@ -45,7 +46,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
     {
         _connection = connection;
         ListId = listId;
+        _saveDebounce = new Debouncer(700, SaveAsync);
     }
+
+    /// <summary>Persist a still-pending debounced edit at once - the host calls this before swapping this
+    /// editor out (a routing-list switch) so a just-typed edit is not lost to the debounce window (#116).</summary>
+    public void FlushPendingSave() => _saveDebounce.Flush();
 
     /// <summary>The routing list id these settings belong to.</summary>
     public long ListId { get; }
@@ -56,18 +62,24 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
     /// </summary>
     public bool Dirty { get; private set; }
 
-    partial void OnLocalDnsChanged(string value) => MarkDirty();
+    partial void OnLocalDnsChanged(string value) => OnEdited();
 
-    partial void OnExclusionsChanged(string value) => MarkDirty();
+    partial void OnExclusionsChanged(string value) => OnEdited();
 
-    partial void OnAllUdpChanged(bool value) => MarkDirty();
+    partial void OnAllUdpChanged(bool value) => OnEdited();
 
-    private void MarkDirty()
+    // Persist automatically on any edit - there is no «Сохранить» button. The field is bound per keystroke so
+    // the VM always holds the latest value; only the (network) save is debounced ~700ms (#116). Dirty is set so
+    // the host's flush-on-list-switch (FlushPendingSave) still persists an edit typed just before a switch.
+    private void OnEdited()
     {
-        if (!_loading)
+        if (_loading)
         {
-            Dirty = true;
+            return;
         }
+
+        Dirty = true;
+        _saveDebounce.Schedule();
     }
 
     /// <summary>
@@ -142,8 +154,8 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
 
     /// <summary>
     /// Fetches the machine's currently-connected local subnets from the agent and merges them into the
-    /// exclusions list (no duplicates). Nothing is saved here - the user reviews and presses «Сохранить».
-    /// Mirrors the former per-config exclusions helper.
+    /// exclusions list (no duplicates). Setting <see cref="Exclusions"/> auto-saves via <c>OnEdited</c>, so the
+    /// merged subnets persist without a «Сохранить» press. Mirrors the former per-config exclusions helper.
     /// </summary>
     [RelayCommand]
     private async Task AddLocalSubnetsAsync()

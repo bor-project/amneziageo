@@ -288,6 +288,31 @@
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
     </Style>
 
+    <!-- Required-field validation. A TextBox flagged Classes.invalid="{Binding SomethingMissing}" gets a red
+         border in EVERY state: the neutral pins above force AgBorder2Brush onto the template PART, so .invalid
+         must re-assert the red on pointerover / focus / focus-within too - and these come LATER in the file so
+         they win the last-writer-wins. Pair the box with a TextBlock.fieldwarn below to say why (e.g. that the
+         change will not be saved). Reusable for any required field; today it flags empty name fields. -->
+    <Style Selector="TextBox.invalid /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+    <Style Selector="TextBox.invalid:pointerover /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+    <Style Selector="TextBox.invalid:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+    <Style Selector="TextBox.invalid:focus-within /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+
+    <!-- The warning line paired with a .invalid field: red, small, wraps. -->
+    <Style Selector="TextBlock.fieldwarn">
+      <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
     <Style Selector="ComboBox.field">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />

@@ -3,7 +3,8 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// A routing-list pick exposed to combo boxes. Id is null for the synthetic "none" choice.
+/// A routing-list pick exposed to combo boxes. Id is null for the synthetic "none" choice. Creating a list is
+/// a button («+ Новый список») in the Routing section, no longer a synthetic combo entry (#111).
 /// </summary>
 internal sealed record RoutingListChoice(long? Id, string Name)
 {
@@ -13,23 +14,12 @@ internal sealed record RoutingListChoice(long? Id, string Name)
     public static RoutingListChoice None { get; } = new(null, Loc.Instance.Get("RoutingChoice_None"));
 
     /// <summary>
-    /// The synthetic "create a new list" choice (Id -1): picking it reveals the inline new-list editor,
-    /// mirroring the "+ Новая конфигурация" sentinel in the config combo.
-    /// </summary>
-    public static RoutingListChoice NewList { get; } = new(-1, Loc.Instance.Get("RoutingChoice_NewList"));
-
-    /// <summary>
     /// True for the synthetic "none" choice.
     /// </summary>
     public bool IsNone => Id is null;
 
     /// <summary>
-    /// True for the synthetic "create a new list" sentinel.
-    /// </summary>
-    public bool IsNewSentinel => Id == -1;
-
-    /// <summary>
-    /// True for a real, persisted list (positive id) - not the "none" or "new" sentinels.
+    /// True for a real, persisted list (positive id) - not the "none" sentinel.
     /// </summary>
     public bool IsReal => Id is > 0;
 }

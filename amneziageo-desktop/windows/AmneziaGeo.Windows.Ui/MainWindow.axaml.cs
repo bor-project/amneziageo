@@ -7,7 +7,6 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
-using Avalonia.Threading;
 using AmneziaGeo.Windows.Ui.Services;
 using AmneziaGeo.Windows.Ui.ViewModels;
 using AmneziaGeo.Localization;
@@ -27,46 +26,10 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
     }
 
-    // After the ✎ command flips the config header into its inline name editor, move keyboard focus into the
-    // box and select its text so the user can type immediately - the editor is otherwise only made visible,
-    // not focused. Deferred to Background priority so it runs after the IsVisible binding has applied.
-    private void OnBeginConfigNameEdit(object? sender, RoutedEventArgs e)
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            var box = this.FindControl<TextBox>("ConfigNameBox");
-            box?.Focus();
-            box?.SelectAll();
-        }, DispatcherPriority.Background);
-    }
-
-    // The Config section's import form uses the window VM's SectionConfig* fields. The file / clipboard picks
-    // live further down (OnSectionConfigBrowse / OnSectionConfigClipboard); QR-image, camera and manual-edit
-    // mirror them here so the section importer has the same rich options the old inline profile form had.
-    private async void OnSectionConfigQrImage(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var path = await PickFileAsync(Loc.Instance.Get("MainCode_QrImageTitle"), "png", "jpg", "jpeg", "bmp");
-        if (path is null)
-        {
-            return;
-        }
-
-        try
-        {
-            using var bitmap = new Bitmap(path);
-            ApplyQrToSectionConfig(vm, bitmap);
-        }
-        catch (Exception ex)
-        {
-            vm.SectionConfigStatus = ex.Message;
-        }
-    }
-
+    // The Config section's import form uses the window VM's SectionConfig* fields. «Файл» (OnSectionConfigBrowse)
+    // loads a .conf / vpn:// text file OR a QR image (auto-detected by extension); «Камера» (OnSectionConfigCamera)
+    // scans a QR live; «Редактировать» (OnSectionConfigEdit) opens the large editor. There is no «Сохранить» -
+    // once the text parses and a name is set the view model auto-saves it (debounced) and opens it (#118).
     private async void OnSectionConfigCamera(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
@@ -80,16 +43,18 @@ public sealed partial class MainWindow : Window
         if (ok && scan.Result is not null)
         {
             vm.SectionConfigText = scan.Result.ConfText;
-            if (string.IsNullOrWhiteSpace(vm.SectionConfigName) && !string.IsNullOrWhiteSpace(scan.Result.Name))
+            if (vm.SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(scan.Result.Name))
             {
                 vm.SectionConfigName = scan.Result.Name!;
             }
+
+            vm.SectionConfigStatus = string.Empty; // clear any stale failure from a prior pick, like the other paths
         }
     }
 
-    // "Вручную": open the large editor seeded with the current draft text; on OK write it back so the
-    // normal Save (import) flow picks it up.
-    private async void OnSectionConfigManual(object? sender, RoutedEventArgs e)
+    // "Редактировать": open the large editor seeded with the current text; on OK write it back. Assigning
+    // SectionConfigText triggers the view model's debounced auto-save once the text parses and a name is set.
+    private async void OnSectionConfigEdit(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
         {
@@ -101,7 +66,24 @@ public sealed partial class MainWindow : Window
         if (await dialog.ShowDialog<bool>(this))
         {
             vm.SectionConfigText = editor.Text;
-            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_ReadyPressSave");
+            var imported = VpnLinkCodec.TryDecode(editor.Text);
+            if (imported is not null)
+            {
+                // Adopt the config's own embedded name over the generic default, exactly like the file / QR /
+                // camera paths - so a vpn:// / .conf pasted here is not saved under «Конфигурация N» (#118 review).
+                if (vm.SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(imported.Name))
+                {
+                    vm.SectionConfigName = imported.Name!;
+                }
+
+                vm.SectionConfigStatus = string.Empty;
+            }
+            else
+            {
+                vm.SectionConfigStatus = string.IsNullOrWhiteSpace(editor.Text)
+                    ? string.Empty
+                    : Loc.Instance.Get("MainVm_ConfigNotRecognized");
+            }
         }
     }
 
@@ -122,12 +104,14 @@ public sealed partial class MainWindow : Window
         }
 
         vm.SectionConfigText = imported.ConfText;
-        if (string.IsNullOrWhiteSpace(vm.SectionConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
+        if (vm.SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(imported.Name))
         {
             vm.SectionConfigName = imported.Name!;
         }
 
-        vm.SectionConfigStatus = Loc.Instance.Get("MainCode_QrRecognizedPressSave");
+        // No status: a recognised QR auto-saves (debounced) and the form closes; the failure paths above keep
+        // their messages.
+        vm.SectionConfigStatus = string.Empty;
     }
 
     private async System.Threading.Tasks.Task<string?> PickFileAsync(string title, params string[] extensions)
@@ -434,7 +418,9 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var path = await PickFileAsync(Loc.Instance.Get("MainCode_ConfigurationTitle"), "conf");
+        // One «Файл» picker for both a config text file and a QR image; the extension decides which (#118).
+        var path = await PickFileAsync(Loc.Instance.Get("MainCode_ConfigurationTitle"),
+            "conf", "txt", "vpn", "png", "jpg", "jpeg", "bmp", "gif");
         if (path is null)
         {
             return;
@@ -442,51 +428,38 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            vm.SectionConfigText = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(vm.SectionConfigName))
+            var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+            if (ext is "png" or "jpg" or "jpeg" or "bmp" or "gif")
             {
-                vm.SectionConfigName = Path.GetFileNameWithoutExtension(path);
+                using var bitmap = new Bitmap(path);
+                ApplyQrToSectionConfig(vm, bitmap);
+                return;
+            }
+
+            var raw = File.ReadAllText(path);
+            if (VpnLinkCodec.TryDecode(raw) is not { } imported)
+            {
+                vm.SectionConfigText = raw;
+                vm.SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
+                return;
+            }
+
+            vm.SectionConfigText = imported.ConfText;
+            vm.SectionConfigStatus = string.Empty;
+            if (vm.SectionConfigNameIsDefault)
+            {
+                var name = !string.IsNullOrWhiteSpace(imported.Name)
+                    ? imported.Name!
+                    : Path.GetFileNameWithoutExtension(path);
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    vm.SectionConfigName = name;
+                }
             }
         }
         catch (Exception ex)
         {
             vm.SectionConfigStatus = ex.Message;
-        }
-    }
-
-    private async void OnSectionConfigClipboard(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is null)
-        {
-            return;
-        }
-
-        var text = await clipboard.TryGetTextAsync();
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_ClipboardNoText");
-            return;
-        }
-
-        var imported = VpnLinkCodec.TryDecode(text);
-        if (imported is not null)
-        {
-            vm.SectionConfigText = imported.ConfText;
-            if (string.IsNullOrWhiteSpace(vm.SectionConfigName) && !string.IsNullOrWhiteSpace(imported.Name))
-            {
-                vm.SectionConfigName = imported.Name!;
-            }
-            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_RecognizedPressSave");
-        }
-        else
-        {
-            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_ClipboardNotRecognized");
         }
     }
 

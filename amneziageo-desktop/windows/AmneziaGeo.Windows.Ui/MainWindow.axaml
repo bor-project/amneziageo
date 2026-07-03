@@ -102,8 +102,8 @@
           </StackPanel>
 
           <!-- profile picker: choose which profile (config × routing pair) to dial. Connect is disabled
-               until a complete profile is chosen. The list is «— не выбрано —», «+ Новый профиль» (which
-               redirects into the Profile settings section to set one up), then every saved profile. -->
+               until a complete profile is chosen. The list is «— не выбрано —» then every saved profile;
+               profiles are created in the Profile settings section (the «+ Профиль» button). -->
           <StackPanel HorizontalAlignment="Center" Spacing="6" Width="300" Margin="0,6,0,0">
             <ComboBox Classes="field" HorizontalAlignment="Stretch"
                       ItemsSource="{Binding ProfileOptions}"
@@ -114,9 +114,14 @@
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
+            <!-- no profiles at all: point the user to add a profile + configuration in settings (#112). -->
             <TextBlock IsVisible="{Binding !HasBalancers}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
                        Text="{l:Tr Main_NoProfilesHint}" />
+            <!-- profiles exist but none usable yet (none selected / no config): ask to pick one to connect (#112). -->
+            <TextBlock IsVisible="{Binding ShowSelectConfigHint}" Classes="muted" FontSize="12"
+                       HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
+                       Text="{l:Tr Main_HomeSelectConfigHint}" />
           </StackPanel>
         </StackPanel>
 
@@ -316,8 +321,10 @@
 
       <!-- content pane -->
       <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
-        <ScrollViewer>
-          <Grid Margin="18,16">
+        <!-- the 18,16 content inset lives on the ScrollViewer padding (not the inner Grid margin) so a
+             section can bind its height to #ContentScroll.Viewport.Height and fill the pane exactly (#118). -->
+        <ScrollViewer x:Name="ContentScroll" Padding="18,16">
+          <Grid>
 
             <!-- ============================= PROFILE SECTION ============================= -->
             <StackPanel IsVisible="{Binding IsSettingsProfile}" Spacing="14">
@@ -327,6 +334,8 @@
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
                 </Border>
+                <!-- «+ Профиль» is disabled while the catalogue is empty (CreateProfileCommand.CanExecute =
+                     HasConfigs): a profile needs a configuration to dial (#113). -->
                 <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateProfileCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="+" />
@@ -335,7 +344,13 @@
                 </Button>
               </Grid>
 
-              <StackPanel Spacing="6">
+              <!-- no configurations yet: adding a profile is blocked, so explain what to do first (#113). -->
+              <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12.5"
+                         TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"
+                         Margin="0,24,0,8" MaxWidth="360"
+                         Text="{l:Tr Main_ProfileNeedsConfigHint}" />
+
+              <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
                 <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
                           ItemsSource="{Binding ProfileOptions}"
@@ -346,33 +361,33 @@
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBlock IsVisible="{Binding !HasBalancers}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                <TextBlock IsVisible="{Binding ShowNoProfilesYetHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                            Text="{l:Tr Main_NoProfilesYetHint}" />
               </StackPanel>
 
               <!-- the open profile's editor: rename + config picker + routing picker + delete -->
               <StackPanel IsVisible="{Binding IsProfileDetail}" Spacing="16">
 
-                <!-- rename -->
+                <!-- rename: the name auto-saves ~700ms after you pause typing (#116); there is no «Сохранить».
+                     The combo above previews the typed name live via ProfileRename (#110), so this binding
+                     stays per-keystroke and the persist is debounced in the view-model, not the binding. -->
                 <StackPanel Spacing="6">
                   <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                              Text="{l:Tr Main_ProfileRenameHint}" />
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBox Grid.Column="0" Classes="field" Text="{Binding ProfileRename, Mode=TwoWay}" />
-                    <Button Grid.Column="1" Classes="softbtn" Content="{l:Tr Main_SaveButton}" Margin="6,0,0,0"
-                            Command="{Binding RenameProfileCommand}" IsEnabled="{Binding CanSaveProfileName}"
-                            ToolTip.Tip="{l:Tr Main_RenameProfileTooltip}" />
-                  </Grid>
+                  <TextBox Classes="field" Classes.invalid="{Binding ProfileNameMissing}"
+                           Text="{Binding ProfileRename, Mode=TwoWay}" />
+                  <TextBlock Classes="fieldwarn" IsVisible="{Binding ProfileNameMissing}"
+                             Text="{l:Tr Main_RequiredEmptyWarning}" />
                   <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <!-- config + routing pickers bound to the open profile (BalancerItemViewModel) -->
                 <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:BalancerItemViewModel" Spacing="16">
 
-                  <!-- config picker (selection-only; the catalogue/editor lives in the Config section).
-                       «+ Новая конфигурация» redirects to that section to add one, then the profile's combo
-                       picks it up. The list is «— не выбрано —», «+ Новая конфигурация», then saved configs. -->
+                  <!-- config picker (selection-only; the catalogue/editor lives in the Config section). The
+                       list is «— не выбрано —» then saved configs; add a config with the «+ Новая
+                       конфигурация» button in the Config section (#111). -->
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="{l:Tr Main_ConfigLabel}" />
                     <ComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -388,9 +403,9 @@
                                Text="{l:Tr Main_ProfileNoConfigHint}" />
                   </StackPanel>
 
-                  <!-- routing picker (selection-only; the rule editor lives in the Routing section).
-                       The None entry means «Полный туннель» (no split routing); «+ Новый список» redirects
-                       to the Routing section to create one, then this combo picks it up. -->
+                  <!-- routing picker (selection-only; the rule editor lives in the Routing section). The None
+                       entry means «Полный туннель» (no split routing); add a list with the «+ Новый список»
+                       button in the Routing section (#111). -->
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
                     <ComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -399,7 +414,7 @@
                       <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:RoutingListChoice">
                           <!-- relabel the "none" sentinel as «Полный туннель» in the profile picker; real
-                               lists and the "+ Новый список" sentinel keep their own names. -->
+                               lists keep their own names. -->
                           <Panel>
                             <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
                             <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
@@ -431,8 +446,14 @@
             </StackPanel>
 
             <!-- ============================= CONFIG SECTION ============================= -->
-            <StackPanel IsVisible="{Binding IsSettingsConfig}" Spacing="14">
-              <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+            <!-- A Grid (not a StackPanel) so the import form's read-only config preview fills the pane height.
+                 Row 0 = section header, Row 1 = catalogue combo, Row 2 = the manage editor (open config),
+                 Row 3 (*) = the import form. Rows 2 and 3 are mutually exclusive (manage vs create), so the
+                 * row lets whichever is shown stretch. MinHeight tracks the scroll viewport because a
+                 ScrollViewer measures its content at infinite height, which would collapse the * row (#118). -->
+            <Grid IsVisible="{Binding IsSettingsConfig}" RowDefinitions="Auto,Auto,Auto,*"
+                  MinHeight="{Binding #ContentScroll.Viewport.Height}">
+              <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto">
                 <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center" />
                 <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
@@ -446,10 +467,9 @@
                 </Button>
               </Grid>
 
-              <!-- config catalogue combo: «— не выбрано —», «+ Новая конфигурация», then saved configs.
-                   «+ Новая конфигурация» opens the import form below; a saved config opens its editor. A
-                   profile's «+ Новая конфигурация» redirect lands here with this combo on that item. -->
-              <StackPanel Spacing="6">
+              <!-- config catalogue combo: «— не выбрано —» then saved configs. A saved config opens its
+                   editor; the import form is opened by the «+ Новая конфигурация» button above (#111). -->
+              <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6">
                 <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
                           ItemsSource="{Binding ConfigCatalogueOptions}"
@@ -464,68 +484,56 @@
                            Text="{l:Tr Main_NoConfigsHint}" />
               </StackPanel>
 
-              <!-- standalone import form (window VM SectionConfig* fields) -->
-              <Border IsVisible="{Binding IsCreatingSectionConfig}"
+              <!-- standalone import form (Row 3, window VM SectionConfig* fields). The config text is a
+                   read-only preview that fills the pane; the actual text is entered in the «Редактировать»
+                   dialog, or loaded from a file / QR image / camera. There is no «Сохранить»/«Отмена»: once
+                   the text parses as a config and the (required) name is set, it auto-saves (debounced) and
+                   opens for management. Clearing the name turns the box red and blocks the auto-save (#118). -->
+              <Border Grid.Row="3" Margin="0,14,0,0" VerticalAlignment="Stretch"
+                      IsVisible="{Binding IsCreatingSectionConfig}"
                       Background="{DynamicResource AgInsetBrush}"
                       BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                       CornerRadius="9" Padding="10">
-                <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" />
-                  <TextBox Classes="field" Text="{Binding SectionConfigName, Mode=TwoWay}"
-                           Watermark="{l:Tr Main_NameOptionalWatermark}" />
-                  <TextBox Classes="field" Text="{Binding SectionConfigText, Mode=TwoWay}"
-                           AcceptsReturn="True" Height="70" TextWrapping="Wrap"
+                <DockPanel LastChildFill="True">
+                  <StackPanel DockPanel.Dock="Top" Spacing="6">
+                    <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" />
+                    <TextBox Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
+                             Text="{Binding SectionConfigName, Mode=TwoWay}"
+                             Watermark="{l:Tr Main_ConfigNameWatermark}" />
+                    <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
+                               Text="{l:Tr Main_RequiredEmptyWarning}" />
+                  </StackPanel>
+                  <!-- few buttons, sized to content and centred (not stretched). «Файл» auto-detects a .conf /
+                       vpn:// text file or a QR image; «Камера» scans a QR; «Редактировать» opens the editor. -->
+                  <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,10,0,0">
+                    <TextBlock Text="{Binding SectionConfigStatus}" Classes="muted" FontSize="11.5"
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                      <Button Classes="softbtn" Content="{l:Tr Main_FileButton}" Click="OnSectionConfigBrowse" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_CameraButton}" Click="OnSectionConfigCamera" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_ConfigEditButton}" Click="OnSectionConfigEdit"
+                              ToolTip.Tip="{l:Tr Main_ConfigEditButtonTooltip}" />
+                    </StackPanel>
+                  </StackPanel>
+                  <TextBox Classes="field" Margin="0,10,0,0" IsReadOnly="True"
+                           Text="{Binding SectionConfigText}" AcceptsReturn="True" TextWrapping="Wrap"
+                           VerticalAlignment="Stretch" MinHeight="180"
+                           ScrollViewer.VerticalScrollBarVisibility="Auto"
                            Watermark="{l:Tr Main_ConfigTextWatermark}" />
-                  <UniformGrid Columns="5">
-                    <Button Classes="softbtn" Content="{l:Tr Main_FileButton}" Click="OnSectionConfigBrowse" Margin="0,0,5,0"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                    <Button Classes="softbtn" Content="QR" Click="OnSectionConfigQrImage" Margin="0,0,5,0"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                    <Button Classes="softbtn" Content="{l:Tr Main_CameraButton}" Click="OnSectionConfigCamera" Margin="0,0,5,0"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                    <Button Classes="softbtn" Content="{l:Tr Main_ClipboardButton}" Click="OnSectionConfigClipboard" Margin="0,0,5,0"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                    <Button Classes="softbtn" Content="{l:Tr Main_ManualButton}" Click="OnSectionConfigManual"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            ToolTip.Tip="{l:Tr Main_ManualButtonTooltip}" />
-                  </UniformGrid>
-                  <TextBlock Text="{Binding SectionConfigStatus}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                  <UniformGrid Columns="2">
-                    <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Margin="0,0,4,0"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            Command="{Binding CancelSectionConfigCommand}" />
-                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Margin="4,0,0,0"
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            IsEnabled="{Binding CanSaveSectionConfig}"
-                            Command="{Binding SaveSectionConfigCommand}" />
-                  </UniformGrid>
-                </StackPanel>
+                </DockPanel>
               </Border>
 
-              <!-- the open config: name editor + .conf export/editor + proxy (WebSocket) + delete -->
-              <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="14">
-                <!-- config name + pencil -->
+              <!-- the open config (Row 2): name editor + .conf export/editor + proxy (WebSocket) + delete -->
+              <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsConfigManage}" Spacing="14">
+                <!-- config name: always editable, per keystroke so the required-field border reacts at once;
+                     the rename auto-saves ~700ms after you pause typing (debounced in the VM, #116/#117) -->
                 <StackPanel Spacing="2">
                   <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
-                  <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditingConfigName}">
-                    <TextBlock Grid.Column="0" Text="{Binding OpenConfig}" FontWeight="SemiBold" FontSize="14"
-                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                    <Button Grid.Column="1" Classes="icon" Content="✎" FontSize="14"
-                            Command="{Binding BeginConfigNameEditCommand}" Click="OnBeginConfigNameEdit"
-                            ToolTip.Tip="{l:Tr Main_RenameTooltip}" />
-                  </Grid>
-                  <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding IsEditingConfigName}">
-                    <TextBox Grid.Column="0" x:Name="ConfigNameBox" Classes="field"
-                             Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Classes="icon" Content="💾" FontSize="14" Margin="6,0,0,0"
-                            Command="{Binding RenameConfigCommand}" IsEnabled="{Binding CanSaveConfigName}"
-                            ToolTip.Tip="{l:Tr Main_SaveNameTooltip}" />
-                    <Button Grid.Column="2" Classes="icon" Content="✕" FontSize="14" Margin="4,0,0,0"
-                            Command="{Binding CancelConfigNameEditCommand}"
-                            ToolTip.Tip="{l:Tr Main_CancelRenameTooltip}" />
-                  </Grid>
-                  <TextBlock Text="{Binding ConfigRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap"
-                             IsVisible="{Binding IsEditingConfigName}" />
+                  <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
+                           Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
+                  <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
+                             Text="{l:Tr Main_RequiredEmptyWarning}" />
+                  <TextBlock Text="{Binding ConfigRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <!-- .conf text + export (ConfigExport: ExportDialogViewModel) -->
@@ -628,12 +636,9 @@
                                            FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
                     </Border>
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveCommand}"
-                            IsEnabled="{Binding !IsBusy}" />
-                    <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
-                               VerticalAlignment="Center" TextWrapping="Wrap" />
-                  </StackPanel>
+                  <!-- No «Сохранить»: transport / MTU / WebSocket auto-save on change (#116). -->
+                  <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
+                             TextWrapping="Wrap" />
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="{l:Tr Main_ImportExportLabel}" />
                     <WrapPanel>
@@ -657,7 +662,7 @@
                   <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                 </StackPanel>
               </StackPanel>
-            </StackPanel>
+            </Grid>
 
             <!-- ============================= ROUTING SECTION ============================= -->
             <StackPanel IsVisible="{Binding IsSettingsRouting}" Spacing="14">
@@ -682,7 +687,7 @@
                           SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
                   <ComboBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:RoutingListChoice">
-                      <!-- «— не выбрано —» for the none sentinel; saved lists and «+ Новый список» keep their names. -->
+                      <!-- «— не выбрано —» for the none sentinel; saved lists keep their names. -->
                       <Panel>
                         <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
                         <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
@@ -702,7 +707,10 @@
                   <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
                     <StackPanel Spacing="6">
                       <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
-                      <TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
+                      <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
+                               Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
+                      <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
+                                 Text="{l:Tr Main_RequiredEmptyWarning}" />
                     </StackPanel>
 
                     <!-- Per-app tunneling (#68) -->
@@ -841,12 +849,9 @@
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
                     </Grid>
 
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Classes="accent" HorizontalAlignment="Left" Content="{l:Tr Main_SaveButton}"
-                              Command="{Binding SaveCommand}" IsEnabled="{Binding !IsBusy}" />
-                      <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
-                                 VerticalAlignment="Center" TextWrapping="Wrap" />
-                    </StackPanel>
+                    <!-- No «Сохранить»: DNS / exclusions / all-UDP auto-save on change (#115). -->
+                    <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
+                               TextWrapping="Wrap" />
                   </StackPanel>
                 </Border>
 

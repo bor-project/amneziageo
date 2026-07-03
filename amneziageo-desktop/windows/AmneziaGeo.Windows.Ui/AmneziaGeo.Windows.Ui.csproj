@@ -37,6 +37,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\..\core\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
   </ItemGroup>
 
   <!-- This is a Windows-only WinExe; declaring it so satisfies the platform-compat analyzer (CA1416) for

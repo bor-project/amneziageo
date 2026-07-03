@@ -4,6 +4,7 @@
     <Project Path="amneziageo-desktop/core/AmneziaGeo.Decl/AmneziaGeo.Decl.csproj" />
     <Project Path="amneziageo-desktop/core/AmneziaGeo.Geo/AmneziaGeo.Geo.csproj" />
     <Project Path="amneziageo-desktop/core/AmneziaGeo.Ipc/AmneziaGeo.Ipc.csproj" />
+    <Project Path="amneziageo-desktop/core/AmneziaGeo.Localization/AmneziaGeo.Localization.csproj" />
   </Folder>
   <Folder Name="/windows/">
     <Project Path="amneziageo-desktop/windows/AmneziaGeo.Windows.App/AmneziaGeo.Windows.App.csproj" />

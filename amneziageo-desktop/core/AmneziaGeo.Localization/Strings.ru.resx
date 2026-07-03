@@ -277,9 +277,6 @@
   <data name="Main_ClearRulesTooltip" xml:space="preserve">
     <value>Удалить все записи списка</value>
   </data>
-  <data name="Main_ClipboardButton" xml:space="preserve">
-    <value>Буфер</value>
-  </data>
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Закрыть</value>
   </data>
@@ -301,8 +298,14 @@
   <data name="Main_ConfigSection" xml:space="preserve">
     <value>КОНФИГУРАЦИИ</value>
   </data>
+  <data name="Main_ConfigEditButton" xml:space="preserve">
+    <value>Редактировать</value>
+  </data>
+  <data name="Main_ConfigEditButtonTooltip" xml:space="preserve">
+    <value>Ввести / отредактировать текст конфигурации в большом редакторе</value>
+  </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
-    <value>vpn://...   или   текст .conf</value>
+    <value>Здесь появится конфигурация</value>
   </data>
   <data name="Main_CopyButton" xml:space="preserve">
     <value>Копировать</value>
@@ -412,12 +415,6 @@
   <data name="Main_LoginWatermark" xml:space="preserve">
     <value>логин</value>
   </data>
-  <data name="Main_ManualButton" xml:space="preserve">
-    <value>Вручную</value>
-  </data>
-  <data name="Main_ManualButtonTooltip" xml:space="preserve">
-    <value>Ввести / отредактировать текст конфигурации в большом редакторе</value>
-  </data>
   <data name="Main_MtuHint" xml:space="preserve">
     <value>576-1500, по умолчанию 1280 (безопасно почти для любой сети). На чистом канале можно поднять до 1420 ради скорости; если TLS-хендшейк всё равно зависает - понизьте ещё.</value>
   </data>
@@ -437,13 +434,13 @@
     <value>Новый список</value>
   </data>
   <data name="Main_NoConfigsHint" xml:space="preserve">
-    <value>Конфигураций пока нет. Выберите «+ Новая конфигурация», чтобы добавить сервер в каталог.</value>
+    <value>Конфигураций пока нет. Нажмите «+ Новая конфигурация», чтобы добавить сервер в каталог.</value>
   </data>
   <data name="Main_NoProfilesHint" xml:space="preserve">
-    <value>Нет профилей. Выберите «+ Новый профиль», чтобы создать и настроить его.</value>
+    <value>Добавьте профиль и конфигурацию в настройках.</value>
   </data>
   <data name="Main_NoProfilesYetHint" xml:space="preserve">
-    <value>Профилей пока нет. Выберите «+ Новый профиль» (здесь или в списке), затем задайте конфигурацию и маршрутизацию.</value>
+    <value>Профилей пока нет. Нажмите «+ Профиль», чтобы создать профиль, затем задайте конфигурацию и маршрутизацию.</value>
   </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
     <value>Списков пока нет. Нажмите «+ Новый список», чтобы задать правила (гео-категории, домены, CIDR, приложения).</value>
@@ -470,7 +467,7 @@
     <value>Профиль</value>
   </data>
   <data name="Main_ProfileNoConfigHint" xml:space="preserve">
-    <value>У профиля пока нет конфигурации. Выберите из списка или «+ Новая конфигурация», чтобы добавить её в разделе «Конфигурации».</value>
+    <value>У профиля пока нет конфигурации. Выберите её из списка или добавьте в разделе «Конфигурации».</value>
   </data>
   <data name="Main_ProfileRenameHint" xml:space="preserve">
     <value>Новое имя для этого профиля. Запущенный профиль переименовать нельзя.</value>
@@ -682,9 +679,6 @@
   <data name="BundleImportVm_PasteOrLoadBundle" xml:space="preserve">
     <value>Вставьте или загрузите содержимое файла бандла.</value>
   </data>
-  <data name="ConfigChoice_NewLabel" xml:space="preserve">
-    <value>+ Новая конфигурация</value>
-  </data>
   <data name="ConfigChoice_NoneLabel" xml:space="preserve">
     <value>— не выбрано —</value>
   </data>
@@ -733,11 +727,8 @@
   <data name="MainCode_ClipboardNoText" xml:space="preserve">
     <value>В буфере обмена нет текста.</value>
   </data>
-  <data name="MainCode_ClipboardNotRecognized" xml:space="preserve">
-    <value>Текст в буфере не распознан как конфигурация (.conf, vpn://, JSON).</value>
-  </data>
   <data name="MainCode_ConfigurationTitle" xml:space="preserve">
-    <value>Конфигурация</value>
+    <value>Файл конфигурации или QR-картинка</value>
   </data>
   <data name="MainCode_CopiedToClipboard" xml:space="preserve">
     <value>Скопировано в буфер обмена.</value>
@@ -751,23 +742,11 @@
   <data name="MainCode_LogsSaveFailed" xml:space="preserve">
     <value>Не удалось сохранить логи: {0}</value>
   </data>
-  <data name="MainCode_QrImageTitle" xml:space="preserve">
-    <value>QR-картинка</value>
-  </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR распознан, но это не конфигурация</value>
   </data>
   <data name="MainCode_QrNotFound" xml:space="preserve">
     <value>QR-код не найден на картинке</value>
-  </data>
-  <data name="MainCode_QrRecognizedPressSave" xml:space="preserve">
-    <value>QR распознан - нажмите «Сохранить»</value>
-  </data>
-  <data name="MainCode_ReadyPressSave" xml:space="preserve">
-    <value>Готово - нажмите «Сохранить».</value>
-  </data>
-  <data name="MainCode_RecognizedPressSave" xml:space="preserve">
-    <value>Распознано — нажмите «Сохранить».</value>
   </data>
   <data name="MainCode_RoutingListQrTitle" xml:space="preserve">
     <value>QR списка маршрутизации</value>
@@ -868,9 +847,6 @@
   <data name="MainVm_UpdateLaunching" xml:space="preserve">
     <value>Запуск установщика…</value>
   </data>
-  <data name="ProfileChoice_NewLabel" xml:space="preserve">
-    <value>+ Новый профиль</value>
-  </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
     <value>— не выбрано —</value>
   </data>
@@ -885,9 +861,6 @@
   </data>
   <data name="QrScanner_CameraNotFound" xml:space="preserve">
     <value>Камера не найдена</value>
-  </data>
-  <data name="RoutingChoice_NewList" xml:space="preserve">
-    <value>+ Новый список</value>
   </data>
   <data name="RoutingChoice_None" xml:space="preserve">
     <value>- не задан -</value>
@@ -1186,9 +1159,6 @@
   <data name="InstallerUi_Close" xml:space="preserve">
     <value>Закрыть</value>
   </data>
-  <data name="InstallerUi_DeleteConfiguration" xml:space="preserve">
-    <value>Удалить конфигурацию (профили и настройки)</value>
-  </data>
   <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
     <value>Скачать обновления файлов баз гео</value>
   </data>
@@ -1260,5 +1230,47 @@
   </data>
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Обновление…</value>
+  </data>
+  <data name="Main_HomeSelectConfigHint" xml:space="preserve">
+    <value>Выберите конфигурацию для подключения.</value>
+  </data>
+  <data name="Main_ProfileNeedsConfigHint" xml:space="preserve">
+    <value>Чтобы добавить профиль, сначала добавьте конфигурацию.</value>
+  </data>
+  <data name="InstallerVm_ResetSettings" xml:space="preserve">
+    <value>Сбросить настройки</value>
+  </data>
+  <data name="InstallerVm_DeleteConfigAndCache" xml:space="preserve">
+    <value>Удалить конфигурацию и кэш</value>
+  </data>
+  <data name="InstallerVm_OptionsInstall" xml:space="preserve">
+    <value>Параметры установки</value>
+  </data>
+  <data name="InstallerVm_OptionsUpdate" xml:space="preserve">
+    <value>Параметры обновления</value>
+  </data>
+  <data name="InstallerVm_OptionsRepair" xml:space="preserve">
+    <value>Параметры восстановления</value>
+  </data>
+  <data name="InstallerVm_OptionsRemove" xml:space="preserve">
+    <value>Параметры удаления</value>
+  </data>
+  <data name="InstallerUi_Continue" xml:space="preserve">
+    <value>Продолжить</value>
+  </data>
+  <data name="InstallerUi_Back" xml:space="preserve">
+    <value>Назад</value>
+  </data>
+  <data name="MainVm_NewConfigDefaultName" xml:space="preserve">
+    <value>Новая конфигурация</value>
+  </data>
+  <data name="MainVm_NewListDefaultName" xml:space="preserve">
+    <value>Новый список</value>
+  </data>
+  <data name="Main_ConfigNameWatermark" xml:space="preserve">
+    <value>Название конфигурации</value>
+  </data>
+  <data name="Main_RequiredEmptyWarning" xml:space="preserve">
+    <value>Обязательное поле — изменения не сохранятся, пока оно пустое.</value>
   </data>
 </root>

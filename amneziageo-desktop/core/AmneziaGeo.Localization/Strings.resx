@@ -277,9 +277,6 @@
   <data name="Main_ClearRulesTooltip" xml:space="preserve">
     <value>Delete all entries in the list</value>
   </data>
-  <data name="Main_ClipboardButton" xml:space="preserve">
-    <value>Clipboard</value>
-  </data>
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Close</value>
   </data>
@@ -301,8 +298,14 @@
   <data name="Main_ConfigSection" xml:space="preserve">
     <value>CONFIGURATIONS</value>
   </data>
+  <data name="Main_ConfigEditButton" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Main_ConfigEditButtonTooltip" xml:space="preserve">
+    <value>Enter / edit the configuration text in the large editor</value>
+  </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
-    <value>vpn://...   or   .conf text</value>
+    <value>The configuration will appear here</value>
   </data>
   <data name="Main_CopyButton" xml:space="preserve">
     <value>Copy</value>
@@ -412,12 +415,6 @@
   <data name="Main_LoginWatermark" xml:space="preserve">
     <value>login</value>
   </data>
-  <data name="Main_ManualButton" xml:space="preserve">
-    <value>Manual</value>
-  </data>
-  <data name="Main_ManualButtonTooltip" xml:space="preserve">
-    <value>Enter / edit the configuration text in the large editor</value>
-  </data>
   <data name="Main_MtuHint" xml:space="preserve">
     <value>576-1500, default 1280 (safe for almost any network). On a clean link you can raise it to 1420 for speed; if the TLS handshake still stalls - lower it further.</value>
   </data>
@@ -437,13 +434,13 @@
     <value>New list</value>
   </data>
   <data name="Main_NoConfigsHint" xml:space="preserve">
-    <value>No configurations yet. Choose «+ New configuration» to add a server to the catalogue.</value>
+    <value>No configurations yet. Use the «+ New configuration» button to add a server to the catalogue.</value>
   </data>
   <data name="Main_NoProfilesHint" xml:space="preserve">
-    <value>No profiles. Choose «+ New profile» to create and set one up.</value>
+    <value>Add a profile and a configuration in settings.</value>
   </data>
   <data name="Main_NoProfilesYetHint" xml:space="preserve">
-    <value>No profiles yet. Choose «+ New profile» (here or in the list), then set the configuration and routing.</value>
+    <value>No profiles yet. Use the «+ Profile» button to create one, then set its configuration and routing.</value>
   </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
     <value>No lists yet. Click «+ New list» to set rules (geo categories, domains, CIDR, apps).</value>
@@ -470,7 +467,7 @@
     <value>Profile</value>
   </data>
   <data name="Main_ProfileNoConfigHint" xml:space="preserve">
-    <value>This profile has no configuration yet. Pick one from the list or «+ New configuration» to add it in the «Configurations» section.</value>
+    <value>This profile has no configuration yet. Pick one from the list, or add it in the «Configurations» section.</value>
   </data>
   <data name="Main_ProfileRenameHint" xml:space="preserve">
     <value>A new name for this profile. A running profile cannot be renamed.</value>
@@ -682,9 +679,6 @@
   <data name="BundleImportVm_PasteOrLoadBundle" xml:space="preserve">
     <value>Paste or load the bundle file contents.</value>
   </data>
-  <data name="ConfigChoice_NewLabel" xml:space="preserve">
-    <value>+ New configuration</value>
-  </data>
   <data name="ConfigChoice_NoneLabel" xml:space="preserve">
     <value>— not selected —</value>
   </data>
@@ -733,11 +727,8 @@
   <data name="MainCode_ClipboardNoText" xml:space="preserve">
     <value>There is no text in the clipboard.</value>
   </data>
-  <data name="MainCode_ClipboardNotRecognized" xml:space="preserve">
-    <value>The clipboard text was not recognized as a configuration (.conf, vpn://, JSON).</value>
-  </data>
   <data name="MainCode_ConfigurationTitle" xml:space="preserve">
-    <value>Configuration</value>
+    <value>Configuration file or QR image</value>
   </data>
   <data name="MainCode_CopiedToClipboard" xml:space="preserve">
     <value>Copied to clipboard.</value>
@@ -751,23 +742,11 @@
   <data name="MainCode_LogsSaveFailed" xml:space="preserve">
     <value>Failed to save logs: {0}</value>
   </data>
-  <data name="MainCode_QrImageTitle" xml:space="preserve">
-    <value>QR image</value>
-  </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR recognized, but it is not a configuration</value>
   </data>
   <data name="MainCode_QrNotFound" xml:space="preserve">
     <value>No QR code found in the image</value>
-  </data>
-  <data name="MainCode_QrRecognizedPressSave" xml:space="preserve">
-    <value>QR recognized - press «Save»</value>
-  </data>
-  <data name="MainCode_ReadyPressSave" xml:space="preserve">
-    <value>Ready - press «Save».</value>
-  </data>
-  <data name="MainCode_RecognizedPressSave" xml:space="preserve">
-    <value>Recognized — press «Save».</value>
   </data>
   <data name="MainCode_RoutingListQrTitle" xml:space="preserve">
     <value>Routing list QR</value>
@@ -868,9 +847,6 @@
   <data name="MainVm_UpdateLaunching" xml:space="preserve">
     <value>Launching installer…</value>
   </data>
-  <data name="ProfileChoice_NewLabel" xml:space="preserve">
-    <value>+ New profile</value>
-  </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
     <value>— none —</value>
   </data>
@@ -885,9 +861,6 @@
   </data>
   <data name="QrScanner_CameraNotFound" xml:space="preserve">
     <value>Camera not found</value>
-  </data>
-  <data name="RoutingChoice_NewList" xml:space="preserve">
-    <value>+ New list</value>
   </data>
   <data name="RoutingChoice_None" xml:space="preserve">
     <value>- not set -</value>
@@ -1186,9 +1159,6 @@ No - keep the current settings.</value>
   <data name="InstallerUi_Close" xml:space="preserve">
     <value>Close</value>
   </data>
-  <data name="InstallerUi_DeleteConfiguration" xml:space="preserve">
-    <value>Delete configuration (profiles and settings)</value>
-  </data>
   <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
     <value>Download geo database file updates</value>
   </data>
@@ -1260,5 +1230,47 @@ No - keep the current settings.</value>
   </data>
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Updating…</value>
+  </data>
+  <data name="Main_HomeSelectConfigHint" xml:space="preserve">
+    <value>Select a configuration to connect.</value>
+  </data>
+  <data name="Main_ProfileNeedsConfigHint" xml:space="preserve">
+    <value>Add a configuration first to create a profile.</value>
+  </data>
+  <data name="InstallerVm_ResetSettings" xml:space="preserve">
+    <value>Reset settings</value>
+  </data>
+  <data name="InstallerVm_DeleteConfigAndCache" xml:space="preserve">
+    <value>Delete configuration and cache</value>
+  </data>
+  <data name="InstallerVm_OptionsInstall" xml:space="preserve">
+    <value>Installation options</value>
+  </data>
+  <data name="InstallerVm_OptionsUpdate" xml:space="preserve">
+    <value>Update options</value>
+  </data>
+  <data name="InstallerVm_OptionsRepair" xml:space="preserve">
+    <value>Repair options</value>
+  </data>
+  <data name="InstallerVm_OptionsRemove" xml:space="preserve">
+    <value>Removal options</value>
+  </data>
+  <data name="InstallerUi_Continue" xml:space="preserve">
+    <value>Continue</value>
+  </data>
+  <data name="InstallerUi_Back" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="MainVm_NewConfigDefaultName" xml:space="preserve">
+    <value>New configuration</value>
+  </data>
+  <data name="MainVm_NewListDefaultName" xml:space="preserve">
+    <value>New list</value>
+  </data>
+  <data name="Main_ConfigNameWatermark" xml:space="preserve">
+    <value>Configuration name</value>
+  </data>
+  <data name="Main_RequiredEmptyWarning" xml:space="preserve">
+    <value>Required field — changes will not be saved while it is empty.</value>
   </data>
 </root>

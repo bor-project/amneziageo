@@ -1,5 +1,6 @@
 using Avalonia.Media.Imaging;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -164,7 +165,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
             || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
             || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
         {
-            StatusMessage = "Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).";
+            StatusMessage = Loc.Instance.Get("ExportVm_NotWireGuardConfig");
             return;
         }
 
@@ -178,6 +179,6 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
         _confText = text;
         IsEditing = false;
         Refresh();
-        StatusMessage = "Сохранено.";
+        StatusMessage = Loc.Instance.Get("ExportVm_Saved");
     }
 }

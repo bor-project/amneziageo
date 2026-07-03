@@ -1,3 +1,5 @@
+using AmneziaGeo.Localization;
+
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>The kind of a <see cref="ProfileChoice"/> exposed to a profile combo box.</summary>
@@ -23,13 +25,13 @@ internal enum ProfileChoiceKind
 internal sealed record ProfileChoice(string Name, ProfileChoiceKind Kind = ProfileChoiceKind.Real)
 {
     /// <summary>The synthetic "no profile" choice (shown, and selectable, when nothing is picked).</summary>
-    public static ProfileChoice None { get; } = new("— не выбрано —", ProfileChoiceKind.None);
+    public static ProfileChoice None { get; } = new(Loc.Instance.Get("ProfileChoice_NoneLabel"), ProfileChoiceKind.None);
 
     /// <summary>
     /// The synthetic "create a new profile" choice: picking it creates a profile and opens it in the
     /// Profile section editor (redirecting there from the home combo).
     /// </summary>
-    public static ProfileChoice New { get; } = new("+ Новый профиль", ProfileChoiceKind.New);
+    public static ProfileChoice New { get; } = new(Loc.Instance.Get("ProfileChoice_NewLabel"), ProfileChoiceKind.New);
 
     /// <summary>True for the synthetic "no profile" choice.</summary>
     public bool IsNone => Kind == ProfileChoiceKind.None;

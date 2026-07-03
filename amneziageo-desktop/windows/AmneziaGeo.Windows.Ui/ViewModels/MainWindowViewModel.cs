@@ -283,12 +283,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>Log verbosity options shown in settings (#82). "Обычный" is the default; "Трасса" captures
     /// every connect step and timing for support diagnosis.</summary>
-    public ObservableCollection<string> LogLevels { get; } = ["Обычный", "Отладка", "Трасса"];
+    public ObservableCollection<string> LogLevels { get; } = [Loc.Instance.Get("MainVm_LogLevelNormal"), Loc.Instance.Get("MainVm_LogLevelDebug"), Loc.Instance.Get("MainVm_LogLevelTrace")];
 
     // Selected verbosity label; two-way bound to the combo. Mapped to/from the persisted token (info/debug/
     // trace) so raising it writes a live set-setting the agent and tunnel apply without a reconnect.
     [ObservableProperty]
-    private string _logLevelLabel = "Обычный";
+    private string _logLevelLabel = Loc.Instance.Get("MainVm_LogLevelNormal");
 
     // The dedicated routing log toggle (#82): two-way bound to a switch in the logs settings. When on, every
     // route/resolve is appended to routes.log (included in the diagnostics bundle) for support diagnosis of a
@@ -310,7 +310,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     // AmneziaWG engine (tunnel.dll) version reported by the agent; "н/д" until known / if unresolved.
     [ObservableProperty]
-    private string _amneziaVersion = "н/д";
+    private string _amneziaVersion = Loc.Instance.Get("MainVm_NotAvailable");
 
     [ObservableProperty]
     private string _newSourceKind = "geosite";
@@ -450,7 +450,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             1 => StatusLabels.Text(IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
             _ => StatusLabels.Text(ConnectionStatus.Disconnected),
         }
-        : "Нет связи с агентом";
+        : Loc.Instance.Get("MainVm_NoAgentConnection");
 
     /// <summary>
     /// Whether the connect / disconnect button is actionable: the agent pipe is up AND a complete profile is
@@ -499,15 +499,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// may be disabled: no profile chosen, or the chosen profile has no configuration yet.</summary>
     public string ConnectHint => ConnState switch
     {
-        1 => "Устанавливается соединение…",
-        2 => "Нажмите, чтобы отключиться",
-        _ when ActiveProfile is null => "Выберите профиль",
-        _ when ActiveProfile is { IsComplete: false } => "У профиля нет конфигурации — задайте её в настройках",
-        _ => "Нажмите, чтобы подключиться",
+        1 => Loc.Instance.Get("MainVm_ConnectHintConnecting"),
+        2 => Loc.Instance.Get("MainVm_ConnectHintClickToDisconnect"),
+        _ when ActiveProfile is null => Loc.Instance.Get("MainVm_ConnectHintSelectProfile"),
+        _ when ActiveProfile is { IsComplete: false } => Loc.Instance.Get("MainVm_ConnectHintNoConfig"),
+        _ => Loc.Instance.Get("MainVm_ConnectHintClickToConnect"),
     };
 
     /// <summary>Label on the connect/disconnect pill button in the settings header.</summary>
-    public string ConnectPillContent => IsTunnelActive ? "Отключить" : "Подключить";
+    public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
     /// <summary>Power circle fill.</summary>
     public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
@@ -1386,16 +1386,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 && snapshot.Balancers.FirstOrDefault(b =>
                        string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Config.Length: 0 };
             notice = emptyProfile
-                ? $"Профиль «{snapshot.SelectedTarget}» пуст - добавьте конфигурацию."
-                : "Не удалось подключиться - сервер не ответил.";
+                ? Loc.Instance.Get("MainVm_NoticeProfileEmpty", snapshot.SelectedTarget)
+                : Loc.Instance.Get("MainVm_NoticeConnectFailed");
         }
         else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
         {
-            notice = $"Выбран профиль «{snapshot.SelectedTarget}». Переподключитесь, чтобы применить.";
+            notice = Loc.Instance.Get("MainVm_NoticeProfileSelected", snapshot.SelectedTarget);
         }
         else if (snapshot.RestartRequired)
         {
-            notice = "Настройки изменены. Переподключитесь, чтобы применить.";
+            notice = Loc.Instance.Get("MainVm_NoticeSettingsChanged");
         }
 
         ShowNotice(notice);
@@ -1564,20 +1564,25 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         return token switch
         {
-            "trace" => "Трасса",
-            "debug" => "Отладка",
-            _ => "Обычный",
+            "trace" => Loc.Instance.Get("MainVm_LogLevelTrace"),
+            "debug" => Loc.Instance.Get("MainVm_LogLevelDebug"),
+            _ => Loc.Instance.Get("MainVm_LogLevelNormal"),
         };
     }
 
     private static string TokenForLogLabel(string label)
     {
-        return label switch
+        if (string.Equals(label, Loc.Instance.Get("MainVm_LogLevelTrace"), StringComparison.Ordinal))
         {
-            "Трасса" => "trace",
-            "Отладка" => "debug",
-            _ => "info",
-        };
+            return "trace";
+        }
+
+        if (string.Equals(label, Loc.Instance.Get("MainVm_LogLevelDebug"), StringComparison.Ordinal))
+        {
+            return "debug";
+        }
+
+        return "info";
     }
 
     // Keeps the validity combo able to display whatever the agent reports (an out-of-band value set via CLI),
@@ -1633,7 +1638,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCollectDiagnostics, []));
         if (!ack.Ok)
         {
-            ShowNotice(string.IsNullOrWhiteSpace(ack.Message) ? "Не удалось собрать логи." : ack.Message);
+            ShowNotice(string.IsNullOrWhiteSpace(ack.Message) ? Loc.Instance.Get("MainVm_DiagnosticsFailed") : ack.Message);
             return null;
         }
 
@@ -1659,7 +1664,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void ApplyUpdateState(StatusSnapshot snapshot)
     {
         AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
-        AmneziaVersion = string.IsNullOrEmpty(snapshot.EngineVersion) ? "н/д" : snapshot.EngineVersion;
+        AmneziaVersion = string.IsNullOrEmpty(snapshot.EngineVersion) ? Loc.Instance.Get("MainVm_NotAvailable") : snapshot.EngineVersion;
 
         UpdateUrl = snapshot.UpdateUrl;
 
@@ -1687,7 +1692,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task CheckUpdate()
     {
-        UpdateStatus = "Проверка…";
+        UpdateStatus = Loc.Instance.Get("MainVm_UpdateChecking");
         // The URL is baked into the build (installer config), not user-entered; just ask for a check.
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCheckUpdate, []));
         UpdateStatus = ack.Message;
@@ -1704,11 +1709,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         UpdateBannerVisible = false;
         UpdateDownloading = true;
         UpdateDownloadPercent = 0;
-        UpdateStatus = "Загрузка установщика…";
+        UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloading");
         try
         {
             var path = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p));
-            UpdateStatus = "Запуск установщика…";
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateLaunching");
 
             // /passive: a single progress UI, no prompts. The display level propagates to the upgrade's
             // related-bundle uninstall, so the old version is removed WITHOUT its own second installer
@@ -1723,7 +1728,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            UpdateStatus = $"Ошибка: {ex.Message}";
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
         }
         finally
         {
@@ -2160,7 +2165,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private string UniqueProfileName()
     {
-        const string baseName = "Новый профиль";
+        var baseName = Loc.Instance.Get("MainVm_NewProfileDefaultName");
         var existing = Balancers.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
         if (!existing.Contains(baseName))
         {
@@ -2226,7 +2231,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         var imported = VpnLinkCodec.TryDecode(SectionConfigText);
         if (imported is null)
         {
-            SectionConfigStatus = "Не распознано (.conf или vpn://)";
+            SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
             return;
         }
 

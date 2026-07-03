@@ -10,6 +10,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using AmneziaGeo.Windows.Ui.Services;
 using AmneziaGeo.Windows.Ui.ViewModels;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui;
 
@@ -49,7 +50,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var path = await PickFileAsync("QR-картинка", "png", "jpg", "jpeg", "bmp");
+        var path = await PickFileAsync(Loc.Instance.Get("MainCode_QrImageTitle"), "png", "jpg", "jpeg", "bmp");
         if (path is null)
         {
             return;
@@ -100,7 +101,7 @@ public sealed partial class MainWindow : Window
         if (await dialog.ShowDialog<bool>(this))
         {
             vm.SectionConfigText = editor.Text;
-            vm.SectionConfigStatus = "Готово - нажмите «Сохранить».";
+            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_ReadyPressSave");
         }
     }
 
@@ -109,14 +110,14 @@ public sealed partial class MainWindow : Window
         var text = QrCodec.Decode(bitmap);
         if (text is null)
         {
-            vm.SectionConfigStatus = "QR-код не найден на картинке";
+            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_QrNotFound");
             return;
         }
 
         var imported = VpnLinkCodec.TryDecodeQr(text);
         if (imported is null)
         {
-            vm.SectionConfigStatus = "QR распознан, но это не конфигурация";
+            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_QrNotConfig");
             return;
         }
 
@@ -126,7 +127,7 @@ public sealed partial class MainWindow : Window
             vm.SectionConfigName = imported.Name!;
         }
 
-        vm.SectionConfigStatus = "QR распознан - нажмите «Сохранить»";
+        vm.SectionConfigStatus = Loc.Instance.Get("MainCode_QrRecognizedPressSave");
     }
 
     private async System.Threading.Tasks.Task<string?> PickFileAsync(string title, params string[] extensions)
@@ -156,7 +157,7 @@ public sealed partial class MainWindow : Window
         if (clipboard is not null)
         {
             await clipboard.SetTextAsync(vm.Payload);
-            vm.StatusMessage = "Скопировано в буфер обмена.";
+            vm.StatusMessage = Loc.Instance.Get("MainCode_CopiedToClipboard");
         }
     }
 
@@ -170,7 +171,7 @@ public sealed partial class MainWindow : Window
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Сохранить конфигурацию",
+            Title = Loc.Instance.Get("MainCode_SaveConfigTitle"),
             SuggestedFileName = vm.SuggestedFileName,
         });
         if (file is null)
@@ -181,7 +182,7 @@ public sealed partial class MainWindow : Window
         await using var stream = await file.OpenWriteAsync();
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(vm.Payload);
-        vm.StatusMessage = "Сохранено.";
+        vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
     }
 
     // WebSocket settings share (copy / save / paste / load) - mirrors the config export/import. The
@@ -197,7 +198,7 @@ public sealed partial class MainWindow : Window
         if (clipboard is not null)
         {
             await clipboard.SetTextAsync(vm.BuildTransferPayload());
-            vm.StatusMessage = "Скопировано в буфер обмена.";
+            vm.StatusMessage = Loc.Instance.Get("MainCode_CopiedToClipboard");
         }
     }
 
@@ -210,7 +211,7 @@ public sealed partial class MainWindow : Window
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Сохранить настройки WebSocket",
+            Title = Loc.Instance.Get("MainCode_SaveWebSocketTitle"),
             SuggestedFileName = vm.SuggestedFileName,
         });
         if (file is null)
@@ -221,7 +222,7 @@ public sealed partial class MainWindow : Window
         await using var stream = await file.OpenWriteAsync();
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(vm.BuildTransferPayload());
-        vm.StatusMessage = "Сохранено.";
+        vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
     }
 
     private async void OnWsImportPaste(object? sender, RoutedEventArgs e)
@@ -240,7 +241,7 @@ public sealed partial class MainWindow : Window
         var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            vm.StatusMessage = "В буфере обмена нет текста.";
+            vm.StatusMessage = Loc.Instance.Get("MainCode_ClipboardNoText");
             return;
         }
 
@@ -254,7 +255,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var path = await PickFileAsync("Настройки WebSocket", "txt", "conf");
+        var path = await PickFileAsync(Loc.Instance.Get("MainCode_WebSocketSettingsTitle"), "txt", "conf");
         if (path is null)
         {
             return;
@@ -283,7 +284,7 @@ public sealed partial class MainWindow : Window
         if (clipboard is not null)
         {
             await clipboard.SetTextAsync(vm.BuildTransferPayload());
-            vm.StatusMessage = "Скопировано в буфер обмена.";
+            vm.StatusMessage = Loc.Instance.Get("MainCode_CopiedToClipboard");
         }
     }
 
@@ -296,7 +297,7 @@ public sealed partial class MainWindow : Window
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Сохранить список маршрутизации",
+            Title = Loc.Instance.Get("MainCode_SaveRoutingListTitle"),
             SuggestedFileName = vm.SuggestedFileName,
         });
         if (file is null)
@@ -307,7 +308,7 @@ public sealed partial class MainWindow : Window
         await using var stream = await file.OpenWriteAsync();
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(vm.BuildTransferPayload());
-        vm.StatusMessage = "Сохранено.";
+        vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
     }
 
     // "Показать QR": render the list (name + rules) as a QR in a dialog. On demand, so the editor never holds
@@ -321,7 +322,7 @@ public sealed partial class MainWindow : Window
 
         var dialog = new QrDialog
         {
-            DataContext = new QrDialogViewModel("QR списка маршрутизации", vm.BuildTransferPayload(), vm.SuggestedFileName),
+            DataContext = new QrDialogViewModel(Loc.Instance.Get("MainCode_RoutingListQrTitle"), vm.BuildTransferPayload(), vm.SuggestedFileName),
         };
         await dialog.ShowDialog(this);
     }
@@ -342,7 +343,7 @@ public sealed partial class MainWindow : Window
         var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            vm.StatusMessage = "В буфере обмена нет текста.";
+            vm.StatusMessage = Loc.Instance.Get("MainCode_ClipboardNoText");
             return;
         }
 
@@ -356,7 +357,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var path = await PickFileAsync("Список маршрутизации", "txt");
+        var path = await PickFileAsync(Loc.Instance.Get("MainCode_RoutingListTitle"), "txt");
         if (path is null)
         {
             return;
@@ -399,7 +400,7 @@ public sealed partial class MainWindow : Window
 
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Папка приложения",
+            Title = Loc.Instance.Get("MainCode_AppFolderTitle"),
             AllowMultiple = false,
         });
         var path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
@@ -416,7 +417,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var path = await PickFileAsync("Приложение", "exe");
+        var path = await PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), "exe");
         if (!string.IsNullOrEmpty(path))
         {
             vm.AddAppToken($"app:path={path}");
@@ -433,7 +434,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var path = await PickFileAsync("Конфигурация", "conf");
+        var path = await PickFileAsync(Loc.Instance.Get("MainCode_ConfigurationTitle"), "conf");
         if (path is null)
         {
             return;
@@ -469,7 +470,7 @@ public sealed partial class MainWindow : Window
         var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            vm.SectionConfigStatus = "В буфере обмена нет текста.";
+            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_ClipboardNoText");
             return;
         }
 
@@ -481,11 +482,11 @@ public sealed partial class MainWindow : Window
             {
                 vm.SectionConfigName = imported.Name!;
             }
-            vm.SectionConfigStatus = "Распознано — нажмите «Сохранить».";
+            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_RecognizedPressSave");
         }
         else
         {
-            vm.SectionConfigStatus = "Текст в буфере не распознан как конфигурация (.conf, vpn://, JSON).";
+            vm.SectionConfigStatus = Loc.Instance.Get("MainCode_ClipboardNotRecognized");
         }
     }
 
@@ -533,9 +534,9 @@ public sealed partial class MainWindow : Window
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Сохранить логи для поддержки",
+            Title = Loc.Instance.Get("MainCode_SaveLogsForSupportTitle"),
             SuggestedFileName = Path.GetFileName(sourcePath),
-            FileTypeChoices = [new FilePickerFileType("ZIP-архив") { Patterns = ["*.zip"] }],
+            FileTypeChoices = [new FilePickerFileType(Loc.Instance.Get("MainCode_ZipArchive")) { Patterns = ["*.zip"] }],
         });
         if (file is null)
         {
@@ -547,11 +548,11 @@ public sealed partial class MainWindow : Window
             await using var input = File.OpenRead(sourcePath);
             await using var output = await file.OpenWriteAsync();
             await input.CopyToAsync(output);
-            vm.ShowTransientNotice("Логи собраны и сохранены.");
+            vm.ShowTransientNotice(Loc.Instance.Get("MainCode_LogsCollectedAndSaved"));
         }
         catch (Exception ex)
         {
-            vm.ShowTransientNotice($"Не удалось сохранить логи: {ex.Message}");
+            vm.ShowTransientNotice(Loc.Instance.Get("MainCode_LogsSaveFailed", ex.Message));
         }
     }
 
@@ -591,12 +592,12 @@ public sealed partial class MainWindow : Window
     {
         var update = new MenuItem
         {
-            Header = "Обновить базу",
+            Header = Loc.Instance.Get("MainCode_UpdateDatabase"),
             Command = source.UpdateCommand,
         };
         var delete = new MenuItem
         {
-            Header = "Удалить базу",
+            Header = Loc.Instance.Get("MainCode_DeleteDatabase"),
             Command = source.RemoveCommand,
         };
         var flyout = new MenuFlyout();

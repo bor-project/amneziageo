@@ -1,3 +1,5 @@
+using AmneziaGeo.Localization;
+
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
@@ -8,13 +10,13 @@ internal sealed record RoutingListChoice(long? Id, string Name)
     /// <summary>
     /// The synthetic "no routing list" choice.
     /// </summary>
-    public static RoutingListChoice None { get; } = new(null, "- не задан -");
+    public static RoutingListChoice None { get; } = new(null, Loc.Instance.Get("RoutingChoice_None"));
 
     /// <summary>
     /// The synthetic "create a new list" choice (Id -1): picking it reveals the inline new-list editor,
     /// mirroring the "+ Новая конфигурация" sentinel in the config combo.
     /// </summary>
-    public static RoutingListChoice NewList { get; } = new(-1, "+ Новый список");
+    public static RoutingListChoice NewList { get; } = new(-1, Loc.Instance.Get("RoutingChoice_NewList"));
 
     /// <summary>
     /// True for the synthetic "none" choice.

@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -68,7 +69,7 @@ internal static class InstalledApps
                     continue;
                 }
 
-                result.Add(new AppCandidate($"{display.Trim()} · установлено", token));
+                result.Add(new AppCandidate(Loc.Instance.Get("InstalledApps_Installed", display.Trim()), token));
             }
             catch
             {

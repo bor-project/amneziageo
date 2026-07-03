@@ -1,3 +1,4 @@
+using AmneziaGeo.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -73,10 +74,10 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     /// "geoip · ошибка: …" when the last download/parse failed.
     /// </summary>
     public string Detail => Error is { Length: > 0 }
-        ? $"{Kind} · ошибка: {Error}"
+        ? Loc.Instance.Get("Source_DetailError", Kind, Error)
         : Updated is null
-            ? $"{Kind} · не загружен"
-            : $"{Kind} · {CategoryCount} категорий · {Updated}";
+            ? Loc.Instance.Get("Source_DetailNotLoaded", Kind)
+            : Loc.Instance.Get("Source_DetailLoaded", Kind, CategoryCount, Updated);
 
     /// <summary>
     /// True while a download percentage should be shown (downloading); false once the file is in hand

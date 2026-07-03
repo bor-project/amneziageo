@@ -1,5 +1,6 @@
 using System;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -42,7 +43,7 @@ internal sealed partial class ConfigEditorViewModel : ViewModelBase
     public bool IsNew => EditName is null;
 
     /// <summary>Dialog title.</summary>
-    public string Title => IsNew ? "Конфигурация вручную" : $"Редактирование: {EditName}";
+    public string Title => IsNew ? Loc.Instance.Get("ConfigEditorVm_TitleNew") : Loc.Instance.Get("ConfigEditorVm_TitleEdit", EditName);
 
     /// <summary>
     /// Loads the existing config's wg-quick text (edit mode only).
@@ -85,7 +86,7 @@ internal sealed partial class ConfigEditorViewModel : ViewModelBase
             || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
             || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
         {
-            StatusMessage = "Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).";
+            StatusMessage = Loc.Instance.Get("ConfigEditorVm_NotAConfig");
             return false;
         }
 

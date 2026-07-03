@@ -1,4 +1,5 @@
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -96,10 +97,10 @@ internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
             }
 
             StatusMessage = added.Count > 0
-                ? $"Добавлено локальных сетей: {added.Count}. Проверьте список и нажмите «Сохранить»."
+                ? Loc.Instance.Get("Exclusions_LocalSubnetsAdded", added.Count)
                 : subnets.Length == 0
-                    ? "Активные локальные сети не обнаружены."
-                    : "Все локальные сети уже в списке.";
+                    ? Loc.Instance.Get("Exclusions_NoActiveLocalSubnets")
+                    : Loc.Instance.Get("Exclusions_AllLocalSubnetsPresent");
         }
         finally
         {

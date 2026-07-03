@@ -1,5 +1,6 @@
 using System.Globalization;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -105,25 +106,20 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
                 ? $"  --restrict-http-upgrade-path-prefix {token} \\\n"
                 : $"  --restrict-to 127.0.0.1:{awgPort} \\\n";
             var hint =
-                $"На сервере: установите wstunnel и запустите его как службу с командой\n\n" +
+                Loc.Instance.Get("Transport_HintIntro") + "\n\n" +
                 $"wstunnel server wss://0.0.0.0:{wsPort} \\\n" +
                 restrictLine +
                 $"  --tls-certificate <fullchain.pem> --tls-private-key <privkey.pem>\n\n" +
-                $"Где fullchain/privkey - уже имеющийся сертификат сервера. " +
-                $"Откройте TCP {wsPort} в фаерволе. Клиент завернёт UDP AmneziaWG в этот WebSocket.";
+                Loc.Instance.Get("Transport_HintCert") + " " +
+                Loc.Instance.Get("Transport_HintFirewall", wsPort);
 
             if (IsBasicAuth && WebSocketUser.Trim().Length > 0)
             {
-                hint +=
-                    "\n\nАвторизация «логин и пароль»: клиент шлёт заголовок Authorization: Basic. " +
-                    "На сервере включите проверку - wstunnel запускают с --restrict-config <yaml>, где задают " +
-                    "разрешённый логин/пароль (Authorization). Логин/пароль НЕ обязаны совпадать с конфигом AmneziaWG.";
+                hint += "\n\n" + Loc.Instance.Get("Transport_HintBasicAuth");
             }
             else if (IsTokenAuth && token.Length > 0)
             {
-                hint +=
-                    "\n\nАвторизация «токен»: токен доступа в URL должен ТОЧНО совпадать с " +
-                    "--restrict-http-upgrade-path-prefix на сервере (и заодно отсекает слепое сканирование).";
+                hint += "\n\n" + Loc.Instance.Get("Transport_HintTokenAuth");
             }
 
             return hint;
@@ -141,7 +137,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         {
             if (UseWebSocket && (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var validate) || validate is < 1 or > 65535))
             {
-                StatusMessage = "Укажите корректный порт WebSocket (1-65535).";
+                StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
                 return;
             }
 
@@ -151,7 +147,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
             var mtuVal = Mtu.Trim();
             if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
             {
-                StatusMessage = "MTU: 576-1500 (пусто = 1280).";
+                StatusMessage = Loc.Instance.Get("Transport_InvalidMtu");
                 return;
             }
 
@@ -191,7 +187,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     {
         if (!Services.PortableTransfer.TryDecodeWebSocket(text, out var enabled, out var port, out var host))
         {
-            StatusMessage = "Не похоже на настройки WebSocket.";
+            StatusMessage = Loc.Instance.Get("Transport_NotWebSocketBlob");
             return false;
         }
 
@@ -203,7 +199,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         WebSocketUser = user;
         WebSocketPassword = password;
         WebSocketToken = token;
-        StatusMessage = "Импортировано - нажмите «Сохранить», чтобы применить.";
+        StatusMessage = Loc.Instance.Get("Transport_Imported");
         return true;
     }
 

@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -38,7 +39,7 @@ internal sealed partial class BundleImportDialogViewModel : ViewModelBase
     {
         if (string.IsNullOrWhiteSpace(Payload))
         {
-            StatusMessage = "Вставьте или загрузите содержимое файла бандла.";
+            StatusMessage = Loc.Instance.Get("BundleImportVm_PasteOrLoadBundle");
             return;
         }
 

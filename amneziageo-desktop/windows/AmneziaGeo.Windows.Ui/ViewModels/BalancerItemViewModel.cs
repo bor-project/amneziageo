@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Avalonia.Media;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -120,7 +121,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// Label for the per-profile connect button: "Переключить" when a DIFFERENT profile is the live tunnel
     /// (tapping switches to this one), otherwise "Подключить".
     /// </summary>
-    public string ConnectActionText => OtherActive ? "Переключить" : "Подключить";
+    public string ConnectActionText => OtherActive ? Loc.Instance.Get("Balancer_SwitchAction") : Loc.Instance.Get("Balancer_ConnectAction");
 
     /// <summary>
     /// True when a real routing list is selected and the toggle can flip use_routing on.
@@ -142,7 +143,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// <summary>
     /// Collapsed-row summary: the configuration name, or a hint when none is set yet.
     /// </summary>
-    public string Detail => HasConfig ? Config : "нет конфигурации";
+    public string Detail => HasConfig ? Config : Loc.Instance.Get("Balancer_NoConfig");
 
     [RelayCommand]
     private Task Select()

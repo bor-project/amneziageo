@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -129,8 +130,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// (running vs installed). Folder/file modes disable the input, so their value is moot.</summary>
     public string AppWatermark => AppMode switch
     {
-        "installed" => "имя установленного приложения",
-        _ => "имя запущенного приложения или службы",
+        "installed" => Loc.Instance.Get("RoutingEditor_AppWatermarkInstalled"),
+        _ => Loc.Instance.Get("RoutingEditor_AppWatermarkRunning"),
     };
 
     /// <summary>
@@ -202,7 +203,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         var trimmed = Name.Trim();
         if (trimmed.Length == 0)
         {
-            StatusMessage = "Введите имя правила";
+            StatusMessage = Loc.Instance.Get("RoutingEditor_EnterRuleName");
             return false;
         }
 
@@ -217,7 +218,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
                 _id = resultId;
             }
 
-            StatusMessage = ack.Ok ? "Сохранено" : ack.Message;
+            StatusMessage = ack.Ok ? Loc.Instance.Get("RoutingEditor_Saved") : ack.Message;
             return ack.Ok;
         }
         finally
@@ -354,14 +355,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             if (string.Equals(kind, "service", StringComparison.Ordinal))
             {
                 token = $"app:svc={value}";
-                display = $"{label} · служба";
+                display = Loc.Instance.Get("RoutingEditor_AppKindService", label);
             }
             else
             {
                 // Default an app to its containing folder so sibling helpers and versioned subfolders match.
                 var dir = System.IO.Path.GetDirectoryName(value);
                 token = !string.IsNullOrEmpty(dir) ? $"app:dir={dir}" : $"app:path={value}";
-                display = $"{label} · приложение";
+                display = Loc.Instance.Get("RoutingEditor_AppKindApplication", label);
             }
 
             AppSuggestions.Add(new AppCandidate(display, token));
@@ -375,7 +376,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         var token = AppSelected?.Token;
         if (string.IsNullOrWhiteSpace(token))
         {
-            StatusMessage = "Выберите приложение или службу из списка.";
+            StatusMessage = Loc.Instance.Get("RoutingEditor_SelectAppOrService");
             return;
         }
 
@@ -417,13 +418,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         var norm = value.Replace('/', '\\').TrimEnd('\\').ToLowerInvariant();
         if (norm.Length == 0)
         {
-            reason = "Пустой путь.";
+            reason = Loc.Instance.Get("RoutingEditor_EmptyPath");
             return false;
         }
 
         if (System.IO.Path.GetFileName(norm) == "svchost.exe")
         {
-            reason = "svchost.exe — общий хост служб, затуннелит много чужого. Выберите службу из списка.";
+            reason = Loc.Instance.Get("RoutingEditor_SvchostTooBroad");
             return false;
         }
 
@@ -432,7 +433,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             || norm.Contains("\\windows\\system32", StringComparison.Ordinal)
             || norm.Contains("\\windows\\syswow64", StringComparison.Ordinal))
         {
-            reason = "Слишком широкий путь — выберите конкретную папку приложения.";
+            reason = Loc.Instance.Get("RoutingEditor_PathTooBroad");
             return false;
         }
 
@@ -456,7 +457,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     {
         if (!PortableTransfer.TryDecodeRouting(text, out var name, out var importedRules))
         {
-            StatusMessage = "Не похоже на список маршрутизации.";
+            StatusMessage = Loc.Instance.Get("RoutingEditor_NotARoutingList");
             return false;
         }
 
@@ -472,8 +473,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
 
         StatusMessage = Name.Trim().Length == 0
-            ? $"Импортировано правил: {importedRules.Count}. Введите имя, чтобы сохранить."
-            : $"Импортировано правил: {importedRules.Count}.";
+            ? Loc.Instance.Get("RoutingEditor_ImportedRulesNeedName", importedRules.Count)
+            : Loc.Instance.Get("RoutingEditor_ImportedRules", importedRules.Count);
         return true;
     }
 
@@ -512,7 +513,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         // still missing rather than persisting a useless list.
         if (Rules.Count == 0)
         {
-            StatusMessage = "Добавьте хотя бы одну запись, чтобы сохранить список.";
+            StatusMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
             return;
         }
 

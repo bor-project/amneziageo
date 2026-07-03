@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -153,7 +154,7 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
             parts.Add(balancer.SelectedRoutingList.Name);
         }
 
-        return parts.Count > 0 ? string.Join(" · ", parts) : "нет конфигурации";
+        return parts.Count > 0 ? string.Join(" · ", parts) : Loc.Instance.Get("BundleExportVm_NoConfiguration");
     }
 
     [RelayCommand(CanExecute = nameof(CanExport))]

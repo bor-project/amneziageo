@@ -1,3 +1,4 @@
+using AmneziaGeo.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
@@ -28,5 +29,5 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     /// <summary>
     /// A short human label like "openai · 1 правило · 12 доменов".
     /// </summary>
-    public string Detail => $"{RuleCount} правил · {RouteCount} маршрутов · {DomainCount} доменов";
+    public string Detail => Loc.Instance.Get("RoutingSummary_Detail", RuleCount, RouteCount, DomainCount);
 }

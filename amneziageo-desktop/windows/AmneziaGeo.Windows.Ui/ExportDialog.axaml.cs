@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Windows.Ui.ViewModels;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui;
 
@@ -30,7 +31,7 @@ public sealed partial class ExportDialog : Window
         if (clipboard is not null)
         {
             await clipboard.SetTextAsync(vm.Payload);
-            vm.StatusMessage = "Скопировано в буфер обмена.";
+            vm.StatusMessage = Loc.Instance.Get("ExportCode_CopiedToClipboard");
         }
     }
 
@@ -43,7 +44,7 @@ public sealed partial class ExportDialog : Window
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Сохранить конфигурацию",
+            Title = Loc.Instance.Get("ExportCode_SaveConfigTitle"),
             SuggestedFileName = vm.SuggestedFileName,
         });
         if (file is null)
@@ -54,7 +55,7 @@ public sealed partial class ExportDialog : Window
         await using var stream = await file.OpenWriteAsync();
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(vm.Payload);
-        vm.StatusMessage = "Сохранено.";
+        vm.StatusMessage = Loc.Instance.Get("ExportCode_Saved");
     }
 
     private void OnClose(object? sender, RoutedEventArgs e)

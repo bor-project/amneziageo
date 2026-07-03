@@ -5,6 +5,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Windows.Ui.ViewModels;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui;
 
@@ -39,7 +40,7 @@ public sealed partial class BundleImportDialog : Window
         var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            vm.StatusMessage = "В буфере обмена нет текста.";
+            vm.StatusMessage = Loc.Instance.Get("BundleImportCode_ClipboardEmpty");
             return;
         }
 
@@ -56,7 +57,7 @@ public sealed partial class BundleImportDialog : Window
 
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Файл бандла",
+            Title = Loc.Instance.Get("BundleImportCode_BundleFileTitle"),
             AllowMultiple = false,
             FileTypeFilter = [new FilePickerFileType("JSON") { Patterns = ["*.json"] }],
         });

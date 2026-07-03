@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Windows.Ui.ViewModels;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui;
 
@@ -31,7 +32,7 @@ public sealed partial class QrDialog : Window
         if (clipboard is not null)
         {
             await clipboard.SetTextAsync(vm.Payload);
-            vm.StatusMessage = "Скопировано в буфер обмена.";
+            vm.StatusMessage = Loc.Instance.Get("QrCode_CopiedToClipboard");
         }
     }
 
@@ -44,7 +45,7 @@ public sealed partial class QrDialog : Window
 
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Сохранить",
+            Title = Loc.Instance.Get("QrCode_SaveTitle"),
             SuggestedFileName = vm.SuggestedFileName,
         });
         if (file is null)
@@ -55,7 +56,7 @@ public sealed partial class QrDialog : Window
         await using var stream = await file.OpenWriteAsync();
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(vm.Payload);
-        vm.StatusMessage = "Сохранено.";
+        vm.StatusMessage = Loc.Instance.Get("QrCode_Saved");
     }
 
     private void OnClose(object? sender, RoutedEventArgs e)

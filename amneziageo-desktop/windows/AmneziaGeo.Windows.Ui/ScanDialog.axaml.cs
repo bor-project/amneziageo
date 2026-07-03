@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using AmneziaGeo.Windows.Ui.Services;
 using AmneziaGeo.Windows.Ui.ViewModels;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui;
 
@@ -49,7 +50,7 @@ public sealed partial class ScanDialog : Window
         var imported = VpnLinkCodec.TryDecodeQr(text);
         if (imported is null)
         {
-            vm.StatusMessage = "QR распознан, но это не конфигурация - продолжаю…";
+            vm.StatusMessage = Loc.Instance.Get("ScanCode_QrNotConfig");
             return;
         }
 

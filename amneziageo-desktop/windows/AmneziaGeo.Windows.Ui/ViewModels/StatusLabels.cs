@@ -1,5 +1,6 @@
 using Avalonia.Media;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -20,13 +21,13 @@ internal static class StatusLabels
     {
         return status switch
         {
-            ConnectionStatus.Connected => "Подключено",
-            ConnectionStatus.Connecting => "Подключение",
-            ConnectionStatus.Disconnecting => "Отключение",
-            ConnectionStatus.Disconnected => "Отключено",
-            ConnectionStatus.Preempted => "Вытеснено",
-            ConnectionStatus.Failed => "Сбой",
-            _ => "Простаивает",
+            ConnectionStatus.Connected => Loc.Instance.Get("Status_Connected"),
+            ConnectionStatus.Connecting => Loc.Instance.Get("Status_Connecting"),
+            ConnectionStatus.Disconnecting => Loc.Instance.Get("Status_Disconnecting"),
+            ConnectionStatus.Disconnected => Loc.Instance.Get("Status_Disconnected"),
+            ConnectionStatus.Preempted => Loc.Instance.Get("Status_Preempted"),
+            ConnectionStatus.Failed => Loc.Instance.Get("Status_Failed"),
+            _ => Loc.Instance.Get("Status_Idle"),
         };
     }
 

@@ -1,3 +1,5 @@
+using AmneziaGeo.Localization;
+
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>The kind of a <see cref="ConfigChoice"/> exposed to the profile's config combo.</summary>
@@ -22,13 +24,13 @@ internal enum ConfigChoiceKind
 internal sealed record ConfigChoice(string Name, ConfigChoiceKind Kind = ConfigChoiceKind.Real)
 {
     /// <summary>The synthetic "no config" choice.</summary>
-    public static ConfigChoice None { get; } = new("— не выбрано —", ConfigChoiceKind.None);
+    public static ConfigChoice None { get; } = new(Loc.Instance.Get("ConfigChoice_NoneLabel"), ConfigChoiceKind.None);
 
     /// <summary>
     /// The synthetic "create a new config" choice: picking it redirects to the Config section to add one,
     /// mirroring the "+ Новый список" sentinel in the routing-list combo.
     /// </summary>
-    public static ConfigChoice NewConfig { get; } = new("+ Новая конфигурация", ConfigChoiceKind.New);
+    public static ConfigChoice NewConfig { get; } = new(Loc.Instance.Get("ConfigChoice_NewLabel"), ConfigChoiceKind.New);
 
     /// <summary>True for the synthetic "no config" choice.</summary>
     public bool IsNone => Kind == ConfigChoiceKind.None;

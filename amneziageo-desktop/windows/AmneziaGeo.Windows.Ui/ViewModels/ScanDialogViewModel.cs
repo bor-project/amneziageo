@@ -1,5 +1,6 @@
 using Avalonia.Media.Imaging;
 using AmneziaGeo.Windows.Ui.Services;
+using AmneziaGeo.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
@@ -14,7 +15,7 @@ internal sealed partial class ScanDialogViewModel : ViewModelBase
     private Bitmap? _preview;
 
     [ObservableProperty]
-    private string _statusMessage = "Наведите камеру на QR-код…";
+    private string _statusMessage = Loc.Instance.Get("ScanVm_AimCameraAtQr");
 
     /// <summary>The decoded config once a valid QR is read.</summary>
     public VpnLinkCodec.Imported? Result { get; set; }

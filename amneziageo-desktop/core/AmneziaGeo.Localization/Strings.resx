@@ -652,4 +652,361 @@
   <data name="Scan_Title" xml:space="preserve">
     <value>Scan QR from camera</value>
   </data>
+  <data name="Balancer_ConnectAction" xml:space="preserve">
+    <value>Connect</value>
+  </data>
+  <data name="Balancer_NoConfig" xml:space="preserve">
+    <value>no configuration</value>
+  </data>
+  <data name="Balancer_SwitchAction" xml:space="preserve">
+    <value>Switch</value>
+  </data>
+  <data name="BundleExportCode_CopiedToClipboard" xml:space="preserve">
+    <value>Copied to clipboard.</value>
+  </data>
+  <data name="BundleExportCode_SaveBundleTitle" xml:space="preserve">
+    <value>Save bundle</value>
+  </data>
+  <data name="BundleExportCode_Saved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="BundleExportVm_NoConfiguration" xml:space="preserve">
+    <value>no configuration</value>
+  </data>
+  <data name="BundleImportCode_BundleFileTitle" xml:space="preserve">
+    <value>Bundle file</value>
+  </data>
+  <data name="BundleImportCode_ClipboardEmpty" xml:space="preserve">
+    <value>The clipboard contains no text.</value>
+  </data>
+  <data name="BundleImportVm_PasteOrLoadBundle" xml:space="preserve">
+    <value>Paste or load the bundle file contents.</value>
+  </data>
+  <data name="ConfigChoice_NewLabel" xml:space="preserve">
+    <value>+ New configuration</value>
+  </data>
+  <data name="ConfigChoice_NoneLabel" xml:space="preserve">
+    <value>— not selected —</value>
+  </data>
+  <data name="ConfigEditorVm_NotAConfig" xml:space="preserve">
+    <value>This does not look like a WireGuard/AmneziaWG configuration ([Interface] and [Peer] are required).</value>
+  </data>
+  <data name="ConfigEditorVm_TitleEdit" xml:space="preserve">
+    <value>Editing: {0}</value>
+  </data>
+  <data name="ConfigEditorVm_TitleNew" xml:space="preserve">
+    <value>Manual configuration</value>
+  </data>
+  <data name="Exclusions_AllLocalSubnetsPresent" xml:space="preserve">
+    <value>All local subnets are already in the list.</value>
+  </data>
+  <data name="Exclusions_LocalSubnetsAdded" xml:space="preserve">
+    <value>Local subnets added: {0}. Review the list and click «Save».</value>
+  </data>
+  <data name="Exclusions_NoActiveLocalSubnets" xml:space="preserve">
+    <value>No active local subnets found.</value>
+  </data>
+  <data name="ExportCode_CopiedToClipboard" xml:space="preserve">
+    <value>Copied to clipboard.</value>
+  </data>
+  <data name="ExportCode_SaveConfigTitle" xml:space="preserve">
+    <value>Save configuration</value>
+  </data>
+  <data name="ExportCode_Saved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="ExportVm_NotWireGuardConfig" xml:space="preserve">
+    <value>Doesn't look like a WireGuard/AmneziaWG configuration (needs [Interface] and [Peer]).</value>
+  </data>
+  <data name="ExportVm_Saved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="InstalledApps_Installed" xml:space="preserve">
+    <value>{0} · installed</value>
+  </data>
+  <data name="MainCode_AppFolderTitle" xml:space="preserve">
+    <value>Application folder</value>
+  </data>
+  <data name="MainCode_ApplicationTitle" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="MainCode_ClipboardNoText" xml:space="preserve">
+    <value>There is no text in the clipboard.</value>
+  </data>
+  <data name="MainCode_ClipboardNotRecognized" xml:space="preserve">
+    <value>The clipboard text was not recognized as a configuration (.conf, vpn://, JSON).</value>
+  </data>
+  <data name="MainCode_ConfigurationTitle" xml:space="preserve">
+    <value>Configuration</value>
+  </data>
+  <data name="MainCode_CopiedToClipboard" xml:space="preserve">
+    <value>Copied to clipboard.</value>
+  </data>
+  <data name="MainCode_DeleteDatabase" xml:space="preserve">
+    <value>Delete database</value>
+  </data>
+  <data name="MainCode_LogsCollectedAndSaved" xml:space="preserve">
+    <value>Logs collected and saved.</value>
+  </data>
+  <data name="MainCode_LogsSaveFailed" xml:space="preserve">
+    <value>Failed to save logs: {0}</value>
+  </data>
+  <data name="MainCode_QrImageTitle" xml:space="preserve">
+    <value>QR image</value>
+  </data>
+  <data name="MainCode_QrNotConfig" xml:space="preserve">
+    <value>QR recognized, but it is not a configuration</value>
+  </data>
+  <data name="MainCode_QrNotFound" xml:space="preserve">
+    <value>No QR code found in the image</value>
+  </data>
+  <data name="MainCode_QrRecognizedPressSave" xml:space="preserve">
+    <value>QR recognized - press «Save»</value>
+  </data>
+  <data name="MainCode_ReadyPressSave" xml:space="preserve">
+    <value>Ready - press «Save».</value>
+  </data>
+  <data name="MainCode_RecognizedPressSave" xml:space="preserve">
+    <value>Recognized — press «Save».</value>
+  </data>
+  <data name="MainCode_RoutingListQrTitle" xml:space="preserve">
+    <value>Routing list QR</value>
+  </data>
+  <data name="MainCode_RoutingListTitle" xml:space="preserve">
+    <value>Routing list</value>
+  </data>
+  <data name="MainCode_SaveConfigTitle" xml:space="preserve">
+    <value>Save configuration</value>
+  </data>
+  <data name="MainCode_SaveLogsForSupportTitle" xml:space="preserve">
+    <value>Save logs for support</value>
+  </data>
+  <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
+    <value>Save routing list</value>
+  </data>
+  <data name="MainCode_SaveWebSocketTitle" xml:space="preserve">
+    <value>Save WebSocket settings</value>
+  </data>
+  <data name="MainCode_Saved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="MainCode_UpdateDatabase" xml:space="preserve">
+    <value>Update database</value>
+  </data>
+  <data name="MainCode_WebSocketSettingsTitle" xml:space="preserve">
+    <value>WebSocket settings</value>
+  </data>
+  <data name="MainCode_ZipArchive" xml:space="preserve">
+    <value>ZIP archive</value>
+  </data>
+  <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
+    <value>Not recognized (.conf or vpn://)</value>
+  </data>
+  <data name="MainVm_Connect" xml:space="preserve">
+    <value>Connect</value>
+  </data>
+  <data name="MainVm_ConnectHintClickToConnect" xml:space="preserve">
+    <value>Click to connect</value>
+  </data>
+  <data name="MainVm_ConnectHintClickToDisconnect" xml:space="preserve">
+    <value>Click to disconnect</value>
+  </data>
+  <data name="MainVm_ConnectHintConnecting" xml:space="preserve">
+    <value>Establishing connection…</value>
+  </data>
+  <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
+    <value>The profile has no configuration — set one in settings</value>
+  </data>
+  <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
+    <value>Select a profile</value>
+  </data>
+  <data name="MainVm_DiagnosticsFailed" xml:space="preserve">
+    <value>Could not collect logs.</value>
+  </data>
+  <data name="MainVm_Disconnect" xml:space="preserve">
+    <value>Disconnect</value>
+  </data>
+  <data name="MainVm_LogLevelDebug" xml:space="preserve">
+    <value>Debug</value>
+  </data>
+  <data name="MainVm_LogLevelNormal" xml:space="preserve">
+    <value>Normal</value>
+  </data>
+  <data name="MainVm_LogLevelTrace" xml:space="preserve">
+    <value>Trace</value>
+  </data>
+  <data name="MainVm_NewProfileDefaultName" xml:space="preserve">
+    <value>New profile</value>
+  </data>
+  <data name="MainVm_NoAgentConnection" xml:space="preserve">
+    <value>No connection to the agent</value>
+  </data>
+  <data name="MainVm_NotAvailable" xml:space="preserve">
+    <value>n/a</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
+    <value>Could not connect - the server did not respond.</value>
+  </data>
+  <data name="MainVm_NoticeProfileEmpty" xml:space="preserve">
+    <value>Profile «{0}» is empty - add a configuration.</value>
+  </data>
+  <data name="MainVm_NoticeProfileSelected" xml:space="preserve">
+    <value>Profile «{0}» selected. Reconnect to apply.</value>
+  </data>
+  <data name="MainVm_NoticeSettingsChanged" xml:space="preserve">
+    <value>Settings changed. Reconnect to apply.</value>
+  </data>
+  <data name="MainVm_UpdateChecking" xml:space="preserve">
+    <value>Checking…</value>
+  </data>
+  <data name="MainVm_UpdateDownloading" xml:space="preserve">
+    <value>Downloading installer…</value>
+  </data>
+  <data name="MainVm_UpdateError" xml:space="preserve">
+    <value>Error: {0}</value>
+  </data>
+  <data name="MainVm_UpdateLaunching" xml:space="preserve">
+    <value>Launching installer…</value>
+  </data>
+  <data name="ProfileChoice_NewLabel" xml:space="preserve">
+    <value>+ New profile</value>
+  </data>
+  <data name="ProfileChoice_NoneLabel" xml:space="preserve">
+    <value>— none —</value>
+  </data>
+  <data name="QrCode_CopiedToClipboard" xml:space="preserve">
+    <value>Copied to clipboard.</value>
+  </data>
+  <data name="QrCode_SaveTitle" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="QrCode_Saved" xml:space="preserve">
+    <value>Saved.</value>
+  </data>
+  <data name="QrScanner_CameraNotFound" xml:space="preserve">
+    <value>Camera not found</value>
+  </data>
+  <data name="RoutingChoice_NewList" xml:space="preserve">
+    <value>+ New list</value>
+  </data>
+  <data name="RoutingChoice_None" xml:space="preserve">
+    <value>- not set -</value>
+  </data>
+  <data name="RoutingEditor_AddAtLeastOneEntry" xml:space="preserve">
+    <value>Add at least one entry to save the list.</value>
+  </data>
+  <data name="RoutingEditor_AppKindApplication" xml:space="preserve">
+    <value>{0} · application</value>
+  </data>
+  <data name="RoutingEditor_AppKindService" xml:space="preserve">
+    <value>{0} · service</value>
+  </data>
+  <data name="RoutingEditor_AppWatermarkInstalled" xml:space="preserve">
+    <value>installed application name</value>
+  </data>
+  <data name="RoutingEditor_AppWatermarkRunning" xml:space="preserve">
+    <value>running application or service name</value>
+  </data>
+  <data name="RoutingEditor_EmptyPath" xml:space="preserve">
+    <value>Empty path.</value>
+  </data>
+  <data name="RoutingEditor_EnterRuleName" xml:space="preserve">
+    <value>Enter a rule name</value>
+  </data>
+  <data name="RoutingEditor_ImportedRules" xml:space="preserve">
+    <value>Imported rules: {0}.</value>
+  </data>
+  <data name="RoutingEditor_ImportedRulesNeedName" xml:space="preserve">
+    <value>Imported rules: {0}. Enter a name to save.</value>
+  </data>
+  <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
+    <value>This does not look like a routing list.</value>
+  </data>
+  <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
+    <value>Path is too broad — select a specific application folder.</value>
+  </data>
+  <data name="RoutingEditor_Saved" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="RoutingEditor_SelectAppOrService" xml:space="preserve">
+    <value>Select an application or service from the list.</value>
+  </data>
+  <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
+    <value>svchost.exe is a shared service host and would tunnel a lot of unrelated traffic. Select a service from the list.</value>
+  </data>
+  <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
+    <value>All local subnets are already in the list.</value>
+  </data>
+  <data name="RoutingSettings_LocalSubnetsAdded" xml:space="preserve">
+    <value>Local subnets added: {0}. Review the list and press «Save».</value>
+  </data>
+  <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
+    <value>No active local subnets found.</value>
+  </data>
+  <data name="RoutingSummary_Detail" xml:space="preserve">
+    <value>{0} rules · {1} routes · {2} domains</value>
+  </data>
+  <data name="ScanCode_QrNotConfig" xml:space="preserve">
+    <value>QR recognized, but it is not a configuration - continuing…</value>
+  </data>
+  <data name="ScanVm_AimCameraAtQr" xml:space="preserve">
+    <value>Point the camera at the QR code…</value>
+  </data>
+  <data name="Source_DetailError" xml:space="preserve">
+    <value>{0} · error: {1}</value>
+  </data>
+  <data name="Source_DetailLoaded" xml:space="preserve">
+    <value>{0} · {1} categories · {2}</value>
+  </data>
+  <data name="Source_DetailNotLoaded" xml:space="preserve">
+    <value>{0} · not loaded</value>
+  </data>
+  <data name="Status_Connected" xml:space="preserve">
+    <value>Connected</value>
+  </data>
+  <data name="Status_Connecting" xml:space="preserve">
+    <value>Connecting</value>
+  </data>
+  <data name="Status_Disconnected" xml:space="preserve">
+    <value>Disconnected</value>
+  </data>
+  <data name="Status_Disconnecting" xml:space="preserve">
+    <value>Disconnecting</value>
+  </data>
+  <data name="Status_Failed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="Status_Idle" xml:space="preserve">
+    <value>Idle</value>
+  </data>
+  <data name="Status_Preempted" xml:space="preserve">
+    <value>Preempted</value>
+  </data>
+  <data name="Transport_HintBasicAuth" xml:space="preserve">
+    <value>"Login and password" authorization: the client sends an Authorization: Basic header. On the server, enable verification - wstunnel is started with --restrict-config &lt;yaml&gt;, where the allowed login/password (Authorization) is set. The login/password do NOT have to match the AmneziaWG config.</value>
+  </data>
+  <data name="Transport_HintCert" xml:space="preserve">
+    <value>Where fullchain/privkey is the server's existing certificate.</value>
+  </data>
+  <data name="Transport_HintFirewall" xml:space="preserve">
+    <value>Open TCP {0} in the firewall. The client will tunnel AmneziaWG UDP into this WebSocket.</value>
+  </data>
+  <data name="Transport_HintIntro" xml:space="preserve">
+    <value>On the server: install wstunnel and run it as a service with the command</value>
+  </data>
+  <data name="Transport_HintTokenAuth" xml:space="preserve">
+    <value>"Token" authorization: the access token in the URL must EXACTLY match --restrict-http-upgrade-path-prefix on the server (and it also blocks blind scanning).</value>
+  </data>
+  <data name="Transport_Imported" xml:space="preserve">
+    <value>Imported - press "Save" to apply.</value>
+  </data>
+  <data name="Transport_InvalidMtu" xml:space="preserve">
+    <value>MTU: 576-1500 (empty = 1280).</value>
+  </data>
+  <data name="Transport_InvalidPort" xml:space="preserve">
+    <value>Enter a valid WebSocket port (1-65535).</value>
+  </data>
+  <data name="Transport_NotWebSocketBlob" xml:space="preserve">
+    <value>This does not look like WebSocket settings.</value>
+  </data>
 </root>

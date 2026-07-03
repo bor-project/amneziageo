@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using AmneziaGeo.Localization;
 using Avalonia.Media.Imaging;
 using FlashCap;
 
@@ -27,7 +28,7 @@ internal sealed class QrCameraScanner(Action<Bitmap> onPreview, Action<string> o
             .FirstOrDefault(d => d.Characteristics.Length > 0);
         if (descriptor is null)
         {
-            throw new InvalidOperationException("Камера не найдена");
+            throw new InvalidOperationException(Loc.Instance.Get("QrScanner_CameraNotFound"));
         }
 
         _device = await descriptor.OpenAsync(descriptor.Characteristics[0], OnFrameAsync);

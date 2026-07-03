@@ -652,4 +652,361 @@
   <data name="Scan_Title" xml:space="preserve">
     <value>Сканировать QR с камеры</value>
   </data>
+  <data name="Balancer_ConnectAction" xml:space="preserve">
+    <value>Подключить</value>
+  </data>
+  <data name="Balancer_NoConfig" xml:space="preserve">
+    <value>нет конфигурации</value>
+  </data>
+  <data name="Balancer_SwitchAction" xml:space="preserve">
+    <value>Переключить</value>
+  </data>
+  <data name="BundleExportCode_CopiedToClipboard" xml:space="preserve">
+    <value>Скопировано в буфер обмена.</value>
+  </data>
+  <data name="BundleExportCode_SaveBundleTitle" xml:space="preserve">
+    <value>Сохранить бандл</value>
+  </data>
+  <data name="BundleExportCode_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="BundleExportVm_NoConfiguration" xml:space="preserve">
+    <value>нет конфигурации</value>
+  </data>
+  <data name="BundleImportCode_BundleFileTitle" xml:space="preserve">
+    <value>Файл бандла</value>
+  </data>
+  <data name="BundleImportCode_ClipboardEmpty" xml:space="preserve">
+    <value>В буфере обмена нет текста.</value>
+  </data>
+  <data name="BundleImportVm_PasteOrLoadBundle" xml:space="preserve">
+    <value>Вставьте или загрузите содержимое файла бандла.</value>
+  </data>
+  <data name="ConfigChoice_NewLabel" xml:space="preserve">
+    <value>+ Новая конфигурация</value>
+  </data>
+  <data name="ConfigChoice_NoneLabel" xml:space="preserve">
+    <value>— не выбрано —</value>
+  </data>
+  <data name="ConfigEditorVm_NotAConfig" xml:space="preserve">
+    <value>Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).</value>
+  </data>
+  <data name="ConfigEditorVm_TitleEdit" xml:space="preserve">
+    <value>Редактирование: {0}</value>
+  </data>
+  <data name="ConfigEditorVm_TitleNew" xml:space="preserve">
+    <value>Конфигурация вручную</value>
+  </data>
+  <data name="Exclusions_AllLocalSubnetsPresent" xml:space="preserve">
+    <value>Все локальные сети уже в списке.</value>
+  </data>
+  <data name="Exclusions_LocalSubnetsAdded" xml:space="preserve">
+    <value>Добавлено локальных сетей: {0}. Проверьте список и нажмите «Сохранить».</value>
+  </data>
+  <data name="Exclusions_NoActiveLocalSubnets" xml:space="preserve">
+    <value>Активные локальные сети не обнаружены.</value>
+  </data>
+  <data name="ExportCode_CopiedToClipboard" xml:space="preserve">
+    <value>Скопировано в буфер обмена.</value>
+  </data>
+  <data name="ExportCode_SaveConfigTitle" xml:space="preserve">
+    <value>Сохранить конфигурацию</value>
+  </data>
+  <data name="ExportCode_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="ExportVm_NotWireGuardConfig" xml:space="preserve">
+    <value>Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).</value>
+  </data>
+  <data name="ExportVm_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="InstalledApps_Installed" xml:space="preserve">
+    <value>{0} · установлено</value>
+  </data>
+  <data name="MainCode_AppFolderTitle" xml:space="preserve">
+    <value>Папка приложения</value>
+  </data>
+  <data name="MainCode_ApplicationTitle" xml:space="preserve">
+    <value>Приложение</value>
+  </data>
+  <data name="MainCode_ClipboardNoText" xml:space="preserve">
+    <value>В буфере обмена нет текста.</value>
+  </data>
+  <data name="MainCode_ClipboardNotRecognized" xml:space="preserve">
+    <value>Текст в буфере не распознан как конфигурация (.conf, vpn://, JSON).</value>
+  </data>
+  <data name="MainCode_ConfigurationTitle" xml:space="preserve">
+    <value>Конфигурация</value>
+  </data>
+  <data name="MainCode_CopiedToClipboard" xml:space="preserve">
+    <value>Скопировано в буфер обмена.</value>
+  </data>
+  <data name="MainCode_DeleteDatabase" xml:space="preserve">
+    <value>Удалить базу</value>
+  </data>
+  <data name="MainCode_LogsCollectedAndSaved" xml:space="preserve">
+    <value>Логи собраны и сохранены.</value>
+  </data>
+  <data name="MainCode_LogsSaveFailed" xml:space="preserve">
+    <value>Не удалось сохранить логи: {0}</value>
+  </data>
+  <data name="MainCode_QrImageTitle" xml:space="preserve">
+    <value>QR-картинка</value>
+  </data>
+  <data name="MainCode_QrNotConfig" xml:space="preserve">
+    <value>QR распознан, но это не конфигурация</value>
+  </data>
+  <data name="MainCode_QrNotFound" xml:space="preserve">
+    <value>QR-код не найден на картинке</value>
+  </data>
+  <data name="MainCode_QrRecognizedPressSave" xml:space="preserve">
+    <value>QR распознан - нажмите «Сохранить»</value>
+  </data>
+  <data name="MainCode_ReadyPressSave" xml:space="preserve">
+    <value>Готово - нажмите «Сохранить».</value>
+  </data>
+  <data name="MainCode_RecognizedPressSave" xml:space="preserve">
+    <value>Распознано — нажмите «Сохранить».</value>
+  </data>
+  <data name="MainCode_RoutingListQrTitle" xml:space="preserve">
+    <value>QR списка маршрутизации</value>
+  </data>
+  <data name="MainCode_RoutingListTitle" xml:space="preserve">
+    <value>Список маршрутизации</value>
+  </data>
+  <data name="MainCode_SaveConfigTitle" xml:space="preserve">
+    <value>Сохранить конфигурацию</value>
+  </data>
+  <data name="MainCode_SaveLogsForSupportTitle" xml:space="preserve">
+    <value>Сохранить логи для поддержки</value>
+  </data>
+  <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
+    <value>Сохранить список маршрутизации</value>
+  </data>
+  <data name="MainCode_SaveWebSocketTitle" xml:space="preserve">
+    <value>Сохранить настройки WebSocket</value>
+  </data>
+  <data name="MainCode_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="MainCode_UpdateDatabase" xml:space="preserve">
+    <value>Обновить базу</value>
+  </data>
+  <data name="MainCode_WebSocketSettingsTitle" xml:space="preserve">
+    <value>Настройки WebSocket</value>
+  </data>
+  <data name="MainCode_ZipArchive" xml:space="preserve">
+    <value>ZIP-архив</value>
+  </data>
+  <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
+    <value>Не распознано (.conf или vpn://)</value>
+  </data>
+  <data name="MainVm_Connect" xml:space="preserve">
+    <value>Подключить</value>
+  </data>
+  <data name="MainVm_ConnectHintClickToConnect" xml:space="preserve">
+    <value>Нажмите, чтобы подключиться</value>
+  </data>
+  <data name="MainVm_ConnectHintClickToDisconnect" xml:space="preserve">
+    <value>Нажмите, чтобы отключиться</value>
+  </data>
+  <data name="MainVm_ConnectHintConnecting" xml:space="preserve">
+    <value>Устанавливается соединение…</value>
+  </data>
+  <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
+    <value>У профиля нет конфигурации — задайте её в настройках</value>
+  </data>
+  <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
+    <value>Выберите профиль</value>
+  </data>
+  <data name="MainVm_DiagnosticsFailed" xml:space="preserve">
+    <value>Не удалось собрать логи.</value>
+  </data>
+  <data name="MainVm_Disconnect" xml:space="preserve">
+    <value>Отключить</value>
+  </data>
+  <data name="MainVm_LogLevelDebug" xml:space="preserve">
+    <value>Отладка</value>
+  </data>
+  <data name="MainVm_LogLevelNormal" xml:space="preserve">
+    <value>Обычный</value>
+  </data>
+  <data name="MainVm_LogLevelTrace" xml:space="preserve">
+    <value>Трасса</value>
+  </data>
+  <data name="MainVm_NewProfileDefaultName" xml:space="preserve">
+    <value>Новый профиль</value>
+  </data>
+  <data name="MainVm_NoAgentConnection" xml:space="preserve">
+    <value>Нет связи с агентом</value>
+  </data>
+  <data name="MainVm_NotAvailable" xml:space="preserve">
+    <value>н/д</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
+    <value>Не удалось подключиться - сервер не ответил.</value>
+  </data>
+  <data name="MainVm_NoticeProfileEmpty" xml:space="preserve">
+    <value>Профиль «{0}» пуст - добавьте конфигурацию.</value>
+  </data>
+  <data name="MainVm_NoticeProfileSelected" xml:space="preserve">
+    <value>Выбран профиль «{0}». Переподключитесь, чтобы применить.</value>
+  </data>
+  <data name="MainVm_NoticeSettingsChanged" xml:space="preserve">
+    <value>Настройки изменены. Переподключитесь, чтобы применить.</value>
+  </data>
+  <data name="MainVm_UpdateChecking" xml:space="preserve">
+    <value>Проверка…</value>
+  </data>
+  <data name="MainVm_UpdateDownloading" xml:space="preserve">
+    <value>Загрузка установщика…</value>
+  </data>
+  <data name="MainVm_UpdateError" xml:space="preserve">
+    <value>Ошибка: {0}</value>
+  </data>
+  <data name="MainVm_UpdateLaunching" xml:space="preserve">
+    <value>Запуск установщика…</value>
+  </data>
+  <data name="ProfileChoice_NewLabel" xml:space="preserve">
+    <value>+ Новый профиль</value>
+  </data>
+  <data name="ProfileChoice_NoneLabel" xml:space="preserve">
+    <value>— не выбрано —</value>
+  </data>
+  <data name="QrCode_CopiedToClipboard" xml:space="preserve">
+    <value>Скопировано в буфер обмена.</value>
+  </data>
+  <data name="QrCode_SaveTitle" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="QrCode_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="QrScanner_CameraNotFound" xml:space="preserve">
+    <value>Камера не найдена</value>
+  </data>
+  <data name="RoutingChoice_NewList" xml:space="preserve">
+    <value>+ Новый список</value>
+  </data>
+  <data name="RoutingChoice_None" xml:space="preserve">
+    <value>- не задан -</value>
+  </data>
+  <data name="RoutingEditor_AddAtLeastOneEntry" xml:space="preserve">
+    <value>Добавьте хотя бы одну запись, чтобы сохранить список.</value>
+  </data>
+  <data name="RoutingEditor_AppKindApplication" xml:space="preserve">
+    <value>{0} · приложение</value>
+  </data>
+  <data name="RoutingEditor_AppKindService" xml:space="preserve">
+    <value>{0} · служба</value>
+  </data>
+  <data name="RoutingEditor_AppWatermarkInstalled" xml:space="preserve">
+    <value>имя установленного приложения</value>
+  </data>
+  <data name="RoutingEditor_AppWatermarkRunning" xml:space="preserve">
+    <value>имя запущенного приложения или службы</value>
+  </data>
+  <data name="RoutingEditor_EmptyPath" xml:space="preserve">
+    <value>Пустой путь.</value>
+  </data>
+  <data name="RoutingEditor_EnterRuleName" xml:space="preserve">
+    <value>Введите имя правила</value>
+  </data>
+  <data name="RoutingEditor_ImportedRules" xml:space="preserve">
+    <value>Импортировано правил: {0}.</value>
+  </data>
+  <data name="RoutingEditor_ImportedRulesNeedName" xml:space="preserve">
+    <value>Импортировано правил: {0}. Введите имя, чтобы сохранить.</value>
+  </data>
+  <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
+    <value>Не похоже на список маршрутизации.</value>
+  </data>
+  <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
+    <value>Слишком широкий путь — выберите конкретную папку приложения.</value>
+  </data>
+  <data name="RoutingEditor_Saved" xml:space="preserve">
+    <value>Сохранено</value>
+  </data>
+  <data name="RoutingEditor_SelectAppOrService" xml:space="preserve">
+    <value>Выберите приложение или службу из списка.</value>
+  </data>
+  <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
+    <value>svchost.exe — общий хост служб, затуннелит много чужого. Выберите службу из списка.</value>
+  </data>
+  <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
+    <value>Все локальные сети уже в списке.</value>
+  </data>
+  <data name="RoutingSettings_LocalSubnetsAdded" xml:space="preserve">
+    <value>Добавлено локальных сетей: {0}. Проверьте список и нажмите «Сохранить».</value>
+  </data>
+  <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
+    <value>Активные локальные сети не обнаружены.</value>
+  </data>
+  <data name="RoutingSummary_Detail" xml:space="preserve">
+    <value>{0} правил · {1} маршрутов · {2} доменов</value>
+  </data>
+  <data name="ScanCode_QrNotConfig" xml:space="preserve">
+    <value>QR распознан, но это не конфигурация - продолжаю…</value>
+  </data>
+  <data name="ScanVm_AimCameraAtQr" xml:space="preserve">
+    <value>Наведите камеру на QR-код…</value>
+  </data>
+  <data name="Source_DetailError" xml:space="preserve">
+    <value>{0} · ошибка: {1}</value>
+  </data>
+  <data name="Source_DetailLoaded" xml:space="preserve">
+    <value>{0} · {1} категорий · {2}</value>
+  </data>
+  <data name="Source_DetailNotLoaded" xml:space="preserve">
+    <value>{0} · не загружен</value>
+  </data>
+  <data name="Status_Connected" xml:space="preserve">
+    <value>Подключено</value>
+  </data>
+  <data name="Status_Connecting" xml:space="preserve">
+    <value>Подключение</value>
+  </data>
+  <data name="Status_Disconnected" xml:space="preserve">
+    <value>Отключено</value>
+  </data>
+  <data name="Status_Disconnecting" xml:space="preserve">
+    <value>Отключение</value>
+  </data>
+  <data name="Status_Failed" xml:space="preserve">
+    <value>Сбой</value>
+  </data>
+  <data name="Status_Idle" xml:space="preserve">
+    <value>Простаивает</value>
+  </data>
+  <data name="Status_Preempted" xml:space="preserve">
+    <value>Вытеснено</value>
+  </data>
+  <data name="Transport_HintBasicAuth" xml:space="preserve">
+    <value>Авторизация «логин и пароль»: клиент шлёт заголовок Authorization: Basic. На сервере включите проверку - wstunnel запускают с --restrict-config &lt;yaml&gt;, где задают разрешённый логин/пароль (Authorization). Логин/пароль НЕ обязаны совпадать с конфигом AmneziaWG.</value>
+  </data>
+  <data name="Transport_HintCert" xml:space="preserve">
+    <value>Где fullchain/privkey - уже имеющийся сертификат сервера.</value>
+  </data>
+  <data name="Transport_HintFirewall" xml:space="preserve">
+    <value>Откройте TCP {0} в фаерволе. Клиент завернёт UDP AmneziaWG в этот WebSocket.</value>
+  </data>
+  <data name="Transport_HintIntro" xml:space="preserve">
+    <value>На сервере: установите wstunnel и запустите его как службу с командой</value>
+  </data>
+  <data name="Transport_HintTokenAuth" xml:space="preserve">
+    <value>Авторизация «токен»: токен доступа в URL должен ТОЧНО совпадать с --restrict-http-upgrade-path-prefix на сервере (и заодно отсекает слепое сканирование).</value>
+  </data>
+  <data name="Transport_Imported" xml:space="preserve">
+    <value>Импортировано - нажмите «Сохранить», чтобы применить.</value>
+  </data>
+  <data name="Transport_InvalidMtu" xml:space="preserve">
+    <value>MTU: 576-1500 (пусто = 1280).</value>
+  </data>
+  <data name="Transport_InvalidPort" xml:space="preserve">
+    <value>Укажите корректный порт WebSocket (1-65535).</value>
+  </data>
+  <data name="Transport_NotWebSocketBlob" xml:space="preserve">
+    <value>Не похоже на настройки WebSocket.</value>
+  </data>
 </root>

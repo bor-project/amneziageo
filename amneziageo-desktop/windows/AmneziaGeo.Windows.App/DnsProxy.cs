@@ -243,7 +243,27 @@ internal sealed class DnsProxy
             else
             {
                 var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
-                var shared = ForwardCoalesced(name, type, query, upstream);
+                byte[] shared;
+                try
+                {
+                    shared = ForwardCoalesced(name, type, query, upstream);
+                }
+                catch (Exception ex)
+                {
+                    // Couldn't reach the upstream resolver (timeout / unreachable): the request did not get
+                    // through. Warn ("недостучались", visible at the default level) so a "site won't open"
+                    // report shows the DNS step failed - a MATCHED (tunneled) name failing here means the geo
+                    // resolver behind the tunnel is unreachable, the usual cause of a blocked site staying dark.
+                    var route = isLocal ? "lan" : matched ? "tunnel" : "local";
+                    _logger.LogWarning("dns query {Name} type={Type} -> {Route} unreachable: {Reason}", name, type, route, ex.Message);
+                    if (RouteLog.Enabled)
+                    {
+                        RouteLog.Note($"query {name} type={type} -> {route} UNREACHABLE: {ex.Message}");
+                    }
+
+                    return; // no answer; the client retries / times out as before
+                }
+
                 StoreInCache(name, type, shared);
                 // Coalesced followers share the leader's response buffer (and thus its transaction id),
                 // so answer each client with a copy carrying its OWN id.
@@ -264,7 +284,13 @@ internal sealed class DnsProxy
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "tracking matched domain failed");
+                    // Resolved, but its tunnel route / allowed-ip could not be installed: the matched domain
+                    // won't actually route through the tunnel. Warn (недостучались) - the answer still goes out.
+                    _logger.LogWarning(ex, "routing matched domain {Name} failed (route not installed)", name);
+                    if (RouteLog.Enabled)
+                    {
+                        RouteLog.Note($"route FAILED for {name}: {ex.Message}");
+                    }
                 }
             }
 
@@ -533,6 +559,18 @@ internal sealed class DnsProxy
                 }
                 catch (Exception)
                 {
+                }
+            }
+
+            // All attempts exhausted without an answer (and not because we were torn down): the rule host
+            // could not be pre-resolved through the tunnel resolver. Warn (недостучались) so a "this app is
+            // not tunneled" report shows its pre-seed failed - it may still route once it queries live.
+            if (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning("seed: rule host {Host} unreachable through the tunnel resolver", host);
+                if (RouteLog.Enabled)
+                {
+                    RouteLog.Note($"seed UNREACHABLE {host}");
                 }
             }
         }

@@ -477,6 +477,7 @@ internal sealed class DomainTracker(
             domains = [.. _current.Keys];
         }
 
+        var failed = 0;
         foreach (var domain in domains)
         {
             try
@@ -490,10 +491,22 @@ internal sealed class DomainTracker(
                 {
                     Update(domain, ips);
                 }
+                else
+                {
+                    failed++;
+                }
             }
             catch (Exception)
             {
+                failed++;
             }
+        }
+
+        // One Warn per cycle (not per domain) when tracked domains could not be re-resolved - couldn't reach
+        // DNS ("недостучались"). The previously resolved IPs are kept, so this is a heads-up, not a failure.
+        if (failed > 0)
+        {
+            logger.LogWarning("re-resolve for {Tunnel}: {Failed}/{Total} tracked domain(s) unreachable", tunnelName, failed, domains.Count);
         }
     }
 

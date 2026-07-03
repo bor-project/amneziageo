@@ -45,6 +45,11 @@ internal sealed class AppRouteWatcher
     // every process each second. Capped so a churn of short-lived PIDs cannot grow it without bound.
     private readonly Dictionary<uint, string?> _pathCache = [];
 
+    // Matched remote endpoints already written to the request log this session, so a persistent connection is
+    // logged once (as a new "request") rather than every 1s poll. Bounded; on overflow the set is dropped and
+    // each still-open remote is re-logged once.
+    private readonly HashSet<string> _loggedRemotes = new(StringComparer.Ordinal);
+
     public AppRouteWatcher(DomainTracker tracker, IReadOnlyList<string> matchers, ILogger logger)
     {
         _tracker = tracker;
@@ -146,7 +151,24 @@ internal sealed class AppRouteWatcher
 
             if (matched)
             {
-                matchedIps.Add(remote.ToString());
+                var key = remote.ToString();
+                matchedIps.Add(key);
+
+                // Log each newly-seen matched destination once as a "request" (Trace) - the real "куда
+                // обращается" for TCP - and mirror it into the routing log when enabled.
+                if (_loggedRemotes.Count >= 65536)
+                {
+                    _loggedRemotes.Clear();
+                }
+
+                if (_loggedRemotes.Add(key))
+                {
+                    _logger.LogTrace("tcp request -> {Remote} (pid {Pid})", remote, pid);
+                    if (RouteLog.Enabled)
+                    {
+                        RouteLog.Note($"tcp request -> {remote} (pid {pid})");
+                    }
+                }
             }
         }
 

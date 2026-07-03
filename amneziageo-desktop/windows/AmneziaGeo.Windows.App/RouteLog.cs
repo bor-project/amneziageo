@@ -1,13 +1,14 @@
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// A dedicated, separately toggleable routing log (#82 follow-up): every route-table change and every
-/// matched DNS resolution is appended, one line per action, to <c>routes.log</c> in the log directory when
-/// enabled. It is OFF by default and independent of the main log's verbosity, so a support engineer can ask
-/// the user to "включить лог маршрутизации", reproduce a "why isn't X routed / why is it slow" problem, and
-/// read exactly which /32 routes were installed for which domain and whether they succeeded - without the
-/// noise of a full Trace log. Enabled live in both processes (agent and per-tunnel service) via the
-/// "route-log" setting, applied on the same poll as the log level (<see cref="LogLevelWatcher"/>).
+/// A dedicated, separately toggleable routing log (#82 follow-up): every route-table change, every matched
+/// DNS resolution, and every outbound request destination (which address the client is reaching, from the DNS
+/// proxy and the app UDP/TCP watchers) is appended, one line per action, to <c>routes.log</c> in the log
+/// directory when enabled. It is OFF by default and independent of the main log's verbosity, so a support
+/// engineer can ask the user to "включить лог маршрутизации", reproduce a "why isn't X routed / why is it
+/// slow" problem, and read exactly where traffic went and which /32 routes were installed for which domain -
+/// without the noise of a full Trace log. Enabled live in both processes (agent and per-tunnel service) via
+/// the "route-log" setting, applied on the same poll as the log level (<see cref="LogLevelWatcher"/>).
 ///
 /// When disabled, <see cref="Write"/> returns on a single volatile read, so the instrumentation sprinkled
 /// through <see cref="RouteManager"/> and <see cref="DomainTracker"/> costs nothing on the hot resolve path.

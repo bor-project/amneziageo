@@ -158,6 +158,14 @@ internal sealed class UdpFlowTracker : IDisposable
             // yet, route add error) leaves it unseen so a later datagram retries it.
             if (_tracker.UpdateAppIps([remoteIp.ToString()]))
             {
+                // A new (deduped) UDP destination we actually tunneled - the real "куда обращается" for UDP,
+                // at Trace (a request). Mirrored into the routing log when enabled.
+                _logger.LogTrace("udp request -> {Remote} (pid {Pid})", remoteIp, pid);
+                if (RouteLog.Enabled)
+                {
+                    RouteLog.Note($"udp request -> {remoteIp} (pid {pid})");
+                }
+
                 MarkSeen(daddr);
             }
         }

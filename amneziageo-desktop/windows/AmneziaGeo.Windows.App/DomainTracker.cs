@@ -127,9 +127,18 @@ internal sealed class DomainTracker(
 
             _current[key] = fresh;
 
-            // Story line for the routing log (off by default): the resolution and what it changed, so a
-            // support engineer sees "domain -> ips" immediately above the /32 routes RouteManager then logs.
-            RouteLog.Note($"resolve {key} -> [{string.Join(",", fresh)}] (+{addedCidrs.Count} route(s), -{stale?.Count ?? 0})");
+            // Resolves at Info (visible at the default "Обычный" level): the meaningful domain -> IPs event.
+            // Logged only when the set actually changed (an unchanged re-resolve returned above), so a periodic
+            // re-resolve that yields the same IPs never spams the log.
+            logger.LogInformation("resolved {Domain} -> {Ips}", key, string.Join(", ", fresh));
+
+            // The same story line for the routing log (off by default): the resolution and what it changed, so
+            // a support engineer sees "domain -> ips" immediately above the /32 routes RouteManager then logs.
+            // Guarded so the interpolation is skipped on the hot resolve path when the routing log is disabled.
+            if (RouteLog.Enabled)
+            {
+                RouteLog.Note($"resolve {key} -> [{string.Join(",", fresh)}] (+{addedCidrs.Count} route(s), -{stale?.Count ?? 0})");
+            }
 
             // A removal can only be expressed by replacing the whole peer set (the UAPI has no delete-one-
             // allowed-ip), so churn from the background re-resolve still pays the full O(total) push. But the

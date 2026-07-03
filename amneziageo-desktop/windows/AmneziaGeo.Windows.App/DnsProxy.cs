@@ -198,11 +198,24 @@ internal sealed class DnsProxy
             // else uses the local resolver so coexisting / corporate names keep resolving.
             var matched = !isLocal && name is not null && _matcher.IsTunneled(name);
 
-            // DIAG: log only geo-MATCHED queries (the domains the user configured to route) so a
-            // "X not routed" report can be localised, without logging every name the system resolves.
-            if (matched && name is not null)
+            // Every DNS query is a "request" - the address the client is about to reach. Logged at Trace (the
+            // verbose per-request detail a support engineer turns on) with its routing decision, and mirrored
+            // into the routing log when that is enabled, so "куда идут запросы / куда обращается" is answerable
+            // from the logs. The matched (tunneled) subset is also kept at Debug so a "X not routed" report is
+            // diagnosable without full Trace.
+            if (name is not null)
             {
-                _logger.LogDebug("DIAG dns matched {Name} type={Type} -> tunnel {Up}", name, type, _tunnelUpstream);
+                var route = isLocal ? "lan" : matched ? "tunnel" : "local";
+                _logger.LogTrace("dns query {Name} type={Type} -> {Route}", name, type, route);
+                if (matched)
+                {
+                    _logger.LogDebug("dns matched {Name} type={Type} -> tunnel {Up}", name, type, _tunnelUpstream);
+                }
+
+                if (RouteLog.Enabled)
+                {
+                    RouteLog.Note($"query {name} type={type} -> {route}");
+                }
             }
 
             byte[] response;

@@ -1,4 +1,5 @@
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Ui.Services;
 
@@ -41,11 +42,17 @@ internal sealed class AgentConnection : IDisposable
     }
 
     /// <summary>
-    /// Sends a command to the agent and returns its acknowledgement.
+    /// Sends a command to the agent and returns its acknowledgement, localizing the reply here - the single
+    /// choke point every UI command flows through (#106). The agent, which does not localize, may reply with a
+    /// marker-encoded resource key; it becomes its translation in the current UI language. A raw reply (a
+    /// config payload, a file path, an exception message) carries no marker and passes through unchanged.
     /// </summary>
-    public Task<IpcAck> SendCommandAsync(IpcCommand command)
+    public async Task<IpcAck> SendCommandAsync(IpcCommand command)
     {
-        return _client.SendCommandAsync(command, _cts.Token);
+        var ack = await _client.SendCommandAsync(command, _cts.Token);
+        return IpcMessage.TryParse(ack.Message, out var key, out var args)
+            ? ack with { Message = Loc.Instance.Get(key, args) }
+            : ack;
     }
 
     /// <inheritdoc/>

@@ -1021,4 +1021,126 @@
   <data name="Unit_Hours" xml:space="preserve">
     <value>h</value>
   </data>
+  <data name="Agent_BundleImported" xml:space="preserve">
+    <value>Imported: {0} configs, {1} routing lists, {2} profiles.</value>
+  </data>
+  <data name="Agent_BundleImportedRenamed" xml:space="preserve">
+    <value>Imported: {0} configs, {1} routing lists, {2} profiles.
+Renamed on import: {3}.</value>
+  </data>
+  <data name="Agent_BundleImportedRenamedMany" xml:space="preserve">
+    <value>Imported: {0} configs, {1} routing lists, {2} profiles.
+Renamed on import: several names clashed with existing ones.</value>
+  </data>
+  <data name="Agent_BundleParseFailed" xml:space="preserve">
+    <value>could not parse the file: {0}</value>
+  </data>
+  <data name="Agent_BundleTooNew" xml:space="preserve">
+    <value>the file is newer (v{0}); update the app</value>
+  </data>
+  <data name="Agent_CheckedNoUpdates" xml:space="preserve">
+    <value>Sources checked: {0}. No updates.</value>
+  </data>
+  <data name="Agent_CheckedUpdatesAvailable" xml:space="preserve">
+    <value>Sources checked: {0}. Updates available: {1}.</value>
+  </data>
+  <data name="Agent_ConfigCopied" xml:space="preserve">
+    <value>config copied: {0}</value>
+  </data>
+  <data name="Agent_ConfigImported" xml:space="preserve">
+    <value>imported {0}</value>
+  </data>
+  <data name="Agent_ConfigSaved" xml:space="preserve">
+    <value>saved {0}</value>
+  </data>
+  <data name="Agent_DiagnosticsFailed" xml:space="preserve">
+    <value>Failed to collect logs: {0}</value>
+  </data>
+  <data name="Agent_DnsReset" xml:space="preserve">
+    <value>DNS reset to auto-detect (applies on reconnect)</value>
+  </data>
+  <data name="Agent_DnsSaved" xml:space="preserve">
+    <value>DNS saved: {0} (applies on reconnect)</value>
+  </data>
+  <data name="Agent_DowngradeAvailable" xml:space="preserve">
+    <value>Rollback to version {0} is available.</value>
+  </data>
+  <data name="Agent_ExclusionsSaved" xml:space="preserve">
+    <value>Exclusions saved (applies on reconnect)</value>
+  </data>
+  <data name="Agent_ExportSelectionParseFailed" xml:space="preserve">
+    <value>could not parse the export selection</value>
+  </data>
+  <data name="Agent_ListsDownloaded" xml:space="preserve">
+    <value>Lists downloaded ({0}).</value>
+  </data>
+  <data name="Agent_ListsDownloadedPartial" xml:space="preserve">
+    <value>Downloaded {0} of {1}; failed: {2}.</value>
+  </data>
+  <data name="Agent_ListsDownloadedProcessFailed" xml:space="preserve">
+    <value>Lists downloaded, but processing failed: {0}</value>
+  </data>
+  <data name="Agent_NameTaken" xml:space="preserve">
+    <value>the name {0} is already taken</value>
+  </data>
+  <data name="Agent_NameUnchanged" xml:space="preserve">
+    <value>the name is unchanged</value>
+  </data>
+  <data name="Agent_NoSourcesToCheck" xml:space="preserve">
+    <value>No sources to check.</value>
+  </data>
+  <data name="Agent_NoSourcesToDownload" xml:space="preserve">
+    <value>No sources to download.</value>
+  </data>
+  <data name="Agent_NotAnAmneziaGeoFile" xml:space="preserve">
+    <value>this is not an AmneziaGeo file</value>
+  </data>
+  <data name="Agent_NothingSelectedForExport" xml:space="preserve">
+    <value>Nothing selected for export</value>
+  </data>
+  <data name="Agent_RenamedTo" xml:space="preserve">
+    <value>renamed to {0}</value>
+  </data>
+  <data name="Agent_RoutingSettingsSaved" xml:space="preserve">
+    <value>Routing settings saved (applies on reconnect)</value>
+  </data>
+  <data name="Agent_SourceAdded" xml:space="preserve">
+    <value>added {0}, downloading…</value>
+  </data>
+  <data name="Agent_SourceCheckFailed" xml:space="preserve">
+    <value>{0}: could not check.</value>
+  </data>
+  <data name="Agent_SourceRemoved" xml:space="preserve">
+    <value>removed {0}</value>
+  </data>
+  <data name="Agent_SourceUpToDate" xml:space="preserve">
+    <value>{0}: up to date.</value>
+  </data>
+  <data name="Agent_SourceUpdateAvailable" xml:space="preserve">
+    <value>Update available: {0}.</value>
+  </data>
+  <data name="Agent_UpToDate" xml:space="preserve">
+    <value>The current version is up to date.</value>
+  </data>
+  <data name="Agent_UpdateAllStarted" xml:space="preserve">
+    <value>update started ({0})</value>
+  </data>
+  <data name="Agent_UpdateAvailable" xml:space="preserve">
+    <value>Update to version {0} is available.</value>
+  </data>
+  <data name="Agent_UpdateCheckFailed" xml:space="preserve">
+    <value>Failed to get update information.</value>
+  </data>
+  <data name="Agent_UpdateSourceStarted" xml:space="preserve">
+    <value>update of {0} started</value>
+  </data>
+  <data name="Agent_UpdateUrlNotSet" xml:space="preserve">
+    <value>Update URL is not set.</value>
+  </data>
+  <data name="Agent_WebSocketDisabled" xml:space="preserve">
+    <value>WebSocket disabled (applies on reconnect)</value>
+  </data>
+  <data name="Agent_WebSocketEnabled" xml:space="preserve">
+    <value>WebSocket enabled, port {0} (applies on reconnect)</value>
+  </data>
 </root>

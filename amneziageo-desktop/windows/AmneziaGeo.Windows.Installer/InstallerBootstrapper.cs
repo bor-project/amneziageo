@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using AmneziaGeo.Localization;
 using WixToolset.BootstrapperApplicationApi;
 
 namespace AmneziaGeo.Windows.Installer;
@@ -162,12 +163,12 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     {
         if (e.Status < 0)
         {
-            Finish(false, "Не удалось спланировать операцию.");
+            Finish(false, Loc.Instance.Get("InstallerBa_PlanFailed"));
             return;
         }
         if (!StopRunningApp())
         {
-            Finish(false, "Не удалось остановить запущенное приложение AmneziaGeo. Закройте его и повторите.");
+            Finish(false, Loc.Instance.Get("InstallerBa_StopAppFailed"));
             return;
         }
         engine.Apply(WindowHandle);
@@ -257,7 +258,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     {
         if (e.Status < 0)
         {
-            Finish(false, $"Ошибка (0x{e.Status:X8}).");
+            Finish(false, Loc.Instance.Get("InstallerBa_ApplyError", e.Status));
             return;
         }
 
@@ -304,7 +305,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 // falls through and downloads, since skipping when unsure would leave bases stale.
                 if (check.GeoUpdatesAvailable == 0)
                 {
-                    return "Базы гео актуальны - загрузка не требуется.";
+                    return Loc.Instance.Get("InstallerBa_GeoUpToDate");
                 }
             }
 
@@ -320,7 +321,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         }
         catch (Exception ex)
         {
-            return $"Не удалось обновить базы гео ({ex.Message}). Можно сделать это позже в приложении.";
+            return Loc.Instance.Get("InstallerBa_GeoUpdateFailed", ex.Message);
         }
     }
 
@@ -404,10 +405,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         // Interactive: ask whether to replace the existing settings with the bundled defaults.
         var answer = MessageBox.Show(
             Application.Current?.MainWindow!,
-            "В системе уже есть сохранённые настройки AmneziaGeo (state.db).\n\n" +
-            "Заменить их рекомендованными настройками из установщика?\n\n" +
-            "Да - заменить (текущие настройки будут потеряны).\n" +
-            "Нет - оставить текущие настройки.",
+            Loc.Instance.Get("InstallerBa_ReplaceDbPrompt"),
             "AmneziaGeo",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -470,9 +468,9 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private static string SuccessText(InstallerAction action) => action switch
     {
-        InstallerAction.Repair => "Восстановление завершено.",
-        InstallerAction.Remove => "AmneziaGeo удалён.",
-        InstallerAction.Update => "Обновление завершено.",
-        _ => "Установка завершена.",
+        InstallerAction.Repair => Loc.Instance.Get("InstallerBa_SuccessRepair"),
+        InstallerAction.Remove => Loc.Instance.Get("InstallerBa_SuccessRemove"),
+        InstallerAction.Update => Loc.Instance.Get("InstallerBa_SuccessUpdate"),
+        _ => Loc.Instance.Get("InstallerBa_SuccessInstall"),
     };
 }

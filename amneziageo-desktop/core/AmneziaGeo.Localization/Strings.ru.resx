@@ -1143,4 +1143,122 @@
   <data name="Agent_WebSocketEnabled" xml:space="preserve">
     <value>WebSocket включён, порт {0} (применится при переподключении)</value>
   </data>
+  <data name="Installer_NotDirectRun" xml:space="preserve">
+    <value>Это внутренний компонент установщика AmneziaGeo и не запускается напрямую.
+
+Запустите AmneziaGeoSetup.exe - это и есть установщик.</value>
+  </data>
+  <data name="InstallerBa_ApplyError" xml:space="preserve">
+    <value>Ошибка (0x{0:X8}).</value>
+  </data>
+  <data name="InstallerBa_GeoUpToDate" xml:space="preserve">
+    <value>Базы гео актуальны - загрузка не требуется.</value>
+  </data>
+  <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
+    <value>Не удалось обновить базы гео ({0}). Можно сделать это позже в приложении.</value>
+  </data>
+  <data name="InstallerBa_PlanFailed" xml:space="preserve">
+    <value>Не удалось спланировать операцию.</value>
+  </data>
+  <data name="InstallerBa_ReplaceDbPrompt" xml:space="preserve">
+    <value>В системе уже есть сохранённые настройки AmneziaGeo (state.db).
+
+Заменить их рекомендованными настройками из установщика?
+
+Да - заменить (текущие настройки будут потеряны).
+Нет - оставить текущие настройки.</value>
+  </data>
+  <data name="InstallerBa_StopAppFailed" xml:space="preserve">
+    <value>Не удалось остановить запущенное приложение AmneziaGeo. Закройте его и повторите.</value>
+  </data>
+  <data name="InstallerBa_SuccessInstall" xml:space="preserve">
+    <value>Установка завершена.</value>
+  </data>
+  <data name="InstallerBa_SuccessRemove" xml:space="preserve">
+    <value>AmneziaGeo удалён.</value>
+  </data>
+  <data name="InstallerBa_SuccessRepair" xml:space="preserve">
+    <value>Восстановление завершено.</value>
+  </data>
+  <data name="InstallerBa_SuccessUpdate" xml:space="preserve">
+    <value>Обновление завершено.</value>
+  </data>
+  <data name="InstallerUi_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="InstallerUi_DeleteConfiguration" xml:space="preserve">
+    <value>Удалить конфигурацию (профили и настройки)</value>
+  </data>
+  <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
+    <value>Скачать обновления файлов баз гео</value>
+  </data>
+  <data name="InstallerUi_LaunchAmneziaGeo" xml:space="preserve">
+    <value>Запустить AmneziaGeo</value>
+  </data>
+  <data name="InstallerUi_Remove" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="InstallerUi_Repair" xml:space="preserve">
+    <value>Восстановить</value>
+  </data>
+  <data name="InstallerUi_SettingsFile" xml:space="preserve">
+    <value>Файл настроек…</value>
+  </data>
+  <data name="InstallerUi_Update" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="InstallerVm_AlreadyInstalled" xml:space="preserve">
+    <value>AmneziaGeo уже установлен. Можно обновить, восстановить или удалить.</value>
+  </data>
+  <data name="InstallerVm_CheckingGeoUpdates" xml:space="preserve">
+    <value>Проверка обновлений баз гео…</value>
+  </data>
+  <data name="InstallerVm_CheckingInstall" xml:space="preserve">
+    <value>Проверка установки…</value>
+  </data>
+  <data name="InstallerVm_DownloadingGeo" xml:space="preserve">
+    <value>Загрузка файлов баз гео…</value>
+  </data>
+  <data name="InstallerVm_Install" xml:space="preserve">
+    <value>Установить</value>
+  </data>
+  <data name="InstallerVm_InstallDowngrade" xml:space="preserve">
+    <value>Установить (откат версии)</value>
+  </data>
+  <data name="InstallerVm_InstalledVersion" xml:space="preserve">
+    <value>Установлено: {0}</value>
+  </data>
+  <data name="InstallerVm_Installing" xml:space="preserve">
+    <value>Установка…</value>
+  </data>
+  <data name="InstallerVm_NewerInstalled" xml:space="preserve">
+    <value>Установлена более новая версия. Можно откатиться на эту или удалить.</value>
+  </data>
+  <data name="InstallerVm_Ready" xml:space="preserve">
+    <value>Готово.</value>
+  </data>
+  <data name="InstallerVm_ReadyToInstall" xml:space="preserve">
+    <value>Готово к установке.</value>
+  </data>
+  <data name="InstallerVm_Removing" xml:space="preserve">
+    <value>Удаление…</value>
+  </data>
+  <data name="InstallerVm_Repairing" xml:space="preserve">
+    <value>Восстановление…</value>
+  </data>
+  <data name="InstallerVm_SeedDbDialogFilter" xml:space="preserve">
+    <value>База настроек SQLite (*.db)|*.db|Все файлы (*.*)|*.*</value>
+  </data>
+  <data name="InstallerVm_SeedDbDialogTitle" xml:space="preserve">
+    <value>Выберите файл настроек (state.db)</value>
+  </data>
+  <data name="InstallerVm_SeedDbNone" xml:space="preserve">
+    <value>Файл настроек по умолчанию не выбран.</value>
+  </data>
+  <data name="InstallerVm_SeedDbSelected" xml:space="preserve">
+    <value>Файл настроек: {0}</value>
+  </data>
+  <data name="InstallerVm_Updating" xml:space="preserve">
+    <value>Обновление…</value>
+  </data>
 </root>

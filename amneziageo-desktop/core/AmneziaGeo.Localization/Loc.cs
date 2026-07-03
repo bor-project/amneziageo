@@ -54,8 +54,9 @@ public sealed class Loc : INotifyPropertyChanged
     /// <summary>Translates a key (code-side).</summary>
     public string Get(string key) => _localizer[key];
 
-    /// <summary>Translates a formatted key with arguments (code-side).</summary>
-    public string Get(string key, params object[] args) => _localizer.GetString(key, args);
+    /// <summary>Translates a formatted key with arguments (code-side). Arguments may be null (string.Format
+    /// renders a null as empty), so callers need not null-guard a value that is only conditionally set.</summary>
+    public string Get(string key, params object?[] args) => _localizer.GetString(key, (object[])args);
 
     /// <summary>
     /// Resolves and applies the startup culture: the saved token when supported, else the OS UI language when

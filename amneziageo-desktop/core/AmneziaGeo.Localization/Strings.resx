@@ -1009,4 +1009,16 @@
   <data name="Transport_NotWebSocketBlob" xml:space="preserve">
     <value>This does not look like WebSocket settings.</value>
   </data>
+  <data name="Main_UpdateAvailableVersion" xml:space="preserve">
+    <value>Version {0} available</value>
+  </data>
+  <data name="Main_UpdateBanner" xml:space="preserve">
+    <value>Update {0} available</value>
+  </data>
+  <data name="Main_GeoUpdateBanner" xml:space="preserve">
+    <value>Geo list updates available: {0}</value>
+  </data>
+  <data name="Unit_Hours" xml:space="preserve">
+    <value>h</value>
+  </data>
 </root>

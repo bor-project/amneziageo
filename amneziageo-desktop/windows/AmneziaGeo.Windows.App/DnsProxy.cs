@@ -195,14 +195,17 @@ internal sealed class DnsProxy
 
             // A matched (to-be-tunneled) name resolves via the clean tunnel resolver so a geo-blocked
             // domain gets its real IPs instead of the local network's poisoned/blocked answer; everything
-            // else uses the local resolver so coexisting / corporate names keep resolving.
-            var matched = !isLocal && name is not null && _matcher.IsTunneled(name);
+            // else uses the local resolver so coexisting / corporate names keep resolving. Match() (rather
+            // than IsTunneled) names the rule that matched, for the routing log; it costs the same and the
+            // GeoMatch is a stack-only struct.
+            var geoMatch = !isLocal && name is not null ? _matcher.Match(name) : null;
+            var matched = geoMatch is not null;
 
-            // Every DNS query is a "request" - the address the client is about to reach. Logged at Trace (the
-            // verbose per-request detail a support engineer turns on) with its routing decision, and mirrored
-            // into the routing log when that is enabled, so "куда идут запросы / куда обращается" is answerable
-            // from the logs. The matched (tunneled) subset is also kept at Debug so a "X not routed" report is
-            // diagnosable without full Trace.
+            // Every DNS query is a "request" - the address the client is about to reach. The main log keeps a
+            // terse Trace line here (verbose per-request detail); the matched subset is also kept at Debug so a
+            // "X not routed" report is diagnosable without full Trace. The RICH routing-log line ("куда идёт
+            // запрос" - resolved IPs, upstream, matched rule, round-trip time) is emitted AFTER resolution
+            // below, where those are known - the old flat "query -> local" line here carried none of them.
             if (name is not null)
             {
                 var route = isLocal ? "lan" : matched ? "tunnel" : "local";
@@ -210,11 +213,6 @@ internal sealed class DnsProxy
                 if (matched)
                 {
                     _logger.LogDebug("dns matched {Name} type={Type} -> tunnel {Up}", name, type, _tunnelUpstream);
-                }
-
-                if (RouteLog.Enabled)
-                {
-                    RouteLog.Note($"query {name} type={type} -> {route}");
                 }
             }
 
@@ -243,31 +241,40 @@ internal sealed class DnsProxy
             else
             {
                 var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
-                byte[] shared;
-                try
-                {
-                    shared = ForwardCoalesced(name, type, query, upstream);
-                }
-                catch (Exception ex)
+                var started = System.Diagnostics.Stopwatch.GetTimestamp();
+                var result = ForwardCoalesced(name, type, query, upstream);
+                if (result.Error is not null)
                 {
                     // Couldn't reach the upstream resolver (timeout / unreachable): the request did not get
                     // through. Warn ("недостучались", visible at the default level) so a "site won't open"
                     // report shows the DNS step failed - a MATCHED (tunneled) name failing here means the geo
                     // resolver behind the tunnel is unreachable, the usual cause of a blocked site staying dark.
                     var route = isLocal ? "lan" : matched ? "tunnel" : "local";
-                    _logger.LogWarning("dns query {Name} type={Type} -> {Route} unreachable: {Reason}", name, type, route, ex.Message);
-                    if (RouteLog.Enabled)
+                    _logger.LogWarning("dns query {Name} type={Type} -> {Route} unreachable: {Reason}", name, type, route, result.Error.Message);
+                    if (RouteLog.Enabled && name is not null && result.Leader)
                     {
-                        RouteLog.Note($"query {name} type={type} -> {route} UNREACHABLE: {ex.Message}");
+                        RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, geoMatch, upstream, started, ips: null, failure: result.Error.Message));
                     }
 
                     return; // no answer; the client retries / times out as before
                 }
 
+                var shared = result.Response!;
                 StoreInCache(name, type, shared);
                 // Coalesced followers share the leader's response buffer (and thus its transaction id),
                 // so answer each client with a copy carrying its OWN id.
                 response = ApplyTransactionId(shared, query);
+
+                // The routing-log story line for a real resolution, now carrying the resolved addresses, the
+                // upstream that answered, the matched rule and the round-trip time - the "куда идёт запрос и
+                // подробности" the old flat line lacked. Only real resolutions land here (cache hits and the
+                // AAAA/HTTPS denials above are not resolution events), and only the coalescing LEADER writes it,
+                // so N simultaneous identical misses that share one forward still produce a single line.
+                if (RouteLog.Enabled && name is not null && result.Leader)
+                {
+                    var ips = DnsMessage.Addresses(shared).Select(a => a.ToString()).ToList();
+                    RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, geoMatch, upstream, started, ips, failure: null));
+                }
             }
 
             // Install routing for a matched domain BEFORE answering. Otherwise the client receives the
@@ -428,23 +435,40 @@ internal sealed class DnsProxy
         }
     }
 
-    // Runs the upstream query once per in-flight (name,type): the first caller creates the shared Lazy and
-    // performs the Forward; concurrent callers for the same key await that single result instead of each
-    // issuing their own upstream round-trip (and each then re-tracking). A null name cannot be keyed, so it
-    // bypasses coalescing. On failure the Lazy caches the exception for the current waiters and the finally
-    // drops it, so a later query retries cleanly.
-    private byte[] ForwardCoalesced(string? name, int type, byte[] query, IPAddress upstream)
+    // Runs the upstream query once per in-flight (name,type): the caller whose Lazy is stored (the "leader")
+    // performs the single Forward; concurrent callers for the same key await that one result instead of each
+    // issuing their own round-trip (and each then re-tracking). Returns which caller is the leader so only IT
+    // writes the routing-log line for the shared resolution - otherwise N simultaneous identical misses print N
+    // duplicate lines. Never throws: a forward failure is returned as Error so the leader flag survives it. A
+    // null name cannot be keyed, so it bypasses coalescing (and is its own leader). The finally drops the entry
+    // so a later query retries cleanly.
+    private CoalescedResult ForwardCoalesced(string? name, int type, byte[] query, IPAddress upstream)
     {
         if (name is null)
         {
-            return Forward(query, upstream);
+            try
+            {
+                return new CoalescedResult(Forward(query, upstream), Leader: true, Error: null);
+            }
+            catch (Exception ex)
+            {
+                return new CoalescedResult(Response: null, Leader: true, ex);
+            }
         }
 
         var key = CacheKey(name, type);
-        var lazy = _inflight.GetOrAdd(key, _ => new Lazy<byte[]>(() => Forward(query, upstream), LazyThreadSafetyMode.ExecutionAndPublication));
+        // GetOrAdd(key, value) (not the factory overload): the caller whose instance is stored is the unique
+        // leader (ReferenceEquals), regardless of which thread ends up running the Lazy's Forward.
+        var mine = new Lazy<byte[]>(() => Forward(query, upstream), LazyThreadSafetyMode.ExecutionAndPublication);
+        var lazy = _inflight.GetOrAdd(key, mine);
+        var leader = ReferenceEquals(lazy, mine);
         try
         {
-            return lazy.Value;
+            return new CoalescedResult(lazy.Value, leader, Error: null);
+        }
+        catch (Exception ex)
+        {
+            return new CoalescedResult(Response: null, leader, ex);
         }
         finally
         {
@@ -452,6 +476,11 @@ internal sealed class DnsProxy
             _inflight.TryRemove(new KeyValuePair<string, Lazy<byte[]>>(key, lazy));
         }
     }
+
+    // Outcome of a (possibly coalesced) upstream forward: the response (null on failure), whether this caller is
+    // the coalescing leader (only the leader writes the routing-log line, so one resolution = one line), and the
+    // failure if any.
+    private readonly record struct CoalescedResult(byte[]? Response, bool Leader, Exception? Error);
 
     // Returns a copy of the upstream response carrying the caller's transaction id. Callers that share a
     // coalesced buffer must not mutate it in place (other waiters read the same instance), so this clones.
@@ -466,6 +495,52 @@ internal sealed class DnsProxy
 
         return copy;
     }
+
+    // "куда идёт запрос" for the routing log: "<domain> <TYPE> -> <DECISION>  ip=<addrs>  up=<resolver>  <N>ms
+    // [rule=<kind>:<value>]" - the resolved addresses, the upstream that answered, the matched geo rule and the
+    // round-trip time. On failure ip=... is replaced by "FAILED" and the reason. Time is measured from the
+    // upstream forward via a Stopwatch timestamp; kept next to the decision it describes.
+    private static string FormatRouteQuery(string name, int type, bool isLocal, bool matched, DomainMatcher.GeoMatch? geoMatch, IPAddress upstream, long startedTimestamp, IReadOnlyList<string>? ips, string? failure)
+    {
+        var ms = (long)System.Diagnostics.Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds;
+        var decision = isLocal ? "LAN" : matched ? "TUNNEL" : "LOCAL";
+        var rule = matched && geoMatch is { } gm ? "  rule=" + RuleLabel(gm) : string.Empty;
+        if (failure is not null)
+        {
+            return $"{name} {TypeLabel(type)} -> {decision}  FAILED  up={upstream}  {ms}ms{rule}  {failure}";
+        }
+
+        var ipText = ips is null || ips.Count == 0
+            ? "-"
+            : ips.Count <= 6 ? string.Join(",", ips) : string.Join(",", ips.Take(6)) + $" +{ips.Count - 6} more";
+        return $"{name} {TypeLabel(type)} -> {decision}  ip={ipText}  up={upstream}  {ms}ms{rule}";
+    }
+
+    // DNS record type -> short label for the routing log; unknown types fall back to "typeNN".
+    private static string TypeLabel(int type) => type switch
+    {
+        1 => "A",
+        28 => "AAAA",
+        65 => "HTTPS",
+        5 => "CNAME",
+        12 => "PTR",
+        15 => "MX",
+        16 => "TXT",
+        33 => "SRV",
+        2 => "NS",
+        6 => "SOA",
+        _ => "type" + type.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    // The matched geo rule as "<kind>:<value>" (e.g. "domain:openai.com").
+    private static string RuleLabel(DomainMatcher.GeoMatch match) => match.Kind switch
+    {
+        GeoDomainKind.Full => "full:" + match.Value,
+        GeoDomainKind.Domain => "domain:" + match.Value,
+        GeoDomainKind.Plain => "plain:" + match.Value,
+        GeoDomainKind.Regex => "regex:" + match.Value,
+        _ => match.Value,
+    };
 
     private void Track(string name, byte[] response)
     {

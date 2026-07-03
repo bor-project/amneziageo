@@ -347,7 +347,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         await configRepo.AddFromTextAsync(args[0], args[1], ct);
         logger.LogInformation("imported config {Name}", args[0]);
-        return new IpcAck(true, $"импортирован {args[0]}");
+        return new IpcAck(true, IpcMessage.Key("Agent_ConfigImported", args[0]));
     }
 
     private async Task<IpcAck> EditConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -367,7 +367,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // text only after the next reconnect.
         await configRepo.EditFromTextAsync(args[0], args[1], ct);
         logger.LogInformation("edited config {Name}", args[0]);
-        return new IpcAck(true, $"сохранён {args[0]}");
+        return new IpcAck(true, IpcMessage.Key("Agent_ConfigSaved", args[0]));
     }
 
     private async Task<IpcAck> RemoveConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -454,12 +454,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         if (await configRepo.ExistsAsync(destination, ct) || await store.GetBalancerAsync(destination, ct) is not null)
         {
-            return new IpcAck(false, $"имя {destination} уже занято");
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", destination));
         }
 
         await configRepo.CopyAsync(source, destination, ct);
         logger.LogInformation("copied config {Source} -> {Dest}", source, destination);
-        return new IpcAck(true, $"конфигурация скопирована: {destination}");
+        return new IpcAck(true, IpcMessage.Key("Agent_ConfigCopied", destination));
     }
 
     private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -473,7 +473,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var newName = args[1].Trim();
         if (string.Equals(oldName, newName, StringComparison.Ordinal))
         {
-            return new IpcAck(true, "имя не изменилось");
+            return new IpcAck(true, IpcMessage.Key("Agent_NameUnchanged"));
         }
 
         if (!await configRepo.ExistsAsync(oldName, ct))
@@ -483,7 +483,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         if (await configRepo.ExistsAsync(newName, ct) || await store.GetBalancerAsync(newName, ct) is not null)
         {
-            return new IpcAck(false, $"имя {newName} уже занято");
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
 
         // Refuse while the config is live under the running tunnel: moving the .conf out from under the
@@ -503,7 +503,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         logger.LogInformation("renamed config {Old} -> {New}", oldName, newName);
-        return new IpcAck(true, $"переименован в {newName}");
+        return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));
     }
 
     private async Task<IpcAck> RenameProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -517,7 +517,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var newName = args[1].Trim();
         if (string.Equals(oldName, newName, StringComparison.Ordinal))
         {
-            return new IpcAck(true, "имя не изменилось");
+            return new IpcAck(true, IpcMessage.Key("Agent_NameUnchanged"));
         }
 
         var balancer = await store.GetBalancerAsync(oldName, ct);
@@ -528,7 +528,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         if (await store.GetBalancerAsync(newName, ct) is not null || await configRepo.ExistsAsync(newName, ct))
         {
-            return new IpcAck(false, $"имя {newName} уже занято");
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
 
         // Refuse to rename the profile the tunnel is running on; disconnect first.
@@ -556,7 +556,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         logger.LogInformation("renamed profile {Old} -> {New}", oldName, newName);
-        return new IpcAck(true, $"переименован в {newName}");
+        return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));
     }
 
     // The selective export selection, parsed from OpExportBundle's arg0 JSON. All three arrays are optional.
@@ -585,7 +585,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         if (selection is null)
         {
-            return new IpcAck(false, "не удалось разобрать выбор для экспорта");
+            return new IpcAck(false, IpcMessage.Key("Agent_ExportSelectionParseFailed"));
         }
 
         // Resolve the EFFECTIVE set of config/routing-list names: the explicitly picked entries, plus
@@ -617,7 +617,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         if (configNames.Count == 0 && routingNames.Count == 0 && profileNames.Count == 0)
         {
-            return new IpcAck(false, "Не выбрано ничего для экспорта");
+            return new IpcAck(false, IpcMessage.Key("Agent_NothingSelectedForExport"));
         }
 
         var configBlocks = new List<PortableBundle.ConfigBlock>();
@@ -729,17 +729,17 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
         catch (JsonException ex)
         {
-            return new IpcAck(false, $"не удалось разобрать файл: {ex.Message}");
+            return new IpcAck(false, IpcMessage.Key("Agent_BundleParseFailed", ex.Message));
         }
 
         if (bundle is null || !string.Equals(bundle.Format, PortableBundle.FormatTag, StringComparison.Ordinal))
         {
-            return new IpcAck(false, "это не файл AmneziaGeo");
+            return new IpcAck(false, IpcMessage.Key("Agent_NotAnAmneziaGeoFile"));
         }
 
         if (bundle.Version > PortableBundle.CurrentVersion)
         {
-            return new IpcAck(false, $"файл новее (v{bundle.Version}); обновите приложение");
+            return new IpcAck(false, IpcMessage.Key("Agent_BundleTooNew", bundle.Version));
         }
 
         // Config and profile names live in one global namespace (rename refuses a name used by either);
@@ -826,20 +826,36 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        var summary = $"Импортировано: конфигураций {bundle.Configs.Count}, списков маршрутизации {bundle.RoutingLists.Count}, профилей {bundle.Profiles.Count}.";
-        if (renames.Count > 0)
-        {
-            summary += renames.Count <= 5
-                ? "\nПереименовано при импорте: " + string.Join(", ", renames) + "."
-                : "\nПереименовано при импорте: несколько имён совпали с уже существующими.";
-        }
-
         logger.LogInformation(
             "imported bundle: {Configs} configs, {Routing} routing lists, {Profiles} profiles",
             bundle.Configs.Count,
             bundle.RoutingLists.Count,
             bundle.Profiles.Count);
-        return new IpcAck(true, summary);
+
+        if (renames.Count == 0)
+        {
+            return new IpcAck(true, IpcMessage.Key(
+                "Agent_BundleImported",
+                bundle.Configs.Count,
+                bundle.RoutingLists.Count,
+                bundle.Profiles.Count));
+        }
+
+        if (renames.Count <= 5)
+        {
+            return new IpcAck(true, IpcMessage.Key(
+                "Agent_BundleImportedRenamed",
+                bundle.Configs.Count,
+                bundle.RoutingLists.Count,
+                bundle.Profiles.Count,
+                string.Join(", ", renames)));
+        }
+
+        return new IpcAck(true, IpcMessage.Key(
+            "Agent_BundleImportedRenamedMany",
+            bundle.Configs.Count,
+            bundle.RoutingLists.Count,
+            bundle.Profiles.Count));
     }
 
     // True when any profile still binds the given config, so removing the config would unbind that profile too.
@@ -1002,8 +1018,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         logger.LogInformation("config {Name}: transport set - websocket={On}, port={Port}, mtu={Mtu}, host={Host}",
             args[0], on, port, mtu, host.Length == 0 ? "(endpoint)" : host);
         return new IpcAck(true, on
-            ? $"WebSocket включён, порт {port} (применится при переподключении)"
-            : "WebSocket выключен (применится при переподключении)");
+            ? IpcMessage.Key("Agent_WebSocketEnabled", port)
+            : IpcMessage.Key("Agent_WebSocketDisabled"));
     }
 
     private async Task<IpcAck> SetConfigDnsAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1040,8 +1056,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         logger.LogInformation("set-config-dns {Name}: servers='{Servers}'", args[0], servers);
         return new IpcAck(true, servers.Length == 0
-            ? "DNS сброшен на автоопределение (применится при переподключении)"
-            : $"DNS сохранён: {servers} (применится при переподключении)");
+            ? IpcMessage.Key("Agent_DnsReset")
+            : IpcMessage.Key("Agent_DnsSaved", servers));
     }
 
     private async Task<IpcAck> SetConfigExclusionsAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1069,7 +1085,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         logger.LogInformation("set-config-exclusions {Name}: {Len} chars", args[0], exclusions.Length);
-        return new IpcAck(true, "Исключения сохранены (применятся при переподключении)");
+        return new IpcAck(true, IpcMessage.Key("Agent_ExclusionsSaved"));
     }
 
     // Returns the default LAN bypass set (RFC1918 ranges + connected subnets outside them) as newline-
@@ -1228,7 +1244,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         logger.LogInformation("set-routing-settings {Id}: dns='{Dns}', excl={Len} chars, allUdp={Udp}, mode={Mode}", id, localDns, exclusions.Length, allUdp, mode);
-        return new IpcAck(true, "Настройки маршрутизации сохранены (применятся при переподключении)");
+        return new IpcAck(true, IpcMessage.Key("Agent_RoutingSettingsSaved"));
     }
 
     private async Task<IpcAck> GetRoutingSettingsAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1376,7 +1392,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // (categories / updated time) lands in the next status snapshot. Not "forced" - a brand-new source
         // always downloads (its file changes), which advances the resolve epoch on its own.
         EnqueueGeoRefresh([source], forceResolve: false);
-        return new IpcAck(true, $"добавлен {name}, загрузка…");
+        return new IpcAck(true, IpcMessage.Key("Agent_SourceAdded", name));
     }
 
     private async Task<IpcAck> RemoveSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1404,7 +1420,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         await geo.RematerializeAllRoutingListsAsync(ct);
         logger.LogInformation("removed geo source {Name}", name);
-        return new IpcAck(true, $"удалён {name}");
+        return new IpcAck(true, IpcMessage.Key("Agent_SourceRemoved", name));
     }
 
     private async Task<IpcAck> UpdateSourcesAsync(CancellationToken ct)
@@ -1413,7 +1429,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // unchanged (their domains' IPs may still have moved), so force the resolve.
         var sources = await store.ListGeoSourcesAsync(ct);
         EnqueueGeoRefresh(sources, forceResolve: true);
-        return new IpcAck(true, $"обновление запущено ({sources.Count})");
+        return new IpcAck(true, IpcMessage.Key("Agent_UpdateAllStarted", sources.Count));
     }
 
     private async Task<IpcAck> UpdateSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1432,7 +1448,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         // A user-initiated per-source update is also a full validation - force the resolve.
         EnqueueGeoRefresh([source], forceResolve: true);
-        return new IpcAck(true, $"обновление {source.Name} запущено");
+        return new IpcAck(true, IpcMessage.Key("Agent_UpdateSourceStarted", source.Name));
     }
 
     /// <summary>
@@ -1473,12 +1489,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var (available, total) = await CheckAllSourcesAsync(ct);
         if (total == 0)
         {
-            return new IpcAck(true, "Нет источников для проверки.");
+            return new IpcAck(true, IpcMessage.Key("Agent_NoSourcesToCheck"));
         }
 
         return new IpcAck(true, available == 0
-            ? $"Проверено источников: {total}. Обновлений нет."
-            : $"Проверено источников: {total}. Доступно обновлений: {available}.");
+            ? IpcMessage.Key("Agent_CheckedNoUpdates", total)
+            : IpcMessage.Key("Agent_CheckedUpdatesAvailable", total, available));
     }
 
     /// <summary>
@@ -1502,9 +1518,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         await BroadcastIfChangedAsync(ct);
         return new IpcAck(true, status switch
         {
-            GeoUpdateChecker.Status.Available => $"Доступно обновление: {source.Name}.",
-            GeoUpdateChecker.Status.UpToDate => $"{source.Name}: актуально.",
-            _ => $"{source.Name}: не удалось проверить.",
+            GeoUpdateChecker.Status.Available => IpcMessage.Key("Agent_SourceUpdateAvailable", source.Name),
+            GeoUpdateChecker.Status.UpToDate => IpcMessage.Key("Agent_SourceUpToDate", source.Name),
+            _ => IpcMessage.Key("Agent_SourceCheckFailed", source.Name),
         });
     }
 
@@ -1883,7 +1899,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         catch (Exception ex)
         {
             logger.LogError(ex, "diagnostics collection failed");
-            return new IpcAck(false, $"Не удалось собрать логи: {ex.Message}");
+            return new IpcAck(false, IpcMessage.Key("Agent_DiagnosticsFailed", ex.Message));
         }
     }
 
@@ -1897,7 +1913,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var settings = await settingsStore.LoadAsync(ct);
         if (string.IsNullOrWhiteSpace(settings.UpdateUrl))
         {
-            return new IpcAck(false, "URL обновлений не задан.");
+            return new IpcAck(false, IpcMessage.Key("Agent_UpdateUrlNotSet"));
         }
 
         var info = await updateChecker.CheckAsync(settings.UpdateUrl, Version(), ct);
@@ -1906,17 +1922,17 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         if (info is null)
         {
-            return new IpcAck(false, "Не удалось получить сведения об обновлении.");
+            return new IpcAck(false, IpcMessage.Key("Agent_UpdateCheckFailed"));
         }
 
         if (!info.Available)
         {
-            return new IpcAck(true, "Установлена актуальная версия.");
+            return new IpcAck(true, IpcMessage.Key("Agent_UpToDate"));
         }
 
         return new IpcAck(true, info.IsDowngrade
-            ? $"Доступен откат к версии {info.Version}."
-            : $"Доступно обновление до версии {info.Version}.");
+            ? IpcMessage.Key("Agent_DowngradeAvailable", info.Version)
+            : IpcMessage.Key("Agent_UpdateAvailable", info.Version));
     }
 
     /// <summary>
@@ -1932,7 +1948,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var sources = await store.ListGeoSourcesAsync(ct);
         if (sources.Count == 0)
         {
-            return new IpcAck(true, "Нет источников для загрузки.");
+            return new IpcAck(true, IpcMessage.Key("Agent_NoSourcesToDownload"));
         }
 
         // Mark every source in-flight so each status snapshot carries per-source download percent: the
@@ -1978,7 +1994,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             catch (Exception ex)
             {
                 logger.LogError(ex, "geo re-materialize failed");
-                return new IpcAck(false, $"Списки скачаны, но не удалось обработать: {ex.Message}");
+                return new IpcAck(false, IpcMessage.Key("Agent_ListsDownloadedProcessFailed", ex.Message));
             }
         }
         finally
@@ -1994,8 +2010,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         return failed.IsEmpty
-            ? new IpcAck(true, $"Списки загружены ({sources.Count}).")
-            : new IpcAck(false, $"Загружено {sources.Count - failed.Count} из {sources.Count}; не удалось: {string.Join(", ", failed)}.");
+            ? new IpcAck(true, IpcMessage.Key("Agent_ListsDownloaded", sources.Count))
+            : new IpcAck(false, IpcMessage.Key("Agent_ListsDownloadedPartial", sources.Count - failed.Count, sources.Count, string.Join(", ", failed)));
     }
 
     private async Task<string> BuildJsonAsync(CancellationToken ct)

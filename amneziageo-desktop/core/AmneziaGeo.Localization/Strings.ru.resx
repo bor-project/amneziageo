@@ -1021,4 +1021,126 @@
   <data name="Unit_Hours" xml:space="preserve">
     <value>ч</value>
   </data>
+  <data name="Agent_BundleImported" xml:space="preserve">
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.</value>
+  </data>
+  <data name="Agent_BundleImportedRenamed" xml:space="preserve">
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.
+Переименовано при импорте: {3}.</value>
+  </data>
+  <data name="Agent_BundleImportedRenamedMany" xml:space="preserve">
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.
+Переименовано при импорте: несколько имён совпали с уже существующими.</value>
+  </data>
+  <data name="Agent_BundleParseFailed" xml:space="preserve">
+    <value>не удалось разобрать файл: {0}</value>
+  </data>
+  <data name="Agent_BundleTooNew" xml:space="preserve">
+    <value>файл новее (v{0}); обновите приложение</value>
+  </data>
+  <data name="Agent_CheckedNoUpdates" xml:space="preserve">
+    <value>Проверено источников: {0}. Обновлений нет.</value>
+  </data>
+  <data name="Agent_CheckedUpdatesAvailable" xml:space="preserve">
+    <value>Проверено источников: {0}. Доступно обновлений: {1}.</value>
+  </data>
+  <data name="Agent_ConfigCopied" xml:space="preserve">
+    <value>конфигурация скопирована: {0}</value>
+  </data>
+  <data name="Agent_ConfigImported" xml:space="preserve">
+    <value>импортирован {0}</value>
+  </data>
+  <data name="Agent_ConfigSaved" xml:space="preserve">
+    <value>сохранён {0}</value>
+  </data>
+  <data name="Agent_DiagnosticsFailed" xml:space="preserve">
+    <value>Не удалось собрать логи: {0}</value>
+  </data>
+  <data name="Agent_DnsReset" xml:space="preserve">
+    <value>DNS сброшен на автоопределение (применится при переподключении)</value>
+  </data>
+  <data name="Agent_DnsSaved" xml:space="preserve">
+    <value>DNS сохранён: {0} (применится при переподключении)</value>
+  </data>
+  <data name="Agent_DowngradeAvailable" xml:space="preserve">
+    <value>Доступен откат к версии {0}.</value>
+  </data>
+  <data name="Agent_ExclusionsSaved" xml:space="preserve">
+    <value>Исключения сохранены (применятся при переподключении)</value>
+  </data>
+  <data name="Agent_ExportSelectionParseFailed" xml:space="preserve">
+    <value>не удалось разобрать выбор для экспорта</value>
+  </data>
+  <data name="Agent_ListsDownloaded" xml:space="preserve">
+    <value>Списки загружены ({0}).</value>
+  </data>
+  <data name="Agent_ListsDownloadedPartial" xml:space="preserve">
+    <value>Загружено {0} из {1}; не удалось: {2}.</value>
+  </data>
+  <data name="Agent_ListsDownloadedProcessFailed" xml:space="preserve">
+    <value>Списки скачаны, но не удалось обработать: {0}</value>
+  </data>
+  <data name="Agent_NameTaken" xml:space="preserve">
+    <value>имя {0} уже занято</value>
+  </data>
+  <data name="Agent_NameUnchanged" xml:space="preserve">
+    <value>имя не изменилось</value>
+  </data>
+  <data name="Agent_NoSourcesToCheck" xml:space="preserve">
+    <value>Нет источников для проверки.</value>
+  </data>
+  <data name="Agent_NoSourcesToDownload" xml:space="preserve">
+    <value>Нет источников для загрузки.</value>
+  </data>
+  <data name="Agent_NotAnAmneziaGeoFile" xml:space="preserve">
+    <value>это не файл AmneziaGeo</value>
+  </data>
+  <data name="Agent_NothingSelectedForExport" xml:space="preserve">
+    <value>Не выбрано ничего для экспорта</value>
+  </data>
+  <data name="Agent_RenamedTo" xml:space="preserve">
+    <value>переименован в {0}</value>
+  </data>
+  <data name="Agent_RoutingSettingsSaved" xml:space="preserve">
+    <value>Настройки маршрутизации сохранены (применятся при переподключении)</value>
+  </data>
+  <data name="Agent_SourceAdded" xml:space="preserve">
+    <value>добавлен {0}, загрузка…</value>
+  </data>
+  <data name="Agent_SourceCheckFailed" xml:space="preserve">
+    <value>{0}: не удалось проверить.</value>
+  </data>
+  <data name="Agent_SourceRemoved" xml:space="preserve">
+    <value>удалён {0}</value>
+  </data>
+  <data name="Agent_SourceUpToDate" xml:space="preserve">
+    <value>{0}: актуально.</value>
+  </data>
+  <data name="Agent_SourceUpdateAvailable" xml:space="preserve">
+    <value>Доступно обновление: {0}.</value>
+  </data>
+  <data name="Agent_UpToDate" xml:space="preserve">
+    <value>Установлена актуальная версия.</value>
+  </data>
+  <data name="Agent_UpdateAllStarted" xml:space="preserve">
+    <value>обновление запущено ({0})</value>
+  </data>
+  <data name="Agent_UpdateAvailable" xml:space="preserve">
+    <value>Доступно обновление до версии {0}.</value>
+  </data>
+  <data name="Agent_UpdateCheckFailed" xml:space="preserve">
+    <value>Не удалось получить сведения об обновлении.</value>
+  </data>
+  <data name="Agent_UpdateSourceStarted" xml:space="preserve">
+    <value>обновление {0} запущено</value>
+  </data>
+  <data name="Agent_UpdateUrlNotSet" xml:space="preserve">
+    <value>URL обновлений не задан.</value>
+  </data>
+  <data name="Agent_WebSocketDisabled" xml:space="preserve">
+    <value>WebSocket выключен (применится при переподключении)</value>
+  </data>
+  <data name="Agent_WebSocketEnabled" xml:space="preserve">
+    <value>WebSocket включён, порт {0} (применится при переподключении)</value>
+  </data>
 </root>

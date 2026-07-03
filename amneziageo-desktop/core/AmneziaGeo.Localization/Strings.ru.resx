@@ -1009,4 +1009,16 @@
   <data name="Transport_NotWebSocketBlob" xml:space="preserve">
     <value>Не похоже на настройки WebSocket.</value>
   </data>
+  <data name="Main_UpdateAvailableVersion" xml:space="preserve">
+    <value>Доступна версия {0}</value>
+  </data>
+  <data name="Main_UpdateBanner" xml:space="preserve">
+    <value>Доступно обновление {0}</value>
+  </data>
+  <data name="Main_GeoUpdateBanner" xml:space="preserve">
+    <value>Доступны обновления geo-списков: {0}</value>
+  </data>
+  <data name="Unit_Hours" xml:space="preserve">
+    <value>ч</value>
+  </data>
 </root>

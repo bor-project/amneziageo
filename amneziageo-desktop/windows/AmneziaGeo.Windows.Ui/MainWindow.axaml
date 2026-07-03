@@ -884,7 +884,7 @@
                                   SelectedItem="{Binding GeoCheckIntervalHours, Mode=TwoWay}">
                           <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="x:Int32">
-                              <TextBlock Text="{Binding StringFormat='{}{0} ч'}" />
+                              <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
                             </DataTemplate>
                           </ComboBox.ItemTemplate>
                         </ComboBox>
@@ -902,7 +902,7 @@
                                 SelectedItem="{Binding GeoCacheValidityHours, Mode=TwoWay}">
                         <ComboBox.ItemTemplate>
                           <DataTemplate x:DataType="x:Int32">
-                            <TextBlock Text="{Binding StringFormat='{}{0} ч'}" />
+                            <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
                           </DataTemplate>
                         </ComboBox.ItemTemplate>
                       </ComboBox>
@@ -1109,7 +1109,7 @@
                               Command="{Binding CheckUpdateCommand}" />
                       <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                       <StackPanel Spacing="6" IsVisible="{Binding UpdateAvailable}">
-                        <TextBlock Text="{Binding UpdateVersion, StringFormat='Доступна версия {0}'}" FontSize="13" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                           <Button Classes="accent" Content="{l:Tr Main_DownloadAndInstallButton}" Command="{Binding InstallUpdateCommand}"
@@ -1174,7 +1174,7 @@
               CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
         <Grid ColumnDefinitions="Auto,*,Auto,Auto">
           <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
-          <TextBlock Grid.Column="1" Text="{Binding UpdateVersion, StringFormat='Доступно обновление {0}'}"
+          <TextBlock Grid.Column="1" Text="{Binding UpdateBannerText}"
                      Foreground="White" FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
           <Button Grid.Column="2" Classes="radiopick" Command="{Binding InstallUpdateCommand}"
@@ -1191,7 +1191,7 @@
               CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
         <Grid ColumnDefinitions="Auto,*,Auto,Auto">
           <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
-          <TextBlock Grid.Column="1" Text="{Binding GeoUpdateCount, StringFormat='Доступны обновления geo-списков: {0}'}"
+          <TextBlock Grid.Column="1" Text="{Binding GeoUpdateBannerText}"
                      Foreground="White" FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
           <Button Grid.Column="2" Classes="radiopick" Command="{Binding UpdateGeoNowCommand}"

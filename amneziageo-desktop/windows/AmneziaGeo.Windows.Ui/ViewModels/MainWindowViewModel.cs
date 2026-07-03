@@ -223,6 +223,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _updateAvailable;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(UpdateVersionBadgeText))]
+    [NotifyPropertyChangedFor(nameof(UpdateBannerText))]
     private string _updateVersion = string.Empty;
 
     [ObservableProperty]
@@ -244,6 +246,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _geoUpdateBannerVisible;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GeoUpdateBannerText))]
     private int _geoUpdateCount;
 
     [ObservableProperty]
@@ -587,6 +590,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public string ThemeLabel => IsDark ? Loc.Instance.Get("Theme_Dark") : Loc.Instance.Get("Theme_Light");
 
+    /// <summary>Localized "Version {0} available" for the update card - re-reads on a data or language change.</summary>
+    public string UpdateVersionBadgeText => Loc.Instance.Get("Main_UpdateAvailableVersion", UpdateVersion);
+
+    /// <summary>Localized "Update {0} available" for the floating update banner.</summary>
+    public string UpdateBannerText => Loc.Instance.Get("Main_UpdateBanner", UpdateVersion);
+
+    /// <summary>Localized "Geo list updates available: {0}" for the geo-update banner.</summary>
+    public string GeoUpdateBannerText => Loc.Instance.Get("Main_GeoUpdateBanner", GeoUpdateCount);
+
     // Maps the persisted language token to/from the combo index (0 = follow system, 1 = ru, 2 = en) (#106).
     private static int IndexForLanguage(string? token) => token?.Trim().ToLowerInvariant() switch
     {
@@ -614,14 +626,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void OnCultureChanged()
     {
-        // Only the "System" combo entry is culture-dependent; refresh it in place (the index, and so the
-        // selection, is preserved). Code-computed labels re-read via their PropertyChanged.
+        // The "System" combo entry is the only culture-dependent item in Languages; refresh it in place (the
+        // index, and so the selection, is preserved).
         if (Languages.Count > 0)
         {
             Languages[0] = Loc.Instance.Get("Lang_System");
         }
 
-        OnPropertyChanged(nameof(ThemeLabel));
+        // Everything else on THIS view model that is a code-computed label (AgentStatusText, ThemeLabel, the
+        // update/geo banner texts, ...) re-reads its translation when we signal "all properties changed", so a
+        // language switch updates the whole main window live. The {l:Tr} XAML strings update on their own via
+        // Loc's "Item[]" notification; per-config/-source card sub-labels refresh on the next status snapshot.
+        OnPropertyChanged(string.Empty);
     }
 
     /// <summary>

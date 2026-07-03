@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -295,6 +296,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _routeLogEnabled;
 
+    /// <summary>UI language options for the settings combo (#106): System / Русский / English. Index 0's label
+    /// ("Системный"/"System") is localized; the language names stay in their own script.</summary>
+    public ObservableCollection<string> Languages { get; } = [Loc.Instance.Get("Lang_System"), "Русский", "English"];
+
+    // Selected language as a combo index: 0 = follow system, 1 = Russian, 2 = English. Two-way bound; a change
+    // persists the token to ui-prefs.json and switches the UI culture live (#106).
+    [ObservableProperty]
+    private int _selectedLanguageIndex;
+
     [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
 
@@ -353,10 +363,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _connection = connection;
         _prefs = prefs;
-        // Seed the persisted theme flag and selected settings section. Assign the backing fields directly so
-        // initialising from prefs does not echo back as a redundant save.
+        // Seed the persisted theme flag, settings section, and language index. Assign the backing fields
+        // directly so initialising from prefs does not echo back as a redundant save / culture re-apply.
         _isDark = prefs.IsDark;
         _settingsSection = prefs.SettingsSection;
+        _selectedLanguageIndex = IndexForLanguage(prefs.Language);
+        // Re-read code-computed labels (and the "System" combo entry) when the language switches live (#106).
+        Loc.Instance.CultureChanged += OnCultureChanged;
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
         _connection.SnapshotReceived += OnSnapshot;
@@ -572,7 +585,44 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Current theme label shown on the toggle button.
     /// </summary>
-    public string ThemeLabel => IsDark ? "Тёмная" : "Светлая";
+    public string ThemeLabel => IsDark ? Loc.Instance.Get("Theme_Dark") : Loc.Instance.Get("Theme_Light");
+
+    // Maps the persisted language token to/from the combo index (0 = follow system, 1 = ru, 2 = en) (#106).
+    private static int IndexForLanguage(string? token) => token?.Trim().ToLowerInvariant() switch
+    {
+        "ru" => 1,
+        "en" => 2,
+        _ => 0,
+    };
+
+    private static string TokenForLanguageIndex(int index) => index switch
+    {
+        1 => "ru",
+        2 => "en",
+        _ => Loc.SystemToken,
+    };
+
+    // A language pick persists its token and switches the UI culture live; the culture change then re-reads
+    // every {l:Tr} binding and the code-computed labels below.
+    partial void OnSelectedLanguageIndexChanged(int value)
+    {
+        var token = TokenForLanguageIndex(value);
+        _prefs.Language = token;
+        _prefs.Save();
+        Loc.Instance.SetCulture(token);
+    }
+
+    private void OnCultureChanged()
+    {
+        // Only the "System" combo entry is culture-dependent; refresh it in place (the index, and so the
+        // selection, is preserved). Code-computed labels re-read via their PropertyChanged.
+        if (Languages.Count > 0)
+        {
+            Languages[0] = Loc.Instance.Get("Lang_System");
+        }
+
+        OnPropertyChanged(nameof(ThemeLabel));
+    }
 
     /// <summary>
     /// Starts the agent connection.

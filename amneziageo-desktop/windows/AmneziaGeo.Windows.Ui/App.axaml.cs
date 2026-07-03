@@ -7,6 +7,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -25,6 +26,8 @@ public sealed partial class App : Application
     private MainWindowViewModel? _viewModel;
     private AgentConnection? _connection;
     private TrayIcon? _trayIcon;
+    private NativeMenuItem? _trayOpen;
+    private NativeMenuItem? _trayExit;
     private UiPreferences? _prefs;
     private bool _exiting;
 
@@ -46,6 +49,10 @@ public sealed partial class App : Application
             var prefs = UiPreferences.Load();
             _prefs = prefs;
             RequestedThemeVariant = prefs.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+
+            // Apply the UI language (#106) before any window is built, so the first frame is already in the
+            // chosen culture: saved preference -> system UI language -> English. A later switch is live.
+            Loc.Instance.ApplyStartupCulture(prefs.Language);
 
             // Don't auto-quit when the window closes: the close box always hides to the tray (the app
             // keeps running in the background - agent link and any active tunnel stay up), and the tray
@@ -120,10 +127,12 @@ public sealed partial class App : Application
 
     private void SetUpTrayIcon()
     {
-        var open = new NativeMenuItem("Открыть");
+        var open = new NativeMenuItem(Loc.Instance.Get("Tray_Open"));
         open.Click += (_, _) => ShowMainWindow();
-        var exit = new NativeMenuItem("Выход");
+        var exit = new NativeMenuItem(Loc.Instance.Get("Tray_Exit"));
         exit.Click += (_, _) => ExitApp();
+        _trayOpen = open;
+        _trayExit = exit;
 
         var menu = new NativeMenu();
         menu.Add(open);
@@ -140,6 +149,22 @@ public sealed partial class App : Application
         };
         // Left-click on the tray icon restores the window.
         _trayIcon.Clicked += (_, _) => ShowMainWindow();
+
+        // The tray items are native (not XAML bindings), so re-label them on a live language switch.
+        Loc.Instance.CultureChanged += OnCultureChanged;
+    }
+
+    private void OnCultureChanged()
+    {
+        if (_trayOpen is not null)
+        {
+            _trayOpen.Header = Loc.Instance.Get("Tray_Open");
+        }
+
+        if (_trayExit is not null)
+        {
+            _trayExit.Header = Loc.Instance.Get("Tray_Exit");
+        }
     }
 
     private void ShowMainWindow()

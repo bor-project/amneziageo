@@ -9,9 +9,9 @@ namespace AmneziaGeo.Windows.Ui.Services;
 /// splitter width, and the selected settings section. Stored as a small JSON file under
 /// %LOCALAPPDATA%\AmneziaGeo - deliberately NOT the agent's machine-wide state.db, since these are per-user
 /// presentation preferences (two users on one machine must not share a theme or window size) - and read
-/// synchronously before the window is shown, so a restored theme/size produces no flicker. Language is not
-/// persisted yet (there is no in-app locale switcher); window position is left to the OS. Best-effort:
-/// read/write failures fall back to defaults and are swallowed.
+/// synchronously before the window is shown, so a restored theme/size produces no flicker, and the UI
+/// language (#106) so the chosen culture is applied before the first window. Window position is left to the
+/// OS. Best-effort: read/write failures fall back to defaults and are swallowed.
 /// </summary>
 internal sealed class UiPreferences
 {
@@ -32,6 +32,12 @@ internal sealed class UiPreferences
 
     /// <summary>The selected settings section: "profile" | "config" | "routing" | "sources" | "logs" | "general".</summary>
     public string SettingsSection { get; set; } = "profile";
+
+    /// <summary>
+    /// The UI language token (#106): "" follows the system UI language, otherwise a supported code ("ru" /
+    /// "en"). Read at startup to pick the culture (system -> English fallback) before any window shows.
+    /// </summary>
+    public string Language { get; set; } = string.Empty;
 
     /// <summary>
     /// The name of the last profile the user had active, restored on launch so the main window opens on the

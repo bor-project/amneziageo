@@ -53,16 +53,27 @@ public sealed class InstallerViewModel : ObservableObject
     private bool _launchOnClose = true;
     private string _geoResult = string.Empty;
     private string _seedDbPath = string.Empty;
+    private InstallerAction? _pendingAction;
 
     public InstallerViewModel(Action<InstallerAction> invoke, Action close)
     {
         _invoke = invoke;
         _close = close;
 
-        InstallCommand = new RelayCommand(() => _invoke(_state == InstallState.NewerInstalled ? InstallerAction.Install : InstallerAction.Install));
-        UpdateCommand = new RelayCommand(() => _invoke(InstallerAction.Update));
-        RepairCommand = new RelayCommand(() => _invoke(InstallerAction.Repair));
-        RemoveCommand = new RelayCommand(() => _invoke(InstallerAction.Remove));
+        // The mode buttons stage an action, opening the options step; Confirm applies it and Back returns to
+        // the action buttons (#114). The action itself is dispatched (to Burn) only on Confirm.
+        InstallCommand = new RelayCommand(() => PendingAction = InstallerAction.Install);
+        UpdateCommand = new RelayCommand(() => PendingAction = InstallerAction.Update);
+        RepairCommand = new RelayCommand(() => PendingAction = InstallerAction.Repair);
+        RemoveCommand = new RelayCommand(() => PendingAction = InstallerAction.Remove);
+        ConfirmCommand = new RelayCommand(() =>
+        {
+            if (_pendingAction is { } action)
+            {
+                _invoke(action);
+            }
+        });
+        BackCommand = new RelayCommand(() => PendingAction = null);
         CloseCommand = new RelayCommand(() => _close());
         PickSeedDbCommand = new RelayCommand(PickSeedDb);
     }
@@ -74,6 +85,12 @@ public sealed class InstallerViewModel : ObservableObject
     public ICommand RepairCommand { get; }
 
     public ICommand RemoveCommand { get; }
+
+    /// <summary>Applies the staged action (starts the Burn plan/apply) from the options step (#114).</summary>
+    public ICommand ConfirmCommand { get; }
+
+    /// <summary>Returns from the options step to the action buttons without applying (#114).</summary>
+    public ICommand BackCommand { get; }
 
     public ICommand CloseCommand { get; }
 
@@ -124,15 +141,55 @@ public sealed class InstallerViewModel : ObservableObject
 
     public string InstallButtonText => State == InstallState.NewerInstalled ? Loc.Instance.Get("InstallerVm_InstallDowngrade") : Loc.Instance.Get("InstallerVm_Install");
 
-    public bool ShowActions => Phase == Phase.Ready;
+    /// <summary>The action currently being configured on the options step; null while the action buttons
+    /// (step 1) are shown (#114).</summary>
+    public InstallerAction? PendingAction
+    {
+        get => _pendingAction;
+        private set
+        {
+            if (Set(ref _pendingAction, value))
+            {
+                // Entering a step: the destructive wipe toggle always starts unchecked, so a choice made on a
+                // previous action's step (then «Назад») never carries over to a different action - e.g. ticking
+                // «Удалить конфигурацию и кэш» for Remove must not pre-check «Сбросить настройки» on Update (#114).
+                if (value is not null)
+                {
+                    DeleteConfig = false;
+                }
+                RaiseVisibility();
+                Raise(nameof(DeleteConfigLabel));
+                Raise(nameof(OptionsHeading));
+            }
+        }
+    }
 
-    public bool ShowInstall => Phase == Phase.Ready && (State == InstallState.NotInstalled || State == InstallState.NewerInstalled);
+    /// <summary>Ready phase, step 1: the maintenance action buttons (no action staged yet).</summary>
+    public bool ShowActionButtons => Phase == Phase.Ready && _pendingAction is null;
 
-    public bool ShowUpdate => Phase == Phase.Ready && State == InstallState.Installed;
+    /// <summary>Ready phase, step 2: options + confirm/back for the staged action (#114).</summary>
+    public bool ShowOptionsStep => Phase == Phase.Ready && _pendingAction is not null;
 
-    public bool ShowRepair => Phase == Phase.Ready && State == InstallState.Installed;
+    /// <summary>Whether the staged action installs/keeps the product (so it offers config + geo options), as
+    /// opposed to Remove (which offers only the delete-config toggle).</summary>
+    private bool IsApplyAction => _pendingAction is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair;
 
-    public bool ShowRemove => Phase == Phase.Ready && (State == InstallState.Installed || State == InstallState.NewerInstalled);
+    /// <summary>The only maintenance action available for the current state, or null when there is a choice. A
+    /// machine with nothing installed can only be installed, so its single-button first step is skipped and
+    /// the options step opens straight away (#114).</summary>
+    private InstallerAction? SoleAction => State == InstallState.NotInstalled ? InstallerAction.Install : null;
+
+    /// <summary>Show «Назад» only when there was a choice to return to - i.e. the options step was reached by
+    /// picking an action, not auto-opened for a sole action (#114).</summary>
+    public bool ShowBack => ShowOptionsStep && SoleAction is null;
+
+    public bool ShowInstall => ShowActionButtons && (State == InstallState.NotInstalled || State == InstallState.NewerInstalled);
+
+    public bool ShowUpdate => ShowActionButtons && State == InstallState.Installed;
+
+    public bool ShowRepair => ShowActionButtons && State == InstallState.Installed;
+
+    public bool ShowRemove => ShowActionButtons && (State == InstallState.Installed || State == InstallState.NewerInstalled);
 
     public bool ShowProgress => Phase == Phase.Applying;
 
@@ -147,18 +204,35 @@ public sealed class InstallerViewModel : ObservableObject
         set => Set(ref _downloadLists, value);
     }
 
-    public bool ShowDownloadOption => Phase == Phase.Ready && (ShowInstall || ShowUpdate);
+    public bool ShowDownloadOption => ShowOptionsStep && IsApplyAction;
 
-    /// <summary>Whether to also delete the runtime configuration (ProgramData\AmneziaGeo: profiles, settings,
-    /// caches) on removal. Off by default so a reinstall keeps the user's data.</summary>
+    /// <summary>Whether to wipe the runtime configuration (ProgramData\AmneziaGeo: profiles, settings, caches,
+    /// geo bases). On install/update/repair this is «Сбросить настройки» (start fresh); on removal it is
+    /// «Удалить конфигурацию и кэш». Off by default so a plain (re)install keeps the user's data (#105/#114).</summary>
     public bool DeleteConfig
     {
         get => _deleteConfig;
         set => Set(ref _deleteConfig, value);
     }
 
-    /// <summary>Offer the "delete configuration" checkbox only when removal is an available action.</summary>
-    public bool ShowDeleteConfigOption => ShowRemove;
+    /// <summary>The wipe toggle is offered on every action's options step; its label is contextual
+    /// (<see cref="DeleteConfigLabel"/>).</summary>
+    public bool ShowDeleteConfigOption => ShowOptionsStep;
+
+    /// <summary>Contextual label for the wipe toggle: «Сбросить настройки» on install/update/repair,
+    /// «Удалить конфигурацию и кэш» on removal (#114).</summary>
+    public string DeleteConfigLabel => _pendingAction == InstallerAction.Remove
+        ? Loc.Instance.Get("InstallerVm_DeleteConfigAndCache")
+        : Loc.Instance.Get("InstallerVm_ResetSettings");
+
+    /// <summary>Heading on the options step, naming the staged action (#114).</summary>
+    public string OptionsHeading => _pendingAction switch
+    {
+        InstallerAction.Update => Loc.Instance.Get("InstallerVm_OptionsUpdate"),
+        InstallerAction.Repair => Loc.Instance.Get("InstallerVm_OptionsRepair"),
+        InstallerAction.Remove => Loc.Instance.Get("InstallerVm_OptionsRemove"),
+        _ => Loc.Instance.Get("InstallerVm_OptionsInstall"),
+    };
 
     /// <summary>Whether to launch AmneziaGeo.UI after the installer closes (checkbox on the done screen).</summary>
     public bool LaunchOnClose
@@ -213,6 +287,13 @@ public sealed class InstallerViewModel : ObservableObject
             _ => Loc.Instance.Get("InstallerVm_Ready"),
         };
         Phase = Phase.Ready;
+
+        // If installing is the only thing this machine can do (nothing is installed), skip the single-button
+        // action step and open its options straight away (#114).
+        if (SoleAction is { } sole)
+        {
+            PendingAction = sole;
+        }
     }
 
     /// <summary>Switch the window to the live-progress view.</summary>
@@ -306,8 +387,9 @@ public sealed class InstallerViewModel : ObservableObject
         ? Loc.Instance.Get("InstallerVm_SeedDbNone")
         : Loc.Instance.Get("InstallerVm_SeedDbSelected", System.IO.Path.GetFileName(SeedDbPath));
 
-    /// <summary>Whether to offer the default-settings-DB picker (install / update only, like the geo option).</summary>
-    public bool ShowSeedDbOption => Phase == Phase.Ready && (ShowInstall || ShowUpdate);
+    /// <summary>Whether to offer the default-settings-DB picker: on the options step for install / update /
+    /// repair (like the geo option), never for removal.</summary>
+    public bool ShowSeedDbOption => ShowOptionsStep && IsApplyAction;
 
     private void PickSeedDb()
     {
@@ -325,7 +407,9 @@ public sealed class InstallerViewModel : ObservableObject
 
     private void RaiseVisibility()
     {
-        Raise(nameof(ShowActions));
+        Raise(nameof(ShowActionButtons));
+        Raise(nameof(ShowOptionsStep));
+        Raise(nameof(ShowBack));
         Raise(nameof(ShowInstall));
         Raise(nameof(ShowUpdate));
         Raise(nameof(ShowRepair));

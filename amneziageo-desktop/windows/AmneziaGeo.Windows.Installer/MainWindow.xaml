@@ -63,26 +63,9 @@
           <Button Content="{l:Tr InstallerUi_Close}" Style="{StaticResource AccentButton}" Command="{Binding CloseCommand}" />
         </StackPanel>
 
-        <!-- Actions (ready phase): optional list-download checkbox + the mode buttons. -->
+        <!-- Ready, step 1 (#114): pick a maintenance action. Its options move to a dedicated step below. -->
         <StackPanel DockPanel.Dock="Bottom"
-                    Visibility="{Binding ShowActions, Converter={StaticResource B2V}}">
-          <!-- Optional user-selected default-settings database (#55): takes priority over a bundled default. -->
-          <StackPanel Orientation="Horizontal" Margin="0,0,0,12"
-                      Visibility="{Binding ShowSeedDbOption, Converter={StaticResource B2V}}">
-            <Button Content="{l:Tr InstallerUi_SettingsFile}" Command="{Binding PickSeedDbCommand}" Margin="0,0,10,0" />
-            <TextBlock Text="{Binding SeedDbLabel}" Style="{StaticResource MutedTextBlock}"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          </StackPanel>
-          <CheckBox Content="{l:Tr InstallerUi_DownloadGeoDbUpdates}"
-                    IsChecked="{Binding DownloadLists}"
-                    Margin="0,0,0,12"
-                    Visibility="{Binding ShowDownloadOption, Converter={StaticResource B2V}}" />
-          <!-- #105: on removal, optionally wipe the runtime configuration (ProgramData\AmneziaGeo). Off by
-               default so a reinstall keeps the user's profiles and settings. -->
-          <CheckBox Content="{l:Tr InstallerUi_DeleteConfiguration}"
-                    IsChecked="{Binding DeleteConfig}"
-                    Margin="0,0,0,12"
-                    Visibility="{Binding ShowDeleteConfigOption, Converter={StaticResource B2V}}" />
+                    Visibility="{Binding ShowActionButtons, Converter={StaticResource B2V}}">
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="{l:Tr InstallerUi_Remove}" Style="{StaticResource DangerButton}"
                     Command="{Binding RemoveCommand}" Margin="0,0,10,0"
@@ -96,6 +79,37 @@
             <Button Content="{Binding InstallButtonText}" Style="{StaticResource AccentButton}"
                     Command="{Binding InstallCommand}"
                     Visibility="{Binding ShowInstall, Converter={StaticResource B2V}}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Ready, step 2 (#114): configure the chosen action, then Continue / Back. Which options appear is
+             per-action (install/update/repair: settings file + geo + reset; remove: only delete config). -->
+        <StackPanel DockPanel.Dock="Bottom"
+                    Visibility="{Binding ShowOptionsStep, Converter={StaticResource B2V}}">
+          <TextBlock Text="{Binding OptionsHeading}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12" />
+          <!-- Optional user-selected default-settings database (#55): takes priority over a bundled default. -->
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,12"
+                      Visibility="{Binding ShowSeedDbOption, Converter={StaticResource B2V}}">
+            <Button Content="{l:Tr InstallerUi_SettingsFile}" Command="{Binding PickSeedDbCommand}" Margin="0,0,10,0" />
+            <TextBlock Text="{Binding SeedDbLabel}" Style="{StaticResource MutedTextBlock}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <CheckBox Content="{l:Tr InstallerUi_DownloadGeoDbUpdates}"
+                    IsChecked="{Binding DownloadLists}"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ShowDownloadOption, Converter={StaticResource B2V}}" />
+          <!-- #105/#114: wipe the runtime configuration (ProgramData\AmneziaGeo). The label is contextual -
+               «Сбросить настройки» on install/update/repair, «Удалить конфигурацию и кэш» on removal. Off by
+               default so a plain (re)install keeps the user's profiles and settings. -->
+          <CheckBox Content="{Binding DeleteConfigLabel}"
+                    IsChecked="{Binding DeleteConfig}"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ShowDeleteConfigOption, Converter={StaticResource B2V}}" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="{l:Tr InstallerUi_Back}" Command="{Binding BackCommand}" Margin="0,0,10,0"
+                    Visibility="{Binding ShowBack, Converter={StaticResource B2V}}" />
+            <Button Content="{l:Tr InstallerUi_Continue}" Style="{StaticResource AccentButton}"
+                    Command="{Binding ConfirmCommand}" />
           </StackPanel>
         </StackPanel>
 

@@ -262,7 +262,8 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return;
         }
 
-        var downloadGeo = (_action == InstallerAction.Install || _action == InstallerAction.Update) && _vm.DownloadLists;
+        var downloadGeo = _action is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair
+            && _vm.DownloadLists;
         if (!downloadGeo)
         {
             Finish(true, SuccessText(_action));
@@ -337,28 +338,32 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             _ => LaunchAction.Install,
         };
 
-        if (action is InstallerAction.Install or InstallerAction.Update)
+        // #114: the "reset settings" / "delete configuration and cache" toggle applies to EVERY action now -
+        // on install/update/repair a checked reset wipes the existing config so the app starts fresh; on
+        // removal it wipes it on uninstall (#105). The MSI's AgWipeConfig runs whenever DELETECONFIG=1. An
+        // explicit DELETECONFIG=1/0 on the command line wins (the variable is then already non-empty);
+        // otherwise take the checkbox, which defaults off - so a headless ARP uninstall keeps the config.
+        if (string.IsNullOrEmpty(engine.GetVariableString("DELETECONFIG")))
         {
-            ResolveSeedReplace();
+            engine.SetVariableString("DELETECONFIG", _vm.DeleteConfig ? "1" : "0", false);
+        }
 
-            // #55: a default-settings DB the user picked in the BA takes priority over a bundled default and
-            // is recorded by the MSI as the seed source. A SEEDDBPATH=... command-line argument is left as
-            // given when the user picked nothing.
+        if (action is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair)
+        {
+            // Reconcile a bundled default DB against an existing one (#54) only on install/update that is NOT
+            // wiping the config: a reset removes state.db (the agent seeds fresh, nothing to replace); a repair
+            // leaves an intact config alone.
+            if (action is not InstallerAction.Repair && !_vm.DeleteConfig)
+            {
+                ResolveSeedReplace();
+            }
+
+            // #55: a default-settings DB the user picked in the BA (or a SEEDDBPATH=... command-line argument)
+            // becomes the MSI's seed source, used by the agent on first run when there is no state.db (e.g.
+            // right after a reset). Left as given when the user picked nothing.
             if (!string.IsNullOrEmpty(_vm.SeedDbPath))
             {
                 engine.SetVariableString("SEEDDBPATH", _vm.SeedDbPath, false);
-            }
-        }
-        else if (action is InstallerAction.Remove)
-        {
-            // #105: pass the "delete configuration" choice to the MSI (DELETECONFIG -> the AgWipeConfig deferred
-            // action wipes ProgramData\AmneziaGeo). An explicit DELETECONFIG=1/0 on the command line wins (the
-            // variable is then already non-empty); otherwise take the checkbox, which defaults off. A headless
-            // ARP uninstall reaches this with the default-off checkbox and no command-line value, so it keeps the
-            // configuration.
-            if (string.IsNullOrEmpty(engine.GetVariableString("DELETECONFIG")))
-            {
-                engine.SetVariableString("DELETECONFIG", _vm.DeleteConfig ? "1" : "0", false);
             }
         }
 

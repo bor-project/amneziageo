@@ -100,16 +100,19 @@
                   Impersonate="no"
                   Return="ignore" />
 
-    <!-- #105: on full removal, optionally wipe the runtime data tree (ProgramData\AmneziaGeo: state.db,
-         Configurations\, geo\, logs\) when the user ticked "delete configuration" in the BA (DELETECONFIG=1,
-         passed by the bundle). Off by default, so a plain uninstall keeps profiles/settings. The WHOLE tree is
-         removed, not just state.db: leaving legacy Configurations\*.conf behind would let them migrate back into
-         a fresh DB on a later reinstall. Deferred + Impersonate="no" so it runs as SYSTEM (the data is owned by
-         the service account) and AFTER StopServices has stopped the agent (its process exit unlocks state.db).
-         $env:ProgramData is resolved by the child process, so no CustomActionData is needed. Best-effort
-         (Return="ignore"): a hiccup never blocks uninstall. The retry loop (up to ~3s) rides out the narrow
-         window where the service is already SCM-stopped but its process has not yet fully released state.db /
-         the current log file, so the wipe does not silently leave those two behind. -->
+    <!-- #105/#114: optionally wipe the runtime data tree (ProgramData\AmneziaGeo: state.db, Configurations\,
+         geo\, logs\) when the user ticked the wipe toggle in the BA (DELETECONFIG=1, passed by the bundle):
+         «Удалить конфигурацию и кэш» on removal, or «Сбросить настройки» on install/update/repair (start the
+         app from a clean config). Off by default, so a plain (un)install keeps profiles/settings. The WHOLE
+         tree is removed, not just state.db: leaving legacy Configurations\*.conf behind would let them migrate
+         back into a fresh DB. Deferred + Impersonate="no" so it runs as SYSTEM (the data is owned by the
+         service account) and AFTER StopServices has stopped the agent (its process exit unlocks state.db) but
+         before the service is (re)started, so a fresh config is seeded after the wipe, not before. On a fresh
+         install / a machine with no config the tree is absent and the action is a no-op. $env:ProgramData is
+         resolved by the child process, so no CustomActionData is needed. Best-effort (Return="ignore"): a
+         hiccup never blocks the operation. The retry loop (up to ~3s) rides out the narrow window where the
+         service is already SCM-stopped but its process has not yet fully released state.db / the current log
+         file, so the wipe does not silently leave those two behind. -->
     <CustomAction Id="AgWipeConfig"
                   Directory="SystemFolder"
                   ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command &quot;$d = Join-Path $env:ProgramData 'AmneziaGeo'; for ($i = 0; $i -lt 10 -and (Test-Path $d); $i++) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path $d) { Start-Sleep -Milliseconds 300 } }&quot;"
@@ -118,7 +121,7 @@
                   Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="AgCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
-      <Custom Action="AgWipeConfig" After="RemoveFiles" Condition="DELETECONFIG=&quot;1&quot; AND REMOVE=&quot;ALL&quot;" />
+      <Custom Action="AgWipeConfig" After="RemoveFiles" Condition="DELETECONFIG=&quot;1&quot;" />
     </InstallExecuteSequence>
   </Package>
 

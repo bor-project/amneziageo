@@ -1,7 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
         x:Class="AmneziaGeo.Windows.Ui.ExportDialog"
-        Title="Экспорт конфигурации"
+        Title="{l:Tr Export_WindowTitle}"
         Width="460" Height="620"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
@@ -17,17 +18,17 @@
             CornerRadius="9" Padding="3">
       <UniformGrid Columns="2">
         <Button Classes="seg" Classes.active="{Binding IsConf}" Command="{Binding ShowConfCommand}"
-                Content="Файл .conf" HorizontalAlignment="Stretch" />
+                Content="{l:Tr Export_ConfFileTab}" HorizontalAlignment="Stretch" />
         <Button Classes="seg" Classes.active="{Binding IsLink}" Command="{Binding ShowLinkCommand}"
-                Content="Ссылка vpn://" HorizontalAlignment="Stretch" />
+                Content="{l:Tr Export_LinkTab}" HorizontalAlignment="Stretch" />
       </UniformGrid>
     </Border>
 
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
                 Spacing="8" Margin="0,12,0,0">
-      <Button Content="Копировать" Click="OnCopy" IsEnabled="{Binding IsReady}" />
-      <Button Content="Сохранить..." Click="OnSave" IsEnabled="{Binding IsReady}" />
-      <Button Content="Закрыть" Click="OnClose" IsDefault="True" />
+      <Button Content="{l:Tr Export_CopyButton}" Click="OnCopy" IsEnabled="{Binding IsReady}" />
+      <Button Content="{l:Tr Export_SaveButton}" Click="OnSave" IsEnabled="{Binding IsReady}" />
+      <Button Content="{l:Tr Export_CloseButton}" Click="OnClose" IsDefault="True" />
     </StackPanel>
 
     <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}"

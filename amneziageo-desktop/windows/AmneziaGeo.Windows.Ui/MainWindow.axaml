@@ -42,7 +42,7 @@
                        VerticalAlignment="Center" HorizontalAlignment="Center"
                        Foreground="{DynamicResource AgMutedBrush}" />
             <Button Classes="icon" Padding="6,4" VerticalAlignment="Center" HorizontalAlignment="Left"
-                    Command="{Binding NavSettingsCommand}" ToolTip.Tip="Настройки">
+                    Command="{Binding NavSettingsCommand}" ToolTip.Tip="{l:Tr Main_SettingsTooltip}">
               <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"
                         Foreground="{DynamicResource AgMutedBrush}" />
             </Button>
@@ -116,7 +116,7 @@
             </ComboBox>
             <TextBlock IsVisible="{Binding !HasBalancers}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
-                       Text="Нет профилей. Выберите «+ Новый профиль», чтобы создать и настроить его." />
+                       Text="{l:Tr Main_NoProfilesHint}" />
           </StackPanel>
         </StackPanel>
 
@@ -142,7 +142,7 @@
 
           <!-- back → Home -->
           <Button Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
-                  Command="{Binding NavHomeCommand}" ToolTip.Tip="Назад к профилям">
+                  Command="{Binding NavHomeCommand}" ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
             <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
                       Foreground="{DynamicResource AgMutedBrush}" />
           </Button>
@@ -203,8 +203,8 @@
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Профиль" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Конфигурация + маршрутизация" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="{l:Tr Main_RailProfileTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailProfileSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -222,8 +222,8 @@
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Конфигурации" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Каталог серверов" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="{l:Tr Main_RailConfigTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailConfigSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -241,8 +241,8 @@
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Маршрутизация" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Списки правил и трафик" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="{l:Tr Main_RailRoutingTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailRoutingSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -260,8 +260,8 @@
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Источники geo" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Базы доменов и стран" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="{l:Tr Main_RailSourcesTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailSourcesSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -279,8 +279,8 @@
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Логи" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Журнал работы агента" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="{l:Tr Main_RailLogsTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailLogsSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -298,8 +298,8 @@
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
                   <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="Общие" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="Оформление и сведения" FontSize="11.5" Classes="muted"
+                    <TextBlock Text="{l:Tr Main_RailGeneralTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_RailGeneralSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                 </Grid>
@@ -322,7 +322,7 @@
             <!-- ============================= PROFILE SECTION ============================= -->
             <StackPanel IsVisible="{Binding IsSettingsProfile}" Spacing="14">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="section" Text="ПРОФИЛЬ" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ProfileSection}" VerticalAlignment="Center" />
                 <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
@@ -330,13 +330,13 @@
                 <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateProfileCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="+" />
-                    <TextBlock Text="Профиль" />
+                    <TextBlock Text="{l:Tr Main_ProfileAddButton}" />
                   </StackPanel>
                 </Button>
               </Grid>
 
               <StackPanel Spacing="6">
-                <TextBlock Classes="label" Text="ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ НАСТРОЙКИ" />
+                <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
                           ItemsSource="{Binding ProfileOptions}"
                           SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
@@ -347,7 +347,7 @@
                   </ComboBox.ItemTemplate>
                 </ComboBox>
                 <TextBlock IsVisible="{Binding !HasBalancers}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="Профилей пока нет. Выберите «+ Новый профиль» (здесь или в списке), затем задайте конфигурацию и маршрутизацию." />
+                           Text="{l:Tr Main_NoProfilesYetHint}" />
               </StackPanel>
 
               <!-- the open profile's editor: rename + config picker + routing picker + delete -->
@@ -355,14 +355,14 @@
 
                 <!-- rename -->
                 <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="НАЗВАНИЕ" />
+                  <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="Новое имя для этого профиля. Запущенный профиль переименовать нельзя." />
+                             Text="{l:Tr Main_ProfileRenameHint}" />
                   <Grid ColumnDefinitions="*,Auto">
                     <TextBox Grid.Column="0" Classes="field" Text="{Binding ProfileRename, Mode=TwoWay}" />
-                    <Button Grid.Column="1" Classes="softbtn" Content="Сохранить" Margin="6,0,0,0"
+                    <Button Grid.Column="1" Classes="softbtn" Content="{l:Tr Main_SaveButton}" Margin="6,0,0,0"
                             Command="{Binding RenameProfileCommand}" IsEnabled="{Binding CanSaveProfileName}"
-                            ToolTip.Tip="Переименовать профиль" />
+                            ToolTip.Tip="{l:Tr Main_RenameProfileTooltip}" />
                   </Grid>
                   <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
@@ -374,7 +374,7 @@
                        «+ Новая конфигурация» redirects to that section to add one, then the profile's combo
                        picks it up. The list is «— не выбрано —», «+ Новая конфигурация», then saved configs. -->
                   <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="КОНФИГУРАЦИЯ" />
+                    <TextBlock Classes="label" Text="{l:Tr Main_ConfigLabel}" />
                     <ComboBox Classes="field" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding ConfigOptions}"
                               SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
@@ -385,14 +385,14 @@
                       </ComboBox.ItemTemplate>
                     </ComboBox>
                     <TextBlock IsVisible="{Binding !HasConfig}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="У профиля пока нет конфигурации. Выберите из списка или «+ Новая конфигурация», чтобы добавить её в разделе «Конфигурации»." />
+                               Text="{l:Tr Main_ProfileNoConfigHint}" />
                   </StackPanel>
 
                   <!-- routing picker (selection-only; the rule editor lives in the Routing section).
                        The None entry means «Полный туннель» (no split routing); «+ Новый список» redirects
                        to the Routing section to create one, then this combo picks it up. -->
                   <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ" />
+                    <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
                     <ComboBox Classes="field" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding RoutingListOptions}"
                               SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
@@ -401,7 +401,7 @@
                           <!-- relabel the "none" sentinel as «Полный туннель» in the profile picker; real
                                lists and the "+ Новый список" sentinel keep their own names. -->
                           <Panel>
-                            <TextBlock Text="Полный туннель" IsVisible="{Binding IsNone}" />
+                            <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
                             <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
                           </Panel>
                         </DataTemplate>
@@ -411,21 +411,21 @@
                       <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
                                     OnContent="" OffContent="" MinWidth="0" />
                       <TextBlock Grid.Column="1" Margin="11,0,0,0"
-                                 Text="Использовать выбранный список" FontSize="12.5" FontWeight="Medium"
+                                 Text="{l:Tr Main_UseSelectedList}" FontSize="12.5" FontWeight="Medium"
                                  VerticalAlignment="Center" />
                     </Grid>
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="«Полный туннель» — весь трафик идёт через VPN. Выберите список, чтобы направлять через VPN только его записи. Правила списков редактируются в разделе «Маршрутизация»." />
+                               Text="{l:Tr Main_RoutingPickerHint}" />
                   </StackPanel>
                 </StackPanel>
 
                 <!-- delete -->
                 <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="УДАЛЕНИЕ" />
+                  <TextBlock Classes="label" Text="{l:Tr Main_DeletionLabel}" />
                   <Button Classes="danger" HorizontalAlignment="Left"
-                          Command="{Binding DeleteOpenProfileCommand}" Content="Удалить профиль" />
+                          Command="{Binding DeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="Профиль удалится вместе со своими настройками. Запущенный профиль нужно сначала отключить." />
+                             Text="{l:Tr Main_DeleteProfileHint}" />
                 </StackPanel>
               </StackPanel>
             </StackPanel>
@@ -433,7 +433,7 @@
             <!-- ============================= CONFIG SECTION ============================= -->
             <StackPanel IsVisible="{Binding IsSettingsConfig}" Spacing="14">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="section" Text="КОНФИГУРАЦИИ" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center" />
                 <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding Configs.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
@@ -441,7 +441,7 @@
                 <Button Grid.Column="3" Classes="softbtn" Command="{Binding BeginSectionConfigCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="+" />
-                    <TextBlock Text="Новая конфигурация" />
+                    <TextBlock Text="{l:Tr Main_NewConfigButton}" />
                   </StackPanel>
                 </Button>
               </Grid>
@@ -450,7 +450,7 @@
                    «+ Новая конфигурация» opens the import form below; a saved config opens its editor. A
                    profile's «+ Новая конфигурация» redirect lands here with this combo on that item. -->
               <StackPanel Spacing="6">
-                <TextBlock Classes="label" Text="ВЫБЕРИТЕ КОНФИГУРАЦИЮ" />
+                <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
                           ItemsSource="{Binding ConfigCatalogueOptions}"
                           SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
@@ -461,7 +461,7 @@
                   </ComboBox.ItemTemplate>
                 </ComboBox>
                 <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="Конфигураций пока нет. Выберите «+ Новая конфигурация», чтобы добавить сервер в каталог." />
+                           Text="{l:Tr Main_NoConfigsHint}" />
               </StackPanel>
 
               <!-- standalone import form (window VM SectionConfig* fields) -->
@@ -470,31 +470,31 @@
                       BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                       CornerRadius="9" Padding="10">
                 <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="НОВАЯ КОНФИГУРАЦИЯ" />
+                  <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" />
                   <TextBox Classes="field" Text="{Binding SectionConfigName, Mode=TwoWay}"
-                           Watermark="Имя (необязательно)" />
+                           Watermark="{l:Tr Main_NameOptionalWatermark}" />
                   <TextBox Classes="field" Text="{Binding SectionConfigText, Mode=TwoWay}"
                            AcceptsReturn="True" Height="70" TextWrapping="Wrap"
-                           Watermark="vpn://...   или   текст .conf" />
+                           Watermark="{l:Tr Main_ConfigTextWatermark}" />
                   <UniformGrid Columns="5">
-                    <Button Classes="softbtn" Content="Файл" Click="OnSectionConfigBrowse" Margin="0,0,5,0"
+                    <Button Classes="softbtn" Content="{l:Tr Main_FileButton}" Click="OnSectionConfigBrowse" Margin="0,0,5,0"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
                     <Button Classes="softbtn" Content="QR" Click="OnSectionConfigQrImage" Margin="0,0,5,0"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                    <Button Classes="softbtn" Content="Камера" Click="OnSectionConfigCamera" Margin="0,0,5,0"
+                    <Button Classes="softbtn" Content="{l:Tr Main_CameraButton}" Click="OnSectionConfigCamera" Margin="0,0,5,0"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                    <Button Classes="softbtn" Content="Буфер" Click="OnSectionConfigClipboard" Margin="0,0,5,0"
+                    <Button Classes="softbtn" Content="{l:Tr Main_ClipboardButton}" Click="OnSectionConfigClipboard" Margin="0,0,5,0"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                    <Button Classes="softbtn" Content="Вручную" Click="OnSectionConfigManual"
+                    <Button Classes="softbtn" Content="{l:Tr Main_ManualButton}" Click="OnSectionConfigManual"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            ToolTip.Tip="Ввести / отредактировать текст конфигурации в большом редакторе" />
+                            ToolTip.Tip="{l:Tr Main_ManualButtonTooltip}" />
                   </UniformGrid>
                   <TextBlock Text="{Binding SectionConfigStatus}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                   <UniformGrid Columns="2">
-                    <Button Classes="softbtn" Content="Отмена" Margin="0,0,4,0"
+                    <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Margin="0,0,4,0"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             Command="{Binding CancelSectionConfigCommand}" />
-                    <Button Classes="accent" Content="Сохранить" Margin="4,0,0,0"
+                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Margin="4,0,0,0"
                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                             IsEnabled="{Binding CanSaveSectionConfig}"
                             Command="{Binding SaveSectionConfigCommand}" />
@@ -506,23 +506,23 @@
               <StackPanel IsVisible="{Binding IsConfigManage}" Spacing="14">
                 <!-- config name + pencil -->
                 <StackPanel Spacing="2">
-                  <TextBlock Classes="label" Text="ИМЯ КОНФИГУРАЦИИ" />
+                  <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
                   <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditingConfigName}">
                     <TextBlock Grid.Column="0" Text="{Binding OpenConfig}" FontWeight="SemiBold" FontSize="14"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                     <Button Grid.Column="1" Classes="icon" Content="✎" FontSize="14"
                             Command="{Binding BeginConfigNameEditCommand}" Click="OnBeginConfigNameEdit"
-                            ToolTip.Tip="Переименовать" />
+                            ToolTip.Tip="{l:Tr Main_RenameTooltip}" />
                   </Grid>
                   <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding IsEditingConfigName}">
                     <TextBox Grid.Column="0" x:Name="ConfigNameBox" Classes="field"
                              Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
                     <Button Grid.Column="1" Classes="icon" Content="💾" FontSize="14" Margin="6,0,0,0"
                             Command="{Binding RenameConfigCommand}" IsEnabled="{Binding CanSaveConfigName}"
-                            ToolTip.Tip="Сохранить имя" />
+                            ToolTip.Tip="{l:Tr Main_SaveNameTooltip}" />
                     <Button Grid.Column="2" Classes="icon" Content="✕" FontSize="14" Margin="4,0,0,0"
                             Command="{Binding CancelConfigNameEditCommand}"
-                            ToolTip.Tip="Отменить переименование" />
+                            ToolTip.Tip="{l:Tr Main_CancelRenameTooltip}" />
                   </Grid>
                   <TextBlock Text="{Binding ConfigRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap"
                              IsVisible="{Binding IsEditingConfigName}" />
@@ -536,13 +536,13 @@
                           IsEnabled="{Binding !IsEditing}">
                     <UniformGrid Columns="2" Width="320">
                       <Button Classes="seg" Classes.active="{Binding IsConf}" Command="{Binding ShowConfCommand}"
-                              Content="Файл .conf" HorizontalAlignment="Stretch" />
+                              Content="{l:Tr Main_ConfFileTab}" HorizontalAlignment="Stretch" />
                       <Button Classes="seg" Classes.active="{Binding IsLink}" Command="{Binding ShowLinkCommand}"
-                              Content="Ссылка vpn://" HorizontalAlignment="Stretch" />
+                              Content="{l:Tr Main_VpnLinkTab}" HorizontalAlignment="Stretch" />
                     </UniformGrid>
                   </Border>
                   <TextBlock IsVisible="{Binding IsEditing}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="Должны быть секции [Interface] и [Peer]. Гео и маршруты профиля сохранятся." />
+                             Text="{l:Tr Main_ConfEditHint}" />
                   <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
                           IsVisible="{Binding ShowQr}">
                     <Image Source="{Binding QrImage}" Width="220" Height="220" />
@@ -550,7 +550,7 @@
                   <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
                           BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                           CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
-                    <TextBlock Text="Конфигурация не помещается в QR-код. Используйте «Сохранить в файл…» или ссылку vpn://."
+                    <TextBlock Text="{l:Tr Main_QrUnavailableHint}"
                                Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
                   </Border>
                   <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
@@ -565,15 +565,15 @@
                              FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
                   </Border>
                   <WrapPanel HorizontalAlignment="Center">
-                    <Button Classes="softbtn" Content="Изменить" Command="{Binding BeginEditCommand}" Margin="4"
+                    <Button Classes="softbtn" Content="{l:Tr Main_EditButton}" Command="{Binding BeginEditCommand}" Margin="4"
                             IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                    <Button Classes="accent" Content="Сохранить" Command="{Binding SaveEditCommand}" Margin="4"
+                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveEditCommand}" Margin="4"
                             IsVisible="{Binding IsEditing}" />
-                    <Button Classes="softbtn" Content="Отмена" Command="{Binding CancelEditCommand}" Margin="4"
+                    <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelEditCommand}" Margin="4"
                             IsVisible="{Binding IsEditing}" />
-                    <Button Classes="softbtn" Content="Копировать" Click="OnConfigExportCopy" Margin="4"
+                    <Button Classes="softbtn" Content="{l:Tr Main_CopyButton}" Click="OnConfigExportCopy" Margin="4"
                             IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                    <Button Classes="softbtn" Content="Сохранить в файл…" Click="OnConfigExportSave" Margin="4"
+                    <Button Classes="softbtn" Content="{l:Tr Main_SaveToFileButton}" Click="OnConfigExportSave" Margin="4"
                             IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
                   </WrapPanel>
                   <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
@@ -582,46 +582,46 @@
 
                 <!-- proxy (WebSocket) : ConfigTransport -->
                 <StackPanel Spacing="10" DataContext="{Binding ConfigTransport}" x:DataType="vm:ConfigTransportViewModel">
-                  <TextBlock Classes="label" Text="ПРОКСИ (WEBSOCKET)" />
-                  <CheckBox Content="Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)"
+                  <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
+                  <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}"
                             IsChecked="{Binding UseWebSocket}" />
                   <!-- MTU applies to any transport (plain WG too), not just WSS: on a path whose real MTU is
                        below ~1500 (mobile, PPPoE, a nested tunnel, double-NAT) a too-high MTU black-holes the
                        large TLS-handshake packets, so every HTTPS connection stalls. Default is the safe 1280
                        (#109). Kept OUTSIDE the WebSocket block so it can be tuned on a plain-WG config too. -->
                   <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="MTU туннеля:" VerticalAlignment="Center" />
+                    <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" />
                     <TextBox Width="90" Text="{Binding Mtu}" />
                     <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
-                               Text="576-1500, по умолчанию 1280 (безопасно почти для любой сети). На чистом канале можно поднять до 1420 ради скорости; если TLS-хендшейк всё равно зависает - понизьте ещё." />
+                               Text="{l:Tr Main_MtuHint}" />
                   </StackPanel>
                   <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
                     <StackPanel Spacing="2">
-                      <TextBlock Text="Адрес сервера (host):" />
+                      <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
                       <TextBox Text="{Binding WebSocketHost}"
-                               Watermark="как у сервера, например wss-front.example.com" />
+                               Watermark="{l:Tr Main_ServerHostWatermark}" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                      <TextBlock Text="Порт сервера (TLS):" VerticalAlignment="Center" />
+                      <TextBlock Text="{l:Tr Main_ServerPortLabel}" VerticalAlignment="Center" />
                       <TextBox Width="90" Text="{Binding WebSocketPort}" />
                     </StackPanel>
                     <StackPanel Spacing="2">
-                      <TextBlock Text="Авторизация:" />
+                      <TextBlock Text="{l:Tr Main_AuthLabel}" />
                       <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
-                        <ComboBoxItem Content="Без авторизации" />
-                        <ComboBoxItem Content="Логин и пароль" />
-                        <ComboBoxItem Content="Токен" />
+                        <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
+                        <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
+                        <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
                       </ComboBox>
                     </StackPanel>
                     <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
-                      <TextBlock Text="Логин:" />
-                      <TextBox Text="{Binding WebSocketUser}" Watermark="логин" />
-                      <TextBlock Text="Пароль:" Margin="0,4,0,0" />
-                      <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="пароль" />
+                      <TextBlock Text="{l:Tr Main_LoginLabel}" />
+                      <TextBox Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
+                      <TextBlock Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
+                      <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
                     </StackPanel>
                     <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
-                      <TextBlock Text="Токен доступа:" />
-                      <TextBox Text="{Binding WebSocketToken}" Watermark="токен доступа" />
+                      <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
+                      <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
                     </StackPanel>
                     <Border Background="{DynamicResource AgInsetBrush}" CornerRadius="6" Padding="8">
                       <SelectableTextBlock Text="{Binding ServerHint}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"
@@ -629,20 +629,20 @@
                     </Border>
                   </StackPanel>
                   <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Classes="accent" Content="Сохранить" Command="{Binding SaveCommand}"
+                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveCommand}"
                             IsEnabled="{Binding !IsBusy}" />
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                                VerticalAlignment="Center" TextWrapping="Wrap" />
                   </StackPanel>
                   <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="ИМПОРТ / ЭКСПОРТ" />
+                    <TextBlock Classes="label" Text="{l:Tr Main_ImportExportLabel}" />
                     <WrapPanel>
-                      <Button Classes="softbtn" Content="Копировать" Margin="0,0,6,6"
-                              Click="OnWsExportCopy" ToolTip.Tip="Скопировать настройки в буфер обмена" />
-                      <Button Classes="softbtn" Content="Сохранить в файл…" Margin="0,0,6,6" Click="OnWsExportSave" />
-                      <Button Classes="softbtn" Content="Вставить" Margin="0,0,6,6"
-                              Click="OnWsImportPaste" ToolTip.Tip="Импортировать настройки из буфера обмена" />
-                      <Button Classes="softbtn" Content="Загрузить файл…" Margin="0,0,6,6" Click="OnWsImportFile" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_CopyButton}" Margin="0,0,6,6"
+                              Click="OnWsExportCopy" ToolTip.Tip="{l:Tr Main_WsCopyTooltip}" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_SaveToFileButton}" Margin="0,0,6,6" Click="OnWsExportSave" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_PasteButton}" Margin="0,0,6,6"
+                              Click="OnWsImportPaste" ToolTip.Tip="{l:Tr Main_WsPasteTooltip}" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_LoadFileButton}" Margin="0,0,6,6" Click="OnWsImportFile" />
                     </WrapPanel>
                   </StackPanel>
                 </StackPanel>
@@ -651,8 +651,8 @@
 
                 <StackPanel Spacing="10">
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="Удалить конфигурацию из каталога. Агент откажет, пока она используется каким-либо профилем или запущенным туннелем — сначала отвяжите её." />
-                  <Button Classes="danger" Content="Удалить конфигурацию" HorizontalAlignment="Left"
+                             Text="{l:Tr Main_DeleteConfigHint}" />
+                  <Button Classes="danger" Content="{l:Tr Main_DeleteConfigButton}" HorizontalAlignment="Left"
                           Command="{Binding DeleteOpenConfigCommand}" />
                   <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                 </StackPanel>
@@ -662,7 +662,7 @@
             <!-- ============================= ROUTING SECTION ============================= -->
             <StackPanel IsVisible="{Binding IsSettingsRouting}" Spacing="14">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="section" Text="МАРШРУТИЗАЦИЯ" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_RoutingSection}" VerticalAlignment="Center" />
                 <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
@@ -670,13 +670,13 @@
                 <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateRoutingListCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="+" />
-                    <TextBlock Text="Новый список" />
+                    <TextBlock Text="{l:Tr Main_NewListButton}" />
                   </StackPanel>
                 </Button>
               </Grid>
 
               <StackPanel Spacing="6">
-                <TextBlock Classes="label" Text="ВЫБЕРИТЕ СПИСОК" />
+                <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
                           ItemsSource="{Binding RoutingCatalogueOptions}"
                           SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
@@ -684,14 +684,14 @@
                     <DataTemplate x:DataType="vm:RoutingListChoice">
                       <!-- «— не выбрано —» for the none sentinel; saved lists and «+ Новый список» keep their names. -->
                       <Panel>
-                        <TextBlock Text="— не выбрано —" IsVisible="{Binding IsNone}" />
+                        <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
                         <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
                       </Panel>
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>
                 <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="Списков пока нет. Нажмите «+ Новый список», чтобы задать правила (гео-категории, домены, CIDR, приложения)." />
+                           Text="{l:Tr Main_NoRoutingListsHint}" />
               </StackPanel>
 
               <!-- the rule editor for the selected/new list (RoutingEditor: RoutingListEditorViewModel) -->
@@ -701,21 +701,21 @@
                         CornerRadius="9" Padding="12">
                   <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
                     <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="ИМЯ СПИСКА" />
-                      <TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}" Watermark="напр. мой-список" />
+                      <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
+                      <TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
                     </StackPanel>
 
                     <!-- Per-app tunneling (#68) -->
                     <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="МАРШРУТИЗАЦИЯ СЕТЕВЫХ ЗАПРОСОВ ПРИЛОЖЕНИЯ" />
+                      <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
                       <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Button Grid.Column="0" Classes="softbtn" Margin="0,0,8,0" Content="Источник ▾">
+                        <Button Grid.Column="0" Classes="softbtn" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
                           <Button.Flyout>
                             <MenuFlyout>
-                              <MenuItem Header="Запущенное" Click="OnAppSourceRunning" />
-                              <MenuItem Header="Установленное" Click="OnAppSourceInstalled" />
-                              <MenuItem Header="Папка…" Click="OnAppSourceFolder" />
-                              <MenuItem Header="Файл…" Click="OnAppSourceFile" />
+                              <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
+                              <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
+                              <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
+                              <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
                             </MenuFlyout>
                           </Button.Flyout>
                         </Button>
@@ -730,24 +730,24 @@
                                 IsEnabled="{Binding IsAppPickerActive}">
                           <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="+" />
-                            <TextBlock Text="Добавить" />
+                            <TextBlock Text="{l:Tr Main_AddButton}" />
                           </StackPanel>
                         </Button>
                       </Grid>
                     </StackPanel>
 
                     <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)" />
+                      <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
                       <Grid ColumnDefinitions="*,Auto">
                         <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
-                                         Watermark="напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24"
+                                         Watermark="{l:Tr Main_AddEntryWatermark}"
                                          Text="{Binding RuleInput, Mode=TwoWay}"
                                          ItemsSource="{Binding GeoSuggestions}"
                                          FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
                         <Button Grid.Column="1" Classes="accent" Command="{Binding AddRuleCommand}">
                           <StackPanel Orientation="Horizontal" Spacing="4">
                             <TextBlock Text="+" />
-                            <TextBlock Text="Добавить" />
+                            <TextBlock Text="{l:Tr Main_AddButton}" />
                           </StackPanel>
                         </Button>
                       </Grid>
@@ -757,10 +757,10 @@
 
                     <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
                       <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Classes="label" Text="ЗАПИСИ" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Classes="icon" Content="Очистить" FontSize="11"
+                        <TextBlock Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Classes="icon" Content="{l:Tr Main_ClearButton}" FontSize="11"
                                 Command="{Binding ClearRulesCommand}"
-                                ToolTip.Tip="Удалить все записи списка" />
+                                ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}" />
                       </Grid>
                       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                               Background="{DynamicResource AgPanelBrush}" CornerRadius="10">
@@ -785,17 +785,17 @@
                     </StackPanel>
 
                     <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="ИМПОРТ / ЭКСПОРТ" />
+                      <TextBlock Classes="label" Text="{l:Tr Main_ImportExportLabel}" />
                       <WrapPanel>
-                        <Button Classes="softbtn" Content="Копировать" Margin="0,0,6,6"
-                                Click="OnRoutingExportCopy" ToolTip.Tip="Скопировать список в буфер обмена" />
-                        <Button Classes="softbtn" Content="Сохранить в файл…" Margin="0,0,6,6"
+                        <Button Classes="softbtn" Content="{l:Tr Main_CopyButton}" Margin="0,0,6,6"
+                                Click="OnRoutingExportCopy" ToolTip.Tip="{l:Tr Main_RoutingCopyTooltip}" />
+                        <Button Classes="softbtn" Content="{l:Tr Main_SaveToFileButton}" Margin="0,0,6,6"
                                 Click="OnRoutingExportSave" />
-                        <Button Classes="softbtn" Content="Показать QR" Margin="0,0,6,6"
-                                Click="OnRoutingShowQr" ToolTip.Tip="Показать QR-код списка для переноса" />
-                        <Button Classes="softbtn" Content="Вставить" Margin="0,0,6,6"
-                                Click="OnRoutingImportPaste" ToolTip.Tip="Импортировать список из буфера обмена" />
-                        <Button Classes="softbtn" Content="Загрузить файл…" Margin="0,0,6,6"
+                        <Button Classes="softbtn" Content="{l:Tr Main_ShowQrButton}" Margin="0,0,6,6"
+                                Click="OnRoutingShowQr" ToolTip.Tip="{l:Tr Main_ShowQrTooltip}" />
+                        <Button Classes="softbtn" Content="{l:Tr Main_PasteButton}" Margin="0,0,6,6"
+                                Click="OnRoutingImportPaste" ToolTip.Tip="{l:Tr Main_RoutingPasteTooltip}" />
+                        <Button Classes="softbtn" Content="{l:Tr Main_LoadFileButton}" Margin="0,0,6,6"
                                 Click="OnRoutingImportFile" />
                       </WrapPanel>
                     </StackPanel>
@@ -808,21 +808,21 @@
                         BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                         CornerRadius="9" Padding="12" IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
                   <StackPanel Spacing="12" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
-                    <TextBlock Classes="label" Text="ТРАФИК ЭТОГО СПИСКА" />
+                    <TextBlock Classes="label" Text="{l:Tr Main_ListTrafficLabel}" />
 
                     <StackPanel Spacing="6">
                       <TextBlock Classes="label" Text="DNS" />
                       <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                                 Text="DNS для обычного (не-туннельного) трафика. Несколько — через запятую. Пусто — определять автоматически. Гео-домены резолвятся отдельным чистым DNS." />
+                                 Text="{l:Tr Main_DnsHint}" />
                       <TextBox Classes="field" Text="{Binding LocalDns, Mode=TwoWay}"
-                               Watermark="напр. 1.1.1.1, 8.8.8.8" />
+                               Watermark="{l:Tr Main_DnsWatermark}" />
                     </StackPanel>
 
                     <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)" />
+                      <TextBlock Classes="label" Text="{l:Tr Main_ExclusionsLabel}" />
                       <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                                 Text="Адреса, которые не заворачивать в VPN. По одному в строке. IP/подсеть идут напрямую мимо туннеля; домен резолвится локальным DNS (уходит напрямую, только если адрес локальный)." />
-                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="Добавить локальные сети"
+                                 Text="{l:Tr Main_ExclusionsHint}" />
+                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="{l:Tr Main_AddLocalSubnetsButton}"
                               Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}" />
                       <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
                                VerticalContentAlignment="Top"
@@ -834,15 +834,15 @@
 
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                        <TextBlock Text="Весь UDP через туннель" FontSize="13.5" />
-                        <TextBlock Text="Заворачивает в туннель ВСЕ исходящие UDP-датаграммы, пока активна выборочная маршрутизация. Нужно для real-time медиа (голосовые звонки, онлайн-игры), чьи адреса серверов приходят сигналингом, а не через DNS. Локальная сеть и сам канал туннеля исключаются."
+                        <TextBlock Text="{l:Tr Main_AllUdpTitle}" FontSize="13.5" />
+                        <TextBlock Text="{l:Tr Main_AllUdpHint}"
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                       </StackPanel>
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
                     </Grid>
 
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Classes="accent" HorizontalAlignment="Left" Content="Сохранить"
+                      <Button Classes="accent" HorizontalAlignment="Left" Content="{l:Tr Main_SaveButton}"
                               Command="{Binding SaveCommand}" IsEnabled="{Binding !IsBusy}" />
                       <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                                  VerticalAlignment="Center" TextWrapping="Wrap" />
@@ -852,7 +852,7 @@
 
                 <Button Classes="danger" HorizontalAlignment="Left"
                         IsVisible="{Binding !RoutingEditor.IsNew}"
-                        Command="{Binding DeleteSectionRoutingListCommand}" Content="Удалить список" />
+                        Command="{Binding DeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
               </StackPanel>
             </StackPanel>
 
@@ -862,10 +862,10 @@
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Text="ИСТОЧНИКИ GEO" Classes="section" VerticalAlignment="Center" />
+                      <TextBlock Text="{l:Tr Main_SourcesSection}" Classes="section" VerticalAlignment="Center" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                        <Button Classes="softbtn" Command="{Binding CheckSourcesCommand}" Content="Проверить обновления" />
-                        <Button Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="Обновить все" />
+                        <Button Classes="softbtn" Command="{Binding CheckSourcesCommand}" Content="{l:Tr Main_CheckUpdatesButton}" />
+                        <Button Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="{l:Tr Main_UpdateAllButton}" />
                       </StackPanel>
                     </Grid>
                   </Border>
@@ -873,8 +873,8 @@
                   <StackPanel Margin="15,12" Spacing="8">
                     <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                        <TextBlock Text="Автопроверка обновлений" FontSize="13.5" />
-                        <TextBlock Text="Периодически проверять источники на новую версию и уведомлять."
+                        <TextBlock Text="{l:Tr Main_AutoCheckTitle}" FontSize="13.5" />
+                        <TextBlock Text="{l:Tr Main_AutoCheckHint}"
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                       </StackPanel>
                       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -893,8 +893,8 @@
                     </Grid>
                     <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                        <TextBlock Text="Актуальность кэша адресов" FontSize="13.5" />
-                        <TextBlock Text="Через сколько данные считаются устаревшими и обновляются в фоне. Ручное «Обновить все» проверяет всегда."
+                        <TextBlock Text="{l:Tr Main_CacheValidityTitle}" FontSize="13.5" />
+                        <TextBlock Text="{l:Tr Main_CacheValidityHint}"
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                       </StackPanel>
                       <ComboBox Grid.Column="1" Classes="field" Width="92" VerticalAlignment="Center"
@@ -909,25 +909,25 @@
                     </Grid>
                     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
-                    <TextBlock Classes="label" Text="ДОБАВИТЬ БАЗУ" />
+                    <TextBlock Classes="label" Text="{l:Tr Main_AddDatabaseLabel}" />
                     <Grid ColumnDefinitions="Auto,*,Auto">
                       <ComboBox Grid.Column="0" Classes="field" Width="118" Margin="0,0,8,0"
                                 ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
                                 IsEnabled="{Binding !SourceKindLocked}"
-                                ToolTip.Tip="Тип определён по имени файла в URL" />
+                                ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
                       <TextBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
                                Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
                       <Button Grid.Column="2" Classes="accent" Command="{Binding AddSourceCommand}">
                         <StackPanel Orientation="Horizontal" Spacing="4">
                           <TextBlock Text="+" />
-                          <TextBlock Text="Добавить" />
+                          <TextBlock Text="{l:Tr Main_AddButton}" />
                         </StackPanel>
                       </Button>
                     </Grid>
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="geosite - категории доменов, geoip - страны. Файл скачивается сразу. Значок ⟳ обновляет базу, «Обновить все» - все сразу; правый клик по базе - удалить." />
+                               Text="{l:Tr Main_GeoKindsHint}" />
 
-                    <TextBlock Classes="label" Text="ИСТОЧНИКИ" Margin="0,6,0,0" />
+                    <TextBlock Classes="label" Text="{l:Tr Main_SourcesLabel}" Margin="0,6,0,0" />
                     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                             Background="{DynamicResource AgInsetBrush}" CornerRadius="12">
                       <StackPanel Margin="10,10">
@@ -938,13 +938,13 @@
                                       BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                                       CornerRadius="9" Padding="11,9" Margin="0,3"
                                       ContextRequested="OnSourceRowContext"
-                                      ToolTip.Tip="Правый клик или ⋮ — обновить / удалить базу">
+                                      ToolTip.Tip="{l:Tr Main_SourceRowTooltip}">
                                 <Grid ColumnDefinitions="*,Auto">
                                   <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                     <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="● Доступно обновление" FontSize="11" FontWeight="SemiBold"
+                                    <TextBlock Text="{l:Tr Main_UpdateAvailableBadge}" FontSize="11" FontWeight="SemiBold"
                                                Foreground="{DynamicResource AgAccentBrush}" Margin="0,3,0,0"
                                                IsVisible="{Binding ShowUpdateBadge}" />
                                   </StackPanel>
@@ -952,7 +952,7 @@
                                               VerticalAlignment="Center" Margin="8,0,0,0">
                                     <Button Classes="icon" VerticalAlignment="Center"
                                             Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
-                                            ToolTip.Tip="Обновить базу">
+                                            ToolTip.Tip="{l:Tr Main_UpdateDatabaseTooltip}">
                                       <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
                                                    FontSize="11.5" VerticalAlignment="Center" />
@@ -961,7 +961,7 @@
                                       </StackPanel>
                                     </Button>
                                     <Button Classes="icon" VerticalAlignment="Center"
-                                            Click="OnSourceKebab" ToolTip.Tip="Действия">
+                                            Click="OnSourceKebab" ToolTip.Tip="{l:Tr Main_ActionsTooltip}">
                                       <TextBlock Text="⋮" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
                                     </Button>
                                   </StackPanel>
@@ -971,7 +971,7 @@
                           </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <TextBlock IsVisible="{Binding !HasSources}"
-                                   Text="Пока нет баз. Добавьте geosite/geoip выше."
+                                   Text="{l:Tr Main_NoSourcesHint}"
                                    Classes="muted" FontSize="12" Margin="2,8" TextWrapping="Wrap" />
                       </StackPanel>
                     </Border>
@@ -986,14 +986,14 @@
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,9">
                     <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Grid.Column="0" Text="ЖУРНАЛ АГЕНТА" Classes="section" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="0" Text="{l:Tr Main_AgentLogSection}" Classes="section" VerticalAlignment="Center" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <TextBlock Text="Уровень:" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
+                        <TextBlock Text="{l:Tr Main_LevelLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
                         <ComboBox SelectedIndex="{Binding LogSeverity, Mode=TwoWay}" MinWidth="150">
-                          <ComboBoxItem Content="Все" />
-                          <ComboBoxItem Content="Информация и выше" />
-                          <ComboBoxItem Content="Предупреждения и выше" />
-                          <ComboBoxItem Content="Только ошибки" />
+                          <ComboBoxItem Content="{l:Tr Main_LogSeverityAll}" />
+                          <ComboBoxItem Content="{l:Tr Main_LogSeverityInfo}" />
+                          <ComboBoxItem Content="{l:Tr Main_LogSeverityWarn}" />
+                          <ComboBoxItem Content="{l:Tr Main_LogSeverityError}" />
                         </ComboBox>
                       </StackPanel>
                     </Grid>
@@ -1004,8 +1004,8 @@
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="Подробность записи" FontSize="13.5" />
-                        <TextBlock Text="«Трасса» фиксирует каждый шаг подключения и тайминги - для диагностики в поддержке."
+                        <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontSize="13.5" />
+                        <TextBlock Text="{l:Tr Main_LogVerbosityHint}"
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
                       </StackPanel>
                       <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="150"
@@ -1019,8 +1019,8 @@
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="Лог маршрутизации" FontSize="13.5" />
-                        <TextBlock Text="Отдельный журнал маршрутов, разрешений адресов и того, куда идут запросы (routes.log) - чтобы понять, почему сайт не открывается или грузится медленно. Попадает в архив для поддержки."
+                        <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
+                        <TextBlock Text="{l:Tr Main_RouteLogHint}"
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
                       </StackPanel>
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
@@ -1031,12 +1031,12 @@
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="Логи для поддержки" FontSize="13.5" />
-                        <TextBlock Text="Собрать логи обоих процессов в один архив (секреты вырезаны) для отправки в поддержку."
+                        <TextBlock Text="{l:Tr Main_SupportLogsTitle}" FontSize="13.5" />
+                        <TextBlock Text="{l:Tr Main_SupportLogsHint}"
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
                       </StackPanel>
                       <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
-                              Content="Собрать логи…" Click="OnCollectLogs" />
+                              Content="{l:Tr Main_CollectLogsButton}" Click="OnCollectLogs" />
                     </Grid>
                   </Border>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
@@ -1051,7 +1051,7 @@
                                              TextWrapping="Wrap" Margin="16,13" />
                       </ScrollViewer>
                       <TextBlock IsVisible="{Binding !HasLogs}" Classes="muted" FontSize="12"
-                                 Text="Журнал появится, когда агент начнёт работу."
+                                 Text="{l:Tr Main_LogEmptyHint}"
                                  Margin="18,15" VerticalAlignment="Top" />
                     </Panel>
                   </Border>
@@ -1097,22 +1097,22 @@
                   </Grid>
 
                   <Grid ColumnDefinitions="*,Auto" Margin="15,11">
-                    <TextBlock Text="Версия движка Amnezia" FontSize="13.5" VerticalAlignment="Center" />
+                    <TextBlock Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
                   </Grid>
 
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="15,12"
                           IsVisible="{Binding HasUpdateUrl}">
                     <StackPanel Spacing="9">
-                      <TextBlock Text="ОБНОВЛЕНИЕ" Classes="section" />
-                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="Проверить обновления"
+                      <TextBlock Text="{l:Tr Main_UpdateSection}" Classes="section" />
+                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="{l:Tr Main_CheckUpdatesButton}"
                               Command="{Binding CheckUpdateCommand}" />
                       <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                       <StackPanel Spacing="6" IsVisible="{Binding UpdateAvailable}">
                         <TextBlock Text="{Binding UpdateVersion, StringFormat='Доступна версия {0}'}" FontSize="13" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                          <Button Classes="accent" Content="Скачать и установить" Command="{Binding InstallUpdateCommand}"
+                          <Button Classes="accent" Content="{l:Tr Main_DownloadAndInstallButton}" Command="{Binding InstallUpdateCommand}"
                                   IsEnabled="{Binding !UpdateDownloading}" />
                           <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
                                      FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />
@@ -1129,14 +1129,14 @@
               <Border Classes="subcard" Margin="0">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
-                    <TextBlock Text="ИМПОРТ / ЭКСПОРТ" Classes="section" />
+                    <TextBlock Text="{l:Tr Main_ImportExportSection}" Classes="section" />
                   </Border>
                   <StackPanel Margin="15,11" Spacing="10">
                     <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                               Text="Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл." />
+                               Text="{l:Tr Main_BundleHint}" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Classes="softbtn" Content="Экспорт…" Click="OnOpenBundleExport" />
-                      <Button Classes="softbtn" Content="Импорт…" Click="OnOpenBundleImport" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_ExportButton}" Click="OnOpenBundleExport" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_ImportButton}" Click="OnOpenBundleImport" />
                     </StackPanel>
                   </StackPanel>
                 </StackPanel>
@@ -1165,7 +1165,7 @@
                      TextWrapping="Wrap" VerticalAlignment="Center" />
           <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
-                  VerticalAlignment="Top" ToolTip.Tip="Закрыть" />
+                  VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />
         </Grid>
       </Border>
 
@@ -1178,11 +1178,11 @@
                      Foreground="White" FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
           <Button Grid.Column="2" Classes="radiopick" Command="{Binding InstallUpdateCommand}"
-                  Content="Обновить" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                  Content="{l:Tr Main_UpdateButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
                   Margin="10,0,0,0" VerticalAlignment="Center" />
           <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissUpdateBannerCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
-                  VerticalAlignment="Top" ToolTip.Tip="Закрыть" />
+                  VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />
         </Grid>
       </Border>
 
@@ -1195,11 +1195,11 @@
                      Foreground="White" FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
           <Button Grid.Column="2" Classes="radiopick" Command="{Binding UpdateGeoNowCommand}"
-                  Content="Обновить сейчас" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                  Content="{l:Tr Main_UpdateNowButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
                   Margin="10,0,0,0" VerticalAlignment="Center" />
           <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissGeoUpdateBannerCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
-                  VerticalAlignment="Top" ToolTip.Tip="Позже - можно обновить в настройках" />
+                  VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_GeoDismissTooltip}" />
         </Grid>
       </Border>
 

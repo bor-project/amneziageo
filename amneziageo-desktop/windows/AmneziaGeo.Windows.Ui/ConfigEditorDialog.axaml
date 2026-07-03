@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
         x:Class="AmneziaGeo.Windows.Ui.ConfigEditorDialog"
         Title="{Binding Title}"
         Width="560" Height="600"
@@ -12,12 +13,12 @@
 
     <TextBlock DockPanel.Dock="Top" Text="{Binding Title}" FontWeight="SemiBold" FontSize="15" />
     <TextBlock DockPanel.Dock="Top" Margin="0,4,0,0" Classes="muted" FontSize="12" TextWrapping="Wrap"
-               Text="Текст wg-quick (.conf). Должны быть секции [Interface] и [Peer]." />
+               Text="{l:Tr ConfigEditor_Hint}" />
 
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
                 Spacing="8" Margin="0,12,0,0">
-      <Button Classes="softbtn" Content="Отмена" Click="OnCancel" />
-      <Button Classes="accent" Content="Сохранить" Click="OnSave" IsDefault="True" />
+      <Button Classes="softbtn" Content="{l:Tr ConfigEditor_CancelButton}" Click="OnCancel" />
+      <Button Classes="accent" Content="{l:Tr ConfigEditor_SaveButton}" Click="OnSave" IsDefault="True" />
     </StackPanel>
 
     <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}"

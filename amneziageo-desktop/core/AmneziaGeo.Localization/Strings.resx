@@ -88,4 +88,568 @@
   <data name="Tray_Exit" xml:space="preserve">
     <value>Exit</value>
   </data>
+  <data name="BundleExport_CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="BundleExport_ConfigsSection" xml:space="preserve">
+    <value>CONFIGURATIONS</value>
+  </data>
+  <data name="BundleExport_CopyButton" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="BundleExport_DoneButton" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="BundleExport_ExportButton" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="BundleExport_Heading" xml:space="preserve">
+    <value>Export profiles, configurations and routing lists</value>
+  </data>
+  <data name="BundleExport_PrivateKeyWarning" xml:space="preserve">
+    <value>⚠ The exported file contains configuration private keys. Store and share it securely.</value>
+  </data>
+  <data name="BundleExport_ProfilesSection" xml:space="preserve">
+    <value>PROFILES</value>
+  </data>
+  <data name="BundleExport_RoutingSection" xml:space="preserve">
+    <value>ROUTING</value>
+  </data>
+  <data name="BundleExport_SaveToFileButton" xml:space="preserve">
+    <value>Save to file…</value>
+  </data>
+  <data name="BundleExport_WindowTitle" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="BundleImport_CloseButton" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="BundleImport_Heading" xml:space="preserve">
+    <value>Import profiles, configurations and routing lists</value>
+  </data>
+  <data name="BundleImport_ImportButton" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="BundleImport_LoadFileButton" xml:space="preserve">
+    <value>Load file…</value>
+  </data>
+  <data name="BundleImport_PasteButton" xml:space="preserve">
+    <value>Paste</value>
+  </data>
+  <data name="BundleImport_PayloadWatermark" xml:space="preserve">
+    <value>Paste the bundle file JSON or load it with the “Load file…” button</value>
+  </data>
+  <data name="BundleImport_SecurityWarning" xml:space="preserve">
+    <value>⚠ The imported file may contain private configuration keys — use files from trusted sources only.</value>
+  </data>
+  <data name="BundleImport_WindowTitle" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="ConfigEditor_CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="ConfigEditor_Hint" xml:space="preserve">
+    <value>wg-quick text (.conf). It must contain [Interface] and [Peer] sections.</value>
+  </data>
+  <data name="ConfigEditor_SaveButton" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Export_CloseButton" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Export_ConfFileTab" xml:space="preserve">
+    <value>.conf file</value>
+  </data>
+  <data name="Export_CopyButton" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="Export_LinkTab" xml:space="preserve">
+    <value>vpn:// link</value>
+  </data>
+  <data name="Export_SaveButton" xml:space="preserve">
+    <value>Save...</value>
+  </data>
+  <data name="Export_WindowTitle" xml:space="preserve">
+    <value>Export configuration</value>
+  </data>
+  <data name="Main_AccessTokenLabel" xml:space="preserve">
+    <value>Access token:</value>
+  </data>
+  <data name="Main_AccessTokenWatermark" xml:space="preserve">
+    <value>access token</value>
+  </data>
+  <data name="Main_ActionsTooltip" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+  <data name="Main_AddButton" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="Main_AddDatabaseLabel" xml:space="preserve">
+    <value>ADD A DATABASE</value>
+  </data>
+  <data name="Main_AddEntryLabel" xml:space="preserve">
+    <value>ADD AN ENTRY (GEO CATEGORY, DOMAIN OR CIDR)</value>
+  </data>
+  <data name="Main_AddEntryWatermark" xml:space="preserve">
+    <value>e.g. geosite:category, example.com, www.example.com, https://example.com, 1.2.3.0/24</value>
+  </data>
+  <data name="Main_AddLocalSubnetsButton" xml:space="preserve">
+    <value>Add local networks</value>
+  </data>
+  <data name="Main_AgentLogSection" xml:space="preserve">
+    <value>AGENT LOG</value>
+  </data>
+  <data name="Main_AllUdpHint" xml:space="preserve">
+    <value>Routes ALL outgoing UDP datagrams into the tunnel while selective routing is active. Needed for real-time media (voice calls, online games) whose server addresses arrive via signaling rather than DNS. The local network and the tunnel channel itself are excluded.</value>
+  </data>
+  <data name="Main_AllUdpTitle" xml:space="preserve">
+    <value>All UDP through the tunnel</value>
+  </data>
+  <data name="Main_AmneziaEngineVersion" xml:space="preserve">
+    <value>Amnezia engine version</value>
+  </data>
+  <data name="Main_AppSourceFile" xml:space="preserve">
+    <value>File…</value>
+  </data>
+  <data name="Main_AppSourceFolder" xml:space="preserve">
+    <value>Folder…</value>
+  </data>
+  <data name="Main_AppSourceInstalled" xml:space="preserve">
+    <value>Installed</value>
+  </data>
+  <data name="Main_AppSourceRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="Main_AuthBasic" xml:space="preserve">
+    <value>Login and password</value>
+  </data>
+  <data name="Main_AuthLabel" xml:space="preserve">
+    <value>Authorization:</value>
+  </data>
+  <data name="Main_AuthNone" xml:space="preserve">
+    <value>No authorization</value>
+  </data>
+  <data name="Main_AuthToken" xml:space="preserve">
+    <value>Token</value>
+  </data>
+  <data name="Main_AutoCheckHint" xml:space="preserve">
+    <value>Periodically check sources for a new version and notify.</value>
+  </data>
+  <data name="Main_AutoCheckTitle" xml:space="preserve">
+    <value>Auto-check for updates</value>
+  </data>
+  <data name="Main_BackToProfilesTooltip" xml:space="preserve">
+    <value>Back to profiles</value>
+  </data>
+  <data name="Main_BundleHint" xml:space="preserve">
+    <value>Select profiles, configurations, and routing lists to transfer to another device, or import a previously exported file.</value>
+  </data>
+  <data name="Main_CacheValidityHint" xml:space="preserve">
+    <value>After how long the data is considered stale and refreshed in the background. Manual «Update all» always checks.</value>
+  </data>
+  <data name="Main_CacheValidityTitle" xml:space="preserve">
+    <value>Address cache freshness</value>
+  </data>
+  <data name="Main_CameraButton" xml:space="preserve">
+    <value>Camera</value>
+  </data>
+  <data name="Main_CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Main_CancelRenameTooltip" xml:space="preserve">
+    <value>Cancel rename</value>
+  </data>
+  <data name="Main_CheckUpdatesButton" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="Main_ChooseConfigLabel" xml:space="preserve">
+    <value>CHOOSE A CONFIGURATION</value>
+  </data>
+  <data name="Main_ChooseListLabel" xml:space="preserve">
+    <value>CHOOSE A LIST</value>
+  </data>
+  <data name="Main_ChooseProfileToSetup" xml:space="preserve">
+    <value>CHOOSE A PROFILE TO SET UP</value>
+  </data>
+  <data name="Main_ClearButton" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Main_ClearRulesTooltip" xml:space="preserve">
+    <value>Delete all entries in the list</value>
+  </data>
+  <data name="Main_ClipboardButton" xml:space="preserve">
+    <value>Clipboard</value>
+  </data>
+  <data name="Main_CloseTooltip" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Main_CollectLogsButton" xml:space="preserve">
+    <value>Collect logs…</value>
+  </data>
+  <data name="Main_ConfEditHint" xml:space="preserve">
+    <value>It must have [Interface] and [Peer] sections. The profile's geo and routes are preserved.</value>
+  </data>
+  <data name="Main_ConfFileTab" xml:space="preserve">
+    <value>.conf file</value>
+  </data>
+  <data name="Main_ConfigLabel" xml:space="preserve">
+    <value>CONFIGURATION</value>
+  </data>
+  <data name="Main_ConfigNameLabel" xml:space="preserve">
+    <value>CONFIGURATION NAME</value>
+  </data>
+  <data name="Main_ConfigSection" xml:space="preserve">
+    <value>CONFIGURATIONS</value>
+  </data>
+  <data name="Main_ConfigTextWatermark" xml:space="preserve">
+    <value>vpn://...   or   .conf text</value>
+  </data>
+  <data name="Main_CopyButton" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="Main_DeleteConfigButton" xml:space="preserve">
+    <value>Delete configuration</value>
+  </data>
+  <data name="Main_DeleteConfigHint" xml:space="preserve">
+    <value>Remove the configuration from the catalogue. The agent will refuse while it is used by any profile or a running tunnel — unlink it first.</value>
+  </data>
+  <data name="Main_DeleteListButton" xml:space="preserve">
+    <value>Delete list</value>
+  </data>
+  <data name="Main_DeleteProfileButton" xml:space="preserve">
+    <value>Delete profile</value>
+  </data>
+  <data name="Main_DeleteProfileHint" xml:space="preserve">
+    <value>The profile is deleted together with its settings. A running profile must be disconnected first.</value>
+  </data>
+  <data name="Main_DeletionLabel" xml:space="preserve">
+    <value>DELETION</value>
+  </data>
+  <data name="Main_DnsHint" xml:space="preserve">
+    <value>DNS for ordinary (non-tunnel) traffic. Several — comma-separated. Empty — detect automatically. Geo domains are resolved via a separate clean DNS.</value>
+  </data>
+  <data name="Main_DnsWatermark" xml:space="preserve">
+    <value>e.g. 1.1.1.1, 8.8.8.8</value>
+  </data>
+  <data name="Main_DownloadAndInstallButton" xml:space="preserve">
+    <value>Download and install</value>
+  </data>
+  <data name="Main_EditButton" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Main_EntriesLabel" xml:space="preserve">
+    <value>ENTRIES</value>
+  </data>
+  <data name="Main_ExclusionsHint" xml:space="preserve">
+    <value>Addresses not to route into the VPN. One per line. An IP/subnet goes directly, bypassing the tunnel; a domain is resolved via the local DNS (goes directly only if the address is local).</value>
+  </data>
+  <data name="Main_ExclusionsLabel" xml:space="preserve">
+    <value>EXCLUSIONS (DIRECT ACCESS)</value>
+  </data>
+  <data name="Main_ExportButton" xml:space="preserve">
+    <value>Export…</value>
+  </data>
+  <data name="Main_FileButton" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="Main_FullTunnel" xml:space="preserve">
+    <value>Full tunnel</value>
+  </data>
+  <data name="Main_GeoDismissTooltip" xml:space="preserve">
+    <value>Later - you can update it in settings</value>
+  </data>
+  <data name="Main_GeoKindsHint" xml:space="preserve">
+    <value>geosite - domain categories, geoip - countries. The file is downloaded immediately. The ⟳ icon updates a database, «Update all» - all at once; right-click a database - delete.</value>
+  </data>
+  <data name="Main_ImportButton" xml:space="preserve">
+    <value>Import…</value>
+  </data>
+  <data name="Main_ImportExportLabel" xml:space="preserve">
+    <value>IMPORT / EXPORT</value>
+  </data>
+  <data name="Main_ImportExportSection" xml:space="preserve">
+    <value>IMPORT / EXPORT</value>
+  </data>
+  <data name="Main_LevelLabel" xml:space="preserve">
+    <value>Level:</value>
+  </data>
+  <data name="Main_ListNameLabel" xml:space="preserve">
+    <value>LIST NAME</value>
+  </data>
+  <data name="Main_ListNameWatermark" xml:space="preserve">
+    <value>e.g. my-list</value>
+  </data>
+  <data name="Main_ListTrafficLabel" xml:space="preserve">
+    <value>TRAFFIC OF THIS LIST</value>
+  </data>
+  <data name="Main_LoadFileButton" xml:space="preserve">
+    <value>Load file…</value>
+  </data>
+  <data name="Main_LogEmptyHint" xml:space="preserve">
+    <value>The log will appear once the agent starts working.</value>
+  </data>
+  <data name="Main_LogSeverityAll" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="Main_LogSeverityError" xml:space="preserve">
+    <value>Errors only</value>
+  </data>
+  <data name="Main_LogSeverityInfo" xml:space="preserve">
+    <value>Info and above</value>
+  </data>
+  <data name="Main_LogSeverityWarn" xml:space="preserve">
+    <value>Warnings and above</value>
+  </data>
+  <data name="Main_LogVerbosityHint" xml:space="preserve">
+    <value>«Trace» records every connection step and timing - for support diagnosis.</value>
+  </data>
+  <data name="Main_LogVerbosityTitle" xml:space="preserve">
+    <value>Record verbosity</value>
+  </data>
+  <data name="Main_LoginLabel" xml:space="preserve">
+    <value>Login:</value>
+  </data>
+  <data name="Main_LoginWatermark" xml:space="preserve">
+    <value>login</value>
+  </data>
+  <data name="Main_ManualButton" xml:space="preserve">
+    <value>Manual</value>
+  </data>
+  <data name="Main_ManualButtonTooltip" xml:space="preserve">
+    <value>Enter / edit the configuration text in the large editor</value>
+  </data>
+  <data name="Main_MtuHint" xml:space="preserve">
+    <value>576-1500, default 1280 (safe for almost any network). On a clean link you can raise it to 1420 for speed; if the TLS handshake still stalls - lower it further.</value>
+  </data>
+  <data name="Main_NameLabel" xml:space="preserve">
+    <value>NAME</value>
+  </data>
+  <data name="Main_NameOptionalWatermark" xml:space="preserve">
+    <value>Name (optional)</value>
+  </data>
+  <data name="Main_NewConfigButton" xml:space="preserve">
+    <value>New configuration</value>
+  </data>
+  <data name="Main_NewConfigLabel" xml:space="preserve">
+    <value>NEW CONFIGURATION</value>
+  </data>
+  <data name="Main_NewListButton" xml:space="preserve">
+    <value>New list</value>
+  </data>
+  <data name="Main_NoConfigsHint" xml:space="preserve">
+    <value>No configurations yet. Choose «+ New configuration» to add a server to the catalogue.</value>
+  </data>
+  <data name="Main_NoProfilesHint" xml:space="preserve">
+    <value>No profiles. Choose «+ New profile» to create and set one up.</value>
+  </data>
+  <data name="Main_NoProfilesYetHint" xml:space="preserve">
+    <value>No profiles yet. Choose «+ New profile» (here or in the list), then set the configuration and routing.</value>
+  </data>
+  <data name="Main_NoRoutingListsHint" xml:space="preserve">
+    <value>No lists yet. Click «+ New list» to set rules (geo categories, domains, CIDR, apps).</value>
+  </data>
+  <data name="Main_NoSourcesHint" xml:space="preserve">
+    <value>No databases yet. Add geosite/geoip above.</value>
+  </data>
+  <data name="Main_NotSelected" xml:space="preserve">
+    <value>— not selected —</value>
+  </data>
+  <data name="Main_PasswordLabel" xml:space="preserve">
+    <value>Password:</value>
+  </data>
+  <data name="Main_PasswordWatermark" xml:space="preserve">
+    <value>password</value>
+  </data>
+  <data name="Main_PasteButton" xml:space="preserve">
+    <value>Paste</value>
+  </data>
+  <data name="Main_PerAppRoutingLabel" xml:space="preserve">
+    <value>ROUTING OF AN APP'S NETWORK REQUESTS</value>
+  </data>
+  <data name="Main_ProfileAddButton" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="Main_ProfileNoConfigHint" xml:space="preserve">
+    <value>This profile has no configuration yet. Pick one from the list or «+ New configuration» to add it in the «Configurations» section.</value>
+  </data>
+  <data name="Main_ProfileRenameHint" xml:space="preserve">
+    <value>A new name for this profile. A running profile cannot be renamed.</value>
+  </data>
+  <data name="Main_ProfileSection" xml:space="preserve">
+    <value>PROFILE</value>
+  </data>
+  <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
+    <value>PROXY (WEBSOCKET)</value>
+  </data>
+  <data name="Main_QrUnavailableHint" xml:space="preserve">
+    <value>The configuration does not fit in a QR code. Use «Save to file…» or the vpn:// link.</value>
+  </data>
+  <data name="Main_RailConfigSubtitle" xml:space="preserve">
+    <value>Server catalogue</value>
+  </data>
+  <data name="Main_RailConfigTitle" xml:space="preserve">
+    <value>Configurations</value>
+  </data>
+  <data name="Main_RailGeneralSubtitle" xml:space="preserve">
+    <value>Appearance and info</value>
+  </data>
+  <data name="Main_RailGeneralTitle" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="Main_RailLogsSubtitle" xml:space="preserve">
+    <value>Agent activity log</value>
+  </data>
+  <data name="Main_RailLogsTitle" xml:space="preserve">
+    <value>Logs</value>
+  </data>
+  <data name="Main_RailProfileSubtitle" xml:space="preserve">
+    <value>Configuration + routing</value>
+  </data>
+  <data name="Main_RailProfileTitle" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="Main_RailRoutingSubtitle" xml:space="preserve">
+    <value>Rule lists and traffic</value>
+  </data>
+  <data name="Main_RailRoutingTitle" xml:space="preserve">
+    <value>Routing</value>
+  </data>
+  <data name="Main_RailSourcesSubtitle" xml:space="preserve">
+    <value>Domain and country databases</value>
+  </data>
+  <data name="Main_RailSourcesTitle" xml:space="preserve">
+    <value>Geo sources</value>
+  </data>
+  <data name="Main_RenameProfileTooltip" xml:space="preserve">
+    <value>Rename profile</value>
+  </data>
+  <data name="Main_RenameTooltip" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="Main_RouteLogHint" xml:space="preserve">
+    <value>A separate log of routes, address resolutions, and where requests go (routes.log) - to understand why a site does not open or loads slowly. Included in the support archive.</value>
+  </data>
+  <data name="Main_RouteLogTitle" xml:space="preserve">
+    <value>Routing log</value>
+  </data>
+  <data name="Main_RoutingCopyTooltip" xml:space="preserve">
+    <value>Copy the list to clipboard</value>
+  </data>
+  <data name="Main_RoutingLabel" xml:space="preserve">
+    <value>ROUTING</value>
+  </data>
+  <data name="Main_RoutingPasteTooltip" xml:space="preserve">
+    <value>Import the list from clipboard</value>
+  </data>
+  <data name="Main_RoutingPickerHint" xml:space="preserve">
+    <value>«Full tunnel» — all traffic goes through the VPN. Pick a list to route only its entries through the VPN. List rules are edited in the «Routing» section.</value>
+  </data>
+  <data name="Main_RoutingSection" xml:space="preserve">
+    <value>ROUTING</value>
+  </data>
+  <data name="Main_SaveButton" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Main_SaveNameTooltip" xml:space="preserve">
+    <value>Save name</value>
+  </data>
+  <data name="Main_SaveToFileButton" xml:space="preserve">
+    <value>Save to file…</value>
+  </data>
+  <data name="Main_ServerHostLabel" xml:space="preserve">
+    <value>Server address (host):</value>
+  </data>
+  <data name="Main_ServerHostWatermark" xml:space="preserve">
+    <value>same as on the server, e.g. wss-front.example.com</value>
+  </data>
+  <data name="Main_ServerPortLabel" xml:space="preserve">
+    <value>Server port (TLS):</value>
+  </data>
+  <data name="Main_SettingsTooltip" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Main_ShowQrButton" xml:space="preserve">
+    <value>Show QR</value>
+  </data>
+  <data name="Main_ShowQrTooltip" xml:space="preserve">
+    <value>Show the list's QR code for transfer</value>
+  </data>
+  <data name="Main_SourceDropdown" xml:space="preserve">
+    <value>Source ▾</value>
+  </data>
+  <data name="Main_SourceKindTooltip" xml:space="preserve">
+    <value>The type is detected from the file name in the URL</value>
+  </data>
+  <data name="Main_SourceRowTooltip" xml:space="preserve">
+    <value>Right-click or ⋮ — update / delete the database</value>
+  </data>
+  <data name="Main_SourcesLabel" xml:space="preserve">
+    <value>SOURCES</value>
+  </data>
+  <data name="Main_SourcesSection" xml:space="preserve">
+    <value>GEO SOURCES</value>
+  </data>
+  <data name="Main_SupportLogsHint" xml:space="preserve">
+    <value>Collect both processes' logs into a single archive (secrets stripped) to send to support.</value>
+  </data>
+  <data name="Main_SupportLogsTitle" xml:space="preserve">
+    <value>Logs for support</value>
+  </data>
+  <data name="Main_TunnelMtuLabel" xml:space="preserve">
+    <value>Tunnel MTU:</value>
+  </data>
+  <data name="Main_UpdateAllButton" xml:space="preserve">
+    <value>Update all</value>
+  </data>
+  <data name="Main_UpdateAvailableBadge" xml:space="preserve">
+    <value>● Update available</value>
+  </data>
+  <data name="Main_UpdateButton" xml:space="preserve">
+    <value>Update</value>
+  </data>
+  <data name="Main_UpdateDatabaseTooltip" xml:space="preserve">
+    <value>Update the database</value>
+  </data>
+  <data name="Main_UpdateNowButton" xml:space="preserve">
+    <value>Update now</value>
+  </data>
+  <data name="Main_UpdateSection" xml:space="preserve">
+    <value>UPDATE</value>
+  </data>
+  <data name="Main_UseSelectedList" xml:space="preserve">
+    <value>Use the selected list</value>
+  </data>
+  <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
+    <value>Use WebSocket (UDP over TCP, bypass UDP blocking)</value>
+  </data>
+  <data name="Main_VpnLinkTab" xml:space="preserve">
+    <value>vpn:// link</value>
+  </data>
+  <data name="Main_WsCopyTooltip" xml:space="preserve">
+    <value>Copy settings to clipboard</value>
+  </data>
+  <data name="Main_WsPasteTooltip" xml:space="preserve">
+    <value>Import settings from clipboard</value>
+  </data>
+  <data name="Qr_CloseButton" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Qr_CopyButton" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="Qr_SaveButton" xml:space="preserve">
+    <value>Save...</value>
+  </data>
+  <data name="Qr_TooLargeHint" xml:space="preserve">
+    <value>Too large for a QR code - use “Save...” or “Copy”.</value>
+  </data>
+  <data name="Qr_WindowTitle" xml:space="preserve">
+    <value>QR code</value>
+  </data>
+  <data name="Scan_CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Scan_Title" xml:space="preserve">
+    <value>Scan QR from camera</value>
+  </data>
 </root>

@@ -88,4 +88,568 @@
   <data name="Tray_Exit" xml:space="preserve">
     <value>Выход</value>
   </data>
+  <data name="BundleExport_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="BundleExport_ConfigsSection" xml:space="preserve">
+    <value>КОНФИГУРАЦИИ</value>
+  </data>
+  <data name="BundleExport_CopyButton" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="BundleExport_DoneButton" xml:space="preserve">
+    <value>Готово</value>
+  </data>
+  <data name="BundleExport_ExportButton" xml:space="preserve">
+    <value>Экспортировать</value>
+  </data>
+  <data name="BundleExport_Heading" xml:space="preserve">
+    <value>Экспорт профилей, конфигураций и списков маршрутизации</value>
+  </data>
+  <data name="BundleExport_PrivateKeyWarning" xml:space="preserve">
+    <value>⚠ Экспортированный файл содержит приватные ключи конфигураций. Храните и передавайте его безопасно.</value>
+  </data>
+  <data name="BundleExport_ProfilesSection" xml:space="preserve">
+    <value>ПРОФИЛИ</value>
+  </data>
+  <data name="BundleExport_RoutingSection" xml:space="preserve">
+    <value>МАРШРУТИЗАЦИЯ</value>
+  </data>
+  <data name="BundleExport_SaveToFileButton" xml:space="preserve">
+    <value>Сохранить в файл…</value>
+  </data>
+  <data name="BundleExport_WindowTitle" xml:space="preserve">
+    <value>Экспорт</value>
+  </data>
+  <data name="BundleImport_CloseButton" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="BundleImport_Heading" xml:space="preserve">
+    <value>Импорт профилей, конфигураций и списков маршрутизации</value>
+  </data>
+  <data name="BundleImport_ImportButton" xml:space="preserve">
+    <value>Импортировать</value>
+  </data>
+  <data name="BundleImport_LoadFileButton" xml:space="preserve">
+    <value>Загрузить файл…</value>
+  </data>
+  <data name="BundleImport_PasteButton" xml:space="preserve">
+    <value>Вставить</value>
+  </data>
+  <data name="BundleImport_PayloadWatermark" xml:space="preserve">
+    <value>Вставьте JSON файла бандла или загрузите его кнопкой «Загрузить файл…»</value>
+  </data>
+  <data name="BundleImport_SecurityWarning" xml:space="preserve">
+    <value>⚠ Импортируемый файл может содержать приватные ключи конфигураций — используйте файлы из доверенных источников.</value>
+  </data>
+  <data name="BundleImport_WindowTitle" xml:space="preserve">
+    <value>Импорт</value>
+  </data>
+  <data name="ConfigEditor_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="ConfigEditor_Hint" xml:space="preserve">
+    <value>Текст wg-quick (.conf). Должны быть секции [Interface] и [Peer].</value>
+  </data>
+  <data name="ConfigEditor_SaveButton" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Export_CloseButton" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Export_ConfFileTab" xml:space="preserve">
+    <value>Файл .conf</value>
+  </data>
+  <data name="Export_CopyButton" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="Export_LinkTab" xml:space="preserve">
+    <value>Ссылка vpn://</value>
+  </data>
+  <data name="Export_SaveButton" xml:space="preserve">
+    <value>Сохранить...</value>
+  </data>
+  <data name="Export_WindowTitle" xml:space="preserve">
+    <value>Экспорт конфигурации</value>
+  </data>
+  <data name="Main_AccessTokenLabel" xml:space="preserve">
+    <value>Токен доступа:</value>
+  </data>
+  <data name="Main_AccessTokenWatermark" xml:space="preserve">
+    <value>токен доступа</value>
+  </data>
+  <data name="Main_ActionsTooltip" xml:space="preserve">
+    <value>Действия</value>
+  </data>
+  <data name="Main_AddButton" xml:space="preserve">
+    <value>Добавить</value>
+  </data>
+  <data name="Main_AddDatabaseLabel" xml:space="preserve">
+    <value>ДОБАВИТЬ БАЗУ</value>
+  </data>
+  <data name="Main_AddEntryLabel" xml:space="preserve">
+    <value>ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)</value>
+  </data>
+  <data name="Main_AddEntryWatermark" xml:space="preserve">
+    <value>напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24</value>
+  </data>
+  <data name="Main_AddLocalSubnetsButton" xml:space="preserve">
+    <value>Добавить локальные сети</value>
+  </data>
+  <data name="Main_AgentLogSection" xml:space="preserve">
+    <value>ЖУРНАЛ АГЕНТА</value>
+  </data>
+  <data name="Main_AllUdpHint" xml:space="preserve">
+    <value>Заворачивает в туннель ВСЕ исходящие UDP-датаграммы, пока активна выборочная маршрутизация. Нужно для real-time медиа (голосовые звонки, онлайн-игры), чьи адреса серверов приходят сигналингом, а не через DNS. Локальная сеть и сам канал туннеля исключаются.</value>
+  </data>
+  <data name="Main_AllUdpTitle" xml:space="preserve">
+    <value>Весь UDP через туннель</value>
+  </data>
+  <data name="Main_AmneziaEngineVersion" xml:space="preserve">
+    <value>Версия движка Amnezia</value>
+  </data>
+  <data name="Main_AppSourceFile" xml:space="preserve">
+    <value>Файл…</value>
+  </data>
+  <data name="Main_AppSourceFolder" xml:space="preserve">
+    <value>Папка…</value>
+  </data>
+  <data name="Main_AppSourceInstalled" xml:space="preserve">
+    <value>Установленное</value>
+  </data>
+  <data name="Main_AppSourceRunning" xml:space="preserve">
+    <value>Запущенное</value>
+  </data>
+  <data name="Main_AuthBasic" xml:space="preserve">
+    <value>Логин и пароль</value>
+  </data>
+  <data name="Main_AuthLabel" xml:space="preserve">
+    <value>Авторизация:</value>
+  </data>
+  <data name="Main_AuthNone" xml:space="preserve">
+    <value>Без авторизации</value>
+  </data>
+  <data name="Main_AuthToken" xml:space="preserve">
+    <value>Токен</value>
+  </data>
+  <data name="Main_AutoCheckHint" xml:space="preserve">
+    <value>Периодически проверять источники на новую версию и уведомлять.</value>
+  </data>
+  <data name="Main_AutoCheckTitle" xml:space="preserve">
+    <value>Автопроверка обновлений</value>
+  </data>
+  <data name="Main_BackToProfilesTooltip" xml:space="preserve">
+    <value>Назад к профилям</value>
+  </data>
+  <data name="Main_BundleHint" xml:space="preserve">
+    <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
+  </data>
+  <data name="Main_CacheValidityHint" xml:space="preserve">
+    <value>Через сколько данные считаются устаревшими и обновляются в фоне. Ручное «Обновить все» проверяет всегда.</value>
+  </data>
+  <data name="Main_CacheValidityTitle" xml:space="preserve">
+    <value>Актуальность кэша адресов</value>
+  </data>
+  <data name="Main_CameraButton" xml:space="preserve">
+    <value>Камера</value>
+  </data>
+  <data name="Main_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Main_CancelRenameTooltip" xml:space="preserve">
+    <value>Отменить переименование</value>
+  </data>
+  <data name="Main_CheckUpdatesButton" xml:space="preserve">
+    <value>Проверить обновления</value>
+  </data>
+  <data name="Main_ChooseConfigLabel" xml:space="preserve">
+    <value>ВЫБЕРИТЕ КОНФИГУРАЦИЮ</value>
+  </data>
+  <data name="Main_ChooseListLabel" xml:space="preserve">
+    <value>ВЫБЕРИТЕ СПИСОК</value>
+  </data>
+  <data name="Main_ChooseProfileToSetup" xml:space="preserve">
+    <value>ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ НАСТРОЙКИ</value>
+  </data>
+  <data name="Main_ClearButton" xml:space="preserve">
+    <value>Очистить</value>
+  </data>
+  <data name="Main_ClearRulesTooltip" xml:space="preserve">
+    <value>Удалить все записи списка</value>
+  </data>
+  <data name="Main_ClipboardButton" xml:space="preserve">
+    <value>Буфер</value>
+  </data>
+  <data name="Main_CloseTooltip" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Main_CollectLogsButton" xml:space="preserve">
+    <value>Собрать логи…</value>
+  </data>
+  <data name="Main_ConfEditHint" xml:space="preserve">
+    <value>Должны быть секции [Interface] и [Peer]. Гео и маршруты профиля сохранятся.</value>
+  </data>
+  <data name="Main_ConfFileTab" xml:space="preserve">
+    <value>Файл .conf</value>
+  </data>
+  <data name="Main_ConfigLabel" xml:space="preserve">
+    <value>КОНФИГУРАЦИЯ</value>
+  </data>
+  <data name="Main_ConfigNameLabel" xml:space="preserve">
+    <value>ИМЯ КОНФИГУРАЦИИ</value>
+  </data>
+  <data name="Main_ConfigSection" xml:space="preserve">
+    <value>КОНФИГУРАЦИИ</value>
+  </data>
+  <data name="Main_ConfigTextWatermark" xml:space="preserve">
+    <value>vpn://...   или   текст .conf</value>
+  </data>
+  <data name="Main_CopyButton" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="Main_DeleteConfigButton" xml:space="preserve">
+    <value>Удалить конфигурацию</value>
+  </data>
+  <data name="Main_DeleteConfigHint" xml:space="preserve">
+    <value>Удалить конфигурацию из каталога. Агент откажет, пока она используется каким-либо профилем или запущенным туннелем — сначала отвяжите её.</value>
+  </data>
+  <data name="Main_DeleteListButton" xml:space="preserve">
+    <value>Удалить список</value>
+  </data>
+  <data name="Main_DeleteProfileButton" xml:space="preserve">
+    <value>Удалить профиль</value>
+  </data>
+  <data name="Main_DeleteProfileHint" xml:space="preserve">
+    <value>Профиль удалится вместе со своими настройками. Запущенный профиль нужно сначала отключить.</value>
+  </data>
+  <data name="Main_DeletionLabel" xml:space="preserve">
+    <value>УДАЛЕНИЕ</value>
+  </data>
+  <data name="Main_DnsHint" xml:space="preserve">
+    <value>DNS для обычного (не-туннельного) трафика. Несколько — через запятую. Пусто — определять автоматически. Гео-домены резолвятся отдельным чистым DNS.</value>
+  </data>
+  <data name="Main_DnsWatermark" xml:space="preserve">
+    <value>напр. 1.1.1.1, 8.8.8.8</value>
+  </data>
+  <data name="Main_DownloadAndInstallButton" xml:space="preserve">
+    <value>Скачать и установить</value>
+  </data>
+  <data name="Main_EditButton" xml:space="preserve">
+    <value>Изменить</value>
+  </data>
+  <data name="Main_EntriesLabel" xml:space="preserve">
+    <value>ЗАПИСИ</value>
+  </data>
+  <data name="Main_ExclusionsHint" xml:space="preserve">
+    <value>Адреса, которые не заворачивать в VPN. По одному в строке. IP/подсеть идут напрямую мимо туннеля; домен резолвится локальным DNS (уходит напрямую, только если адрес локальный).</value>
+  </data>
+  <data name="Main_ExclusionsLabel" xml:space="preserve">
+    <value>ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)</value>
+  </data>
+  <data name="Main_ExportButton" xml:space="preserve">
+    <value>Экспорт…</value>
+  </data>
+  <data name="Main_FileButton" xml:space="preserve">
+    <value>Файл</value>
+  </data>
+  <data name="Main_FullTunnel" xml:space="preserve">
+    <value>Полный туннель</value>
+  </data>
+  <data name="Main_GeoDismissTooltip" xml:space="preserve">
+    <value>Позже - можно обновить в настройках</value>
+  </data>
+  <data name="Main_GeoKindsHint" xml:space="preserve">
+    <value>geosite - категории доменов, geoip - страны. Файл скачивается сразу. Значок ⟳ обновляет базу, «Обновить все» - все сразу; правый клик по базе - удалить.</value>
+  </data>
+  <data name="Main_ImportButton" xml:space="preserve">
+    <value>Импорт…</value>
+  </data>
+  <data name="Main_ImportExportLabel" xml:space="preserve">
+    <value>ИМПОРТ / ЭКСПОРТ</value>
+  </data>
+  <data name="Main_ImportExportSection" xml:space="preserve">
+    <value>ИМПОРТ / ЭКСПОРТ</value>
+  </data>
+  <data name="Main_LevelLabel" xml:space="preserve">
+    <value>Уровень:</value>
+  </data>
+  <data name="Main_ListNameLabel" xml:space="preserve">
+    <value>ИМЯ СПИСКА</value>
+  </data>
+  <data name="Main_ListNameWatermark" xml:space="preserve">
+    <value>напр. мой-список</value>
+  </data>
+  <data name="Main_ListTrafficLabel" xml:space="preserve">
+    <value>ТРАФИК ЭТОГО СПИСКА</value>
+  </data>
+  <data name="Main_LoadFileButton" xml:space="preserve">
+    <value>Загрузить файл…</value>
+  </data>
+  <data name="Main_LogEmptyHint" xml:space="preserve">
+    <value>Журнал появится, когда агент начнёт работу.</value>
+  </data>
+  <data name="Main_LogSeverityAll" xml:space="preserve">
+    <value>Все</value>
+  </data>
+  <data name="Main_LogSeverityError" xml:space="preserve">
+    <value>Только ошибки</value>
+  </data>
+  <data name="Main_LogSeverityInfo" xml:space="preserve">
+    <value>Информация и выше</value>
+  </data>
+  <data name="Main_LogSeverityWarn" xml:space="preserve">
+    <value>Предупреждения и выше</value>
+  </data>
+  <data name="Main_LogVerbosityHint" xml:space="preserve">
+    <value>«Трасса» фиксирует каждый шаг подключения и тайминги - для диагностики в поддержке.</value>
+  </data>
+  <data name="Main_LogVerbosityTitle" xml:space="preserve">
+    <value>Подробность записи</value>
+  </data>
+  <data name="Main_LoginLabel" xml:space="preserve">
+    <value>Логин:</value>
+  </data>
+  <data name="Main_LoginWatermark" xml:space="preserve">
+    <value>логин</value>
+  </data>
+  <data name="Main_ManualButton" xml:space="preserve">
+    <value>Вручную</value>
+  </data>
+  <data name="Main_ManualButtonTooltip" xml:space="preserve">
+    <value>Ввести / отредактировать текст конфигурации в большом редакторе</value>
+  </data>
+  <data name="Main_MtuHint" xml:space="preserve">
+    <value>576-1500, по умолчанию 1280 (безопасно почти для любой сети). На чистом канале можно поднять до 1420 ради скорости; если TLS-хендшейк всё равно зависает - понизьте ещё.</value>
+  </data>
+  <data name="Main_NameLabel" xml:space="preserve">
+    <value>НАЗВАНИЕ</value>
+  </data>
+  <data name="Main_NameOptionalWatermark" xml:space="preserve">
+    <value>Имя (необязательно)</value>
+  </data>
+  <data name="Main_NewConfigButton" xml:space="preserve">
+    <value>Новая конфигурация</value>
+  </data>
+  <data name="Main_NewConfigLabel" xml:space="preserve">
+    <value>НОВАЯ КОНФИГУРАЦИЯ</value>
+  </data>
+  <data name="Main_NewListButton" xml:space="preserve">
+    <value>Новый список</value>
+  </data>
+  <data name="Main_NoConfigsHint" xml:space="preserve">
+    <value>Конфигураций пока нет. Выберите «+ Новая конфигурация», чтобы добавить сервер в каталог.</value>
+  </data>
+  <data name="Main_NoProfilesHint" xml:space="preserve">
+    <value>Нет профилей. Выберите «+ Новый профиль», чтобы создать и настроить его.</value>
+  </data>
+  <data name="Main_NoProfilesYetHint" xml:space="preserve">
+    <value>Профилей пока нет. Выберите «+ Новый профиль» (здесь или в списке), затем задайте конфигурацию и маршрутизацию.</value>
+  </data>
+  <data name="Main_NoRoutingListsHint" xml:space="preserve">
+    <value>Списков пока нет. Нажмите «+ Новый список», чтобы задать правила (гео-категории, домены, CIDR, приложения).</value>
+  </data>
+  <data name="Main_NoSourcesHint" xml:space="preserve">
+    <value>Пока нет баз. Добавьте geosite/geoip выше.</value>
+  </data>
+  <data name="Main_NotSelected" xml:space="preserve">
+    <value>— не выбрано —</value>
+  </data>
+  <data name="Main_PasswordLabel" xml:space="preserve">
+    <value>Пароль:</value>
+  </data>
+  <data name="Main_PasswordWatermark" xml:space="preserve">
+    <value>пароль</value>
+  </data>
+  <data name="Main_PasteButton" xml:space="preserve">
+    <value>Вставить</value>
+  </data>
+  <data name="Main_PerAppRoutingLabel" xml:space="preserve">
+    <value>МАРШРУТИЗАЦИЯ СЕТЕВЫХ ЗАПРОСОВ ПРИЛОЖЕНИЯ</value>
+  </data>
+  <data name="Main_ProfileAddButton" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
+  <data name="Main_ProfileNoConfigHint" xml:space="preserve">
+    <value>У профиля пока нет конфигурации. Выберите из списка или «+ Новая конфигурация», чтобы добавить её в разделе «Конфигурации».</value>
+  </data>
+  <data name="Main_ProfileRenameHint" xml:space="preserve">
+    <value>Новое имя для этого профиля. Запущенный профиль переименовать нельзя.</value>
+  </data>
+  <data name="Main_ProfileSection" xml:space="preserve">
+    <value>ПРОФИЛЬ</value>
+  </data>
+  <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
+    <value>ПРОКСИ (WEBSOCKET)</value>
+  </data>
+  <data name="Main_QrUnavailableHint" xml:space="preserve">
+    <value>Конфигурация не помещается в QR-код. Используйте «Сохранить в файл…» или ссылку vpn://.</value>
+  </data>
+  <data name="Main_RailConfigSubtitle" xml:space="preserve">
+    <value>Каталог серверов</value>
+  </data>
+  <data name="Main_RailConfigTitle" xml:space="preserve">
+    <value>Конфигурации</value>
+  </data>
+  <data name="Main_RailGeneralSubtitle" xml:space="preserve">
+    <value>Оформление и сведения</value>
+  </data>
+  <data name="Main_RailGeneralTitle" xml:space="preserve">
+    <value>Общие</value>
+  </data>
+  <data name="Main_RailLogsSubtitle" xml:space="preserve">
+    <value>Журнал работы агента</value>
+  </data>
+  <data name="Main_RailLogsTitle" xml:space="preserve">
+    <value>Логи</value>
+  </data>
+  <data name="Main_RailProfileSubtitle" xml:space="preserve">
+    <value>Конфигурация + маршрутизация</value>
+  </data>
+  <data name="Main_RailProfileTitle" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
+  <data name="Main_RailRoutingSubtitle" xml:space="preserve">
+    <value>Списки правил и трафик</value>
+  </data>
+  <data name="Main_RailRoutingTitle" xml:space="preserve">
+    <value>Маршрутизация</value>
+  </data>
+  <data name="Main_RailSourcesSubtitle" xml:space="preserve">
+    <value>Базы доменов и стран</value>
+  </data>
+  <data name="Main_RailSourcesTitle" xml:space="preserve">
+    <value>Источники geo</value>
+  </data>
+  <data name="Main_RenameProfileTooltip" xml:space="preserve">
+    <value>Переименовать профиль</value>
+  </data>
+  <data name="Main_RenameTooltip" xml:space="preserve">
+    <value>Переименовать</value>
+  </data>
+  <data name="Main_RouteLogHint" xml:space="preserve">
+    <value>Отдельный журнал маршрутов, разрешений адресов и того, куда идут запросы (routes.log) - чтобы понять, почему сайт не открывается или грузится медленно. Попадает в архив для поддержки.</value>
+  </data>
+  <data name="Main_RouteLogTitle" xml:space="preserve">
+    <value>Лог маршрутизации</value>
+  </data>
+  <data name="Main_RoutingCopyTooltip" xml:space="preserve">
+    <value>Скопировать список в буфер обмена</value>
+  </data>
+  <data name="Main_RoutingLabel" xml:space="preserve">
+    <value>МАРШРУТИЗАЦИЯ</value>
+  </data>
+  <data name="Main_RoutingPasteTooltip" xml:space="preserve">
+    <value>Импортировать список из буфера обмена</value>
+  </data>
+  <data name="Main_RoutingPickerHint" xml:space="preserve">
+    <value>«Полный туннель» — весь трафик идёт через VPN. Выберите список, чтобы направлять через VPN только его записи. Правила списков редактируются в разделе «Маршрутизация».</value>
+  </data>
+  <data name="Main_RoutingSection" xml:space="preserve">
+    <value>МАРШРУТИЗАЦИЯ</value>
+  </data>
+  <data name="Main_SaveButton" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Main_SaveNameTooltip" xml:space="preserve">
+    <value>Сохранить имя</value>
+  </data>
+  <data name="Main_SaveToFileButton" xml:space="preserve">
+    <value>Сохранить в файл…</value>
+  </data>
+  <data name="Main_ServerHostLabel" xml:space="preserve">
+    <value>Адрес сервера (host):</value>
+  </data>
+  <data name="Main_ServerHostWatermark" xml:space="preserve">
+    <value>как у сервера, например wss-front.example.com</value>
+  </data>
+  <data name="Main_ServerPortLabel" xml:space="preserve">
+    <value>Порт сервера (TLS):</value>
+  </data>
+  <data name="Main_SettingsTooltip" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="Main_ShowQrButton" xml:space="preserve">
+    <value>Показать QR</value>
+  </data>
+  <data name="Main_ShowQrTooltip" xml:space="preserve">
+    <value>Показать QR-код списка для переноса</value>
+  </data>
+  <data name="Main_SourceDropdown" xml:space="preserve">
+    <value>Источник ▾</value>
+  </data>
+  <data name="Main_SourceKindTooltip" xml:space="preserve">
+    <value>Тип определён по имени файла в URL</value>
+  </data>
+  <data name="Main_SourceRowTooltip" xml:space="preserve">
+    <value>Правый клик или ⋮ — обновить / удалить базу</value>
+  </data>
+  <data name="Main_SourcesLabel" xml:space="preserve">
+    <value>ИСТОЧНИКИ</value>
+  </data>
+  <data name="Main_SourcesSection" xml:space="preserve">
+    <value>ИСТОЧНИКИ GEO</value>
+  </data>
+  <data name="Main_SupportLogsHint" xml:space="preserve">
+    <value>Собрать логи обоих процессов в один архив (секреты вырезаны) для отправки в поддержку.</value>
+  </data>
+  <data name="Main_SupportLogsTitle" xml:space="preserve">
+    <value>Логи для поддержки</value>
+  </data>
+  <data name="Main_TunnelMtuLabel" xml:space="preserve">
+    <value>MTU туннеля:</value>
+  </data>
+  <data name="Main_UpdateAllButton" xml:space="preserve">
+    <value>Обновить все</value>
+  </data>
+  <data name="Main_UpdateAvailableBadge" xml:space="preserve">
+    <value>● Доступно обновление</value>
+  </data>
+  <data name="Main_UpdateButton" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="Main_UpdateDatabaseTooltip" xml:space="preserve">
+    <value>Обновить базу</value>
+  </data>
+  <data name="Main_UpdateNowButton" xml:space="preserve">
+    <value>Обновить сейчас</value>
+  </data>
+  <data name="Main_UpdateSection" xml:space="preserve">
+    <value>ОБНОВЛЕНИЕ</value>
+  </data>
+  <data name="Main_UseSelectedList" xml:space="preserve">
+    <value>Использовать выбранный список</value>
+  </data>
+  <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
+    <value>Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)</value>
+  </data>
+  <data name="Main_VpnLinkTab" xml:space="preserve">
+    <value>Ссылка vpn://</value>
+  </data>
+  <data name="Main_WsCopyTooltip" xml:space="preserve">
+    <value>Скопировать настройки в буфер обмена</value>
+  </data>
+  <data name="Main_WsPasteTooltip" xml:space="preserve">
+    <value>Импортировать настройки из буфера обмена</value>
+  </data>
+  <data name="Qr_CloseButton" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Qr_CopyButton" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="Qr_SaveButton" xml:space="preserve">
+    <value>Сохранить...</value>
+  </data>
+  <data name="Qr_TooLargeHint" xml:space="preserve">
+    <value>Слишком большой для QR - используйте «Сохранить...» или «Копировать».</value>
+  </data>
+  <data name="Qr_WindowTitle" xml:space="preserve">
+    <value>QR-код</value>
+  </data>
+  <data name="Scan_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Scan_Title" xml:space="preserve">
+    <value>Сканировать QR с камеры</value>
+  </data>
 </root>

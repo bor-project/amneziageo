@@ -4,11 +4,12 @@ using Microsoft.Extensions.Hosting;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Keeps the live log level (<see cref="LogLevelController"/>) in sync with the persisted "log-level" setting
-/// across both processes (#82). The agent runs <see cref="LogLevelBackgroundWatcher"/> as a hosted service and
-/// also pushes the level instantly from the set-setting IPC handler; the per-tunnel service process, which has
-/// no host, applies the level once at bring-up and then polls so a support-requested change takes effect on a
-/// running tunnel without a reconnect. The shared state database is the single channel between the processes.
+/// Keeps the live diagnostic switches - the log level (<see cref="LogLevelController"/>) and the routing log
+/// toggle (<see cref="RouteLog"/>) - in sync with their persisted settings across both processes (#82). The
+/// agent runs <see cref="LogLevelBackgroundWatcher"/> as a hosted service and also pushes changes instantly
+/// from the set-setting IPC handler; the per-tunnel service process, which has no host, applies them once at
+/// bring-up and then polls so a support-requested change takes effect on a running tunnel without a reconnect.
+/// The shared state database is the single channel between the processes.
 /// </summary>
 internal static class LogLevelWatcher
 {
@@ -22,9 +23,9 @@ internal static class LogLevelWatcher
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Reads the persisted level once and applies it. A missing or invalid value leaves the current level
-    /// untouched (Information by default), and a transient read failure is swallowed so it never crashes the
-    /// caller.
+    /// Reads the persisted diagnostic settings once and applies them: the log level (a missing or invalid
+    /// value leaves the current level untouched, Information by default) and the routing-log on/off toggle. A
+    /// transient read failure is swallowed so it never crashes the caller.
     /// </summary>
     public static async Task ApplyAsync(IStateStore store, LogLevelController controller, CancellationToken ct = default)
     {
@@ -35,6 +36,11 @@ internal static class LogLevelWatcher
             {
                 controller.Set(token);
             }
+
+            // The routing log is an independent toggle applied on the same poll, so "включите лог
+            // маршрутизации" from support takes effect live in both the agent and the tunnel process.
+            var routeLog = await store.GetSettingAsync(RouteLog.SettingKey, ct);
+            RouteLog.Enabled = IsTrue(routeLog);
         }
         catch (OperationCanceledException)
         {
@@ -44,6 +50,13 @@ internal static class LogLevelWatcher
         {
             // A transient DB read must not stop logging or the poll loop.
         }
+    }
+
+    // The routing-log setting is persisted by SettingsStore as the canonical "true"/"false", but accept the
+    // other truthy spellings a CLI set-option might write so an out-of-band value still enables the log.
+    private static bool IsTrue(string? value)
+    {
+        return value?.Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes";
     }
 
     /// <summary>

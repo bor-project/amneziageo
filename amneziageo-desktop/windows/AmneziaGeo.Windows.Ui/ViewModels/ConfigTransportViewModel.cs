@@ -66,7 +66,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
-        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1420";
+        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1280";
 
         // Split the stored address into the host plus its auth mode / inputs. Default the host field to
         // the config's own Endpoint host so the common case (wstunnel on the same server) needs no input.
@@ -147,11 +147,11 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
 
             var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
 
-            // MTU: empty = default 1420. Validate 576-1500 before sending.
+            // MTU: empty = default 1280. Validate 576-1500 before sending.
             var mtuVal = Mtu.Trim();
             if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
             {
-                StatusMessage = "MTU: 576-1500 (пусто = 1420).";
+                StatusMessage = "MTU: 576-1500 (пусто = 1280).";
                 return;
             }
 

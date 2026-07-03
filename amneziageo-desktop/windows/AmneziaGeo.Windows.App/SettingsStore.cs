@@ -26,6 +26,7 @@ internal sealed class SettingsStore(IStateStore store)
             GeoCacheValidityHours = await ReadIntAsync("geo-cache-validity-hours", defaults.GeoCacheValidityHours, ct),
             TunnelAllUdp = await ReadBoolAsync("tunnel-all-udp", defaults.TunnelAllUdp, ct),
             LogLevel = await ReadLogLevelAsync(defaults.LogLevel, ct),
+            RouteLog = await ReadBoolAsync(RouteLog.SettingKey, defaults.RouteLog, ct),
         };
     }
 
@@ -93,7 +94,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] IntKeys =
         ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "failback-probes", "probe-timeout-seconds", "geo-check-interval-hours", "geo-cache-validity-hours"];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp"];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey];
 
     // Validated string settings. "log-level" (#82) is constrained to the three exposed verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey];

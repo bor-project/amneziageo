@@ -66,10 +66,12 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             if (Directory.Exists(logDir))
             {
                 // Both processes roll into "ageo-<date>[_NNN].log" (the agent and each per-tunnel service);
-                // agent.log is the legacy name. Include them all so a connect failure that only the tunnel
-                // process saw is in the bundle.
+                // agent.log is the legacy name. routes.log[.1] is the optional dedicated routing log (#82).
+                // Include them all so a connect failure that only the tunnel process saw, and the route/resolve
+                // trail behind a slow-load report, are both in the bundle.
                 var files = Directory.EnumerateFiles(logDir, "ageo-*.log")
-                    .Concat(Directory.EnumerateFiles(logDir, "agent.log"));
+                    .Concat(Directory.EnumerateFiles(logDir, "agent.log"))
+                    .Concat(Directory.EnumerateFiles(logDir, "routes.log*"));
                 foreach (var file in files)
                 {
                     try
@@ -101,6 +103,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         sb.AppendLine();
         sb.AppendLine("[settings]");
         sb.AppendLine($"log level:       {s.LogLevel}");
+        sb.AppendLine($"routing log:     {(s.RouteLog ? "on" : "off")}");
         sb.AppendLine($"refresh:         {s.RefreshSeconds}s");
         sb.AppendLine($"connect timeout: {s.ConnectTimeoutSeconds}s");
         sb.AppendLine($"dead threshold:  {s.DeadThresholdSeconds}s");
@@ -111,15 +114,75 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         sb.AppendLine($"selected target: {control.Target ?? "-"}");
         sb.AppendLine($"running:         {control.Running}");
         sb.AppendLine($"connect failed:  {control.ConnectFailed}");
+        sb.AppendLine();
 
+        // Per-config MTU and routing (#82): the single most useful thing when diagnosing a "slow handshake /
+        // won't route" report is what MTU the tunnel actually uses and how each config splits traffic. Kept
+        // structural (no keys/endpoints beyond what redaction leaves) so the block is safe to share.
         var configs = await store.ListConfigNamesAsync();
-        sb.AppendLine($"configs ({configs.Count}): {string.Join(", ", configs)}");
+        sb.AppendLine($"[configs] ({configs.Count})");
         foreach (var config in configs)
         {
+            sb.AppendLine($"  {config}:");
+            var transport = await store.GetConfigTransportAsync(config, ct);
+            var mtu = transport is { Mtu: > 0 } ? transport.Mtu.ToString(System.Globalization.CultureInfo.InvariantCulture) : "1280 (default)";
+            sb.AppendLine($"    mtu:        {mtu}");
+            if (transport?.UseWebSocket == true)
+            {
+                var wsHost = string.IsNullOrWhiteSpace(transport.WebSocketHost) ? "(endpoint host)" : transport.WebSocketHost;
+                sb.AppendLine($"    websocket:  on -> {wsHost}:{transport.WebSocketPort}");
+            }
+            else
+            {
+                sb.AppendLine("    websocket:  off (plain UDP)");
+            }
+
+            var geoSettings = await store.GetTunnelGeoAsync(config, ct);
+            if (geoSettings is not null)
+            {
+                sb.AppendLine($"    geo:        split={(geoSettings.GeoSplit ? "on" : "off")}, {geoSettings.Rules.Count} rule(s), {geoSettings.Routes.Count} route(s), {geoSettings.Domains.Count} domain(s)");
+            }
+
+            var configDns = await store.GetConfigDnsAsync(config, ct);
+            sb.AppendLine($"    dns:        {(string.IsNullOrWhiteSpace(configDns?.Servers) ? "auto (system)" : configDns!.Servers)}");
+
+            var configEx = await store.GetConfigExclusionsAsync(config, ct);
+            var exCount = string.IsNullOrWhiteSpace(configEx?.Exclusions)
+                ? 0
+                : configEx!.Exclusions.Split(['\n', '\r', ',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Length;
+            sb.AppendLine($"    exclusions: {(configEx is null ? "default (RFC1918 + local subnets)" : $"{exCount} entr(ies)")}");
+
             var message = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(config), ct);
             if (!string.IsNullOrWhiteSpace(message))
             {
-                sb.AppendLine($"last connect message [{config}]: {message}");
+                sb.AppendLine($"    last error: {message}");
+            }
+        }
+
+        // Routing lists and how profiles bind them: the routing preset (its own DNS/exclusions/all-UDP) is
+        // what actually shapes a matched connect, so a "list-driven" tunnel's behaviour is spelled out here.
+        var routingLists = await store.ListRoutingListsAsync(ct);
+        if (routingLists.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"[routing lists] ({routingLists.Count})");
+            foreach (var list in routingLists)
+            {
+                sb.AppendLine($"  [{list.Id}] {list.Name}: {list.Rules.Count} rule(s), {list.Routes.Count} route(s), {list.Domains.Count} domain(s)");
+            }
+        }
+
+        var profiles = await store.ListBalancerNamesAsync(ct);
+        if (profiles.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"[profiles] ({profiles.Count})");
+            foreach (var name in profiles)
+            {
+                var balancer = await store.GetBalancerAsync(name, ct);
+                var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
+                var routing = listId is not null ? $"routing list {listId} ({(useRouting ? "on" : "off")})" : "no routing list";
+                sb.AppendLine($"  {name} -> config '{(string.IsNullOrEmpty(balancer?.Config) ? "(none)" : balancer!.Config)}', {routing}");
             }
         }
 

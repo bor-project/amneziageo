@@ -78,7 +78,7 @@ internal static class ProcessCatalog
         return entries;
     }
 
-    // A friendly label for an app: the binary's FileDescription (e.g. "Discord") when present, else the
+    // A friendly label for an app: the binary's FileDescription (a human-readable product name) when present, else the
     // process name. FileVersionInfo can throw for some binaries, so fall back quietly.
     private static string DescribeApp(string path, string processName)
     {

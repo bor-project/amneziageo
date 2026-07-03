@@ -585,14 +585,14 @@
                   <CheckBox Content="Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)"
                             IsChecked="{Binding UseWebSocket}" />
                   <!-- MTU applies to any transport (plain WG too), not just WSS: on a path whose real MTU is
-                       below ~1500 (mobile, PPPoE, a nested tunnel, double-NAT) the 1420 default black-holes the
-                       large TLS-handshake packets, so every HTTPS connection stalls. Kept OUTSIDE the WebSocket
-                       block so it can be lowered on a plain-WG config too. -->
+                       below ~1500 (mobile, PPPoE, a nested tunnel, double-NAT) a too-high MTU black-holes the
+                       large TLS-handshake packets, so every HTTPS connection stalls. Default is the safe 1280
+                       (#109). Kept OUTSIDE the WebSocket block so it can be tuned on a plain-WG config too. -->
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="MTU туннеля:" VerticalAlignment="Center" />
                     <TextBox Width="90" Text="{Binding Mtu}" />
                     <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
-                               Text="576-1500, по умолчанию 1420. Если сайты открываются с задержкой и зависает TLS-хендшейк - понизьте (например, 1280)." />
+                               Text="576-1500, по умолчанию 1280 (безопасно почти для любой сети). На чистом канале можно поднять до 1420 ради скорости; если TLS-хендшейк всё равно зависает - понизьте ещё." />
                   </StackPanel>
                   <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
                     <StackPanel Spacing="2">
@@ -834,7 +834,7 @@
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
                         <TextBlock Text="Весь UDP через туннель" FontSize="13.5" />
-                        <TextBlock Text="Заворачивает в туннель ВСЕ исходящие UDP-датаграммы, пока активна выборочная маршрутизация. Нужно для real-time медиа (например, голос Discord), чьи адреса серверов приходят сигналингом, а не через DNS. Локальная сеть и сам канал туннеля исключаются."
+                        <TextBlock Text="Заворачивает в туннель ВСЕ исходящие UDP-датаграммы, пока активна выборочная маршрутизация. Нужно для real-time медиа (голосовые звонки, онлайн-игры), чьи адреса серверов приходят сигналингом, а не через DNS. Локальная сеть и сам канал туннеля исключаются."
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
                       </StackPanel>
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
@@ -1010,6 +1010,18 @@
                       <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="150"
                                 ItemsSource="{Binding LogLevels}"
                                 SelectedItem="{Binding LogLevelLabel, Mode=TwoWay}" />
+                    </Grid>
+                  </Border>
+                  <!-- Routing log (#82): a separate, toggleable log of every route change and matched DNS
+                       resolution (routes.log), included in the support bundle. Off by default; applies live. -->
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="Лог маршрутизации" FontSize="13.5" />
+                        <TextBlock Text="Отдельный журнал каждого маршрута и разрешения адреса (routes.log) - чтобы понять, почему сайт не открывается или грузится медленно. Попадает в архив для поддержки."
+                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
                     </Grid>
                   </Border>
                   <!-- Support export (#82): one redacted zip (both processes' logs + summary + journal) to

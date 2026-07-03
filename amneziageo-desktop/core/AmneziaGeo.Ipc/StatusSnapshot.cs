@@ -35,4 +35,7 @@ public sealed record StatusSnapshot(
     bool TunnelAllUdp = false,
     // Current log verbosity token: "info" (default), "debug", or "trace". Surfaced so the UI can show and
     // change the level; a support engineer raises it to "trace" to capture every connect step (#82).
-    string LogLevel = "info");
+    string LogLevel = "info",
+    // Whether the dedicated routing log (routes.log) is currently recording (#82). Surfaced so the UI can
+    // show and toggle it; a support engineer turns it on to see every route/resolve for a slow-load report.
+    bool RouteLog = false);

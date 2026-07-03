@@ -72,7 +72,7 @@ internal sealed record AppSettings
 
     /// <summary>
     /// When set (and the tunnel is in split mode), every outbound UDP datagram's destination is routed
-    /// through the tunnel - a catch-all for real-time media (e.g. Discord voice) whose server IPs arrive via
+    /// through the tunnel - a catch-all for real-time media (voice calls, online games) whose server IPs arrive via
     /// app-layer signaling, not DNS, so split rules never capture them. Off by default. Implemented by the
     /// ETW UDP tracker running WITHOUT its per-app PID filter; the tunnel's own underlay endpoint is excluded
     /// so the WG transport never loops back into the tunnel.
@@ -84,4 +84,11 @@ internal sealed record AppSettings
     /// in both processes. Raised to "trace" to capture every connect step and timing for support diagnosis.
     /// </summary>
     public string LogLevel { get; init; } = "info";
+
+    /// <summary>
+    /// Whether the dedicated routing log (routes.log) is recording (#82). Off by default; when on, every
+    /// route-table change and matched DNS resolution is appended for support diagnosis, independent of the
+    /// main log's verbosity.
+    /// </summary>
+    public bool RouteLog { get; init; }
 }

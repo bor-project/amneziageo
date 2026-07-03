@@ -22,10 +22,12 @@ internal sealed class TunnelRunner(
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
-    // Tunnel MTU default: 1420 (the AmneziaWG driver default). When WSS is active and no per-config
-    // override is set, this value is used as-is - the user can lower it (e.g. 1280) if the WSS overhead
-    // causes fragmentation/loss (#77, #80).
-    private const int DefaultMtu = 1420;
+    // Tunnel MTU default: 1280 - the IPv6-minimum, universally-safe value (#109). The AmneziaWG driver's
+    // own default is 1420, but on any path whose real MTU is below ~1500 (mobile, PPPoE, a nested tunnel,
+    // double-NAT) 1420 black-holes the large TLS-handshake packets and every HTTPS connect stalls for
+    // seconds on retransmits. 1280 fits virtually every real path; a user on a clean 1500 link can raise it
+    // per-config for a little more throughput. Used when a config sets no explicit MTU (#77, #80).
+    private const int DefaultMtu = 1280;
 
     /// <summary>
     /// Loads the tunnel config and materialized geo set, then hands control to the native service loop. On
@@ -83,7 +85,7 @@ internal sealed class TunnelRunner(
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
 
-        // Per-config MTU (#80): stored value is written to [Interface] MTU. Default 1420.
+        // Per-config MTU (#80): stored value is written to [Interface] MTU. Default 1280 (#109).
         var effectiveMtu = transport?.Mtu > 0 ? transport.Mtu : DefaultMtu;
         string? wsHost = null;            // the wstunnel server host the WSS connection dials
         var wsPort = 0;                   // the wstunnel server TLS port
@@ -417,7 +419,7 @@ internal sealed class TunnelRunner(
         }
 
         // UDP complement (#77-udp): route UDP datagrams through the tunnel whose server IPs arrive via
-        // signaling rather than DNS (e.g. Discord voice). Needed when tunneling matched apps' UDP (uses the
+        // signaling rather than DNS (voice calls, online games). Needed when tunneling matched apps' UDP (uses the
         // watcher's PID match) OR when wrapping ALL UDP (allUdp, no watcher). Its lifetime is the session
         // (stopped via sessionCts on teardown) - NOT a `using`, which would dispose it at end of scope and
         // race the Task.Run that has only just scheduled it. The underlay endpoint is excluded so the WG
@@ -443,7 +445,7 @@ internal sealed class TunnelRunner(
             logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}", name, wsTransport.LocalPort);
         }
 
-        // Apply the effective MTU (per-config override or the 1420 default) to the wg-quick config.
+        // Apply the effective MTU (per-config override or the 1280 default) to the wg-quick config.
         config = WgConfigEditor.SetMtu(config, effectiveMtu);
         logger.LogInformation("mtu for {Name}: {Mtu}", name, effectiveMtu);
 

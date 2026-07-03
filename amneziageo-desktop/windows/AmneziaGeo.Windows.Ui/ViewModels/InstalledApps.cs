@@ -6,7 +6,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// Enumerates installed applications from the Windows "Uninstall" registry (the same source as
 /// Add/Remove Programs) for the per-app tunneling picker (#71). Read in the UI process, which runs as the
 /// user, so both per-machine (HKLM, 64- and 32-bit) and per-user (HKCU) installs are visible - the agent
-/// runs as SYSTEM and would miss the user's HKCU (where per-user apps like Discord register).
+/// runs as SYSTEM and would miss the user's HKCU (where per-user apps register).
 /// </summary>
 internal static class InstalledApps
 {

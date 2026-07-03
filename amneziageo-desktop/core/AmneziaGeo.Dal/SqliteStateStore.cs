@@ -73,7 +73,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         use_ws     INTEGER NOT NULL DEFAULT 0,
                         ws_host    TEXT NOT NULL DEFAULT '',
                         ws_port    INTEGER NOT NULL DEFAULT 443,
-                        mtu        INTEGER NOT NULL DEFAULT 1420,
+                        mtu        INTEGER NOT NULL DEFAULT 1280,
                         updated_at TEXT NOT NULL
                     );
 
@@ -207,8 +207,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // WebSocket transport host, added after the table shipped with only use_ws/ws_port.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
 
-            // Tunnel MTU (#80): default 1420, valid 576-1500. Written to [Interface] MTU.
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1420;", ct).ConfigureAwait(false);
+            // Tunnel MTU (#80): default 1280 (conservative, #109), valid 576-1500. Written to [Interface] MTU.
+            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1280;", ct).ConfigureAwait(false);
 
             // Generation counter bumped whenever a routing list's materialized set (routes/domains) changes,
             // so a running tunnel can cheaply detect its geo address set went stale and re-apply it (#83).

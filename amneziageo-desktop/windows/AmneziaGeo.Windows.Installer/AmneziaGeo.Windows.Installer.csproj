@@ -26,4 +26,10 @@
     <PackageReference Include="WixToolset.BootstrapperApplicationApi" Version="5.0.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Shared localization (#106): the same resx-backed IStringLocalizer the app uses, so the installer UI
+         is bilingual too (system UI language at startup, English fallback). -->
+    <ProjectReference Include="..\..\core\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
+  </ItemGroup>
+
 </Project>

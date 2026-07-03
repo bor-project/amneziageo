@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Installer;
 
@@ -42,7 +43,7 @@ public sealed class InstallerViewModel : ObservableObject
     private Phase _phase = Phase.Detecting;
     private InstallState _state = InstallState.Unknown;
     private InstallerAction _action;
-    private string _subText = "Проверка установки…";
+    private string _subText = Loc.Instance.Get("InstallerVm_CheckingInstall");
     private string _versionText = string.Empty;
     private int _progress;
     private bool _success;
@@ -121,7 +122,7 @@ public sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    public string InstallButtonText => State == InstallState.NewerInstalled ? "Установить (откат версии)" : "Установить";
+    public string InstallButtonText => State == InstallState.NewerInstalled ? Loc.Instance.Get("InstallerVm_InstallDowngrade") : Loc.Instance.Get("InstallerVm_Install");
 
     public bool ShowActions => Phase == Phase.Ready;
 
@@ -203,13 +204,13 @@ public sealed class InstallerViewModel : ObservableObject
     public void SetDetected(InstallState state, string? installedVersion)
     {
         State = state;
-        VersionText = string.IsNullOrEmpty(installedVersion) ? string.Empty : $"Установлено: {installedVersion}";
+        VersionText = string.IsNullOrEmpty(installedVersion) ? string.Empty : Loc.Instance.Get("InstallerVm_InstalledVersion", installedVersion);
         SubText = state switch
         {
-            InstallState.NotInstalled => "Готово к установке.",
-            InstallState.Installed => "AmneziaGeo уже установлен. Можно обновить, восстановить или удалить.",
-            InstallState.NewerInstalled => "Установлена более новая версия. Можно откатиться на эту или удалить.",
-            _ => "Готово.",
+            InstallState.NotInstalled => Loc.Instance.Get("InstallerVm_ReadyToInstall"),
+            InstallState.Installed => Loc.Instance.Get("InstallerVm_AlreadyInstalled"),
+            InstallState.NewerInstalled => Loc.Instance.Get("InstallerVm_NewerInstalled"),
+            _ => Loc.Instance.Get("InstallerVm_Ready"),
         };
         Phase = Phase.Ready;
     }
@@ -222,10 +223,10 @@ public sealed class InstallerViewModel : ObservableObject
         IsIndeterminate = false;
         SubText = action switch
         {
-            InstallerAction.Repair => "Восстановление…",
-            InstallerAction.Remove => "Удаление…",
-            InstallerAction.Update => "Обновление…",
-            _ => "Установка…",
+            InstallerAction.Repair => Loc.Instance.Get("InstallerVm_Repairing"),
+            InstallerAction.Remove => Loc.Instance.Get("InstallerVm_Removing"),
+            InstallerAction.Update => Loc.Instance.Get("InstallerVm_Updating"),
+            _ => Loc.Instance.Get("InstallerVm_Installing"),
         };
         Phase = Phase.Applying;
     }
@@ -242,7 +243,7 @@ public sealed class InstallerViewModel : ObservableObject
     /// only - runs before deciding whether a download is needed).</summary>
     public void BeginGeoCheck()
     {
-        SubText = "Проверка обновлений баз гео…";
+        SubText = Loc.Instance.Get("InstallerVm_CheckingGeoUpdates");
         IsIndeterminate = true;
     }
 
@@ -250,7 +251,7 @@ public sealed class InstallerViewModel : ObservableObject
     /// indeterminate (a spinner) until the first real percentage arrives via <see cref="ReportGeoProgress"/>.</summary>
     public void BeginGeoDownload()
     {
-        SubText = "Загрузка файлов баз гео…";
+        SubText = Loc.Instance.Get("InstallerVm_DownloadingGeo");
         Progress = 0;
         IsIndeterminate = true;
     }
@@ -302,8 +303,8 @@ public sealed class InstallerViewModel : ObservableObject
 
     /// <summary>Caption next to the picker: the chosen file name, or a "none selected" hint.</summary>
     public string SeedDbLabel => string.IsNullOrEmpty(SeedDbPath)
-        ? "Файл настроек по умолчанию не выбран."
-        : $"Файл настроек: {System.IO.Path.GetFileName(SeedDbPath)}";
+        ? Loc.Instance.Get("InstallerVm_SeedDbNone")
+        : Loc.Instance.Get("InstallerVm_SeedDbSelected", System.IO.Path.GetFileName(SeedDbPath));
 
     /// <summary>Whether to offer the default-settings-DB picker (install / update only, like the geo option).</summary>
     public bool ShowSeedDbOption => Phase == Phase.Ready && (ShowInstall || ShowUpdate);
@@ -312,8 +313,8 @@ public sealed class InstallerViewModel : ObservableObject
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Выберите файл настроек (state.db)",
-            Filter = "База настроек SQLite (*.db)|*.db|Все файлы (*.*)|*.*",
+            Title = Loc.Instance.Get("InstallerVm_SeedDbDialogTitle"),
+            Filter = Loc.Instance.Get("InstallerVm_SeedDbDialogFilter"),
             CheckFileExists = true,
         };
         if (dialog.ShowDialog() == true)

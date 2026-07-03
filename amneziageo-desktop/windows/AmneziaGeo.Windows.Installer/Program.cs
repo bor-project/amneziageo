@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using AmneziaGeo.Localization;
 using WixToolset.BootstrapperApplicationApi;
 
 namespace AmneziaGeo.Windows.Installer;
@@ -18,6 +19,10 @@ internal static class Program
 {
     private static int Main()
     {
+        // Pick the installer UI language before any window: the system UI language, English as the fallback
+        // (there is no saved preference yet - the app is not installed). #106.
+        Loc.Instance.ApplyStartupCulture(null);
+
         var application = new InstallerBootstrapper();
 
         var watchdog = new Thread(() => WatchForMissingEngine(application)) { IsBackground = true };
@@ -50,8 +55,7 @@ internal static class Program
         }
 
         MessageBox.Show(
-            "Это внутренний компонент установщика AmneziaGeo и не запускается напрямую.\n\n" +
-            "Запустите AmneziaGeoSetup.exe - это и есть установщик.",
+            Loc.Instance.Get("Installer_NotDirectRun"),
             "AmneziaGeo",
             MessageBoxButton.OK,
             MessageBoxImage.Information);

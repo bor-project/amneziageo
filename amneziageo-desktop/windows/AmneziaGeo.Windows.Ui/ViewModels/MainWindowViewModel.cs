@@ -289,6 +289,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _logLevelLabel = "Обычный";
 
+    // The dedicated routing log toggle (#82): two-way bound to a switch in the logs settings. When on, every
+    // route/resolve is appended to routes.log (included in the diagnostics bundle) for support diagnosis of a
+    // "not routed / slow to load" report. Applied live in both processes; off by default.
+    [ObservableProperty]
+    private bool _routeLogEnabled;
+
     [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
 
@@ -1351,6 +1357,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         EnsureGeoValidity(snapshot.GeoCacheValidityHours);
         GeoCacheValidityHours = snapshot.GeoCacheValidityHours;
         LogLevelLabel = LabelForLogToken(snapshot.LogLevel);
+        RouteLogEnabled = snapshot.RouteLog;
         _suppressSettingPush = false;
 
         ApplyUpdateState(snapshot);
@@ -1490,6 +1497,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
                 ["log-level", TokenForLogLabel(value)]));
+        }
+    }
+
+    partial void OnRouteLogEnabledChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("route-log", value);
         }
     }
 

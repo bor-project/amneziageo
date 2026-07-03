@@ -51,12 +51,15 @@ internal sealed partial class RouteManager
         var (gateway, interfaceIndex) = FindPhysicalGateway(endpoint);
         if (gateway is null)
         {
+            RouteLog.Write("endpoint-excl", $"{endpoint}/32", "physical gw", ok: false, "no gateway found");
             return false;
         }
 
         var row = NewRow(endpoint, 32, interfaceIndex, gateway);
         var result = CreateIpForwardEntry2(ref row);
-        if (result is NoError or ErrorObjectAlreadyExists)
+        var ok = result is NoError or ErrorObjectAlreadyExists;
+        RouteLog.Write("endpoint-excl", $"{endpoint}/32", $"{gateway} if{interfaceIndex}", ok);
+        if (ok)
         {
             // The endpoint route sits on the physical adapter and does not vanish with the tunnel.
             UpdateState(name, endpoint.ToString(), add: true);
@@ -73,6 +76,7 @@ internal sealed partial class RouteManager
     {
         DeleteManagedRoutes(endpoint, ifIndex: null);
         UpdateState(name, endpoint.ToString(), add: false);
+        RouteLog.Write("rm endpoint", $"{endpoint}/32", "physical", ok: true);
     }
 
     /// <summary>
@@ -132,7 +136,9 @@ internal sealed partial class RouteManager
 
             var row = NewRow(dest, prefix, interfaceIndex, gateway);
             var result = CreateIpForwardEntry2(ref row);
-            if (result is NoError or ErrorObjectAlreadyExists)
+            var ok = result is NoError or ErrorObjectAlreadyExists;
+            RouteLog.Write("lan-excl", $"{dest}/{prefix}", $"{gateway} if{interfaceIndex}", ok);
+            if (ok)
             {
                 UpdateStateFile(TunnelPaths.LanStateFile(name), $"{dest}/{prefix}", add: true);
                 any = true;
@@ -154,7 +160,9 @@ internal sealed partial class RouteManager
 
                 var row = NewRowV6(dest, prefix, best.InterfaceIndex, best.NextHop);
                 var result = CreateIpForwardEntry2(ref row);
-                if (result is NoError or ErrorObjectAlreadyExists)
+                var ok = result is NoError or ErrorObjectAlreadyExists;
+                RouteLog.Write("lan-excl6", $"{network}/{prefix}", $"if{best.InterfaceIndex}", ok);
+                if (ok)
                 {
                     UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
                     any = true;
@@ -307,6 +315,7 @@ internal sealed partial class RouteManager
         foreach (var cidr in ReadStateFile(path))
         {
             DeleteCidrRoute(cidr);
+            RouteLog.Write("rm lan-excl", cidr, "physical", ok: true);
         }
 
         TryDelete(path);
@@ -359,11 +368,14 @@ internal sealed partial class RouteManager
     /// </summary>
     public bool AddTunnelRoute(IPAddress ip, uint tunnelInterfaceIndex)
     {
+        var prefix = ip.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
         var row = ip.AddressFamily == AddressFamily.InterNetworkV6
             ? NewRowV6(ip, 128, tunnelInterfaceIndex, nextHop: null) // on-link (no gateway)
             : NewRow(ip, 32, tunnelInterfaceIndex, nextHop: null);
         var result = CreateIpForwardEntry2(ref row);
-        return result is NoError or ErrorObjectAlreadyExists;
+        var ok = result is NoError or ErrorObjectAlreadyExists;
+        RouteLog.Write("tunnel +host", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok);
+        return ok;
     }
 
     /// <summary>
@@ -386,7 +398,9 @@ internal sealed partial class RouteManager
             var prefixV6 = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var pv6) ? pv6 : (byte)128;
             var rowV6 = NewRowV6(ip, prefixV6, tunnelInterfaceIndex, nextHop: null);
             var resultV6 = CreateIpForwardEntry2(ref rowV6);
-            return resultV6 is NoError or ErrorObjectAlreadyExists;
+            var okV6 = resultV6 is NoError or ErrorObjectAlreadyExists;
+            RouteLog.Write("tunnel +cidr", $"{ip}/{prefixV6}", $"if{tunnelInterfaceIndex}", okV6);
+            return okV6;
         }
 
         if (ip.AddressFamily != AddressFamily.InterNetwork)
@@ -397,7 +411,9 @@ internal sealed partial class RouteManager
         var prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : (byte)32;
         var row = NewRow(ip, prefix, tunnelInterfaceIndex, nextHop: null);
         var result = CreateIpForwardEntry2(ref row);
-        return result is NoError or ErrorObjectAlreadyExists;
+        var ok = result is NoError or ErrorObjectAlreadyExists;
+        RouteLog.Write("tunnel +cidr", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok);
+        return ok;
     }
 
     /// <summary>
@@ -408,10 +424,12 @@ internal sealed partial class RouteManager
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
             DeleteManagedV6Routes(ip, 128);
+            RouteLog.Write("tunnel -host", $"{ip}/128", $"if{tunnelInterfaceIndex}", ok: true);
             return;
         }
 
         DeleteManagedRoutes(ip, tunnelInterfaceIndex);
+        RouteLog.Write("tunnel -host", $"{ip}/32", $"if{tunnelInterfaceIndex}", ok: true);
     }
 
     /// <summary>
@@ -426,6 +444,8 @@ internal sealed partial class RouteManager
         {
             return;
         }
+
+        RouteLog.Write("tunnel -hosts", $"{ips.Count} route(s)", $"if{tunnelInterfaceIndex}", ok: true);
 
         var v4 = new HashSet<uint>();
         foreach (var ip in ips)

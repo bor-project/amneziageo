@@ -979,8 +979,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // Optional 4th arg: the wstunnel host. Empty reuses the config's own Endpoint host.
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
 
-        // Optional 5th arg: the tunnel MTU (default 1420). Valid range: 576-1500.
-        var mtu = 1420;
+        // Optional 5th arg: the tunnel MTU (default 1280, #109). Valid range: 576-1500.
+        var mtu = 1280;
         if (args.Count > 4 && args[4].Trim().Length > 0)
         {
             if (!int.TryParse(args[4].Trim(), System.Globalization.CultureInfo.InvariantCulture, out mtu) || mtu is < 576 or > 1500)
@@ -999,7 +999,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("set-websocket {Name}: on={On}, port={Port}", args[0], on, port);
+        logger.LogInformation("config {Name}: transport set - websocket={On}, port={Port}, mtu={Mtu}, host={Host}",
+            args[0], on, port, mtu, host.Length == 0 ? "(endpoint)" : host);
         return new IpcAck(true, on
             ? $"WebSocket включён, порт {port} (применится при переподключении)"
             : "WebSocket выключен (применится при переподключении)");
@@ -1855,6 +1856,15 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(true, $"log level = {logLevel.Current}");
         }
 
+        // The routing log toggle also applies live: flip this process's switch now (the tunnel process picks
+        // it up on its next poll) so the UI feels responsive. The value was already validated/persisted above.
+        if (key == RouteLog.SettingKey)
+        {
+            RouteLog.Enabled = args[1].Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes";
+            logger.LogInformation("routing log {State}", RouteLog.Enabled ? "on" : "off");
+            return new IpcAck(true, RouteLog.Enabled ? "routing log on" : "routing log off");
+        }
+
         logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
     }
@@ -2082,7 +2092,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             control.ConnectFailed,
             AppSettings.EngineVersion,
             settings.TunnelAllUdp,
-            settings.LogLevel);
+            settings.LogLevel,
+            settings.RouteLog);
     }
 
     /// <summary>

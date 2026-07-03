@@ -183,7 +183,7 @@ internal sealed class AppRouteWatcher
         foreach (var dir in _dirs)
         {
             // Under the install tree: "<dir>\..." (case-insensitive). Catches an app's versioned subfolders
-            // and sibling helpers (e.g. Discord.exe + its updater) from one folder rule.
+            // and sibling helpers (an app's main .exe + its updater) from one folder rule.
             if (path.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase))
             {
                 return true;

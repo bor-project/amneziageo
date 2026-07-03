@@ -8,7 +8,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// UDP complement to <see cref="AppRouteWatcher"/>: subscribes to the kernel-network ETW provider and
 /// routes remote IPs of UDP datagrams sent by matched apps through the tunnel. The TCP-based watcher
-/// cannot see UDP flows, so real-time media apps (e.g. Discord voice) whose servers deliver IPs through
+/// cannot see UDP flows, so real-time media apps (voice calls, online games) whose servers deliver IPs through
 /// an application-layer signaling channel (not DNS) need this path to land UDP traffic in the tunnel.
 /// </summary>
 internal sealed class UdpFlowTracker : IDisposable
@@ -18,7 +18,7 @@ internal sealed class UdpFlowTracker : IDisposable
     // KERNEL_NETWORK_KEYWORD_IPV4 (0x10): IPv4 TCP and UDP datagram events from this provider.
     private const ulong IPv4Keyword = 0x10UL;
     // EventId 42 = KNetEvt_SendIPV4Udp (UDPv4 datagram sent). NB: id 10 is TCPv4 send, which the TCP watcher
-    // already covers - real-time media (Discord voice) is UDP, so the UDP send event (42) is the one we want.
+    // already covers - real-time media (voice calls) is UDP, so the UDP send event (42) is the one we want.
     private const int UdpV4SendId = 42;
     // KNetEvt_SendIPV4Udp payload (little-endian): PID(4) size(4) daddr(4) saddr(4) dport(2) sport(2) ...
     // The owning process is an explicit payload field at offset 0 - more reliable than the ETW header PID,

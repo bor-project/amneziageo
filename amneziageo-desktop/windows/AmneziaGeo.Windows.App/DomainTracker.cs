@@ -127,6 +127,10 @@ internal sealed class DomainTracker(
 
             _current[key] = fresh;
 
+            // Story line for the routing log (off by default): the resolution and what it changed, so a
+            // support engineer sees "domain -> ips" immediately above the /32 routes RouteManager then logs.
+            RouteLog.Note($"resolve {key} -> [{string.Join(",", fresh)}] (+{addedCidrs.Count} route(s), -{stale?.Count ?? 0})");
+
             // A removal can only be expressed by replacing the whole peer set (the UAPI has no delete-one-
             // allowed-ip), so churn from the background re-resolve still pays the full O(total) push. But the
             // live DNS answer path only ever ADDS a freshly matched domain's IPs - advertise just those, in a

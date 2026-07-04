@@ -42,8 +42,12 @@ internal sealed class DnsProxy
     // Coalesces concurrent identical (name,type) misses onto a single upstream query, so N simultaneous
     // lookups for the same not-yet-cached name resolve ONCE instead of each issuing its own Forward.
     private readonly ConcurrentDictionary<string, Lazy<byte[]>> _inflight = new(StringComparer.Ordinal);
-    private readonly IReadOnlyList<GeoDomain> _domains;
-    private readonly DomainMatcher _matcher;
+    // Rebuilt live (#108): a geosite source refresh that changed the active routing list's domains swaps
+    // both by reference from the tracker's generation poll, so added/removed domains take effect without a
+    // reconnect. Volatile - the reference is read on the hot query path (thread pool) and replaced on the
+    // poll thread; the matcher itself is immutable, so a query always sees a whole old or whole new one.
+    private volatile IReadOnlyList<GeoDomain> _domains;
+    private volatile DomainMatcher _matcher;
     private readonly IPAddress _tunnelUpstream;
     private readonly IPAddress _localUpstream;
     private readonly IPAddress? _lanUpstream;
@@ -131,6 +135,108 @@ internal sealed class DnsProxy
     public void ClearCache()
     {
         _cache.Clear();
+    }
+
+    /// <summary>
+    /// Rebuilds the domain matcher live from a freshly materialized rule set, so a source refresh that
+    /// changed the active routing list's geosite domains takes effect WITHOUT a reconnect (#108). The
+    /// matcher is immutable and swapped by reference, so an in-flight query on the hot path sees either the
+    /// whole old or the whole new matcher, never a half-built one. Full/domain hosts that are new since the
+    /// previous set are then resolved through the tunnel resolver and routed best-effort, so an app holding
+    /// a pre-tunnel cached IP for a just-added domain is tunnelled without waiting for it to re-query.
+    /// Removed domains simply stop matching; their already-installed /32 routes are left in place (add-only,
+    /// as with the tracker's geoip ranges) - a stale route over-tunnels a since-removed domain (harmless)
+    /// rather than being torn out live. Wired only for a tunnel that tracks domains at connect (so the clean
+    /// tunnel resolver's /32 is already routed); a list that gains its FIRST domain takes full effect on the
+    /// next reconnect.
+    /// </summary>
+    public void UpdateDomains(IReadOnlyList<GeoDomain> domains, CancellationToken ct)
+    {
+        var previous = _domains;
+        _matcher = new DomainMatcher(domains);
+        _domains = domains;
+
+        // Drop cached answers: a name newly matched by the rebuilt matcher may have a pre-match entry cached
+        // from the LOCAL resolver (for a geo-blocked host, a poisoned/sinkhole IP). Left in place it would be
+        // served - TryGetCached precedes the upstream choice, and a cache hit skips Track - so the domain
+        // would keep resolving off-tunnel to the stale IP until its TTL expired (up to MaxCacheSeconds),
+        // defeating the live rebuild. This is the counterpart to the connect path's ClearCache() after the
+        // tunnel is up (FlushDnsWhenTunnelUpAsync). A generation change is rare, so re-resolving the working
+        // set on demand afterwards is cheap.
+        _cache.Clear();
+
+        _logger.LogInformation("geo cache: domain matcher rebuilt live ({Count} rule(s))", domains.Count);
+        if (RouteLog.Enabled)
+        {
+            RouteLog.Note($"matcher rebuilt live: {domains.Count} rule(s)");
+        }
+
+        if (_tracker is not null && !ct.IsCancellationRequested)
+        {
+            _ = SeedNewDomainsAsync(previous, domains, ct);
+        }
+    }
+
+    // Best-effort resolve+route of full/domain hosts that are new since the previous matcher build, through
+    // the tunnel resolver (like the connect-time seeder, but only the delta). Covers an app holding a
+    // pre-tunnel cached IP for a just-added domain that never re-queries; browsers and TTL-respecting apps
+    // are already covered on demand by the live proxy path once the rebuilt matcher matches the name.
+    private async Task SeedNewDomainsAsync(IReadOnlyList<GeoDomain> previous, IReadOnlyList<GeoDomain> current, CancellationToken ct)
+    {
+        var tracker = _tracker;
+        if (tracker is null)
+        {
+            return;
+        }
+
+        var old = new HashSet<string>(RuleHosts(previous), StringComparer.Ordinal);
+        var added = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var host in RuleHosts(current))
+        {
+            if (!old.Contains(host) && !tracker.IsTracked(host))
+            {
+                added.Add(host);
+            }
+        }
+
+        if (added.Count == 0)
+        {
+            return;
+        }
+
+        _logger.LogInformation("geo cache: pre-resolving {Count} newly added domain(s) live", added.Count);
+        using var gate = new SemaphoreSlim(8);
+        try
+        {
+            await Task.WhenAll(added.Select(h => ResolveOneAsync(gate, tracker, h, ct)));
+        }
+        catch (OperationCanceledException)
+        {
+            // Tunnel torn down mid-seed - nothing to do; the routes for whatever resolved are already in.
+        }
+        catch (Exception ex)
+        {
+            // Fire-and-forget: never let a background pre-resolve fault surface as an unobserved task
+            // exception. The matcher is already swapped, so these domains still route on demand.
+            _logger.LogDebug(ex, "live pre-resolve of newly added domains failed");
+        }
+    }
+
+    // The resolvable rule hosts (full/domain kinds) of a materialized domain set, normalized. Substring
+    // (plain) and regex rules have no single host to resolve, so they are only ever seeded on demand.
+    private static IEnumerable<string> RuleHosts(IReadOnlyList<GeoDomain> domains)
+    {
+        foreach (var entry in domains)
+        {
+            if (entry.Kind is GeoDomainKind.Full or GeoDomainKind.Domain)
+            {
+                var host = entry.Value.Trim().Trim('.').ToLowerInvariant();
+                if (host.Length > 0)
+                {
+                    yield return host;
+                }
+            }
+        }
     }
 
     private bool Bind(IPAddress address)
@@ -577,15 +683,11 @@ internal sealed class DnsProxy
         await tracker.WarmStartCompleted.WaitAsync(ct);
 
         var hosts = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var entry in _domains)
+        foreach (var host in RuleHosts(_domains))
         {
-            if (entry.Kind is GeoDomainKind.Full or GeoDomainKind.Domain)
+            if (!tracker.IsTracked(host))
             {
-                var host = entry.Value.Trim().Trim('.').ToLowerInvariant();
-                if (host.Length > 0 && !tracker.IsTracked(host))
-                {
-                    hosts.Add(host);
-                }
+                hosts.Add(host);
             }
         }
 

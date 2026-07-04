@@ -94,6 +94,31 @@ internal static class DnsMessage
         return response;
     }
 
+    // SERVFAIL echo of the question: lets a client fail fast and retry instead of waiting out
+    // its resolver timeout when the upstream query could not be answered.
+    public static byte[] BuildServFail(byte[] query)
+    {
+        var end = 12;
+        SkipName(query, ref end);
+        end += 4;
+        if (end < 12 || end > query.Length)
+        {
+            return query;
+        }
+
+        var response = new byte[end];
+        Array.Copy(query, response, end);
+        response[2] = (byte)(query[2] | 0x80); // QR = 1 (response), preserve opcode / RD
+        response[3] = 0x82;                     // RA = 1, RCODE = 2 (SERVFAIL)
+        response[6] = 0;
+        response[7] = 0; // ANCOUNT = 0
+        response[8] = 0;
+        response[9] = 0; // NSCOUNT = 0
+        response[10] = 0;
+        response[11] = 0; // ARCOUNT = 0 (drop any EDNS OPT)
+        return response;
+    }
+
     /// <summary>
     /// Returns the smallest record TTL in the answer section, or 0 when there are none.
     /// </summary>

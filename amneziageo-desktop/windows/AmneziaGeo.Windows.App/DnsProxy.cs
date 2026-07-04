@@ -16,6 +16,8 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class DnsProxy
 {
     private const int UpstreamTimeoutMs = 5000;
+    // Per-attempt wait before retransmitting a lost upstream query, within the overall timeout.
+    private const int UpstreamRetransmitMs = 400;
     private const int SioUdpConnReset = unchecked((int)0x9800000C);
     private const int TypeAaaa = 28;
     private const int TypeHttps = 65; // HTTPS/SVCB
@@ -37,6 +39,7 @@ internal sealed class DnsProxy
     private volatile IReadOnlyList<GeoDomain> _domains;
     private volatile DomainMatcher _matcher;
     private readonly IPAddress _tunnelUpstream;
+    private readonly IPAddress? _tunnelUpstreamSecondary;
     private readonly IPAddress _localUpstream;
     private readonly IPAddress? _lanUpstream;
     private readonly IReadOnlyList<string> _localDomains;
@@ -47,11 +50,12 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null)
     {
         _domains = domains;
         _matcher = new DomainMatcher(domains);
         _tunnelUpstream = tunnelUpstream;
+        _tunnelUpstreamSecondary = tunnelSecondary;
         _localUpstream = localUpstream;
         _lanUpstream = lanUpstream;
         _localDomains = [.. localDomains.Select(d => d.Trim().Trim('.').ToLowerInvariant()).Where(d => d.Length > 0)];
@@ -73,8 +77,8 @@ internal sealed class DnsProxy
             BoundV6 = IPAddress.IPv6Loopback;
         }
 
-        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} localUp={LocalUp} lanUp={LanUp} localDomains={LocalDomains} v4={V4} v6={V6} stripV6={StripV6}",
-            _domains.Count, _tunnelUpstream, _localUpstream, _lanUpstream is null ? "(none)" : _lanUpstream, _localDomains.Count, BoundV4, BoundV6, _stripV6);
+        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} tunnelUp2={TunnelUp2} localUp={LocalUp} lanUp={LanUp} localDomains={LocalDomains} v4={V4} v6={V6} stripV6={StripV6}",
+            _domains.Count, _tunnelUpstream, _tunnelUpstreamSecondary is null ? "(none)" : _tunnelUpstreamSecondary, _localUpstream, _lanUpstream is null ? "(none)" : _lanUpstream, _localDomains.Count, BoundV4, BoundV6, _stripV6);
     }
 
     /// <summary>
@@ -291,8 +295,9 @@ internal sealed class DnsProxy
             else
             {
                 var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
+                var secondary = matched ? _tunnelUpstreamSecondary : null;
                 var started = System.Diagnostics.Stopwatch.GetTimestamp();
-                var result = ForwardCoalesced(name, type, query, upstream);
+                var result = ForwardCoalesced(name, type, query, upstream, secondary);
                 if (result.Error is not null)
                 {
                     // Upstream unreachable: warn so a 'site won't open' report shows DNS failed.
@@ -301,6 +306,14 @@ internal sealed class DnsProxy
                     if (RouteLog.Enabled && name is not null && result.Leader)
                     {
                         RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, geoMatch, upstream, started, ips: null, failure: result.Error.Message));
+                    }
+
+                    // Answer SERVFAIL instead of dropping the query, so the client fails fast and
+                    // retries at once rather than waiting out its own multi-second resolver timeout.
+                    var servfail = DnsMessage.BuildServFail(query);
+                    lock (server)
+                    {
+                        server.Send(servfail, servfail.Length, client);
                     }
 
                     return;
@@ -456,25 +469,70 @@ internal sealed class DnsProxy
         return type.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + name.TrimEnd('.').ToLowerInvariant();
     }
 
-    private static byte[] Forward(byte[] query, IPAddress upstream)
+    private static byte[] Forward(byte[] query, IPAddress upstream, IPAddress? secondary = null)
     {
-        using (var client = new UdpClient())
+        var upstreams = secondary is null || secondary.Equals(upstream)
+            ? new[] { upstream }
+            : new[] { upstream, secondary };
+        var deadlineMs = Environment.TickCount64 + UpstreamTimeoutMs;
+        SocketException? last = null;
+        var idx = 0;
+        var missesOnCurrent = 0;
+        while (true)
         {
-            client.Client.ReceiveTimeout = UpstreamTimeoutMs;
-            client.Send(query, query.Length, new IPEndPoint(upstream, 53));
-            var remote = new IPEndPoint(IPAddress.Any, 0);
-            return client.Receive(ref remote);
+            var remaining = (int)(deadlineMs - Environment.TickCount64);
+            if (remaining <= 0)
+            {
+                throw last ?? new SocketException((int)SocketError.TimedOut);
+            }
+
+            // Retransmit a dropped query after a short wait rather than stalling the whole budget
+            // on one lost packet; a fresh socket per attempt lets us fail over between resolvers.
+            var attemptMs = Math.Min(remaining, UpstreamRetransmitMs);
+            var attemptStart = Environment.TickCount64;
+            try
+            {
+                using var client = new UdpClient();
+                client.Client.ReceiveTimeout = attemptMs;
+                client.Connect(new IPEndPoint(upstreams[idx], 53));
+                client.Send(query, query.Length);
+                var remote = new IPEndPoint(IPAddress.Any, 0);
+                return client.Receive(ref remote);
+            }
+            catch (SocketException ex) when (
+                ex.SocketErrorCode is SocketError.TimedOut
+                or SocketError.HostUnreachable
+                or SocketError.NetworkUnreachable
+                or SocketError.ConnectionReset)
+            {
+                last = ex;
+                // Fail over to the secondary resolver after two misses so a resolver blackhole
+                // recovers, not just an occasional dropped datagram (retransmit handles that).
+                if (upstreams.Length > 1 && ++missesOnCurrent >= 2)
+                {
+                    idx = (idx + 1) % upstreams.Length;
+                    missesOnCurrent = 0;
+                }
+
+                // Pace retransmits when the failure returns faster than the window (ICMP
+                // unreachable/reset), so bring-up churn doesn't spin the loop.
+                var pause = attemptMs - (int)(Environment.TickCount64 - attemptStart);
+                if (pause > 0)
+                {
+                    Thread.Sleep(pause);
+                }
+            }
         }
     }
 
     // Runs the upstream query once per in-flight (name,type); only the leader writes the routing-log line.
-    private CoalescedResult ForwardCoalesced(string? name, int type, byte[] query, IPAddress upstream)
+    private CoalescedResult ForwardCoalesced(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null)
     {
         if (name is null)
         {
             try
             {
-                return new CoalescedResult(Forward(query, upstream), Leader: true, Error: null);
+                return new CoalescedResult(Forward(query, upstream, secondary), Leader: true, Error: null);
             }
             catch (Exception ex)
             {
@@ -484,7 +542,7 @@ internal sealed class DnsProxy
 
         var key = CacheKey(name, type);
         // GetOrAdd(key, value): the caller whose instance is stored is the leader.
-        var mine = new Lazy<byte[]>(() => Forward(query, upstream), LazyThreadSafetyMode.ExecutionAndPublication);
+        var mine = new Lazy<byte[]>(() => Forward(query, upstream, secondary), LazyThreadSafetyMode.ExecutionAndPublication);
         var lazy = _inflight.GetOrAdd(key, mine);
         var leader = ReferenceEquals(lazy, mine);
         try
@@ -666,7 +724,7 @@ internal sealed class DnsProxy
 
     private void CollectAddresses(string host, int type, List<IPAddress> ips)
     {
-        var response = Forward(DnsMessage.BuildQuery(host, type), _tunnelUpstream);
+        var response = Forward(DnsMessage.BuildQuery(host, type), _tunnelUpstream, _tunnelUpstreamSecondary);
         foreach (var ip in DnsMessage.Addresses(response))
         {
             ips.Add(ip);

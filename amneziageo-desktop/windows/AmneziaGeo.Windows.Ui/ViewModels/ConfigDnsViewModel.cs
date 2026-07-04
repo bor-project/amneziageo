@@ -6,10 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// The per-config preferred-DNS editor shown on a profile's DNS aspect: a single comma/space-separated
-/// servers field saved through the agent (set-config-dns). Empty clears the override → auto-detect the
-/// system resolvers. Moved here from the former global settings so each profile carries its own DNS for
-/// NON-tunneled names. Applies on the next connect.
+/// The per-config preferred-DNS editor: a comma/space-separated servers field saved through the agent. Empty clears the override to auto-detect the system resolvers. Applies on the next connect.
 /// </summary>
 internal sealed partial class ConfigDnsViewModel : ViewModelBase
 {
@@ -34,11 +31,13 @@ internal sealed partial class ConfigDnsViewModel : ViewModelBase
         _dns = dns;
     }
 
-    /// <summary>The configuration name being edited.</summary>
+    /// <summary>
+    /// The configuration name being edited.
+    /// </summary>
     public string ConfigName { get; }
 
     /// <summary>
-    /// Saves the preferred DNS through the agent (empty clears it → auto-detect). Applies on reconnect.
+    /// Saves the preferred DNS through the agent. Empty clears the override. Applies on reconnect.
     /// </summary>
     [RelayCommand]
     private async Task SaveAsync()

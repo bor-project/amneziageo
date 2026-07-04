@@ -8,8 +8,7 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Windows.Ui;
 
 /// <summary>
-/// Generic dialog that shows a ready payload as a QR code, with copy / save. Used to share a routing list
-/// (its name + rules) without keeping a live QR in the editor (that stole input focus).
+/// Generic dialog that shows a ready payload as a QR code, with copy / save.
 /// </summary>
 public sealed partial class QrDialog : Window
 {

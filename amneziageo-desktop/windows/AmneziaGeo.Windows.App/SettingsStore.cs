@@ -18,8 +18,7 @@ internal sealed class SettingsStore(IStateStore store)
             RefreshSeconds = await ReadIntAsync("refresh-seconds", defaults.RefreshSeconds, ct),
             ConnectTimeoutSeconds = await ReadIntAsync("connect-timeout-seconds", defaults.ConnectTimeoutSeconds, ct),
             DeadThresholdSeconds = await ReadIntAsync("dead-threshold-seconds", defaults.DeadThresholdSeconds, ct),
-            // The update URL is baked into the build (installer config), not a persisted/user setting, so it
-            // is always the baked default - a stale 'update-url' row from older builds must not shadow it.
+            // Update URL is baked into the build; a stale persisted row must not shadow it.
             UpdateUrl = defaults.UpdateUrl,
             GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
             GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
@@ -61,8 +60,7 @@ internal sealed class SettingsStore(IStateStore store)
         if (StringKeys.Contains(key))
         {
             var trimmed = value.Trim();
-            // The log level accepts only the three exposed tokens; a bad value is rejected so the live switch
-            // never lands in an unknown state. Stored lowercase-canonical.
+            // Log level accepts only the exposed tokens; a bad value is rejected, stored lowercase.
             if (key == LogLevelWatcher.SettingKey)
             {
                 var token = trimmed.ToLowerInvariant();
@@ -75,7 +73,7 @@ internal sealed class SettingsStore(IStateStore store)
                 return true;
             }
 
-            // Other free-form string settings; an empty value clears it.
+            // Free-form string settings; an empty value clears it.
             await store.SetSettingAsync(key, trimmed, ct);
             return true;
         }
@@ -96,7 +94,7 @@ internal sealed class SettingsStore(IStateStore store)
 
     private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey];
 
-    // Validated string settings. "log-level" (#82) is constrained to the three exposed verbosity tokens.
+    // Validated string settings; log-level is constrained to verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey];
 
     private async Task<int> ReadIntAsync(string key, int fallback, CancellationToken ct)

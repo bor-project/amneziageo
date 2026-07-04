@@ -6,13 +6,13 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Windows.Ui.Localization;
 
 /// <summary>
-/// Formats an hour count for the geo settings combos as "{n} {localized-hours-unit}" (e.g. "24 h" / "24 ч").
-/// Used from the two interval/validity combo item templates via {x:Static l:HoursConverter.Instance}. The
-/// suffix follows the current UI language; a live language switch is reflected the next time the item renders.
+/// Formats an hour count with a localized unit suffix.
 /// </summary>
 public sealed class HoursConverter : IValueConverter
 {
-    /// <summary>Shared instance for XAML binding (no need for a Resources declaration).</summary>
+    /// <summary>
+    /// Shared instance for XAML binding.
+    /// </summary>
     public static readonly HoursConverter Instance = new();
 
     /// <inheritdoc/>

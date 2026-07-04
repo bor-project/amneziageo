@@ -3,20 +3,17 @@ using System.Linq;
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
-/// In-band encoding for a localizable IPC ack message (#106). The agent process does not localize; it puts a
-/// resource KEY plus its format arguments into <see cref="IpcAck.Message"/> via <see cref="Key"/>, and the UI
-/// translates it centrally (in AgentConnection, the one place every command reply flows through) with
-/// <see cref="TryParse"/> before display. A message without the marker - raw text, a config payload, a file
-/// path, an exception message - is passed through untranslated, so only intentionally-keyed replies localize.
+/// In-band encoding for a localizable IPC ack message.
 /// </summary>
 public static class IpcMessage
 {
-    // A control char no genuine message starts with, tagging a payload as "a localization key", and a unit
-    // separator between the key and its stringified arguments.
+    // Marker tags a payload as a localization key; separator delimits the key and its arguments.
     private const char Marker = '\u0001';
     private const char Separator = '\u001F';
 
-    /// <summary>Encodes a resource key and its (stringified) format arguments as an ack payload.</summary>
+    /// <summary>
+    /// Encodes a resource key and its format arguments as an ack payload.
+    /// </summary>
     public static string Key(string key, params object?[] args)
     {
         if (args is null || args.Length == 0)
@@ -28,8 +25,7 @@ public static class IpcMessage
     }
 
     /// <summary>
-    /// Decodes a payload produced by <see cref="Key"/>. Returns false - leaving the message to be shown as-is -
-    /// for any message that does not carry the marker.
+    /// Decodes a payload produced by Key. Returns false for any message without the marker.
     /// </summary>
     public static bool TryParse(string? message, out string key, out string[] args)
     {

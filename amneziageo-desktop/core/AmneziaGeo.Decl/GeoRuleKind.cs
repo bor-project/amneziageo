@@ -26,9 +26,7 @@ public enum GeoRuleKind
     Cidr,
 
     /// <summary>
-    /// An application matcher (per-app tunneling). The value is a sub-typed token:
-    /// "path=&lt;exe&gt;", "dir=&lt;folder&gt;", "svc=&lt;service&gt;", "pkg=&lt;sid&gt;" or "name=&lt;exe&gt;".
-    /// Appended last so existing persisted enum ordinals (0..3) stay stable.
+    /// An application matcher token: "path=", "dir=", "svc=", "pkg=" or "name=".
     /// </summary>
     App,
 }

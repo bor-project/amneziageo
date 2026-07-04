@@ -5,9 +5,7 @@ using AmneziaGeo.Windows.Ui.ViewModels;
 namespace AmneziaGeo.Windows.Ui;
 
 /// <summary>
-/// Modal editor for a config's wg-quick text. In "new" mode it returns the typed text (the caller
-/// imports it); in "edit" mode it overwrites the existing config in place on save. Closes with a bool:
-/// true if saved/accepted, false if cancelled.
+/// Modal editor for a config's wg-quick text. Closes with true if saved, false if cancelled.
 /// </summary>
 public sealed partial class ConfigEditorDialog : Window
 {

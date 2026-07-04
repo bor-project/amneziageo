@@ -23,19 +23,15 @@ public sealed record StatusSnapshot(
     string UpdateDescription = "",
     bool GeoAutoCheck = true,
     int GeoCheckIntervalHours = 24,
-    // How long the materialized geo address cache stays current before a background refresh re-validates
-    // the in-use lists (#83). Surfaced next to the sources so the user can tune it.
+    // How long the materialized geo address cache stays current before a background refresh.
     int GeoCacheValidityHours = 24,
     bool ConnectFailed = false,
-    // AmneziaWG engine version (git describe of the bundled amneziawg-windows submodule, baked at
-    // build time). tunnel.dll carries no version resource, so this is the authoritative engine
-    // version. Empty when the build could not resolve it.
+    // AmneziaWG engine version (git describe of the bundled submodule). Authoritative engine version.
+    // Empty when the build could not resolve it.
     string EngineVersion = "",
-    // When set, all UDP is routed through the tunnel while in split mode (#77-udp).
+    // When set, all UDP is routed through the tunnel while in split mode.
     bool TunnelAllUdp = false,
-    // Current log verbosity token: "info" (default), "debug", or "trace". Surfaced so the UI can show and
-    // change the level; a support engineer raises it to "trace" to capture every connect step (#82).
+    // Current log verbosity token: "info" (default), "debug", or "trace".
     string LogLevel = "info",
-    // Whether the dedicated routing log (routes.log) is currently recording (#82). Surfaced so the UI can
-    // show and toggle it; a support engineer turns it on to see every route/resolve for a slow-load report.
+    // Whether the dedicated routing log (routes.log) is currently recording.
     bool RouteLog = false);

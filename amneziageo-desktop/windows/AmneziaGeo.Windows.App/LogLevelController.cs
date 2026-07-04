@@ -4,9 +4,7 @@ using Serilog.Events;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Owns the live Serilog level switch so the verbosity can be changed at runtime (#82) without a restart.
-/// Wraps Serilog behind a small surface so the broker and CLI can raise/lower the level without depending on
-/// Serilog directly. Three user-facing levels are exposed: "info" (default), "debug", and "trace".
+/// Owns the live Serilog level switch for runtime verbosity changes.
 /// </summary>
 internal sealed class LogLevelController
 {
@@ -29,8 +27,7 @@ internal sealed class LogLevelController
     }
 
     /// <summary>
-    /// Maps a persisted token to a Serilog level. "trace" maps to Verbose (the RingBufferSink already renders
-    /// Verbose as TRC); anything unrecognized is Information so a bad value never silences the log.
+    /// Maps a persisted token to a Serilog level.
     /// </summary>
     public static LogEventLevel Parse(string? token)
     {

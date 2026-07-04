@@ -8,9 +8,7 @@ namespace AmneziaGeo.Windows.App;
 internal static class GeoMaterializer
 {
     /// <summary>
-    /// Returns the materialized routes, domains, and app matchers for a set of rules. App rules are
-    /// pass-through (no geo expansion): their value token ("dir=...", "path=...", "svc=...", etc.) is the
-    /// matcher the per-app route watcher consumes, so it is carried verbatim alongside routes/domains.
+    /// Materializes routes, domains, and app matchers for a set of rules; app rule values are carried verbatim.
     /// </summary>
     public static (IReadOnlyList<string> Routes, IReadOnlyList<GeoDomain> Domains, IReadOnlyList<string> Apps) Materialize(IReadOnlyList<GeoRule> rules, GeoIndex index)
     {

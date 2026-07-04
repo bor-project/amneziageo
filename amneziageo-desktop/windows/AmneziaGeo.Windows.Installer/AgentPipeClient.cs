@@ -7,26 +7,20 @@ using System.Text.Json.Serialization;
 namespace AmneziaGeo.Windows.Installer;
 
 /// <summary>
-/// A tiny client for the AmneziaGeo agent's status/control pipe - just enough to send one command and
-/// read its ack. The installer (net8) can't reference the app's net10 IPC library, so the minimal
-/// newline-delimited JSON protocol (camelCase, one envelope per line) is reproduced here. The agent
-/// runs as LocalSystem and does the privileged geo download the unprivileged bootstrapper cannot.
+/// Client for the agent pipe used by the installer.
 /// </summary>
 internal static class AgentPipeClient
 {
     private const string PipeName = "AmneziaGeo.Agent";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <summary>The agent's reply to a command, plus what its status snapshots revealed while we waited.
-    /// <paramref name="GeoUpdatesAvailable"/> is the number of geo sources flagged "update available" in the
-    /// last snapshot seen (-1 if none seen) - used to decide whether a download is worth offering.</summary>
+    /// <summary>
+    /// Agent reply with status snapshot summary.
+    /// </summary>
     public readonly record struct AgentReply(bool Ok, string Message, int GeoUpdatesAvailable);
 
     /// <summary>
-    /// Connects (retrying until <paramref name="connectTimeout"/>), sends the command, and returns the
-    /// agent's ack. While waiting for the ack it reads the status snapshots the agent pushes: it reports an
-    /// aggregate download percent (across in-flight geo sources) to <paramref name="progress"/>, and tracks
-    /// how many sources have an update available. Throws on connect/timeout/pipe failure.
+    /// Connects, sends a command, returns the agent ack.
     /// </summary>
     public static async Task<AgentReply> SendAsync(
         string op, string[] args, TimeSpan connectTimeout, TimeSpan ackTimeout, CancellationToken ct,
@@ -46,8 +40,6 @@ internal static class AgentPipeClient
 
         var updatesAvailable = -1;
 
-        // The agent pushes a status snapshot on connect and as state changes; read each one for progress /
-        // update-availability, and return once our command's ack arrives.
         while (true)
         {
             var line = await reader.ReadLineAsync(ackCts.Token);

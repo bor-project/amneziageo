@@ -8,9 +8,8 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Windows.Ui;
 
 /// <summary>
-/// Modal dialog for the selective bundle export (#91): the user checks which profiles, configs, and routing
-/// lists to bundle (phase 1, the tree), exports, then copies/saves the resulting JSON (phase 2). Owns its
-/// own clipboard/file IO, like <see cref="QrDialog"/> and <see cref="ExportDialog"/>.
+/// Modal dialog for the selective bundle export: check profiles, configs, and routing lists to
+/// bundle, then copy/save the resulting JSON.
 /// </summary>
 public sealed partial class BundleExportDialog : Window
 {

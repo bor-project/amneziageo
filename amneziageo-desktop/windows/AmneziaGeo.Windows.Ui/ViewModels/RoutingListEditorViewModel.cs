@@ -12,10 +12,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
 /// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs). Edits are
-/// persisted automatically - a short debounce after the last change saves the list through the agent, so
-/// there is no "Сохранить" button. The share QR is no longer inline (it lived in the edit surface, and
-/// swapping the Image stole input focus); it is shown on demand in a separate dialog (BuildTransferPayload
-/// feeds QrDialog).
+/// persisted automatically via a debounced save through the agent.
 /// </summary>
 internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 {
@@ -24,19 +21,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     private readonly DispatcherTimer _autoSaveTimer;
     private long _id;
 
-    // All geo category tokens from the agent's last list-geo response, unfiltered. GeoSuggestions is derived
-    // from this set minus the rules already in the list, sorted by name - recomputed locally (no extra IPC)
-    // whenever Rules changes, so an added rule drops out of the suggestions immediately and a removed one
-    // comes back.
+    // All geo category tokens from the last list-geo response.
     private readonly List<string> _allGeoTokens = [];
 
-    // Auto-save is suppressed while the editor is constructed and its initial rules are loaded, so seeding
-    // Name/Rules does not immediately re-save unchanged data (and churn the snapshot). Cleared when LoadAsync
-    // finishes; user edits after that schedule a debounced save.
+    // Auto-save suppressed during construction and initial load.
     private bool _suppressAutoSave = true;
 
-    // Consecutive failed auto-saves; bounds retrying a transient agent rejection so a single NAK does not
-    // strand the edit, without spinning forever on a persistent failure.
+    // Consecutive failed auto-saves; bounds retries.
     private int _saveFailures;
 
     [ObservableProperty]
@@ -52,9 +43,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBusy;
 
-    // Per-app tunneling add-row (#68). The source mode is chosen from a dropdown: "running" turns the input
-    // into an autocomplete over the agent's running app/service list; "folder"/"file" are one-shot dialogs
-    // raised from the view. App entries are stored as app: rule tokens in the same Rules collection as geo.
+    // Per-app tunneling add-row. App entries are stored as app: rule tokens.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAppPickerActive))]
     [NotifyPropertyChangedFor(nameof(AppWatermark))]
@@ -67,7 +56,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     private AppCandidate? _appSelected;
 
     /// <summary>
-    /// ctor used when creating a fresh routing list.
+    /// ctor
     /// </summary>
     public RoutingListEditorViewModel(AgentConnection connection, Action<long>? onSaved = null)
         : this(connection, 0, string.Empty, onSaved)
@@ -76,7 +65,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// ctor used when editing an existing routing list (rules loaded via LoadAsync).
+    /// ctor
     /// </summary>
     public RoutingListEditorViewModel(AgentConnection connection, long id, string name, Action<long>? onSaved = null)
     {
@@ -87,8 +76,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _autoSaveTimer.Tick += OnAutoSaveTick;
         Rules.CollectionChanged += (_, _) =>
         {
-            // Re-derive the suggestions (the rule just added/removed should disappear from / reappear in the
-            // dropdown) and queue the debounced save.
+            // Re-derive suggestions and queue the save.
             ApplySuggestionFilter();
             ScheduleAutoSave();
         };
@@ -96,9 +84,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// True when this editor is creating a new list rather than editing an existing one. Cleared once the new
-    /// list is first saved and gets a real id, so the host stops treating it as a draft - «Удалить» appears
-    /// and selecting the now-real list does not rebuild this editor.
+    /// True while creating a new list; cleared after the first save.
     /// </summary>
     [ObservableProperty]
     private bool _isNew;
@@ -108,8 +94,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// </summary>
     public long Id => _id;
 
-    /// <summary>The name is a required field (#117): an emptied name box turns red and warns, because a list
-    /// with no name is not saved (<see cref="AutoSaveAsync"/> returns early while the name is blank).</summary>
+    /// <summary>
+    /// True when the name field is empty.
+    /// </summary>
     public bool IsNameMissing => string.IsNullOrWhiteSpace(Name);
 
     /// <summary>
@@ -123,16 +110,18 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     public ObservableCollection<string> GeoSuggestions { get; } = [];
 
     /// <summary>
-    /// App/service matches for the per-app add-row's autocomplete (running mode), fetched from the agent.
+    /// App/service matches for the per-app add-row autocomplete (running mode), fetched from the agent.
     /// </summary>
     public ObservableCollection<AppCandidate> AppSuggestions { get; } = [];
 
-    /// <summary>Whether the per-app add-row is in a list-pick mode (running or installed): the autocomplete
-    /// and «Добавить» are active. Folder/file picks are one-shot dialogs instead.</summary>
+    /// <summary>
+    /// True when the add-row is in a list-pick mode (running or installed).
+    /// </summary>
     public bool IsAppPickerActive => AppMode is "running" or "installed";
 
-    /// <summary>Watermark for the app add-row input, reflecting the selected source mode
-    /// (running vs installed). Folder/file modes disable the input, so their value is moot.</summary>
+    /// <summary>
+    /// Watermark for the app add-row input, reflects the selected source mode.
+    /// </summary>
     public string AppWatermark => AppMode switch
     {
         "installed" => Loc.Instance.Get("RoutingEditor_AppWatermarkInstalled"),
@@ -140,7 +129,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     };
 
     /// <summary>
-    /// Fetches geo category suggestions and (for existing lists) the current rules.
+    /// Fetches geo category suggestions and the current rules for an existing list.
     /// </summary>
     public async Task LoadAsync()
     {
@@ -163,9 +152,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Re-fetches the geo category suggestions from the agent, replacing the current set. Called when the
-    /// set of geo sources changes (a source finished downloading, was added or removed) so the rule search
-    /// reflects the new categories without reopening the editor.
+    /// Re-fetches geo category suggestions from the agent, replacing the current set.
     /// </summary>
     public async Task RefreshSuggestionsAsync()
     {
@@ -175,9 +162,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             return;
         }
 
-        // Cache the full set, then derive the visible suggestions. ApplySuggestionFilter swaps GeoSuggestions
-        // in one go, so the list is never momentarily empty across the await and overlapping refreshes do not
-        // interleave a half-built set.
+        // Cache the full set; derive the visible suggestions.
         var tokens = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         _allGeoTokens.Clear();
         _allGeoTokens.AddRange(tokens);
@@ -185,8 +170,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Rebuilds <see cref="GeoSuggestions"/> from the cached geo tokens: drops the rules already in the list
-    /// and sorts by name. Runs locally (no IPC), so it is cheap to re-apply on every Rules change.
+    /// Rebuilds GeoSuggestions from cached tokens, dropping rules already in the list.
     /// </summary>
     private void ApplySuggestionFilter()
     {
@@ -201,7 +185,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Saves the list (insert or update) through the agent; returns whether it succeeded.
+    /// Saves the list (insert or update) through the agent.
     /// </summary>
     public async Task<bool> SaveAsync()
     {
@@ -233,7 +217,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Deletes the list through the agent; returns whether it succeeded.
+    /// Deletes the list through the agent.
     /// </summary>
     public async Task<bool> DeleteAsync()
     {
@@ -257,14 +241,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Cancels a pending debounced auto-save without persisting it (used when the list is being deleted).
+    /// Cancels a pending debounced auto-save.
     /// </summary>
     public void CancelPendingSave() => _autoSaveTimer.Stop();
 
     /// <summary>
-    /// Called when the editor is detached (list switch / close / profile change / disconnect). A persisted
-    /// list (Id != 0) with a queued edit is flushed so navigating away does not lose it; an un-persisted draft
-    /// (Id == 0) is simply abandoned, so a half-made "+ Новый список" leaves no orphan list behind.
+    /// Called when the editor is detached. Flushes a persisted list with a queued edit; abandons a draft.
     /// </summary>
     public void DetachAutoSave()
     {
@@ -272,8 +254,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _autoSaveTimer.Stop();
         if (hadPending && _id != 0 && Name.Trim().Length != 0 && Rules.Count != 0)
         {
-            // Persist the last edit (fire-and-forget). The list is already bound, so no _onSaved is needed.
-            // An emptied list (no rules) is not flushed - saving without rules is disallowed.
+            // Persist the last edit; no _onSaved needed.
             _ = SaveAsync();
         }
     }
@@ -303,7 +284,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Clears all entries of this list at once, for rebuilding a large list from scratch (auto-saves).
+    /// Clears all entries of this list at once.
     /// </summary>
     [RelayCommand]
     private void ClearRules()
@@ -311,22 +292,26 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         Rules.Clear();
     }
 
-    // --- Per-app tunneling (#68): the add-row's "running" autocomplete + the shared token-add path ---
+    // Per-app tunneling: running autocomplete + token-add path.
 
-    /// <summary>Switches the add-row to "running" mode and (re)loads the running app/service matches.</summary>
+    /// <summary>
+    /// Switches the add-row to running mode and reloads the running app/service matches.
+    /// </summary>
     public async Task EnterRunningModeAsync()
     {
         AppMode = "running";
         await LoadRunningAsync();
     }
 
-    /// <summary>Switches the add-row to "installed" mode and loads installed apps from the Uninstall registry.</summary>
+    /// <summary>
+    /// Switches the add-row to installed mode and loads installed apps from the Uninstall registry.
+    /// </summary>
     public async Task EnterInstalledModeAsync()
     {
         AppMode = "installed";
         AppInput = string.Empty;
         AppSelected = null;
-        // Registry enumeration is synchronous I/O; run it off the UI thread, then publish on return.
+        // Run registry enumeration off the UI thread.
         var candidates = await Task.Run(InstalledApps.List);
         AppSuggestions.Clear();
         foreach (var candidate in candidates)
@@ -364,7 +349,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             }
             else
             {
-                // Default an app to its containing folder so sibling helpers and versioned subfolders match.
+                // Default an app to its containing folder.
                 var dir = System.IO.Path.GetDirectoryName(value);
                 token = !string.IsNullOrEmpty(dir) ? $"app:dir={dir}" : $"app:path={value}";
                 display = Loc.Instance.Get("RoutingEditor_AppKindApplication", label);
@@ -374,7 +359,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Adds the app/service picked in the running-mode autocomplete as an app: rule.</summary>
+    /// <summary>
+    /// Adds the app/service picked in the running-mode autocomplete as an app: rule.
+    /// </summary>
     [RelayCommand]
     private void AddApp()
     {
@@ -391,8 +378,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Adds an app matcher token (app:path=/dir=/svc=) after a safety check. Called by the view for folder
-    /// and file picks, and by <see cref="AddApp"/> for a running-mode pick.
+    /// Adds an app matcher token (app:path=/dir=/svc=) after a safety check.
     /// </summary>
     public void AddAppToken(string token)
     {
@@ -408,8 +394,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
     }
 
-    // Rejects matchers that would tunnel far more than one app: a shared service host (svchost.exe) or a
-    // path so broad (a drive root, the Windows / System32 tree) it would capture much of the system.
+    // Rejects matchers that would tunnel far more than one app.
     private static bool IsAppMatcherSafe(string token, out string reason)
     {
         reason = string.Empty;
@@ -445,18 +430,18 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         return true;
     }
 
-    /// <summary>A suggested file name when exporting this list.</summary>
+    /// <summary>
+    /// A suggested file name when exporting this list.
+    /// </summary>
     public string SuggestedFileName => string.IsNullOrWhiteSpace(Name) ? "routing.txt" : $"{Name.Trim()}-routing.txt";
 
     /// <summary>
-    /// Serialises this list (name + rules) to a portable blob for copy / save / QR - the same share flow a
-    /// config has.
+    /// Serialises this list to a portable blob for copy / save / QR.
     /// </summary>
     public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, Rules);
 
     /// <summary>
-    /// Replaces this list's name + rules from an imported blob. Returns whether the text was a recognisable
-    /// routing-list blob; the result auto-saves.
+    /// Replaces this list's name + rules from an imported blob; the result auto-saves.
     /// </summary>
     public bool ApplyImport(string text)
     {
@@ -488,7 +473,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         ScheduleAutoSave();
     }
 
-    // (Re)start the debounce so a save fires a short while after the last edit. No-op while seeding.
+    // Restart the debounce; no-op while seeding.
     private void ScheduleAutoSave()
     {
         if (_suppressAutoSave)
@@ -508,31 +493,27 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 
     private async Task AutoSaveAsync()
     {
-        // Nothing to persist until the list has a name; stay quiet (no nag) while it is still blank.
+        // Nothing to persist until the list has a name.
         if (Name.Trim().Length == 0)
         {
             return;
         }
 
-        // A list with no rules routes nothing: do not save an empty list. Once a name is typed, hint what is
-        // still missing rather than persisting a useless list.
+        // Do not save an empty list; hint what is missing.
         if (Rules.Count == 0)
         {
             StatusMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
             return;
         }
 
-        // A save is still in flight: retry after the debounce so the latest edit is not dropped.
+        // Retry after the debounce if a save is in flight.
         if (IsBusy)
         {
             ScheduleAutoSave();
             return;
         }
 
-        // Capture before the save: _onSaved must fire exactly once, when a new list (id=0) is first
-        // persisted. Subsequent auto-saves for name or rule edits on an already-persisted list must
-        // not call _onSaved — the callback triggers profile assignment / snapshot sync on the host
-        // side, which can re-create the editor and close the inline name field while the user types.
+        // _onSaved fires once, when a new list is first persisted.
         var wasNew = _id == 0;
 
         if (await SaveAsync())
@@ -540,17 +521,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             _saveFailures = 0;
             if (wasNew && _id != 0)
             {
-                // No longer a draft: clear IsNew before notifying the host so that when it selects the newly
-                // created list, BuildSectionRoutingEditor short-circuits (same real id) instead of rebuilding
-                // and re-fetching this editor mid-edit, and «Удалить» becomes visible.
+                // Clear IsNew before notifying the host.
                 IsNew = false;
                 _onSaved?.Invoke(_id);
             }
         }
         else if (++_saveFailures <= 2)
         {
-            // A transient agent rejection (the blank-name case already returned above): retry shortly so a
-            // single NAK does not strand the edit unpersisted.
+            // Retry shortly on a transient rejection.
             ScheduleAutoSave();
         }
     }
@@ -565,9 +543,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             return t;
         }
 
-        // A URL (scheme://...) is stripped to its host and routed as a domain. A bare "word:" without
-        // "//" is a known rule prefix (geosite:/geoip:/domain:/cidr:/app:) and is left untouched - the
-        // old "contains ':' -> already prefixed" check misread "https://..." as a prefixed token.
+        // Strip a URL to its host; leave a known rule prefix untouched.
         var schemeIdx = t.IndexOf("://", StringComparison.Ordinal);
         if (schemeIdx >= 0)
         {
@@ -583,8 +559,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         return t.Contains('/') ? $"cidr:{t}" : $"domain:{StripHost(t)}";
     }
 
-    // Drops the leading "www." label and anything past the host (path, query, fragment, port) so a
-    // pasted URL or "www.example.com" becomes the bare registrable host.
+    // Drops the leading www. and anything past the host.
     private static string StripHost(string s)
     {
         if (s.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
@@ -611,8 +586,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 }
 
 /// <summary>
-/// A running-app or service match shown in the per-app add-row autocomplete (#68). The display string is
-/// what the box shows and filters on; the token is the app: rule added when picked.
+/// A running-app or service match for the add-row autocomplete. Display is what the box shows; Token is the
+/// app: rule added when picked.
 /// </summary>
 internal sealed record AppCandidate(string Display, string Token)
 {

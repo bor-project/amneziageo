@@ -4,9 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Periodically checks the configured update URL for a new application version (mirrors the
-/// <c>StatusPipeServer</c> push-loop idiom: a while + Task.Delay loop guarded by try/catch). Results
-/// are stored in <see cref="UpdateState"/> and pushed to the UI via the status snapshot.
+/// Periodically checks the update URL for a new version.
 /// </summary>
 internal sealed class UpdateCheckService(
     SettingsStore settingsStore,

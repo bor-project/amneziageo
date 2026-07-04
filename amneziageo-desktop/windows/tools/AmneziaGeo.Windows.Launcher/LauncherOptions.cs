@@ -21,7 +21,7 @@ internal sealed class LauncherOptions
     public bool RunUi { get; set; } = true;
 
     /// <summary>
-    /// Paths to default Amnezia configs to register on startup; each entry is a .conf file or a directory scanned for *.conf, and environment variables are expanded.
+    /// Paths to default configs to register on startup.
     /// </summary>
     public string[] ConfigPaths { get; set; } = [];
 
@@ -41,9 +41,7 @@ internal sealed class LauncherOptions
     public WebSocketSpec[] WebSockets { get; set; } = [];
 
     /// <summary>
-    /// When true the startup seed runs only once (guarded by a marker file) so re-launches do not
-    /// overwrite the user's later changes. Used by a shipped preconfigured build; dev leaves it false to
-    /// re-seed a known state every launch.
+    /// Run the startup seed only once per install.
     /// </summary>
     public bool SeedOnce { get; set; }
 }
@@ -59,7 +57,7 @@ internal sealed class WebSocketSpec
     public string Config { get; set; } = string.Empty;
 
     /// <summary>
-    /// Whether the WebSocket transport is turned on. Seed it off to preconfigure without forcing it.
+    /// Whether the WebSocket transport is turned on.
     /// </summary>
     public bool Enabled { get; set; }
 
@@ -69,8 +67,7 @@ internal sealed class WebSocketSpec
     public int Port { get; set; } = 443;
 
     /// <summary>
-    /// The server address: empty (reuse the config's Endpoint host), a bare host, or a full
-    /// wss://[user:pass@]host:port[/token] URL carrying optional auth (basic creds and/or a path token).
+    /// Server address for the WebSocket transport.
     /// </summary>
     public string Host { get; set; } = string.Empty;
 }
@@ -86,7 +83,7 @@ internal sealed class RoutingListSpec
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Rule tokens like "geosite:openai", "geoip:de", "domain:example.com", "cidr:1.2.3.0/24".
+    /// Rule tokens for the list.
     /// </summary>
     public string[] Rules { get; set; } = [];
 }
@@ -97,7 +94,7 @@ internal sealed class RoutingListSpec
 internal sealed class ProfileSpec
 {
     /// <summary>
-    /// The profile name (also the key for upsert; matches the balancer group name).
+    /// Profile name.
     /// </summary>
     public string Name { get; set; } = string.Empty;
 
@@ -122,7 +119,7 @@ internal sealed class ProfileSpec
     public string? RoutingList { get; set; }
 
     /// <summary>
-    /// Whether the routing list is enabled (use_routing flag).
+    /// Whether the routing list is enabled.
     /// </summary>
     public bool UseRouting { get; set; }
 }

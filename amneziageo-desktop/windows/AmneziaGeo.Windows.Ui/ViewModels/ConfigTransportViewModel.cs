@@ -8,11 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// The WebSocket (UDP-over-TCP / wstunnel) transport settings shown on a config's management page: a
-/// toggle, the server address, the TLS port, an authorization mode (none / basic login+password / path
-/// token) with its inputs, and a server-setup hint. The mode + inputs are folded into one stored address
-/// string (a bare host, or a <c>wss://[user:pass@]host:port[/token]</c> URL) on save and parsed back on
-/// load - the agent already understands both auth forms from that single field. Saving sends set-websocket.
+/// The WebSocket (UDP-over-TCP / wstunnel) transport settings for a config: a toggle, the server address, the TLS port, an authorization mode (none / basic login+password / path token) with its inputs, and a server-setup hint. The mode + inputs are folded into one stored address string on save and parsed back on load. Saving sends set-websocket.
 /// </summary>
 internal sealed partial class ConfigTransportViewModel : ViewModelBase
 {
@@ -31,8 +27,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ServerHint))]
     private string _webSocketPort = "443";
 
-    // Authorization mode: 0 = none, 1 = login + password (basic), 2 = path token. Drives which inputs
-    // show and how the address is composed on save.
+    // Authorization mode: 0 = none, 1 = basic, 2 = path token.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBasicAuth))]
     [NotifyPropertyChangedFor(nameof(IsTokenAuth))]
@@ -71,8 +66,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         _useWebSocket = useWebSocket;
         _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1280";
 
-        // Split the stored address into the host plus its auth mode / inputs. Default the host field to
-        // the config's own Endpoint host so the common case (wstunnel on the same server) needs no input.
+        // Parse the stored address; default the host to the config's Endpoint host.
         var (host, port, user, password, token, mode) = ParseStored(webSocketHost);
         _webSocketHost = string.IsNullOrWhiteSpace(host) ? EndpointHost(endpoint) : host;
         _authMode = mode;
@@ -82,11 +76,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         _webSocketPort = (port > 0 ? port : webSocketPort).ToString(CultureInfo.InvariantCulture);
     }
 
-    // Auto-save (#116): any field change persists through the agent - there is no «Сохранить» button. Fields
-    // bind per keystroke so the VM always holds the latest value; only the (network) persist is debounced
-    // ~700ms (_saveDebounce) and flushed on teardown (FlushPendingSave), so a fast config switch never strands
-    // a typed edit. The ctor seeds via the backing fields (no change events fire), so merely opening a config
-    // never saves. _applying suppresses the per-field saves while ApplyImport sets a batch, which saves once.
+    // Auto-save: field changes persist through the agent, debounced and flushed on teardown. _applying suppresses per-field saves during ApplyImport.
     private bool _applying;
 
     partial void OnUseWebSocketChanged(bool value) => AutoSave();
@@ -113,17 +103,24 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Persist a still-pending debounced edit at once - the host calls this before this editor is
-    /// replaced (a config switch / rename / delete) so an edit typed just before it is not lost (#116).</summary>
+    /// <summary>
+    /// Persist a still-pending debounced edit at once. The host calls this before this editor is replaced so a typed edit is not lost.
+    /// </summary>
     public void FlushPendingSave() => _saveDebounce.Flush();
 
-    /// <summary>The configuration name being edited.</summary>
+    /// <summary>
+    /// The configuration name being edited.
+    /// </summary>
     public string ConfigName { get; }
 
-    /// <summary>True when the login+password auth mode is selected (mode 1).</summary>
+    /// <summary>
+    /// True when the login+password auth mode is selected (mode 1).
+    /// </summary>
     public bool IsBasicAuth => AuthMode == 1;
 
-    /// <summary>True when the path-token auth mode is selected (mode 2).</summary>
+    /// <summary>
+    /// True when the path-token auth mode is selected (mode 2).
+    /// </summary>
     public bool IsTokenAuth => AuthMode == 2;
 
     /// <summary>
@@ -180,7 +177,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
 
             var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
 
-            // MTU: empty = default 1280. Validate 576-1500 before sending.
+            // MTU: empty = default 1280; validate 576-1500.
             var mtuVal = Mtu.Trim();
             if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
             {
@@ -188,9 +185,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
                 return;
             }
 
-            // Fold the host + auth mode / inputs into the single stored address string. An empty value
-            // means "reuse the Endpoint host" on the agent side, so collapse a bare host that equals the
-            // config's own Endpoint host to empty; a URL form (auth present) is always sent verbatim.
+            // Fold the host + auth mode / inputs into the stored address string. Collapse a bare host equal to the Endpoint host to empty; a URL form is sent verbatim.
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
@@ -203,12 +198,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         }
     }
 
-    /// <summary>A suggested file name when exporting these settings.</summary>
+    /// <summary>
+    /// A suggested file name when exporting these settings.
+    /// </summary>
     public string SuggestedFileName => $"{ConfigName}-websocket.txt";
 
     /// <summary>
-    /// Serialises the current WebSocket settings (enabled, port, composed address incl. auth) to a
-    /// portable blob for copy / save - the same share flow a config has.
+    /// Serialises the current WebSocket settings to a portable blob for copy / save.
     /// </summary>
     public string BuildTransferPayload()
     {
@@ -217,8 +213,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Applies an imported WebSocket blob to the editable fields; auto-save (#116) then persists it (one save,
-    /// not one per field). Returns whether the text was a recognisable blob.
+    /// Applies an imported WebSocket blob to the editable fields; auto-save then persists it (one save, not one per field). Returns whether the text was a recognisable blob.
     /// </summary>
     public bool ApplyImport(string text)
     {
@@ -251,10 +246,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Builds the stored address from the host field and the selected auth mode: a bare host when no auth,
-    /// a <c>wss://user:pass@host:port</c> URL for login+password (user/pass percent-escaped so symbols
-    /// survive the URL; the agent unescapes them back), or a <c>wss://host:port/token</c> URL for a token.
-    /// The port is baked into any URL form so it is not lost to the wss default (443).
+    /// Builds the stored address from the host field and the selected auth mode: a bare host when no auth, a wss://user:pass@host:port URL for login+password (user/pass percent-escaped), or a wss://host:port/token URL for a token. The port is baked into any URL form so it is not lost to the wss default (443).
     /// </summary>
     private string ComposeAddress(int port)
     {
@@ -327,8 +319,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         return (value, 0, string.Empty, string.Empty, string.Empty, 0);
     }
 
-    // The host the address is built around: a pasted ws(s):// URL is reduced to its host (its embedded
-    // auth is superseded by the explicit mode/inputs); a bare host passes through unchanged.
+    // Reduce a pasted ws(s):// URL to its host; a bare host passes through.
     private static string ExtractHost(string field)
     {
         var value = field?.Trim() ?? string.Empty;

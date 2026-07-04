@@ -8,12 +8,10 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// The per-routing-list traffic editor shown in the Routing settings section: the preferred local DNS for
-/// non-tunneled names, the bypass-exclusions list (domains kept on the local resolver, IP/CIDR routed
-/// direct), and whether all UDP is forced through the tunnel. These used to live per-config; they now hang
-/// off the routing list (keyed by its id) so the same config can be paired with different routing presets.
-/// Loaded through the agent (get-routing-settings) and saved as a block (set-routing-settings); the list's
-/// rule set lives separately in <see cref="RoutingListEditorViewModel"/>. Applies on the next connect.
+/// The per-routing-list traffic editor shown in the Routing settings section: preferred local DNS for
+/// non-tunneled names, the bypass-exclusions list, and whether all UDP is forced through the tunnel.
+/// Loaded through the agent and saved as a block; the list's rule set lives separately in
+/// RoutingListEditorViewModel. Applies on the next connect.
 /// </summary>
 internal sealed partial class RoutingSettingsViewModel : ViewModelBase
 {
@@ -35,12 +33,11 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBusy;
 
-    // True while LoadAsync is seeding the fields, so echoing the loaded values back does not mark the editor
-    // dirty. Edits the user makes after the load set Dirty, which the host flushes on a list switch.
+    // True while LoadAsync seeds the fields.
     private bool _loading;
 
     /// <summary>
-    /// ctor. Call <see cref="LoadAsync"/> after construction to populate the fields from the agent.
+    /// ctor
     /// </summary>
     public RoutingSettingsViewModel(AgentConnection connection, long listId)
     {
@@ -49,16 +46,18 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
         _saveDebounce = new Debouncer(700, SaveAsync);
     }
 
-    /// <summary>Persist a still-pending debounced edit at once - the host calls this before swapping this
-    /// editor out (a routing-list switch) so a just-typed edit is not lost to the debounce window (#116).</summary>
+    /// <summary>
+    /// Persist a pending debounced edit at once.
+    /// </summary>
     public void FlushPendingSave() => _saveDebounce.Flush();
 
-    /// <summary>The routing list id these settings belong to.</summary>
+    /// <summary>
+    /// The routing list id these settings belong to.
+    /// </summary>
     public long ListId { get; }
 
     /// <summary>
-    /// Whether the user changed DNS / exclusions / all-UDP since the last load or save. The host flushes a
-    /// dirty editor before switching to another list so an un-saved edit is not silently dropped.
+    /// True if the user changed DNS / exclusions / all-UDP since the last load or save.
     /// </summary>
     public bool Dirty { get; private set; }
 
@@ -68,9 +67,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
 
     partial void OnAllUdpChanged(bool value) => OnEdited();
 
-    // Persist automatically on any edit - there is no «Сохранить» button. The field is bound per keystroke so
-    // the VM always holds the latest value; only the (network) save is debounced ~700ms (#116). Dirty is set so
-    // the host's flush-on-list-switch (FlushPendingSave) still persists an edit typed just before a switch.
+    // Persist automatically on any edit; the save is debounced.
     private void OnEdited()
     {
         if (_loading)
@@ -84,7 +81,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
 
     /// <summary>
     /// Fetches the stored settings for this list from the agent and fills the fields. Missing/unreadable
-    /// settings leave the defaults (empty DNS/exclusions, all-UDP off).
+    /// settings leave the defaults.
     /// </summary>
     public async Task LoadAsync()
     {
@@ -110,7 +107,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
             }
             catch (JsonException)
             {
-                // best-effort: a malformed ack leaves the defaults
+                // A malformed ack leaves the defaults.
             }
         }
         finally
@@ -122,9 +119,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Saves DNS + exclusions + all-UDP for this list as one block (mode stays "split"; full tunnel is a
-    /// separate routing choice, not a list setting). An all-default block clears the row server-side.
-    /// Applies on reconnect.
+    /// Saves DNS + exclusions + all-UDP for this list as one block; applies on reconnect.
     /// </summary>
     [RelayCommand]
     public async Task SaveAsync()
@@ -153,9 +148,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Fetches the machine's currently-connected local subnets from the agent and merges them into the
-    /// exclusions list (no duplicates). Setting <see cref="Exclusions"/> auto-saves via <c>OnEdited</c>, so the
-    /// merged subnets persist without a «Сохранить» press. Mirrors the former per-config exclusions helper.
+    /// Fetches the machine's local subnets from the agent and merges them into the exclusions list.
     /// </summary>
     [RelayCommand]
     private async Task AddLocalSubnetsAsync()

@@ -8,7 +8,7 @@ namespace AmneziaGeo.Windows.Ui;
 /// </summary>
 public static partial class Program
 {
-    // Stable taskbar identity across updates.
+    // Stable taskbar identity.
     private const string AppUserModelId = "AmneziaGeo.AmneziaGeo";
 
     [STAThread]
@@ -16,8 +16,7 @@ public static partial class Program
     {
         SetAppUserModelId();
 
-        // Single-instance: a second launch must not open a duplicate window. It surfaces the already
-        // running window and exits; only the first instance starts the app.
+        // Single-instance: a second launch surfaces the existing window and exits.
         if (!SingleInstance.TryAcquire())
         {
             return;

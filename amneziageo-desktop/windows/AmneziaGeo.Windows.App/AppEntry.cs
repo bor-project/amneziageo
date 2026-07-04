@@ -15,9 +15,7 @@ public static class AppEntry
     /// </summary>
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        // "--agent <name>" binds a specific launch target (the preconfigured installer seeds e.g. "main");
-        // bare "--agent" runs the agent with no launch target so a clean install idles without a phantom
-        // binding and instead picks up the persisted user selection (AgentControl.SelectedTargetKey).
+        // "--agent <name>" seeds a launch target; bare "--agent" idles with no target and picks up the persisted selection.
         var agentTarget = args switch
         {
             ["--agent", var target] => target,
@@ -26,9 +24,7 @@ public static class AppEntry
         };
         using (var host = AppHost.Build(agentTarget))
         {
-            // The bundled default-config DB (#54) is deployed only by the privileged agent (SYSTEM) on
-            // first start - never by a CLI invocation - so it lands with SYSTEM ownership and a single
-            // writer. Runs before the store opens so the seeded DB is what InitializeAsync sees.
+            // Seed DB is applied only by the privileged agent so it lands with SYSTEM ownership.
             if (agentTarget is not null)
             {
                 SeedImporter.TryApply(
@@ -38,9 +34,7 @@ public static class AppEntry
             await EnsureStoreAsync(host.Services);
             if (agentTarget is not null)
             {
-                // Take over the status pipe from any prior owner (a crashed dev launcher, a stray dotnet
-                // run child, or the installed service running next to a dev session) before the host binds
-                // it; otherwise the pipe's DACL makes pipe creation spin forever on ACCESS_DENIED.
+                // Take over the status pipe before binding: a prior owner's DACL otherwise spins creation on ACCESS_DENIED.
                 var serviceManager = host.Services.GetRequiredService<ServiceManager>();
                 var guardLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SoleAgentGuard");
                 await SoleAgentGuard.EnsureSoleAsync(serviceManager, guardLogger, cancellationToken);
@@ -60,13 +54,10 @@ public static class AppEntry
         var store = services.GetRequiredService<IStateStore>();
         await store.InitializeAsync();
 
-        // One-time: pull any legacy on-disk wg-quick files (Configurations\*.conf, from before configs
-        // lived in the database) into the database. Idempotent and cheap once everything is migrated.
+        // One-time: pull legacy on-disk wg-quick files into the database.
         await services.GetRequiredService<ConfigRepository>().MigrateLegacyConfigsAsync();
 
-        // One-time (#87): move per-config DNS/exclusions and the global all-UDP onto the routing list each
-        // profile is assigned, so the routing preset owns its traffic settings. Idempotent (skips lists that
-        // already carry settings) and behaviour-neutral (the tunnel reads the same values).
+        // One-time: move per-config DNS/exclusions and global all-UDP onto each profile's routing list.
         await store.MigrateConfigSettingsToRoutingAsync();
     }
 }

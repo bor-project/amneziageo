@@ -47,32 +47,27 @@ public static class IpcContract
     public const string OpSetGeo = "set-geo";
 
     /// <summary>
-    /// Command to set a config's WebSocket transport (carry the AmneziaWG UDP over TCP/TLS via wstunnel,
-    /// for networks that block UDP) and tunnel MTU override. Args: name, on/off, port (the wstunnel
-    /// server's TLS port, e.g. 443), optional host (the wstunnel server hostname; empty reuses the
-    /// config's own Endpoint host), optional mtu (integer; 0 = auto/driver default, or 1280 for WSS).
-    /// Applies on the next connect.
+    /// Command to set a config's WebSocket transport and tunnel MTU override. Args: name, on/off, port,
+    /// optional host, optional mtu. Applies on the next connect.
     /// </summary>
     public const string OpSetWebSocket = "set-websocket";
 
     /// <summary>
-    /// Command to set a config's preferred DNS for NON-tunneled (local) name resolution. Args: name,
-    /// servers (comma/space-separated; empty clears it → auto-detect the system resolvers). Applies on the
-    /// next connect. Moved here from the former global "preferred-dns" app setting.
+    /// Command to set a config's preferred DNS for local name resolution. Args: name, servers
+    /// (comma/space-separated; empty clears it). Applies on the next connect.
     /// </summary>
     public const string OpSetConfigDns = "set-config-dns";
 
     /// <summary>
-    /// Command to set a config's bypass exclusions (kept OFF the tunnel). Args: name, exclusions (one entry
-    /// per line / comma-separated; domains kept on the local resolver, IP/CIDR routed direct). Applies on
-    /// the next connect. Moved here from the former global "exclusions" app setting.
+    /// Command to set a config's bypass exclusions. Args: name, exclusions (one entry per line /
+    /// comma-separated; domains kept on the local resolver, IP/CIDR routed direct). Applies on the next
+    /// connect.
     /// </summary>
     public const string OpSetConfigExclusions = "set-config-exclusions";
 
     /// <summary>
-    /// Command to list the machine's currently-connected local subnets (the non-RFC1918 / CGNAT networks the
-    /// built-in defaults miss). No args. The ack message holds newline-separated CIDRs; the UI merges them
-    /// into a profile's exclusions list on demand (replacing the former auto-exclude-LAN flag).
+    /// Command to list the machine's currently-connected local subnets. No args. The ack message holds
+    /// newline-separated CIDRs; the UI merges them into a profile's exclusions list on demand.
     /// </summary>
     public const string OpListLocalSubnets = "list-local-subnets";
 
@@ -82,9 +77,9 @@ public static class IpcContract
     public const string OpListGeo = "list-geo";
 
     /// <summary>
-    /// Command to list running applications and services for the per-app tunneling picker (#68). The ack
-    /// message holds newline-separated rows, each tab-separated: kind ("app"/"service"), label, value
-    /// (exe path for an app, service name for a service), detail (host exe path for a service, else empty).
+    /// Command to list running applications and services for the per-app tunneling picker. The ack
+    /// message holds newline-separated rows, each tab-separated: kind ("app"/"service"), label, value,
+    /// detail.
     /// </summary>
     public const string OpListProcesses = "list-processes";
 
@@ -112,10 +107,10 @@ public static class IpcContract
     public const string OpAssignRouting = "assign-routing";
 
     /// <summary>
-    /// Command to set a routing list's traffic settings (consolidated onto the routing preset, #87). Args:
-    /// routing list id, then optional local DNS (comma/space-separated; empty = auto-detect), exclusions
-    /// (one entry per line / comma-separated), all-UDP ("on"/"off": wrap every outbound UDP through the
-    /// tunnel), mode ("split"/"full"). An all-default tuple clears the row. Applies on the next connect.
+    /// Command to set a routing list's traffic settings. Args: routing list id, then optional local DNS
+    /// (comma/space-separated; empty = auto-detect), exclusions (one entry per line / comma-separated),
+    /// all-UDP ("on"/"off"), mode ("split"/"full"). An all-default tuple clears the row. Applies on the
+    /// next connect.
     /// </summary>
     public const string OpSetRoutingSettings = "set-routing-settings";
 
@@ -221,17 +216,15 @@ public static class IpcContract
     public const string OpRenameProfile = "rename-profile";
 
     /// <summary>
-    /// Command to export a SELECTIVE bundle of configs, routing lists, and profiles as a portable JSON file
-    /// (#91): the user picks which catalogue entries and profiles to include via a tree of checkboxes. Args:
-    /// a selection JSON object <c>{ "profiles": [...], "configs": [...], "routingLists": [...] }</c> (each
-    /// array optional; a selected profile pulls in its bound config and routing list automatically). The
-    /// ack message holds the bundle JSON.
+    /// Command to export a selective bundle of configs, routing lists, and profiles as a portable JSON file.
+    /// Args: a selection JSON object (each array optional; a selected profile pulls in its bound config and
+    /// routing list automatically). The ack message holds the bundle JSON.
     /// </summary>
     public const string OpExportBundle = "export-bundle";
 
     /// <summary>
-    /// Command to import a selective bundle (#91), recreating its configs, routing lists, and profiles as
-    /// new, independent entities under fresh (de-duplicated) names on any name collision. Args: bundle json.
+    /// Command to import a selective bundle, recreating its configs, routing lists, and profiles as new,
+    /// independent entities under fresh (de-duplicated) names on any name collision. Args: bundle json.
     /// The ack message holds a human-readable summary.
     /// </summary>
     public const string OpImportBundle = "import-bundle";
@@ -250,18 +243,16 @@ public static class IpcContract
     public const string OpDownloadGeo = "download-geo";
 
     /// <summary>
-    /// Command to build a redacted diagnostics bundle for support (#82). No args. The agent zips the log
-    /// files from both processes plus a summary and the live journal (secrets scrubbed) and returns the full
-    /// path to the written .zip in the ack message; Ok=false with the reason on failure.
+    /// Command to build a redacted diagnostics bundle for support. No args. The agent zips the log files
+    /// from both processes plus a summary and the live journal (secrets scrubbed) and returns the full path
+    /// to the written .zip in the ack message; Ok=false with the reason on failure.
     /// </summary>
     public const string OpCollectDiagnostics = "collect-diagnostics";
 
     /// <summary>
-    /// Sent once by the UI right after connecting to mark its pipe connection as a presence-holding
-    /// session. No args. The agent ties the tunnel's lifetime to UI presence: when the last attached UI
-    /// session drops (window closed or the process crashed) and a tunnel is up, the agent disconnects it
-    /// after a short grace. Transient command clients (the CLI) never send this, so they do not keep the
-    /// tunnel alive or tear it down.
+    /// Sent once by the UI to mark its pipe connection as a presence-holding session. No args. The agent
+    /// ties the tunnel's lifetime to UI presence and disconnects after a short grace when the last UI
+    /// session drops. Transient command clients never send this.
     /// </summary>
     public const string OpAttachUi = "attach-ui";
 }

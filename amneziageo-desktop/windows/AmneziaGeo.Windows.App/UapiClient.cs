@@ -19,10 +19,7 @@ internal sealed class UapiClient
     }
 
     /// <summary>
-    /// Adds several allowed IPs to the peer in one UAPI exchange without clearing the existing set (no
-    /// replace_allowed_ips). Cost is O(new) rather than the O(total) of a full <see cref="SetAllowedIps"/>
-    /// replace, so the live DNS path can advertise a freshly resolved domain's IPs without re-pushing the
-    /// entire multi-thousand-entry set on every resolution. Empty input is a no-op.
+    /// Adds allowed IPs without replacing the existing set.
     /// </summary>
     public bool AddAllowedIps(string tunnelName, string peerPublicKeyBase64, IReadOnlyList<string> cidrs)
     {
@@ -101,17 +98,12 @@ internal sealed class UapiClient
     }
 
     /// <summary>
-    /// Aggregate peer counters read from the device: the latest handshake (unix seconds, 0 = never), and
-    /// the summed rx / tx bytes across peers.
+    /// Peer counters: latest handshake and summed rx/tx bytes.
     /// </summary>
     public readonly record struct PeerStatus(long HandshakeSec, long RxBytes, long TxBytes);
 
     /// <summary>
-    /// Returns the device's peer counters, or null when the device is unreachable. This is the structured,
-    /// data form of the engine's connection progress: a completed handshake (HandshakeSec &gt; 0) means
-    /// connected; a server that never answers shows HandshakeSec == 0 and RxBytes == 0 even as we keep
-    /// sending initiations (TxBytes grows) - the data equivalent of the engine's "handshake did not
-    /// complete" log, used to detect a failed connect without scraping logs.
+    /// Returns peer counters, or null when the device is unreachable.
     /// </summary>
     public PeerStatus? TryGetPeerStatus(string tunnelName)
     {

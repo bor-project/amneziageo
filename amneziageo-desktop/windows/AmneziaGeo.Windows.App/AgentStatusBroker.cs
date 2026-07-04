@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Builds status snapshots and pushes them to connected UI clients over the status pipe.
+/// Status snapshots broker for UI clients.
 /// </summary>
 internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogRingBuffer logBuffer, LogLevelController logLevel, DiagnosticsCollector diagnostics, ILogger<AgentStatusBroker> logger)
 {
@@ -16,39 +16,25 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private readonly Lock _gate = new();
     private string? _lastJson;
 
-    // Connections that announced themselves as UI sessions (attach-ui). The tunnel's lifetime is tied to
-    // their presence: when the last one drops while a tunnel is up, the tunnel is disconnected after a
-    // short grace. Subset of _clients; guarded by _gate.
+    // UI sessions; tunnel outlives them only by the grace window. Guarded by _gate.
     private readonly HashSet<PipeConnection> _uiSessions = [];
 
-    // Pending "UI gone" teardown, cancelled if a UI re-attaches within the grace window - this covers the
-    // UI client's own auto-reconnect after a transient pipe drop, so the tunnel does not flap. Guarded by _gate.
+    // Pending UI-gone teardown; cancelled on reattach. Guarded by _gate.
     private CancellationTokenSource? _teardownGrace;
 
-    // How long the tunnel survives after the last UI session drops. Must exceed the UI client's reconnect
-    // delay (StatusPipeClient retries ~2s) so a brief pipe hiccup followed by a reconnect does not tear the
-    // tunnel down; short enough that a real window-close/crash disconnects promptly.
+    // Grace window; must exceed the UI client reconnect delay.
     private static readonly TimeSpan _uiTeardownGrace = TimeSpan.FromSeconds(5);
 
-    // Per-source download/apply progress while an update is in flight, keyed by source name. The value
-    // is the download percent (0-100), or -1 while the routing lists re-materialize (indeterminate).
-    // Presence in the map means "updating"; the snapshot overlays it onto each SourceEntry so the UI can
-    // spin the refresh icon and show a percentage.
+    // Per-source progress: 0-100 while downloading, -1 while re-materializing. Presence means "updating".
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _updating = new(StringComparer.Ordinal);
 
-    // Per-source "a newer remote file exists" flag, set by the update-check and cleared when the source
-    // is re-downloaded. Surfaced on each SourceEntry so the UI can badge the row.
+    // Per-source "update available" flag; surfaced on SourceEntry.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
-    // Per-source last download/parse failure (e.g. a wrong URL that returned an HTML page), set when an
-    // update fails and cleared on a successful download. Surfaced on each SourceEntry so the row can tell
-    // the user why a freshly added source has no categories instead of silently showing "не загружен".
+    // Per-source last failure message; surfaced on SourceEntry.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastError = new(StringComparer.Ordinal);
 
-    // Coalesced geo-refresh coordinator (#83): at most one download/re-materialize session runs at a time.
-    // A trigger that arrives while a session is in flight is neither dropped nor run in parallel - it is
-    // queued (its sources unioned, its force-resolve flag OR-ed) and runs once the current session finishes,
-    // so a user "Обновить" during an auto-refresh takes effect without two sessions clobbering each other.
+    // At most one geo-refresh session at a time; concurrent triggers queue (sources unioned, force OR-ed).
     private readonly object _geoSessionGate = new();
     private bool _geoRunning;
     private bool _geoQueued;
@@ -56,8 +42,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private readonly HashSet<string> _geoQueuedNames = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// The profile whose live status the connection card reflects: the running target while connected,
-    /// otherwise the selected target. The radio uses the selected target (snapshot SelectedTarget).
+    /// Profile reflected on the connection card.
     /// </summary>
     public string? BoundTarget => control.Running ? (control.RunningTarget ?? control.Target) : control.Target;
 
@@ -115,8 +100,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             connection.Dispose();
             logger.LogInformation("status client disconnected");
 
-            // Only a UI session leaving can end the tunnel - a transient command client (the CLI) never
-            // does. Done after releasing the lock so the grace-teardown scheduling does not run under it.
+            // Only a UI session drop can end the tunnel; scheduled outside the lock.
             if (wasUi)
             {
                 OnUiSessionEnded();
@@ -124,12 +108,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    /// <summary>
-    /// Registers a connection as a presence-holding UI session and cancels any pending "UI gone" teardown.
-    /// The cancel covers the UI client's own auto-reconnect after a transient pipe drop: the prior
-    /// connection's exit may have scheduled a teardown that this reattach must call off, so the tunnel
-    /// stays up across the blip.
-    /// </summary>
     private void MarkUiSession(PipeConnection connection)
     {
         lock (_gate)
@@ -143,12 +121,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         logger.LogInformation("UI session attached");
     }
 
-    /// <summary>
-    /// Called when a UI session's connection drops. If it was the last UI and a tunnel is up, schedules a
-    /// disconnect after a short grace (cancelled if a UI re-attaches in that window). This is what ties the
-    /// VPN's lifetime to the app: closing the window or a UI crash brings the tunnel down, while the
-    /// privileged agent service keeps running idle.
-    /// </summary>
     private void OnUiSessionEnded()
     {
         CancellationToken graceToken;
@@ -174,7 +146,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
             catch (OperationCanceledException)
             {
-                return; // a UI re-attached within the grace window
+                return; // UI re-attached
             }
 
             lock (_gate)
@@ -239,8 +211,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return;
         }
 
-        // Attach is handled here (not in ExecuteCommandAsync) because it needs the connection identity to
-        // register it as a presence-holding UI session.
+        // Attach needs the connection identity, so it stays here.
         if (envelope.Command.Op == IpcContract.OpAttachUi)
         {
             MarkUiSession(connection);
@@ -362,9 +333,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
 
-        // Overwrites the stored text in place; membership/geo/routing are untouched. A thrown validation
-        // error is turned into a failed ack by ExecuteCommandAsync's catch. A running member uses the new
-        // text only after the next reconnect.
+        // Running members pick up the new text on the next reconnect.
         await configRepo.EditFromTextAsync(args[0], args[1], ct);
         logger.LogInformation("edited config {Name}", args[0]);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigSaved", args[0]));
@@ -383,9 +352,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {name}");
         }
 
-        // Refuse to pull a config out from under the running tunnel: if it is a member of the bound
-        // target while connected, deleting it would change the live member set (and could orphan the
-        // active member). The caller disconnects, or removes it from the profile, first.
+        // Refuse while the config is a live member of the running target.
         var bound = BoundTarget;
         if (control.Running && bound is not null)
         {
@@ -415,7 +382,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown profile: {name}");
         }
 
-        // Refuse to delete the profile the tunnel is currently running on; disconnect first.
+        // Refuse while the profile is running.
         if (control.Running && string.Equals(name, BoundTarget, StringComparison.Ordinal))
         {
             return new IpcAck(false, $"profile {name} is running; disconnect first");
@@ -427,8 +394,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, $"removed profile {name}");
     }
 
-    // Drops the persisted target binding when the just-removed profile/config was the selected target, so
-    // a deleted referent does not leave a dangling selection the connection card would keep showing.
+    // Clear target binding when the removed profile/config was selected.
     private async Task ClearBindingIfTargetAsync(string name, CancellationToken ct)
     {
         if (string.Equals(name, control.Target, StringComparison.Ordinal))
@@ -486,8 +452,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
 
-        // Refuse while the config is live under the running tunnel: moving the .conf out from under the
-        // active member would break it. Disconnect first.
+        // Refuse while the config is a live member of the running tunnel.
         if (control.Running && await IsRunningMemberAsync(oldName, ct))
         {
             return new IpcAck(false, $"config {oldName} is in use by the running tunnel; disconnect first");
@@ -495,7 +460,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         await configRepo.RenameAsync(oldName, newName, ct);
 
-        // A single-config target named after the config follows the rename so the selection keeps working.
+        // A same-named single-config target follows the rename.
         if (string.Equals(oldName, control.Target, StringComparison.Ordinal))
         {
             control.SetTarget(newName);
@@ -531,14 +496,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
 
-        // Refuse to rename the profile the tunnel is running on; disconnect first.
+        // Refuse while the profile is running.
         if (control.Running && string.Equals(oldName, BoundTarget, StringComparison.Ordinal))
         {
             return new IpcAck(false, $"profile {oldName} is running; disconnect first");
         }
 
-        // Move the balancer row, then carry the routing assignment (keyed by profile name) and the
-        // selection/binding across to the new name.
+        // Carry routing assignment and selection across to the new name.
         await store.SaveBalancerAsync(balancer with { Name = newName }, ct);
         await store.RemoveBalancerAsync(oldName, ct);
 
@@ -559,11 +523,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));
     }
 
-    // The selective export selection, parsed from OpExportBundle's arg0 JSON. All three arrays are optional.
+    // Export selection from OpExportBundle's arg0 JSON; all arrays optional.
     private sealed record SelectionRequest(string[]? Profiles, string[]? Configs, string[]? RoutingLists);
 
-    // Exports a SELECTIVE bundle (#91): the caller picks which configs, routing lists, and profiles to
-    // include, by name, via a tree of checkboxes - any combination, not just a single profile.
+    // Export a selective bundle: caller picks configs, routing lists, and profiles by name.
     private async Task<IpcAck> ExportBundleAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -623,7 +586,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var configBlocks = new List<PortableBundle.ConfigBlock>();
         foreach (var name in configNames)
         {
-            // Skip silently if a named config vanished between selection and export.
+            // Skip if the config vanished between selection and export.
             if (!await configRepo.ExistsAsync(name, ct))
             {
                 continue;
@@ -710,11 +673,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, PortableBundle.Serialize(bundle));
     }
 
-    // Imports a SELECTIVE bundle (#91), recreating every carried config, routing list, and profile as new,
-    // independent entities under fresh (de-duplicated) names using the FreeName/SanitizeFileName policy
-    // below. All-or-nothing per call: a single malformed config's text throws and aborts the whole import
-    // (the outer command dispatch's catch turns it into a failed ack); already-written rows from the same
-    // call are not rolled back.
+    // Import a selective bundle: recreates configs, routing lists, and profiles under fresh names. All-or-nothing; no rollback of rows already written.
     private async Task<IpcAck> ImportBundleAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -772,7 +731,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 renames.Add($"«{block.Name}» → «{finalName}»");
             }
 
-            // Validates [Interface]/[Peer]; a malformed bundle throws here and aborts the import.
+            // Malformed config text throws here and aborts the import.
             await configRepo.AddFromTextAsync(finalName, block.ConfigText, ct);
 
             if (block.Transport is { } tr)
@@ -782,7 +741,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
             if (block.Geo is { } g)
             {
-                // Re-materializes the rule tokens against this machine's geo data (empty until downloaded).
+                // Re-materialize rule tokens against local geo data.
                 await geo.ApplyAsync(finalName, g.Split, g.Rules, ct);
             }
 
@@ -819,7 +778,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var config = block.Config is not null && configNameMap.TryGetValue(block.Config, out var cn) ? cn : string.Empty;
             await store.SaveBalancerAsync(new BalancerGroup(finalName, config), ct);
 
-            // No EnsureDefaultTargetAsync here: a bulk import must not silently steal the connection target.
+            // No auto-target here: bulk import must not steal the selection.
             if (block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rl))
             {
                 await store.SetProfileRoutingAsync(finalName, rl.Id, block.UseRouting, ct);
@@ -858,7 +817,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             bundle.Profiles.Count));
     }
 
-    // True when any profile still binds the given config, so removing the config would unbind that profile too.
+    // True when a profile still binds the config.
     private async Task<bool> ConfigInUseAsync(string config, CancellationToken ct)
     {
         foreach (var profileName in await store.ListBalancerNamesAsync(ct))
@@ -899,8 +858,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return $"{baseName} ({Guid.NewGuid():N})";
     }
 
-    // A config is stored as <name>.conf, so its name (and a profile's, since they share a namespace) must be
-    // a valid file name; replace anything that is not.
+    // Config/profile names must be valid file names; replace invalid chars.
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
@@ -909,10 +867,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return clean.Length == 0 ? "config" : clean;
     }
 
-    // Makes the given profile the connection target when none is selected yet, so a fresh user who just
-    // added (or imported) a profile can connect it straight away. The header connect button drives the
-    // bound target, which would otherwise stay empty and make a connect a silent no-op. Idempotent: once
-    // any target is set this does nothing, so adding further profiles never steals the selection.
+    // Set the profile as target when none is set; idempotent.
     private async Task EnsureDefaultTargetAsync(string name, CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(control.Target))
@@ -945,8 +900,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         await EnsureDefaultTargetAsync(name, ct);
         var changed = existing is null || !string.Equals(existing.Config, updated.Config, StringComparison.Ordinal);
 
-        // Only disrupt the live session when the *active* profile changed; creating or editing other
-        // profiles (e.g. "+ Профиль") must not reconnect the running tunnel.
+        // Only invalidate when the active profile changed.
         if (changed && string.Equals(name, BoundTarget, StringComparison.Ordinal))
         {
             control.Invalidate();
@@ -992,10 +946,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "invalid websocket port (1-65535)");
         }
 
-        // Optional 4th arg: the wstunnel host. Empty reuses the config's own Endpoint host.
+        // Optional 4th arg: wstunnel host; empty reuses the Endpoint host.
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
 
-        // Optional 5th arg: the tunnel MTU (default 1280, #109). Valid range: 576-1500.
+        // Optional 5th arg: tunnel MTU (default 1280, range 576-1500).
         var mtu = 1280;
         if (args.Count > 4 && args[4].Trim().Length > 0)
         {
@@ -1007,9 +961,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         await store.SetConfigTransportAsync(new ConfigTransport(args[0], on, host, port, mtu), ct);
 
-        // Transport rewrites the dial path (UDP -> loopback wstunnel); like a routing change it only
-        // applies cleanly on a fresh tunnel. If the changed config is in the running target, flag a
-        // reconnect and let the UI prompt - the new setting is persisted and takes effect next connect.
+        // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected.
         if (control.Running && await IsRunningMemberAsync(args[0], ct))
         {
             control.SetRestartRequired();
@@ -1034,8 +986,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
 
-        // Optional 2nd arg: the preferred DNS servers (comma/space-separated). Empty clears the override,
-        // reverting non-tunneled resolution to the auto-detected system resolvers.
+        // Optional 2nd arg: preferred DNS servers; empty clears the override.
         var servers = args.Count > 1 ? args[1].Trim() : string.Empty;
         if (servers.Length == 0)
         {
@@ -1046,9 +997,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             await store.SetConfigDnsAsync(new ConfigDns(args[0], servers), ct);
         }
 
-        // DNS feeds the per-tunnel resolver wiring, decided at connect time; like a routing/transport change
-        // it applies cleanly only on a fresh tunnel. If the changed config is in the running target, flag a
-        // reconnect - the new setting is persisted and takes effect on the next connect.
+        // DNS applies on a fresh tunnel; flag a reconnect when the running target is affected.
         if (control.Running && await IsRunningMemberAsync(args[0], ct))
         {
             control.SetRestartRequired();
@@ -1072,13 +1021,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
 
-        // Arg 2: the bypass list (one entry per line / comma-separated). Detected local subnets are now part
-        // of this list (added explicitly from the UI), so there is no separate auto-exclude flag.
+        // Arg 2: bypass list (line/comma-separated); local subnets are included explicitly.
         var exclusions = args.Count > 1 ? args[1].Trim() : string.Empty;
         await store.SetConfigExclusionsAsync(new ConfigExclusions(args[0], exclusions), ct);
 
-        // Exclusions reshape AllowedIPs / split-DNS, decided at connect time; like a routing/DNS change they
-        // apply cleanly only on a fresh tunnel. If the changed config is in the running target, flag a reconnect.
+        // Exclusions apply on a fresh tunnel; flag a reconnect when the running target is affected.
         if (control.Running && await IsRunningMemberAsync(args[0], ct))
         {
             control.SetRestartRequired();
@@ -1088,17 +1035,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, IpcMessage.Key("Agent_ExclusionsSaved"));
     }
 
-    // Returns the default LAN bypass set (RFC1918 ranges + connected subnets outside them) as newline-
-    // separated CIDRs, so the "add local networks" button installs the full set - including what used to be
-    // the hidden floor - into a profile's exclusions list.
+    // Default LAN bypass CIDRs (RFC1918 + connected subnets), newline-separated.
     private IpcAck ListLocalSubnets()
     {
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
     }
 
-    /// <summary>
-    /// Returns whether a config is the running single-config target or a member of the running balancer.
-    /// </summary>
     private async Task<bool> IsRunningMemberAsync(string config, CancellationToken ct)
     {
         var bound = BoundTarget;
@@ -1122,9 +1064,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, string.Join('\n', tokens));
     }
 
-    // Running applications + services for the per-app tunneling picker (#68). Enumerated in the agent
-    // (SYSTEM) so image paths and service hosting PIDs the user-mode UI cannot read are available. Each row
-    // is tab-separated: kind, label, value, detail (see IpcContract.OpListProcesses).
+    // Apps + services for per-app tunneling; enumerated as SYSTEM to read restricted paths. Rows are tab-separated: kind, label, value, detail.
     private static IpcAck ListProcesses()
     {
         var lines = ProcessCatalog.List()
@@ -1152,9 +1092,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
-        // If the running profile routes through this list, its rules just changed under a live tunnel.
-        // Routing changes only apply cleanly on a fresh tunnel (same rationale as assign-routing), so flag
-        // a reconnect and let the UI show the "reconnect to apply" banner.
+        // Flag a reconnect when the running profile routes through this list.
         if (control.Running && BoundTarget is not null)
         {
             var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
@@ -1209,9 +1147,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown routing list: {id}");
         }
 
-        // Args after the id: local DNS, exclusions, all-UDP (on/off), mode (split/full). All optional; an
-        // all-default tuple clears the row so "no row = defaults" holds (split mode, runtime-default
-        // exclusions, system resolvers, no all-UDP).
+        // Args after id: local DNS, exclusions, all-UDP, mode. All optional; all-default clears the row.
         var localDns = args.Count > 1 ? args[1].Trim() : string.Empty;
         var exclusions = args.Count > 2 ? args[2].Trim() : string.Empty;
         var udpArg = args.Count > 3 ? args[3].Trim().ToLowerInvariant() : "off";
@@ -1231,9 +1167,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             await store.SetRoutingSettingsAsync(new RoutingSettings(id, localDns, exclusions, allUdp, mode), ct);
         }
 
-        // These settings reshape AllowedIPs / split-DNS / UDP routing, decided at connect time. If the
-        // running profile routes through this list, flag a reconnect so the UI prompts; the settings are
-        // persisted and take effect on the next connect. (The agent does not consume them yet — wired in #89.)
+        // Settings apply on a fresh tunnel; flag a reconnect when the running profile routes through this list.
         if (control.Running && BoundTarget is not null)
         {
             var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
@@ -1307,10 +1241,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             && control.Running
             && string.Equals(profile, BoundTarget, StringComparison.Ordinal))
         {
-            // Routing changes alter AllowedIPs/DNS and only apply cleanly on a fresh tunnel. Applying
-            // them in place left a half-applied split/full state, so we do NOT re-apply live; we flag a
-            // restart and let the UI prompt the user. The new setting is persisted and takes effect on
-            // the next connect (when the balancer re-projects routing).
+            // Routing applies on a fresh tunnel; flag a restart instead of re-applying live.
             control.SetRestartRequired();
         }
 
@@ -1355,14 +1286,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         control.SetTarget(name);
-        // Persist the selection so it survives an agent/host restart (the launch argument no longer
-        // carries a default target).
+        // Persist the selection across restarts.
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
         logger.LogInformation("selected profile {Profile}", name);
 
-        // No auto-switch: a connected tunnel keeps running its current target; the UI shows a
-        // "reconnect to apply" notice (selected != running). The selection takes effect on the next
-        // connect. The snapshot rebroadcast carries the new SelectedTarget so the radio updates.
+        // No auto-switch; the tunnel keeps running. Selection takes effect on the next connect.
         return new IpcAck(true, control.Running ? $"selected {name} (reconnect to apply)" : $"selected {name}");
     }
 
@@ -1387,10 +1315,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         await store.SaveGeoSourceAsync(source, ct);
         logger.LogInformation("added geo source {Name} ({Kind}) {Url}", name, kind, url);
 
-        // Download + re-materialize off the command path so the ack returns immediately: a large file
-        // over a slow link must not block the pipe or overrun the client's command timeout. The result
-        // (categories / updated time) lands in the next status snapshot. Not "forced" - a brand-new source
-        // always downloads (its file changes), which advances the resolve epoch on its own.
+        // Download + re-materialize off the command path; the ack returns immediately.
         EnqueueGeoRefresh([source], forceResolve: false);
         return new IpcAck(true, IpcMessage.Key("Agent_SourceAdded", name));
     }
@@ -1425,8 +1350,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
     private async Task<IpcAck> UpdateSourcesAsync(CancellationToken ct)
     {
-        // A user-initiated "Обновить все" is a full validation: re-resolve even sources the server reports
-        // unchanged (their domains' IPs may still have moved), so force the resolve.
+        // User-initiated refresh forces re-resolve even for unchanged sources.
         var sources = await store.ListGeoSourcesAsync(ct);
         EnqueueGeoRefresh(sources, forceResolve: true);
         return new IpcAck(true, IpcMessage.Key("Agent_UpdateAllStarted", sources.Count));
@@ -1446,16 +1370,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown source: {args[0]}");
         }
 
-        // A user-initiated per-source update is also a full validation - force the resolve.
+        // User-initiated per-source update forces re-resolve.
         EnqueueGeoRefresh([source], forceResolve: true);
         return new IpcAck(true, IpcMessage.Key("Agent_UpdateSourceStarted", source.Name));
     }
 
     /// <summary>
-    /// Checks every source for a newer remote file without downloading it, records the result per source
-    /// for the snapshot, broadcasts, and returns how many of the sources have an update available. The
-    /// whole sweep is time-bounded so a slow source cannot overrun the caller's timeout. Public so the
-    /// periodic <see cref="GeoUpdateCheckService"/> can trigger the same sweep.
+    /// Check every source for a newer remote file; returns how many have an update available.
     /// </summary>
     public async Task<(int Available, int Total)> CheckAllSourcesAsync(CancellationToken ct)
     {
@@ -1481,9 +1402,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return (available, sources.Count);
     }
 
-    /// <summary>
-    /// IPC handler for a manual "check all sources" - runs the sweep and returns a human-readable summary.
-    /// </summary>
     private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
     {
         var (available, total) = await CheckAllSourcesAsync(ct);
@@ -1497,9 +1415,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             : IpcMessage.Key("Agent_CheckedUpdatesAvailable", total, available));
     }
 
-    /// <summary>
-    /// Checks a single source for a newer remote file without downloading it.
-    /// </summary>
     private async Task<IpcAck> CheckSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -1524,18 +1439,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         });
     }
 
-    /// <summary>
-    /// Runs the update-check for one source and records the result. A definite answer flips the
-    /// per-source flag; an Unknown (network error / nothing to compare) leaves the prior state intact.
-    /// </summary>
     private async Task<GeoUpdateChecker.Status> CheckOneAsync(GeoSource source, CancellationToken ct)
     {
         GeoUpdateChecker.Status status;
         try
         {
-            // A per-source ceiling so one stalled connect can't ride HttpClient's default timeout past the
-            // client's command timeout; it also bounds the single-source (check-source) path, which has no
-            // outer sweep budget.
+            // Per-source ceiling; bounds the single-source path that has no outer budget.
             using var perSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
             perSource.CancelAfter(TimeSpan.FromSeconds(10));
             status = await geoUpdateChecker.CheckAsync(source, perSource.Token);
@@ -1562,11 +1471,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return status;
     }
 
-    /// <summary>
-    /// A short, single-line message for a source's download/parse failure, suitable for the row. Our own
-    /// validation failures (InvalidDataException) already carry a user-facing Russian message; for other
-    /// errors (network, etc.) the exception text is used, capped so a long message can't blow up the row.
-    /// </summary>
     private static string ShortError(Exception ex)
     {
         var inner = ex is AggregateException agg && agg.InnerException is not null ? agg.InnerException : ex;
@@ -1579,16 +1483,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return message.Length > 200 ? message[..200] + "…" : message;
     }
 
-    /// <summary>
-    /// Re-downloads the given sources and re-materializes the routing lists on a background task, then
-    /// pushes a fresh snapshot. Kept off the IPC command path so a slow download never blocks the pipe
-    /// or overruns the client's command timeout. A lightweight ticker broadcasts in-flight progress so
-    /// the UI can spin the refresh icon and show a live percentage.
-    /// </summary>
-    // Queues a geo refresh for the given sources, coalesced through the single-session coordinator. When
-    // <paramref name="forceResolve"/> is set the session re-validates even if nothing downloaded (a user
-    // "Обновить" or the TTL-driven background refresh: the IPs behind unchanged domains still drift). Returns
-    // immediately - the work runs off the command path so the ack is not blocked by a multi-megabyte download.
+    // Queue a geo refresh, coalesced through the session coordinator. forceResolve re-validates even unchanged sources.
     private void EnqueueGeoRefresh(IReadOnlyList<GeoSource> sources, bool forceResolve)
     {
         lock (_geoSessionGate)
@@ -1611,9 +1506,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         _ = RunGeoSessionChainAsync(sources, forceResolve);
     }
 
-    // Runs geo sessions one at a time, draining any request queued while a session was in flight. The
-    // _geoRunning flag flips under the same lock that queues work, so a trigger racing the end of a session
-    // is never lost: it is either queued (running still true) or starts a fresh chain (running false).
+    // Run sessions one at a time; drain queued requests. The running flag and queue share one lock.
     private async Task RunGeoSessionChainAsync(IReadOnlyList<GeoSource> sources, bool forceResolve)
     {
         while (true)
@@ -1660,20 +1553,15 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    // One geo refresh session: download the changed sources, re-materialize the routing lists, then stamp the
-    // refresh time and - when forced or a file actually changed - bump the resolve epoch so any live tunnel
-    // re-resolves its domains (#83). Safe to call with an empty source set (a forced re-validate with no
-    // pending download still advances the epoch).
+    // One refresh session: download changed sources, re-materialize lists, bump the resolve epoch when forced or changed.
     private async Task RunGeoSessionAsync(IReadOnlyList<GeoSource> sources, bool forceResolve)
     {
-        // Time the whole session so a slow geo update ("медленная загрузка" of the lists) is diagnosable from
-        // the log: which source was slow, and how long the re-materialize took (#82).
+        // Time the session for diagnostics.
         var geoSw = System.Diagnostics.Stopwatch.StartNew();
         logger.LogDebug("geo refresh session: {Count} source(s) [{Names}], forceResolve={Force}",
             sources.Count, string.Join(",", sources.Select(source => source.Name)), forceResolve);
 
-        // Claim only the sources not already in flight (TryAdd is atomic), so an overlapping run does not
-        // start a duplicate download / re-materialize of the same source.
+        // Claim only sources not already in flight.
         var pending = sources.Where(source => _updating.TryAdd(source.Name, 0)).ToList();
         var changed = false;
         if (pending.Count > 0)
@@ -1682,10 +1570,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var ticker = ProgressPumpAsync(pump.Token);
             try
             {
-                // Download all sources concurrently: a slow or unreachable source (e.g. github.com on a
-                // censored network) must not hold up the others, so "Обновить все" finishes in the time of
-                // the slowest source, not the sum. Per-source state lives in concurrent maps and each
-                // writes a distinct file, so the only contention is the brief metadata write (busy-retried).
+                // Download sources concurrently; slow ones don't block the others.
                 await Task.WhenAll(pending.Select(async source =>
                 {
                     try
@@ -1693,9 +1578,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                         var srcSw = System.Diagnostics.Stopwatch.StartNew();
                         var before = await store.GetGeoFileAsync(source.Name);
                         var after = await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
-                        // Content-hash comparison, not a timestamp: a conditional GET that returns 304 hands
-                        // back the same metadata, so an unchanged file leaves the hash equal and does not force
-                        // a re-resolve. Written only to true from multiple tasks, so the race is benign.
+                        // Compare by content hash, not timestamp; 304 leaves the hash equal.
                         var srcChanged = before is null || !string.Equals(before.Sha256, after.Sha256, StringComparison.Ordinal);
                         if (srcChanged)
                         {
@@ -1705,11 +1588,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                         logger.LogDebug("geo source {Name}: {State} in {Ms} ms",
                             source.Name, srcChanged ? "changed" : "unchanged (304/same hash)", srcSw.ElapsedMilliseconds);
 
-                        // Downloaded: the local file is now current, so any pending update flag is stale and
-                        // any prior failure is resolved.
+                        // Downloaded: clear the update flag and prior failure.
                         _updateAvailable[source.Name] = false;
                         _lastError.TryRemove(source.Name, out _);
-                        // Switch to indeterminate while the re-materialize runs below.
+                        // Indeterminate while re-materializing.
                         _updating[source.Name] = -1;
                     }
                     catch (Exception ex)
@@ -1720,9 +1602,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                     }
                 }));
 
-                // Stop the percentage broadcaster before re-materializing: there is no percent to show
-                // while applying, and the spinner keeps running client-side from the broadcast "applying"
-                // state - so the ticker's reads need not contend with the re-materialize writes.
+                // Stop the progress pump before re-materializing.
                 pump.Cancel();
                 await ticker;
                 await BroadcastIfChangedAsync(CancellationToken.None);
@@ -1753,9 +1633,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        // A forced (user / TTL) refresh re-validates even when nothing downloaded; a changed download likewise
-        // needs the running tunnel to re-resolve. Either way, advance the resolve epoch so any live
-        // DomainTracker re-resolves its domains on its next poll. Then stamp the refresh time for the TTL gate.
+        // Advance the resolve epoch when forced or changed; stamp the refresh time.
         if (forceResolve || changed)
         {
             await BumpResolveEpochAsync();
@@ -1766,9 +1644,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             changed, forceResolve || changed, geoSw.ElapsedMilliseconds);
     }
 
-    // Internal counters (not user settings): the resolve epoch a running tunnel polls to know it must
-    // re-resolve its tracked domains, and the last-refresh stamp the TTL background gate reads. Kept as raw
-    // key/value rows so they never surface in the user-facing settings surface.
+    // Internal counters (not user settings): resolve epoch and last-refresh stamp.
     private async Task BumpResolveEpochAsync()
     {
         var current = await store.GetSettingAsync("geo-resolve-epoch");
@@ -1777,11 +1653,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     }
 
     /// <summary>
-    /// Triggers a background geo refresh when the address cache is older than its validity window, so the
-    /// in-use lists stay current without the user pressing "Обновить". A no-op when there are no sources, or
-    /// when nothing uses geo routing (no assigned list and no running tunnel), or when the cache is still
-    /// fresh. The work is coalesced through the shared session coordinator, so it never overlaps a manual
-    /// update. Called by the periodic <see cref="GeoUpdateCheckService"/> (and so also on startup) (#83).
+    /// Refresh the geo cache when it is older than its validity window.
     /// </summary>
     public async Task RefreshStaleGeoAsync(CancellationToken ct)
     {
@@ -1791,8 +1663,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return;
         }
 
-        // Only refresh when something actually consumes geo routing; otherwise there is nothing to keep fresh
-        // and no reason to hit the network.
+        // Only refresh when something consumes geo routing.
         var assigned = await store.ListAssignedRoutingListIdsAsync(ct);
         if (assigned.Count == 0 && !control.Running)
         {
@@ -1812,12 +1683,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         EnqueueGeoRefresh(sources, forceResolve: true);
     }
 
-    /// <summary>
-    /// Broadcasts the snapshot on a steady cadence while a download is in flight, so the spinner and
-    /// percentage advance smoothly. A single pump (rather than a broadcast per progress callback) keeps
-    /// snapshot rebuilds bounded; the change-dedup in <see cref="BroadcastIfChangedAsync"/> drops ticks
-    /// that did not move the visible percent. Never throws - a store hiccup must not down the update.
-    /// </summary>
     private async Task ProgressPumpAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -1838,10 +1703,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    /// <summary>
-    /// Records a source's download percent into the in-flight map. Cheap and synchronous; the progress
-    /// pump turns it into broadcasts.
-    /// </summary>
     private sealed class SourceProgress(System.Collections.Concurrent.ConcurrentDictionary<string, int> map, string name) : IProgress<int>
     {
         public void Report(int value)
@@ -1863,8 +1724,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"invalid setting or value; keys: {string.Join(", ", SettingsStore.Keys())}");
         }
 
-        // The log level applies live (#82): push it to this process's switch immediately (the poll and the
-        // tunnel process would pick it up within seconds, but the instant push makes the UI feel responsive).
+        // Log level applies live; push to this process's switch now.
         if (key == LogLevelWatcher.SettingKey)
         {
             logLevel.Set(args[1]);
@@ -1872,8 +1732,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(true, $"log level = {logLevel.Current}");
         }
 
-        // The routing log toggle also applies live: flip this process's switch now (the tunnel process picks
-        // it up on its next poll) so the UI feels responsive. The value was already validated/persisted above.
+        // Routing log toggle applies live; flip this process's switch now.
         if (key == RouteLog.SettingKey)
         {
             RouteLog.Enabled = args[1].Trim().ToLowerInvariant() is "true" or "on" or "1" or "yes";
@@ -1885,10 +1744,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
     }
 
-    /// <summary>
-    /// Builds a redacted diagnostics bundle and returns its path in the ack (#82). The agent, running as
-    /// SYSTEM, is the only party that can read both processes' logs, so the collection happens here.
-    /// </summary>
     private async Task<IpcAck> CollectDiagnosticsAsync(CancellationToken ct)
     {
         try
@@ -1903,11 +1758,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    /// <summary>
-    /// Checks the configured update URL for a different application version, records the result for the
-    /// snapshot, and returns a human-readable status. A different version (newer or older) counts as
-    /// available since the installer permits rollback.
-    /// </summary>
     private async Task<IpcAck> CheckUpdateAsync(CancellationToken ct)
     {
         var settings = await settingsStore.LoadAsync(ct);
@@ -1935,12 +1785,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             : IpcMessage.Key("Agent_UpdateAvailable", info.Version));
     }
 
-    /// <summary>
-    /// Seeds the default geo sources (if none) then SYNCHRONOUSLY downloads every source and
-    /// re-materializes the routing lists, returning a result. Used by the installer's "download lists"
-    /// step (the privileged agent does the download the unprivileged bootstrapper cannot). A download
-    /// failure is reported (Ok=false) but is non-fatal to the caller.
-    /// </summary>
     private async Task<IpcAck> DownloadGeoAsync(CancellationToken ct)
     {
         await GeoDefaults.SeedIfEmptyAsync(store, logger, ct);
@@ -2024,9 +1868,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     {
         var states = await store.ListBalancerStatesAsync(ct);
 
-        // The agent manages exactly one target. Derive each config's live status from that bound
-        // group's state alone, so a transient connecting / disconnecting state shows on its member
-        // cards and stale rows from other groups don't leak in.
+        // Derive each config's status from the bound group's state alone.
         var boundState = BoundTarget is not null ? states.FirstOrDefault(s => s.Group == BoundTarget) : null;
         var boundConfig = boundState is null
             ? null
@@ -2041,9 +1883,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var transport = await store.GetConfigTransportAsync(name, ct);
             var configDns = await store.GetConfigDnsAsync(name, ct);
             var configEx = await store.GetConfigExclusionsAsync(name, ct);
-            // No stored row → show the runtime default set (RFC1918 ranges + connected subnets) so the user
-            // sees what currently keeps the LAN direct and can edit it; saving from the UI then creates the
-            // row, which the tunnel applies verbatim (the default is never frozen into storage on its own).
+            // No row -> show the runtime default LAN bypass; saving freezes it.
             var exclusions = configEx?.Exclusions ?? string.Join('\n', routes.DefaultExclusionEntries());
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
                 ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
@@ -2089,8 +1929,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
             var updating = _updating.TryGetValue(source.Name, out var percent);
             var updateAvailable = _updateAvailable.TryGetValue(source.Name, out var avail) && avail;
-            // A stale error is hidden while a retry is in flight so the row shows the spinner, not the old
-            // failure.
+            // Hide stale errors while a retry is in flight.
             var error = !updating && _lastError.TryGetValue(source.Name, out var err) ? err : null;
             sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable, error));
         }
@@ -2112,10 +1951,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.RouteLog);
     }
 
-    /// <summary>
-    /// Maps a balancer group's status to the connection status shown on a member config card.
-    /// Non-active members read Connecting while the group brings a member up, otherwise Idle.
-    /// </summary>
     private static string MemberDisplayStatus(string groupStatus, bool isActive)
     {
         return groupStatus switch
@@ -2127,7 +1962,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         };
     }
 
-    // Extracts the Endpoint value from a config's wg-quick text (for the connection card label).
+    // Extract Endpoint from a config's wg-quick text.
     private static string ReadEndpoint(string config)
     {
         foreach (var line in config.Split('\n'))

@@ -9,31 +9,23 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Builds a redacted diagnostics bundle for support (#82): the log files from both the agent and every
-/// per-tunnel service process, plus a summary (versions, OS, settings, connection state) and the live
-/// journal, zipped into one file the user can send. Secrets - private/preshared keys and basic-auth
-/// credentials - are scrubbed so the bundle is safe to share. The agent (SYSTEM) writes it under ProgramData,
-/// which the unprivileged UI can read and copy to a user-chosen location.
+/// Builds a redacted diagnostics bundle for support.
 /// </summary>
 internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore settings, LogRingBuffer logBuffer, AgentControl control, ILogger<DiagnosticsCollector> logger)
 {
-    // Mask the value after a wg-quick "PrivateKey =" / "PresharedKey =" or a UAPI "private_key=" /
-    // "preshared_key=". Public keys and endpoints are not secrets and are kept (they help diagnosis).
+    // Mask private/preshared key values; public keys and endpoints stay for diagnosis.
     private static readonly Regex KeyMaterial =
         new(@"(?i)((?:private|preshared)[_ ]?key\s*[=:]\s*)\S+", RegexOptions.Compiled);
 
-    // Strip basic-auth credentials embedded in a URL (e.g. a wss://user:pass@host WebSocket front).
+    // Strip basic-auth credentials embedded in a URL.
     private static readonly Regex UrlCredentials =
         new(@"([a-zA-Z][a-zA-Z0-9+.\-]*://)[^/@\s:]+:[^/@\s]*@", RegexOptions.Compiled);
 
-    // Strip the path/anti-probe token after the host in a ws/wss URL (with or without leftover userinfo).
-    // Scoped to ws/wss so benign https paths (geo source / update URLs) keep their diagnostic value; the
-    // WebSocket path prefix is a shared anti-probe secret and must not survive into the bundle.
+    // Strip the path/anti-probe token after the host in a ws/wss URL.
     private static readonly Regex WsUrlPathToken =
         new(@"(?i)(wss?://(?:[^/@\s]+@)?[^/@\s]+)/\S+", RegexOptions.Compiled);
 
-    // Strip a bare basic-auth credential the wstunnel underlay takes on its command line (or echoes to its
-    // own stdout/stderr, captured at Debug), plus generic credential/password labels.
+    // Strip wstunnel credential flags and generic credential/password labels.
     private static readonly Regex CredentialFlag =
         new(@"(?i)(--http-upgrade-credentials[=\s]+)\S+", RegexOptions.Compiled);
     private static readonly Regex CredentialLabel =
@@ -65,10 +57,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             var logDir = TunnelPaths.LogDirectory();
             if (Directory.Exists(logDir))
             {
-                // Both processes roll into "ageo-<date>[_NNN].log" (the agent and each per-tunnel service);
-                // agent.log is the legacy name. routes.log[.1] is the optional dedicated routing log (#82).
-                // Include them all so a connect failure that only the tunnel process saw, and the route/resolve
-                // trail behind a slow-load report, are both in the bundle.
+                // Include all ageo-*.log, agent.log, and routes.log* files.
                 var files = Directory.EnumerateFiles(logDir, "ageo-*.log")
                     .Concat(Directory.EnumerateFiles(logDir, "agent.log"))
                     .Concat(Directory.EnumerateFiles(logDir, "routes.log*"));
@@ -116,9 +105,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         sb.AppendLine($"connect failed:  {control.ConnectFailed}");
         sb.AppendLine();
 
-        // Per-config MTU and routing (#82): the single most useful thing when diagnosing a "slow handshake /
-        // won't route" report is what MTU the tunnel actually uses and how each config splits traffic. Kept
-        // structural (no keys/endpoints beyond what redaction leaves) so the block is safe to share.
+        // Per-config MTU and routing.
         var configs = await store.ListConfigNamesAsync();
         sb.AppendLine($"[configs] ({configs.Count})");
         foreach (var config in configs)
@@ -159,8 +146,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             }
         }
 
-        // Routing lists and how profiles bind them: the routing preset (its own DNS/exclusions/all-UDP) is
-        // what actually shapes a matched connect, so a "list-driven" tunnel's behaviour is spelled out here.
+        // Routing lists and profile bindings.
         var routingLists = await store.ListRoutingListsAsync(ct);
         if (routingLists.Count > 0)
         {
@@ -220,7 +206,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         writer.Write(content);
     }
 
-    // Keep the diagnostics folder from growing without bound: drop bundles older than a week. Best-effort.
+    // Drop bundles older than a week.
     private static void PruneOld(string dir)
     {
         try

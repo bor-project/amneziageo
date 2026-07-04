@@ -13,11 +13,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// View model for the selective bundle export dialog (#91): the user checks which profiles, configs, and
-/// routing lists to include, then exports them as one portable JSON file via <see cref="IpcContract.OpExportBundle"/>.
-/// Distinct from <see cref="ExportDialogViewModel"/> (a single config's .conf/vpn:// share) - this picks
-/// from a tree across all three catalogues at once. Built directly from the window's already-loaded
-/// snapshot collections, so opening the dialog needs no extra IPC round trip.
+/// View model for the bundle export dialog.
 /// </summary>
 internal sealed partial class BundleExportDialogViewModel : ViewModelBase
 {
@@ -42,8 +38,7 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
     private bool _isBusy;
 
     /// <summary>
-    /// ctor. Builds the three checkable lists from the window's live snapshot collections and wires the
-    /// profile -&gt; config/routing-list cascade.
+    /// ctor
     /// </summary>
     public BundleExportDialogViewModel(
         AgentConnection connection,
@@ -115,16 +110,12 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
         }
     }
 
-    /// <summary>The "ПРОФИЛИ" section rows.</summary>
     public ObservableCollection<BundleItem> ProfileItems { get; } = [];
 
-    /// <summary>The "КОНФИГУРАЦИИ" section rows.</summary>
     public ObservableCollection<BundleItem> ConfigItems { get; } = [];
 
-    /// <summary>The "МАРШРУТИЗАЦИЯ" section rows.</summary>
     public ObservableCollection<BundleItem> RoutingItems { get; } = [];
 
-    /// <summary>A suggested file name for the exported bundle.</summary>
     public string SuggestedFileName => "amneziageo-bundle.agbundle.json";
 
     private void Wire(BundleItem item, Action<bool>? cascade = null)
@@ -186,7 +177,6 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
         }
     }
 
-    // Mirrors the selection JSON the agent parses (AgentStatusBroker.SelectionRequest): { profiles, configs,
-    // routingLists }, serialized camelCase so the wire shape matches the brief/contract documentation exactly.
+    // Selection JSON sent to the agent (camelCase).
     private sealed record SelectionPayload(string[] Profiles, string[] Configs, string[] RoutingLists);
 }

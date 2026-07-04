@@ -39,9 +39,7 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, ILogger<StatusP
             }
             catch (Exception ex)
             {
-                // A held pipe (another agent still owns it) is an expected, recoverable state - log it
-                // concisely without a stack trace and back off, instead of flooding the journal every
-                // second. The startup guard normally takes over before we reach here.
+                // Held pipe is expected and recoverable: back off without flooding the journal.
                 var taken = ex is UnauthorizedAccessException or IOException;
                 if (taken)
                 {

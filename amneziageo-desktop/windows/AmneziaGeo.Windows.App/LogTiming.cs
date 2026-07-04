@@ -4,9 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Small timing helpers for the connect/refresh trace (#82). A step logs its entry at Trace and its duration
-/// at Debug, so at "Обычный" the log stays quiet, at "Отладка" every step carries a millisecond cost (the
-/// answer to "why is it slow"), and at "Трасса" each step is also announced as it begins ("every action").
+/// Timing helpers for the connect/refresh trace.
 /// </summary>
 internal static class LogTiming
 {
@@ -20,8 +18,7 @@ internal static class LogTiming
     }
 
     /// <summary>
-    /// Times a scope and logs "{step} in {ms} ms" at Debug on dispose. A struct so a step on the hot connect
-    /// path allocates nothing.
+    /// Times a scope and logs its duration at Debug on dispose.
     /// </summary>
     internal readonly struct TimedStep : IDisposable
     {

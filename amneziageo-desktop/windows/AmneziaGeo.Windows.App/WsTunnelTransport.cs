@@ -7,19 +7,14 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Carries a tunnel's AmneziaWG UDP over a wstunnel WebSocket (TCP/TLS) so the tunnel works on networks
-/// that block UDP. Spawns the bundled wstunnel client as a child process: it listens on a loopback UDP
-/// port and forwards datagrams to the server's WebSocket on the configured TLS port (usually 443), which
-/// the server unwraps to the AmneziaWG container's loopback UDP. The WG engine then dials the local port
-/// instead of the blocked public endpoint. Supervises the child (restarts it on unexpected exit) until
-/// stopped with the session.
+/// Carries a tunnel's AmneziaWG UDP over a wstunnel WebSocket (TCP/TLS) so the tunnel works on networks that block UDP.
 /// </summary>
 internal sealed class WsTunnelTransport : IAsyncDisposable
 {
     private readonly string _serverHost;
     private readonly int _wsPort;
-    private readonly int _targetPort;   // server-side AmneziaWG UDP port (the original Endpoint's port)
-    private readonly string _pathPrefix; // optional auth/anti-probe path token (server --restrict-http-upgrade-path-prefix)
+    private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
+    private readonly string _pathPrefix; // path token for server-side --restrict-http-upgrade-path-prefix
     private readonly string _credentials; // optional basic-auth "user[:pass]"
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
@@ -38,15 +33,12 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     }
 
     /// <summary>
-    /// The loopback UDP port the WG engine should dial - written into the config's Endpoint in place of
-    /// the blocked public endpoint.
+    /// Loopback UDP port the WG engine dials instead of the blocked public endpoint.
     /// </summary>
     public int LocalPort { get; }
 
     /// <summary>
-    /// Starts a wstunnel client for a config and waits until its local UDP listener is bound. Returns null
-    /// when the bundled binary is missing or the listener never came up, so the caller can fail the connect
-    /// cleanly rather than bring up a tunnel whose endpoint goes nowhere.
+    /// Starts a wstunnel client and waits until its local UDP listener is bound; null on missing binary or timeout.
     /// </summary>
     public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, ILogger logger, CancellationToken ct)
     {
@@ -73,15 +65,9 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     private void Spawn()
     {
-        // -L udp://<localPort>:<dstHost>:<dstPort> : listen on loopback UDP <localPort> (default bind is
-        // 127.0.0.1) and forward to <dstHost>:<dstPort> resolved ON THE SERVER, i.e. the AmneziaWG
-        // container at 127.0.0.1:<targetPort>. timeout_sec=0 keeps the UDP association alive for the
-        // long-lived WireGuard session. The wss:// target carries the real server hostname so its TLS
-        // certificate validates. --tls-verify-certificate is required because wstunnel DISABLES
-        // verification by default (it would connect to any self-signed cert); the server reuses the
-        // existing real x-ui/no-ip certificate for this hostname, so verifying it defeats MITM.
-        // Optional auth, carried in one URL field by the UI: a path token (-P, matched server-side by
-        // --restrict-http-upgrade-path-prefix; also defeats blind probing) and/or basic-auth credentials.
+        // -L udp://<localPort>:127.0.0.1:<targetPort> forwards to the AmneziaWG container on the server;
+        // timeout_sec=0 keeps the UDP association alive. --tls-verify-certificate is required (wstunnel
+        // disables verification by default). Optional -P path token and basic-auth credentials.
         var auth = string.Empty;
         if (_pathPrefix.Length > 0)
         {
@@ -130,11 +116,6 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             process.Id, LocalPort, _serverHost, _wsPort, _targetPort);
     }
 
-    /// <summary>
-    /// Keeps a wstunnel client alive for the session: if the child exits unexpectedly (network drop,
-    /// crash) it is restarted on the same local port so the WG engine's loopback endpoint stays valid.
-    /// Ends when the session token is cancelled (teardown).
-    /// </summary>
     private async Task SuperviseAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -196,9 +177,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
                 return false;
             }
 
-            // wstunnel binds its local UDP socket as soon as the client starts (the WS connection to the
-            // server is established lazily on the first datagram), so a bound loopback listener on our
-            // port means the engine can dial it.
+            // wstunnel binds its local UDP socket on start; the WS connection opens lazily on the first datagram.
             var listeners = IPGlobalProperties.GetIPGlobalProperties().GetActiveUdpListeners();
             foreach (var endpoint in listeners)
             {
@@ -221,10 +200,6 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         return false;
     }
 
-    /// <summary>
-    /// Reserves a free loopback UDP port by binding ephemeral and reading the assigned number; the socket
-    /// is released immediately so wstunnel can take the port. A brief TOCTOU window, acceptable here.
-    /// </summary>
     private static int FreeUdpPort()
     {
         using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -232,6 +207,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         return ((IPEndPoint)socket.LocalEndPoint!).Port;
     }
 
+    /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
         await _cts.CancelAsync().ConfigureAwait(false);

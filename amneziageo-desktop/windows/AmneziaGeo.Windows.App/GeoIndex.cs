@@ -116,10 +116,7 @@ internal sealed class GeoIndex
         return [.. set];
     }
 
-    // Defence in depth: even though GeoFileUpdater now validates a source before persisting it, a file
-    // saved by an older build (or corrupted on disk) must not break index-wide queries. Tolerate a single
-    // unparseable file by skipping it rather than letting the parse error escape and fail list-geo,
-    // save-routing-list, materialization, etc. for every source at once.
+    // Tolerate a single unparseable file so a corrupt or legacy source does not break index-wide queries.
     private static T Safe<T>(Func<T> parse, T fallback)
     {
         try

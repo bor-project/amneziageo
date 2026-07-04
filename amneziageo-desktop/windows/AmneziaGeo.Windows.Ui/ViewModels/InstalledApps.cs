@@ -4,10 +4,7 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// Enumerates installed applications from the Windows "Uninstall" registry (the same source as
-/// Add/Remove Programs) for the per-app tunneling picker (#71). Read in the UI process, which runs as the
-/// user, so both per-machine (HKLM, 64- and 32-bit) and per-user (HKCU) installs are visible - the agent
-/// runs as SYSTEM and would miss the user's HKCU (where per-user apps register).
+/// Enumerates installed applications from the Windows "Uninstall" registry for the per-app tunneling picker. Read in the UI process so both per-machine (HKLM, 64- and 32-bit) and per-user (HKCU) installs are visible; the agent runs as SYSTEM and would miss the user's HKCU.
 /// </summary>
 internal static class InstalledApps
 {
@@ -15,8 +12,7 @@ internal static class InstalledApps
     private const string UninstallPathWow = @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
 
     /// <summary>
-    /// Returns the installed apps as picker candidates (an app:dir= / app:path= token each), de-duplicated
-    /// and sorted by name. Best-effort: an unreadable key is skipped rather than failing the enumeration.
+    /// Returns the installed apps as picker candidates (an app:dir= / app:path= token each), de-duplicated and sorted by name. An unreadable key is skipped rather than failing the enumeration.
     /// </summary>
     public static IReadOnlyList<AppCandidate> List()
     {
@@ -55,7 +51,7 @@ internal static class InstalledApps
                     continue; // updates / components with no friendly name
                 }
 
-                // Skip OS components, patches, and updates under a parent product - they are not apps.
+                // Skip OS components, patches, and updates under a parent product.
                 if ((key.GetValue("SystemComponent") as int? ?? 0) == 1
                     || key.GetValue("ParentKeyName") is not null
                     || key.GetValue("ParentDisplayName") is not null)
@@ -78,8 +74,7 @@ internal static class InstalledApps
         }
     }
 
-    // Prefer the install folder (catches the app's helpers / versioned subfolders); fall back to the main
-    // exe from DisplayIcon. Returns null when neither yields a usable path.
+    // Prefer the install folder; fall back to the main exe from DisplayIcon.
     private static string? ResolveToken(RegistryKey key)
     {
         if (key.GetValue("InstallLocation") as string is { } location && !string.IsNullOrWhiteSpace(location))
@@ -91,8 +86,7 @@ internal static class InstalledApps
         return exe is null ? null : $"app:path={exe}";
     }
 
-    // DisplayIcon is usually "<exe>" or "<exe>,<index>"; strip the icon index and quotes, accept only a
-    // real .exe (not a .dll or a bare icon resource).
+    // Strip the icon index and quotes from DisplayIcon; accept only a real .exe.
     private static string? ExeFromDisplayIcon(string? icon)
     {
         if (string.IsNullOrWhiteSpace(icon))

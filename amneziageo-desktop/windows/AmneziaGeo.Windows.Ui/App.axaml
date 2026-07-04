@@ -3,10 +3,7 @@
              x:Class="AmneziaGeo.Windows.Ui.App"
              RequestedThemeVariant="Light">
 
-  <!-- All shared control styles + sizes + interaction behaviour live here, in one place. Interaction
-       rule (app-wide): NO hover effect anywhere (no background / border / colour / opacity change on
-       pointer-over); the only feedback is a subtle press opacity. Selection uses an .active background.
-       Button heights are uniform and compact (vertical padding 4), matching the softbtn. -->
+  <!-- Shared control styles. No hover effect app-wide; feedback is press opacity only. -->
   <Application.Styles>
     <FluentTheme />
 
@@ -52,7 +49,7 @@
       <Setter Property="FontFamily" Value="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
     </Style>
 
-    <!-- Button.seg : sidebar nav segment - compact, stretches to fill its (equal) column. -->
+    <!-- Sidebar nav segment. -->
     <Style Selector="Button.seg">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -110,8 +107,7 @@
       <Setter Property="CornerRadius" Value="9" />
     </Style>
 
-    <!-- danger : a destructive action (delete profile). Outlined red - literal colours so it reads on
-         both themes without depending on a theme brush. -->
+    <!-- Destructive action. -->
     <Style Selector="Button.danger">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="#E0A0A0" />
@@ -133,8 +129,7 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
-    <!-- powerctl : the round on/off connection control. Static control chrome (like every other control);
-         only the round circle reflects connection state, not the whole plaque. -->
+    <!-- Round on/off connection control. -->
     <Style Selector="Button.powerctl">
       <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
@@ -143,8 +138,7 @@
       <Setter Property="Padding" Value="5,3,11,3" />
     </Style>
 
-    <!-- powerbig : the large round connection control shown in the right pane on the profiles list.
-         Chrome-less (only the drawn rings + circle show); the round circle reflects connection state. -->
+    <!-- Large round connection control on the profiles list. -->
     <Style Selector="Button.powerbig">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -152,8 +146,7 @@
       <Setter Property="CornerRadius" Value="120" />
     </Style>
 
-    <!-- backbtn : header "back to the previous menu" control. Chrome-less and subtle, like the rest;
-         the only feedback is the shared press opacity. -->
+    <!-- Header back button. -->
     <Style Selector="Button.backbtn">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -164,7 +157,7 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
-    <!-- brand : the "AmneziaGeo" logo in the left header, chrome-less Home button. -->
+    <!-- Brand logo home button. -->
     <Style Selector="Button.brand">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -173,7 +166,7 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
-    <!-- connectpill : the connect / stop button (compact, white text on a bound status-coloured fill) -->
+    <!-- Connect / stop button. -->
     <Style Selector="Button.connectpill">
       <Setter Property="Foreground" Value="White" />
       <Setter Property="BorderThickness" Value="0" />
@@ -185,7 +178,7 @@
       <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
 
-    <!-- radiopick : the active-profile radio (chrome-less) -->
+    <!-- Active-profile radio. -->
     <Style Selector="Button.radiopick">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
@@ -193,7 +186,7 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
-    <!-- rowselect : a flat, borderless, full-width selectable list row with a radio -->
+    <!-- Flat selectable list row. -->
     <Style Selector="Button.rowselect">
       <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
       <Setter Property="BorderThickness" Value="0" />
@@ -216,14 +209,7 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
-    <!-- ============================================================================================
-         ONE place that governs ALL button interaction (classed buttons here AND plain buttons in the
-         dialogs). The rule: a button never recolours on pointer-over / press / disabled - the
-         content-presenter is pinned to the control's OWN Background / Foreground / BorderBrush in
-         every state, so whatever a class sets (or .active sets) is exactly what shows, hovered or not.
-         The ONLY feedback is a subtle press opacity; disabled is dimmed. No per-class hover styles
-         exist, so there is nothing to forget when a new button class is added.
-         ============================================================================================ -->
+    <!-- Pin button content-presenter colours in every state; no hover recolour app-wide. -->
     <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
@@ -262,11 +248,7 @@
       <Setter Property="FontSize" Value="13" />
     </Style>
 
-    <!-- ONE place for text-input borders (classed .field AND plain dialog text boxes / the
-         AutoCompleteBox's inner text box). FluentTheme paints the hover/focus border on the template
-         PART (Border#PART_BorderElement), so it MUST be pinned there - a control-level setter never
-         reaches it. Same neutral secondary border in every state: no pointer-over / focus recolour,
-         no accent focus underline, no transition fade. -->
+    <!-- Pin text-input border on the template PART in every state. -->
     <Style Selector="TextBox /template/ Border#PART_BorderElement">
       <Setter Property="Transitions" Value="{x:Null}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
@@ -288,11 +270,7 @@
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
     </Style>
 
-    <!-- Required-field validation. A TextBox flagged Classes.invalid="{Binding SomethingMissing}" gets a red
-         border in EVERY state: the neutral pins above force AgBorder2Brush onto the template PART, so .invalid
-         must re-assert the red on pointerover / focus / focus-within too - and these come LATER in the file so
-         they win the last-writer-wins. Pair the box with a TextBlock.fieldwarn below to say why (e.g. that the
-         change will not be saved). Reusable for any required field; today it flags empty name fields. -->
+    <!-- Required-field red border in every state. -->
     <Style Selector="TextBox.invalid /template/ Border#PART_BorderElement">
       <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
     </Style>
@@ -306,7 +284,7 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
     </Style>
 
-    <!-- The warning line paired with a .invalid field: red, small, wraps. -->
+    <!-- Warning line paired with a .invalid field. -->
     <Style Selector="TextBlock.fieldwarn">
       <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />
       <Setter Property="FontSize" Value="11.5" />
@@ -324,8 +302,7 @@
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
     </Style>
 
-    <!-- Strict, flicker-free ComboBox.field (closed box): null the part transition and hold resting
-         colours in every state; feedback is the subtle press opacity below. -->
+    <!-- Flicker-free closed ComboBox.field. -->
     <Style Selector="ComboBox.field /template/ Border#Background">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
@@ -359,7 +336,7 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
     </Style>
 
-    <!-- Control.spin : continuous rotation (source refresh icon, connect-control spinner ring, ...) -->
+    <!-- Continuous rotation. -->
     <Style Selector="Control.spin">
       <Setter Property="RenderTransformOrigin" Value="50%,50%" />
       <Setter Property="RenderTransform" Value="rotate(0)" />
@@ -377,11 +354,7 @@
       </Style.Animations>
     </Style>
 
-    <!-- Connect-control spinner: a single accent arc that travels around the ring by animating
-         StrokeDashOffset (the dash "marches" along the stroke). This moves the arc WITHOUT a rotation
-         transform - rotations silently fail here (see Control.spin), but StrokeDashOffset is a plain
-         render property animated like opacity. The dash pattern (one dash + one gap ≈ the circumference)
-         shows a single arc; one full offset period = one revolution. Idle invisible; .spinning shows it. -->
+    <!-- Connect-control spinner arc via StrokeDashOffset. -->
     <Style Selector="Ellipse.connspin">
       <Setter Property="Opacity" Value="0" />
     </Style>
@@ -395,8 +368,7 @@
       </Style.Animations>
     </Style>
 
-    <!-- Control.pulse : opacity breathing - a robust "busy" indicator (pure opacity, no transform so it
-         cannot silently fail on a transform-origin/RenderTransform quirk the way a rotation can). -->
+    <!-- Opacity breathing busy indicator. -->
     <Style Selector="Control.pulse">
       <Style.Animations>
         <Animation Duration="0:0:1" IterationCount="INFINITE">
@@ -413,10 +385,7 @@
       </Style.Animations>
     </Style>
 
-    <!-- Power-button ring wave: three accent rings (r1 inner → r3 outer) light up in sequence during a
-         transient connect (waveout: r1→r2→r3, outward) or disconnect (wavein: r3→r2→r1, inward). Each ring
-         runs the same opacity pulse; only the start delay differs, producing the travelling wave. Idle
-         opacity is 0 (invisible). -->
+    <!-- Power-button ring wave during connect / disconnect. -->
     <Style Selector="Ellipse.ring">
       <Setter Property="Opacity" Value="0" />
     </Style>
@@ -475,8 +444,7 @@
       </Style.Animations>
     </Style>
 
-    <!-- Strict, flicker-free ComboBox dropdown rows. The popup lives outside any window's template
-         scope, so these must be app-level. -->
+    <!-- Flicker-free ComboBox dropdown rows. -->
     <Style Selector="ComboBoxItem /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>

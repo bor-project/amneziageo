@@ -33,10 +33,7 @@ internal sealed class Cli(
         switch (args)
         {
             case ["--service", var name]:
-                // This is the per-tunnel service process (no host, so no hosted LogLevelBackgroundWatcher).
-                // Apply the persisted level before the tunnel bring-up starts so its trace is captured at the
-                // right verbosity from the first line, then poll so a support-requested change (agent writes
-                // the setting) takes hold on the running tunnel without a reconnect (#82).
+                // Per-tunnel service process: apply the persisted level before bring-up, then poll so a live change takes hold without reconnect.
                 await LogLevelWatcher.ApplyAsync(store, logLevel);
                 using (var levelCts = new CancellationTokenSource())
                 {
@@ -316,7 +313,6 @@ internal sealed class Cli(
         return 0;
     }
 
-    // Stores a config from a wg-quick file (overwriting an existing one) then creates its tunnel service.
     private async Task<int> InstallTunnelAsync(string name, string configPath)
     {
         try
@@ -581,12 +577,6 @@ internal sealed class Cli(
         }
     }
 
-    /// <summary>
-    /// Test helper: connects as a UI session (announces attach-ui) and stays connected for the given
-    /// seconds, then disconnects - so the agent's "tunnel lives only while a UI is connected" teardown can
-    /// be exercised headlessly (the real GUI cannot run over SSH). Prints connect/disconnect and each
-    /// snapshot's running state.
-    /// </summary>
     private static async Task<int> IpcUiProbeAsync(string secondsArg)
     {
         if (!int.TryParse(secondsArg, System.Globalization.CultureInfo.InvariantCulture, out var seconds) || seconds <= 0)
@@ -689,9 +679,7 @@ internal sealed class Cli(
         return 0;
     }
 
-    // Offline counterpart of the agent's set-websocket IPC op (AgentStatusBroker.SetWebSocketAsync): writes
-    // a config's WebSocket transport straight to the store, for seeding from the launcher. host may be empty
-    // (reuse the config's Endpoint host) or a full wss://[user:pass@]host:port[/token] URL carrying auth.
+    // Offline counterpart of the agent's set-websocket IPC op: writes transport straight to the store.
     private async Task<int> SetWebSocketAsync(string name, string toggle, string portText, string host)
     {
         if (!await configRepo.ExistsAsync(name))

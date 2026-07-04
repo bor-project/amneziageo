@@ -5,12 +5,7 @@ using System.Threading.Tasks;
 namespace AmneziaGeo.Windows.Ui.Services;
 
 /// <summary>
-/// A trailing-edge debounce for auto-save (#116). <see cref="Schedule"/> (re)starts the quiet timer, so the
-/// action runs once the caller stops scheduling for <c>ms</c> milliseconds. <see cref="Flush"/> runs a pending
-/// action at once - call it before an editor is torn down (a config / list switch) so a just-typed edit is not
-/// lost; <see cref="Cancel"/> drops a pending action. The bound field is updated per keystroke, so the owning
-/// view-model always holds the latest value and only the (network) persist is debounced - unlike Binding.Delay,
-/// which keeps the value in the control and would strand it on teardown.
+/// Trailing-edge debounce for auto-save.
 /// </summary>
 internal sealed class Debouncer
 {
@@ -25,8 +20,9 @@ internal sealed class Debouncer
         _action = action;
     }
 
-    /// <summary>(Re)start the quiet timer; a fresh call cancels the previous one, so the action fires once the
-    /// caller pauses for the debounce window.</summary>
+    /// <summary>
+    /// (Re)starts the quiet timer.
+    /// </summary>
     public void Schedule()
     {
         _cts?.Cancel();
@@ -54,7 +50,9 @@ internal sealed class Debouncer
         }
     }
 
-    /// <summary>Run a still-pending action immediately (e.g. before the owner is discarded) so the edit persists.</summary>
+    /// <summary>
+    /// Runs a pending action immediately.
+    /// </summary>
     public void Flush()
     {
         if (_pending)
@@ -65,7 +63,9 @@ internal sealed class Debouncer
         }
     }
 
-    /// <summary>Drop a pending action without running it.</summary>
+    /// <summary>
+    /// Drops a pending action.
+    /// </summary>
     public void Cancel()
     {
         _cts?.Cancel();

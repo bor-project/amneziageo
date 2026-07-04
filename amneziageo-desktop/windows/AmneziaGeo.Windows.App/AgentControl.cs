@@ -1,15 +1,12 @@
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Shared, mutable control surface between the IPC command broker and the running balancer.
-/// Carries the desired connection state (running vs stopped) and a change signal the runner
-/// observes to re-apply configuration or routing live, without restarting the agent process.
+/// Control surface shared between the IPC broker and the balancer.
 /// </summary>
 internal sealed class AgentControl
 {
     /// <summary>
-    /// Store-settings key under which the user-selected target profile is persisted, so a chosen
-    /// profile survives an agent/host restart instead of reverting to a launch-argument default.
+    /// Store key for the selected target profile.
     /// </summary>
     public const string SelectedTargetKey = "selected-target";
 
@@ -22,43 +19,32 @@ internal sealed class AgentControl
     private CancellationTokenSource _change = new();
 
     /// <summary>
-    /// Whether the agent should keep a tunnel up. Toggled by the connect / disconnect command.
-    /// Starts <c>false</c>: the agent comes up disconnected and the user initiates the connection.
+    /// Whether the agent keeps a tunnel up.
     /// </summary>
     public bool Running => _running;
 
     /// <summary>
-    /// Set when a setting that only applies on a fresh tunnel (e.g. the routing toggle) changed while
-    /// the bound target is connected. The UI surfaces this as a "reconnect to apply" notice. We do not
-    /// re-apply such changes in place - that left a half-applied split/full state - so the user
-    /// reconnects to apply. Cleared on any connect / disconnect.
+    /// A connected tunnel must be reconnected to apply a changed setting.
     /// </summary>
     public bool RestartRequired => _restartRequired;
 
     /// <summary>
-    /// The profile the user has selected (the radio). The next connect binds to it; selecting it does
-    /// NOT switch a live tunnel.
+    /// The user-selected profile (radio).
     /// </summary>
     public string? Target => _target;
 
     /// <summary>
-    /// The profile the running tunnel is actually bound to - latched from <see cref="Target"/> on each
-    /// connect. Differs from <see cref="Target"/> when the user has selected another profile but not yet
-    /// reconnected: the connection status reflects this one, the radio reflects <see cref="Target"/>.
+    /// The profile the running tunnel is bound to.
     /// </summary>
     public string? RunningTarget => _runningTarget;
 
     /// <summary>
-    /// One-shot flag latched when a user-initiated connect gave up without bringing up any member within
-    /// the data-driven deadline. The UI surfaces it as a "failed to connect" banner. Cleared on the next
-    /// connect / disconnect command (a fresh user action).
+    /// One-shot flag: the last connect attempt gave up.
     /// </summary>
     public bool ConnectFailed => _connectFailed;
 
     /// <summary>
-    /// A token that fires once when the desired state or persisted configuration changes.
-    /// Capture it before reading <see cref="Running"/>, then link it into the session's
-    /// cancellation so in-flight waits abort promptly and the supervisor re-evaluates.
+    /// Fires when the desired state or persisted configuration changes.
     /// </summary>
     public CancellationToken ChangeToken
     {
@@ -72,17 +58,12 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Sets the desired connection state and signals the runner to re-evaluate. Clears the
-    /// restart-required notice: a connect applies the current settings, and a disconnect makes it moot.
+    /// Sets the desired connection state and signals the runner.
     /// </summary>
     public void SetRunning(bool value)
     {
         _running = value;
-        // A fresh user connect / disconnect clears any prior failed-connect notice.
         _connectFailed = false;
-        // Latch the selected target as the running target on connect: the runner brings up the
-        // currently-selected profile and then stays on it (live edits re-apply; a later selection does
-        // not switch the tunnel until the next connect).
         if (value)
         {
             _runningTarget = _target;
@@ -93,23 +74,16 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Selects the active target profile and signals the runner to switch to it. Does not change the
-    /// running / stopped state: switching while connected reconnects to the new target; while stopped it
-    /// just becomes the target the next connect uses.
+    /// Selects the active target profile without changing running state.
     /// </summary>
     public void SetTarget(string name)
     {
-        // No auto-switch: selecting a profile only records the desired target. A connected tunnel keeps
-        // running its latched target until the user reconnects (the UI shows a "reconnect to apply"
-        // notice); a stopped agent uses this target on the next connect. So we deliberately do NOT
-        // signal the runner here.
+        // No signal: selecting does not switch a live tunnel.
         _target = name;
     }
 
     /// <summary>
-    /// Clears the selected target (no profile chosen). Used when the bound profile/config is deleted or
-    /// the persisted selection is found dangling, so the connection card stops showing a phantom target.
-    /// Does not signal: callers decide whether a re-evaluation is needed.
+    /// Clears the selected target.
     /// </summary>
     public void ClearTarget()
     {
@@ -117,7 +91,7 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Signals the runner that persisted configuration or routing changed and must be re-applied.
+    /// Signals that persisted configuration changed and must be re-applied.
     /// </summary>
     public void Invalidate()
     {
@@ -125,9 +99,7 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Called by the runner when a connect attempt gave up (no member reachable within the deadline):
-    /// latches the one-shot failed notice, drops the desired state to stopped (отбой), and signals the
-    /// supervisor to idle.
+    /// Latches a failed connect and drops to stopped.
     /// </summary>
     public void FailConnect()
     {
@@ -139,7 +111,7 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Flags that a connected tunnel must be reconnected for a just-changed setting to take effect.
+    /// Flags a connected tunnel as needing reconnect.
     /// </summary>
     public void SetRestartRequired()
     {

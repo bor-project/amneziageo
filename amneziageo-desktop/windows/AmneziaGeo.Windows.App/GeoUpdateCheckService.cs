@@ -4,12 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Periodically checks the geo sources for a newer remote file (without downloading) so the UI can badge
-/// rows and notify. Mirrors <see cref="UpdateCheckService"/>'s while + Task.Delay idiom, but the cadence
-/// is settings-driven: when auto-check is on it runs the sweep then sleeps the configured interval; when
-/// off it idles, re-reading the toggle every so often so turning it back on takes effect without a restart.
-/// The actual sweep (and the per-source flag bookkeeping) lives in the broker so the manual and periodic
-/// paths share one implementation.
+/// Periodically checks geo sources for a newer remote file.
 /// </summary>
 internal sealed class GeoUpdateCheckService(
     SettingsStore settingsStore,
@@ -42,10 +37,6 @@ internal sealed class GeoUpdateCheckService(
                 {
                     var (available, total) = await broker.CheckAllSourcesAsync(ct);
                     logger.LogInformation("geo auto-check: {Available}/{Total} sources have updates", available, total);
-                    // Beyond badging available updates, keep the address cache itself current (#83): when it is
-                    // older than its validity window this downloads any changed sources and re-resolves the
-                    // in-use lists. The first sweep runs shortly after startup, so a stale cache is refreshed
-                    // without the user pressing "Обновить". Coalesced with manual updates by the broker.
                     await broker.RefreshStaleGeoAsync(ct);
                     delay = TimeSpan.FromHours(Math.Clamp(settings.GeoCheckIntervalHours, MinIntervalHours, MaxIntervalHours));
                 }

@@ -5,9 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// On agent startup, seeds the default geo sources for a fresh install (empty source list) so the
-/// source list is never empty out of the box. The actual download of the geo data is driven by the
-/// installer (a checkbox → the synchronous "download-geo" IPC op), or by the user in the app, not here.
+/// Seeds default geo sources on agent startup for a fresh install.
 /// </summary>
 internal sealed class GeoBootstrapService(
     IStateStore store,

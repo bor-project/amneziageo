@@ -8,25 +8,20 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed record AppSettings
 {
-    // The update URL baked into the assembly at build time (App.csproj AssemblyMetadata, fed from
-    // installer.config.json by build-installer.ps1). Empty when the build configured no update URL.
+    // Baked from installer.config.json at build time.
     private static readonly string BakedUpdateUrl =
         Assembly.GetExecutingAssembly()
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "AmneziaGeo.UpdateUrl")?.Value ?? string.Empty;
 
-    // The AmneziaWG engine version baked into the assembly at build time (App.csproj runs `git describe`
-    // on the bundled amneziawg-windows submodule). tunnel.dll has no version resource, so this is the
-    // authoritative engine version. Empty when the build could not resolve it (no git / no submodule).
+    // Engine version from git describe on the amneziawg-windows submodule.
     private static readonly string BakedEngineVersion =
         Assembly.GetExecutingAssembly()
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "AmneziaGeo.EngineVersion")?.Value?.Trim() ?? string.Empty;
 
     /// <summary>
-    /// AmneziaWG engine (tunnel.dll) version, baked from the amneziawg-windows submodule at build time.
-    /// A build constant (not persisted), exposed next to the other baked-in value (the update URL).
-    /// Empty if the build could not resolve it.
+    /// Engine version baked at build time.
     /// </summary>
     public static string EngineVersion => BakedEngineVersion;
 
@@ -46,15 +41,12 @@ internal sealed record AppSettings
     public int DeadThresholdSeconds { get; init; } = 180;
 
     /// <summary>
-    /// URL of the update metadata file (JSON with version/description/setup). Empty disables update
-    /// checks (and hides their UI). The installer is expected to sit next to this file (resolved relative
-    /// to it). Defaults to the value baked into the build from installer.config.json.
+    /// Update metadata URL.
     /// </summary>
     public string UpdateUrl { get; init; } = BakedUpdateUrl;
 
     /// <summary>
-    /// When set, the agent periodically checks the geo sources for a newer remote file (without
-    /// downloading) and the UI badges/notifies. Defaults on.
+    /// Periodic geo-source update check.
     /// </summary>
     public bool GeoAutoCheck { get; init; } = true;
 
@@ -64,31 +56,22 @@ internal sealed record AppSettings
     public int GeoCheckIntervalHours { get; init; } = 24;
 
     /// <summary>
-    /// How long the materialized geo address cache (resolved domain IPs and the geoip route set) is
-    /// considered current, in hours. Past this age a background refresh re-validates the in-use lists and
-    /// re-resolves their domains; a user-initiated update always re-validates regardless of age (#83).
+    /// Geo address cache validity, in hours.
     /// </summary>
     public int GeoCacheValidityHours { get; init; } = 24;
 
     /// <summary>
-    /// When set (and the tunnel is in split mode), every outbound UDP datagram's destination is routed
-    /// through the tunnel - a catch-all for real-time media (voice calls, online games) whose server IPs arrive via
-    /// app-layer signaling, not DNS, so split rules never capture them. Off by default. Implemented by the
-    /// ETW UDP tracker running WITHOUT its per-app PID filter; the tunnel's own underlay endpoint is excluded
-    /// so the WG transport never loops back into the tunnel.
+    /// Route all outbound UDP through the tunnel in split mode.
     /// </summary>
     public bool TunnelAllUdp { get; init; }
 
     /// <summary>
-    /// Log verbosity token (#82): "info" (default), "debug", or "trace". Drives the live Serilog level switch
-    /// in both processes. Raised to "trace" to capture every connect step and timing for support diagnosis.
+    /// Log verbosity token: info, debug, or trace.
     /// </summary>
     public string LogLevel { get; init; } = "info";
 
     /// <summary>
-    /// Whether the dedicated routing log (routes.log) is recording (#82). Off by default; when on, every
-    /// route-table change and matched DNS resolution is appended for support diagnosis, independent of the
-    /// main log's verbosity.
+    /// Whether the dedicated routing log is recording.
     /// </summary>
     public bool RouteLog { get; init; }
 }

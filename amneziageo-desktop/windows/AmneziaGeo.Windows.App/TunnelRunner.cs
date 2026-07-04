@@ -22,17 +22,11 @@ internal sealed class TunnelRunner(
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
-    // Tunnel MTU default: 1280 - the IPv6-minimum, universally-safe value (#109). The AmneziaWG driver's
-    // own default is 1420, but on any path whose real MTU is below ~1500 (mobile, PPPoE, a nested tunnel,
-    // double-NAT) 1420 black-holes the large TLS-handshake packets and every HTTPS connect stalls for
-    // seconds on retransmits. 1280 fits virtually every real path; a user on a clean 1500 link can raise it
-    // per-config for a little more throughput. Used when a config sets no explicit MTU (#77, #80).
+    // 1280 - IPv6-minimum, fits sub-1500 paths where 1420 black-holes TLS handshakes.
     private const int DefaultMtu = 1280;
 
     /// <summary>
-    /// Loads the tunnel config and materialized geo set, then hands control to the native service loop. On
-    /// a setup failure it forwards the reason to the shared store so the agent can surface it in the UI
-    /// journal - this per-tunnel service process's own log file (ageo-DATE_NNN.log) is not shown in the UI.
+    /// Runs the native tunnel service loop.
     /// </summary>
     public async Task RunAsync(string name)
     {
@@ -42,11 +36,8 @@ internal sealed class TunnelRunner(
         }
         catch (Exception ex)
         {
-            // Log the failure with its stack into this process's own log (always visible, even at "Обычный"),
-            // so a collected diagnostics bundle carries the reason a connect never came up (#82).
             logger.LogError(ex, "connect {Name}: bring-up failed - {Reason}", name, ex.Message);
 
-            // Best-effort: persist the failure reason for the agent to re-log; never mask the original.
             try
             {
                 await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), ex.Message);
@@ -61,12 +52,9 @@ internal sealed class TunnelRunner(
 
     private async Task RunInnerAsync(string name)
     {
-        // Time the whole bring-up so each milestone below carries a cumulative "[N ms]": a support engineer
-        // reading a Debug/Trace log sees exactly which step a slow connect stalled on (#82).
         var connectSw = Stopwatch.StartNew();
         logger.LogInformation("connect {Name}: bring-up starting", name);
 
-        // Start from a clean slate: revert any DNS/route leftovers from a previous tunnel.
         using (logger.Step("reconcile leftovers"))
         {
             reconciler.Reconcile();
@@ -74,25 +62,20 @@ internal sealed class TunnelRunner(
 
         var config = await store.GetConfigTextAsync(name)
             ?? throw new InvalidOperationException($"configuration '{name}' is not stored");
-        // Only the length is logged - the config text carries private keys and must never reach the log.
+        // Log length only - the config carries private keys.
         logger.LogTrace("connect {Name}: config loaded ({Length} chars) [{Elapsed} ms]", name, config.Length, connectSw.ElapsedMilliseconds);
 
-        // Resolve the WebSocket (UDP-over-TCP) transport plan up front from the ORIGINAL endpoint, but
-        // start the wstunnel child last (just before the engine) so a setup failure cannot orphan it.
-        // When enabled, the engine dials a loopback wstunnel port and the real server is reached
-        // out-of-band over TCP/TLS, so the endpoint exclusion below must target the real server IP, not
-        // loopback.
+        // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it.
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
 
-        // Per-config MTU (#80): stored value is written to [Interface] MTU. Default 1280 (#109).
         var effectiveMtu = transport?.Mtu > 0 ? transport.Mtu : DefaultMtu;
-        string? wsHost = null;            // the wstunnel server host the WSS connection dials
-        var wsPort = 0;                   // the wstunnel server TLS port
-        var wsTargetPort = 0;             // server-side AmneziaWG UDP port = the original Endpoint's port
-        var wsPathPrefix = string.Empty;  // optional auth/anti-probe path token
-        var wsCredentials = string.Empty; // optional basic-auth "user[:pass]"
-        IPAddress? wsServerIp = null;     // resolved wsHost, excluded so wstunnel's own TCP/TLS stays off-tunnel
+        string? wsHost = null;
+        var wsPort = 0;
+        var wsTargetPort = 0;
+        var wsPathPrefix = string.Empty;
+        var wsCredentials = string.Empty;
+        IPAddress? wsServerIp = null;
         if (useWebSocket)
         {
             var parsed = ParseEndpoint(WgConfigEditor.GetEndpoint(config));
@@ -105,10 +88,7 @@ internal sealed class TunnelRunner(
             {
                 var (endpointHost, endpointPort) = parsed.Value;
                 wsTargetPort = endpointPort;
-                // The host field defaults to the config's own Endpoint host but may carry a full
-                // wss://[user:pass@]host[:port]/[token] URL (separate WS front, plus optional auth in one
-                // string). Resolve the resulting host for the exclusion route, since that is where wstunnel
-                // opens its TCP/TLS connection.
+                // WebSocketHost may be a full wss:// URL; resolve its host for the exclusion route.
                 var ws = WsEndpoint.Parse(transport!.WebSocketHost, transport.WebSocketPort, endpointHost);
                 wsHost = ws.Host;
                 wsPort = ws.Port;
@@ -120,16 +100,13 @@ internal sealed class TunnelRunner(
 
         if (useWebSocket)
         {
-            // The underlay plan - host/port only. The path prefix is an anti-probe auth token and the
-            // credentials are basic-auth, so both are secrets: log only whether a path token is set, never
-            // its value (they must not reach the log or a collected diagnostics bundle).
+            // Log only that a path token is set, never its value - path/credentials are secrets.
             logger.LogDebug("connect {Name}: websocket underlay -> {Host}:{Port} pathToken={HasPath} targetPort={Target}",
                 name, wsHost, wsPort, !string.IsNullOrEmpty(wsPathPrefix), wsTargetPort);
         }
 
         WsTunnelTransport? wsTransport = null;
 
-        // Prefer the live balancer routing projection; fall back to the config's own set-geo split.
         var geo = await store.GetActiveTunnelGeoAsync(name);
 
         var geoSplit = geo?.GeoSplit ?? false;
@@ -140,21 +117,15 @@ internal sealed class TunnelRunner(
         logger.LogDebug("connect {Name}: geo loaded - split={Split} routes={Routes} domains={Domains} apps={Apps} [{Elapsed} ms]",
             name, geoSplit, geoRoutes.Count, domains.Count, apps.Count, connectSw.ElapsedMilliseconds);
 
-        // This tunnel adapter is IPv4-only when the config declares no IPv6 Address.
         var stripV6 = !HasIpv6Address(config);
 
-        // The proxy tracks matched domains only in split mode (in full tunnel everything is already
-        // routed; tracking would replace 0.0.0.0/0 with a few /32s).
+        // Domain tracking only in split mode.
         var trackDomains = geoSplit && domains.Count > 0;
 
-        // Per-app tunneling (#68) is also a split-only concept: the app route watcher feeds matched apps'
-        // remote IPs into the shared domain tracker. In full tunnel everything is already routed.
+        // App tracking only in split mode.
         var trackApps = geoSplit && apps.Count > 0;
 
-        // Clean resolver for TUNNELED (matched) names = the config's own DNS, reached THROUGH the tunnel.
-        // A geo-blocked domain must resolve here, not via the local network resolver, which hands back a
-        // poisoned/blocked answer (e.g. chatgpt.com -> a sinkhole IP) that then gets routed into the
-        // tunnel to nowhere. Add the resolver's address to the tunneled routes so it is reachable.
+        // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
         var configDns = WgConfigEditor.GetDns(config);
         IReadOnlyList<string> tunnelResolver = configDns.Count > 0 ? configDns : ["1.1.1.1"];
         if (trackDomains)
@@ -172,17 +143,11 @@ internal sealed class TunnelRunner(
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), geoRoutes);
         if (stripV6)
         {
-            // Never hand IPv6 routes (e.g. a full-tunnel config's ::/0) to a v4-only tunnel: the engine
-            // would route IPv6 into a tunnel with no transit while clients still try IPv6 first.
+            // Strip IPv6 routes on a v4-only tunnel.
             allowedIps = [.. allowedIps.Where(a => !a.Contains(':'))];
         }
 
-        // Split any default route (0.0.0.0/0 or ::/0) into its two halves before handing AllowedIPs to
-        // the engine. A peer with a /0 AllowedIP makes the engine arm its own blanket kill-switch
-        // firewall (amneziawg-windows tunnel/addressconfig.go: doNotRestrict=false), which blocks the LAN
-        // and severs host/Hyper-V SSH and has no LAN bypass. The two /1 halves cover the same address
-        // space for routing but are not /0, so the engine routes the full tunnel WITHOUT arming that
-        // firewall. Our own WindowsFirewall provides the kill-switch (with a LAN bypass) instead.
+        // Split /0 into /1 halves so the engine's blanket kill-switch isn't armed.
         allowedIps = SplitDefaultRoutes(allowedIps);
 
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
@@ -191,46 +156,24 @@ internal sealed class TunnelRunner(
 
         var appSettings = await settings.LoadAsync();
 
-        // Routing-list settings (#87/#89): when an assigned routing list drives this connect (projected
-        // above with its id), the list's own DNS / exclusions / all-UDP are authoritative - the routing
-        // preset owns them. With no active list (full tunnel / config's own geo) or no settings row stored
-        // for it, fall back to the per-config values, i.e. the prior behaviour. So existing setups (no
-        // routing_settings rows yet) are unchanged; the list path engages only once settings are saved.
+        // Routing list owns DNS/exclusions/AllUdp when assigned; else per-config defaults.
         var activeRoutingListId = await store.GetActiveRoutingListIdAsync(name);
         var routingSettings = activeRoutingListId is long activeListId
             ? await store.GetRoutingSettingsAsync(activeListId)
             : null;
 
-        // Wrap ALL UDP through the tunnel (#77-udp): split-only catch-all for real-time media whose server
-        // IPs arrive via signaling, not DNS. Drives the ETW UDP tracker's no-PID-filter mode below. In full
-        // tunnel everything is already routed, so it is a no-op there. Sourced from the active routing list
-        // when one is set, else the global app setting (legacy).
+        // All-UDP catch-all (split-only); from the routing list or the global setting.
         var allUdp = geoSplit && (routingSettings?.AllUdp ?? appSettings.TunnelAllUdp);
 
-        // Capture the resolvers the system uses now, before redirecting, so the proxy can forward
-        // NON-tunneled queries to them - keeps corporate/existing name resolution working alongside
-        // another VPN. The loopback proxy always runs (split AND full): on this IPv4-only tunnel it
-        // denies AAAA and HTTPS/SVCB (type 65) so dual-stack clients don't stall and Chrome doesn't take
-        // an HTTP/3 hint path that bypasses the tunnel.
-        // This profile's (config's) "preferred DNS" overrides the auto-detected system resolvers for
-        // NON-tunneled names; empty falls back to what the system uses now. Tunneled (geo-matched) names keep
-        // the clean tunnelResolver above, so this never weakens geo resolution. Per-config (moved off the
-        // former global app setting) so each profile carries its own DNS.
-        // Active routing list's local DNS wins; otherwise the per-config preferred DNS (empty = auto-detect).
+        // Preferred-DNS overrides the system resolvers for non-tunneled names; empty = auto-detect.
         var preferredDnsServers = routingSettings is not null
             ? routingSettings.LocalDns
             : (await store.GetConfigDnsAsync(name))?.Servers ?? string.Empty;
         var preferredDns = ParseDnsServers(preferredDnsServers);
-        // The real system/LAN resolver, captured regardless of any preferred-DNS override: LOCAL names
-        // (the LAN, corporate, and user exclusion-list domains) must keep resolving HERE, not offshore -
-        // this is what keeps the local network alive in full tunnel and fixes a preferred-DNS set to a
-        // public resolver from swallowing local lookups.
+        // LAN resolver always captured; local names resolve here, not offshore.
         var lanResolvers = dns.CaptureUpstream();
         var upstream = preferredDns.Count > 0 ? preferredDns : lanResolvers;
-        // Bypass list: the active routing list's exclusions when one drives this connect (it owns them),
-        // else the per-config list. "No stored row" keeps the old defaulting (runtime default LAN floor);
-        // a stored row is authoritative (the user may pare it down). Routing lists are split, so the
-        // full-tunnel-only LAN floor below never engages for them - the floor matters on the config path.
+        // Bypass list: routing list's exclusions or per-config; full-tunnel LAN floor only without a list.
         string? storedExclusions;
         bool hasStoredExclusions;
         if (routingSettings is not null)
@@ -247,12 +190,7 @@ internal sealed class TunnelRunner(
 
         var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(storedExclusions ?? string.Empty);
         var exclusionDomains = new List<string>(parsedExclusionDomains);
-        // Treat the network's own DNS suffix(es) - the corp/LAN domain DHCP advertises - as local, so a
-        // corporate host published under a public-looking FQDN via split-horizon DNS (mail.company.com -> an
-        // internal IP) resolves via the LAN resolver and stays off the tunnel. Without this, full tunnel
-        // sends such names to the offshore resolver (a public/empty answer) and corp services break. Captured
-        // before the DNS redirect; applies in both modes (harmless in split, where these already resolve via
-        // the system resolver).
+        // Keep LAN DNS suffixes off-tunnel (split-horizon DNS).
         foreach (var suffix in dns.CaptureLocalDnsSuffixes())
         {
             if (!exclusionDomains.Contains(suffix))
@@ -265,70 +203,45 @@ internal sealed class TunnelRunner(
         {
             logger.LogInformation("local DNS suffixes kept on-LAN: {Suffixes}", string.Join(", ", exclusionDomains.Skip(parsedExclusionDomains.Count)));
         }
-        // The WebSocket underlay server's hostname must resolve via the LAN resolver, never through the
-        // tunnel: in full tunnel non-matched names go to the tunnel resolver, but the tunnel is not up yet
-        // and cannot come up until wstunnel reaches the server, whose name it must resolve first. Treat it
-        // as a split-DNS local domain so it resolves out-of-band (its route is already excluded above).
+        // Resolve the wstunnel host via the LAN resolver - the tunnel isn't up yet.
         if (useWebSocket && wsHost is not null && !IPAddress.TryParse(wsHost, out _))
         {
             exclusionDomains.Add(wsHost);
         }
-        // The default bypass set (the RFC1918 ranges + the machine's currently-connected subnets) is computed
-        // at runtime, never stored: with no exclusions row it is what keeps the LAN direct in full tunnel, so
-        // it always matches the network the host is on right now. Once the user saves a row, that list is
-        // authoritative (they can pare it down - even drop the LAN ranges - or extend it).
+        // Default bypass = RFC1918 + connected subnets; a stored list is authoritative.
         var exclusionCidrs = !hasStoredExclusions
             ? new List<string>(routes.DefaultExclusionEntries())
             : new List<string>(parsedCidrs);
 
         IReadOnlyList<string> redirectServers = [];
 
-        // Local resolver for NON-tunneled names: in split the captured system resolver (coexisting /
-        // corporate names keep resolving); in full tunnel everything is tunneled, so resolve all names
-        // via the clean resolver above.
         var localResolver = geoSplit
             ? (upstream.Count > 0 ? upstream : tunnelResolver)
             : tunnelResolver;
 
-        // The domain tracker owns the dynamic /32 routes and the single allowed-ips authority. It is shared
-        // by the DNS path (matched domains) and the app route watcher (matched apps), so create it once when
-        // either is active and hand it to both - two independent SetAllowedIps owners would clobber.
-        // Session lifetime token, cancelled in the finally below on teardown. Created here - before the
-        // domain tracker starts - so the tracker's refresh loop stops with the session like every other
-        // background task, instead of running on against a torn-down adapter.
+        // One tracker shared by DNS and app paths; created before the tracker starts so its loop stops with the session.
         using var sessionCts = new CancellationTokenSource();
 
-        // Create the tracker when it has live work: matched domains, matched apps, all-UDP catch-all, OR a
-        // routing list drives this split tunnel (so a source refresh that grows the list's geoip ranges is
-        // applied live without a reconnect - the tracker polls the list's materialization generation) (#83).
+        // Tracker when there's live work or a routing list drives the split.
         DomainTracker? tracker = null;
         if (trackDomains || trackApps || allUdp || (geoSplit && activeRoutingListId is not null))
         {
             var peer = WgConfigEditor.GetPeerPublicKey(config);
             if (peer is not null)
             {
-                // Constructed here but STARTED below, only after the optional geo-domain sink is attached
-                // (#108), so the first materialization-generation poll can never race ahead of the sink and
-                // skip a live matcher rebuild.
+                // Started after the geo-domain sink is attached to avoid a rebuild race.
                 tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, appSettings.RefreshSeconds, stripV6);
             }
         }
 
         var proxy = StartProxy(trackDomains ? domains : [], stripV6, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
 
-        // #108: let a live materialization-generation change (a geosite source refresh) rebuild the proxy's
-        // domain matcher without a reconnect. Only for a domain-tracking tunnel that bound its proxy: there
-        // the clean tunnel resolver's /32 is already routed, so a newly matched domain actually resolves
-        // through the tunnel (a list that gains its first domain still needs a reconnect for that route).
-        // Set synchronously here, before the tracker's first poll, so no early generation change is missed.
+        // A geosite refresh rebuilds the proxy's matcher without a reconnect.
         if (trackDomains && proxy is not null && tracker is not null)
         {
             tracker.SetGeoDomainSink((d, ct) => proxy.UpdateDomains(d, ct));
         }
 
-        // Start the tracker now that the (optional) geo-domain sink is attached. Its first generation poll
-        // still waits for the adapter + warm start, but starting it here (not at construction) guarantees
-        // the sink is in place before any live rebuild could fire (#108/#83).
         if (tracker is not null)
         {
             _ = Task.Run(() => tracker.RunAsync(sessionCts.Token));
@@ -340,8 +253,7 @@ internal sealed class TunnelRunner(
         }
         else
         {
-            // Could not bind loopback :53 (another resolver holds it): degrade to setting resolvers
-            // directly - no AAAA/type-65 deny, but connectivity rather than a hang.
+            // Loopback :53 busy - fall back to direct resolvers.
             redirectServers = configDns.Count > 0 ? configDns : upstream;
             logger.LogWarning("DNS proxy unavailable (loopback :53 busy); using direct resolvers");
         }
@@ -349,8 +261,7 @@ internal sealed class TunnelRunner(
         logger.LogDebug("connect {Name}: dns proxy {State}, tracker={Tracker} [{Elapsed} ms]",
             name, proxy?.BoundV4 is not null ? $"bound {proxy.BoundV4}" : "unavailable", tracker is not null, connectSw.ElapsedMilliseconds);
 
-        // We set DNS on the adapters ourselves (via WMI); strip it from the config so the engine does
-        // not also try to (it only applies DNS for full tunnel anyway).
+        // Strip DNS from config; we apply it on the adapter ourselves.
         config = WgConfigEditor.RemoveDns(config);
 
         var applied = false;
@@ -359,9 +270,7 @@ internal sealed class TunnelRunner(
             using (logger.Step("apply DNS + flush cache"))
             {
                 dns.Apply(name, redirectServers);
-                // Drop entries resolved before the redirect so already-cached domains (e.g. a popular
-                // youtube.com) are re-queried through the proxy and can be matched and routed, instead of
-                // being served stale from the OS cache and silently bypassing split routing.
+                // Flush so pre-redirect answers are re-queried through the proxy.
                 dns.FlushCache();
             }
 
@@ -372,62 +281,37 @@ internal sealed class TunnelRunner(
 
         if (stripV6 && redirectServers.Count > 0)
         {
-            // Give the IPv4-only tunnel adapter a working v4 resolver once it is up, so Windows' dead
-            // fec0:: IPv6 servers (handed to a v4-only adapter) never stall lookups. Reapplied per run.
+            // Set a v4 resolver on the v4-only adapter.
             _ = Task.Run(() => ConfigureTunnelAdapterDnsAsync(name, redirectServers));
         }
 
-        // With the WebSocket transport the engine's endpoint is loopback; the connection that must stay
-        // off the tunnel is wstunnel's own to the real server, so exclude the real server IP instead.
+        // Exclude wstunnel's real server IP, not the loopback endpoint.
         var endpoint = useWebSocket ? wsServerIp : TunnelEndpoint.Resolve(config);
         var excluded = endpoint is not null && routes.AddEndpointExclusion(name, endpoint);
 
-        // Full tunnel routes the default into the tunnel, which would swallow the local network too. Keep
-        // the private LAN (RDP/SSH/printers, including a host one hop away in another local subnet)
-        // reachable in parallel by routing the RFC1918 ranges out the physical gateway. Split mode never
-        // tunnels the default, so the LAN is already direct and needs no exclusion. Added before the
-        // adapter comes up so the next-hop resolves to the physical gateway, not the tunnel.
+        // Keep the LAN direct in full tunnel via RFC1918 exclusions.
         var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs);
         logger.LogDebug("connect {Name}: routes - endpoint {Endpoint} excluded={Excluded}, lan-exclusions={Lan} [{Elapsed} ms]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
-        // The engine no longer arms its own kill-switch (we split the default route above), so when the
-        // user opts into the kill-switch we arm our own once the tunnel adapter appears. The session
-        // token (declared above) lets teardown cancel a still-pending arm and guarantees the filters come
-        // down with the tunnel.
-
-        // Always arm the WFP firewall once the tunnel adapter appears: it blocks QUIC (UDP/443) egressing
-        // the tunnel so HTTP/3 falls back to TCP, which is reliable over the obfuscated tunnel (raw QUIC
-        // stalls - e.g. some YouTube videos never load). The KILL-SWITCH (block everything off-tunnel) is a
-        // full-tunnel concept: on in full tunnel, off in split (where it would sever the intended-direct
-        // traffic). LAN bypass is always included; a dual-stack tunnel (config has a v6 Address) also gets
-        // the v6 LAN bypass.
+        // WFP: block QUIC egress (HTTP/3 falls back to TCP); kill-switch on in full tunnel, off in split.
         var killSwitch = !geoSplit;
-        // Under the kill-switch the WebSocket underlay (wstunnel.exe child) must be whitelisted by app-id,
-        // or the block-all severs its TCP/TLS lifeline and the full tunnel passes no data.
+        // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
         _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, sessionCts.Token));
 
-        // Re-flush the OS DNS cache once the tunnel is up. The connect-time flush above runs before the
-        // adapter and its routes exist, so a name resolved in the window before the clean resolver's /32
-        // route goes live can be answered from the local network's poisoned cache (a geo-blocked apex
-        // like chatgpt.com gets a sinkhole IP that then sticks). Flushing again after the adapter appears
-        // drops that window poison so the next lookup resolves cleanly through the tunnel.
+        // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
         {
             _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, proxy, sessionCts.Token));
-            // Pre-install routes for the rule's hostnames so an app with a pre-tunnel cached IP is tunnelled without a DNS query (#67).
+            // Pre-install rule hostname routes for cached-IP apps (#67).
             if (trackDomains && proxy is not null)
             {
                 _ = Task.Run(() => SeedDomainRoutesAsync(name, proxy, sessionCts.Token));
             }
         }
 
-        // Per-app tunneling (#68): watch which processes own which connections and route the matched apps'
-        // remote IPs through the tunnel (DNS-path-independent, so it covers DoH/DoT apps). Feeds the shared
-        // tracker created above; cancelled with the session on teardown.
-        // App route watcher (TCP table) only when there are app matchers - it pins matched apps' TCP remote
-        // IPs; the ETW UDP tracker below complements it for UDP.
+        // App route watcher pins matched apps' TCP remote IPs into the tracker.
         AppRouteWatcher? watcher = null;
         if (trackApps && tracker is not null)
         {
@@ -439,21 +323,14 @@ internal sealed class TunnelRunner(
             }
         }
 
-        // UDP complement (#77-udp): route UDP datagrams through the tunnel whose server IPs arrive via
-        // signaling rather than DNS (voice calls, online games). Needed when tunneling matched apps' UDP (uses the
-        // watcher's PID match) OR when wrapping ALL UDP (allUdp, no watcher). Its lifetime is the session
-        // (stopped via sessionCts on teardown) - NOT a `using`, which would dispose it at end of scope and
-        // race the Task.Run that has only just scheduled it. The underlay endpoint is excluded so the WG
-        // transport never loops into the tunnel.
+        // UDP tracker: routes UDP by signaling (not DNS); not a using to avoid racing Task.Run.
         if (tracker is not null && (watcher is not null || allUdp))
         {
             var udpTracker = new UdpFlowTracker(watcher, tracker, allUdp, endpoint, loggerFactory.CreateLogger<UdpFlowTracker>());
             _ = Task.Run(() => udpTracker.RunAsync(sessionCts.Token));
         }
 
-        // Start the WebSocket transport last and redirect the endpoint to its loopback port. Done here,
-        // with nothing between it and the engine start, so a started child is always reached by the
-        // finally below (no orphaned wstunnel process). A start failure aborts the connect.
+        // Start wstunnel last so a failure can't orphan it.
         if (useWebSocket)
         {
             wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials, loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
@@ -466,12 +343,9 @@ internal sealed class TunnelRunner(
             logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}", name, wsTransport.LocalPort);
         }
 
-        // Apply the effective MTU (per-config override or the 1280 default) to the wg-quick config.
         config = WgConfigEditor.SetMtu(config, effectiveMtu);
         logger.LogInformation("mtu for {Name}: {Mtu}", name, effectiveMtu);
 
-        // The single most useful line for "why is connecting slow": how long every step above took before
-        // the engine (and therefore the handshake) even started.
         logger.LogInformation("connect {Name}: bring-up complete in {Elapsed} ms, starting engine", name, connectSw.ElapsedMilliseconds);
 
         try
@@ -492,8 +366,7 @@ internal sealed class TunnelRunner(
             if (applied)
             {
                 dns.Restore();
-                // Flush again so cached answers that resolved to tunnel-routed IPs do not survive the
-                // tunnel and point at addresses no longer reachable off it.
+                // Flush so cached tunnel-routed IPs don't outlive the tunnel.
                 dns.FlushCache();
             }
 
@@ -517,7 +390,6 @@ internal sealed class TunnelRunner(
         var proxy = new DnsProxy(domains, tunnelIp, localIp, lanIp, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6);
         if (proxy.BoundV4 is null)
         {
-            // Could not bind any loopback :53 (another resolver holds it). Degrade gracefully.
             return null;
         }
 
@@ -534,8 +406,6 @@ internal sealed class TunnelRunner(
         return servers.Count > 0 && IPAddress.TryParse(servers[0], out var ip) ? ip : fallback;
     }
 
-    // Parses the user's "preferred DNS" setting (comma/space/semicolon separated) into valid IP literals,
-    // dropping anything that is not a parseable address. Empty input yields an empty list (auto-detect).
     private static IReadOnlyList<string> ParseDnsServers(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -548,10 +418,6 @@ internal sealed class TunnelRunner(
             .Where(s => IPAddress.TryParse(s, out _))];
     }
 
-    // Splits the user exclusions list (newline / comma / semicolon / space separated) into IP/CIDR
-    // entries (routed direct out the physical gateway in full tunnel) and domain entries (resolved by the
-    // LAN resolver, split-DNS). A bare IP becomes a host route (/32 or /128); anything not parseable as an
-    // address is treated as a domain suffix.
     private static (IReadOnlyList<string> Cidrs, IReadOnlyList<string> Domains) ParseExclusions(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -577,8 +443,7 @@ internal sealed class TunnelRunner(
                     cidrs.Add($"{host}/{prefix}");
                 }
 
-                // else: a parseable IP with a malformed/out-of-range prefix (typo like 10.0.0.0/abc or /99)
-                // is dropped - never reaches the route or firewall layer, so one typo can't disarm anything.
+                // Malformed prefix is dropped.
             }
             else
             {
@@ -589,10 +454,6 @@ internal sealed class TunnelRunner(
         return (cidrs, domains);
     }
 
-    /// <summary>
-    /// Splits a wg-quick Endpoint value ("host:port") into host and port, or null when malformed. The
-    /// last colon separates the port so IPv6 literals (rare for an Endpoint host) are not mis-split.
-    /// </summary>
     private static (string Host, int Port)? ParseEndpoint(string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
@@ -617,10 +478,6 @@ internal sealed class TunnelRunner(
         return (host, port);
     }
 
-    /// <summary>
-    /// Resolves a host (or IPv4 literal) to its first IPv4 address, or null when unresolvable - used to
-    /// exclude the wstunnel server from the tunnel so its TCP/TLS connection routes out the physical gateway.
-    /// </summary>
     private static IPAddress? ResolveHostV4(string host)
     {
         if (IPAddress.TryParse(host, out var literal))
@@ -658,11 +515,6 @@ internal sealed class TunnelRunner(
         return false;
     }
 
-    /// <summary>
-    /// Replaces a default route (0.0.0.0/0 or ::/0) with its two /1 halves, which together cover the
-    /// same address space for routing but are not /0 - so the engine routes the full tunnel without
-    /// arming its own kill-switch. Other prefixes pass through unchanged; the result is de-duplicated.
-    /// </summary>
     private static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps)
     {
         var result = new List<string>();
@@ -711,13 +563,6 @@ internal sealed class TunnelRunner(
         }
     }
 
-    /// <summary>
-    /// Waits for the tunnel adapter (and its AllowedIPs routes, including the clean resolver's /32) to
-    /// appear, then flushes the OS DNS cache - once when the adapter is up and once more after the first
-    /// handshake settles. This drops any sinkhole answer cached during the bring-up window (before the
-    /// clean resolver was routed through the tunnel), so a geo-blocked apex re-resolves cleanly instead
-    /// of serving stale poison. Cancelled with the session if the tunnel is torn down first.
-    /// </summary>
     private async Task FlushDnsWhenTunnelUpAsync(string name, DnsProxy? proxy, CancellationToken ct)
     {
         try
@@ -728,12 +573,7 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is not null)
                 {
-                    // Drop the proxy's OWN cache too (not just the OS cache): a matched geo-blocked name
-                    // resolved in the bring-up window - before the clean resolver's /32 route was live -
-                    // leaked to the poisoned local resolver and was cached here. Without clearing it the
-                    // OS re-query is answered from the proxy's stale poison and the domain stays broken.
-                    // Cleared at both flush points so the route-settle gap after the adapter appears is
-                    // covered.
+                    // Clear the proxy cache too - bring-up-window poison lingers here.
                     proxy?.ClearCache();
                     dns.FlushCache();
                     await Task.Delay(2000, ct);
@@ -747,14 +587,9 @@ internal sealed class TunnelRunner(
         }
         catch (OperationCanceledException)
         {
-            // Tunnel went down before it came up; nothing to flush.
         }
     }
 
-    /// <summary>
-    /// Waits for the tunnel adapter, then proactively resolves the rule's hostnames through the tunnel
-    /// resolver and installs their /32 routes. Cancelled with the session if the tunnel is torn down first.
-    /// </summary>
     private async Task SeedDomainRoutesAsync(string name, DnsProxy proxy, CancellationToken ct)
     {
         try
@@ -777,12 +612,6 @@ internal sealed class TunnelRunner(
         }
     }
 
-    /// <summary>
-    /// Waits for the tunnel adapter to appear, then arms the WFP firewall on it (QUIC block always, plus
-    /// the kill-switch when <paramref name="killSwitch"/>). If the tunnel is torn down before or while
-    /// arming (the session token is cancelled), nothing is left armed: the post-arm re-check disables it,
-    /// and teardown's own Disable() is idempotent.
-    /// </summary>
     private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
     {
         try
@@ -809,7 +638,6 @@ internal sealed class TunnelRunner(
         }
         catch (OperationCanceledException)
         {
-            // Tunnel went down before the adapter came up; nothing to arm.
         }
     }
 }

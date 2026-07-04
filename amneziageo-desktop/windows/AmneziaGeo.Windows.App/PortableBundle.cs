@@ -4,11 +4,7 @@ using System.Text.Json.Serialization;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// A portable, SELECTIVE snapshot of zero or more configs, routing lists, and profiles, picked by the user
-/// from a tree of checkboxes - any combination of shared catalogue entries plus the thin profile rows that
-/// reference them by name. Configs carry their private keys in the clear, so the resulting file must be
-/// stored/transferred carefully. Materialized route/domain sets are intentionally omitted from routing
-/// lists - only the rule tokens travel, so the target machine re-materializes them against its own geo data.
+/// Selective snapshot of configs, routing lists, profiles. Configs carry keys in clear; only rule tokens travel.
 /// </summary>
 internal static class PortableBundle
 {
@@ -30,11 +26,7 @@ internal static class PortableBundle
     };
 
     /// <summary>
-    /// The full exported selection: zero or more configs, routing lists, and profiles. A profile's
-    /// <see cref="ProfileBlock.Config"/> / <see cref="ProfileBlock.RoutingList"/> are names that resolve into
-    /// <see cref="Configs"/> / <see cref="RoutingLists"/> on import; they may be null (no config / no routing
-    /// assigned) or refer to a name not present in this same bundle (the profile was selected without its
-    /// dependency - import then leaves that side unbound).
+    /// Exported selection of configs, routing lists, and profiles. Profile references resolve by name on import.
     /// </summary>
     public sealed record Bundle(
         string Format,
@@ -44,9 +36,7 @@ internal static class PortableBundle
         IReadOnlyList<ProfileBlock> Profiles);
 
     /// <summary>
-    /// A standalone configuration: its wg-quick text (including keys), WebSocket transport (if any), and its
-    /// own geo split (if any). DNS and exclusions are NOT carried here - stage #87/#88/#90 moved those onto
-    /// the routing preset (<see cref="RoutingSettingsBlock"/>).
+    /// A standalone config: wg-quick text, WebSocket transport, geo split.
     /// </summary>
     public sealed record ConfigBlock(
         string Name,
@@ -55,19 +45,17 @@ internal static class PortableBundle
         GeoBlock? Geo);
 
     /// <summary>
-    /// The config's WebSocket (UDP-over-TCP) transport and tunnel MTU. Host empty reuses the config's own
-    /// Endpoint host.
+    /// WebSocket transport and tunnel MTU. Empty Host reuses the config's Endpoint host.
     /// </summary>
     public sealed record TransportBlock(bool UseWebSocket, string Host, int Port, int Mtu);
 
     /// <summary>
-    /// The config's own geo split: whether it is on and the rule tokens (geosite:openai, geoip:ru, …).
+    /// Geo split toggle and rule tokens.
     /// </summary>
     public sealed record GeoBlock(bool Split, IReadOnlyList<string> Rules);
 
     /// <summary>
-    /// A standalone, shared routing list: its rule tokens and its traffic settings (local DNS, exclusions,
-    /// all-UDP), when customized.
+    /// A shared routing list: rule tokens and optional traffic settings.
     /// </summary>
     public sealed record RoutingBlock(
         string Name,
@@ -75,15 +63,12 @@ internal static class PortableBundle
         RoutingSettingsBlock? Settings);
 
     /// <summary>
-    /// A routing list's traffic policy. Mode is always "split" here - "full" is a live, per-connect choice,
-    /// not part of the shared list's portable state.
+    /// A routing list's traffic policy. Mode is always "split" here.
     /// </summary>
     public sealed record RoutingSettingsBlock(string LocalDns, string Exclusions, bool AllUdp);
 
     /// <summary>
-    /// A thin profile reference: the config and routing list it binds, by name (resolved against
-    /// <see cref="Bundle.Configs"/> / <see cref="Bundle.RoutingLists"/> on import), and whether it uses
-    /// routing. Either reference may be null when the profile has none.
+    /// A thin profile reference: bound config and routing list by name; either may be null.
     /// </summary>
     public sealed record ProfileBlock(
         string Name,

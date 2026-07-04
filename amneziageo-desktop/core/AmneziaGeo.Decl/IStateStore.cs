@@ -26,42 +26,32 @@ public interface IStateStore
     Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the config's own (user-configured) geo settings and active set, or null if absent.
-    /// Ignores any live balancer routing projection — use <see cref="GetActiveTunnelGeoAsync"/>
-    /// for what the running tunnel should apply.
+    /// Returns the config's own geo settings, ignoring any live balancer projection.
     /// </summary>
     Task<TunnelGeo?> GetTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the geo set the running tunnel should apply: the active balancer routing projection
-    /// when one is present, otherwise the config's own set-geo split. Null if neither exists.
+    /// Returns the geo set the running tunnel should apply: balancer projection if present, else the config's own split.
     /// </summary>
     Task<TunnelGeo?> GetActiveTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates the config's own (user-configured) geo settings and active set. Leaves
-    /// any live balancer routing projection untouched.
+    /// Inserts or updates the config's own geo settings. Leaves any live balancer projection untouched.
     /// </summary>
     Task SaveTunnelGeoAsync(TunnelGeo geo, CancellationToken ct = default);
 
     /// <summary>
-    /// Stores a balancer routing projection for a tunnel and marks it live. Written only by the
-    /// balancer; never touches the config's own set-geo columns. <paramref name="routingListId"/> is the
-    /// id of the routing list this projection came from (null for a full-tunnel / no-list projection), so
-    /// the running tunnel can resolve the active list's traffic settings (#87/#89).
+    /// Stores a balancer routing projection and marks it live. routingListId is the source list (null for full-tunnel / no-list).
     /// </summary>
     Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// Drops the live balancer routing projection for a tunnel, reverting it to its own set-geo
-    /// split (or no split). A no-op when no row exists. Never touches the config's own columns.
+    /// Drops the live balancer projection, reverting to the config's own split. No-op when no row exists.
     /// </summary>
     Task ClearTunnelProjectionAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the routing list id of the tunnel's live projection, or null when there is no live
-    /// projection or it is a full-tunnel / no-list projection. Used at connect to resolve the active
-    /// routing list's traffic settings (local DNS, exclusions, all-UDP).
+    /// Returns the routing list id of the tunnel's live projection, or null when none or full-tunnel.
     /// </summary>
     Task<long?> GetActiveRoutingListIdAsync(string name, CancellationToken ct = default);
 
@@ -76,8 +66,7 @@ public interface IStateStore
     Task RemoveTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the config's transport settings (WebSocket over TCP), or null when none are stored
-    /// (the config uses plain UDP).
+    /// Returns the config's transport settings, or null when none (plain UDP).
     /// </summary>
     Task<ConfigTransport?> GetConfigTransportAsync(string name, CancellationToken ct = default);
 
@@ -92,8 +81,7 @@ public interface IStateStore
     Task RemoveConfigTransportAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns a config's preferred DNS settings, or null when none are stored (the config auto-detects
-    /// the system resolvers for non-tunneled names).
+    /// Returns the config's preferred DNS, or null when none (auto-detect).
     /// </summary>
     Task<ConfigDns?> GetConfigDnsAsync(string name, CancellationToken ct = default);
 
@@ -108,8 +96,7 @@ public interface IStateStore
     Task RemoveConfigDnsAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns a config's bypass exclusions, or null when none are stored (the config uses just the
-    /// built-in defaults with auto-exclude-LAN on).
+    /// Returns the config's bypass exclusions, or null when none (built-in defaults with auto-exclude-LAN).
     /// </summary>
     Task<ConfigExclusions?> GetConfigExclusionsAsync(string name, CancellationToken ct = default);
 
@@ -204,8 +191,7 @@ public interface IStateStore
     Task RemoveBalancerAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates a routing list. If Id is 0 a new row is inserted; otherwise the
-    /// row with that id is updated. Returns the row id after the call.
+    /// Inserts or updates a routing list. Returns the row id.
     /// </summary>
     Task<long> SaveRoutingListAsync(RoutingList list, CancellationToken ct = default);
 
@@ -225,27 +211,22 @@ public interface IStateStore
     Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Removes a routing list by id. Profiles referencing it have their assignment cleared.
+    /// Removes a routing list by id. Profile assignments are cleared.
     /// </summary>
     Task RemoveRoutingListAsync(long id, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the current materialized set and generation of the routing list actively projected onto the
-    /// given tunnel, or null when the tunnel has no live routing-list projection (full tunnel / no list /
-    /// not connected). Read live from the routing list itself - not the projection snapshot - so a running
-    /// tunnel can detect when a source refresh or rule edit re-materialized its list and re-apply it (#83).
+    /// Returns the current materialized set and generation of the routing list projected onto a tunnel, or null when none.
     /// </summary>
     Task<ActiveRoutingListMaterialization?> GetActiveRoutingListMaterializationAsync(string tunnel, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the ids of routing lists assigned to at least one profile (in use). Refreshing only these -
-    /// rather than every stored list - keeps a geo re-materialization bounded to what a tunnel could apply (#83).
+    /// Returns ids of routing lists assigned to at least one profile.
     /// </summary>
     Task<IReadOnlyList<long>> ListAssignedRoutingListIdsAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Returns a routing list's traffic settings (local DNS, exclusions, all-UDP, mode), or null when
-    /// none are stored (the list uses defaults: split mode, runtime-default exclusions, no all-UDP).
+    /// Returns a routing list's traffic settings, or null when none (defaults: split mode, no all-UDP).
     /// </summary>
     Task<RoutingSettings?> GetRoutingSettingsAsync(long routingListId, CancellationToken ct = default);
 
@@ -260,10 +241,7 @@ public interface IStateStore
     Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// One-time, idempotent migration (#87): seeds each routing list assigned to a profile with traffic
-    /// settings taken from its member config's DNS / exclusions and the legacy global all-UDP flag, when the
-    /// list carries none yet. Lists that already have settings are left untouched. Behaviour-neutral - the
-    /// running tunnel reads the same values, now sourced from the routing list instead of the per-config tables.
+    /// One-time idempotent migration: seeds each assigned routing list with traffic settings from its member config and the legacy global all-UDP flag.
     /// </summary>
     Task MigrateConfigSettingsToRoutingAsync(CancellationToken ct = default);
 

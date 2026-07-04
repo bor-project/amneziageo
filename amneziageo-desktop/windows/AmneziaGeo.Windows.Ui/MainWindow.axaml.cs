@@ -26,10 +26,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
     }
 
-    // The Config section's import form uses the window VM's SectionConfig* fields. «Файл» (OnSectionConfigBrowse)
-    // loads a .conf / vpn:// text file OR a QR image (auto-detected by extension); «Камера» (OnSectionConfigCamera)
-    // scans a QR live; «Редактировать» (OnSectionConfigEdit) opens the large editor. There is no «Сохранить» -
-    // once the text parses and a name is set the view model auto-saves it (debounced) and opens it (#118).
+    // Config section import form: «Камера» scans a QR live.
     private async void OnSectionConfigCamera(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
@@ -48,12 +45,11 @@ public sealed partial class MainWindow : Window
                 vm.SectionConfigName = scan.Result.Name!;
             }
 
-            vm.SectionConfigStatus = string.Empty; // clear any stale failure from a prior pick, like the other paths
+            vm.SectionConfigStatus = string.Empty; // clear any stale failure from a prior pick.
         }
     }
 
-    // "Редактировать": open the large editor seeded with the current text; on OK write it back. Assigning
-    // SectionConfigText triggers the view model's debounced auto-save once the text parses and a name is set.
+    // «Редактировать»: open the large editor seeded with the current text; on OK write it back.
     private async void OnSectionConfigEdit(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
@@ -69,8 +65,7 @@ public sealed partial class MainWindow : Window
             var imported = VpnLinkCodec.TryDecode(editor.Text);
             if (imported is not null)
             {
-                // Adopt the config's own embedded name over the generic default, exactly like the file / QR /
-                // camera paths - so a vpn:// / .conf pasted here is not saved under «Конфигурация N» (#118 review).
+                // Adopt the config's embedded name over the generic default.
                 if (vm.SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(imported.Name))
                 {
                     vm.SectionConfigName = imported.Name!;
@@ -109,8 +104,7 @@ public sealed partial class MainWindow : Window
             vm.SectionConfigName = imported.Name!;
         }
 
-        // No status: a recognised QR auto-saves (debounced) and the form closes; the failure paths above keep
-        // their messages.
+        // No status: a recognised QR auto-saves and the form closes.
         vm.SectionConfigStatus = string.Empty;
     }
 
@@ -128,8 +122,7 @@ public sealed partial class MainWindow : Window
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 
-    // Copy the current export payload (.conf or vpn:// link) to the clipboard. Clipboard access is a
-    // window concern, so the inline export pane's button is wired here rather than in the view model.
+    // Copy the export payload to the clipboard (window concern).
     private async void OnConfigExportCopy(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel { ConfigExport: { } vm })
@@ -145,7 +138,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Save the current export payload to a file the user picks (window concern, like the copy above).
+    // Save the export payload to a picked file.
     private async void OnConfigExportSave(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel { ConfigExport: { } vm })
@@ -169,8 +162,7 @@ public sealed partial class MainWindow : Window
         vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
     }
 
-    // WebSocket settings share (copy / save / paste / load) - mirrors the config export/import. The
-    // button's DataContext is the open config's ConfigTransportViewModel (the WS section's DataContext).
+    // WebSocket settings share (copy / save / paste / load).
     private async void OnWsExportCopy(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: ConfigTransportViewModel vm })
@@ -255,8 +247,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Routing-list share (copy / save / paste / load) - the button's DataContext is the window VM's
-    // RoutingEditor (a RoutingListEditorViewModel).
+    // Routing-list share (copy / save / paste / load).
     private async void OnRoutingExportCopy(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
@@ -295,8 +286,7 @@ public sealed partial class MainWindow : Window
         vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
     }
 
-    // "Показать QR": render the list (name + rules) as a QR in a dialog. On demand, so the editor never holds
-    // a live QR that would swap its Image and steal input focus.
+    // «Показать QR»: render the list as a QR on demand.
     private async void OnRoutingShowQr(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
@@ -357,8 +347,8 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Per-app tunneling source picks (#68). The editor VM is resolved via the window VM's RoutingEditor
-    // because a MenuFlyout item lives in its own visual tree and does not inherit the editor's DataContext.
+    // Per-app tunneling source picks. Editor VM resolved via the window VM's RoutingEditor (MenuFlyout
+    // items do not inherit the editor's DataContext).
     private async void OnAppSourceRunning(object? sender, RoutedEventArgs e)
     {
         if ((DataContext as MainWindowViewModel)?.RoutingEditor is { } vm)
@@ -408,9 +398,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Standalone config-import (the Config settings section): adds a config to the shared catalogue without a
-    // profile. The form binds the window VM's SectionConfig* fields, so unlike the per-profile import these
-    // handlers read/write the MainWindowViewModel rather than a row's BalancerItemViewModel.
+    // Standalone config-import: adds a config to the shared catalogue without a profile.
     private async void OnSectionConfigBrowse(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
@@ -418,7 +406,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // One «Файл» picker for both a config text file and a QR image; the extension decides which (#118).
+        // One «Файл» picker for both a config text file and a QR image; extension decides which.
         var path = await PickFileAsync(Loc.Instance.Get("MainCode_ConfigurationTitle"),
             "conf", "txt", "vpn", "png", "jpg", "jpeg", "bmp", "gif");
         if (path is null)
@@ -463,9 +451,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Selective export/import (#91): the General settings section's "Экспорт…" / "Импорт…" buttons. The
-    // export dialog is built straight from the window VM's already-loaded snapshot collections - opening it
-    // needs no extra IPC round trip - plus the connection it uses for the eventual export/import call.
+    // Selective export/import: «Экспорт…» / «Импорт…» buttons.
     private async void OnOpenBundleExport(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
@@ -489,9 +475,7 @@ public sealed partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
-    // "Собрать логи" (#82): ask the agent for a redacted diagnostics zip, then let the user save a copy where
-    // they want. The bundle is built agent-side (only SYSTEM can read both processes' logs) under ProgramData,
-    // which this UI can read; we copy it to the picked file.
+    // «Собрать логи»: ask the agent for a redacted diagnostics zip, then save a copy.
     private async void OnCollectLogs(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm)
@@ -557,10 +541,8 @@ public sealed partial class MainWindow : Window
         e.Handled = true;
     }
 
-    // Builds the per-source action menu (update / delete) and shows it at the given target. The menu is
-    // built here, with each command assigned directly from the row's view model, because a MenuItem hosted
-    // in a flyout popup does not reliably inherit the row's DataContext for a {Binding}-based command in
-    // Avalonia 11. Sources cannot be edited (only added / removed / refreshed), so the menu has no "edit".
+    // Builds the per-source action menu (update / delete). Commands assigned directly from the row's VM
+    // because flyout MenuItems do not reliably inherit the row's DataContext in Avalonia 11.
     private static void ShowSourceMenu(Control target, SourceItemViewModel source, bool atPointer)
     {
         var update = new MenuItem

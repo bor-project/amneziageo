@@ -77,9 +77,7 @@ public static class WgConfigEditor
     }
 
     /// <summary>
-    /// Returns the config with its peer Endpoint replaced by the given value (e.g. "127.0.0.1:51820").
-    /// Used to redirect the dial through a local transport (wstunnel) when the original Endpoint's UDP
-    /// is blocked. A no-op when the config declares no Endpoint.
+    /// Returns the config with its peer Endpoint replaced by the given value.
     /// </summary>
     public static string SetEndpoint(string config, string endpoint)
     {
@@ -159,10 +157,7 @@ public static class WgConfigEditor
     }
 
     /// <summary>
-    /// Returns the config with its DNS set to the given servers (any existing DNS lines are dropped
-    /// and a single line is inserted into the [Interface] section). The engine then configures the
-    /// tunnel adapter's resolver natively from this line — no out-of-process DNS calls. A no-op when
-    /// no servers are given.
+    /// Returns the config with its DNS set to the given servers.
     /// </summary>
     public static string SetDns(string config, IReadOnlyList<string> servers)
     {
@@ -190,10 +185,7 @@ public static class WgConfigEditor
     }
 
     /// <summary>
-    /// Returns the config with its [Interface] MTU set to the given value (any existing MTU lines are
-    /// dropped and a single line is inserted into the [Interface] section). Used to shrink the tunnel
-    /// MTU when the underlay adds per-packet overhead that cannot be fragmented (the WSS/wstunnel
-    /// transport), so inner segments fit the encapsulated path instead of stalling on it.
+    /// Returns the config with its [Interface] MTU set to the given value.
     /// </summary>
     public static string SetMtu(string config, int mtu)
     {

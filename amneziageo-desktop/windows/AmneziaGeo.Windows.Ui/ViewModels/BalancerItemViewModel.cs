@@ -20,11 +20,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private readonly Func<string, bool, Task> _setProfileConnection;
     private readonly Func<string, Task<IpcAck>> _removeConfig;
     private bool _suppress;
-    // One-shot flag: set before RoutingListOptions.Clear() so the deferred Avalonia binding
-    // event (SelectedItem → None) that arrives after _suppress=false is consumed and ignored.
     private bool _suppressNextRoutingNone;
-    // Optimistic running override: set the instant the user taps connect/disconnect on this profile so the
-    // button flips immediately; cleared once a snapshot's real status agrees with the requested state.
     private bool? _pendingRunning;
 
     [ObservableProperty]
@@ -36,9 +32,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsComplete))]
     private string _config = string.Empty;
 
-    // The config selected in the profile's config combo. Picking a real config assigns it to this profile
-    // (configs are shared across profiles by name); the "— не выбрано —" choice clears it. Configs are added
-    // from the Config section's «+ Новая конфигурация» button, not from this combo (#111).
     [ObservableProperty]
     private ConfigChoice _selectedConfig = ConfigChoice.None;
 
@@ -80,11 +73,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         _removeConfig = removeConfig;
     }
 
-    /// <summary>
-    /// The config options available in the profile's config combo: the synthetic "— не выбрано —" followed by
-    /// every config in the shared catalogue (selectable / reusable across profiles). Rebuilt from the snapshot
-    /// in <see cref="ApplyFromEntry"/>.
-    /// </summary>
     public ObservableCollection<ConfigChoice> ConfigOptions { get; } = [];
 
     /// <summary>
@@ -104,7 +92,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
     /// <summary>
     /// Whether this profile is the one the agent currently has up. Drives the per-profile
-    /// Подключить vs Отключить affordance.
+    /// connect vs disconnect affordance.
     /// </summary>
     public bool IsRunning => _pendingRunning ?? !string.Equals(Status, ConnectionStatus.Disconnected, StringComparison.Ordinal);
 
@@ -124,11 +112,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     /// </summary>
     public bool HasConfig => Config.Length > 0;
 
-    /// <summary>
-    /// Whether the profile is complete enough to dial: a configuration must be assigned (there is nothing to
-    /// connect to without one). Routing always has a valid value - «Полный туннель» when no list is chosen -
-    /// so it never blocks completeness.
-    /// </summary>
     public bool IsComplete => HasConfig;
 
     /// <summary>
@@ -142,9 +125,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         return _selectProfile(Name);
     }
 
-    // Connect THIS profile: select it as the target, then connect. If another profile is already up, the
-    // agent's supervisor re-latches the target on connect and re-runs the loop - tearing the old tunnel
-    // down and bringing this one up (an automatic switch).
     [RelayCommand]
     private Task ConnectProfile()
     {
@@ -180,11 +160,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             Status = entry.Status;
             Config = entry.Config;
 
-            // The profile's assigned config must always be selectable, even if it is momentarily absent from
-            // the shared catalogue (e.g. a config it reuses was renamed/removed via another profile). Surface
-            // it as a transient real choice (appended after the None/New head and the saved configs) so the
-            // combo shows the real name instead of misrepresenting a set config as «— не выбрано —» - a
-            // divergence a later combo touch could otherwise turn into an accidental unassign.
+            // Keep the assigned config selectable even if it's not in the catalogue.
             var effectiveOptions = configOptions;
             if (entry.Config.Length > 0
                 && !configOptions.Any(option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal)))
@@ -194,7 +170,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
                 effectiveOptions = augmented;
             }
 
-            // Rebuild config options only when the catalogue changed (same reasoning as routing below).
             if (!ConfigOptions.SequenceEqual(effectiveOptions))
             {
                 ConfigOptions.Clear();
@@ -204,19 +179,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
                 }
             }
 
-            // Resolve the combo to the profile's assigned config, or «— не выбрано —» when it has none.
             SelectedConfig = ConfigOptions.FirstOrDefault(
                     option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal))
                 ?? ConfigChoice.None;
 
-            // Rebuild the options only when the catalogue actually changed. A Clear()+Add() on every
-            // snapshot would null the ComboBox's selection (which then churns the inline editor) even
-            // when nothing changed.
             if (!RoutingListOptions.SequenceEqual(routingOptions))
             {
-                // Arm the one-shot flag before Clear() so the deferred Avalonia ComboBox
-                // SelectedItem→None event that arrives after _suppress=false is swallowed.
-                // Only arm when the current selection has something worth protecting.
+                // Arm the one-shot flag before Clear() fires a None echo.
                 _suppressNextRoutingNone = SelectedRoutingList.IsReal;
                 RoutingListOptions.Clear();
                 foreach (var option in routingOptions)
@@ -225,8 +194,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
                 }
             }
 
-            // Resolve the combo to the profile's assigned list, or «Полный туннель» (the None sentinel) when
-            // it has none. Lists are created from the Routing section's «+ Новый список» button, not this combo.
             SelectedRoutingList = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
 
             UseRouting = entry.UseRouting && SelectedRoutingList.IsReal;
@@ -236,7 +203,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             _suppress = false;
         }
 
-        // Release the optimistic running override once the real status agrees with the user's last tap.
+        // Clear the optimistic status once the real status matches.
         var statusRunning = !string.Equals(Status, ConnectionStatus.Disconnected, StringComparison.Ordinal);
         if (_pendingRunning == statusRunning)
         {
@@ -248,9 +215,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Deletes this profile's configuration from the catalogue and clears it from the profile. The agent
-    /// refuses while the config is in use by the running profile, so on a non-OK ack nothing changes.
-    /// Returns the agent's ack so the caller can report a refusal.
+    /// Remove the config from the catalogue and clear it from this profile.
     /// </summary>
     public async Task<IpcAck> DeleteConfigAsync(string config)
     {
@@ -267,7 +232,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
     partial void OnSelectedConfigChanged(ConfigChoice? oldValue, ConfigChoice newValue)
     {
-        // newValue can momentarily be null: clearing the bound options nulls the ComboBox's SelectedItem.
+        // newValue can be null while the options are being cleared.
         if (_suppress || newValue is null)
         {
             return;
@@ -275,8 +240,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
         if (newValue.IsReal && !string.Equals(newValue.Name, Config, StringComparison.Ordinal))
         {
-            // Picking an existing config (re)assigns it to this profile - the same config can back several
-            // profiles, since balancers reference a config by name.
             Config = newValue.Name;
             _ = _saveProfile(Name, newValue.Name);
         }
@@ -289,16 +252,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
 
     partial void OnSelectedRoutingListChanged(RoutingListChoice? oldValue, RoutingListChoice newValue)
     {
-        // newValue can momentarily be null: clearing the bound options nulls the ComboBox's SelectedItem.
+        // newValue can be null while the options are being cleared.
         if (_suppress || newValue is null)
         {
             return;
         }
 
-        // RoutingListOptions.Clear() inside ApplyFromEntry posts a deferred SelectedItem→None event
-        // that the Avalonia binding dispatcher delivers after _suppress=false. Without this guard it
-        // would call _assignRouting(null) and unassign the routing list mid-edit. The one-shot flag is
-        // armed only when there is an active real selection to protect.
+        // Swallow the Clear() echo in the routing combo.
         if (!newValue.IsReal && _suppressNextRoutingNone)
         {
             _suppressNextRoutingNone = false;

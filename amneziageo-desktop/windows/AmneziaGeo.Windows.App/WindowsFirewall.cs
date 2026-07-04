@@ -7,37 +7,22 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// A WFP (Windows Filtering Platform) kill-switch, ported from the reference daemon's
-/// windowsfirewall.cpp. When enabled it installs, in its own sublayer, a lowest-weight block-all plus
-/// higher-weight permits, so the only traffic allowed is: this process (which carries the encrypted
-/// WireGuard underlay to the server), the tunnel adapter, loopback, DHCP, Hyper-V VM&lt;-&gt;VM, and the
-/// private LAN ranges (IPv4 always; IPv6 ULA/NDP additionally on a dual-stack tunnel). The LAN bypass is
-/// what lets host/Hyper-V SSH and local devices keep working while every other off-tunnel path is blocked.
-///
-/// All objects live in a dynamic WFP session: if this process dies, the engine handle closes and the
-/// whole sublayer + filters are removed automatically, so a crash cannot leave the machine firewalled
-/// off. <see cref="Disable"/> closes the handle explicitly. GUIDs/constants/struct offsets here were
-/// cross-checked against the engine's own firewall package (amneziawg-windows tunnel/firewall).
+/// WFP kill-switch: block-all plus permits for this process, tunnel, loopback, DHCP, LAN.
 /// </summary>
 internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) : IDisposable
 {
-    // Filter weights (FWP_UINT8, 0..15). Block sits at the bottom; every carve-out outranks it, and
-    // within one sublayer the highest-weight matching filter wins.
+    // Filter weights (FWP_UINT8, 0..15); highest-weight matching filter wins.
     private const byte WeightBlock = 0;
     private const byte WeightLan = 2;
     private const byte WeightDhcp = 4;
     private const byte WeightLoopback = 8;
     private const byte WeightTun = 10;
-    // QUIC block sits ABOVE the tunnel permit (10) but below the app hard-permit (14): it must override
-    // "permit everything on the tunnel interface" for UDP/443 while never touching this process's underlay.
+    // QUIC block outranks tunnel permit (10) but not the app hard-permit (14).
     private const byte WeightQuicBlock = 12;
     private const byte WeightApp = 14;
     private const byte WeightHyperV = 14;
 
-    // Infrastructure IPv4 ranges always permitted under the kill-switch (NOT user-controllable LAN bypass):
-    // link-local, multicast (mDNS/SSDP/LLMNR), and the limited broadcast. The RFC1918 LAN bypass that keeps
-    // host/Hyper-V SSH (e.g. 192.168.x) alive comes from the per-config bypass list (extraCidrs) instead, so
-    // it is visible and editable; the default set materialises the same RFC1918 ranges at runtime.
+    // Infrastructure ranges (not user-controllable); LAN bypass comes from extraCidrs.
     private static readonly string[] LanInfraCidrsV4 =
     [
         "169.254.0.0/16",
@@ -45,9 +30,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         "255.255.255.255/32",
     ];
 
-    // IPv6 LAN ranges permitted as the v6 LAN bypass on a dual-stack tunnel: ULA (the v6 RFC1918),
-    // link-local (covers NDP unicast), and link-local multicast (covers NDP / DHCPv6 multicast). Permits
-    // are address-based, so no ICMPv6-type conditions are needed.
+    // v6 LAN bypass: ULA, link-local, link-local multicast.
     private static readonly string[] LanCidrsV6 =
     [
         "fc00::/7",
@@ -73,10 +56,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     }
 
     /// <summary>
-    /// Arms the kill-switch on the given tunnel interface. Permits are installed before the block so
-    /// there is never a window in which traffic (e.g. the caller's own SSH) is blocked without its
-    /// carve-out present. Returns false and installs nothing on any failure. Thread-safe with respect
-    /// to <see cref="Disable"/> so a tunnel teardown racing the arming cannot leave a stray engine.
+    /// Arms the kill-switch; permits before block. Returns false on failure.
     /// </summary>
     public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
     {
@@ -102,19 +82,14 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             {
                 CreateSublayer(engine);
 
-                // Always: block QUIC (UDP/443) egressing the tunnel so HTTP/3 falls back to TCP, which is
-                // reliable over the obfuscated tunnel (QUIC stalls - e.g. some YouTube videos). Weighted
-                // above the tunnel permit so it still wins when the kill-switch's permit-tun is present.
+                // Block QUIC (UDP/443) on tunnel so HTTP/3 falls back to TCP.
                 BlockTunnelQuic(engine, luid);
 
                 if (killSwitch)
                 {
-                    // Permits first.
                     PermitApp(engine);
 
-                    // The WebSocket transport carries the encrypted underlay to the server over a SEPARATE
-                    // child process (wstunnel.exe), not this app - so permit it too, or the block-all below
-                    // severs the tunnel's TCP/TLS lifeline and the full tunnel connects but passes no data.
+                    // Permit wstunnel.exe (carries the encrypted underlay in a child process).
                     if (!string.IsNullOrEmpty(underlayAppPath) && File.Exists(underlayAppPath))
                     {
                         PermitExe(engine, underlayAppPath, "Permit wstunnel underlay");
@@ -123,15 +98,14 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     PermitTunInterface(engine, luid);
                     PermitLoopback(engine);
                     PermitDhcpV4(engine);
-                    PermitLan(engine, extraLanCidrs ?? []); // bypass CIDRs (runtime default set or user's list) - permitted under the kill-switch
+                    PermitLan(engine, extraLanCidrs ?? []);
                     if (dualStack)
                     {
-                        PermitLanV6(engine); // v6 LAN bypass (ULA + NDP) on a dual-stack tunnel
+                        PermitLanV6(engine);
                     }
 
-                    TryPermitHyperV(engine); // best-effort; not fatal if the L2 layer is unavailable
+                    TryPermitHyperV(engine); // best-effort.
 
-                    // Block everything else, last.
                     BlockAll(engine);
                 }
 
@@ -142,14 +116,14 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             catch (Exception ex)
             {
                 logger.LogError(ex, "firewall: failed to install filters");
-                FwpmEngineClose0(engine); // drops anything added so far (dynamic session)
+                FwpmEngineClose0(engine);
                 return false;
             }
         }
     }
 
     /// <summary>
-    /// Removes all kill-switch filters by closing the dynamic session. Idempotent and thread-safe.
+    /// Removes all kill-switch filters.
     /// </summary>
     public void Disable()
     {
@@ -169,7 +143,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
     public void Dispose()
     {
         Disable();
@@ -211,10 +185,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
     }
 
-    // Permits all traffic from a specific executable (matched by Windows app-id) as a hard permit
-    // (CLEAR_ACTION_RIGHT) so the encrypted underlay to the server survives even if another sublayer would
-    // block it. Returns false (without throwing) when the app-id cannot be resolved, so a best-effort
-    // underlay permit does not abort the whole kill-switch.
+    // Hard permit (CLEAR_ACTION_RIGHT) so the underlay survives other sublayers.
     private bool PermitExe(IntPtr engine, string path, string label)
     {
         var rc = FwpmGetAppIdFromFileName0(path, out var appId);
@@ -294,18 +265,13 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private void PermitLan(IntPtr engine, IReadOnlyList<string> extraCidrs)
     {
-        // Infrastructure ranges (link-local / multicast / broadcast) are always permitted - not user-
-        // controllable bypass, but mDNS/SSDP/LLMNR and broadcast must survive the kill-switch regardless.
+        // Infrastructure ranges always permitted.
         foreach (var cidr in LanInfraCidrsV4)
         {
             PermitV4Cidr(engine, cidr);
         }
 
-        // The bypass CIDRs (the runtime default set - RFC1918 ranges + connected subnets - when the config
-        // has no exclusions row, otherwise the user's saved list); without the permit the block-all severs
-        // them despite their exclusion route. A single malformed entry must NEVER abort arming the kill-switch
-        // - that would leave the full tunnel with no firewall at all (no block-all, no QUIC block) and a leak
-        // on drop. PermitV4Cidr validates and skips invalid/v6 CIDRs; the try/catch is belt-and-suspenders.
+        // A malformed entry skips, never aborts arming.
         foreach (var cidr in extraCidrs)
         {
             try
@@ -364,9 +330,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     Condition(CondIpRemoteAddress, MatchEqual, FwpV6AddrMask, (ulong)maskPtr),
                 };
 
-                // Best-effort: a v6 permit failure must NOT abort arming the (v4) kill-switch, so use
-                // AddRaw + log instead of Add (which throws). The engine copies the condition synchronously,
-                // so maskPtr is freed once the calls return.
+                // Best-effort: v6 permit failure must not abort the v4 kill-switch.
                 var rcOut = AddRaw(engine, LayerAleAuthConnectV6, WeightLan, ActionPermit, 0, cond, $"Permit LAN v6 {cidr} (out)");
                 var rcIn = AddRaw(engine, LayerAleAuthRecvAcceptV6, WeightLan, ActionPermit, 0, cond, $"Permit LAN v6 {cidr} (in)");
                 if (rcOut != 0 || rcIn != 0)
@@ -401,9 +365,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private void BlockTunnelQuic(IntPtr engine, ulong luid)
     {
-        // Match: traffic egressing the tunnel adapter AND UDP AND remote port 443 (= QUIC / HTTP-3).
-        // Different field keys are AND-ed, so this is exactly "QUIC over the tunnel". IPv4 only - this is
-        // a v4-only tunnel and AAAA is denied at the proxy, so there is no v6 QUIC to route.
+        // Block QUIC (UDP/443) egressing the tunnel; v4 only (AAAA denied at proxy).
         var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
         try
         {
@@ -425,11 +387,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private void BlockAll(IntPtr engine)
     {
-        // Zero-condition terminating block at the lowest weight on all four ALE layers; every permit
-        // above outranks it. This also blocks ALL IPv6 (we add no NDP/DHCPv6/LAN-v6 carve-outs, unlike
-        // the reference): intentional on these IPv4-only tunnels where AAAA is denied and v6 has no
-        // transit, so a fully-blocked v6 stack just prevents leaks. (IPv4 LAN/ARP is layer 2 and
-        // unaffected; the v4 LAN bypass keeps host/Hyper-V SSH alive.)
+        // Block-all at lowest weight; also blocks all v6 intentionally (v4-only tunnel).
         foreach (var layer in AleLayers)
         {
             Add(engine, layer, WeightBlock, ActionBlock, 0, [], "Block all");
@@ -448,9 +406,6 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         };
     }
 
-    /// <summary>
-    /// Adds one filter and throws on failure.
-    /// </summary>
     private void Add(IntPtr engine, Guid layer, byte weight, uint actionType, uint flags, FWPM_FILTER_CONDITION0[] conditions, string name)
     {
         var rc = AddRaw(engine, layer, weight, actionType, flags, conditions, name);
@@ -460,10 +415,6 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
     }
 
-    /// <summary>
-    /// Adds one filter, returning the raw status (0 = success). The engine copies all referenced data,
-    /// so the marshalled conditions/name are freed once the call returns.
-    /// </summary>
     private uint AddRaw(IntPtr engine, Guid layer, byte weight, uint actionType, uint flags, FWPM_FILTER_CONDITION0[] conditions, string name)
     {
         var namePtr = Marshal.StringToHGlobalUni(name);
@@ -505,13 +456,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
     }
 
-    /// <summary>
-    /// Parses an IPv4 CIDR into host-order address and mask DWORDs (the byte order WFP's
-    /// FWP_V4_ADDR_AND_MASK expects).
-    /// </summary>
-    // Parses "a.b.c.d/n" into a network address + mask. Returns false (no throw) for a non-IPv4 address
-    // or an out-of-range/non-numeric prefix, so a malformed user CIDR is skipped rather than aborting the
-    // whole kill-switch. The 0..32 bound also avoids a negative C# shift count yielding a bogus mask.
+    // Malformed CIDR returns false (skipped, not aborted).
     private static bool TryParseV4Cidr(string cidr, out uint addr, out uint mask)
     {
         addr = 0;
@@ -652,9 +597,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         public ushort weight;
     }
 
-    // Explicit layout mirrors FWPM_FILTER0 exactly (x64, 200 bytes) - see amneziawg-windows
-    // tunnel/firewall/types_windows_64.go. The 4-byte gap before providerContextKey is the union
-    // { UINT64 rawContext; GUID providerContextKey } 8-byte alignment.
+    // Explicit layout mirrors FWPM_FILTER0 (x64, 200 bytes); 4-byte gap before providerContextKey is the union 8-byte alignment.
     [StructLayout(LayoutKind.Explicit, Size = 200)]
     private struct FWPM_FILTER0
     {

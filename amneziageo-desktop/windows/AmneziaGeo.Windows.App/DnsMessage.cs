@@ -38,8 +38,7 @@ internal static class DnsMessage
     }
 
     /// <summary>
-    /// Builds a minimal DNS A/AAAA query for <paramref name="name"/> (recursion desired), big-endian wire
-    /// format. Used to proactively resolve rule domains through the tunnel resolver.
+    /// Builds a minimal DNS A/AAAA query (recursion desired), big-endian wire format.
     /// </summary>
     public static byte[] BuildQuery(string name, int type)
     {
@@ -71,7 +70,6 @@ internal static class DnsMessage
 
     /// <summary>
     /// Builds an empty NOERROR/NODATA response for a query (header + question only, no answers).
-    /// Used to deny AAAA on an IPv4-only tunnel so clients never attempt dead IPv6 addresses.
     /// </summary>
     public static byte[] BuildNoData(byte[] query)
     {

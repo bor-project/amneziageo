@@ -7,11 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// The per-config bypass-exclusions editor shown on a profile's Маршрутизация aspect: the manual list
-/// (domains kept on the local resolver, IP/CIDR routed direct), saved through the agent
-/// (set-config-exclusions). Moved here from the former global settings so each profile carries its own.
-/// The former auto-exclude-LAN flag is replaced by an explicit "add local subnets" action that fetches the
-/// machine's connected subnets and merges them into the visible list. Applies on the next connect.
+/// The per-config bypass-exclusions editor: the manual list (domains kept on the local resolver, IP/CIDR routed direct), saved through the agent. An "add local subnets" action fetches the machine's connected subnets and merges them into the visible list. Applies on the next connect.
 /// </summary>
 internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
 {
@@ -36,7 +32,9 @@ internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
         _exclusions = exclusions;
     }
 
-    /// <summary>The configuration name being edited.</summary>
+    /// <summary>
+    /// The configuration name being edited.
+    /// </summary>
     public string ConfigName { get; }
 
     /// <summary>
@@ -59,9 +57,7 @@ internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Fetches the machine's currently-connected local subnets from the agent and merges them into the list
-    /// (no duplicates). The user reviews the result and presses «Сохранить» to persist - nothing is saved
-    /// here, so the addition stays visible and editable first.
+    /// Fetches the machine's currently-connected local subnets from the agent and merges them into the list (no duplicates). Nothing is saved here; the user reviews and persists.
     /// </summary>
     [RelayCommand]
     private async Task AddLocalSubnetsAsync()
@@ -79,8 +75,7 @@ internal sealed partial class ConfigExclusionsViewModel : ViewModelBase
             var subnets = ack.Message
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-            // Merge into the current list, preserving its existing lines and appending only subnets not
-            // already present (case-insensitive).
+            // Merge new subnets into the list.
             var lines = (Exclusions ?? string.Empty)
                 .Replace("\r\n", "\n", StringComparison.Ordinal)
                 .Split('\n')

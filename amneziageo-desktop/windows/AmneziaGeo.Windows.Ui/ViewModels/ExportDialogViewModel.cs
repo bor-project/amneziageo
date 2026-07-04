@@ -8,8 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// View model for the export dialog: fetches a config's wg-quick text from the agent and renders it as
-/// raw <c>.conf</c> or an Amnezia <c>vpn://</c> link, with a matching QR code, for copy / save.
+/// View model for the export dialog: fetches a config's wg-quick text from the agent and renders it as raw .conf or an Amnezia vpn:// link, with a matching QR code, for copy / save.
 /// </summary>
 internal sealed partial class ExportDialogViewModel : ViewModelBase
 {
@@ -37,8 +36,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private bool _isReady;
 
-    // Inline editing of the .conf text: the payload box is read-only until "Изменить" unlocks it. Editing
-    // applies to the raw config form (not the vpn:// link), and "Сохранить" persists it in place.
+    // Inline editing of the .conf text; "Сохранить" persists in place.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowQr))]
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
@@ -53,28 +51,39 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
         ConfigName = name;
     }
 
-    /// <summary>The config being exported.</summary>
+    /// <summary>
+    /// The config being exported.
+    /// </summary>
     public string ConfigName { get; }
 
-    /// <summary>Whether the raw .conf form is selected.</summary>
+    /// <summary>
+    /// Whether the raw .conf form is selected.
+    /// </summary>
     public bool IsConf => !AsLink;
 
-    /// <summary>Whether the vpn:// link form is selected.</summary>
+    /// <summary>
+    /// Whether the vpn:// link form is selected.
+    /// </summary>
     public bool IsLink => AsLink;
 
-    /// <summary>Whether a QR code was rendered for the current payload.</summary>
+    /// <summary>
+    /// Whether a QR code was rendered for the current payload.
+    /// </summary>
     public bool HasQr => QrImage is not null;
 
-    /// <summary>Whether the QR is shown: a QR exists and the text is not being edited.</summary>
+    /// <summary>
+    /// Whether the QR is shown: a QR exists and the text is not being edited.
+    /// </summary>
     public bool ShowQr => QrImage is not null && !IsEditing;
 
     /// <summary>
-    /// Whether the payload is loaded but no QR could be produced (the config is too large to encode) and we
-    /// are not editing - the UI shows a "doesn't fit in a QR" notice in the QR's place.
+    /// Whether the payload is loaded but no QR could be produced (the config is too large to encode) and we are not editing.
     /// </summary>
     public bool QrUnavailable => IsReady && !IsEditing && QrImage is null;
 
-    /// <summary>A suggested file name for the current form.</summary>
+    /// <summary>
+    /// A suggested file name for the current form.
+    /// </summary>
     public string SuggestedFileName => AsLink ? $"{ConfigName}.vpn.txt" : $"{ConfigName}.conf";
 
     /// <summary>
@@ -114,8 +123,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
         }
         catch (Exception)
         {
-            // Too large to encode as a QR. Leave the status line clean - the QrUnavailable notice in the
-            // QR's place tells the user the config doesn't fit and to use a file or the vpn:// link.
+            // Too large to encode as a QR.
             QrImage = null;
             StatusMessage = string.Empty;
         }
@@ -133,8 +141,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
         AsLink = true;
     }
 
-    // "Изменить": unlock the text for editing. Force the raw .conf form first - editing applies to the
-    // config text, not the vpn:// link.
+    // "Изменить": unlock the .conf text for editing.
     [RelayCommand]
     private void BeginEdit()
     {

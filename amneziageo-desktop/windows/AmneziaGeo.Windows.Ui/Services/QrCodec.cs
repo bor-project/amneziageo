@@ -10,13 +10,12 @@ using ZXing.Common;
 namespace AmneziaGeo.Windows.Ui.Services;
 
 /// <summary>
-/// QR generation (QRCoder) and decoding (ZXing.Net) without a System.Drawing dependency: QRCoder emits
-/// PNG bytes that Avalonia decodes, and ZXing reads the raw BGRA pixels of an Avalonia bitmap.
+/// QR generation and decoding without a System.Drawing dependency.
 /// </summary>
 internal static class QrCodec
 {
     /// <summary>
-    /// Renders <paramref name="text"/> as a QR-code bitmap.
+    /// Renders text as a QR-code bitmap.
     /// </summary>
     public static Bitmap Generate(string text, int pixelsPerModule = 8)
     {

@@ -29,8 +29,7 @@
       <Button Classes="softbtn" Content="{l:Tr BundleImport_CloseButton}" Click="OnClose" IsDefault="True" />
     </StackPanel>
 
-    <!-- Muted, not error-tinted: unlike the other small dialogs' StatusMessage (error-only there), this one
-         also carries the success summary ("Импортировано: …") - painting that red would read as a failure. -->
+    <!-- Muted: carries both success summary and error messages. -->
     <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                TextWrapping="Wrap" Margin="0,10,0,0" />
 

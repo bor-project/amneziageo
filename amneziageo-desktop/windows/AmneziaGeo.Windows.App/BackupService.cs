@@ -22,8 +22,6 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
         {
             await store.BackupToAsync(snapshot);
 
-            // Configs live in the database now, so the snapshot already contains them - the archive is just
-            // the database plus a manifest. A plain copy of state.db is itself a complete backup.
             var configs = await store.ListConfigNamesAsync();
             if (File.Exists(path))
             {
@@ -130,8 +128,7 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
                 zip.GetEntry("state.db")?.ExtractToFile(dbPath, overwrite: true);
 
-                // New backups carry configs inside state.db. Older archives kept them as Configurations\*.conf
-                // entries; still extract those so the startup migration can absorb them into the configs table.
+                // Legacy archives kept configs as Configurations\*.conf; extract so the startup migration absorbs them.
                 Directory.CreateDirectory(configsDir);
                 foreach (var entry in zip.Entries)
                 {

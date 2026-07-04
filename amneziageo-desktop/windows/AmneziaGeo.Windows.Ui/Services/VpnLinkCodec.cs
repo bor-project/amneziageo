@@ -8,22 +8,20 @@ using System.Text.Json;
 namespace AmneziaGeo.Windows.Ui.Services;
 
 /// <summary>
-/// Converts between a wg-quick <c>.conf</c> (what this app stores) and Amnezia's <c>vpn://</c> share
-/// link, so configs interoperate with the official Amnezia app. The link is
-/// <c>vpn://</c> + url-safe-base64 (no padding) of Qt <c>qCompress</c> output (4-byte big-endian length
-/// prefix + a zlib stream) of an indented JSON document; the AmneziaWG config text lives at
-/// <c>containers[0].awg.last_config.config</c> (last_config is itself a JSON string).
+/// Converts between a wg-quick .conf and an Amnezia vpn:// share link.
 /// </summary>
 internal static class VpnLinkCodec
 {
     private const string _scheme = "vpn://";
     private const short _qrMagic = 1984;
 
-    /// <summary>The result of a successful import: the wg-quick text and an optional suggested name.</summary>
+    /// <summary>
+    /// Result of a successful import.
+    /// </summary>
     public sealed record Imported(string ConfText, string? Name);
 
     /// <summary>
-    /// Builds an Amnezia <c>vpn://</c> link from a wg-quick config so the official app can import it.
+    /// Builds an Amnezia vpn:// link from a wg-quick config.
     /// </summary>
     public static string Encode(string confText, string? name)
     {
@@ -61,8 +59,7 @@ internal static class VpnLinkCodec
     }
 
     /// <summary>
-    /// Parses a pasted/loaded string into a wg-quick config: accepts a raw <c>.conf</c>, an Amnezia
-    /// <c>vpn://</c> link, or a bare Amnezia JSON document. Returns null if it is none of these.
+    /// Parses a pasted/loaded string into a wg-quick config.
     /// </summary>
     public static Imported? TryDecode(string input)
     {
@@ -82,7 +79,7 @@ internal static class VpnLinkCodec
             text = text[_scheme.Length..].Trim();
         }
 
-        // vpn:// payload (or a bare base64 blob): base64url -> qUncompress (or raw) -> JSON.
+        // vpn:// payload or a bare base64 blob.
         var bytes = TryBase64UrlDecode(text);
         if (bytes is not null)
         {
@@ -94,7 +91,7 @@ internal static class VpnLinkCodec
             }
         }
 
-        // A bare JSON document pasted directly.
+        // Bare JSON document.
         if (text.StartsWith('{'))
         {
             return TryParseAmneziaJson(text);
@@ -104,8 +101,7 @@ internal static class VpnLinkCodec
     }
 
     /// <summary>
-    /// Parses the text scanned from a QR. Handles a plain <c>vpn://</c>/<c>.conf</c> QR and Amnezia's
-    /// chunked QR wrapper (magic 1984 + chunk header); a single config fits one chunk.
+    /// Parses text scanned from a QR.
     /// </summary>
     public static Imported? TryDecodeQr(string qrText)
     {
@@ -120,7 +116,7 @@ internal static class VpnLinkCodec
             return TryDecode(text);
         }
 
-        // Amnezia chunk wrapper: base64url( [2 BE magic][1 count][1 id][4 BE len][payload] ).
+        // Amnezia chunk wrapper.
         var bytes = TryBase64UrlDecode(text);
         if (bytes is { Length: >= 8 } && (short)((bytes[0] << 8) | bytes[1]) == _qrMagic)
         {
@@ -134,7 +130,7 @@ internal static class VpnLinkCodec
                 return TryParseAmneziaJson(json);
             }
 
-            // Multi-chunk QR (rare for a single config) needs several frames assembled - not supported here.
+            // Multi-chunk QR is not supported.
             return null;
         }
 

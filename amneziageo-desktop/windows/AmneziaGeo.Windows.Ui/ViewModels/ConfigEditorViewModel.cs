@@ -7,9 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// View model for the manual config editor dialog. In "new" mode it is a comfortable text surface whose
-/// text the caller imports through the normal add flow; in "edit" mode it loads an existing config's
-/// wg-quick text and overwrites it in place (edit-config) on save, preserving memberships/geo/routing.
+/// View model for the manual config editor dialog. "new" mode: the caller imports the text through the normal add flow; "edit" mode: loads an existing config's wg-quick text and overwrites it in place on save.
 /// </summary>
 internal sealed partial class ConfigEditorViewModel : ViewModelBase
 {
@@ -24,25 +22,35 @@ internal sealed partial class ConfigEditorViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBusy;
 
-    /// <summary>ctor for a new manual config (no persistence; the caller imports the returned text).</summary>
+    /// <summary>
+    /// ctor
+    /// </summary>
     public ConfigEditorViewModel()
     {
     }
 
-    /// <summary>ctor for editing an existing config in place (loaded via LoadAsync, saved via edit-config).</summary>
+    /// <summary>
+    /// ctor
+    /// </summary>
     public ConfigEditorViewModel(AgentConnection connection, string editName)
     {
         _connection = connection;
         EditName = editName;
     }
 
-    /// <summary>The config being edited, or null when composing a brand-new one.</summary>
+    /// <summary>
+    /// The config being edited, or null when composing a brand-new one.
+    /// </summary>
     public string? EditName { get; }
 
-    /// <summary>Whether this is a fresh manual config rather than an edit of an existing one.</summary>
+    /// <summary>
+    /// Whether this is a fresh manual config rather than an edit of an existing one.
+    /// </summary>
     public bool IsNew => EditName is null;
 
-    /// <summary>Dialog title.</summary>
+    /// <summary>
+    /// Dialog title.
+    /// </summary>
     public string Title => IsNew ? Loc.Instance.Get("ConfigEditorVm_TitleNew") : Loc.Instance.Get("ConfigEditorVm_TitleEdit", EditName);
 
     /// <summary>

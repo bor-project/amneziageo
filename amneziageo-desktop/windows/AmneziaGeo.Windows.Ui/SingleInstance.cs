@@ -8,14 +8,12 @@ namespace AmneziaGeo.Windows.Ui;
 
 /// <summary>
 /// Restricts the desktop UI to a single running instance per interactive session. The first instance owns
-/// a named mutex and listens on a named event; a later launch signals that event - bringing the existing
-/// window to the front - and exits without opening a second window.
+/// a named mutex and listens on a named event; a later launch signals that event and exits.
 /// </summary>
 internal static class SingleInstance
 {
-    // Per-session (Local\) names: one UI per user session, which is what the user sees. A Global\ name
-    // would also block a second logged-in user on the same machine, which is not the intent. Each handle is
-    // held in a static field for the whole process lifetime so the GC cannot collect it and drop the lock.
+    // Per-session (Local\) names: one UI per user session. Handles held in static fields for the whole
+    // process lifetime so the GC cannot collect them and drop the lock.
     private const string MutexName = @"Local\AmneziaGeo.Ui.SingleInstance";
     private const string ActivateEventName = @"Local\AmneziaGeo.Ui.Activate";
 
@@ -24,8 +22,8 @@ internal static class SingleInstance
     private static RegisteredWaitHandle? _registration;
 
     /// <summary>
-    /// Returns true when this is the only instance and the caller should continue starting. Returns false
-    /// when another instance already runs - it has been asked to surface its window and the caller must exit.
+    /// Returns true when this is the only instance and the caller should continue starting. Returns
+    /// false when another instance already runs and has been asked to surface its window.
     /// </summary>
     public static bool TryAcquire()
     {
@@ -40,11 +38,10 @@ internal static class SingleInstance
         return true;
     }
 
-    // Another instance owns the mutex: nudge it to the foreground (best effort), then let the caller exit.
+    // Another instance owns the mutex: nudge it to the foreground, then exit.
     private static void SignalExistingInstance()
     {
-        // TryOpenExisting is annotated Windows-only; this app only runs on Windows, but the Ui project
-        // targets plain net10.0 (Avalonia is cross-platform), so guard it to satisfy the platform analyzer.
+        // Guard to satisfy the platform analyzer (TryOpenExisting is Windows-only).
         if (!OperatingSystem.IsWindows())
         {
             return;
@@ -62,11 +59,11 @@ internal static class SingleInstance
         }
         catch
         {
-            // Best effort: even if we cannot signal the first instance, we must still not open a window.
+            // Best effort: do not open a window even if signalling fails.
         }
     }
 
-    // Owning instance: listen for a later launch's activation signal so the main window can be raised.
+    // Owning instance: listen for a later launch's activation signal.
     private static void StartListening()
     {
         _activate = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
@@ -93,8 +90,7 @@ internal static class SingleInstance
 
         window.Show();
         window.Activate();
-        // A brief Topmost flip is the reliable way to pull a window above the foreground app without keeping
-        // it pinned on top.
+        // Brief Topmost flip to pull the window above the foreground app.
         window.Topmost = true;
         window.Topmost = false;
     }

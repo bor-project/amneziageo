@@ -3,7 +3,9 @@ using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Installer;
 
-/// <summary>The phase of the installer session.</summary>
+/// <summary>
+/// Installer session phase.
+/// </summary>
 public enum Phase
 {
     Detecting,
@@ -12,7 +14,9 @@ public enum Phase
     Done,
 }
 
-/// <summary>What the engine found already on the machine.</summary>
+/// <summary>
+/// Detected install state on the machine.
+/// </summary>
 public enum InstallState
 {
     Unknown,
@@ -21,7 +25,9 @@ public enum InstallState
     NewerInstalled,
 }
 
-/// <summary>The maintenance action the user picked; mapped to a Burn LaunchAction by the BA.</summary>
+/// <summary>
+/// Maintenance action chosen by the user.
+/// </summary>
 public enum InstallerAction
 {
     Install,
@@ -31,9 +37,7 @@ public enum InstallerAction
 }
 
 /// <summary>
-/// Drives the installer window. UI-only: it knows nothing about Burn - the BA injects an
-/// <c>invoke</c> callback (run a maintenance action) and a <c>close</c> callback, and pushes
-/// detection / progress / result back in via the Set* / Report* methods (always on the UI thread).
+/// Installer window view model.
 /// </summary>
 public sealed class InstallerViewModel : ObservableObject
 {
@@ -55,13 +59,14 @@ public sealed class InstallerViewModel : ObservableObject
     private string _seedDbPath = string.Empty;
     private InstallerAction? _pendingAction;
 
+    /// <summary>
+    /// ctor
+    /// </summary>
     public InstallerViewModel(Action<InstallerAction> invoke, Action close)
     {
         _invoke = invoke;
         _close = close;
 
-        // The mode buttons stage an action, opening the options step; Confirm applies it and Back returns to
-        // the action buttons (#114). The action itself is dispatched (to Burn) only on Confirm.
         InstallCommand = new RelayCommand(() => PendingAction = InstallerAction.Install);
         UpdateCommand = new RelayCommand(() => PendingAction = InstallerAction.Update);
         RepairCommand = new RelayCommand(() => PendingAction = InstallerAction.Repair);
@@ -86,10 +91,14 @@ public sealed class InstallerViewModel : ObservableObject
 
     public ICommand RemoveCommand { get; }
 
-    /// <summary>Applies the staged action (starts the Burn plan/apply) from the options step (#114).</summary>
+    /// <summary>
+    /// Applies the staged action from the options step.
+    /// </summary>
     public ICommand ConfirmCommand { get; }
 
-    /// <summary>Returns from the options step to the action buttons without applying (#114).</summary>
+    /// <summary>
+    /// Returns from the options step to the action buttons.
+    /// </summary>
     public ICommand BackCommand { get; }
 
     public ICommand CloseCommand { get; }
@@ -141,8 +150,9 @@ public sealed class InstallerViewModel : ObservableObject
 
     public string InstallButtonText => State == InstallState.NewerInstalled ? Loc.Instance.Get("InstallerVm_InstallDowngrade") : Loc.Instance.Get("InstallerVm_Install");
 
-    /// <summary>The action currently being configured on the options step; null while the action buttons
-    /// (step 1) are shown (#114).</summary>
+    /// <summary>
+    /// Action being configured on the options step, or null on the action buttons step.
+    /// </summary>
     public InstallerAction? PendingAction
     {
         get => _pendingAction;
@@ -150,9 +160,6 @@ public sealed class InstallerViewModel : ObservableObject
         {
             if (Set(ref _pendingAction, value))
             {
-                // Entering a step: the destructive wipe toggle always starts unchecked, so a choice made on a
-                // previous action's step (then «Назад») never carries over to a different action - e.g. ticking
-                // «Удалить конфигурацию и кэш» for Remove must not pre-check «Сбросить настройки» on Update (#114).
                 if (value is not null)
                 {
                     DeleteConfig = false;
@@ -164,23 +171,23 @@ public sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    /// <summary>Ready phase, step 1: the maintenance action buttons (no action staged yet).</summary>
+    /// <summary>
+    /// Show the maintenance action buttons step.
+    /// </summary>
     public bool ShowActionButtons => Phase == Phase.Ready && _pendingAction is null;
 
-    /// <summary>Ready phase, step 2: options + confirm/back for the staged action (#114).</summary>
+    /// <summary>
+    /// Show the options step for the staged action.
+    /// </summary>
     public bool ShowOptionsStep => Phase == Phase.Ready && _pendingAction is not null;
 
-    /// <summary>Whether the staged action installs/keeps the product (so it offers config + geo options), as
-    /// opposed to Remove (which offers only the delete-config toggle).</summary>
     private bool IsApplyAction => _pendingAction is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair;
 
-    /// <summary>The only maintenance action available for the current state, or null when there is a choice. A
-    /// machine with nothing installed can only be installed, so its single-button first step is skipped and
-    /// the options step opens straight away (#114).</summary>
     private InstallerAction? SoleAction => State == InstallState.NotInstalled ? InstallerAction.Install : null;
 
-    /// <summary>Show «Назад» only when there was a choice to return to - i.e. the options step was reached by
-    /// picking an action, not auto-opened for a sole action (#114).</summary>
+    /// <summary>
+    /// Show Back only when there was a choice to return to.
+    /// </summary>
     public bool ShowBack => ShowOptionsStep && SoleAction is null;
 
     public bool ShowInstall => ShowActionButtons && (State == InstallState.NotInstalled || State == InstallState.NewerInstalled);
@@ -197,7 +204,9 @@ public sealed class InstallerViewModel : ObservableObject
 
     public bool DoneSucceeded => _success;
 
-    /// <summary>Whether to download the geo lists after install (checkbox, install/update only).</summary>
+    /// <summary>
+    /// Whether to download the geo lists after install.
+    /// </summary>
     public bool DownloadLists
     {
         get => _downloadLists;
@@ -206,26 +215,30 @@ public sealed class InstallerViewModel : ObservableObject
 
     public bool ShowDownloadOption => ShowOptionsStep && IsApplyAction;
 
-    /// <summary>Whether to wipe the runtime configuration (ProgramData\AmneziaGeo: profiles, settings, caches,
-    /// geo bases). On install/update/repair this is «Сбросить настройки» (start fresh); on removal it is
-    /// «Удалить конфигурацию и кэш». Off by default so a plain (re)install keeps the user's data (#105/#114).</summary>
+    /// <summary>
+    /// Whether to wipe the runtime configuration.
+    /// </summary>
     public bool DeleteConfig
     {
         get => _deleteConfig;
         set => Set(ref _deleteConfig, value);
     }
 
-    /// <summary>The wipe toggle is offered on every action's options step; its label is contextual
-    /// (<see cref="DeleteConfigLabel"/>).</summary>
+    /// <summary>
+    /// Show the wipe toggle on the options step.
+    /// </summary>
     public bool ShowDeleteConfigOption => ShowOptionsStep;
 
-    /// <summary>Contextual label for the wipe toggle: «Сбросить настройки» on install/update/repair,
-    /// «Удалить конфигурацию и кэш» on removal (#114).</summary>
+    /// <summary>
+    /// Contextual label for the wipe toggle.
+    /// </summary>
     public string DeleteConfigLabel => _pendingAction == InstallerAction.Remove
         ? Loc.Instance.Get("InstallerVm_DeleteConfigAndCache")
         : Loc.Instance.Get("InstallerVm_ResetSettings");
 
-    /// <summary>Heading on the options step, naming the staged action (#114).</summary>
+    /// <summary>
+    /// Heading on the options step.
+    /// </summary>
     public string OptionsHeading => _pendingAction switch
     {
         InstallerAction.Update => Loc.Instance.Get("InstallerVm_OptionsUpdate"),
@@ -234,17 +247,23 @@ public sealed class InstallerViewModel : ObservableObject
         _ => Loc.Instance.Get("InstallerVm_OptionsInstall"),
     };
 
-    /// <summary>Whether to launch AmneziaGeo.UI after the installer closes (checkbox on the done screen).</summary>
+    /// <summary>
+    /// Whether to launch the UI after the installer closes.
+    /// </summary>
     public bool LaunchOnClose
     {
         get => _launchOnClose;
         set => Set(ref _launchOnClose, value);
     }
 
-    /// <summary>Show the launch checkbox only after a successful install or update.</summary>
+    /// <summary>
+    /// Show the launch checkbox after a successful install or update.
+    /// </summary>
     public bool ShowLaunchOption => Phase == Phase.Done && _success && _action is InstallerAction.Install or InstallerAction.Update;
 
-    /// <summary>True while the list download runs (no percentage available) - spins the progress bar.</summary>
+    /// <summary>
+    /// True while the list download runs with no percentage.
+    /// </summary>
     public bool IsIndeterminate
     {
         get => _indeterminate;
@@ -259,7 +278,9 @@ public sealed class InstallerViewModel : ObservableObject
 
     public bool ShowPercent => !IsIndeterminate;
 
-    /// <summary>The geo-list download outcome, shown as a second line on the final screen.</summary>
+    /// <summary>
+    /// Geo-list download outcome shown on the final screen.
+    /// </summary>
     public string GeoResult
     {
         get => _geoResult;
@@ -274,7 +295,9 @@ public sealed class InstallerViewModel : ObservableObject
 
     public bool HasGeoResult => !string.IsNullOrEmpty(GeoResult);
 
-    /// <summary>Called once detection completes; sets the state and a human description.</summary>
+    /// <summary>
+    /// Apply detection result to the view state.
+    /// </summary>
     public void SetDetected(InstallState state, string? installedVersion)
     {
         State = state;
@@ -288,15 +311,15 @@ public sealed class InstallerViewModel : ObservableObject
         };
         Phase = Phase.Ready;
 
-        // If installing is the only thing this machine can do (nothing is installed), skip the single-button
-        // action step and open its options straight away (#114).
         if (SoleAction is { } sole)
         {
             PendingAction = sole;
         }
     }
 
-    /// <summary>Switch the window to the live-progress view.</summary>
+    /// <summary>
+    /// Switch to the live-progress view.
+    /// </summary>
     public void BeginApply(InstallerAction action)
     {
         _action = action;
@@ -320,16 +343,18 @@ public sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    /// <summary>Switches the window to the indeterminate "checking for base updates" view (update/repair
-    /// only - runs before deciding whether a download is needed).</summary>
+    /// <summary>
+    /// Switch to the checking-for-updates view.
+    /// </summary>
     public void BeginGeoCheck()
     {
         SubText = Loc.Instance.Get("InstallerVm_CheckingGeoUpdates");
         IsIndeterminate = true;
     }
 
-    /// <summary>Switches the window to the "downloading lists" view (after the MSI step). Starts
-    /// indeterminate (a spinner) until the first real percentage arrives via <see cref="ReportGeoProgress"/>.</summary>
+    /// <summary>
+    /// Switch to the downloading-lists view.
+    /// </summary>
     public void BeginGeoDownload()
     {
         SubText = Loc.Instance.Get("InstallerVm_DownloadingGeo");
@@ -337,7 +362,9 @@ public sealed class InstallerViewModel : ObservableObject
         IsIndeterminate = true;
     }
 
-    /// <summary>Reports geo-list download progress, flipping the spinner to a determinate percentage.</summary>
+    /// <summary>
+    /// Report geo-list download progress.
+    /// </summary>
     public void ReportGeoProgress(int percent)
     {
         if (percent is >= 0 and <= 100)
@@ -347,7 +374,9 @@ public sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    /// <summary>Called once apply finishes; shows the result.</summary>
+    /// <summary>
+    /// Show the apply result.
+    /// </summary>
     public void Complete(bool success, string message)
     {
         _success = success;
@@ -358,18 +387,23 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowLaunchOption));
     }
 
-    /// <summary>Finishes with the MSI result plus a second line carrying the geo-download outcome.</summary>
+    /// <summary>
+    /// Finish with the MSI result and the geo-download outcome.
+    /// </summary>
     public void CompleteWithGeo(string message, string geoResult)
     {
         GeoResult = geoResult;
         Complete(true, message);
     }
 
-    /// <summary>Opens a file picker for a default-settings database (#55); the BA writes the chosen path
-    /// into the bundle's SEEDDBPATH variable before planning.</summary>
+    /// <summary>
+    /// Open a file picker for a default-settings database.
+    /// </summary>
     public ICommand PickSeedDbCommand { get; }
 
-    /// <summary>The user-selected default-settings DB path (empty = none), read by the BA on install.</summary>
+    /// <summary>
+    /// User-selected default-settings DB path.
+    /// </summary>
     public string SeedDbPath
     {
         get => _seedDbPath;
@@ -382,13 +416,16 @@ public sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    /// <summary>Caption next to the picker: the chosen file name, or a "none selected" hint.</summary>
+    /// <summary>
+    /// Caption next to the picker.
+    /// </summary>
     public string SeedDbLabel => string.IsNullOrEmpty(SeedDbPath)
         ? Loc.Instance.Get("InstallerVm_SeedDbNone")
         : Loc.Instance.Get("InstallerVm_SeedDbSelected", System.IO.Path.GetFileName(SeedDbPath));
 
-    /// <summary>Whether to offer the default-settings-DB picker: on the options step for install / update /
-    /// repair (like the geo option), never for removal.</summary>
+    /// <summary>
+    /// Show the default-settings-DB picker on the options step.
+    /// </summary>
     public bool ShowSeedDbOption => ShowOptionsStep && IsApplyAction;
 
     private void PickSeedDb()

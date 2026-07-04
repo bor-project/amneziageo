@@ -8,10 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// View model for the selective bundle import dialog (#91): the user pastes or loads a bundle JSON (as
-/// produced by <see cref="BundleExportDialogViewModel"/>) and imports it via
-/// <see cref="IpcContract.OpImportBundle"/>. No tree preview - the agent's name-conflict policy (automatic
-/// dedup-by-rename, same as the existing single-profile import) makes one low-value.
+/// View model for the bundle import dialog.
 /// </summary>
 internal sealed partial class BundleImportDialogViewModel : ViewModelBase
 {

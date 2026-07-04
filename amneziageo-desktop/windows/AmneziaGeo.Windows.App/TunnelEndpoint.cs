@@ -31,8 +31,7 @@ internal static class TunnelEndpoint
             }
             catch (SocketException)
             {
-                // Endpoint resolution is best-effort: the exclusion route is skipped and the engine
-                // resolves the endpoint itself. A throw here would crash the whole tunnel service.
+                // Engine resolves the endpoint itself.
                 return null;
             }
 

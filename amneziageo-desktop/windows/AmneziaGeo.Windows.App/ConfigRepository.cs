@@ -3,10 +3,7 @@ using AmneziaGeo.Decl;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Manages stored tunnel configurations and their associated geo and resolution state. The wg-quick text
-/// of every configuration lives in the state database (the configs table) - the single place all
-/// configuration is kept, so a backup is just a copy of the database. There are no on-disk .conf files;
-/// the tunnel service reads a config's text straight from the database when it connects.
+/// Manages tunnel configurations stored in the state database.
 /// </summary>
 internal sealed class ConfigRepository(IStateStore store, ServiceManager serviceManager)
 {
@@ -52,7 +49,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
-    /// Imports a new configuration from raw wg-quick text (parsed UI-side from a file, link, or QR).
+    /// Imports a new configuration from raw wg-quick text.
     /// </summary>
     public async Task AddFromTextAsync(string name, string text, CancellationToken ct = default)
     {
@@ -82,8 +79,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
-    /// Overwrites an existing configuration's wg-quick text in place (manual edit). The config's profile
-    /// memberships, geo, and routing state are preserved - only its text changes.
+    /// Overwrites an existing configuration's wg-quick text in place.
     /// </summary>
     public async Task EditFromTextAsync(string name, string text, CancellationToken ct = default)
     {
@@ -125,8 +121,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
-    /// Renames a configuration: moves its stored text and carries its geo settings, transport settings,
-    /// saved resolutions, and balancer memberships over to the new name. The destination must be free.
+    /// Renames a configuration and carries its associated state to the new name.
     /// </summary>
     public async Task RenameAsync(string oldName, string newName, CancellationToken ct = default)
     {
@@ -226,10 +221,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
-    /// One-time migration: imports any legacy on-disk wg-quick files (Configurations\*.conf, from before
-    /// configs lived in the database) into the state database. The files are left in place as a safety
-    /// copy but are no longer read. Idempotent - a config already in the database is left untouched, so a
-    /// later edit in the database is never clobbered by the stale file.
+    /// Imports legacy on-disk wg-quick files into the state database.
     /// </summary>
     public async Task MigrateLegacyConfigsAsync(CancellationToken ct = default)
     {
@@ -264,8 +256,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
     private static void EnsureValidName(string name)
     {
-        // The name is the config's identity and is also used as the Windows tunnel service name, so keep
-        // the conservative filesystem-safe character guard even though configs are no longer files.
+        // Name doubles as the Windows service name, so keep it filesystem-safe.
         if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
             throw new ArgumentException($"invalid configuration name: {name}");

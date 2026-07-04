@@ -10,10 +10,7 @@ namespace AmneziaGeo.Windows.App;
 internal sealed record UpdateInfo(bool Available, string Version, string SetupUrl, string Description, bool IsDowngrade);
 
 /// <summary>
-/// Checks an HTTP-hosted update metadata file for a different application version. The metadata is a
-/// small JSON document (version / description / setup) sitting next to the installer; the setup field
-/// is resolved relative to the metadata URL. A version that merely differs (newer OR older) counts as
-/// available, since the installer permits downgrade (rollback).
+/// Checks an HTTP update metadata file for a different version.
 /// </summary>
 internal sealed class UpdateChecker(HttpClient http)
 {
@@ -48,7 +45,7 @@ internal sealed class UpdateChecker(HttpClient http)
             return (cmp != 0, cmp < 0);
         }
 
-        // Unparseable versions: treat any string difference as an available (forward) update.
+        // Treat any string difference as an update.
         return (!string.Equals(remote.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase), false);
     }
 

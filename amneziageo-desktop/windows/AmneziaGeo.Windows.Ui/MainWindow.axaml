@@ -14,28 +14,23 @@
         Foreground="{DynamicResource AgFgBrush}">
 
   <Window.Resources>
-    <!-- "sync" glyph (two circular arrows): the per-source refresh / update icon. -->
+    <!-- Refresh glyph. -->
     <StreamGeometry x:Key="AgRefreshGeometry">M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z</StreamGeometry>
-    <!-- "power" glyph (broken ring + top bar): the large connection control's centre icon. -->
+    <!-- Power glyph. -->
     <StreamGeometry x:Key="AgPowerGeometry">M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z</StreamGeometry>
-    <!-- "gear" glyph: the Settings button icon. -->
+    <!-- Gear glyph. -->
     <StreamGeometry x:Key="AgGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
-    <!-- "back" glyph (left arrow): the Settings header back-to-home control. -->
+    <!-- Back glyph. -->
     <StreamGeometry x:Key="AgBackGeometry">M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z</StreamGeometry>
   </Window.Resources>
 
   <Grid>
 
-    <!-- ===================================================================================== -->
-    <!-- HOME : no sidebar. A thin top row with a gear button at the left; a centered column with  -->
-    <!-- the big power button, the status + hint, and a profile combo beneath. Connect is gated on -->
-    <!-- a profile being selected.                                                                 -->
-    <!-- ===================================================================================== -->
+    <!-- HOME screen. -->
     <Border Classes="card" Margin="12" Padding="0" IsVisible="{Binding IsHome}">
       <DockPanel LastChildFill="True">
 
-        <!-- top row: gear (→ Settings) pinned to the left edge; title centered across the whole bar.
-             No bottom divider - it read as a stray curved line where it met the card's rounded corners. -->
+        <!-- Top row: gear pinned left, title centered. -->
         <Border DockPanel.Dock="Top" Height="48" Padding="12,0">
           <Grid>
             <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
@@ -49,7 +44,7 @@
           </Grid>
         </Border>
 
-        <!-- centered column: power button + status/hint + profile combo -->
+        <!-- Centered column: power button + status/hint + profile combo. -->
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18">
           <Button Classes="powerbig" HorizontalAlignment="Center"
                   Command="{Binding ToggleConnectionCommand}"
@@ -62,8 +57,7 @@
                        StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
               <Ellipse Width="158" Height="158" Stroke="{DynamicResource AgBorder2Brush}"
                        StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <!-- accent ring-wave overlays: light up in sequence during a transient connect (outward)
-                   / disconnect (inward); invisible (opacity 0) otherwise. r1 inner → r3 outer. -->
+              <!-- Accent ring-wave overlays during connect / disconnect. -->
               <Ellipse Classes="ring r1" Classes.waveout="{Binding IsConnectingOut}"
                        Classes.wavein="{Binding IsConnectingIn}"
                        Width="158" Height="158" Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
@@ -101,9 +95,7 @@
                        HorizontalAlignment="Center" Foreground="{Binding ConnectHintBrush}" />
           </StackPanel>
 
-          <!-- profile picker: choose which profile (config × routing pair) to dial. Connect is disabled
-               until a complete profile is chosen. The list is «— не выбрано —» then every saved profile;
-               profiles are created in the Profile settings section (the «+ Профиль» button). -->
+          <!-- Profile picker: «- не выбрано -» then saved profiles. -->
           <StackPanel HorizontalAlignment="Center" Spacing="6" Width="300" Margin="0,6,0,0">
             <ComboBox Classes="field" HorizontalAlignment="Stretch"
                       ItemsSource="{Binding ProfileOptions}"
@@ -114,11 +106,11 @@
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
-            <!-- no profiles at all: point the user to add a profile + configuration in settings (#112). -->
+            <!-- No profiles: hint to add one in settings. -->
             <TextBlock IsVisible="{Binding !HasBalancers}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
                        Text="{l:Tr Main_NoProfilesHint}" />
-            <!-- profiles exist but none usable yet (none selected / no config): ask to pick one to connect (#112). -->
+            <!-- Profiles exist but none usable: hint to pick one. -->
             <TextBlock IsVisible="{Binding ShowSelectConfigHint}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
                        Text="{l:Tr Main_HomeSelectConfigHint}" />
@@ -128,32 +120,25 @@
       </DockPanel>
     </Border>
 
-    <!-- ===================================================================================== -->
-    <!-- SETTINGS : a top header bar [logo → home | connect status/button] + a two-column          -->
-    <!-- [section rail | content]. The rail is 6 rowselect items driving SelectSettingsCommand;     -->
-    <!-- the content switches on IsSettingsXxx.                                                     -->
-    <!-- ===================================================================================== -->
+    <!-- SETTINGS screen. -->
 
-      <!-- Top header bar (SETTINGS only): back → home (left), title centered, animated connect control
-           (right). Gated on IsSettings so it never overlays the Home screen, whose own gear row + big
-           centre button own the connection there. Square bottom corners so it reads as a top bar. -->
+      <!-- Settings top header: back to home (left), title centered, connect control (right). -->
       <Border Classes="card" CornerRadius="0" Height="48" Margin="12,12,12,0" Padding="12,0"
               VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
         <Grid>
-          <!-- title centered across the whole bar -->
+          <!-- Title centered. -->
           <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
                      Foreground="{DynamicResource AgMutedBrush}" />
 
-          <!-- back → Home -->
+          <!-- Back to Home. -->
           <Button Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
                   Command="{Binding NavHomeCommand}" ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
             <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
                       Foreground="{DynamicResource AgMutedBrush}" />
           </Button>
 
-          <!-- animated connect / disconnect control: the round circle reflects connection state and an
-               accent arc spins while connecting / disconnecting (the control used here before the flat pill). -->
+          <!-- Animated connect / disconnect control. -->
           <Button Classes="powerctl" HorizontalAlignment="Right" VerticalAlignment="Center"
                   MinWidth="150" HorizontalContentAlignment="Left"
                   Command="{Binding ToggleConnectionCommand}"
@@ -175,8 +160,7 @@
                             HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
               </Panel>
-              <!-- short status only (e.g. «Отключено»); the full hint lives on the Home screen, so the
-                   control stays compact and never stretches to the length of a sentence. -->
+              <!-- Short status only. -->
               <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
                          Foreground="{Binding ConnectStatusBrush}" VerticalAlignment="Center" />
             </StackPanel>
@@ -186,13 +170,13 @@
 
     <Grid IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
       <Grid.ColumnDefinitions>
-        <!-- section rail: drag-resizable via the GridSplitter, clamped so it can neither collapse nor starve the content pane -->
+        <!-- Section rail column, drag-resizable via the GridSplitter. -->
         <ColumnDefinition Width="260" MinWidth="210" MaxWidth="460" />
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
 
-      <!-- section rail -->
+      <!-- Section rail. -->
       <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
         <ScrollViewer>
           <StackPanel Margin="12,12">
@@ -313,20 +297,19 @@
           </ScrollViewer>
       </Border>
 
-      <!-- draggable divider: resize the section rail vs. the content pane (restored #50) -->
+      <!-- Draggable divider between rail and content. -->
       <GridSplitter Grid.Column="1" Grid.Row="1" Width="5"
                     ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                     Background="Transparent" Margin="0,12,0,0" />
 
-      <!-- content pane -->
+      <!-- Content pane. -->
       <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
-        <!-- the 18,16 content inset lives on the ScrollViewer padding (not the inner Grid margin) so a
-             section can bind its height to #ContentScroll.Viewport.Height and fill the pane exactly (#118). -->
+        <!-- Inset on the ScrollViewer so a section can bind its height to the viewport. -->
         <ScrollViewer x:Name="ContentScroll" Padding="18,16">
           <Grid>
 
-            <!-- ============================= PROFILE SECTION ============================= -->
+            <!-- PROFILE SECTION -->
             <StackPanel IsVisible="{Binding IsSettingsProfile}" Spacing="14">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                 <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ProfileSection}" VerticalAlignment="Center" />
@@ -334,8 +317,7 @@
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
                 </Border>
-                <!-- «+ Профиль» is disabled while the catalogue is empty (CreateProfileCommand.CanExecute =
-                     HasConfigs): a profile needs a configuration to dial (#113). -->
+                <!-- «+ Профиль» disabled when the catalogue is empty. -->
                 <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateProfileCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="+" />
@@ -344,7 +326,7 @@
                 </Button>
               </Grid>
 
-              <!-- no configurations yet: adding a profile is blocked, so explain what to do first (#113). -->
+              <!-- No configurations yet: explain what to do first. -->
               <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12.5"
                          TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"
                          Margin="0,24,0,8" MaxWidth="360"
@@ -365,12 +347,10 @@
                            Text="{l:Tr Main_NoProfilesYetHint}" />
               </StackPanel>
 
-              <!-- the open profile's editor: rename + config picker + routing picker + delete -->
+              <!-- Open profile's editor: rename + config picker + routing picker + delete. -->
               <StackPanel IsVisible="{Binding IsProfileDetail}" Spacing="16">
 
-                <!-- rename: the name auto-saves ~700ms after you pause typing (#116); there is no «Сохранить».
-                     The combo above previews the typed name live via ProfileRename (#110), so this binding
-                     stays per-keystroke and the persist is debounced in the view-model, not the binding. -->
+                <!-- Rename: auto-saves debounced; no «Сохранить». -->
                 <StackPanel Spacing="6">
                   <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
@@ -382,12 +362,10 @@
                   <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
 
-                <!-- config + routing pickers bound to the open profile (BalancerItemViewModel) -->
+                <!-- Config + routing pickers for the open profile. -->
                 <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:BalancerItemViewModel" Spacing="16">
 
-                  <!-- config picker (selection-only; the catalogue/editor lives in the Config section). The
-                       list is «— не выбрано —» then saved configs; add a config with the «+ Новая
-                       конфигурация» button in the Config section (#111). -->
+                  <!-- Config picker: «- не выбрано -» then saved configs. -->
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="{l:Tr Main_ConfigLabel}" />
                     <ComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -403,9 +381,7 @@
                                Text="{l:Tr Main_ProfileNoConfigHint}" />
                   </StackPanel>
 
-                  <!-- routing picker (selection-only; the rule editor lives in the Routing section). The None
-                       entry means «Полный туннель» (no split routing); add a list with the «+ Новый список»
-                       button in the Routing section (#111). -->
+                  <!-- Routing picker: None means «Полный туннель». -->
                   <StackPanel Spacing="6">
                     <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
                     <ComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -413,8 +389,7 @@
                               SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
                       <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:RoutingListChoice">
-                          <!-- relabel the "none" sentinel as «Полный туннель» in the profile picker; real
-                               lists keep their own names. -->
+                          <!-- Relabel the "none" sentinel as «Полный туннель». -->
                           <Panel>
                             <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
                             <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
@@ -434,7 +409,7 @@
                   </StackPanel>
                 </StackPanel>
 
-                <!-- delete -->
+                <!-- Delete. -->
                 <StackPanel Spacing="6">
                   <TextBlock Classes="label" Text="{l:Tr Main_DeletionLabel}" />
                   <Button Classes="danger" HorizontalAlignment="Left"
@@ -445,12 +420,7 @@
               </StackPanel>
             </StackPanel>
 
-            <!-- ============================= CONFIG SECTION ============================= -->
-            <!-- A Grid (not a StackPanel) so the import form's read-only config preview fills the pane height.
-                 Row 0 = section header, Row 1 = catalogue combo, Row 2 = the manage editor (open config),
-                 Row 3 (*) = the import form. Rows 2 and 3 are mutually exclusive (manage vs create), so the
-                 * row lets whichever is shown stretch. MinHeight tracks the scroll viewport because a
-                 ScrollViewer measures its content at infinite height, which would collapse the * row (#118). -->
+            <!-- CONFIG SECTION: Grid so the import form fills the pane height. -->
             <Grid IsVisible="{Binding IsSettingsConfig}" RowDefinitions="Auto,Auto,Auto,*"
                   MinHeight="{Binding #ContentScroll.Viewport.Height}">
               <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto">
@@ -467,8 +437,7 @@
                 </Button>
               </Grid>
 
-              <!-- config catalogue combo: «— не выбрано —» then saved configs. A saved config opens its
-                   editor; the import form is opened by the «+ Новая конфигурация» button above (#111). -->
+              <!-- Config catalogue combo: «- не выбрано -» then saved configs. -->
               <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6">
                 <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -484,11 +453,7 @@
                            Text="{l:Tr Main_NoConfigsHint}" />
               </StackPanel>
 
-              <!-- standalone import form (Row 3, window VM SectionConfig* fields). The config text is a
-                   read-only preview that fills the pane; the actual text is entered in the «Редактировать»
-                   dialog, or loaded from a file / QR image / camera. There is no «Сохранить»/«Отмена»: once
-                   the text parses as a config and the (required) name is set, it auto-saves (debounced) and
-                   opens for management. Clearing the name turns the box red and blocks the auto-save (#118). -->
+              <!-- Standalone import form (Row 3). Auto-saves when text parses and name is set. -->
               <Border Grid.Row="3" Margin="0,14,0,0" VerticalAlignment="Stretch"
                       IsVisible="{Binding IsCreatingSectionConfig}"
                       Background="{DynamicResource AgInsetBrush}"
@@ -503,8 +468,7 @@
                     <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
                                Text="{l:Tr Main_RequiredEmptyWarning}" />
                   </StackPanel>
-                  <!-- few buttons, sized to content and centred (not stretched). «Файл» auto-detects a .conf /
-                       vpn:// text file or a QR image; «Камера» scans a QR; «Редактировать» opens the editor. -->
+                  <!-- Buttons sized to content, centred. -->
                   <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,10,0,0">
                     <TextBlock Text="{Binding SectionConfigStatus}" Classes="muted" FontSize="11.5"
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" />
@@ -523,10 +487,9 @@
                 </DockPanel>
               </Border>
 
-              <!-- the open config (Row 2): name editor + .conf export/editor + proxy (WebSocket) + delete -->
+              <!-- Open config (Row 2): name editor + .conf export/editor + proxy + delete. -->
               <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsConfigManage}" Spacing="14">
-                <!-- config name: always editable, per keystroke so the required-field border reacts at once;
-                     the rename auto-saves ~700ms after you pause typing (debounced in the VM, #116/#117) -->
+                <!-- Config name: per-keystroke so the required-field border reacts at once; auto-saves debounced. -->
                 <StackPanel Spacing="2">
                   <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
                   <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
@@ -536,7 +499,7 @@
                   <TextBlock Text="{Binding ConfigRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
 
-                <!-- .conf text + export (ConfigExport: ExportDialogViewModel) -->
+                <!-- .conf text + export. -->
                 <StackPanel Spacing="10" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
                   <Border Background="{DynamicResource AgInsetBrush}"
                           BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
@@ -588,15 +551,12 @@
                              HorizontalAlignment="Center" TextAlignment="Center" />
                 </StackPanel>
 
-                <!-- proxy (WebSocket) : ConfigTransport -->
+                <!-- Proxy (WebSocket). -->
                 <StackPanel Spacing="10" DataContext="{Binding ConfigTransport}" x:DataType="vm:ConfigTransportViewModel">
                   <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
                   <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}"
                             IsChecked="{Binding UseWebSocket}" />
-                  <!-- MTU applies to any transport (plain WG too), not just WSS: on a path whose real MTU is
-                       below ~1500 (mobile, PPPoE, a nested tunnel, double-NAT) a too-high MTU black-holes the
-                       large TLS-handshake packets, so every HTTPS connection stalls. Default is the safe 1280
-                       (#109). Kept OUTSIDE the WebSocket block so it can be tuned on a plain-WG config too. -->
+                  <!-- MTU applies to any transport, not just WSS. Kept outside the WebSocket block. -->
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" />
                     <TextBox Width="90" Text="{Binding Mtu}" />
@@ -636,7 +596,7 @@
                                            FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
                     </Border>
                   </StackPanel>
-                  <!-- No «Сохранить»: transport / MTU / WebSocket auto-save on change (#116). -->
+                  <!-- Auto-saves on change. -->
                   <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                              TextWrapping="Wrap" />
                   <StackPanel Spacing="6">
@@ -664,7 +624,7 @@
               </StackPanel>
             </Grid>
 
-            <!-- ============================= ROUTING SECTION ============================= -->
+            <!-- ROUTING SECTION -->
             <StackPanel IsVisible="{Binding IsSettingsRouting}" Spacing="14">
               <Grid ColumnDefinitions="Auto,Auto,*,Auto">
                 <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_RoutingSection}" VerticalAlignment="Center" />
@@ -687,7 +647,7 @@
                           SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
                   <ComboBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:RoutingListChoice">
-                      <!-- «— не выбрано —» for the none sentinel; saved lists keep their names. -->
+                      <!-- «- не выбрано -» for the none sentinel. -->
                       <Panel>
                         <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
                         <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
@@ -699,7 +659,7 @@
                            Text="{l:Tr Main_NoRoutingListsHint}" />
               </StackPanel>
 
-              <!-- the rule editor for the selected/new list (RoutingEditor: RoutingListEditorViewModel) -->
+              <!-- Rule editor for the selected/new list. -->
               <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="12">
                 <Border Background="Transparent"
                         BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
@@ -713,7 +673,7 @@
                                  Text="{l:Tr Main_RequiredEmptyWarning}" />
                     </StackPanel>
 
-                    <!-- Per-app tunneling (#68) -->
+                    <!-- Per-app tunneling. -->
                     <StackPanel Spacing="6">
                       <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
                       <Grid ColumnDefinitions="Auto,*,Auto">
@@ -810,8 +770,7 @@
                   </StackPanel>
                 </Border>
 
-                <!-- per-routing traffic settings (RoutingSettings: RoutingSettingsViewModel): local DNS +
-                     exclusions + all-UDP. Shown once the list has a real id. -->
+                <!-- Per-routing traffic settings: local DNS + exclusions + all-UDP. -->
                 <Border Background="Transparent"
                         BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                         CornerRadius="9" Padding="12" IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
@@ -849,7 +808,7 @@
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
                     </Grid>
 
-                    <!-- No «Сохранить»: DNS / exclusions / all-UDP auto-save on change (#115). -->
+                    <!-- Auto-saves on change. -->
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                                TextWrapping="Wrap" />
                   </StackPanel>
@@ -861,7 +820,7 @@
               </StackPanel>
             </StackPanel>
 
-            <!-- ============================= SOURCES SECTION ============================= -->
+            <!-- SOURCES SECTION -->
             <StackPanel IsVisible="{Binding IsSettingsSources}">
               <Border Classes="subcard" Margin="0">
                 <StackPanel>
@@ -985,7 +944,7 @@
               </Border>
             </StackPanel>
 
-            <!-- ============================= LOGS SECTION ============================= -->
+            <!-- LOGS SECTION -->
             <StackPanel IsVisible="{Binding IsSettingsLogs}">
               <Border Classes="subcard" Margin="0">
                 <StackPanel>
@@ -1003,9 +962,7 @@
                       </StackPanel>
                     </Grid>
                   </Border>
-                  <!-- Capture verbosity (#82): the minimum level WRITTEN to the log in both processes -
-                       distinct from the display filter above. Raise to "Трасса" to record every connect
-                       step and timing for support diagnosis; applies live, no reconnect needed. -->
+                  <!-- Capture verbosity: minimum level WRITTEN to the log; applies live. -->
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
@@ -1018,9 +975,7 @@
                                 SelectedItem="{Binding LogLevelLabel, Mode=TwoWay}" />
                     </Grid>
                   </Border>
-                  <!-- Routing log (#82): a separate, toggleable log of every route change, matched DNS
-                       resolution, and outbound request destination (routes.log), included in the support
-                       bundle. Off by default; applies live. -->
+                  <!-- Routing log: toggleable log of route changes and DNS resolutions. -->
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
@@ -1031,8 +986,7 @@
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
                     </Grid>
                   </Border>
-                  <!-- Support export (#82): one redacted zip (both processes' logs + summary + journal) to
-                       send to support. -->
+                  <!-- Support export: redacted diagnostics zip. -->
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
@@ -1064,7 +1018,7 @@
               </Border>
             </StackPanel>
 
-            <!-- ============================= GENERAL SECTION (+ About) ============================= -->
+            <!-- GENERAL SECTION (+ About) -->
             <StackPanel IsVisible="{Binding IsSettingsGeneral}" Spacing="14">
               <Border Classes="subcard" Margin="0">
                 <StackPanel>
@@ -1080,7 +1034,7 @@
 
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
-                  <!-- Language (#106): live switch, persisted to ui-prefs.json -->
+                  <!-- Language: live switch. -->
                   <Grid ColumnDefinitions="*,Auto" Margin="15,11">
                     <TextBlock Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
                     <ComboBox Grid.Column="1" MinWidth="150" VerticalAlignment="Center"
@@ -1090,7 +1044,7 @@
                 </StackPanel>
               </Border>
 
-              <!-- About folded into General -->
+              <!-- About folded into General. -->
               <Border Classes="subcard" Margin="0">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
@@ -1128,9 +1082,7 @@
                 </StackPanel>
               </Border>
 
-              <!-- Selective export/import of profiles, configs, and routing lists (#91): a portable JSON
-                   bundle the user assembles by picking from a tree, separate from the per-profile share
-                   above (ConfigExport) and the per-routing-list share (RoutingEditor). -->
+              <!-- Selective export/import: portable JSON bundle of profiles, configs, routing lists. -->
               <Border Classes="subcard" Margin="0">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
@@ -1153,10 +1105,7 @@
       </Border>
     </Grid>
 
-    <!-- ===================================================================================== -->
-    <!-- Floating notification toasts at the window root, overlaying content (priority order:     -->
-    <!-- reconnect notice → app update → geo update).                                             -->
-    <!-- ===================================================================================== -->
+    <!-- Floating notification toasts (reconnect notice, app update, geo update). -->
     <StackPanel ZIndex="50" VerticalAlignment="Top" HorizontalAlignment="Center"
                 Margin="12,24,12,0" MaxWidth="560" Spacing="6">
 

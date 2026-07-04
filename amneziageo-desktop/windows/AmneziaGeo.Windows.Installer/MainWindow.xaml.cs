@@ -2,9 +2,14 @@ using System.Windows;
 
 namespace AmneziaGeo.Windows.Installer;
 
-/// <summary>The installer window. All behaviour lives in <see cref="InstallerViewModel"/>.</summary>
+/// <summary>
+/// Installer window.
+/// </summary>
 public partial class MainWindow : Window
 {
+    /// <summary>
+    /// ctor
+    /// </summary>
     public MainWindow()
     {
         InitializeComponent();

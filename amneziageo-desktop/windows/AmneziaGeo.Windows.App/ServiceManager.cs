@@ -18,11 +18,7 @@ internal sealed class ServiceManager
         }
 
         var serviceName = TunnelPaths.ServiceName(name);
-        // Quote the name: it becomes part of the service ImagePath, which the SCM re-parses into argv when
-        // it launches the process. A config name may contain spaces or parens (the app auto-suffixes " (2)"
-        // on a name clash), so an unquoted name like bor_ws (2) would split into extra argv tokens, the
-        // "--service" <name> handler would not match, and the process would never run as a tunnel (sc start
-        // then times out with 1053). EnsureValidName forbids '"', so there are no inner quotes to escape.
+        // Quote the name: it becomes part of the service ImagePath re-parsed into argv.
         var binPath = $"\"{Environment.ProcessPath}\" --service \"{name}\"";
         var created = Sc(
             "create",
@@ -158,8 +154,7 @@ internal sealed class ServiceManager
     public int InstallAgent(string target)
     {
         var serviceName = TunnelPaths.AgentServiceName();
-        // Quote the target for the same reason as the tunnel service binPath: it is re-parsed from the
-        // ImagePath into argv, so a target name with a space must survive as a single argument.
+        // Quote the target: it is re-parsed from ImagePath into argv.
         var binPath = $"\"{Environment.ProcessPath}\" --agent \"{target}\"";
         return Sc(
             "create",

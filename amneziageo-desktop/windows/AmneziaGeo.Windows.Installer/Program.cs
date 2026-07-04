@@ -6,21 +6,12 @@ using WixToolset.BootstrapperApplicationApi;
 namespace AmneziaGeo.Windows.Installer;
 
 /// <summary>
-/// Entry point for the AmneziaGeo bootstrapper application. In WiX v5 a managed out-of-process BA is
-/// a normal WinExe started via <see cref="ManagedBootstrapperApplication.Run"/>; the host wires the
-/// engine connection and runs <see cref="BootstrapperApplication.Run"/> on a UI-capable thread.
-///
-/// This exe is NOT the installer - it is only the installer's UI, launched by the Burn engine from
-/// inside AmneziaGeoSetup.exe. Launched on its own (a double-click) it has no engine pipe to connect
-/// to and <see cref="ManagedBootstrapperApplication.Run"/> blocks forever with no window, so a
-/// watchdog catches the missing engine and points the user at the real setup instead of hanging.
+/// Bootstrapper application entry point.
 /// </summary>
 internal static class Program
 {
     private static int Main()
     {
-        // Pick the installer UI language before any window: the system UI language, English as the fallback
-        // (there is no saved preference yet - the app is not installed). #106.
         Loc.Instance.ApplyStartupCulture(null);
 
         var application = new InstallerBootstrapper();
@@ -32,9 +23,6 @@ internal static class Program
         return 0;
     }
 
-    // The engine calls OnCreate within a fraction of a second of hosting us. If that has not happened
-    // well after start-up we were launched directly, so tell the user what to run and bail out - Run()
-    // would otherwise sit forever on the absent engine pipe.
     private static void WatchForMissingEngine(InstallerBootstrapper application)
     {
         Thread.Sleep(TimeSpan.FromSeconds(6));
@@ -51,7 +39,6 @@ internal static class Program
         }
         catch
         {
-            // best effort
         }
 
         MessageBox.Show(

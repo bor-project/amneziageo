@@ -5,8 +5,7 @@ using Serilog.Events;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// A Serilog sink that appends each rendered log event to the in-memory <see cref="LogRingBuffer"/>, so
-/// recent agent activity can be surfaced to the UI over IPC (the home-screen journal).
+/// Serilog sink that appends rendered events to the in-memory ring buffer.
 /// </summary>
 internal sealed class RingBufferSink(LogRingBuffer buffer) : ILogEventSink
 {

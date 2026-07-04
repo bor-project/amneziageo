@@ -18,9 +18,6 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
     {
         var launch = LaunchOptions.Resolve(options.Value, args);
 
-        // Seeding. In dev (SeedOnce=false) it re-applies every launch (a known starting state). For a
-        // shipped preconfigured build (SeedOnce=true) it runs only on the first launch and then leaves a
-        // marker, so a user's later edits (toggling WebSocket, changing routing) survive subsequent logons.
         if (ShouldSeed())
         {
             RegisterConfigs(launch.ConfigPaths);
@@ -42,9 +39,6 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
 
             if (launch.RunService)
             {
-                // The shipped product launches with no args: default to the "main" profile (the same target
-                // the old agent service bound). The UI re-targets to whatever profile the user selects, and an
-                // absent/unknown target just idles serving the pipe, so a missing target never blocks startup.
                 var target = launch.Target ?? "main";
 
                 if (launch.ConfigPath is not null)
@@ -59,8 +53,6 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
 
             if (launch.RunUi)
             {
-                // Self-register the elevated logon autostart task (no-op in Debug) so the product comes back
-                // after a reboot without a UAC prompt; the MSI removes it on uninstall.
                 ScheduledTaskInstaller.EnsureLogonTask(logger);
 
                 logger.LogInformation("starting UI");
@@ -142,8 +134,6 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
         }
     }
 
-    // Whether to run the startup seed. Always in dev; once (guarded by a marker file) for a shipped
-    // preconfigured build, so re-seeding never clobbers the user's later changes.
     private bool ShouldSeed()
     {
         if (!options.Value.SeedOnce)
@@ -179,8 +169,6 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
         }
     }
 
-    // Lives next to the shared state (ProgramData\AmneziaGeo) so it survives reinstall (the MSI does not
-    // remove ProgramData) - a reinstall should not re-seed over the user's existing setup.
     private static string SeedMarkerPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "AmneziaGeo",
@@ -219,9 +207,6 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
         foreach (var raw in paths)
         {
             var expanded = Environment.ExpandEnvironmentVariables(raw);
-            // A relative path resolves against the install dir (the exe's folder), not the working
-            // directory, so a bundled seed conf (e.g. "seed\bor123.conf") is found whether launched from
-            // the shortcut or the elevated logon task.
             if (!Path.IsPathRooted(expanded))
             {
                 expanded = Path.GetFullPath(expanded, AppContext.BaseDirectory);

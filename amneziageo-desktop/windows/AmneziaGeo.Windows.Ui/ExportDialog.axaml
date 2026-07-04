@@ -11,7 +11,7 @@
 
     <TextBlock DockPanel.Dock="Top" Text="{Binding ConfigName}" FontWeight="SemiBold" FontSize="16" />
 
-    <!-- format toggle: raw .conf vs Amnezia vpn:// link -->
+    <!-- Format toggle: raw .conf vs Amnezia vpn:// link. -->
     <Border DockPanel.Dock="Top" Margin="0,12,0,0"
             Background="{DynamicResource AgInsetBrush}"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"

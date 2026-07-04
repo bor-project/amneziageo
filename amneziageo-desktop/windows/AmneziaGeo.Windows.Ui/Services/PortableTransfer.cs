@@ -5,9 +5,7 @@ using System.Text;
 namespace AmneziaGeo.Windows.Ui.Services;
 
 /// <summary>
-/// Encodes/decodes a config's WebSocket transport settings and a routing list as small, human-readable,
-/// line-based text blobs, so they can be shared the same way a config is (copy / save to file / paste).
-/// The formats are intentionally plain so a recipient can also read or hand-edit them.
+/// Encodes/decodes WebSocket transport and routing lists as plain text blobs.
 /// </summary>
 internal static class PortableTransfer
 {
@@ -15,8 +13,7 @@ internal static class PortableTransfer
     private const string RoutingHeader = "#ageo-routing v1";
 
     /// <summary>
-    /// Serialises a config's WebSocket transport. <paramref name="host"/> is the stored address (a bare
-    /// host or a full wss://[user:pass@]host:port[/token] URL carrying auth), so auth travels with it.
+    /// Serialises a WebSocket transport.
     /// </summary>
     public static string EncodeWebSocket(bool enabled, int port, string host)
     {
@@ -29,8 +26,7 @@ internal static class PortableTransfer
     }
 
     /// <summary>
-    /// Parses a WebSocket transport blob produced by <see cref="EncodeWebSocket"/>. Returns false when the
-    /// text is not a recognisable websocket blob.
+    /// Parses a WebSocket transport blob.
     /// </summary>
     public static bool TryDecodeWebSocket(string? text, out bool enabled, out int port, out string host)
     {
@@ -78,13 +74,12 @@ internal static class PortableTransfer
             }
         }
 
-        // A valid blob carries at least a port or a host (an all-defaults blob is meaningless).
+        // At least a port or a host.
         return sawPort || host.Length > 0;
     }
 
     /// <summary>
-    /// Serialises a routing list: a name header then one rule token per line (geosite:openai, domain:..,
-    /// cidr:..). Comment lines start with '#'.
+    /// Serialises a routing list.
     /// </summary>
     public static string EncodeRouting(string name, IReadOnlyList<string> rules)
     {
@@ -104,8 +99,7 @@ internal static class PortableTransfer
     }
 
     /// <summary>
-    /// Parses a routing-list blob produced by <see cref="EncodeRouting"/>. The name comes from the
-    /// "#name:" header; every non-comment line is a rule. Returns false when the text is not recognisable.
+    /// Parses a routing-list blob.
     /// </summary>
     public static bool TryDecodeRouting(string? text, out string name, out IReadOnlyList<string> rules)
     {
@@ -127,7 +121,7 @@ internal static class PortableTransfer
 
             if (line.StartsWith('#'))
             {
-                // "#name: <name>" is the only meaningful comment; other comments are ignored.
+                // Only #name: is read.
                 const string nameTag = "#name:";
                 if (line.StartsWith(nameTag, System.StringComparison.OrdinalIgnoreCase))
                 {

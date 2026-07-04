@@ -4,12 +4,11 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Windows.Ui.Services;
 
 /// <summary>
-/// Maintains the background connection to the agent and surfaces status snapshots.
+/// Holds the agent connection and surfaces status snapshots.
 /// </summary>
 internal sealed class AgentConnection : IDisposable
 {
-    // AnnounceUi: this is the real UI, so mark the pipe connection as a presence session - the agent keeps
-    // the tunnel up only while a UI is connected and disconnects it shortly after the window closes/crashes.
+    // Real UI presence; the agent keeps the tunnel up only while a UI is attached.
     private readonly StatusPipeClient _client = new() { AnnounceUi = true };
     private readonly CancellationTokenSource _cts = new();
     private Task? _loop;
@@ -42,10 +41,7 @@ internal sealed class AgentConnection : IDisposable
     }
 
     /// <summary>
-    /// Sends a command to the agent and returns its acknowledgement, localizing the reply here - the single
-    /// choke point every UI command flows through (#106). The agent, which does not localize, may reply with a
-    /// marker-encoded resource key; it becomes its translation in the current UI language. A raw reply (a
-    /// config payload, a file path, an exception message) carries no marker and passes through unchanged.
+    /// Sends a command and localizes the reply.
     /// </summary>
     public async Task<IpcAck> SendCommandAsync(IpcCommand command)
     {
@@ -58,9 +54,6 @@ internal sealed class AgentConnection : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        // Idempotent: shutdown disposes this both from the explicit tray "Выход" path and from the
-        // lifetime's ShutdownRequested handler (OS session end). A second Cancel on a disposed source
-        // would throw, so guard it.
         if (_disposed)
         {
             return;

@@ -21,53 +21,38 @@ internal sealed class DomainTracker(
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
-    // Remote IPs discovered by the per-app route watcher (#68). Kept separate from the domain map so the
-    // re-resolve loop never touches them (they have no domain), but unioned into the allowed-ips so they
-    // share the single authority - otherwise the app watcher and the DNS path would clobber each other's
-    // SetAllowedIps. Accumulates for the life of the tunnel; capped so a chatty app cannot grow it without
-    // bound.
+    // App-discovered remote IPs, unioned into allowed-ips so the watcher and DNS path share one authority.
     private readonly HashSet<string> _appIps = [];
 
-    // The list-materialized static route set (geoip CIDRs, plus the tunnel resolver's /32s when domains are
-    // tracked), captured at connect and grown live when a source refresh adds ranges (#83). Add-only: a range
-    // dropped from the list keeps its route until reconnect, since removing an engine-installed route live
-    // would blackhole traffic to it (the peer would still reject a since-removed allowed-ip). Guarded by _lock.
+    // Static geoip CIDRs captured at connect; add-only live, since removing an engine route mid-session blackholes.
     private readonly HashSet<string> _staticRoutes = new(staticRoutes, StringComparer.Ordinal);
 
-    // Baselines for the signals a running tunnel polls over the shared store: the active routing list's
-    // materialization generation (a change = re-apply geoip ranges) and the global resolve epoch (a change =
-    // re-resolve all tracked domains now). Captured once the tracker starts, after the warm-start cache load.
+    // Baselines for the poll signals: list materialization generation and global resolve epoch.
     private long? _knownGeneration;
     private long _knownResolveEpoch;
 
-    // The live geo-domain sink: the DNS proxy's matcher rebuild, attached once the proxy is built (it is
-    // constructed after this tracker). Invoked on the poll thread when the materialization generation
-    // changes, so a source refresh that altered the list's geosite domains rebuilds the proxy's matcher
-    // without a reconnect (#108). Volatile: written on the connect thread, read on the poll thread. Null
-    // (no-op) for a tunnel that does not track domains.
+    // Live geo-domain sink; rebuilt on materialization generation change so a source refresh takes effect without reconnect.
     private volatile Action<IReadOnlyList<GeoDomain>, CancellationToken>? _onGeoDomainsChanged;
 
     private uint? _interfaceIndex;
     private readonly TaskCompletionSource _warmStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
-    /// Completes once the DB-cache warm start has been applied. The eager route seeder awaits this and then
-    /// resolves ONLY domains the cache did not already restore, so a reconnect with a warm cache issues no
-    /// up-front DNS at all.
+    /// Completes once the DB-cache warm start is applied.
     /// </summary>
     public Task WarmStartCompleted => _warmStart.Task;
 
     /// <summary>
-    /// Attaches the live geo-domain sink (the DNS proxy's <c>UpdateDomains</c>) once the proxy exists. A
-    /// materialization generation change then rebuilds the proxy's domain matcher from the fresh domain set
-    /// without a reconnect (#108). Set synchronously at connect, before the first poll; null until then.
+    /// Attaches the live geo-domain sink; a generation change rebuilds the proxy matcher without reconnect.
     /// </summary>
     public void SetGeoDomainSink(Action<IReadOnlyList<GeoDomain>, CancellationToken> sink)
     {
         _onGeoDomainsChanged = sink;
     }
 
-    /// <summary>True when a domain's resolution is already known (restored from cache or resolved before).</summary>
+    /// <summary>
+    /// True when a domain's resolution is already known.
+    /// </summary>
     public bool IsTracked(string domain)
     {
         var key = domain.TrimEnd('.').ToLowerInvariant();
@@ -78,7 +63,7 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Applies a domain's resolved IPs: routes new ones, drops stale ones, replaces allowed IPs, and persists.
+    /// Applies a domain's resolved IPs and persists.
     /// </summary>
     public void Update(string domain, IReadOnlyList<string> ips)
     {
@@ -92,8 +77,7 @@ internal sealed class DomainTracker(
             }
 
             var key = domain.TrimEnd('.').ToLowerInvariant();
-            // On an IPv4-only tunnel, never route IPv6: those addresses have no transit and only
-            // make clients stall before falling back to IPv4.
+            // IPv4-only tunnel: never route IPv6 (no transit).
             var effective = stripV6 ? ips.Where(ip => !ip.Contains(':')).ToList() : ips;
             var fresh = new HashSet<string>(effective);
             _current.TryGetValue(key, out var old);
@@ -119,12 +103,7 @@ internal sealed class DomainTracker(
                 }
             }
 
-            // A resolved IP is frequently shared: CDN/anycast edges resolve for many hostnames, and the
-            // per-app watcher (#68) pins IPs in _appIps. BuildAllowedIps() unions ALL of those, so dropping
-            // a /32 route just because it left THIS domain's set - while another domain or _appIps still
-            // advertises it in allowed-ips - desyncs routing from allowed-ips: the IP stays tunnel-eligible
-            // but has no route, so its packets fall off the tunnel until a later refresh happens to re-add
-            // it. Remove the route only when nothing else still needs the IP (#73).
+            // Remove the /32 only when no other domain or _appIps still references the IP, so routes and allowed-ips stay in sync.
             List<IPAddress>? stale = null;
             foreach (var ip in old)
             {
@@ -137,32 +116,19 @@ internal sealed class DomainTracker(
             var removedAny = stale is not null;
             if (removedAny)
             {
-                // Delete all stale routes with a single forwarding-table read instead of one full-table
-                // scan per IP - the per-IP path in a loop is O(stale * table) under this lock.
                 routes.RemoveTunnelRoutes(stale!, index.Value);
             }
 
             _current[key] = fresh;
 
-            // Resolves at Info (visible at the default "Обычный" level): the meaningful domain -> IPs event.
-            // Logged only when the set actually changed (an unchanged re-resolve returned above), so a periodic
-            // re-resolve that yields the same IPs never spams the log.
             logger.LogInformation("resolved {Domain} -> {Ips}", key, string.Join(", ", fresh));
 
-            // The same story line for the routing log (off by default): the resolution and what it changed, so
-            // a support engineer sees "domain -> ips" immediately above the /32 routes RouteManager then logs.
-            // Guarded so the interpolation is skipped on the hot resolve path when the routing log is disabled.
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"resolve {key} -> [{string.Join(",", fresh)}] (+{addedCidrs.Count} route(s), -{stale?.Count ?? 0})");
             }
 
-            // A removal can only be expressed by replacing the whole peer set (the UAPI has no delete-one-
-            // allowed-ip), so churn from the background re-resolve still pays the full O(total) push. But the
-            // live DNS answer path only ever ADDS a freshly matched domain's IPs - advertise just those, in a
-            // single incremental exchange, so route-before-answer stays O(new) instead of waiting on a
-            // multi-thousand-entry replace that grows with every domain browsed (the cause of every newly
-            // resolved domain hanging before its answer).
+            // Advertise only the newly added IPs incrementally so route-before-answer stays O(new).
             if (removedAny)
             {
                 uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
@@ -172,10 +138,7 @@ internal sealed class DomainTracker(
                 uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
             }
 
-            // Persistence is only a warm-start cache; it must not block the caller, which on the live
-            // DNS path now runs before the answer is sent (route-before-answer). A synchronous SQLite
-            // write here would add disk latency to every freshly resolved domain and serialize route
-            // installs under the lock. Fire-and-forget; a refresh self-heals any out-of-order write.
+            // Fire-and-forget: persistence must not block the live DNS answer path.
             var snapshot = new DomainResolution(key, [.. fresh]);
             _ = Task.Run(() => PersistAsync(snapshot));
         }
@@ -194,10 +157,7 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Waits for the tunnel adapter, applies the cached resolutions in one push (warm start), then
-    /// re-resolves periodically. Eager up-front resolution of the whole rule set is intentionally NOT done
-    /// here - the warm cache covers known domains, the live DNS path covers visited ones on demand, and
-    /// <see cref="DnsProxy.SeedRoutesAsync"/> (after <see cref="WarmStartCompleted"/>) resolves only the rest.
+    /// Applies cached resolutions (warm start), then re-resolves periodically.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
@@ -217,17 +177,10 @@ internal sealed class DomainTracker(
                 _warmStart.TrySetResult();
             }
 
-            // Leave _knownGeneration null so the FIRST poll reconciles the geoip set against the live routing
-            // list: if a source refresh re-materialized the list during the connect window (the projection
-            // captured at connect held the old set), ApplyStaticAdditions adds the delta on that first poll;
-            // when nothing changed it is a no-op (the set already matches), so connect stays behaviour-neutral.
-            // The resolve epoch IS baselined to the current value, so an unchanged epoch does not force a
-            // spurious re-resolve on the first poll.
+            // Leave _knownGeneration null so the first poll reconciles geoip deltas; baseline the resolve epoch.
             _knownResolveEpoch = await ReadResolveEpochAsync();
 
-            // Poll the signals more often than a full re-resolve so a user "Обновить" (which bumps the resolve
-            // epoch) takes effect promptly, without re-resolving every domain on each short poll. A full
-            // periodic re-resolve still runs every refreshSeconds - domain IPs drift on their own TTLs.
+            // Poll signals often so a user refresh takes effect promptly; full re-resolve runs every refreshSeconds.
             var pollInterval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 15), 1, 60));
             var fullRefresh = TimeSpan.FromSeconds(refreshSeconds);
             var sinceFullRefresh = TimeSpan.Zero;
@@ -243,9 +196,6 @@ internal sealed class DomainTracker(
                     if (current is not null && current.Generation != _knownGeneration)
                     {
                         ApplyStaticAdditions(current.Routes);
-                        // #108: the same generation change that grew the geoip ranges may have added/removed
-                        // geosite DOMAINS; rebuild the proxy's matcher from the fresh set so they route (or
-                        // stop routing) without a reconnect. The sink is null for a non-domain tunnel.
                         _onGeoDomainsChanged?.Invoke(current.Domains, ct);
                         _knownGeneration = current.Generation;
                     }
@@ -271,8 +221,7 @@ internal sealed class DomainTracker(
         }
         catch (OperationCanceledException)
         {
-            // Tunnel torn down: stop the refresh loop with the session (the warm-start waiter must still
-            // be released so DnsProxy.SeedRoutesAsync never hangs).
+            // Release the warm-start waiter so SeedRoutesAsync never hangs.
             _warmStart.TrySetResult();
         }
         catch (Exception ex)
@@ -283,11 +232,7 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Warm-start application of the DB cache: installs the /32 route for every cached IP and advertises the
-    /// whole set to the peer in a SINGLE allowed-ips replace - O(1) UAPI round-trips instead of one per
-    /// cached domain - and populates <c>_current</c> so the on-demand path and the route seeder can tell
-    /// which domains are already known. No-op when the cache is empty (the static set is already on the
-    /// device from the engine's initial config).
+    /// Warm-starts from the DB cache: installs /32 routes and advertises the whole set in one allowed-ips replace.
     /// </summary>
     public void SeedFromCache(IReadOnlyList<DomainResolution> cached)
     {
@@ -322,10 +267,7 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Routes a set of remote IPs discovered by the per-app route watcher (#68) through the tunnel: adds a
-    /// /32 for each newly seen IP and folds them into the allowed-ips. Caller passes the IPs matched this
-    /// poll; only previously unseen ones install a route, so it is cheap to call every tick. No-op until the
-    /// tunnel adapter exists.
+    /// Routes per-app discovered remote IPs through the tunnel; only newly seen IPs install a route.
     /// </summary>
     public bool UpdateAppIps(IReadOnlyList<string> ips)
     {
@@ -334,15 +276,14 @@ internal sealed class DomainTracker(
             var index = EnsureIndex();
             if (index is null)
             {
-                return false; // tunnel adapter not up yet - let the caller retry later
+                return false; // adapter not up; caller retries
             }
 
             var addedCidrs = new List<string>();
             var allHandled = true;
             foreach (var ip in ips)
             {
-                // v4-only tunnel: never route IPv6 (no transit). The watcher already enumerates IPv4 only,
-                // but guard so a future v6 path cannot leak dead routes onto a stripV6 tunnel.
+                // v4-only tunnel: never route IPv6.
                 if (stripV6 && ip.Contains(':'))
                 {
                     continue;
@@ -350,19 +291,17 @@ internal sealed class DomainTracker(
 
                 if (_appIps.Contains(ip))
                 {
-                    continue; // already tracked
+                    continue;
                 }
 
-                // Bound the set so a chatty app (many short-lived endpoints) cannot grow it without limit.
+                // Bound the set so a chatty app cannot grow it without limit.
                 if (_appIps.Count >= 8192)
                 {
-                    allHandled = false; // not recorded, so the caller does not mark it done
+                    allHandled = false; // not recorded; caller retries
                     break;
                 }
 
-                // Advertise the IP in allowed-ips only once its /32 route is actually installed, so the
-                // route set and allowed-ips never diverge (#73). AddTunnelRoute treats AlreadyExists as
-                // success; a genuine failure leaves the IP unseen so the next poll retries it.
+                // Advertise the IP only once its /32 route is installed, so routes and allowed-ips stay in sync.
                 var parsed = IPAddress.Parse(ip);
                 var ok = routes.AddTunnelRoute(parsed, index.Value);
                 logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
@@ -373,21 +312,17 @@ internal sealed class DomainTracker(
                 }
                 else
                 {
-                    allHandled = false; // route add failed - allow a retry on the next event/poll
+                    allHandled = false; // route add failed; caller retries
                 }
             }
 
-            // The app set only ever grows within a session, so advertise the new IPs incrementally rather
-            // than re-pushing the whole peer set on every poll that discovers one (no-op when none were added).
+            // Advertise new IPs incrementally; the set only grows within a session.
             uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
             return allHandled;
         }
     }
 
-    // True when an IP - other than via <paramref name="excludeKey"/>'s just-applied fresh set - is still
-    // advertised in allowed-ips: held by another tracked domain or by the per-app watcher's set. Used to
-    // keep the /32 route set in lockstep with BuildAllowedIps() so a shared IP is never left in allowed-ips
-    // without a backing route (#73). Caller holds _lock.
+    // True when an IP is still held by another tracked domain or _appIps, excluding the just-applied set.
     private bool IsStillReferenced(string ip, string excludeKey)
     {
         if (_appIps.Contains(ip))
@@ -406,8 +341,7 @@ internal sealed class DomainTracker(
         return false;
     }
 
-    // Host CIDR for an address: /32 for IPv4, /128 for IPv6. Single source of truth for the prefix so the
-    // incremental add path and the full BuildAllowedIps() replace never disagree on how an IP is advertised.
+    // /32 for IPv4, /128 for IPv6; single source of truth for the prefix.
     private static string Cidr(IPAddress ip)
     {
         var prefix = ip.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;
@@ -425,7 +359,7 @@ internal sealed class DomainTracker(
             }
         }
 
-        // App-discovered IPs share the same allowed-ips authority (single SetAllowedIps owner).
+        // App-discovered IPs share the same allowed-ips authority.
         foreach (var ip in _appIps)
         {
             all.Add(Cidr(IPAddress.Parse(ip)));
@@ -434,12 +368,6 @@ internal sealed class DomainTracker(
         return all;
     }
 
-    /// <summary>
-    /// Applies geoip ranges that appeared in the active routing list since connect (a source refresh grew a
-    /// category): installs a tunnel route for each newly present CIDR and advertises it to the peer in one
-    /// incremental exchange. Add-only - a range dropped from the list keeps its route until reconnect, so a
-    /// stale range is over-tunnelled (harmless) rather than blackholed. No-op until the adapter is up.
-    /// </summary>
     private void ApplyStaticAdditions(IReadOnlyList<string> freshRoutes)
     {
         lock (_lock)
@@ -453,7 +381,7 @@ internal sealed class DomainTracker(
             var addedCidrs = new List<string>();
             foreach (var cidr in freshRoutes)
             {
-                // v4-only tunnel: never route IPv6 (no transit), matching the connect-time stripV6 filter.
+                // v4-only tunnel: never route IPv6.
                 if (stripV6 && cidr.Contains(':'))
                 {
                     continue;
@@ -461,11 +389,10 @@ internal sealed class DomainTracker(
 
                 if (!_staticRoutes.Add(cidr))
                 {
-                    continue; // already present
+                    continue;
                 }
 
-                // Advertise the range only once its route is installed, so the route set and allowed-ips never
-                // diverge (#73). A failed install is rolled back out of the set so a later poll retries it.
+                // Advertise the range only once its route is installed, so routes and allowed-ips stay in sync.
                 if (routes.AddTunnelCidr(cidr, index.Value))
                 {
                     addedCidrs.Add(cidr);
@@ -523,8 +450,7 @@ internal sealed class DomainTracker(
             }
         }
 
-        // One Warn per cycle (not per domain) when tracked domains could not be re-resolved - couldn't reach
-        // DNS ("недостучались"). The previously resolved IPs are kept, so this is a heads-up, not a failure.
+        // One Warn per cycle when tracked domains could not be re-resolved; cached IPs are kept.
         if (failed > 0)
         {
             logger.LogWarning("re-resolve for {Tunnel}: {Failed}/{Total} tracked domain(s) unreachable", tunnelName, failed, domains.Count);

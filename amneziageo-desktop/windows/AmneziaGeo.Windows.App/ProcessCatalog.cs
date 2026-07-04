@@ -4,28 +4,23 @@ using System.Runtime.InteropServices;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Enumerates running applications and services for the per-app tunneling picker (#68). Runs in the agent
-/// (SYSTEM), which can read image paths and service hosting PIDs the user-mode UI cannot. Produces a unified
-/// list: services are listed by service name (a svchost-hosted service shares svchost.exe's path, so it can
-/// only be told apart by name), applications by image path (deduplicated, one row per binary). System pseudo
-/// processes (Idle/System/Registry) and the raw svchost hosts of services are excluded.
+/// Enumerates running applications and services for the per-app tunneling picker.
 /// </summary>
 internal static class ProcessCatalog
 {
-    /// <summary>A picker row: Kind is "app" or "service"; Value is the matcher payload the UI turns into an
-    /// app:path=/app:dir= (app) or app:svc= (service) rule; Detail is the host exe path (services) or empty.</summary>
+    /// <summary>
+    /// A picker row.
+    /// </summary>
     public sealed record Entry(string Kind, string Label, string Value, string Detail);
 
     /// <summary>
-    /// Returns the unified app + service list. Best-effort: a process or service that cannot be read is
-    /// skipped rather than failing the whole enumeration.
+    /// Returns the unified app + service list.
     /// </summary>
     public static IReadOnlyList<Entry> List()
     {
         var entries = new List<Entry>();
 
-        // Services first, so their hosting PIDs can be excluded from the app list (a service - whether
-        // svchost-hosted or its own exe - is shown as a Service row, never duplicated as an App row).
+        // Services first so their PIDs can be excluded from the app list.
         var services = EnumerateServices();
         var servicePids = new HashSet<uint>();
         foreach (var (name, display, pid) in services)
@@ -39,7 +34,7 @@ internal static class ProcessCatalog
             entries.Add(new Entry("service", string.IsNullOrWhiteSpace(display) ? name : display, name, host));
         }
 
-        // Applications: one row per distinct image path, skipping service hosts and unreadable/system procs.
+        // One row per distinct image path, skipping service hosts and system procs.
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var process in Process.GetProcesses())
         {
@@ -69,7 +64,7 @@ internal static class ProcessCatalog
             }
         }
 
-        // Stable, human-friendly order: apps then services, each by label.
+        // Stable order: apps then services, each by label.
         entries.Sort((a, b) =>
         {
             var byKind = string.CompareOrdinal(a.Kind, b.Kind);
@@ -78,8 +73,7 @@ internal static class ProcessCatalog
         return entries;
     }
 
-    // A friendly label for an app: the binary's FileDescription (a human-readable product name) when present, else the
-    // process name. FileVersionInfo can throw for some binaries, so fall back quietly.
+    // Friendly label: FileDescription when present, else process name.
     private static string DescribeApp(string path, string processName)
     {
         try
@@ -110,7 +104,7 @@ internal static class ProcessCatalog
         try
         {
             var resume = 0;
-            // First call sizes the buffer (fails with ERROR_MORE_DATA, sets bytesNeeded).
+            // First call sizes the buffer.
             EnumServicesStatusEx(scm, ScEnumProcessInfo, ServiceWin32, ServiceActive, IntPtr.Zero, 0, out var bytesNeeded, out _, ref resume, null);
             if (bytesNeeded <= 0)
             {

@@ -6,27 +6,14 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Per-app split tunneling (#68): watches which processes own which outbound TCP connections and routes the
-/// remote IPs of matched apps through the tunnel. Unlike the DNS-driven domain path, this is independent of
-/// how the app resolves names (plain DNS, DoH, DoT, an in-process cache) — it keys on the OWNING PROCESS, so
-/// an app the user marked for the tunnel is routed by the IPs it actually connects to.
-///
-/// Mechanism (all user-mode, no driver): poll <c>GetExtendedTcpTable(OWNER_PID)</c> for connections with a
-/// remote endpoint, resolve each owning PID to its image path (and, for <c>svc=</c> matchers, resolve the
-/// service name to its hosting PID), match against the app matchers, and feed the matched remote IPs to the
-/// <see cref="DomainTracker"/> so they share the single allowed-ips authority and /32 route set. Discovered
-/// IPs accumulate for the life of the tunnel (an app's endpoints rarely need un-routing while it runs).
-///
-/// Caveat: polling is reactive, so the very first SYN of a freshly opened connection can egress before its
-/// route exists; the app retries and subsequent attempts route correctly. A race-free install would need a
-/// kernel WFP connect-time callout (a driver), which is out of scope here.
+/// Per-app split tunneling by owning process.
 /// </summary>
 internal sealed class AppRouteWatcher
 {
-    // Poll cadence. Tight enough that a connecting app routes within ~1s (its TCP retry), without spinning.
+    // Poll ~1s: routes within a TCP retry.
     private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
 
-    // Process-state of a TCP row that has a real remote peer we should route. LISTEN (2) has no remote.
+    // LISTEN state has no remote peer.
     private const uint MibTcpStateListen = 2;
     private const int AfInet = 2;
     private const int TcpTableOwnerPidAll = 5;
@@ -34,22 +21,21 @@ internal sealed class AppRouteWatcher
     private readonly DomainTracker _tracker;
     private readonly ILogger _logger;
 
-    // Parsed matchers (lower-cased, canonical). pkg= (UWP) is not matched in v1 — logged and skipped.
+    // Parsed matchers. pkg= not matched in v1.
     private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _dirs = [];
     private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _services = [];
 
-    // PID -> image path, cached across ticks. PIDs can be reused, but the only consequence of a stale entry
-    // is routing one extra IP through the tunnel, so a long-lived cache is a fair trade for not re-opening
-    // every process each second. Capped so a churn of short-lived PIDs cannot grow it without bound.
+    // PID->path cache; stale entry only over-routes one IP.
     private readonly Dictionary<uint, string?> _pathCache = [];
 
-    // Matched remote endpoints already written to the request log this session, so a persistent connection is
-    // logged once (as a new "request") rather than every 1s poll. Bounded; on overflow the set is dropped and
-    // each still-open remote is re-logged once.
+    // Log each remote once per session.
     private readonly HashSet<string> _loggedRemotes = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// ctor
+    /// </summary>
     public AppRouteWatcher(DomainTracker tracker, IReadOnlyList<string> matchers, ILogger logger)
     {
         _tracker = tracker;
@@ -61,7 +47,7 @@ internal sealed class AppRouteWatcher
             var eq = token.IndexOf('=');
             if (eq <= 0)
             {
-                // Bare value with no sub-type: treat as a full path (the file picker's default).
+                // Bare value: treat as a full path.
                 _paths.Add(token);
                 continue;
             }
@@ -88,21 +74,25 @@ internal sealed class AppRouteWatcher
                     _services.Add(value);
                     break;
                 default:
-                    // pkg= (UWP package SID) and any future kind: not matched by image path. Skip with a note
-                    // so the user can see it had no effect rather than silently believing it routes.
+                    // pkg= (UWP) and unknown kinds: not matched by image path.
                     _logger.LogInformation("app route watcher: matcher kind '{Kind}' is not supported yet; ignored", kind);
                     break;
             }
         }
     }
 
+    /// <summary>
+    /// Whether a PID matches the app rules.
+    /// </summary>
     internal bool MatchesPid(uint pid) => ResolveServicePids().Contains(pid) || MatchesByImage(pid);
 
-    /// <summary>True when there is at least one matcher this watcher can act on.</summary>
+    /// <summary>
+    /// Has any matcher.
+    /// </summary>
     public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0;
 
     /// <summary>
-    /// Polls connections and routes matched apps' remote IPs until cancelled (tunnel teardown).
+    /// Poll and route matched apps' remotes.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
@@ -134,10 +124,10 @@ internal sealed class AppRouteWatcher
 
     private void Tick()
     {
-        // Resolve service matchers to their current hosting PIDs (services restart, so re-resolve each tick).
+        // Re-resolve service PIDs each tick (services restart).
         var servicePids = ResolveServicePids();
 
-        // Per-tick decision cache so each PID is classified at most once even if it owns many connections.
+        // Per-tick decision cache.
         var decision = new Dictionary<uint, bool>();
         var matchedIps = new List<string>();
 
@@ -154,8 +144,7 @@ internal sealed class AppRouteWatcher
                 var key = remote.ToString();
                 matchedIps.Add(key);
 
-                // Log each newly-seen matched destination once as a "request" (Trace) - the real "куда
-                // обращается" for TCP - and mirror it into the routing log when enabled.
+                // Log each new matched remote once.
                 if (_loggedRemotes.Count >= 65536)
                 {
                     _loggedRemotes.Clear();
@@ -178,8 +167,7 @@ internal sealed class AppRouteWatcher
         }
     }
 
-    // Whether the process' image path matches a path=/dir=/name= rule. Service-hosted (svc=) matching is
-    // handled separately by PID, since a svchost-hosted service shares svchost.exe's path.
+    // Image-path match for path=/dir=/name=; svc= handled by PID.
     private bool MatchesByImage(uint pid)
     {
         var path = ResolvePath(pid);
@@ -204,8 +192,7 @@ internal sealed class AppRouteWatcher
 
         foreach (var dir in _dirs)
         {
-            // Under the install tree: "<dir>\..." (case-insensitive). Catches an app's versioned subfolders
-            // and sibling helpers (an app's main .exe + its updater) from one folder rule.
+            // Matches dir prefix, catches versioned subfolders.
             if (path.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
@@ -252,7 +239,6 @@ internal sealed class AppRouteWatcher
     private static IEnumerable<(IPAddress Remote, uint Pid)> EnumerateTcpConnections()
     {
         var size = 0;
-        // First call sizes the buffer.
         GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
         if (size <= 0)
         {
@@ -284,10 +270,7 @@ internal sealed class AppRouteWatcher
                 var remote = new IPAddress(BitConverter.GetBytes(row.dwRemoteAddr));
                 if (!IsTunnelableRemote(remote))
                 {
-                    // A marked app also opens loopback/LAN connections (its own IPC, the router, a NAS).
-                    // Those must never be pulled into the tunnel — folding 127.0.0.1 into a /32 tunnel
-                    // route stole the system DNS the agent serves on 127.0.0.1 and broke the app's own
-                    // loopback IPC. Only routable public remotes belong in the per-app route set.
+                    // Skip loopback/LAN: routing 127.0.0.1 into the tunnel broke the agent's DNS and app IPC.
                     continue;
                 }
 
@@ -300,11 +283,7 @@ internal sealed class AppRouteWatcher
         }
     }
 
-    // Only routable public remotes belong in the tunnel. A process opens connections to many non-public
-    // peers — loopback (its own IPC/RPC, and the agent's DNS proxy on 127.0.0.1), the LAN (router, NAS,
-    // the local DNS upstream), link-local and multicast. Routing any of those into the tunnel is wrong and
-    // actively harmful, so they are filtered out before a /32 route or allowed-ip is ever created for them.
-    // The table is queried AF_INET only; the v6 arms are kept for a future AF_INET6 pass.
+    // Keep only public routable remotes; v6 arms for a future pass.
     internal static bool IsTunnelableRemote(IPAddress addr)
     {
         if (addr.AddressFamily == AddressFamily.InterNetwork)
@@ -374,8 +353,7 @@ internal sealed class AppRouteWatcher
         }
     }
 
-    // Resolves a service name to its hosting process id, or null when the service is stopped / absent. Only
-    // the services the user picked are queried (targeted), so no full service enumeration is needed.
+    // Resolve a service name to its hosting PID.
     private static uint? QueryServiceProcessId(string serviceName)
     {
         var scm = OpenSCManager(null, null, ScManagerConnect);

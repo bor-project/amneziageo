@@ -8,21 +8,15 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Points network adapters' DNS at the loopback proxy and restores them, via WMI
-/// (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder) - the same mechanism
-/// Set-DnsClientServerAddress uses, in-process (no process spawn). On this OS the pure-P/Invoke
-/// SetInterfaceDnsSettings is a no-op and a bare registry write isn't honored without the WMI/CIM
-/// notify, so WMI is the only reliable no-spawn option (needs BuiltInComInteropSupport).
-/// The captured original resolvers are exposed so the proxy can forward non-geo queries to them,
-/// preserving existing/corporate name resolution when running alongside another VPN. State is
-/// persisted per tunnel so a crashed predecessor's redirect can be reverted from another process.
+/// (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder). State is persisted per tunnel so a
+/// crashed predecessor's redirect can be reverted from another process.
 /// </summary>
 internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 {
     private string _name = string.Empty;
 
     /// <summary>
-    /// Reads the resolvers the system currently uses (the default-route adapter's, else the first
-    /// adapter with DNS), so the proxy can forward non-geo queries upstream. Read-only.
+    /// Reads the resolvers the system currently uses, so the proxy can forward non-geo queries upstream.
     /// </summary>
     public IReadOnlyList<string> CaptureUpstream()
     {
@@ -54,11 +48,8 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     }
 
     /// <summary>
-    /// Reads the connection-specific DNS suffix(es) the system currently advertises - the corp/LAN domain
-    /// pushed by DHCP (DNSDomain) plus any suffix search list (DNSDomainSuffixSearchOrder). The proxy treats
-    /// names under these as LOCAL and resolves them via the LAN resolver, so a corporate host published under
-    /// a public-looking FQDN via split-horizon DNS (e.g. mail.company.com -> an internal IP) is NOT forced
-    /// offshore through the tunnel in full-tunnel mode (which breaks it). Read-only; loopback/empty skipped.
+    /// Reads the connection-specific DNS suffixes the system advertises, so the proxy treats names under
+    /// them as local and resolves them via the LAN resolver.
     /// </summary>
     public IReadOnlyList<string> CaptureLocalDnsSuffixes()
     {
@@ -102,14 +93,11 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             {
                 var index = Convert.ToUInt32(adapter["InterfaceIndex"]);
                 var current = adapter["DNSServerSearchOrder"] as string[] ?? [];
-                // Capture the baseline excluding our proxy targets and loopback so a dirty predecessor
-                // cannot make us "restore" the proxy address itself.
+                // Exclude our proxy targets and loopback so a dirty predecessor cannot be "restored".
                 saved[index] = current.Where(s => !proxyServers.Contains(s) && !IsLoopback(s)).ToArray();
                 SetDns(adapter, proxyServers);
-                // WMI SetDNSServerSearchOrder is IPv4-ONLY: it leaves the adapter's IPv6 DNS (often the
-                // router's fe80:: resolver) in place, and Windows will use it - handing back the local
-                // network's POISONED answer for a geo-blocked apex (e.g. chatgpt.com) that then bypasses
-                // the proxy entirely. Point IPv6 DNS at the proxy's ::1 too so every query reaches us.
+                // WMI SetDNSServerSearchOrder is IPv4-only and leaves the adapter's IPv6 DNS in place;
+                // point IPv6 DNS at the proxy's ::1 too so every query reaches us.
                 RedirectV6Dns(index);
             }
         }
@@ -119,10 +107,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     }
 
     /// <summary>
-    /// Sets a single adapter's DNS by interface index. Used for the tunnel adapter once it is up:
-    /// giving it the proxy as its IPv4 resolver makes it answer instantly and stops Windows' dead
-    /// fec0:: IPv6 resolvers (handed to a v4-only adapter) from stalling lookups. Empty list resets
-    /// the adapter to automatic (DHCP).
+    /// Sets a single adapter's DNS by interface index. Empty list resets the adapter to automatic (DHCP).
     /// </summary>
     public void SetAdapter(uint interfaceIndex, IReadOnlyList<string> servers)
     {
@@ -138,12 +123,8 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     }
 
     /// <summary>
-    /// Clears the OS DNS resolver cache (the same call <c>ipconfig /flushdns</c> makes). Run right after
-    /// the redirect to the loopback proxy is applied: without it, a domain resolved before connecting -
-    /// e.g. a popular site like youtube.com already in the cache - is served from the cache and never
-    /// reaches the proxy, so it is never matched and never routed into the tunnel until its TTL expires
-    /// (split routing silently misses it while its uncached CDN subdomains do get tracked). Also run on
-    /// teardown so proxy answers carrying tunnel-routed IPs do not linger. Best-effort; never throws.
+    /// Clears the OS DNS resolver cache (the same call ipconfig /flushdns makes). Run after the redirect
+    /// is applied and on teardown.
     /// </summary>
     public void FlushCache()
     {
@@ -157,8 +138,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
     }
 
-    // ipconfig /flushdns calls this same dnsapi export; it clears the system resolver cache in-process
-    // with no process spawn. Undocumented but stable since Windows XP.
+    // dnsapi export ipconfig /flushdns calls; clears the system resolver cache in-process.
     [DllImport("dnsapi.dll", EntryPoint = "DnsFlushResolverCache")]
     private static extern uint DnsFlushResolverCache();
 
@@ -196,7 +176,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         {
             // Empty originals => the adapter was on automatic (DHCP); resetting to none reverts it.
             SetAdapter(index, original);
-            // Hand IPv6 DNS back to automatic (re-acquired via RA/DHCPv6) - it was redirected to ::1.
+            // Hand IPv6 DNS back to automatic; it was redirected to ::1.
             ResetV6Dns(index);
         }
     }

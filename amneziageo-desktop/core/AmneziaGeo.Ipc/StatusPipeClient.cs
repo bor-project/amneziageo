@@ -13,8 +13,7 @@ public sealed class StatusPipeClient
     private static readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(30);
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
-    // Serializes the whole request->ack cycle. The protocol tracks a single pending ack, so only one command
-    // may be in flight at a time — otherwise concurrent callers get each other's responses (see SendCommandAsync).
+    // Serializes the request->ack cycle: only one command may be in flight at a time.
     private readonly SemaphoreSlim _commandLock = new(1, 1);
     private readonly Lock _ackGate = new();
     private StreamWriter? _writer;
@@ -41,9 +40,9 @@ public sealed class StatusPipeClient
     public bool IsConnected => _writer is not null;
 
     /// <summary>
-    /// When true, the client sends an <see cref="IpcContract.OpAttachUi"/> marker on every (re)connect so
-    /// the agent treats this connection as a presence-holding UI session — the tunnel stays up only while
-    /// such a session is connected. The UI sets this; transient command clients (the CLI) leave it false.
+    /// When true, the client announces itself as a presence-holding UI session on every (re)connect, so
+    /// the tunnel stays up only while such a session is connected. The UI sets this; transient command
+    /// clients leave it false.
     /// </summary>
     public bool AnnounceUi { get; init; }
 
@@ -92,11 +91,8 @@ public sealed class StatusPipeClient
 
         var line = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.CommandType, Command: command), IpcJson.Options);
 
-        // One command in flight at a time: the single _pendingAck slot can pair a response with its request
-        // only if the previous command has been acked first. Two concurrent callers (e.g. two routing-list
-        // editors loading at once) would otherwise overwrite _pendingAck and have their replies cross-delivered
-        // FIFO — the symptom was an editor showing another command's response (the whole geo catalogue instead
-        // of the list's rules). Holding _commandLock across the write AND the ack wait keeps each pair intact.
+        // One command in flight at a time: holding _commandLock across the write and the ack wait keeps
+        // each request/response pair intact.
         await _commandLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -141,8 +137,7 @@ public sealed class StatusPipeClient
         }
     }
 
-    // Drops the pending ack slot if it is still the given request's, so a later response cannot resolve a
-    // request that already failed or timed out.
+    // Drops the pending ack slot if it still belongs to the given request.
     private void ClearPendingAck(TaskCompletionSource<IpcAck> tcs)
     {
         lock (_ackGate)
@@ -198,11 +193,6 @@ public sealed class StatusPipeClient
         }
     }
 
-    /// <summary>
-    /// Sends the UI-attach marker on the freshly opened connection. Fire-and-forget (no ack awaited): the
-    /// agent's reply is an ordinary ack with no pending request and is harmlessly ignored. Uses the write
-    /// lock so it cannot interleave with a concurrent user command.
-    /// </summary>
     private async Task AnnounceUiAsync(StreamWriter writer, CancellationToken ct)
     {
         var line = JsonSerializer.Serialize(

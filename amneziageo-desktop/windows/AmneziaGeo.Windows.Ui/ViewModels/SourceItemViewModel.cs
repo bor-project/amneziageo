@@ -5,9 +5,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// A geo data source row on the routing page. Update / delete are dispatched as IPC commands to the
-/// agent via the provided delegates (rather than parent-relative bindings, which do not resolve inside
-/// the delete flyout's popup).
+/// A geo data source row on the routing page. Update / delete are dispatched as IPC commands via the
+/// provided delegates.
 /// </summary>
 internal sealed partial class SourceItemViewModel : ViewModelBase
 {
@@ -46,8 +45,7 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     private bool _updating;
 
     /// <summary>
-    /// The last download/parse failure for this source (e.g. a wrong URL), or null when the last attempt
-    /// succeeded. Folded into <see cref="Detail"/> so the row explains why a source has no categories.
+    /// The last download/parse failure for this source, or null when the last attempt succeeded.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Detail))]
@@ -59,14 +57,15 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     private int _progress;
 
     /// <summary>
-    /// True when the last update-check found a newer remote file; the row badges it until re-downloaded.
-    /// Hidden while a download is in flight (the spinner already shows the fresh state is coming).
+    /// True when a newer remote file was found.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowUpdateBadge))]
     private bool _updateAvailable;
 
-    /// <summary>Whether to badge the row with "обновление доступно".</summary>
+    /// <summary>
+    /// Whether to badge the row with "обновление доступно".
+    /// </summary>
     public bool ShowUpdateBadge => UpdateAvailable && !Updating;
 
     /// <summary>
@@ -80,8 +79,7 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
             : Loc.Instance.Get("Source_DetailLoaded", Kind, CategoryCount, Updated);
 
     /// <summary>
-    /// True while a download percentage should be shown (downloading); false once the file is in hand
-    /// and the routing lists re-materialize, where the spinner runs indeterminate (Progress is -1).
+    /// True while a download percentage should be shown.
     /// </summary>
     public bool ShowProgress => Updating && Progress >= 0;
 

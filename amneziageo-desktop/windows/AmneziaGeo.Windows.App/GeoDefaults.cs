@@ -17,7 +17,9 @@ internal static class GeoDefaults
         ("geoip", "https://raw.githubusercontent.com/123jjck/cdn-ip-ranges/main/discord-voice/discord-voice_geoip_ipv4.dat"),
     ];
 
-    /// <summary>Seeds the default sources only when none are configured. Returns true if it seeded.</summary>
+    /// <summary>
+    /// Seeds the default sources when none are configured.
+    /// </summary>
     public static async Task<bool> SeedIfEmptyAsync(IStateStore store, ILogger? logger, CancellationToken ct)
     {
         var existing = await store.ListGeoSourcesAsync(ct);

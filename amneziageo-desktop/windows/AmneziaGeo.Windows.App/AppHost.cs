@@ -22,14 +22,11 @@ internal static class AppHost
 
         var builder = Host.CreateApplicationBuilder();
 
-        // Capture recent log lines in memory so the UI home screen can show a live activity journal;
-        // the same instance is registered for the status broker and fed by the Serilog sink below.
+        // In-memory log ring for the UI activity journal; fed by the Serilog sink below.
         var logBuffer = new LogRingBuffer();
         builder.Services.AddSingleton(logBuffer);
 
-        // The live verbosity switch (#82): the minimum level is not hardcoded but obeys a switch the user can
-        // raise to Debug/Trace to diagnose a failing or slow connect. Shared by both processes and kept in
-        // sync with the persisted "log-level" setting by LogLevelWatcher; the broker also pushes it instantly.
+        // Live verbosity switch: shared by both processes, kept in sync with the "log-level" setting.
         var logLevel = new LogLevelController();
         builder.Services.AddSingleton(logLevel);
 
@@ -41,9 +38,7 @@ internal static class AppHost
             .WriteTo.File(
                 Path.Combine(TunnelPaths.LogDirectory(), "ageo-.log"),
                 rollingInterval: RollingInterval.Day,
-                // Bound the on-disk footprint so a long Trace session cannot fill the disk: roll at 25 MB and
-                // keep at most 10 files per process. Trace is verbose, so this cap is what makes it safe to
-                // leave on while reproducing an issue.
+                // Cap on-disk footprint: a long Trace session must not fill the disk.
                 fileSizeLimitBytes: 25_000_000,
                 rollOnFileSizeLimit: true,
                 retainedFileCountLimit: 10)

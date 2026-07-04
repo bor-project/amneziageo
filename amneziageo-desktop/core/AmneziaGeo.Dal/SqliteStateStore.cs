@@ -8,7 +8,7 @@ using Microsoft.Data.Sqlite;
 namespace AmneziaGeo.Dal;
 
 /// <summary>
-/// SQLite-backed <see cref="IStateStore"/>.
+/// SQLite-backed state store.
 /// </summary>
 public sealed class SqliteStateStore(string databasePath) : IStateStore
 {
@@ -177,41 +177,31 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN routing_list_id INTEGER;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN use_routing INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
 
-            // Collapse to one configuration per profile: the balancer (multiple members + failover) was
-            // removed, so keep only the first/default member (position 0) of every profile and drop the
-            // rest. Idempotent — after the first run no position>0 rows remain. routing_list_id/use_routing
-            // are denormalised onto the surviving position-0 row, so the assignment carries over unchanged.
+            // Collapse to one config per profile (balancer removed): drop non-primary rows.
             await TryAlterAsync(connection, "DELETE FROM balancers WHERE position > 0;", ct).ConfigureAwait(false);
 
-            // Balancer routing projection lives in its own columns so it never clobbers a config's
-            // own set-geo split: the user columns (geo_split/rules/routes/domains) hold user intent,
-            // the proj_* columns hold the active projection, and `projected` selects which is live.
+            // Projection columns hold the live balancer routing; user columns hold config intent.
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN projected INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_split INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
-            // Per-app tunneling (#68): the materialized app matchers ("dir=...", "svc=...", etc.) for the
-            // active projection. The own set-geo path derives apps from rules_json, so only the projection
-            // (which carries no rules) needs its own column.
+            // Materialized app matchers for the projection (config path derives apps from rules).
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_apps_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
 
-            // The routing list a live projection came from (#87/#89), so the running tunnel can resolve the
-            // list's traffic settings (local DNS / exclusions / all-UDP). NULL for full-tunnel / no-list.
+            // Routing list a live projection came from (null for full-tunnel / no-list).
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routing_list_id INTEGER;", ct).ConfigureAwait(false);
 
-            // HTTP validators for the geo-list update-check: captured at download time so a later check
-            // can issue a conditional request and learn whether the remote file changed without re-fetching it.
+            // HTTP validators for conditional update-checks.
             await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN etag TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN last_modified TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
 
-            // WebSocket transport host, added after the table shipped with only use_ws/ws_port.
+            // WebSocket transport host.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
 
-            // Tunnel MTU (#80): default 1280 (conservative, #109), valid 576-1500. Written to [Interface] MTU.
+            // Tunnel MTU (default 1280, valid 576-1500).
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1280;", ct).ConfigureAwait(false);
 
-            // Generation counter bumped whenever a routing list's materialized set (routes/domains) changes,
-            // so a running tunnel can cheaply detect its geo address set went stale and re-apply it (#83).
+            // Generation counter, bumped when the materialized set changes.
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
         }
     }
@@ -425,9 +415,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    // An active balancer projection wins; otherwise fall back to the config's own
-                    // set-geo split. The projection carries no rules — the live service only needs
-                    // the split flag, routes, and domains.
+                    // Active balancer projection wins; otherwise the config's own split. Projections carry no rules.
                     if (reader.GetInt32(0) != 0)
                     {
                         var projRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [];
@@ -456,8 +444,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                // Insert leaves the user columns at safe defaults (no own split); the conflict path
-                // never lists them, so a config's own set-geo split is preserved untouched.
+                // Insert keeps user columns at defaults; conflict path preserves the config's own split.
                 command.CommandText =
                     """
                     INSERT INTO tunnel_geo (name, geo_split, rules_json, routes_json, domains_json, projected, proj_split, proj_routes_json, proj_domains_json, proj_apps_json, proj_routing_list_id, updated_at)
@@ -494,8 +481,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                // Only the projection is dropped; the user columns are left intact, so the config
-                // reverts to its own set-geo split (or no split). A no-op when no row exists.
+                // Drop the projection; config reverts to its own split. No-op when no row.
                 command.CommandText =
                     """
                     UPDATE tunnel_geo
@@ -526,8 +512,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                // Only a LIVE projection (projected = 1) names an active routing list; the config's own
-                // set-geo split has no list. NULL proj_routing_list_id = full-tunnel / no-list projection.
+                // Only a live projection names a routing list; null = full-tunnel / no-list.
                 command.CommandText = "SELECT proj_routing_list_id FROM tunnel_geo WHERE name = $name AND projected = 1;";
                 command.Parameters.AddWithValue("$name", name);
 
@@ -971,8 +956,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         }
 
                         currentIps.Add(reader.GetString(1));
-                        // The domain's resolved-at is the freshest write across its IP rows, so a partially
-                        // refreshed set still reports a recent age rather than an old one.
+                        // Resolved-at is the freshest write across the domain's IP rows.
                         var rowResolvedAt = DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
                         if (currentResolvedAt is null || rowResolvedAt > currentResolvedAt)
                         {
@@ -1021,9 +1005,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
             await using (transaction.ConfigureAwait(false))
             {
-                // The routing assignment (routing_list_id / use_routing) lives on these same rows.
-                // Re-saving a balancer must not silently drop it — losing use_routing would make the
-                // next projection clear the members' split and bring the tunnel up full (kill-switch).
+                // Preserve the routing assignment across re-saves (losing use_routing drops the split).
                 long? routingListId = null;
                 var useRouting = false;
                 var read = connection.CreateCommand();
@@ -1059,10 +1041,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
-                // A profile is exactly one row holding its single configuration (the member column). A
-                // config-less profile stores an empty-string member; GetBalancerAsync surfaces it as an
-                // empty Config. The recheck_seconds/mode columns are vestigial (the balancer was removed) —
-                // write fixed values to satisfy the NOT NULL schema without reshaping the table.
+                // One row per profile (member column). recheck_seconds/mode are vestigial; write fixed values.
                 var insert = connection.CreateCommand();
                 await using (insert.ConfigureAwait(false))
                 {
@@ -1615,10 +1594,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 }
                 else
                 {
-                    // Bump the generation only when the materialized set actually changes: a rename, or a
-                    // re-materialize that produced the same routes/domains, must not force the running tunnel
-                    // to re-push its allowed-ips (#83). The JSON is produced deterministically from the rules,
-                    // so byte-equality is a safe "unchanged" test (a false miss only costs one no-op re-apply).
+                    // Bump generation only when the materialized set changes (byte-equal JSON = unchanged).
                     long generation = 1;
                     var current = connection.CreateCommand();
                     await using (current.ConfigureAwait(false))
@@ -1816,8 +1792,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                // Join the live projection to the routing list itself so the caller sees the list's CURRENT
-                // materialized set and generation - not the snapshot captured into proj_* at connect time.
+                // Read the list's current materialization, not the connect-time snapshot.
                 command.CommandText =
                     """
                     SELECT rl.id, rl.generation, rl.routes_json, rl.domains_json
@@ -1959,7 +1934,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         {
             await connection.OpenAsync(ct).ConfigureAwait(false);
 
-            // The legacy global all-UDP flag (now per-routing-list). Default off.
+            // Legacy global all-UDP flag. Default off.
             var globalAllUdp = 0;
             var readUdp = connection.CreateCommand();
             await using (readUdp.ConfigureAwait(false))
@@ -1973,10 +1948,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 }
             }
 
-            // Seed each assigned routing list's settings from its member config's DNS/exclusions plus the
-            // global all-UDP, but only for lists that have no settings row yet (NOT EXISTS) - so re-running is
-            // a no-op. One member per list (GROUP BY routing_list_id; first wins on a list shared across
-            // configs). An all-default tuple inserts nothing, keeping "no row = defaults".
+            // Seed settings from member config + global all-UDP, only for lists with no row yet.
             var migrate = connection.CreateCommand();
             await using (migrate.ConfigureAwait(false))
             {
@@ -2100,9 +2072,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         return new RoutingList(id, name, rules, routes, domains, ExtractApps(rules));
     }
 
-    // The materialized app matchers for a rule set: App-kind rules carry their matcher token verbatim
-    // ("dir=...", "path=...", "svc=...", "pkg=...", "name=..."). Derived from rules so the own set-geo and
-    // routing-list paths need no separate column; only the rules-less balancer projection persists its own.
+    // Collect App-kind rule values as matcher tokens.
     private static List<string> ExtractApps(IReadOnlyList<GeoRule> rules)
     {
         var apps = new List<string>();

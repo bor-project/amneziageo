@@ -6,28 +6,22 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// UDP complement to <see cref="AppRouteWatcher"/>: subscribes to the kernel-network ETW provider and
-/// routes remote IPs of UDP datagrams sent by matched apps through the tunnel. The TCP-based watcher
-/// cannot see UDP flows, so real-time media apps (voice calls, online games) whose servers deliver IPs through
-/// an application-layer signaling channel (not DNS) need this path to land UDP traffic in the tunnel.
+/// UDP complement to AppRouteWatcher: tunnels UDP destinations of matched apps via the kernel-network ETW provider.
 /// </summary>
 internal sealed class UdpFlowTracker : IDisposable
 {
     // Microsoft-Windows-Kernel-Network - per-datagram network events.
     private static readonly Guid KernelNetworkProvider = new("7DD42A49-5329-4832-8DFD-43D979153A88");
-    // KERNEL_NETWORK_KEYWORD_IPV4 (0x10): IPv4 TCP and UDP datagram events from this provider.
+    // KERNEL_NETWORK_KEYWORD_IPV4 (0x10): IPv4 TCP and UDP datagram events.
     private const ulong IPv4Keyword = 0x10UL;
-    // EventId 42 = KNetEvt_SendIPV4Udp (UDPv4 datagram sent). NB: id 10 is TCPv4 send, which the TCP watcher
-    // already covers - real-time media (voice calls) is UDP, so the UDP send event (42) is the one we want.
+    // EventId 42 = UDPv4 send; 10 is TCPv4 and already covered by the TCP watcher.
     private const int UdpV4SendId = 42;
-    // KNetEvt_SendIPV4Udp payload (little-endian): PID(4) size(4) daddr(4) saddr(4) dport(2) sport(2) ...
-    // The owning process is an explicit payload field at offset 0 - more reliable than the ETW header PID,
-    // which this provider can log under a system worker thread. daddr (the remote/destination IPv4) is at 8.
+    // SendIPV4Udp payload (little-endian): PID(4) size(4) daddr(4) saddr(4) dport(2) sport(2).
+    // Payload PID (offset 0) is more reliable than the ETW header PID; daddr at offset 8.
     private const int PidOffset = 0;
     private const int RemoteAddrOffset = 8;
     private const int MinPayloadBytes = RemoteAddrOffset + 4;
-    // Our own service process - the in-process WG engine's underlay UDP (and the loopback DNS proxy's
-    // upstream queries) come from here and must never be tunneled in all-UDP mode (would loop the transport).
+    // Own process - its underlay and DNS-proxy UDP must never be tunneled (would loop).
     private static readonly uint OwnProcessId = (uint)Environment.ProcessId;
 
     private readonly AppRouteWatcher? _watcher;
@@ -36,14 +30,12 @@ internal sealed class UdpFlowTracker : IDisposable
     private readonly IPAddress? _excludeEndpoint;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
-    // Destinations already routed (or already found non-tunnelable) this session, keyed by the raw 4-byte
-    // daddr. Handle runs on a single ETW processing thread, so this needs no lock; it lets the common
-    // repeat-datagram case skip the per-packet IPAddress/string allocation and the shared tracker lock.
+    // Seen destinations (raw daddr); ETW handler is single-threaded, no lock needed.
     private readonly HashSet<uint> _seen = [];
 
-    /// <param name="watcher">Per-app PID matcher; may be null in all-UDP mode (the PID gate is bypassed).</param>
-    /// <param name="allUdp">When true, tunnel EVERY process's UDP destinations, not just matched apps' (#77-udp).</param>
-    /// <param name="excludeEndpoint">The tunnel's own underlay server IP, never tunneled (avoids a transport loop).</param>
+    /// <summary>
+    /// ctor
+    /// </summary>
     public UdpFlowTracker(AppRouteWatcher? watcher, DomainTracker tracker, bool allUdp, IPAddress? excludeEndpoint, ILogger logger)
     {
         _watcher = watcher;
@@ -62,9 +54,7 @@ internal sealed class UdpFlowTracker : IDisposable
             {
                 ct.Register(Stop);
 
-                // EnableProvider returns true only when it RESTARTED a pre-existing session; false is the
-                // normal first-enable path, and a genuine failure throws (caught below). Treating false as
-                // "unavailable" disabled the tracker on every clean start - so do not gate on the result.
+                // EnableProvider false is normal first-enable; do not gate on the result.
                 if (_session.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, IPv4Keyword))
                 {
                     _logger.LogDebug("UdpFlowTracker: restarted a pre-existing ETW session {Name}", sessionName);
@@ -73,7 +63,7 @@ internal sealed class UdpFlowTracker : IDisposable
                 _session.Source.AllEvents += evt => Handle(evt, ct);
                 _logger.LogInformation("UdpFlowTracker: ETW session {Name} started", sessionName);
 
-                // Source.Process() blocks the thread until Stop() is called.
+                // Source.Process() blocks until Stop().
                 await Task.Run(() => _session.Source.Process(), CancellationToken.None).ConfigureAwait(false);
             }
         }
@@ -107,15 +97,11 @@ internal sealed class UdpFlowTracker : IDisposable
                 return;
             }
 
-            // Owning process is the payload PID field (offset 0), not the ETW header PID. In all-UDP mode
-            // every process's UDP is tunneled EXCEPT our own; otherwise only matched apps' (by PID).
+            // Payload PID (offset 0), not the ETW header PID.
             var pid = BitConverter.ToUInt32(data, PidOffset);
             if (_allUdp)
             {
-                // Never tunnel our OWN process's UDP. The in-process WG engine sends the plain-UDP underlay
-                // to the server; pinning that to the tunnel it carries is a fatal loop - and keying on the PID
-                // (not the endpoint IP) is robust against a round-robin endpoint that resolves to several IPs.
-                // The loopback DNS proxy's upstream queries run from here too and need no tunneling.
+                // Never tunnel own process: WG underlay and DNS-proxy upstream would loop.
                 if (pid == OwnProcessId)
                 {
                     return;
@@ -126,22 +112,17 @@ internal sealed class UdpFlowTracker : IDisposable
                 return;
             }
 
-            // Cheap per-packet dedupe BEFORE any allocation or the shared tracker lock: the raw 4 bytes as
-            // a hash key (endianness is irrelevant for a key). A destination already routed - or already
-            // rejected below - is the overwhelmingly common case under a live call and is skipped here.
+            // Dedupe by raw daddr before any allocation.
             var daddr = BitConverter.ToUInt32(data, RemoteAddrOffset);
             if (_seen.Contains(daddr))
             {
                 return;
             }
 
-            // daddr is the IPv4 destination in network byte order - read the 4 bytes straight into IPAddress
-            // (do not BitConverter it, which would byte-swap on a little-endian host).
+            // daddr is network byte order; read bytes directly into IPAddress.
             var remoteIp = new IPAddress(new ReadOnlySpan<byte>(data, RemoteAddrOffset, 4).ToArray());
 
-            // Never tunnel the WG underlay's own datagrams to the server endpoint: that would route the
-            // transport into the tunnel it carries (a loop). Matters in all-UDP mode, where the engine's
-            // plain-UDP send to the real server would otherwise be captured and pinned to the tunnel.
+            // Skip the WG underlay endpoint to avoid a transport loop.
             if (_excludeEndpoint is not null && remoteIp.Equals(_excludeEndpoint))
             {
                 MarkSeen(daddr);
@@ -154,12 +135,9 @@ internal sealed class UdpFlowTracker : IDisposable
                 return;
             }
 
-            // Remember the destination only once the tracker actually routed it; a failure (adapter not up
-            // yet, route add error) leaves it unseen so a later datagram retries it.
+            // Mark seen only after a successful route; failures retry on the next datagram.
             if (_tracker.UpdateAppIps([remoteIp.ToString()]))
             {
-                // A new (deduped) UDP destination we actually tunneled - the real "куда обращается" for UDP,
-                // at Trace (a request). Mirrored into the routing log when enabled.
                 _logger.LogTrace("udp request -> {Remote} (pid {Pid})", remoteIp, pid);
                 if (RouteLog.Enabled)
                 {
@@ -175,8 +153,7 @@ internal sealed class UdpFlowTracker : IDisposable
         }
     }
 
-    // Records a destination as handled. Bounded so a long session cannot grow it without limit; on overflow
-    // the whole set is dropped (each live destination is simply re-evaluated once on its next datagram).
+    // Marks destination handled; clears on overflow to bound the set.
     private void MarkSeen(uint daddr)
     {
         if (_seen.Count >= 65536)

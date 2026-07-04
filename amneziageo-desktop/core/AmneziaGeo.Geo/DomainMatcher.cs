@@ -4,12 +4,7 @@ using AmneziaGeo.Decl;
 namespace AmneziaGeo.Geo;
 
 /// <summary>
-/// Decides whether a domain should be routed through the tunnel. Built ONCE from the materialized geo
-/// domain set and reused for every DNS query: exact ("full") and suffix ("domain") rules are indexed in
-/// hash sets for O(1)/O(labels) lookup, substring ("plain") values are pre-lower-cased, and regex rules
-/// are pre-compiled - so a query costs no per-entry allocation and no regex recompilation, unlike the old
-/// per-query linear scan that re-lower-cased every entry and re-parsed every pattern through the 15-slot
-/// static Regex cache.
+/// Decides whether a domain is routed through the tunnel.
 /// </summary>
 public sealed class DomainMatcher
 {
@@ -19,9 +14,7 @@ public sealed class DomainMatcher
     private readonly List<Regex> _regex = [];
 
     /// <summary>
-    /// Builds the matcher index. Each value is normalized once (trailing dot trimmed, lower-cased); each
-    /// regex is compiled once. A malformed regex pattern is skipped rather than failing the whole tunnel
-    /// (the old code would have thrown on every query that reached it).
+    /// ctor
     /// </summary>
     public DomainMatcher(IReadOnlyList<GeoDomain> domains)
     {
@@ -53,16 +46,12 @@ public sealed class DomainMatcher
     }
 
     /// <summary>
-    /// Returns true when the domain matches any configured geo rule. Delegates to <see cref="Match"/> so
-    /// there is a single matching implementation; <see cref="GeoMatch"/> is a stack-only struct, so the
-    /// common (bool) path allocates nothing beyond the one lower-cased host that matching already needs.
+    /// Returns true when the domain matches any geo rule.
     /// </summary>
     public bool IsTunneled(string domain) => Match(domain) is not null;
 
     /// <summary>
-    /// Returns the geo rule that matches the domain - its kind and the value it matched on - or null when
-    /// nothing matches, so a caller (e.g. the routing log) can report WHY a name was tunneled. Same order
-    /// and semantics as before: full (exact), then exact/suffix domain, then substring plain, then regex.
+    /// Returns the geo rule that matched the domain, or null.
     /// </summary>
     public GeoMatch? Match(string domain)
     {
@@ -72,8 +61,6 @@ public sealed class DomainMatcher
             return null;
         }
 
-        // Full: exact host. Domain: exact host, or any parent label-boundary suffix ("x.example.com"
-        // matches "example.com") - the same semantics as host == value || host.EndsWith("." + value).
         if (_full.Contains(host))
         {
             return new GeoMatch(GeoDomainKind.Full, host);
@@ -114,7 +101,9 @@ public sealed class DomainMatcher
         return null;
     }
 
-    /// <summary>The geo rule that matched a domain: which kind of rule, and the value it matched on.</summary>
+    /// <summary>
+    /// The geo rule that matched a domain.
+    /// </summary>
     public readonly record struct GeoMatch(GeoDomainKind Kind, string Value);
 
     private static string Normalize(string value)

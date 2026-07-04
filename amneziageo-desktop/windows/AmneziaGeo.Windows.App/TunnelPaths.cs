@@ -22,9 +22,7 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Settings-store key carrying the last connect-failure reason for a tunnel. The per-tunnel service
-    /// process writes it on a setup failure; the agent reads it back on a failed connect so the cause shows
-    /// up in the UI journal (the per-tunnel process's own log file is not visible to the UI).
+    /// Settings key carrying the last connect-failure reason for a tunnel.
     /// </summary>
     public static string ConnectMessageKey(string name)
     {
@@ -56,8 +54,7 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Path to the bundled wstunnel client executable, shipped next to the agent so the privileged
-    /// service can launch it as the UDP-over-TCP transport. Lives in the install directory, not ProgramData.
+    /// Path to the bundled wstunnel client executable.
     /// </summary>
     public static string WsTunnelExe()
     {
@@ -73,9 +70,7 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Path to the bundled default-configuration database laid next to the agent by the installer when
-    /// installer.config.json supplies a defaultConfigDb (#54). Consumed once by <see cref="SeedImporter"/>
-    /// into <see cref="StateDbFile"/>. Lives in the install directory, not ProgramData.
+    /// Path to the bundled default-configuration database laid next to the agent by the installer.
     /// </summary>
     public static string SeedDbFile()
     {
@@ -83,9 +78,7 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Marker laid next to the agent (by the installer) when the bundled default DB should overwrite an
-    /// existing <see cref="StateDbFile"/> on conflict (the replace-on-conflict choice, #54). Its mere
-    /// presence means "replace"; absence means "keep the existing database".
+    /// Marker file: presence means the bundled default DB should replace an existing one on conflict.
     /// </summary>
     public static string SeedReplaceFlagFile()
     {
@@ -109,8 +102,7 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Path to a tunnel's persisted endpoint-exclusion routes used to revert them after a stop, even
-    /// from another process when the tunnel exited without running its teardown.
+    /// Path to a tunnel's persisted endpoint-exclusion routes.
     /// </summary>
     public static string RouteStateFile(string name)
     {
@@ -126,9 +118,7 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Path to a tunnel's persisted LAN-bypass exclusion routes (the RFC1918 ranges kept off the tunnel
-    /// in full-tunnel mode), used to revert them after a stop, even from another process when the tunnel
-    /// exited without running its teardown.
+    /// Path to a tunnel's persisted LAN-bypass exclusion routes.
     /// </summary>
     public static string LanStateFile(string name)
     {
@@ -160,8 +150,7 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Directory where collected diagnostics bundles are written (#82). Under ProgramData, so a bundle the
-    /// SYSTEM agent writes is readable by the unprivileged UI, which copies it to the user's chosen location.
+    /// Directory where collected diagnostics bundles are written.
     /// </summary>
     public static string DiagnosticsDirectory()
     {

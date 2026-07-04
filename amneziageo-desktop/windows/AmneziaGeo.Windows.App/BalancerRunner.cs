@@ -4,9 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Runs a profile's single configuration: brings the tunnel up, keeps it alive, and re-dials when the
-/// handshake dies. Re-runs on each change so connect / disconnect and routing edits apply live without
-/// restarting the agent. Returns only on shutdown (the host cancellation token).
+/// Runs the profile config and re-runs on each change.
 /// </summary>
 internal sealed class BalancerRunner(
     ServiceManager serviceManager,
@@ -20,18 +18,14 @@ internal sealed class BalancerRunner(
 {
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
-    // How long a connect attempt tolerates no handshake AND zero bytes received before treating the config
-    // as unreachable - the data-driven failure signal (the server never answered our handshake
-    // initiations). ConnectTimeoutSeconds stays the absolute backstop.
+    // No-handshake/no-rx window: data-driven unreachable signal.
     private static readonly TimeSpan _noResponseWindow = TimeSpan.FromSeconds(12);
 
     private BalancerGroup _group = null!;
     private AppSettings _settings = new();
 
     /// <summary>
-    /// Supervises the agent's target: re-reads the profile and routing, idles while stopped, and
-    /// (re)runs a session on each change so connect / disconnect and routing edits apply live without
-    /// restarting the agent. Returns only on shutdown (the host cancellation token).
+    /// Runs sessions per target change.
     /// </summary>
     public async Task RunAsync(BalancerGroup initial, CancellationToken ct)
     {
@@ -70,8 +64,7 @@ internal sealed class BalancerRunner(
                 }
                 catch (Exception ex)
                 {
-                    // A transient fault (service launch failure, store error, ...) must not kill the
-                    // supervisor or freeze the status; tear down, mark disconnected, and retry.
+                    // Don't let a transient fault kill the supervisor.
                     logger.LogError(ex, "tunnel session failed: {Reason}; retrying", ex.Message);
                     Stop(group.Config);
                     await SetStateAsync("disconnected", null);
@@ -81,16 +74,9 @@ internal sealed class BalancerRunner(
         }
     }
 
-    /// <summary>
-    /// Re-reads the target profile from the store so a config or routing edit takes effect. Falls back
-    /// to a profile that owns the named config when no profile row exists (so a bare config name is
-    /// connectable), and clears a dangling binding when the target names neither.
-    /// </summary>
     private async Task<BalancerGroup?> ResolveAsync(BalancerGroup initial, CancellationToken ct)
     {
-        // While running, stay on the latched running target so live edits re-apply but a newly-selected
-        // profile does NOT switch the tunnel (the user reconnects to apply). While stopped, track the
-        // selected target so the idle view reflects the user's choice. Fall back to the launch target.
+        // Latch the running target so a new selection doesn't switch until reconnect.
         var name = (control.Running ? control.RunningTarget : control.Target) ?? control.Target ?? initial.Name;
         var balancer = await store.GetBalancerAsync(name, ct);
         if (balancer is not null)
@@ -103,10 +89,7 @@ internal sealed class BalancerRunner(
             return new BalancerGroup(name, name);
         }
 
-        // The target names neither a profile nor a config. Either nothing is selected yet (clean install)
-        // or the bound profile/config was deleted - a broken binding. Drop any dangling selection so the
-        // UI stops showing a phantom target, and keep the supervisor alive on a nameless empty profile so
-        // it idles (the pipe/status stay up) until a profile is created and selected.
+        // Broken binding: clear the dangling selection and idle.
         if (!string.IsNullOrEmpty(name))
         {
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
@@ -117,9 +100,6 @@ internal sealed class BalancerRunner(
         return new BalancerGroup(string.Empty, string.Empty);
     }
 
-    /// <summary>
-    /// Blocks until the desired state or configuration changes (or the agent shuts down).
-    /// </summary>
     private static async Task IdleAsync(CancellationToken token)
     {
         try
@@ -131,10 +111,6 @@ internal sealed class BalancerRunner(
         }
     }
 
-    /// <summary>
-    /// Runs one session: projects routing, connects the profile's single config, then keeps it alive
-    /// (re-dialing on a dead handshake) until the session token fires (a change signal or shutdown).
-    /// </summary>
     private async Task RunSessionAsync(BalancerGroup group, CancellationToken ct)
     {
         _settings = await settingsStore.LoadAsync(ct);
@@ -142,8 +118,7 @@ internal sealed class BalancerRunner(
 
         if (string.IsNullOrEmpty(config))
         {
-            // A named-but-config-less profile is worth a warning; the nameless empty profile (no target
-            // selected) is the normal idle state and must stay quiet.
+            // Named-but-config-less warns; nameless idle stays quiet.
             if (!string.IsNullOrEmpty(group.Name))
             {
                 logger.LogWarning("profile {Profile} has no configuration", group.Name);
@@ -151,9 +126,7 @@ internal sealed class BalancerRunner(
 
             await SetStateAsync("disconnected", null);
 
-            // A user connect to a config-less profile can never succeed. Drop the desired state to stopped
-            // and raise the one-shot failed notice instead of sitting on Running=true (perpetual
-            // "connecting…"). FailConnect signals, so the supervisor re-enters the idle branch next loop.
+            // Fail the connect instead of perpetual "connecting…".
             if (control.Running)
             {
                 control.FailConnect();
@@ -168,8 +141,7 @@ internal sealed class BalancerRunner(
             logger.LogError("missing config: {Config}", config);
             await SetStateAsync("disconnected", null);
 
-            // Same as the config-less case: a config whose .conf is gone can never dial, so fail the
-            // connect rather than leaving Running=true (perpetual "connecting…").
+            // Missing .conf: fail the connect.
             if (control.Running)
             {
                 control.FailConnect();
@@ -185,14 +157,10 @@ internal sealed class BalancerRunner(
         await SetStateAsync("connecting", null);
         if (!await TryConnectAsync(config, ct))
         {
-            // A user-initiated connect could not bring the config up within the data-driven deadline.
-            // Give up (отбой) and raise a one-shot "failed" notice for the UI rather than retrying
-            // forever; FailConnect drops the desired state to stopped, so the supervisor then idles.
+            // Give up and raise the failed notice; supervisor idles after.
             if (!ct.IsCancellationRequested)
             {
-                // Surface the per-tunnel service's own failure reason (wstunnel missing, config parse, etc.)
-                // that it forwarded to the shared store; fall back to the generic line when there is none
-                // (a plain reachability timeout leaves no message).
+                // Surface the service's failure reason if any.
                 var reason = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(config), ct);
                 if (string.IsNullOrEmpty(reason))
                 {
@@ -248,8 +216,7 @@ internal sealed class BalancerRunner(
         }
         finally
         {
-            // Surface a transient "disconnecting" only on a genuine user disconnect (running off),
-            // not on a config-change re-run, where the session immediately reconnects.
+            // "disconnecting" only on a real user disconnect, not a re-run.
             if (!control.Running)
             {
                 await SetStateAsync("disconnecting", config);
@@ -264,10 +231,7 @@ internal sealed class BalancerRunner(
     {
         if (await store.GetBalancerAsync(profile, ct) is null)
         {
-            // No profile drives this connect (a bare-config target: legacy set-profile <config> / a seed
-            // --agent target). Clear any projection a previous connect left on this config so it reverts to
-            // its own set-geo and a stale proj_routing_list_id does not leak a dead routing list's DNS /
-            // exclusions / all-UDP into this tunnel (#89).
+            // Clear stale projection so a dead routing list doesn't leak into this tunnel.
             await store.ClearTunnelProjectionAsync(config, ct);
             return;
         }
@@ -275,9 +239,7 @@ internal sealed class BalancerRunner(
         var (listId, useRouting) = await store.GetProfileRoutingAsync(profile, ct);
         if (!useRouting || listId is null)
         {
-            // Routing off (or no list selected): full tunnel via the config's own AllowedIPs
-            // (0.0.0.0/0, ::/0). Project an explicit non-split state so the toggle is authoritative
-            // and overrides any config set-geo split. This is a kill-switch full tunnel by design.
+            // Routing off: project full tunnel, override config set-geo.
             await ProjectFullTunnelAsync(config, ct);
             return;
         }
@@ -296,10 +258,7 @@ internal sealed class BalancerRunner(
 
     private async Task ProjectFullTunnelAsync(string config, CancellationToken ct)
     {
-        // Projects an explicit non-split state: GetActiveTunnelGeoAsync then returns geoSplit=false, so
-        // AllowedIpsResolver falls back to the config's own AllowedIPs (0.0.0.0/0, ::/0) = full tunnel.
-        // Making the projection authoritative means the routing toggle overrides any config set-geo,
-        // so turning routing off reliably switches to full tunnel instead of a leftover split.
+        // geoSplit=false -> full tunnel via config AllowedIPs.
         await store.SaveTunnelProjectionAsync(config, false, [], [], [], null, ct);
         logger.LogInformation("projected full tunnel to {Config} (routing off)", config);
     }
@@ -318,7 +277,7 @@ internal sealed class BalancerRunner(
 
     private async Task<bool> TryConnectAsync(string member, CancellationToken ct)
     {
-        // Clear any forwarded reason from a previous attempt so a failure now reflects THIS run.
+        // Clear prior reason so this run's failure isn't stale.
         await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(member), string.Empty, ct);
 
         logger.LogInformation("connecting {Member}: creating and starting tunnel service", member);
@@ -344,8 +303,7 @@ internal sealed class BalancerRunner(
             if (uapi.TryGetPeerStatus(member) is { } status)
             {
                 var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalSeconds;
-                // Full per-poll resolution of the handshake progression (the Info heartbeat below is every 4s):
-                // at Debug/Trace a support engineer sees exactly when rx starts moving, or that it never does.
+                // Per-poll handshake detail for Debug/Trace.
                 logger.LogDebug("{Member}: poll - handshake={Hs}s tx={Tx}B rx={Rx}B elapsed={Sec}s",
                     member, status.HandshakeSec, status.TxBytes, status.RxBytes, elapsed);
                 if (status.HandshakeSec > 0)
@@ -354,8 +312,7 @@ internal sealed class BalancerRunner(
                     return true;
                 }
 
-                // The pipe answered: the per-tunnel service started and its engine is up - distinguishes a
-                // service that never launched from one that launched but the server stays silent.
+                // Service responded: distinguishes launch failure from silent server.
                 if (!sawService)
                 {
                     sawService = true;
@@ -369,9 +326,7 @@ internal sealed class BalancerRunner(
                         member, status.TxBytes, status.RxBytes, elapsed);
                 }
 
-                // Data-driven failure: the engine has had time to send handshake initiations (TxBytes grows),
-                // but the server has returned nothing (no handshake, zero rx). That is the structured form of
-                // the engine's "handshake did not complete" - give up now rather than waiting the backstop.
+                // No rx after the window: server silent, give up.
                 if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
                 {
                     logger.LogWarning("{Member}: server did not answer - no handshake, 0 bytes received in {Sec}s (sent {Tx} B); unreachable",
@@ -381,8 +336,7 @@ internal sealed class BalancerRunner(
             }
             else
             {
-                // The per-tunnel service has not answered UAPI yet (still starting its engine). Visible only
-                // at Trace so "waiting for the service to come up" is part of the every-action trace.
+                // Service not up yet; Trace only.
                 logger.LogTrace("{Member}: tunnel service not responding over UAPI yet ({Sec}s)",
                     member, (int)(DateTimeOffset.UtcNow - start).TotalSeconds);
             }
@@ -390,10 +344,7 @@ internal sealed class BalancerRunner(
             await DelayAsync(TimeSpan.FromSeconds(1), ct);
         }
 
-        // Timed out. Make the reason explicit: a service that never answered over UAPI almost certainly never
-        // ran its engine (a bad start, e.g. sc start=1053), as opposed to one that ran but the server stayed
-        // silent (already logged above as "server did not answer"). Surface any reason the per-tunnel service
-        // forwarded before it died, since its own log is not shown in the agent journal.
+        // Never responded: surface why the service failed to launch.
         if (!sawService)
         {
             var reason = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(member), ct);
@@ -407,8 +358,7 @@ internal sealed class BalancerRunner(
         return false;
     }
 
-    // Human-readable meaning for the sc.exe / Win32 service error codes seen during connect, so the journal
-    // explains a failed start instead of just printing a number.
+    // sc.exe error code names.
     private static string ScError(int code) => code switch
     {
         0 => "ok",

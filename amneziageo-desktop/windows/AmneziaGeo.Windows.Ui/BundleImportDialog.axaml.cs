@@ -10,9 +10,7 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Windows.Ui;
 
 /// <summary>
-/// Modal dialog for the selective bundle import (#91): paste or load a bundle JSON (as produced by
-/// <see cref="BundleExportDialog"/>) and import it. No tree preview - the agent's automatic dedup-by-rename
-/// conflict policy makes one low-value, the same convention as the existing single-profile import.
+/// Modal dialog for the selective bundle import: paste or load a bundle JSON and import it.
 /// </summary>
 public sealed partial class BundleImportDialog : Window
 {

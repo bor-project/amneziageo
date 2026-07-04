@@ -23,7 +23,6 @@
 
     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
                 Spacing="8" Margin="0,12,0,0">
-      <Button Classes="softbtn" Content="{l:Tr BundleImport_PasteButton}" Click="OnPaste" />
       <Button Classes="softbtn" Content="{l:Tr BundleImport_LoadFileButton}" Click="OnLoadFile" />
       <Button Classes="accent" Content="{l:Tr BundleImport_ImportButton}" Command="{Binding ImportCommand}" IsEnabled="{Binding !IsBusy}" />
       <Button Classes="softbtn" Content="{l:Tr BundleImport_CloseButton}" Click="OnClose" IsDefault="True" />

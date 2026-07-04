@@ -823,9 +823,7 @@
 
             <!-- SOURCES SECTION -->
             <StackPanel IsVisible="{Binding IsSettingsSources}">
-              <Border Classes="subcard" Margin="0">
-                <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <TextBlock Text="{l:Tr Main_SourcesSection}" Classes="section" VerticalAlignment="Center" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
@@ -835,7 +833,7 @@
                     </Grid>
                   </Border>
 
-                  <StackPanel Margin="15,12" Spacing="8">
+                  <StackPanel Margin="0,12" Spacing="8">
                     <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
                         <TextBlock Text="{l:Tr Main_AutoCheckTitle}" FontSize="13.5" />
@@ -941,15 +939,12 @@
                       </StackPanel>
                     </Border>
                   </StackPanel>
-                </StackPanel>
-              </Border>
             </StackPanel>
 
             <!-- LOGS SECTION -->
             <StackPanel IsVisible="{Binding IsSettingsLogs}">
-              <Border Classes="subcard" Margin="0">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,9">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,9">
                     <Grid ColumnDefinitions="*,Auto">
                       <TextBlock Grid.Column="0" Text="{l:Tr Main_AgentLogSection}" Classes="section" VerticalAlignment="Center" />
                       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -964,7 +959,7 @@
                     </Grid>
                   </Border>
                   <!-- Capture verbosity: minimum level WRITTEN to the log; applies live. -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                         <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontSize="13.5" />
@@ -977,7 +972,7 @@
                     </Grid>
                   </Border>
                   <!-- Routing log: toggleable log of route changes and DNS resolutions. -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                         <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
@@ -988,7 +983,7 @@
                     </Grid>
                   </Border>
                   <!-- Support export: redacted diagnostics zip. -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
                     <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                         <TextBlock Text="{l:Tr Main_SupportLogsTitle}" FontSize="13.5" />
@@ -1000,7 +995,7 @@
                     </Grid>
                   </Border>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                          Background="{DynamicResource AgInsetBrush}" Margin="15,12,15,15"
+                          Background="{DynamicResource AgInsetBrush}" Margin="0,12,0,15"
                           CornerRadius="12" MaxHeight="520">
                     <Panel>
                       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -1016,19 +1011,17 @@
                     </Panel>
                   </Border>
                 </StackPanel>
-              </Border>
             </StackPanel>
 
             <!-- GENERAL SECTION (+ About) -->
             <StackPanel IsVisible="{Binding IsSettingsGeneral}" Spacing="14">
-              <Border Classes="subcard" Margin="0">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
                     <TextBlock Text="{l:Tr General_Section}" Classes="section" />
                   </Border>
 
                   <!-- Theme -->
-                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
                     <TextBlock Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
                     <Button Grid.Column="1" Classes="softbtn" Content="{Binding ThemeLabel}" Command="{Binding ToggleThemeCommand}" />
                   </Grid>
@@ -1036,32 +1029,30 @@
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
                   <!-- Language: live switch. -->
-                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
                     <TextBlock Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
                     <ComboBox Grid.Column="1" MinWidth="150" VerticalAlignment="Center"
                               ItemsSource="{Binding Languages}"
                               SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}" />
                   </Grid>
                 </StackPanel>
-              </Border>
 
               <!-- About folded into General. -->
-              <Border Classes="subcard" Margin="0">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
                     <TextBlock Text="{l:Tr About_Section}" Classes="section" />
                   </Border>
-                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
                     <TextBlock Text="{l:Tr About_Version}" FontSize="13.5" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
                   </Grid>
 
-                  <Grid ColumnDefinitions="*,Auto" Margin="15,11">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
                     <TextBlock Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
                   </Grid>
 
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="15,12"
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,12"
                           IsVisible="{Binding HasUpdateUrl}">
                     <StackPanel Spacing="9">
                       <TextBlock Text="{l:Tr Main_UpdateSection}" Classes="section" />
@@ -1081,15 +1072,13 @@
                     </StackPanel>
                   </Border>
                 </StackPanel>
-              </Border>
 
               <!-- Selective export/import: portable JSON bundle of profiles, configs, routing lists. -->
-              <Border Classes="subcard" Margin="0">
                 <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="15,11">
+                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
                     <TextBlock Text="{l:Tr Main_ImportExportSection}" Classes="section" />
                   </Border>
-                  <StackPanel Margin="15,11" Spacing="10">
+                  <StackPanel Margin="0,11" Spacing="10">
                     <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
                                Text="{l:Tr Main_BundleHint}" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -1098,7 +1087,6 @@
                     </StackPanel>
                   </StackPanel>
                 </StackPanel>
-              </Border>
             </StackPanel>
 
           </Grid>

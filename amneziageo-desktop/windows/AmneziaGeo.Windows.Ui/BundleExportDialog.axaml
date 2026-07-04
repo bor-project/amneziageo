@@ -76,15 +76,31 @@
 
         <StackPanel Spacing="6">
           <TextBlock Text="{l:Tr BundleExport_RoutingSection}" Classes="section" FontSize="12" />
+          <TextBlock Text="{l:Tr BundleExport_RoutingRulesHint}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
           <ItemsControl ItemsSource="{Binding RoutingItems}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:BundleItem">
-                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding !IsLocked}" Margin="0,3">
-                  <StackPanel>
-                    <TextBlock Text="{Binding Name}" FontSize="13.5" />
-                    <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" />
-                  </StackPanel>
-                </CheckBox>
+                <StackPanel Margin="0,3">
+                  <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding !IsLocked}">
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" FontSize="13.5" />
+                      <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" />
+                    </StackPanel>
+                  </CheckBox>
+                  <!-- Per-rule exclusion tree: uncheck a rule to drop it from this list in the bundle.
+                       Disabled when the whole list is excluded. -->
+                  <ItemsControl ItemsSource="{Binding Rules}" IsVisible="{Binding HasRules}"
+                                IsEnabled="{Binding IsChecked}" Margin="26,2,0,0">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:BundleRuleItem">
+                        <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Margin="0,1" MinHeight="0">
+                          <TextBlock Text="{Binding Token}" FontSize="11.5"
+                                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
+                        </CheckBox>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

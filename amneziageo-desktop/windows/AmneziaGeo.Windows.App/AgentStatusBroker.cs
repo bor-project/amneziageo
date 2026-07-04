@@ -535,8 +535,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));
     }
 
-    // Export selection from OpExportBundle's arg0 JSON; all arrays optional.
-    private sealed record SelectionRequest(string[]? Profiles, string[]? Configs, string[]? RoutingLists);
+    // Export selection from OpExportBundle's arg0 JSON; all arrays optional. RoutingRules maps a routing
+    // list name to the rule tokens to KEEP; an absent list keeps all its rules.
+    private sealed record SelectionRequest(
+        string[]? Profiles,
+        string[]? Configs,
+        string[]? RoutingLists,
+        Dictionary<string, string[]>? RoutingRules);
 
     // Export a selective bundle: caller picks configs, routing lists, and profiles by name.
     private async Task<IpcAck> ExportBundleAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -636,6 +641,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 }
 
                 var rules = list.Rules.Select(GeoConfigurator.Format).ToList();
+
+                // Drop rules the user unchecked in the export tree (machine-specific app rules, etc).
+                // No entry for this list = keep everything.
+                if (selection.RoutingRules is not null
+                    && selection.RoutingRules.TryGetValue(name, out var kept))
+                {
+                    var keepSet = new HashSet<string>(kept, StringComparer.Ordinal);
+                    rules = rules.Where(keepSet.Contains).ToList();
+                }
+
                 PortableBundle.RoutingSettingsBlock? settingsBlock = null;
                 var settings = await store.GetRoutingSettingsAsync(list.Id, ct);
                 if (settings is not null)

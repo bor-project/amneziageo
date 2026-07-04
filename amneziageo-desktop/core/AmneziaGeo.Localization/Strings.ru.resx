@@ -115,6 +115,9 @@
   <data name="BundleExport_RoutingSection" xml:space="preserve">
     <value>МАРШРУТИЗАЦИЯ</value>
   </data>
+  <data name="BundleExport_RoutingRulesHint" xml:space="preserve">
+    <value>Снимите галочки с правил, которые не нужно выгружать (например приложения на этой машине).</value>
+  </data>
   <data name="BundleExport_SaveToFileButton" xml:space="preserve">
     <value>Сохранить в файл…</value>
   </data>

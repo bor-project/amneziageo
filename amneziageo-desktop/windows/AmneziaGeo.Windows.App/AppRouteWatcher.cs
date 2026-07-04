@@ -48,7 +48,7 @@ internal sealed class AppRouteWatcher
             if (eq <= 0)
             {
                 // Bare value: treat as a full path.
-                _paths.Add(token);
+                _paths.Add(AmneziaGeo.Ipc.AppPathToken.Tokenize(token));
                 continue;
             }
 
@@ -62,10 +62,10 @@ internal sealed class AppRouteWatcher
             switch (kind)
             {
                 case "path":
-                    _paths.Add(value);
+                    _paths.Add(AmneziaGeo.Ipc.AppPathToken.Tokenize(value));
                     break;
                 case "dir":
-                    _dirs.Add(value.TrimEnd('\\', '/'));
+                    _dirs.Add(AmneziaGeo.Ipc.AppPathToken.Tokenize(value.TrimEnd('\\', '/')));
                     break;
                 case "name":
                     _names.Add(value);
@@ -176,7 +176,9 @@ internal sealed class AppRouteWatcher
             return false;
         }
 
-        if (_paths.Contains(path))
+        // Canonicalize to the same %ENV% space the rules were stored in (portable across users/machines).
+        var canon = AmneziaGeo.Ipc.AppPathToken.Tokenize(path);
+        if (_paths.Contains(canon))
         {
             return true;
         }
@@ -193,7 +195,7 @@ internal sealed class AppRouteWatcher
         foreach (var dir in _dirs)
         {
             // Matches dir prefix, catches versioned subfolders.
-            if (path.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase))
+            if (canon.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

@@ -388,6 +388,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             return;
         }
 
+        // Store a portable %ENV% path so the rule survives export to another machine or user.
+        token = AmneziaGeo.Ipc.AppPathToken.TokenizeRule(token);
         if (!Rules.Contains(token))
         {
             Rules.Add(token);

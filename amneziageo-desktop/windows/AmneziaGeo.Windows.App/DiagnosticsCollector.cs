@@ -112,7 +112,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         {
             sb.AppendLine($"  {config}:");
             var transport = await store.GetConfigTransportAsync(config, ct);
-            var mtu = transport is { Mtu: > 0 } ? transport.Mtu.ToString(System.Globalization.CultureInfo.InvariantCulture) : "1280 (default)";
+            var mtu = transport is { Mtu: > 0 } ? transport.Mtu.ToString(System.Globalization.CultureInfo.InvariantCulture) : "1380 (default)";
             sb.AppendLine($"    mtu:        {mtu}");
             if (transport?.UseWebSocket == true)
             {

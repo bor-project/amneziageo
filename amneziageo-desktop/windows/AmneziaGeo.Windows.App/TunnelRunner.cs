@@ -22,8 +22,8 @@ internal sealed class TunnelRunner(
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
-    // 1280 - IPv6-minimum, fits sub-1500 paths where 1420 black-holes TLS handshakes.
-    private const int DefaultMtu = 1280;
+    // 1380 - more throughput than the 1280 IPv6-minimum, still under sub-1500 paths where 1420 black-holes TLS handshakes.
+    private const int DefaultMtu = 1380;
 
     /// <summary>
     /// Runs the native tunnel service loop.

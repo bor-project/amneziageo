@@ -64,7 +64,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
-        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1280";
+        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1380";
 
         // Parse the stored address; default the host to the config's Endpoint host.
         var (host, port, user, password, token, mode) = ParseStored(webSocketHost);
@@ -177,7 +177,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
 
             var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
 
-            // MTU: empty = default 1280; validate 576-1500.
+            // MTU: empty = default 1380; validate 576-1500.
             var mtuVal = Mtu.Trim();
             if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
             {

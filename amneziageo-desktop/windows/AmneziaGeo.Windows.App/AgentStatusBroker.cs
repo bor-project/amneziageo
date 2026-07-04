@@ -496,11 +496,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
 
-        // Refuse while the profile is running.
-        if (control.Running && string.Equals(oldName, BoundTarget, StringComparison.Ordinal))
-        {
-            return new IpcAck(false, $"profile {oldName} is running; disconnect first");
-        }
+        // Renaming the running profile is allowed: the live tunnel keeps running under its old in-memory
+        // binding and the UI raises a "reconnect to apply" banner, as for any change to a live tunnel.
+        var wasLiveTarget = control.Running && string.Equals(oldName, BoundTarget, StringComparison.Ordinal);
 
         // Carry routing assignment and selection across to the new name.
         await store.SaveBalancerAsync(balancer with { Name = newName }, ct);
@@ -513,10 +511,24 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             await store.SetProfileRoutingAsync(oldName, null, false, ct);
         }
 
-        if (string.Equals(oldName, control.Target, StringComparison.Ordinal))
+        // Carry the live status row so the renamed profile keeps showing its real state; without it the
+        // bound status reads Disconnected (state is still keyed under the old name) until a reconnect.
+        if (await store.GetBalancerStateAsync(oldName, ct) is { } liveState)
         {
-            control.SetTarget(newName);
+            await store.SaveBalancerStateAsync(liveState with { Group = newName }, ct);
+        }
+
+        // Follow the rename in the live binding so the supervisor keeps resolving the profile: a stale
+        // running target would look like a broken binding on the next re-dial and drop the tunnel.
+        control.RetargetName(oldName, newName);
+        if (string.Equals(newName, control.Target, StringComparison.Ordinal))
+        {
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, newName, ct);
+        }
+
+        if (wasLiveTarget)
+        {
+            control.SetRestartRequired();
         }
 
         logger.LogInformation("renamed profile {Old} -> {New}", oldName, newName);

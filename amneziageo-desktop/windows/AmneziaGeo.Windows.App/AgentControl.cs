@@ -91,6 +91,23 @@ internal sealed class AgentControl
     }
 
     /// <summary>
+    /// Follows a profile rename in the live binding without switching the tunnel, so the supervisor keeps
+    /// resolving the running profile - a stale target reads as a broken binding on the next re-dial.
+    /// </summary>
+    public void RetargetName(string oldName, string newName)
+    {
+        if (string.Equals(_target, oldName, StringComparison.Ordinal))
+        {
+            _target = newName;
+        }
+
+        if (string.Equals(_runningTarget, oldName, StringComparison.Ordinal))
+        {
+            _runningTarget = newName;
+        }
+    }
+
+    /// <summary>
     /// Signals that persisted configuration changed and must be re-applied.
     /// </summary>
     public void Invalidate()

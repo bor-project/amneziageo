@@ -307,12 +307,33 @@ internal sealed class TunnelRunner(
             var peer = WgConfigEditor.GetPeerPublicKey(config);
             if (peer is not null)
             {
+                // Constructed here but STARTED below, only after the optional geo-domain sink is attached
+                // (#108), so the first materialization-generation poll can never race ahead of the sink and
+                // skip a live matcher rebuild.
                 tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, appSettings.RefreshSeconds, stripV6);
-                _ = Task.Run(() => tracker.RunAsync(sessionCts.Token));
             }
         }
 
         var proxy = StartProxy(trackDomains ? domains : [], stripV6, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
+
+        // #108: let a live materialization-generation change (a geosite source refresh) rebuild the proxy's
+        // domain matcher without a reconnect. Only for a domain-tracking tunnel that bound its proxy: there
+        // the clean tunnel resolver's /32 is already routed, so a newly matched domain actually resolves
+        // through the tunnel (a list that gains its first domain still needs a reconnect for that route).
+        // Set synchronously here, before the tracker's first poll, so no early generation change is missed.
+        if (trackDomains && proxy is not null && tracker is not null)
+        {
+            tracker.SetGeoDomainSink((d, ct) => proxy.UpdateDomains(d, ct));
+        }
+
+        // Start the tracker now that the (optional) geo-domain sink is attached. Its first generation poll
+        // still waits for the adapter + warm start, but starting it here (not at construction) guarantees
+        // the sink is in place before any live rebuild could fire (#108/#83).
+        if (tracker is not null)
+        {
+            _ = Task.Run(() => tracker.RunAsync(sessionCts.Token));
+        }
+
         if (proxy?.BoundV4 is not null)
         {
             redirectServers = [proxy.BoundV4.ToString()];

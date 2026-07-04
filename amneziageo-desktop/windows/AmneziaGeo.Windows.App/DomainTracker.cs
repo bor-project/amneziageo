@@ -40,6 +40,13 @@ internal sealed class DomainTracker(
     private long? _knownGeneration;
     private long _knownResolveEpoch;
 
+    // The live geo-domain sink: the DNS proxy's matcher rebuild, attached once the proxy is built (it is
+    // constructed after this tracker). Invoked on the poll thread when the materialization generation
+    // changes, so a source refresh that altered the list's geosite domains rebuilds the proxy's matcher
+    // without a reconnect (#108). Volatile: written on the connect thread, read on the poll thread. Null
+    // (no-op) for a tunnel that does not track domains.
+    private volatile Action<IReadOnlyList<GeoDomain>, CancellationToken>? _onGeoDomainsChanged;
+
     private uint? _interfaceIndex;
     private readonly TaskCompletionSource _warmStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -49,6 +56,16 @@ internal sealed class DomainTracker(
     /// up-front DNS at all.
     /// </summary>
     public Task WarmStartCompleted => _warmStart.Task;
+
+    /// <summary>
+    /// Attaches the live geo-domain sink (the DNS proxy's <c>UpdateDomains</c>) once the proxy exists. A
+    /// materialization generation change then rebuilds the proxy's domain matcher from the fresh domain set
+    /// without a reconnect (#108). Set synchronously at connect, before the first poll; null until then.
+    /// </summary>
+    public void SetGeoDomainSink(Action<IReadOnlyList<GeoDomain>, CancellationToken> sink)
+    {
+        _onGeoDomainsChanged = sink;
+    }
 
     /// <summary>True when a domain's resolution is already known (restored from cache or resolved before).</summary>
     public bool IsTracked(string domain)
@@ -226,6 +243,10 @@ internal sealed class DomainTracker(
                     if (current is not null && current.Generation != _knownGeneration)
                     {
                         ApplyStaticAdditions(current.Routes);
+                        // #108: the same generation change that grew the geoip ranges may have added/removed
+                        // geosite DOMAINS; rebuild the proxy's matcher from the fresh set so they route (or
+                        // stop routing) without a reconnect. The sink is null for a non-domain tunnel.
+                        _onGeoDomainsChanged?.Invoke(current.Domains, ct);
                         _knownGeneration = current.Generation;
                     }
 

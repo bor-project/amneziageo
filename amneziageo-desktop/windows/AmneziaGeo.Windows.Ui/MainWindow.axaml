@@ -306,7 +306,8 @@
       <!-- Content pane. -->
       <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
         <!-- Inset on the ScrollViewer so a section can bind its height to the viewport. -->
-        <ScrollViewer x:Name="ContentScroll" Padding="18,16">
+        <!-- Never scroll sideways: long values (source URLs) trim/wrap instead of overflowing the card. -->
+        <ScrollViewer x:Name="ContentScroll" Padding="18,16" HorizontalScrollBarVisibility="Disabled">
           <Grid>
 
             <!-- PROFILE SECTION -->

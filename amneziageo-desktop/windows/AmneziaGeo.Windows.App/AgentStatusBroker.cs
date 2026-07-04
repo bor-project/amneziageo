@@ -949,8 +949,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // Optional 4th arg: wstunnel host; empty reuses the Endpoint host.
         var host = args.Count > 3 ? args[3].Trim() : string.Empty;
 
-        // Optional 5th arg: tunnel MTU (default 1280, range 576-1500).
-        var mtu = 1280;
+        // Optional 5th arg: tunnel MTU (default 1380, range 576-1500).
+        var mtu = 1380;
         if (args.Count > 4 && args[4].Trim().Length > 0)
         {
             if (!int.TryParse(args[4].Trim(), System.Globalization.CultureInfo.InvariantCulture, out mtu) || mtu is < 576 or > 1500)

@@ -15,6 +15,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AmneziaGeo.Windows.Installer</AssemblyName>
     <RootNamespace>AmneziaGeo.Windows.Installer</RootNamespace>
+    <!-- WPF falls back to the executable icon for the window/taskbar when Window.Icon is unset. -->
+    <ApplicationIcon>..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</ApplicationIcon>
     <!-- We create the WPF Application by hand in the BA thread, so suppress the auto-generated
          WPF entry point and use our own Program.Main. -->
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>

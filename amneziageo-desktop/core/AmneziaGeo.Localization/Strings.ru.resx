@@ -128,16 +128,13 @@
     <value>Импорт профилей, конфигураций и списков маршрутизации</value>
   </data>
   <data name="BundleImport_ImportButton" xml:space="preserve">
-    <value>Импортировать</value>
+    <value>Сохранить</value>
   </data>
   <data name="BundleImport_LoadFileButton" xml:space="preserve">
-    <value>Загрузить файл…</value>
-  </data>
-  <data name="BundleImport_PasteButton" xml:space="preserve">
-    <value>Вставить</value>
+    <value>Выбрать файл…</value>
   </data>
   <data name="BundleImport_PayloadWatermark" xml:space="preserve">
-    <value>Вставьте JSON файла бандла или загрузите его кнопкой «Загрузить файл…»</value>
+    <value>Вставьте JSON бандла (Ctrl+V) или выберите файл кнопкой «Выбрать файл…»</value>
   </data>
   <data name="BundleImport_SecurityWarning" xml:space="preserve">
     <value>⚠ Импортируемый файл может содержать приватные ключи конфигураций — используйте файлы из доверенных источников.</value>

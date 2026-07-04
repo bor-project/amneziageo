@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using Avalonia.Controls;
-using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Windows.Ui.ViewModels;
@@ -20,30 +19,6 @@ public sealed partial class BundleImportDialog : Window
     public BundleImportDialog()
     {
         InitializeComponent();
-    }
-
-    private async void OnPaste(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not BundleImportDialogViewModel vm)
-        {
-            return;
-        }
-
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is null)
-        {
-            return;
-        }
-
-        var text = await clipboard.TryGetTextAsync();
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            vm.StatusMessage = Loc.Instance.Get("BundleImportCode_ClipboardEmpty");
-            return;
-        }
-
-        vm.Payload = text;
-        vm.StatusMessage = string.Empty;
     }
 
     private async void OnLoadFile(object? sender, RoutedEventArgs e)

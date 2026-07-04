@@ -128,16 +128,13 @@
     <value>Import profiles, configurations and routing lists</value>
   </data>
   <data name="BundleImport_ImportButton" xml:space="preserve">
-    <value>Import</value>
+    <value>Save</value>
   </data>
   <data name="BundleImport_LoadFileButton" xml:space="preserve">
-    <value>Load file…</value>
-  </data>
-  <data name="BundleImport_PasteButton" xml:space="preserve">
-    <value>Paste</value>
+    <value>Choose file…</value>
   </data>
   <data name="BundleImport_PayloadWatermark" xml:space="preserve">
-    <value>Paste the bundle file JSON or load it with the “Load file…” button</value>
+    <value>Paste the bundle JSON (Ctrl+V) or pick a file with the “Choose file…” button</value>
   </data>
   <data name="BundleImport_SecurityWarning" xml:space="preserve">
     <value>⚠ The imported file may contain private configuration keys — use files from trusted sources only.</value>

@@ -127,7 +127,23 @@ internal sealed class TunnelRunner(
 
         // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
         var configDns = WgConfigEditor.GetDns(config);
-        IReadOnlyList<string> tunnelResolver = configDns.Count > 0 ? configDns : ["1.1.1.1"];
+        var resolvers = configDns.Count > 0 ? new List<string>(configDns) : new List<string> { "1.1.1.1" };
+        // Ensure a distinct secondary resolver so DNS survives a resolver blackhole (failover),
+        // not just an occasional dropped datagram (retransmit). Each /32 is routed below.
+        foreach (var fallback in new[] { "1.1.1.1", "1.0.0.1" })
+        {
+            if (resolvers.Count >= 2)
+            {
+                break;
+            }
+
+            if (!resolvers.Contains(fallback))
+            {
+                resolvers.Add(fallback);
+            }
+        }
+
+        IReadOnlyList<string> tunnelResolver = resolvers;
         if (trackDomains)
         {
             foreach (var server in tunnelResolver)
@@ -385,9 +401,10 @@ internal sealed class TunnelRunner(
     private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, bool stripV6, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
+        var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
         var localIp = ParseFirst(localUpstream, tunnelIp);
         IPAddress? lanIp = lanUpstream.Count > 0 && IPAddress.TryParse(lanUpstream[0], out var li) ? li : null;
-        var proxy = new DnsProxy(domains, tunnelIp, localIp, lanIp, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6);
+        var proxy = new DnsProxy(domains, tunnelIp, localIp, lanIp, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary);
         if (proxy.BoundV4 is null)
         {
             return null;

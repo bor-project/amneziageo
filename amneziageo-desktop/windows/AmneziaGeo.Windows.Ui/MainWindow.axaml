@@ -559,7 +559,7 @@
                   <!-- MTU applies to any transport, not just WSS. Kept outside the WebSocket block. -->
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" />
-                    <TextBox Width="90" Text="{Binding Mtu}" />
+                    <TextBox Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
                     <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
                                Text="{l:Tr Main_MtuHint}" />
                   </StackPanel>

@@ -708,6 +708,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "import-bundle requires the bundle json");
         }
 
+        // How to treat a name already present: new (add a numbered copy), replace, skip, or merge.
+        var policy = args.Count > 1 ? args[1] : "new";
+
         PortableBundle.Bundle? bundle;
         try
         {
@@ -729,21 +732,20 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         // Config and profile names live in one global namespace (rename refuses a name used by either);
-        // routing-list names are a separate space.
-        var taken = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var existing in await configRepo.ListAsync(ct))
+        // routing-list names are a separate space. Snapshots taken before import drive collision detection.
+        var existingConfigs = new HashSet<string>(await configRepo.ListAsync(ct), StringComparer.Ordinal);
+        var existingProfiles = new HashSet<string>(await store.ListBalancerNamesAsync(ct), StringComparer.Ordinal);
+        var existingLists = (await store.ListRoutingListsAsync(ct))
+            .ToDictionary(l => l.Name, l => l, StringComparer.Ordinal);
+
+        // Growing namespaces so the add-as-new path never reuses a name taken earlier in THIS import.
+        var taken = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
+        foreach (var p in existingProfiles)
         {
-            taken.Add(existing);
+            taken.Add(p);
         }
 
-        foreach (var existing in await store.ListBalancerNamesAsync(ct))
-        {
-            taken.Add(existing);
-        }
-
-        var listNames = new HashSet<string>(
-            (await store.ListRoutingListsAsync(ct)).Select(l => l.Name),
-            StringComparer.Ordinal);
+        var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
 
         var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var routingMap = new Dictionary<string, (string Name, long Id)>(StringComparer.Ordinal);
@@ -751,7 +753,42 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         foreach (var block in bundle.Configs)
         {
-            var finalName = FreeName(SanitizeFileName(block.Name), taken);
+            var incoming = SanitizeFileName(block.Name);
+
+            // Same-name config already here and a non-default policy: act in place, keeping its bindings.
+            if (existingConfigs.Contains(incoming) && policy != "new")
+            {
+                if (policy == "skip")
+                {
+                    configNameMap[block.Name] = incoming;
+                    continue;
+                }
+
+                // Replace and merge both take the file's text/transport; they differ only in the geo rules.
+                await configRepo.EditFromTextAsync(incoming, block.ConfigText, ct);
+                if (block.Transport is { } trE)
+                {
+                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu), ct);
+                }
+
+                if (block.Geo is { } gE)
+                {
+                    var rules = gE.Rules;
+                    if (policy == "merge")
+                    {
+                        var own = await store.GetTunnelGeoAsync(incoming, ct);
+                        var keep = own?.Rules.Select(GeoConfigurator.Format) ?? Enumerable.Empty<string>();
+                        rules = keep.Concat(gE.Rules).Distinct(StringComparer.Ordinal).ToList();
+                    }
+
+                    await geo.ApplyAsync(incoming, gE.Split, rules, ct);
+                }
+
+                configNameMap[block.Name] = incoming;
+                continue;
+            }
+
+            var finalName = FreeName(incoming, taken);
             taken.Add(finalName);
             if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
             {
@@ -777,6 +814,29 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         foreach (var block in bundle.RoutingLists)
         {
+            // Same-name list already here and a non-default policy: act on the existing row (id kept, so
+            // profiles bound to it stay bound).
+            if (existingLists.TryGetValue(block.Name, out var existingList) && policy != "new")
+            {
+                if (policy == "skip")
+                {
+                    routingMap[block.Name] = (existingList.Name, existingList.Id);
+                    continue;
+                }
+
+                List<string> rules = policy == "merge"
+                    ? existingList.Rules.Select(GeoConfigurator.Format).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
+                    : block.Rules.ToList();
+                await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, rules, ct);
+                if (block.Settings is { } sE)
+                {
+                    await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.LocalDns, sE.Exclusions, sE.AllUdp, "split"), ct);
+                }
+
+                routingMap[block.Name] = (existingList.Name, existingList.Id);
+                continue;
+            }
+
             var finalName = FreeName(block.Name, listNames);
             listNames.Add(finalName);
             if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
@@ -795,6 +855,39 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         foreach (var block in bundle.Profiles)
         {
+            var config = block.Config is not null && configNameMap.TryGetValue(block.Config, out var cn) ? cn : string.Empty;
+            long? routingId = block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rl)
+                ? rl.Id
+                : null;
+
+            // Same-name profile already here and a non-default policy.
+            if (existingProfiles.Contains(block.Name) && policy != "new")
+            {
+                if (policy == "skip")
+                {
+                    continue;
+                }
+
+                // Keep an existing config binding the file leaves empty (both replace and merge), so a
+                // restore whose profile omits the config never orphans a working profile. Symmetric with
+                // routing below, which is likewise preserved when the file carries none.
+                var boundConfig = config;
+                if (config.Length == 0)
+                {
+                    boundConfig = (await store.GetBalancerAsync(block.Name, ct))?.Config ?? string.Empty;
+                }
+
+                await store.SaveBalancerAsync(new BalancerGroup(block.Name, boundConfig), ct);
+
+                // No auto-target here: bulk import must not steal the selection.
+                if (routingId is not null)
+                {
+                    await store.SetProfileRoutingAsync(block.Name, routingId.Value, block.UseRouting, ct);
+                }
+
+                continue;
+            }
+
             var finalName = FreeName(block.Name, taken);
             taken.Add(finalName);
             if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
@@ -802,13 +895,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 renames.Add($"«{block.Name}» → «{finalName}»");
             }
 
-            var config = block.Config is not null && configNameMap.TryGetValue(block.Config, out var cn) ? cn : string.Empty;
             await store.SaveBalancerAsync(new BalancerGroup(finalName, config), ct);
 
             // No auto-target here: bulk import must not steal the selection.
-            if (block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rl))
+            if (routingId is not null)
             {
-                await store.SetProfileRoutingAsync(finalName, rl.Id, block.UseRouting, ct);
+                await store.SetProfileRoutingAsync(finalName, routingId.Value, block.UseRouting, ct);
             }
         }
 

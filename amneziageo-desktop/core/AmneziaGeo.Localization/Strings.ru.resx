@@ -130,6 +130,21 @@
   <data name="BundleImport_Heading" xml:space="preserve">
     <value>Импорт профилей, конфигураций и списков маршрутизации</value>
   </data>
+  <data name="BundleImport_ConflictLabel" xml:space="preserve">
+    <value>При совпадении имён:</value>
+  </data>
+  <data name="BundleImport_ConflictAddNew" xml:space="preserve">
+    <value>Добавить как новое</value>
+  </data>
+  <data name="BundleImport_ConflictReplace" xml:space="preserve">
+    <value>Заменить</value>
+  </data>
+  <data name="BundleImport_ConflictSkip" xml:space="preserve">
+    <value>Пропустить</value>
+  </data>
+  <data name="BundleImport_ConflictMerge" xml:space="preserve">
+    <value>Объединить</value>
+  </data>
   <data name="BundleImport_ImportButton" xml:space="preserve">
     <value>Сохранить</value>
   </data>

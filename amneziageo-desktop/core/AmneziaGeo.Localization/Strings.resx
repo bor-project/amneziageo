@@ -130,6 +130,21 @@
   <data name="BundleImport_Heading" xml:space="preserve">
     <value>Import profiles, configurations and routing lists</value>
   </data>
+  <data name="BundleImport_ConflictLabel" xml:space="preserve">
+    <value>On name conflict:</value>
+  </data>
+  <data name="BundleImport_ConflictAddNew" xml:space="preserve">
+    <value>Add as new</value>
+  </data>
+  <data name="BundleImport_ConflictReplace" xml:space="preserve">
+    <value>Replace</value>
+  </data>
+  <data name="BundleImport_ConflictSkip" xml:space="preserve">
+    <value>Skip</value>
+  </data>
+  <data name="BundleImport_ConflictMerge" xml:space="preserve">
+    <value>Merge</value>
+  </data>
   <data name="BundleImport_ImportButton" xml:space="preserve">
     <value>Save</value>
   </data>

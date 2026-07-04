@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -57,7 +58,7 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
 
         foreach (var list in routingLists)
         {
-            var item = new BundleItem { Name = list.Name, Detail = list.Detail };
+            var item = new BundleItem { Name = list.Name, Detail = list.Detail, ListId = list.Id };
             Wire(item);
             RoutingItems.Add(item);
         }
@@ -118,6 +119,36 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
 
     public string SuggestedFileName => "amneziageo-bundle.agbundle.json";
 
+    /// <summary>
+    /// Fetches each routing list's rule tokens so the export tree can offer per-rule exclusion.
+    /// Tokens match exactly what the agent exports (both go through GeoConfigurator.Format), so the
+    /// selection can filter by token string. Call once after construction, before showing the dialog.
+    /// </summary>
+    public async Task LoadRoutingRulesAsync()
+    {
+        foreach (var item in RoutingItems)
+        {
+            if (item.ListId <= 0)
+            {
+                continue;
+            }
+
+            var detail = await _connection.SendCommandAsync(
+                new IpcCommand(IpcContract.OpGetRoutingList, [item.ListId.ToString(CultureInfo.InvariantCulture)]));
+            if (!detail.Ok)
+            {
+                continue;
+            }
+
+            foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                item.Rules.Add(new BundleRuleItem { Token = token });
+            }
+
+            item.HasRules = item.Rules.Count > 0;
+        }
+    }
+
     private void Wire(BundleItem item, Action<bool>? cascade = null)
     {
         item.CheckedChanged = value =>
@@ -154,10 +185,25 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
         IsBusy = true;
         try
         {
+            // Per-list rule filter: only lists that ship AND have at least one excluded rule need an
+            // explicit keep-list. An absent entry tells the agent to keep every rule (backward compatible).
+            var routingRules = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            foreach (var item in RoutingItems)
+            {
+                // Emit the keep-list for any list with an excluded rule - including one pulled in only by a
+                // checked profile. The agent applies it solely to lists it actually exports, so a spare
+                // entry is harmless, and a profile-bound list never loses its filter.
+                if (item.Rules.Any(r => !r.IsChecked))
+                {
+                    routingRules[item.Name] = [.. item.Rules.Where(r => r.IsChecked).Select(r => r.Token)];
+                }
+            }
+
             var selection = new SelectionPayload(
                 [.. ProfileItems.Where(i => i.IsChecked).Select(i => i.Name)],
                 [.. ConfigItems.Where(i => i.IsChecked).Select(i => i.Name)],
-                [.. RoutingItems.Where(i => i.IsChecked).Select(i => i.Name)]);
+                [.. RoutingItems.Where(i => i.IsChecked).Select(i => i.Name)],
+                routingRules.Count > 0 ? routingRules : null);
             var json = JsonSerializer.Serialize(selection, _selectionOptions);
 
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpExportBundle, [json]));
@@ -177,6 +223,11 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
         }
     }
 
-    // Selection JSON sent to the agent (camelCase).
-    private sealed record SelectionPayload(string[] Profiles, string[] Configs, string[] RoutingLists);
+    // Selection JSON sent to the agent (camelCase). RoutingRules maps a routing list name to the rule
+    // tokens to KEEP; absent list = keep all its rules.
+    private sealed record SelectionPayload(
+        string[] Profiles,
+        string[] Configs,
+        string[] RoutingLists,
+        Dictionary<string, string[]>? RoutingRules);
 }

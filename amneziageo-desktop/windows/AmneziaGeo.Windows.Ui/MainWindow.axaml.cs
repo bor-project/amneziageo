@@ -460,6 +460,7 @@ public sealed partial class MainWindow : Window
         }
 
         var dialogVm = new BundleExportDialogViewModel(vm.Connection, vm.Balancers, vm.Configs, vm.RoutingLists);
+        await dialogVm.LoadRoutingRulesAsync();
         var dialog = new BundleExportDialog { DataContext = dialogVm };
         await dialog.ShowDialog(this);
     }

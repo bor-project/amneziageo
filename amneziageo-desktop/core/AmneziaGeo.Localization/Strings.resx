@@ -115,6 +115,9 @@
   <data name="BundleExport_RoutingSection" xml:space="preserve">
     <value>ROUTING</value>
   </data>
+  <data name="BundleExport_RoutingRulesHint" xml:space="preserve">
+    <value>Uncheck rules you don't want to include (e.g. machine-specific apps).</value>
+  </data>
   <data name="BundleExport_SaveToFileButton" xml:space="preserve">
     <value>Save to file…</value>
   </data>

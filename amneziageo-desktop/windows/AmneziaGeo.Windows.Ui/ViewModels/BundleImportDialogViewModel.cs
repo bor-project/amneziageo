@@ -23,6 +23,10 @@ internal sealed partial class BundleImportDialogViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isBusy;
 
+    // Name-conflict policy: 0 add-as-new (default), 1 replace, 2 skip, 3 merge.
+    [ObservableProperty]
+    private int _conflictPolicyIndex;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -43,7 +47,8 @@ internal sealed partial class BundleImportDialogViewModel : ViewModelBase
         IsBusy = true;
         try
         {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportBundle, [Payload]));
+            var policy = ConflictPolicyIndex switch { 1 => "replace", 2 => "skip", 3 => "merge", _ => "new" };
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportBundle, [Payload, policy]));
             StatusMessage = ack.Message;
         }
         finally

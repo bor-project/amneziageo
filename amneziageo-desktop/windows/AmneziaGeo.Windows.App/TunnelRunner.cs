@@ -117,7 +117,10 @@ internal sealed class TunnelRunner(
         logger.LogDebug("connect {Name}: geo loaded - split={Split} routes={Routes} domains={Domains} apps={Apps} [{Elapsed} ms]",
             name, geoSplit, geoRoutes.Count, domains.Count, apps.Count, connectSw.ElapsedMilliseconds);
 
-        var stripV6 = !HasIpv6Address(config);
+        // IPv4-only tunnel. AAAA is answered NODATA so clients fall back to A, and the adapter carries no
+        // IPv6 address or routes. Halves the DNS/route work and closes the v6 leak/blackhole a half-configured
+        // dual stack would open. (Was config-derived via HasIpv6Address; forced on while the tunnel is v4-only.)
+        var stripV6 = true;
 
         // Domain tracking only in split mode.
         var trackDomains = geoSplit && domains.Count > 0;
@@ -180,8 +183,10 @@ internal sealed class TunnelRunner(
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), geoRoutes);
         if (stripV6)
         {
-            // Strip IPv6 routes on a v4-only tunnel.
+            // v4-only tunnel: strip IPv6 routes and the IPv6 interface Address so the adapter is purely v4
+            // (a dangling v6 adapter address with no v6 routes is exactly the blackhole this mode avoids).
             allowedIps = [.. allowedIps.Where(a => !a.Contains(':'))];
+            config = WgConfigEditor.StripIpv6Addresses(config);
         }
 
         // Split /0 into /1 halves so the engine's blanket kill-switch isn't armed.
@@ -538,19 +543,6 @@ internal sealed class TunnelRunner(
         }
 
         return null;
-    }
-
-    private static bool HasIpv6Address(string config)
-    {
-        foreach (var address in WgConfigEditor.GetAddresses(config))
-        {
-            if (address.Contains(':'))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps)

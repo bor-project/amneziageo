@@ -42,6 +42,42 @@ public static class WgConfigEditor
     }
 
     /// <summary>
+    /// Returns the config with IPv6 entries removed from the interface Address line, keeping IPv4 only, so the
+    /// adapter never receives a dangling IPv6 address on a v4-only tunnel. If no IPv4 entry remains (a v6-only
+    /// config, for which an IPv4-only tunnel is meaningless), the Address line is left unchanged.
+    /// </summary>
+    public static string StripIpv6Addresses(string config)
+    {
+        var kept = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("Address", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = trimmed[(trimmed.IndexOf('=') + 1)..];
+                var v4 = new List<string>();
+                foreach (var entry in value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!entry.Contains(':'))
+                    {
+                        v4.Add(entry);
+                    }
+                }
+
+                if (v4.Count > 0)
+                {
+                    kept.Add($"Address = {string.Join(", ", v4)}");
+                    continue;
+                }
+            }
+
+            kept.Add(line);
+        }
+
+        return string.Join('\n', kept);
+    }
+
+    /// <summary>
     /// Returns the DNS servers declared in the config.
     /// </summary>
     public static IReadOnlyList<string> GetDns(string config)

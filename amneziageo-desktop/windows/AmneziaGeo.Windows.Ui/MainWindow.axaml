@@ -6,6 +6,7 @@
         x:Class="AmneziaGeo.Windows.Ui.MainWindow"
         x:CompileBindings="True"
         x:DataType="vm:MainWindowViewModel"
+        Design.DataContext="{x:Static vm:DesignData.MainWindow}"
         Title="AmneziaGeo"
         Width="987" Height="610"
         MinWidth="800" MinHeight="560"
@@ -170,8 +171,9 @@
 
     <Grid IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
       <Grid.ColumnDefinitions>
-        <!-- Section rail column, drag-resizable via the GridSplitter. -->
-        <ColumnDefinition Width="260" MinWidth="210" MaxWidth="460" />
+        <!-- Section rail column, drag-resizable via the GridSplitter.
+             MaxWidth capped so a wide rail can't starve the content pane and clip its right-side controls. -->
+        <ColumnDefinition Width="260" MinWidth="210" MaxWidth="360" />
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
       </Grid.ColumnDefinitions>
@@ -874,7 +876,7 @@
 
                     <TextBlock Classes="label" Text="{l:Tr Main_AddDatabaseLabel}" />
                     <Grid ColumnDefinitions="Auto,*,Auto">
-                      <ComboBox Grid.Column="0" Classes="field" Width="118" Margin="0,0,8,0"
+                      <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
                                 ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
                                 IsEnabled="{Binding !SourceKindLocked}"
                                 ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />

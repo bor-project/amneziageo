@@ -76,6 +76,35 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
+    /// The last-good IPv4 addresses tracked for a domain (whose /32 routes are already installed), or null
+    /// when the domain is untracked or has no routable IPv4. Lets the DNS proxy answer a known domain from
+    /// live routing state instead of re-querying the tunnel resolver. IPv4-only: an A answer is synthesized
+    /// from these, so IPv6 is filtered here rather than trusting the stripV6 flag.
+    /// </summary>
+    public IReadOnlyList<string>? KnownIps(string domain)
+    {
+        var key = domain.TrimEnd('.').ToLowerInvariant();
+        lock (_lock)
+        {
+            if (!_current.TryGetValue(key, out var set))
+            {
+                return null;
+            }
+
+            var v4 = new List<string>();
+            foreach (var ip in set)
+            {
+                if (!ip.Contains(':'))
+                {
+                    v4.Add(ip);
+                }
+            }
+
+            return v4.Count > 0 ? v4 : null;
+        }
+    }
+
+    /// <summary>
     /// Applies a domain's freshly resolved IPs additively (used by both the hot path and the list-update
     /// re-resolve): unions them with the cache and routes only the new ones. A previously routed IP is never
     /// dropped here, so a partial or transient answer cannot blackhole a working address. Domains that leave

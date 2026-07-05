@@ -19,10 +19,17 @@ internal sealed class DnsProxy
     // Per-attempt wait before retransmitting a lost upstream query, within the overall timeout.
     private const int UpstreamRetransmitMs = 400;
     private const int SioUdpConnReset = unchecked((int)0x9800000C);
+    private const int TypeA = 1;
     private const int TypeAaaa = 28;
     private const int TypeHttps = 65; // HTTPS/SVCB
     private const int MinCacheSeconds = 10;
     private const int MaxCacheSeconds = 300;
+    // Serve-known: TTL on an answer synthesized from tracked IPs. Short so the client re-asks and picks up
+    // freshly revalidated IPs, but long enough that repeat queries take the lock-free cache path.
+    private const int ServeKnownTtlSeconds = 30;
+    // Minimum gap between background revalidations of the same domain, so a chatty client cannot storm the
+    // (lossy) tunnel resolver.
+    private const int RevalidateMinIntervalMs = 60_000;
 
     // Fallback loopback aliases when 127.0.0.1:53 is taken by another resolver.
     private static readonly IPAddress[] V4Candidates = [IPAddress.Loopback, IPAddress.Parse("127.0.0.2")];
@@ -35,6 +42,11 @@ internal sealed class DnsProxy
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     // Coalesces concurrent identical (name,type) misses onto a single upstream query.
     private readonly ConcurrentDictionary<string, Lazy<byte[]>> _inflight = new(StringComparer.Ordinal);
+    // Per-name Environment.TickCount64 of the last background revalidate, to rate-limit them.
+    private readonly ConcurrentDictionary<string, long> _lastRevalidate = new(StringComparer.Ordinal);
+    // Bounds concurrent background revalidations so a burst of first-served domains cannot park many pool
+    // threads (each Forward blocks up to UpstreamTimeoutMs) and starve the Handle path.
+    private readonly SemaphoreSlim _revalidateSlots = new(4, 4);
     // Volatile: read on the hot query path, replaced on the poll thread; the matcher is immutable.
     private volatile IReadOnlyList<GeoDomain> _domains;
     private volatile DomainMatcher _matcher;
@@ -167,6 +179,7 @@ internal sealed class DnsProxy
             if (!matcher.IsTunneled(host))
             {
                 tracker.Remove(host);
+                _lastRevalidate.TryRemove(host, out _);
                 removed++;
             }
         }
@@ -326,6 +339,19 @@ internal sealed class DnsProxy
                 response = cached;
                 fromCache = true;
             }
+            else if (matched && type == TypeA && _tracker is not null && _tracker.KnownIps(name!) is { Count: > 0 } known)
+            {
+                // Already-tracked domain: its IPs are installed as /32 routes and carrying traffic. Answer
+                // instantly from that last-good set instead of re-querying the tunnel resolver, which rides
+                // the same lossy underlay and would stall the client for seconds. Refresh in the background
+                // to pick up new CDN IPs. Cache the synthetic answer (short TTL) so repeat queries take the
+                // lock-free cache path, and treat it as already-handled so the route step below is skipped
+                // (routes for a known domain are already installed).
+                response = DnsMessage.BuildAAnswer(query, known, ServeKnownTtlSeconds);
+                fromCache = true;
+                StoreInCache(name, type, response);
+                TriggerRevalidate(name!);
+            }
             else
             {
                 var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
@@ -393,6 +419,55 @@ internal sealed class DnsProxy
         catch (Exception)
         {
         }
+    }
+
+    // Refreshes a tracked domain's IPs off the client's query path. Rate-limited per name and resolved
+    // straight to the tunnel resolver (bypassing the serve-known branch above so new IPs are actually
+    // discovered). A lost query is fine - the domain keeps serving its last-good set and we retry next window.
+    private void TriggerRevalidate(string name)
+    {
+        var tracker = _tracker;
+        if (tracker is null)
+        {
+            return;
+        }
+
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        var now = Environment.TickCount64;
+        var last = _lastRevalidate.GetOrAdd(key, 0);
+        if (now - last < RevalidateMinIntervalMs || !_lastRevalidate.TryUpdate(key, now, last))
+        {
+            return;
+        }
+
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            if (!_revalidateSlots.Wait(0))
+            {
+                return; // too many revalidations in flight; the per-name window retries this later
+            }
+
+            try
+            {
+                var response = Forward(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary);
+                var ips = DnsMessage.Addresses(response)
+                    .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+                    .Select(a => a.ToString())
+                    .ToList();
+                if (ips.Count > 0)
+                {
+                    tracker.Add(name, ips);
+                }
+            }
+            catch
+            {
+                // Background refresh; a lost query just means we try again on the next window.
+            }
+            finally
+            {
+                _revalidateSlots.Release();
+            }
+        });
     }
 
     // Whether a name resolves via the LAN resolver and stays off the tunnel.

@@ -120,6 +120,85 @@ internal static class DnsMessage
     }
 
     /// <summary>
+    /// Builds a NOERROR response echoing the question with one A record per IPv4 address at the given TTL.
+    /// Non-IPv4 inputs are skipped; with no usable address it falls back to NODATA. Strips any EDNS OPT
+    /// (ARCOUNT = 0), like the sibling builders.
+    /// </summary>
+    public static byte[] BuildAAnswer(byte[] query, IReadOnlyList<string> ips, int ttlSeconds)
+    {
+        var qend = 12;
+        SkipName(query, ref qend);
+        qend += 4; // qtype + qclass
+        if (qend < 12 || qend > query.Length)
+        {
+            return query;
+        }
+
+        // Cap the answer so a domain whose add-only IP set grew large over the session can't push the UDP
+        // response past the 512-byte limit (this proxy has no TCP fallback). A client only needs a few; any
+        // routed subset works.
+        const int maxRecords = 20;
+        var rdata = new List<byte[]>();
+        foreach (var ip in ips)
+        {
+            if (rdata.Count >= maxRecords)
+            {
+                break;
+            }
+
+            if (IPAddress.TryParse(ip, out var parsed))
+            {
+                var bytes = parsed.GetAddressBytes();
+                if (bytes.Length == 4)
+                {
+                    rdata.Add(bytes);
+                }
+            }
+        }
+
+        if (rdata.Count == 0)
+        {
+            return BuildNoData(query);
+        }
+
+        var ttl = ttlSeconds < 0 ? 0 : ttlSeconds;
+        // Each A RR: name pointer (2) + type (2) + class (2) + ttl (4) + rdlength (2) + rdata (4) = 16.
+        var response = new byte[qend + (rdata.Count * 16)];
+        Array.Copy(query, response, qend);
+        response[2] = (byte)(query[2] | 0x80); // QR = 1 (response), preserve opcode / RD
+        response[3] = 0x80;                     // RA = 1, RCODE = 0 (NOERROR)
+        response[6] = (byte)(rdata.Count >> 8);
+        response[7] = (byte)(rdata.Count & 0xFF); // ANCOUNT
+        response[8] = 0;
+        response[9] = 0; // NSCOUNT = 0
+        response[10] = 0;
+        response[11] = 0; // ARCOUNT = 0 (drop any EDNS OPT)
+
+        var pos = qend;
+        foreach (var bytes in rdata)
+        {
+            response[pos++] = 0xC0;
+            response[pos++] = 0x0C; // name = pointer to the question at offset 12
+            response[pos++] = 0x00;
+            response[pos++] = 0x01; // type A
+            response[pos++] = 0x00;
+            response[pos++] = 0x01; // class IN
+            response[pos++] = (byte)((ttl >> 24) & 0xFF);
+            response[pos++] = (byte)((ttl >> 16) & 0xFF);
+            response[pos++] = (byte)((ttl >> 8) & 0xFF);
+            response[pos++] = (byte)(ttl & 0xFF);
+            response[pos++] = 0x00;
+            response[pos++] = 0x04; // rdlength = 4
+            response[pos++] = bytes[0];
+            response[pos++] = bytes[1];
+            response[pos++] = bytes[2];
+            response[pos++] = bytes[3];
+        }
+
+        return response;
+    }
+
+    /// <summary>
     /// Returns the smallest record TTL in the answer section, or 0 when there are none.
     /// </summary>
     public static int MinTtl(byte[] message)

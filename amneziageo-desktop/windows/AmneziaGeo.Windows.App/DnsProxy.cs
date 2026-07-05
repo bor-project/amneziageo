@@ -143,7 +143,41 @@ internal sealed class DnsProxy
 
         if (_tracker is not null && !ct.IsCancellationRequested)
         {
+            // Actualization: drop domains that left the lists, then seed the ones that were added.
+            PruneDepartedDomains();
             _ = SeedNewDomainsAsync(previous, domains, ct);
+        }
+    }
+
+    // Removes tracked domains that no longer match any current routing rule. Union semantics of the
+    // materialized set mean a domain contributed by several rules/categories survives until the LAST
+    // one drops it - so "youtube in 3 lists" is only untracked when none of them list it anymore.
+    private void PruneDepartedDomains()
+    {
+        var tracker = _tracker;
+        var matcher = _matcher;
+        if (tracker is null)
+        {
+            return;
+        }
+
+        var removed = 0;
+        foreach (var host in tracker.TrackedHosts())
+        {
+            if (!matcher.IsTunneled(host))
+            {
+                tracker.Remove(host);
+                removed++;
+            }
+        }
+
+        if (removed > 0)
+        {
+            _logger.LogInformation("geo cache: dropped {Count} domain(s) no longer in the routing lists", removed);
+            if (RouteLog.Enabled)
+            {
+                RouteLog.Note($"prune: dropped {removed} departed domain(s)");
+            }
         }
     }
 
@@ -627,9 +661,12 @@ internal sealed class DnsProxy
             ips.Add(ip.ToString());
         }
 
-        if (ips.Count > 0)
+        // Re-check membership at Add time: _matcher may have swapped (a list edit) between the match that
+        // routed this query here and now - do not (re-)route a domain that just left the routing lists.
+        if (ips.Count > 0 && _matcher.IsTunneled(name))
         {
-            _tracker?.Update(name, ips);
+            // Hot path: add-only union with the cache; a partial answer never drops a working IP.
+            _tracker?.Add(name, ips);
         }
     }
 
@@ -697,7 +734,14 @@ internal sealed class DnsProxy
 
                     if (ips.Count > 0)
                     {
-                        tracker.Update(host, ips.Select(a => a.ToString()).ToList());
+                        // Seed/pre-resolve is add-only. Re-check membership at Add time: a long seed retry can
+                        // complete after a later list edit dropped this host (and after PruneDepartedDomains
+                        // ran), which would otherwise re-install a zombie route for a departed domain.
+                        if (_matcher.IsTunneled(host))
+                        {
+                            tracker.Add(host, ips.Select(a => a.ToString()).ToList());
+                        }
+
                         return;
                     }
                 }

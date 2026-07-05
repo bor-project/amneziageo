@@ -125,8 +125,15 @@ internal sealed class TunnelRunner(
         // App tracking only in split mode.
         var trackApps = geoSplit && apps.Count > 0;
 
-        // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
-        var configDns = WgConfigEditor.GetDns(config);
+        // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes. The proxy forwards
+        // to the tunnel resolver over an IPv4 socket, so an IPv6 resolver (e.g. Cloudflare's
+        // 2606:4700:4700::1111, shipped by many configs alongside 1.1.1.1) is unreachable - every failover to it
+        // fails instantly with "address incompatible with the requested protocol", turning a single dropped
+        // primary datagram into a hard DNS failure. Keep IPv4 resolvers only; the fallback below tops the list
+        // up to a distinct pair.
+        var configDns = WgConfigEditor.GetDns(config)
+            .Where(d => IPAddress.TryParse(d, out var dip) && dip.AddressFamily == AddressFamily.InterNetwork)
+            .ToList();
         var resolvers = configDns.Count > 0 ? new List<string>(configDns) : new List<string> { "1.1.1.1" };
         // Ensure a distinct secondary resolver so DNS survives a resolver blackhole (failover),
         // not just an occasional dropped datagram (retransmit). Each /32 is routed below.
@@ -144,17 +151,31 @@ internal sealed class TunnelRunner(
         }
 
         IReadOnlyList<string> tunnelResolver = resolvers;
+        // Resolver /32s are infrastructure: routed through the tunnel so the tunnel DNS stays reachable. Collect
+        // them so they can be excluded from the reconcilable list set below - a list range that happens to equal a
+        // resolver IP must never be torn down by the live reconcile, or DNS through the tunnel dies.
+        var resolverRoutes = new HashSet<string>(StringComparer.Ordinal);
         if (trackDomains)
         {
             foreach (var server in tunnelResolver)
             {
+                if (!IPAddress.TryParse(server, out _))
+                {
+                    continue;
+                }
+
                 var route = $"{server}/32";
-                if (IPAddress.TryParse(server, out _) && !geoRoutes.Contains(route))
+                resolverRoutes.Add(route);
+                if (!geoRoutes.Contains(route))
                 {
                     geoRoutes.Add(route);
                 }
             }
         }
+
+        // Reconcilable list ranges = the list's own ranges MINUS resolver infrastructure, so a range that
+        // coincides with a tunnel-DNS resolver /32 stays advertised (in _staticRoutes) but is never in _listRoutes.
+        var listRoutes = (geo?.Routes ?? []).Where(r => !resolverRoutes.Contains(r)).ToList();
 
         var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), geoRoutes);
         if (stripV6)
@@ -246,7 +267,7 @@ internal sealed class TunnelRunner(
             if (peer is not null)
             {
                 // Started after the geo-domain sink is attached to avoid a rebuild race.
-                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, appSettings.RefreshSeconds, stripV6);
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, appSettings.RefreshSeconds, stripV6);
             }
         }
 
@@ -320,11 +341,11 @@ internal sealed class TunnelRunner(
         if (applied)
         {
             _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, proxy, sessionCts.Token));
-            // Pre-install rule hostname routes for cached-IP apps (#67).
-            if (trackDomains && proxy is not null)
-            {
-                _ = Task.Run(() => SeedDomainRoutesAsync(name, proxy, sessionCts.Token));
-            }
+            // No connect-time mass pre-resolve of the geosite list: geo routes are restored from the DB
+            // cache (DomainTracker.SeedFromCache) and anything new is resolved on-demand per DNS query on
+            // the thread pool. The old full-list live resolve here saturated the tunnel DNS path (1.1.1.1)
+            // for minutes and starved real traffic (the "seed storm"). The address cache is refreshed when
+            // routing lists change, not at connect. (DnsProxy.SeedRoutesAsync is kept for easy revert.)
         }
 
         // App route watcher pins matched apps' TCP remote IPs into the tracker.
@@ -596,28 +617,6 @@ internal sealed class TunnelRunner(
                     await Task.Delay(2000, ct);
                     proxy?.ClearCache();
                     dns.FlushCache();
-                    return;
-                }
-
-                await Task.Delay(500, ct);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private async Task SeedDomainRoutesAsync(string name, DnsProxy proxy, CancellationToken ct)
-    {
-        try
-        {
-            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-            while (DateTimeOffset.UtcNow < deadline)
-            {
-                ct.ThrowIfCancellationRequested();
-                if (routes.FindInterfaceIndex(name) is not null)
-                {
-                    await proxy.SeedRoutesAsync(ct);
                     return;
                 }
 

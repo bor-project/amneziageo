@@ -156,9 +156,10 @@ public interface IStateStore
     Task RemoveGeoSourceAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates the resolved IPs for a tunnel's domain.
+    /// Inserts or updates the resolved IPs for a tunnel's domain, tagged with the routing list it came from
+    /// (0 = none/unknown). The list id lets a list's cached resolutions be cleaned when the list is removed.
     /// </summary>
-    Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, CancellationToken ct = default);
+    Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, long listId, CancellationToken ct = default);
 
     /// <summary>
     /// Returns all saved domain resolutions for a tunnel.
@@ -169,6 +170,11 @@ public interface IStateStore
     /// Removes all saved domain resolutions for a tunnel.
     /// </summary>
     Task RemoveDomainResolutionsAsync(string tunnel, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a single domain's cached resolution for a tunnel (domain left the routing lists).
+    /// </summary>
+    Task DeleteDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default);
 
     /// <summary>
     /// Inserts or updates a failover balancer group.

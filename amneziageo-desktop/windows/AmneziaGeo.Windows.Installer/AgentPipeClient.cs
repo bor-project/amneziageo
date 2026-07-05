@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Installer;
 
@@ -66,9 +67,27 @@ internal static class AgentPipeClient
             }
             else if (envelope?.Type == "ack" && envelope.Ack is not null)
             {
-                return new AgentReply(envelope.Ack.Ok, envelope.Ack.Message ?? string.Empty, updatesAvailable);
+                return new AgentReply(envelope.Ack.Ok, Decode(envelope.Ack.Message), updatesAvailable);
             }
         }
+    }
+
+    // Agent acks may carry a localization key (IpcMessage encoding: marker char + key + unit-separated args)
+    // instead of literal text. Resolve it through the shared strings so the installer shows real wording, not
+    // a marker-prefixed key. A plain message (no marker) is returned unchanged.
+    private const char MessageMarker = (char)1;
+    private const char MessageSeparator = (char)31;
+
+    private static string Decode(string? message)
+    {
+        if (string.IsNullOrEmpty(message) || message[0] != MessageMarker)
+        {
+            return message ?? string.Empty;
+        }
+
+        var parts = message[1..].Split(MessageSeparator);
+        var args = parts.Length > 1 ? parts[1..] : [];
+        return Loc.Instance.Get(parts[0], args);
     }
 
     private sealed class Envelope

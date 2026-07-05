@@ -32,6 +32,10 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private int _result;
     private InstallState _detectedState;
 
+    // #123: a configuration file picked on the options step, applied post-install via the agent import path.
+    private string? _configPath;
+    private string _configPolicy = "new";
+
     private volatile bool _engineConnected;
 
     /// <summary>
@@ -127,13 +131,31 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
         _dispatcher.BeginInvoke(() =>
         {
-            _vm.SetDetected(state, _installedVersion);
+            _vm.SetDetected(state, _installedVersion, ExistingConfigPresent());
 
             if (!_interactive)
             {
                 OnUserAction(MapCommandAction(_command.Action, state));
             }
         });
+    }
+
+    /// <summary>
+    /// Whether a runtime configuration (state.db) already exists on the machine, so a picked bundle may
+    /// collide with it and the options step should offer an inline conflict policy.
+    /// </summary>
+    private static bool ExistingConfigPresent()
+    {
+        try
+        {
+            return File.Exists(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "AmneziaGeo", "state.db"));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // ---- Plan ----
@@ -237,9 +259,10 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return;
         }
 
-        var downloadGeo = _action is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair
-            && _vm.DownloadLists;
-        if (!downloadGeo)
+        var isApply = _action is InstallerAction.Install or InstallerAction.Update or InstallerAction.Repair;
+        var importConfig = isApply && !string.IsNullOrEmpty(_configPath);
+        var downloadGeo = isApply && _vm.DownloadLists;
+        if (!importConfig && !downloadGeo)
         {
             Finish(true, SuccessText(_action));
             return;
@@ -247,14 +270,79 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
         _dispatcher.BeginInvoke(async () =>
         {
-            var geo = await RunGeoStepAsync();
-            _result = 0;
-            _vm.CompleteWithGeo(SuccessText(_action), geo);
+            var lines = new List<string>();
+            var importOk = true;
+
+            // The whole continuation is guarded: a throw here (async void) would otherwise leave the UI stuck
+            // in the Applying phase and, in silent mode, never call Shutdown. Config import and geo download are
+            // each best-effort; a failed import (below) fails the run, a failed geo download does not.
+            try
+            {
+                // #123: apply the picked configuration through the agent's own import op (same path as the app),
+                // now that the MSI has installed and started the agent and its pipe is reachable.
+                if (importConfig)
+                {
+                    var (ok, message) = await RunConfigImportAsync(_configPath!, _configPolicy);
+                    importOk = ok;
+                    if (!string.IsNullOrEmpty(message))
+                    {
+                        lines.Add(message);
+                    }
+                }
+
+                if (downloadGeo)
+                {
+                    var geo = await RunGeoStepAsync();
+                    if (!string.IsNullOrEmpty(geo))
+                    {
+                        lines.Add(geo);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                importOk = false;
+                lines.Add(Loc.Instance.Get("InstallerBa_ConfigImportFailed", ex.Message));
+            }
+
+            _result = importOk ? 0 : 1;
+            var heading = importOk ? SuccessText(_action) : Loc.Instance.Get("InstallerBa_InstalledButConfigFailed");
+            _vm.CompleteWithGeo(importOk, heading, string.Join(Environment.NewLine, lines));
             if (!_interactive)
             {
                 Application.Current?.Shutdown();
             }
         });
+    }
+
+    private async Task<(bool Ok, string Message)> RunConfigImportAsync(string path, string policy)
+    {
+        try
+        {
+            _vm.BeginConfigImport();
+
+            var content = await File.ReadAllTextAsync(path);
+
+            // A portable bundle is JSON ({...}); anything else is treated as a single wg-quick config. Both go
+            // through the same import ops the in-app import uses - import-bundle honours the conflict policy.
+            var reply = content.TrimStart().StartsWith('{')
+                ? await AgentPipeClient.SendAsync(
+                    "import-bundle", [content, policy],
+                    connectTimeout: TimeSpan.FromSeconds(20),
+                    ackTimeout: TimeSpan.FromSeconds(60),
+                    CancellationToken.None)
+                : await AgentPipeClient.SendAsync(
+                    "import-config", [Path.GetFileNameWithoutExtension(path), content],
+                    connectTimeout: TimeSpan.FromSeconds(20),
+                    ackTimeout: TimeSpan.FromSeconds(60),
+                    CancellationToken.None);
+
+            return (reply.Ok, reply.Message);
+        }
+        catch (Exception ex)
+        {
+            return (false, Loc.Instance.Get("InstallerBa_ConfigImportFailed", ex.Message));
+        }
     }
 
     private async Task<string> RunGeoStepAsync()
@@ -316,10 +404,10 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 ResolveSeedReplace();
             }
 
-            if (!string.IsNullOrEmpty(_vm.SeedDbPath))
-            {
-                engine.SetVariableString("SEEDDBPATH", _vm.SeedDbPath, false);
-            }
+            // #123: the picked configuration file is applied post-install through the agent import path
+            // (RunConfigImportAsync), not seeded as a SQLite database. Snapshot the choice for that step.
+            _configPath = string.IsNullOrEmpty(_vm.ConfigPath) ? null : _vm.ConfigPath;
+            _configPolicy = _vm.ConflictPolicy;
         }
 
         _vm.BeginApply(action);

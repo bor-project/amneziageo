@@ -16,6 +16,7 @@ internal sealed class DomainTracker(
     string tunnelName,
     string peerPublicKey,
     IReadOnlyList<string> staticRoutes,
+    IReadOnlyList<string> listRoutes,
     int refreshSeconds,
     bool stripV6)
 {
@@ -24,18 +25,30 @@ internal sealed class DomainTracker(
     // App-discovered remote IPs, unioned into allowed-ips so the watcher and DNS path share one authority.
     private readonly HashSet<string> _appIps = [];
 
-    // Static geoip CIDRs captured at connect; add-only live, since removing an engine route mid-session blackholes.
+    // All static geoip CIDRs advertised in allowed-ips: list ranges + connect infrastructure (tunnel-DNS /32s).
     private readonly HashSet<string> _staticRoutes = new(staticRoutes, StringComparer.Ordinal);
+
+    // The reconcilable subset: ranges that came from the routing list. Only these are removed when a list drops
+    // them - infrastructure routes (in _staticRoutes but not here, e.g. the tunnel resolver /32s) are never touched.
+    private readonly HashSet<string> _listRoutes = new(stripV6 ? listRoutes.Where(c => !c.Contains(':')) : listRoutes, StringComparer.Ordinal);
 
     // Baselines for the poll signals: list materialization generation and global resolve epoch.
     private long? _knownGeneration;
     private long _knownResolveEpoch;
+
+    // Routing list the tunnel currently projects; tags persisted resolutions so a list's cache can be cleaned
+    // on removal. Read/written under _lock. 0 = full-tunnel / no-list.
+    private long _activeListId;
 
     // Live geo-domain sink; rebuilt on materialization generation change so a source refresh takes effect without reconnect.
     private volatile Action<IReadOnlyList<GeoDomain>, CancellationToken>? _onGeoDomainsChanged;
 
     private uint? _interfaceIndex;
     private readonly TaskCompletionSource _warmStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    // Serializes cache persistence: writes run in enqueue order so a DELETE never overtakes a later SAVE.
+    private readonly object _persistLock = new();
+    private Task _persistChain = Task.CompletedTask;
 
     /// <summary>
     /// Completes once the DB-cache warm start is applied.
@@ -63,9 +76,12 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Applies a domain's resolved IPs and persists.
+    /// Applies a domain's freshly resolved IPs additively (used by both the hot path and the list-update
+    /// re-resolve): unions them with the cache and routes only the new ones. A previously routed IP is never
+    /// dropped here, so a partial or transient answer cannot blackhole a working address. Domains that leave
+    /// the routing lists are dropped separately via <see cref="Remove"/>.
     /// </summary>
-    public void Update(string domain, IReadOnlyList<string> ips)
+    public void Add(string domain, IReadOnlyList<string> ips)
     {
         lock (_lock)
         {
@@ -78,77 +94,154 @@ internal sealed class DomainTracker(
 
             var key = domain.TrimEnd('.').ToLowerInvariant();
             // IPv4-only tunnel: never route IPv6 (no transit).
-            var effective = stripV6 ? ips.Where(ip => !ip.Contains(':')).ToList() : ips;
-            var fresh = new HashSet<string>(effective);
+            var effective = stripV6 ? ips.Where(ip => !ip.Contains(':')) : ips;
             _current.TryGetValue(key, out var old);
             old ??= [];
-            if (fresh.SetEquals(old))
-            {
-                logger.LogDebug("DIAG track {Domain} unchanged ({N} ips)", domain, fresh.Count);
-                return;
-            }
 
             var addedCidrs = new List<string>();
-            foreach (var ip in fresh)
+            var added = new HashSet<string>();
+            foreach (var ip in effective)
             {
-                if (!old.Contains(ip))
+                if (old.Contains(ip) || added.Contains(ip))
                 {
-                    var parsed = IPAddress.Parse(ip);
-                    var ok = routes.AddTunnelRoute(parsed, index.Value);
-                    logger.LogDebug("DIAG track add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
-                    if (ok)
-                    {
-                        addedCidrs.Add(Cidr(parsed));
-                    }
+                    continue;
+                }
+
+                var parsed = IPAddress.Parse(ip);
+                // Record the IP only once its /32 route is actually installed, so routes, allowed-ips and
+                // _current never drift - a failed route must not leave a routeless allowed-ip behind.
+                if (routes.AddTunnelRoute(parsed, index.Value))
+                {
+                    added.Add(ip);
+                    addedCidrs.Add(Cidr(parsed));
+                }
+                else
+                {
+                    logger.LogDebug("DIAG track add {Ip}/32 -> ifIndex {Index} ok=false (skipped)", ip, index.Value);
                 }
             }
 
-            // Remove the /32 only when no other domain or _appIps still references the IP, so routes and allowed-ips stay in sync.
-            List<IPAddress>? stale = null;
-            foreach (var ip in old)
+            if (added.Count == 0)
             {
-                if (!fresh.Contains(ip) && !IsStillReferenced(ip, key))
+                logger.LogDebug("DIAG track {Domain} no new routable ips", domain);
+                return;
+            }
+
+            var union = new HashSet<string>(old);
+            union.UnionWith(added);
+            _current[key] = union;
+
+            logger.LogInformation("resolved {Domain} -> {Ips}", key, string.Join(", ", union));
+            if (RouteLog.Enabled)
+            {
+                RouteLog.Note($"resolve {key} -> [{string.Join(",", union)}] (+{addedCidrs.Count} route(s))");
+            }
+
+            // Advertise only the newly added IPs incrementally so route-before-answer stays O(new).
+            uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+
+            var listId = _activeListId;
+            EnqueuePersist(() => PersistAsync(listId, new DomainResolution(key, [.. union])));
+        }
+    }
+
+    /// <summary>
+    /// Snapshot of the currently tracked domain keys (used by list-update reconciliation to find
+    /// domains that no longer match any routing rule).
+    /// </summary>
+    public IReadOnlyList<string> TrackedHosts()
+    {
+        lock (_lock)
+        {
+            return [.. _current.Keys];
+        }
+    }
+
+    /// <summary>
+    /// Drops a domain that left the routing lists: removes its /32 routes and allowed-ips (keeping IPs
+    /// still referenced by another domain or the app set) and forgets its cached resolution.
+    /// </summary>
+    public void Remove(string domain)
+    {
+        lock (_lock)
+        {
+            var key = domain.TrimEnd('.').ToLowerInvariant();
+            if (!_current.TryGetValue(key, out var ips))
+            {
+                return;
+            }
+
+            // Compute stale before dropping the key; IsStillReferenced already excludes this domain.
+            List<IPAddress>? stale = null;
+            foreach (var ip in ips)
+            {
+                if (!IsStillReferenced(ip, key))
                 {
                     (stale ??= []).Add(IPAddress.Parse(ip));
                 }
             }
 
-            var removedAny = stale is not null;
-            if (removedAny)
+            _current.Remove(key);
+
+            var index = EnsureIndex();
+            if (index is not null && stale is not null)
             {
-                routes.RemoveTunnelRoutes(stale!, index.Value);
-            }
-
-            _current[key] = fresh;
-
-            logger.LogInformation("resolved {Domain} -> {Ips}", key, string.Join(", ", fresh));
-
-            if (RouteLog.Enabled)
-            {
-                RouteLog.Note($"resolve {key} -> [{string.Join(",", fresh)}] (+{addedCidrs.Count} route(s), -{stale?.Count ?? 0})");
-            }
-
-            // Advertise only the newly added IPs incrementally so route-before-answer stays O(new).
-            if (removedAny)
-            {
+                routes.RemoveTunnelRoutes(stale, index.Value);
                 uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
             }
-            else
+
+            logger.LogInformation("untracked {Domain}: left routing lists (-{Count} route(s))", key, stale?.Count ?? 0);
+            if (RouteLog.Enabled)
             {
-                uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+                RouteLog.Note($"untrack {key} (-{stale?.Count ?? 0} route(s))");
             }
 
-            // Fire-and-forget: persistence must not block the live DNS answer path.
-            var snapshot = new DomainResolution(key, [.. fresh]);
-            _ = Task.Run(() => PersistAsync(snapshot));
+            EnqueuePersist(() => DeleteResolutionAsync(key));
         }
     }
 
-    private async Task PersistAsync(DomainResolution resolution)
+    // Serializes cache writes so a fire-and-forget DELETE never overtakes a later SAVE for the same domain
+    // (or vice versa): both are enqueued under _lock, and this chain runs them in that order off the hot path.
+    private void EnqueuePersist(Func<Task> op)
+    {
+        lock (_persistLock)
+        {
+            var previous = _persistChain;
+            _persistChain = RunSequentialAsync(previous, op);
+        }
+    }
+
+    private static async Task RunSequentialAsync(Task previous, Func<Task> op)
     {
         try
         {
-            await store.SaveDomainResolutionAsync(tunnelName, resolution);
+            await previous.ConfigureAwait(false);
+        }
+        catch
+        {
+            // A prior write already logged its own failure; never let it break the chain.
+        }
+
+        await op().ConfigureAwait(false);
+    }
+
+    private async Task DeleteResolutionAsync(string domain)
+    {
+        try
+        {
+            await store.DeleteDomainResolutionAsync(tunnelName, domain);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "delete of {Domain} resolution failed", domain);
+        }
+    }
+
+    private async Task PersistAsync(long listId, DomainResolution resolution)
+    {
+        try
+        {
+            await store.SaveDomainResolutionAsync(tunnelName, resolution, listId);
         }
         catch (Exception ex)
         {
@@ -157,7 +250,8 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// Applies cached resolutions (warm start), then re-resolves periodically.
+    /// Applies cached resolutions (warm start), then watches for routing-list changes and re-resolves
+    /// only when a list actually changes. There is no periodic timer-driven re-resolve.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
@@ -179,23 +273,33 @@ internal sealed class DomainTracker(
 
             // Leave _knownGeneration null so the first poll reconciles geoip deltas; baseline the resolve epoch.
             _knownResolveEpoch = await ReadResolveEpochAsync();
+            var initialListId = await store.GetActiveRoutingListIdAsync(tunnelName) ?? 0;
+            lock (_lock)
+            {
+                _activeListId = initialListId;
+            }
 
-            // Poll signals often so a user refresh takes effect promptly; full re-resolve runs every refreshSeconds.
+            // No timer-driven re-resolve (that periodically hammered every tracked domain and congested the
+            // tunnel DNS). Active domains stay fresh via the on-demand DNS path; a full re-resolve runs ONLY
+            // when a routing list actually changed (resolve-epoch bump). The poll just watches two cheap
+            // signals: the list materialization generation and the resolve epoch.
             var pollInterval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 15), 1, 60));
-            var fullRefresh = TimeSpan.FromSeconds(refreshSeconds);
-            var sinceFullRefresh = TimeSpan.Zero;
             while (true)
             {
                 await Task.Delay(pollInterval, ct);
-                sinceFullRefresh += pollInterval;
 
-                var forceResolve = false;
                 try
                 {
                     var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName);
                     if (current is not null && current.Generation != _knownGeneration)
                     {
-                        ApplyStaticAdditions(current.Routes);
+                        lock (_lock)
+                        {
+                            _activeListId = current.ListId;
+                        }
+
+                        ReconcileStaticRoutes(current.Routes);
+                        // Rebuild the matcher, seed newly added domains, and prune domains that left the lists.
                         _onGeoDomainsChanged?.Invoke(current.Domains, ct);
                         _knownGeneration = current.Generation;
                     }
@@ -204,18 +308,12 @@ internal sealed class DomainTracker(
                     if (epoch != _knownResolveEpoch)
                     {
                         _knownResolveEpoch = epoch;
-                        forceResolve = true;
+                        await RefreshAsync();
                     }
                 }
                 catch (Exception ex)
                 {
                     logger.LogDebug(ex, "geo cache signal poll failed for {Tunnel}", tunnelName);
-                }
-
-                if (forceResolve || sinceFullRefresh >= fullRefresh)
-                {
-                    await RefreshAsync();
-                    sinceFullRefresh = TimeSpan.Zero;
                 }
             }
         }
@@ -368,7 +466,10 @@ internal sealed class DomainTracker(
         return all;
     }
 
-    private void ApplyStaticAdditions(IReadOnlyList<string> freshRoutes)
+    // Reconciles the routing list's static geoip ranges live on a list change: adds ranges new to the list and
+    // removes ranges that left it. Only the list subset (_listRoutes) is touched; infrastructure routes such as
+    // the tunnel-DNS /32s are never removed.
+    private void ReconcileStaticRoutes(IReadOnlyList<string> freshRoutes)
     {
         lock (_lock)
         {
@@ -378,16 +479,15 @@ internal sealed class DomainTracker(
                 return;
             }
 
-            var addedCidrs = new List<string>();
-            foreach (var cidr in freshRoutes)
-            {
-                // v4-only tunnel: never route IPv6.
-                if (stripV6 && cidr.Contains(':'))
-                {
-                    continue;
-                }
+            // v4-only tunnel: never route IPv6.
+            var fresh = new HashSet<string>(
+                stripV6 ? freshRoutes.Where(c => !c.Contains(':')) : freshRoutes,
+                StringComparer.Ordinal);
 
-                if (!_staticRoutes.Add(cidr))
+            var addedCidrs = new List<string>();
+            foreach (var cidr in fresh)
+            {
+                if (!_listRoutes.Add(cidr))
                 {
                     continue;
                 }
@@ -395,17 +495,44 @@ internal sealed class DomainTracker(
                 // Advertise the range only once its route is installed, so routes and allowed-ips stay in sync.
                 if (routes.AddTunnelCidr(cidr, index.Value))
                 {
+                    _staticRoutes.Add(cidr);
                     addedCidrs.Add(cidr);
                 }
                 else
                 {
-                    _staticRoutes.Remove(cidr);
+                    _listRoutes.Remove(cidr);
                 }
+            }
+
+            // Remove ranges that left the list. Delete the OS route FIRST (traffic then falls back to the default
+            // route = direct); rebuild allowed-ips after. The reverse order would leave a route-to-tunnel with no
+            // matching allowed-ip = blackhole.
+            var removed = 0;
+            foreach (var cidr in _listRoutes.Where(c => !fresh.Contains(c)).ToList())
+            {
+                _listRoutes.Remove(cidr);
+                _staticRoutes.Remove(cidr);
+                routes.RemoveTunnelCidr(cidr, index.Value);
+                removed++;
             }
 
             if (addedCidrs.Count > 0)
             {
                 logger.LogInformation("geo cache: applied {Count} new range(s) live to {Tunnel}", addedCidrs.Count, tunnelName);
+            }
+
+            if (removed > 0)
+            {
+                logger.LogInformation("geo cache: removed {Count} departed range(s) live from {Tunnel}", removed, tunnelName);
+            }
+
+            // One allowed-ips update reflecting both directions; full replace when anything was removed.
+            if (removed > 0)
+            {
+                uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
+            }
+            else if (addedCidrs.Count > 0)
+            {
                 uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
             }
         }
@@ -437,7 +564,9 @@ internal sealed class DomainTracker(
                     .ToList();
                 if (ips.Count > 0)
                 {
-                    Update(domain, ips);
+                    // Add-only: refresh brings in new IPs but never drops a domain's live ones (a partial
+                    // answer must not blackhole an active flow). Departed domains are pruned via the matcher.
+                    Add(domain, ips);
                 }
                 else
                 {

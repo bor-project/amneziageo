@@ -203,6 +203,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // Generation counter, bumped when the materialized set changes.
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+
+            // Routing list a cached resolution belongs to (0 = none/unknown); lets a list's cache be cleaned on removal.
+            await TryAlterAsync(connection, "ALTER TABLE domain_ips ADD COLUMN list_id INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
         }
     }
 
@@ -873,7 +876,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, CancellationToken ct = default)
+    public async Task SaveDomainResolutionAsync(string tunnel, DomainResolution resolution, long listId, CancellationToken ct = default)
     {
         var timestamp = Timestamp();
         var connection = new SqliteConnection(_connectionString);
@@ -902,10 +905,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         insert.Transaction = transaction;
                         insert.CommandText =
                             """
-                            INSERT INTO domain_ips (tunnel, domain, ip, updated_at)
-                            VALUES ($tunnel, $domain, $ip, $updated);
+                            INSERT INTO domain_ips (tunnel, list_id, domain, ip, updated_at)
+                            VALUES ($tunnel, $list, $domain, $ip, $updated);
                             """;
                         insert.Parameters.AddWithValue("$tunnel", tunnel);
+                        insert.Parameters.AddWithValue("$list", listId);
                         insert.Parameters.AddWithValue("$domain", resolution.Domain);
                         insert.Parameters.AddWithValue("$ip", ip);
                         insert.Parameters.AddWithValue("$updated", timestamp);
@@ -931,7 +935,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT domain, ip, updated_at FROM domain_ips WHERE tunnel = $tunnel ORDER BY domain, ip;";
+                // DISTINCT (domain, ip) across list ids: one /32 per domain even if several lists cache it.
+                command.CommandText = "SELECT domain, ip, MAX(updated_at) FROM domain_ips WHERE tunnel = $tunnel GROUP BY domain, ip ORDER BY domain, ip;";
                 command.Parameters.AddWithValue("$tunnel", tunnel);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -988,6 +993,25 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText = "DELETE FROM domain_ips WHERE tunnel = $tunnel;";
                 command.Parameters.AddWithValue("$tunnel", tunnel);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task DeleteDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "DELETE FROM domain_ips WHERE tunnel = $tunnel AND domain = $domain;";
+                command.Parameters.AddWithValue("$tunnel", tunnel);
+                command.Parameters.AddWithValue("$domain", domain);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
@@ -1765,6 +1789,16 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     deleteSettings.CommandText = "DELETE FROM routing_settings WHERE list_id = $id;";
                     deleteSettings.Parameters.AddWithValue("$id", id);
                     await deleteSettings.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                }
+
+                var deleteResolutions = connection.CreateCommand();
+                await using (deleteResolutions.ConfigureAwait(false))
+                {
+                    // Drop cached resolutions that belonged to this list so they are not seeded after removal.
+                    deleteResolutions.Transaction = transaction;
+                    deleteResolutions.CommandText = "DELETE FROM domain_ips WHERE list_id = $id;";
+                    deleteResolutions.Parameters.AddWithValue("$id", id);
+                    await deleteResolutions.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
 
                 var deleteList = connection.CreateCommand();

@@ -298,7 +298,7 @@ internal sealed class Cli(
 
     private async Task<int> SeedDomainAsync(string name, string domain, string ip)
     {
-        await store.SaveDomainResolutionAsync(name, new DomainResolution(domain.ToLowerInvariant(), [ip]));
+        await store.SaveDomainResolutionAsync(name, new DomainResolution(domain.ToLowerInvariant(), [ip]), 0);
         Console.WriteLine($"seeded {name} {domain} -> {ip}");
         return 0;
     }

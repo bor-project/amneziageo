@@ -116,7 +116,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
         foreach (var resolution in await store.ListDomainResolutionsAsync(source, ct))
         {
-            await store.SaveDomainResolutionAsync(destination, resolution, ct);
+            await store.SaveDomainResolutionAsync(destination, resolution, 0, ct);
         }
     }
 
@@ -173,7 +173,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
         foreach (var resolution in await store.ListDomainResolutionsAsync(oldName, ct))
         {
-            await store.SaveDomainResolutionAsync(newName, resolution, ct);
+            await store.SaveDomainResolutionAsync(newName, resolution, 0, ct);
         }
 
         await store.RemoveDomainResolutionsAsync(oldName, ct);

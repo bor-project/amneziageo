@@ -437,6 +437,37 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Removes the on-link prefix route for a CIDR from the tunnel interface (only our managed route with the
+    /// exact destination + prefix on this interface is deleted).
+    /// </summary>
+    public void RemoveTunnelCidr(string cidr, uint tunnelInterfaceIndex)
+    {
+        var slash = cidr.IndexOf('/');
+        var network = slash >= 0 ? cidr[..slash] : cidr;
+        if (!IPAddress.TryParse(network, out var ip))
+        {
+            return;
+        }
+
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var prefixV6 = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var pv6) ? pv6 : (byte)128;
+            DeleteManagedV6Routes(ip, prefixV6);
+            RouteLog.Write("tunnel -cidr", $"{ip}/{prefixV6}", $"if{tunnelInterfaceIndex}", ok: true);
+            return;
+        }
+
+        if (ip.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return;
+        }
+
+        var prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : (byte)32;
+        DeleteManagedRoutes(ip, tunnelInterfaceIndex, prefix);
+        RouteLog.Write("tunnel -cidr", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok: true);
+    }
+
+    /// <summary>
     /// Returns the IPv4 interface index of a network adapter by name.
     /// </summary>
     public uint? FindInterfaceIndex(string adapterName)

@@ -1145,6 +1145,12 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
     <value>Failed to update the geo databases ({0}). You can do this later in the application.</value>
   </data>
+  <data name="InstallerBa_ConfigImportFailed" xml:space="preserve">
+    <value>Failed to apply the configuration: {0}</value>
+  </data>
+  <data name="InstallerBa_InstalledButConfigFailed" xml:space="preserve">
+    <value>Installation complete, but the configuration could not be applied.</value>
+  </data>
   <data name="InstallerBa_PlanFailed" xml:space="preserve">
     <value>Failed to plan the operation.</value>
   </data>
@@ -1186,8 +1192,8 @@ No - keep the current settings.</value>
   <data name="InstallerUi_Repair" xml:space="preserve">
     <value>Repair</value>
   </data>
-  <data name="InstallerUi_SettingsFile" xml:space="preserve">
-    <value>Settings file…</value>
+  <data name="InstallerUi_ConfigFile" xml:space="preserve">
+    <value>Configuration file…</value>
   </data>
   <data name="InstallerUi_Update" xml:space="preserve">
     <value>Update</value>
@@ -1231,17 +1237,20 @@ No - keep the current settings.</value>
   <data name="InstallerVm_Repairing" xml:space="preserve">
     <value>Repairing…</value>
   </data>
-  <data name="InstallerVm_SeedDbDialogFilter" xml:space="preserve">
-    <value>SQLite settings database (*.db)|*.db|All files (*.*)|*.*</value>
+  <data name="InstallerVm_ConfigFileDialogFilter" xml:space="preserve">
+    <value>AmneziaGeo configuration (*.agbundle.json;*.json;*.conf;*.vpn.txt)|*.agbundle.json;*.json;*.conf;*.vpn.txt|All files (*.*)|*.*</value>
   </data>
-  <data name="InstallerVm_SeedDbDialogTitle" xml:space="preserve">
-    <value>Select a settings file (state.db)</value>
+  <data name="InstallerVm_ConfigFileDialogTitle" xml:space="preserve">
+    <value>Select a configuration file</value>
   </data>
-  <data name="InstallerVm_SeedDbNone" xml:space="preserve">
-    <value>No default settings file selected.</value>
+  <data name="InstallerVm_ConfigFileNone" xml:space="preserve">
+    <value>No configuration file selected.</value>
   </data>
-  <data name="InstallerVm_SeedDbSelected" xml:space="preserve">
-    <value>Settings file: {0}</value>
+  <data name="InstallerVm_ConfigFileSelected" xml:space="preserve">
+    <value>Configuration file: {0}</value>
+  </data>
+  <data name="InstallerVm_ImportingConfig" xml:space="preserve">
+    <value>Applying configuration…</value>
   </data>
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Updating…</value>

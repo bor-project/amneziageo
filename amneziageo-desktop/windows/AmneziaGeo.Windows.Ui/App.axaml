@@ -336,6 +336,20 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
     </Style>
 
+    <!-- Compact, text-less toggle: drop the default (untranslated) "On/Off" labels and the
+         WinUI-inherited wide MinWidth, so a switch is just the knob and never widens/clips its row. -->
+    <Style Selector="ToggleSwitch">
+      <Setter Property="OnContent" Value="" />
+      <Setter Property="OffContent" Value="" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="ToggleSwitch /template/ ContentPresenter#PART_OnContentPresenter">
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="ToggleSwitch /template/ ContentPresenter#PART_OffContentPresenter">
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+
     <!-- Continuous rotation. -->
     <Style Selector="Control.spin">
       <Setter Property="RenderTransformOrigin" Value="50%,50%" />

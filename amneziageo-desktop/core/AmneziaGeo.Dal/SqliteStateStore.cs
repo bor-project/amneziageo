@@ -73,7 +73,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         use_ws     INTEGER NOT NULL DEFAULT 0,
                         ws_host    TEXT NOT NULL DEFAULT '',
                         ws_port    INTEGER NOT NULL DEFAULT 443,
-                        mtu        INTEGER NOT NULL DEFAULT 1380,
+                        mtu        INTEGER NOT NULL DEFAULT 1280,
                         updated_at TEXT NOT NULL
                     );
 
@@ -198,8 +198,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // WebSocket transport host.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
 
-            // Tunnel MTU (default 1380, valid 576-1500).
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1380;", ct).ConfigureAwait(false);
+            // Tunnel MTU (default 1280, valid 576-1500). A stored 1380 (the former default) is treated as
+            // "follow the current default" at connect time (TunnelRunner.LegacyDefaultMtu), so existing
+            // default-valued configs pick up the lowered MTU without clobbering an explicit user choice.
+            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1280;", ct).ConfigureAwait(false);
 
             // Generation counter, bumped when the materialized set changes.
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);

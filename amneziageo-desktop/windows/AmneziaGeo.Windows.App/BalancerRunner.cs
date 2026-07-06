@@ -24,6 +24,13 @@ internal sealed class BalancerRunner(
     private BalancerGroup _group = null!;
     private AppSettings _settings = new();
 
+    // Liveness tracking. rx progress proves the tunnel is carrying data even mid-rekey; a re-dial only fires
+    // after several consecutive dead polls so a single lost handshake on a lossy link can't tear down a live
+    // session. -1 forces the first poll after (re)connect to seed the baseline rather than count as progress.
+    private long _lastRxBytes = -1;
+    private int _deadStreak;
+    private const int DeadStreakLimit = 3;
+
     /// <summary>
     /// Runs sessions per target change.
     /// </summary>
@@ -182,6 +189,9 @@ internal sealed class BalancerRunner(
         logger.LogInformation("connected: {Config} ({Profile})", config, group.Name);
         await SetStateAsync("connected", config);
 
+        _lastRxBytes = -1;
+        _deadStreak = 0;
+
         try
         {
             while (!ct.IsCancellationRequested)
@@ -194,7 +204,15 @@ internal sealed class BalancerRunner(
 
                 if (!IsAlive(config))
                 {
-                    logger.LogWarning("config {Config} unreachable; re-dialing", config);
+                    if (++_deadStreak < DeadStreakLimit)
+                    {
+                        logger.LogDebug("config {Config} liveness miss {Streak}/{Limit}", config, _deadStreak, DeadStreakLimit);
+                        continue;
+                    }
+
+                    logger.LogWarning("config {Config} unreachable ({Streak} consecutive misses); re-dialing", config, _deadStreak);
+                    _deadStreak = 0;
+                    _lastRxBytes = -1;
                     await SetStateAsync("connecting", null);
                     Stop(config);
                     if (!await TryConnectAsync(config, ct))
@@ -211,6 +229,11 @@ internal sealed class BalancerRunner(
                     }
 
                     await SetStateAsync("connected", config);
+                    _lastRxBytes = -1;
+                }
+                else
+                {
+                    _deadStreak = 0;
                 }
             }
         }
@@ -374,13 +397,26 @@ internal sealed class BalancerRunner(
 
     private bool IsAlive(string member)
     {
-        var handshake = uapi.TryGetLastHandshake(member);
-        if (handshake is null or 0)
+        if (uapi.TryGetPeerStatus(member) is not { } status)
         {
-            return false;
+            // UAPI momentarily unreadable - inconclusive, not a reason to tear down a live session.
+            return true;
         }
 
-        var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - handshake.Value;
+        // Data still arriving is definitive liveness, even while a rekey handshake is in flight on a lossy link.
+        if (status.RxBytes > _lastRxBytes)
+        {
+            _lastRxBytes = status.RxBytes;
+            return true;
+        }
+
+        // No handshake recorded yet (e.g. right after a re-dial) - give it time rather than declaring dead.
+        if (status.HandshakeSec <= 0)
+        {
+            return true;
+        }
+
+        var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec;
         return age < _settings.DeadThresholdSeconds;
     }
 

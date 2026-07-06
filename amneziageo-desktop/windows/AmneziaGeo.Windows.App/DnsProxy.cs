@@ -16,8 +16,10 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class DnsProxy
 {
     private const int UpstreamTimeoutMs = 5000;
-    // Per-attempt wait before retransmitting a lost upstream query, within the overall timeout.
-    private const int UpstreamRetransmitMs = 400;
+    // Per-attempt wait before retransmitting a lost upstream query, within the overall timeout. Kept short
+    // because the tunnel resolver rides a lossy underlay: a dropped datagram should recover in well under a
+    // human-perceptible pause, not a near-half-second window.
+    private const int UpstreamRetransmitMs = 250;
     private const int SioUdpConnReset = unchecked((int)0x9800000C);
     private const int TypeA = 1;
     private const int TypeAaaa = 28;
@@ -597,6 +599,7 @@ internal sealed class DnsProxy
         SocketException? last = null;
         var idx = 0;
         var missesOnCurrent = 0;
+        var firstAttempt = true;
         while (true)
         {
             var remaining = (int)(deadlineMs - Environment.TickCount64);
@@ -615,6 +618,14 @@ internal sealed class DnsProxy
                 client.Client.ReceiveTimeout = attemptMs;
                 client.Connect(new IPEndPoint(upstreams[idx], 53));
                 client.Send(query, query.Length);
+                if (firstAttempt)
+                {
+                    // One redundant copy up front: the tunnel's lossy underlay drops ~1-in-8 datagrams, so a
+                    // second query makes the resolver almost certainly see it within one RTT instead of
+                    // waiting out a full retransmit window. The reply leg is covered by the short retransmit.
+                    client.Send(query, query.Length);
+                }
+
                 var remote = new IPEndPoint(IPAddress.Any, 0);
                 return client.Receive(ref remote);
             }
@@ -625,6 +636,7 @@ internal sealed class DnsProxy
                 or SocketError.ConnectionReset)
             {
                 last = ex;
+                firstAttempt = false;
                 // Fail over to the secondary resolver after two misses so a resolver blackhole
                 // recovers, not just an occasional dropped datagram (retransmit handles that).
                 if (upstreams.Length > 1 && ++missesOnCurrent >= 2)

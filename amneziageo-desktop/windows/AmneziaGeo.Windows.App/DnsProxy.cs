@@ -110,6 +110,16 @@ internal sealed class DnsProxy
     /// </summary>
     public void Serve()
     {
+        // DNS forwarding (Forward) is synchronous and blocks a pool thread for up to UpstreamTimeoutMs on a
+        // lossy/dead resolver. Each query is dispatched via ThreadPool (see ServeOne), so a burst of
+        // cache-missing lookups (e.g. flipping YouTube Shorts, which use fresh per-video CDN hostnames)
+        // parks many pool threads at once. At the default min (= CPU count) the pool then injects new
+        // threads only ~1-2/sec, so fast answers (cache hits, serve-known) queue for seconds behind the
+        // blocked forwards. Raise the min so the burst is absorbed without the injection throttle; threads
+        // are still created only on demand.
+        ThreadPool.GetMinThreads(out var minWorker, out var minIo);
+        ThreadPool.SetMinThreads(Math.Max(minWorker, 128), minIo);
+
         var threads = new List<Thread>();
         foreach (var server in _servers)
         {

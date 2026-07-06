@@ -175,7 +175,9 @@
              MaxWidth capped so a wide rail can't starve the content pane and clip its right-side controls. -->
         <ColumnDefinition Width="260" MinWidth="210" MaxWidth="360" />
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
+        <!-- Content floored: the splitter can never starve it below its min, so the
+             disabled-hscroll pane fits/wraps instead of clipping right-side controls. -->
+        <ColumnDefinition Width="*" MinWidth="440" />
       </Grid.ColumnDefinitions>
 
       <!-- Section rail. -->

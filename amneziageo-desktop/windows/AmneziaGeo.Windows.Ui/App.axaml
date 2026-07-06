@@ -300,6 +300,9 @@
       <Setter Property="FontSize" Value="13" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+      <!-- Reset the inherited Fluent ComboBoxThemeMinWidth (120) so authored narrow
+           Width values (e.g. the 92px "24 ч" combos) are honored, not clamped wider. -->
+      <Setter Property="MinWidth" Value="0" />
     </Style>
 
     <!-- Flicker-free closed ComboBox.field. -->

@@ -250,6 +250,23 @@ public static class IpcContract
     public const string OpCollectDiagnostics = "collect-diagnostics";
 
     /// <summary>
+    /// Command to list the on-disk log files for the in-app viewer. No args. The ack message holds a JSON
+    /// array of { name, type ("agent"/"routes"/"other"), size (bytes), modified (ISO-8601) }, newest first.
+    /// The agent reads the files as SYSTEM so an unprivileged UI can view logs it cannot open directly.
+    /// </summary>
+    public const string OpListLogs = "list-logs";
+
+    /// <summary>
+    /// Command to read a bounded window of a log file for the in-app viewer. Args: [0] file name (a basename
+    /// from OpListLogs; validated against the enumerated set to bar path traversal); [1] optional tailBytes
+    /// (default 262144, clamped to 4KB..1MB); [2] optional beforeOffset (read the window ENDING at this byte
+    /// offset to page older, omitted/0 = live tail). The ack message holds a JSON object
+    /// { lines: string[], firstOffset: long, fileSize: long, truncated: bool } where truncated means a
+    /// partial leading line was dropped (more content exists before firstOffset).
+    /// </summary>
+    public const string OpReadLog = "read-log";
+
+    /// <summary>
     /// Sent once by the UI to mark its pipe connection as a presence-holding session. No args. The agent
     /// ties the tunnel's lifetime to UI presence and disconnects after a short grace when the last UI
     /// session drops. Transient command clients never send this.

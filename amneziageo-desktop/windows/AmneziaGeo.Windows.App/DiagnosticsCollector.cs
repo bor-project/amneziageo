@@ -54,29 +54,46 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             AddText(zip, "summary.txt", Redact(summary));
             AddText(zip, "journal.txt", Redact(string.Join(Environment.NewLine, logBuffer.Snapshot())));
 
-            var logDir = TunnelPaths.LogDirectory();
-            if (Directory.Exists(logDir))
+            foreach (var (file, _) in EnumerateLogFiles())
             {
-                // Include all ageo-*.log, agent.log, and routes.log* files.
-                var files = Directory.EnumerateFiles(logDir, "ageo-*.log")
-                    .Concat(Directory.EnumerateFiles(logDir, "agent.log"))
-                    .Concat(Directory.EnumerateFiles(logDir, "routes.log*"));
-                foreach (var file in files)
+                try
                 {
-                    try
-                    {
-                        AddRedactedLog(zip, file);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "diagnostics: could not add log {File}", Path.GetFileName(file));
-                    }
+                    AddRedactedLog(zip, file);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "diagnostics: could not add log {File}", Path.GetFileName(file));
                 }
             }
         }
 
         logger.LogInformation("diagnostics bundle written: {Path}", zipPath);
         return zipPath;
+    }
+
+    /// <summary>
+    /// Enumerates the on-disk log files with a coarse type tag: the agent's Serilog rolls (ageo-*.log) and
+    /// the routing log with its rotation backups (routes.log, routes.log.1..N). The single source of truth
+    /// shared by the diagnostics bundle and the in-app log viewer (OpListLogs / OpReadLog). The legacy
+    /// agent.log is intentionally omitted - it is never written.
+    /// </summary>
+    internal static IEnumerable<(string Path, string Type)> EnumerateLogFiles()
+    {
+        var logDir = TunnelPaths.LogDirectory();
+        if (!Directory.Exists(logDir))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(logDir, "ageo-*.log"))
+        {
+            yield return (file, "agent");
+        }
+
+        foreach (var file in Directory.EnumerateFiles(logDir, "routes.log*"))
+        {
+            yield return (file, "routes");
+        }
     }
 
     private async Task<string> BuildSummaryAsync(CancellationToken ct)

@@ -298,6 +298,18 @@
   <data name="Main_CollectLogsButton" xml:space="preserve">
     <value>Собрать логи…</value>
   </data>
+  <data name="Main_LogFileLabel" xml:space="preserve">
+    <value>Файл:</value>
+  </data>
+  <data name="Main_LogFollowLabel" xml:space="preserve">
+    <value>Следить</value>
+  </data>
+  <data name="Main_LogLoadOlderButton" xml:space="preserve">
+    <value>Загрузить ранее</value>
+  </data>
+  <data name="Main_LogSearchWatermark" xml:space="preserve">
+    <value>Поиск в логе</value>
+  </data>
   <data name="Main_ConfEditHint" xml:space="preserve">
     <value>Должны быть секции [Interface] и [Peer]. Гео и маршруты профиля сохранятся.</value>
   </data>
@@ -825,6 +837,18 @@
   </data>
   <data name="MainVm_LogLevelNormal" xml:space="preserve">
     <value>Обычный</value>
+  </data>
+  <data name="MainVm_LogSearchMatches" xml:space="preserve">
+    <value>совпадений: {0}</value>
+  </data>
+  <data name="MainVm_LogTypeAgent" xml:space="preserve">
+    <value>агент</value>
+  </data>
+  <data name="MainVm_LogTypeOther" xml:space="preserve">
+    <value>прочее</value>
+  </data>
+  <data name="MainVm_LogTypeRoutes" xml:space="preserve">
+    <value>маршруты</value>
   </data>
   <data name="MainVm_LogLevelTrace" xml:space="preserve">
     <value>Трасса</value>

@@ -43,7 +43,7 @@ internal sealed class DnsProxy
     private readonly List<UdpClient> _servers = [];
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     // Coalesces concurrent identical (name,type) misses onto a single upstream query.
-    private readonly ConcurrentDictionary<string, Lazy<byte[]>> _inflight = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _inflight = new(StringComparer.Ordinal);
     // Per-name Environment.TickCount64 of the last background revalidate, to rate-limit them.
     private readonly ConcurrentDictionary<string, long> _lastRevalidate = new(StringComparer.Ordinal);
     // Bounds concurrent background revalidations so a burst of first-served domains cannot park many pool
@@ -299,7 +299,7 @@ internal sealed class DnsProxy
                     }
 
                     var client = remote;
-                    ThreadPool.QueueUserWorkItem(_ => Handle(server, query, client));
+                    _ = HandleAsync(server, query, client);
                 }
             }
         }
@@ -309,7 +309,7 @@ internal sealed class DnsProxy
         }
     }
 
-    private void Handle(UdpClient server, byte[] query, IPEndPoint client)
+    private async Task HandleAsync(UdpClient server, byte[] query, IPEndPoint client)
     {
         try
         {
@@ -369,7 +369,7 @@ internal sealed class DnsProxy
                 var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
                 var secondary = matched ? _tunnelUpstreamSecondary : null;
                 var started = System.Diagnostics.Stopwatch.GetTimestamp();
-                var result = ForwardCoalesced(name, type, query, upstream, secondary);
+                var result = await ForwardCoalescedAsync(name, type, query, upstream, secondary);
                 if (result.Error is not null)
                 {
                     // Upstream unreachable: warn so a 'site won't open' report shows DNS failed.
@@ -452,34 +452,39 @@ internal sealed class DnsProxy
             return;
         }
 
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            if (!_revalidateSlots.Wait(0))
-            {
-                return; // too many revalidations in flight; the per-name window retries this later
-            }
+        _ = RevalidateAsync(name, tracker);
+    }
 
-            try
+    // Background per-domain refresh, off the client's query path: bounded by _revalidateSlots and resolved
+    // straight to the tunnel resolver (bypassing the serve-known branch so new IPs are discovered). Async, so
+    // waiting on a lossy resolver parks a Task rather than a pool thread.
+    private async Task RevalidateAsync(string name, DomainTracker tracker)
+    {
+        if (!await _revalidateSlots.WaitAsync(0).ConfigureAwait(false))
+        {
+            return; // too many revalidations in flight; the per-name window retries this later
+        }
+
+        try
+        {
+            var response = await ForwardAsync(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary).ConfigureAwait(false);
+            var ips = DnsMessage.Addresses(response)
+                .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+                .Select(a => a.ToString())
+                .ToList();
+            if (ips.Count > 0)
             {
-                var response = Forward(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary);
-                var ips = DnsMessage.Addresses(response)
-                    .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
-                    .Select(a => a.ToString())
-                    .ToList();
-                if (ips.Count > 0)
-                {
-                    tracker.Add(name, ips);
-                }
+                tracker.Add(name, ips);
             }
-            catch
-            {
-                // Background refresh; a lost query just means we try again on the next window.
-            }
-            finally
-            {
-                _revalidateSlots.Release();
-            }
-        });
+        }
+        catch
+        {
+            // Background refresh; a lost query just means we try again on the next window.
+        }
+        finally
+        {
+            _revalidateSlots.Release();
+        }
     }
 
     // Whether a name resolves via the LAN resolver and stays off the tunnel.
@@ -590,7 +595,7 @@ internal sealed class DnsProxy
         return type.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + name.TrimEnd('.').ToLowerInvariant();
     }
 
-    private static byte[] Forward(byte[] query, IPAddress upstream, IPAddress? secondary = null)
+    private static async Task<byte[]> ForwardAsync(byte[] query, IPAddress upstream, IPAddress? secondary = null)
     {
         var upstreams = secondary is null || secondary.Equals(upstream)
             ? new[] { upstream }
@@ -608,14 +613,14 @@ internal sealed class DnsProxy
                 throw last ?? new SocketException((int)SocketError.TimedOut);
             }
 
-            // Retransmit a dropped query after a short wait rather than stalling the whole budget
-            // on one lost packet; a fresh socket per attempt lets us fail over between resolvers.
+            // Retransmit a dropped query after a short wait rather than stalling the whole budget on one lost
+            // packet; a fresh socket per attempt lets us fail over between resolvers. The receive is awaited,
+            // so a slow/lossy resolver parks a Task, not a pool thread.
             var attemptMs = Math.Min(remaining, UpstreamRetransmitMs);
             var attemptStart = Environment.TickCount64;
             try
             {
                 using var client = new UdpClient();
-                client.Client.ReceiveTimeout = attemptMs;
                 client.Connect(new IPEndPoint(upstreams[idx], 53));
                 client.Send(query, query.Length);
                 if (firstAttempt)
@@ -626,16 +631,20 @@ internal sealed class DnsProxy
                     client.Send(query, query.Length);
                 }
 
-                var remote = new IPEndPoint(IPAddress.Any, 0);
-                return client.Receive(ref remote);
+                using var attemptCts = new CancellationTokenSource(attemptMs);
+                var result = await client.ReceiveAsync(attemptCts.Token).ConfigureAwait(false);
+                return result.Buffer;
             }
-            catch (SocketException ex) when (
-                ex.SocketErrorCode is SocketError.TimedOut
-                or SocketError.HostUnreachable
-                or SocketError.NetworkUnreachable
-                or SocketError.ConnectionReset)
+            catch (Exception ex) when (
+                ex is OperationCanceledException
+                || (ex is SocketException se
+                    && se.SocketErrorCode is SocketError.TimedOut
+                    or SocketError.HostUnreachable
+                    or SocketError.NetworkUnreachable
+                    or SocketError.ConnectionReset
+                    or SocketError.OperationAborted))
             {
-                last = ex;
+                last = ex as SocketException ?? new SocketException((int)SocketError.TimedOut);
                 firstAttempt = false;
                 // Fail over to the secondary resolver after two misses so a resolver blackhole
                 // recovers, not just an occasional dropped datagram (retransmit handles that).
@@ -650,20 +659,20 @@ internal sealed class DnsProxy
                 var pause = attemptMs - (int)(Environment.TickCount64 - attemptStart);
                 if (pause > 0)
                 {
-                    Thread.Sleep(pause);
+                    await Task.Delay(pause).ConfigureAwait(false);
                 }
             }
         }
     }
 
     // Runs the upstream query once per in-flight (name,type); only the leader writes the routing-log line.
-    private CoalescedResult ForwardCoalesced(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null)
+    private async Task<CoalescedResult> ForwardCoalescedAsync(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null)
     {
         if (name is null)
         {
             try
             {
-                return new CoalescedResult(Forward(query, upstream, secondary), Leader: true, Error: null);
+                return new CoalescedResult(await ForwardAsync(query, upstream, secondary).ConfigureAwait(false), Leader: true, Error: null);
             }
             catch (Exception ex)
             {
@@ -672,13 +681,14 @@ internal sealed class DnsProxy
         }
 
         var key = CacheKey(name, type);
-        // GetOrAdd(key, value): the caller whose instance is stored is the leader.
-        var mine = new Lazy<byte[]>(() => Forward(query, upstream, secondary), LazyThreadSafetyMode.ExecutionAndPublication);
+        // GetOrAdd(key, value): the caller whose instance is stored is the leader. The Lazy holds the shared
+        // forward Task so concurrent identical misses await one upstream query.
+        var mine = new Lazy<Task<byte[]>>(() => ForwardAsync(query, upstream, secondary), LazyThreadSafetyMode.ExecutionAndPublication);
         var lazy = _inflight.GetOrAdd(key, mine);
         var leader = ReferenceEquals(lazy, mine);
         try
         {
-            return new CoalescedResult(lazy.Value, leader, Error: null);
+            return new CoalescedResult(await lazy.Value.ConfigureAwait(false), leader, Error: null);
         }
         catch (Exception ex)
         {
@@ -687,7 +697,7 @@ internal sealed class DnsProxy
         finally
         {
             // Remove only our own entry so a racing newcomer's fresh Lazy is left intact.
-            _inflight.TryRemove(new KeyValuePair<string, Lazy<byte[]>>(key, lazy));
+            _inflight.TryRemove(new KeyValuePair<string, Lazy<Task<byte[]>>>(key, lazy));
         }
     }
 
@@ -823,10 +833,10 @@ internal sealed class DnsProxy
                 try
                 {
                     var ips = new List<IPAddress>();
-                    CollectAddresses(host, 1, ips);
+                    await CollectAddressesAsync(host, 1, ips);
                     if (!_stripV6)
                     {
-                        CollectAddresses(host, 28, ips);
+                        await CollectAddressesAsync(host, 28, ips);
                     }
 
                     if (ips.Count > 0)
@@ -863,9 +873,9 @@ internal sealed class DnsProxy
         }
     }
 
-    private void CollectAddresses(string host, int type, List<IPAddress> ips)
+    private async Task CollectAddressesAsync(string host, int type, List<IPAddress> ips)
     {
-        var response = Forward(DnsMessage.BuildQuery(host, type), _tunnelUpstream, _tunnelUpstreamSecondary);
+        var response = await ForwardAsync(DnsMessage.BuildQuery(host, type), _tunnelUpstream, _tunnelUpstreamSecondary).ConfigureAwait(false);
         foreach (var ip in DnsMessage.Addresses(response))
         {
             ips.Add(ip);

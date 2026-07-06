@@ -22,8 +22,17 @@ internal sealed class TunnelRunner(
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
-    // 1380 - more throughput than the 1280 IPv6-minimum, still under sub-1500 paths where 1420 black-holes TLS handshakes.
-    private const int DefaultMtu = 1380;
+    // 1280 - the IPv6-minimum floor. On lossy/policed underlays larger frames drop disproportionately
+    // (measured on .39: ~20% loss at 1400B vs ~8% at 64B to the server), so a smaller MTU lowers the
+    // per-packet drop rate and the cost of each full-segment retransmit; 1420 black-holes TLS handshakes.
+    private const int DefaultMtu = 1280;
+
+    // Former default. A config still storing exactly this is treated as "follow DefaultMtu", so lowering
+    // the default takes effect for existing configs too, without clobbering a user's explicit MTU choice.
+    private const int LegacyDefaultMtu = 1380;
+
+    // Proactively refresh the peer handshake/NAT mapping so a lossy underlay can't let the session age out.
+    private const int DefaultKeepaliveSeconds = 25;
 
     /// <summary>
     /// Runs the native tunnel service loop.
@@ -69,7 +78,8 @@ internal sealed class TunnelRunner(
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
 
-        var effectiveMtu = transport?.Mtu > 0 ? transport.Mtu : DefaultMtu;
+        var storedMtu = transport?.Mtu ?? 0;
+        var effectiveMtu = storedMtu > 0 && storedMtu != LegacyDefaultMtu ? storedMtu : DefaultMtu;
         string? wsHost = null;
         var wsPort = 0;
         var wsTargetPort = 0;
@@ -386,7 +396,10 @@ internal sealed class TunnelRunner(
         }
 
         config = WgConfigEditor.SetMtu(config, effectiveMtu);
-        logger.LogInformation("mtu for {Name}: {Mtu}", name, effectiveMtu);
+        // Keep the peer handshake/NAT state warm so a lossy underlay doesn't let the session age out into a
+        // forced re-dial; only injected when the imported config didn't already specify its own keepalive.
+        config = WgConfigEditor.EnsurePersistentKeepalive(config, DefaultKeepaliveSeconds);
+        logger.LogInformation("mtu for {Name}: {Mtu}, keepalive ensured ({Keepalive}s)", name, effectiveMtu, DefaultKeepaliveSeconds);
 
         logger.LogInformation("connect {Name}: bring-up complete in {Elapsed} ms, starting engine", name, connectSw.ElapsedMilliseconds);
 

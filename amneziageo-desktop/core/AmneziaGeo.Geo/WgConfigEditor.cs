@@ -242,4 +242,31 @@ public static class WgConfigEditor
 
         return string.Join('\n', kept);
     }
+
+    /// <summary>
+    /// Returns the config with a PersistentKeepalive added under [Peer] when none is present. An existing
+    /// keepalive is left untouched so a server-specified interval wins over the injected default.
+    /// </summary>
+    public static string EnsurePersistentKeepalive(string config, int seconds)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            if (line.Trim().StartsWith("PersistentKeepalive", StringComparison.OrdinalIgnoreCase))
+            {
+                return config;
+            }
+        }
+
+        var kept = new List<string>();
+        foreach (var line in config.Split('\n'))
+        {
+            kept.Add(line);
+            if (line.Trim().Equals("[Peer]", StringComparison.OrdinalIgnoreCase))
+            {
+                kept.Add($"PersistentKeepalive = {seconds}");
+            }
+        }
+
+        return string.Join('\n', kept);
+    }
 }

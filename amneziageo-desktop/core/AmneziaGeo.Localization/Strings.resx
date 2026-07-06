@@ -298,6 +298,18 @@
   <data name="Main_CollectLogsButton" xml:space="preserve">
     <value>Collect logs…</value>
   </data>
+  <data name="Main_LogFileLabel" xml:space="preserve">
+    <value>File:</value>
+  </data>
+  <data name="Main_LogFollowLabel" xml:space="preserve">
+    <value>Follow</value>
+  </data>
+  <data name="Main_LogLoadOlderButton" xml:space="preserve">
+    <value>Load earlier</value>
+  </data>
+  <data name="Main_LogSearchWatermark" xml:space="preserve">
+    <value>Search in log</value>
+  </data>
   <data name="Main_ConfEditHint" xml:space="preserve">
     <value>It must have [Interface] and [Peer] sections. The profile's geo and routes are preserved.</value>
   </data>
@@ -825,6 +837,18 @@
   </data>
   <data name="MainVm_LogLevelNormal" xml:space="preserve">
     <value>Normal</value>
+  </data>
+  <data name="MainVm_LogSearchMatches" xml:space="preserve">
+    <value>{0} match(es)</value>
+  </data>
+  <data name="MainVm_LogTypeAgent" xml:space="preserve">
+    <value>agent</value>
+  </data>
+  <data name="MainVm_LogTypeOther" xml:space="preserve">
+    <value>other</value>
+  </data>
+  <data name="MainVm_LogTypeRoutes" xml:space="preserve">
+    <value>routes</value>
   </data>
   <data name="MainVm_LogLevelTrace" xml:space="preserve">
     <value>Trace</value>

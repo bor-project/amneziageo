@@ -37,6 +37,10 @@ internal static class AppHost
             .WriteTo.Console()
             .WriteTo.File(
                 Path.Combine(TunnelPaths.LogDirectory(), "ageo-.log"),
+                // Pinned greppable line format: ISO timestamp + 3-char level + message, one entry per line
+                // (exceptions append on following lines). Explicit so the on-disk format the log viewer and
+                // grep rely on cannot drift with Serilog's default template.
+                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
                 rollingInterval: RollingInterval.Day,
                 // Cap on-disk footprint: a long Trace session must not fill the disk.
                 fileSizeLimitBytes: 25_000_000,

@@ -272,6 +272,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 IpcContract.OpCollectDiagnostics => await CollectDiagnosticsAsync(ct),
+                IpcContract.OpListLogs => ListLogs(),
+                IpcContract.OpReadLog => ReadLog(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -1875,6 +1877,145 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             logger.LogError(ex, "diagnostics collection failed");
             return new IpcAck(false, IpcMessage.Key("Agent_DiagnosticsFailed", ex.Message));
         }
+    }
+
+    // Lists the on-disk log files for the in-app viewer (OpListLogs), newest generation first. The agent
+    // reads these as SYSTEM so an unprivileged UI can view logs whose files it may not open directly.
+    private static IpcAck ListLogs()
+    {
+        var files = DiagnosticsCollector.EnumerateLogFiles()
+            .Select(f => (f.Type, Info: new FileInfo(f.Path)))
+            .Where(f => f.Info.Exists)
+            .OrderByDescending(f => f.Info.LastWriteTimeUtc)
+            .Select(f => new
+            {
+                name = f.Info.Name,
+                type = f.Type,
+                size = f.Info.Length,
+                modified = f.Info.LastWriteTime.ToString("o"),
+            })
+            .ToList();
+        return new IpcAck(true, JsonSerializer.Serialize(files));
+    }
+
+    // Reads a bounded window (the live tail by default) of one enumerated log file (OpReadLog). The name is
+    // validated against the enumerated set, so this never becomes an arbitrary-file-read oracle for a local
+    // user on the authenticated pipe.
+    private static IpcAck ReadLog(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "read-log requires a file name");
+        }
+
+        var name = args[0];
+        var target = DiagnosticsCollector.EnumerateLogFiles()
+            .FirstOrDefault(f => string.Equals(Path.GetFileName(f.Path), name, StringComparison.OrdinalIgnoreCase));
+        if (target.Path is null)
+        {
+            return new IpcAck(false, $"unknown log file: {name}");
+        }
+
+        var tailBytes = args.Count > 1 && long.TryParse(args[1], out var tb) ? tb : 262144;
+        tailBytes = Math.Clamp(tailBytes, 4096, 1_048_576);
+        long? beforeOffset = args.Count > 2 && long.TryParse(args[2], out var bo) && bo > 0 ? bo : null;
+
+        using var stream = new FileStream(target.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var fileSize = stream.Length;
+        var end = beforeOffset is { } b && b <= fileSize ? b : fileSize;
+        var start = Math.Max(0, end - tailBytes);
+        var length = (int)(end - start);
+        var buffer = new byte[length];
+        stream.Seek(start, SeekOrigin.Begin);
+        stream.ReadExactly(buffer, 0, length);
+
+        // Work in byte space: a 0x0A never appears inside a multibyte UTF-8 sequence, so newline scanning and
+        // offset math are exact regardless of where the arbitrary window boundary fell (decoding first would
+        // turn a split leading char into a replacement char and desync firstOffset from the real byte layout).
+        var truncated = start > 0;
+        var contentStart = 0;
+        var firstOffset = start;
+        if (truncated)
+        {
+            var nl = Array.IndexOf(buffer, (byte)'\n', 0, length);
+            if (nl >= 0)
+            {
+                // The window began mid-file: its first line is a fragment. Drop up to and including the first
+                // newline and report the offset of the first whole line so a page-older read ends exactly there.
+                contentStart = nl + 1;
+                firstOffset = start + contentStart;
+            }
+            else
+            {
+                // No newline in the window: it is one over-long line. Drop the fragment (no fabricated whole
+                // line, no mid-char split) but keep the anchor at 'start' so repeated page-older still walks
+                // backward toward the line's beginning instead of re-reading the same empty window forever.
+                contentStart = length;
+                firstOffset = start;
+            }
+        }
+
+        // At the live-tail boundary, drop any half-written trailing multibyte char so it never decodes to a
+        // replacement glyph; those bytes are picked up on the next read once the character is complete.
+        var contentEnd = end == fileSize ? TrimPartialTrailingUtf8(buffer, contentStart, length) : length;
+        var text = contentEnd > contentStart
+            ? Encoding.UTF8.GetString(buffer, contentStart, contentEnd - contentStart)
+            : string.Empty;
+
+        var split = text.Split('\n');
+        // Log lines end with a newline, so the split yields a trailing empty element; drop it. A live file
+        // mid-write may end without one - then the last element is the partial newest line, which we keep.
+        var count = split.Length;
+        if (count > 0 && split[count - 1].Length == 0)
+        {
+            count--;
+        }
+
+        var lines = new List<string>(count);
+        for (var i = 0; i < count; i++)
+        {
+            lines.Add(split[i].TrimEnd('\r'));
+        }
+
+        return new IpcAck(true, JsonSerializer.Serialize(new
+        {
+            lines,
+            firstOffset,
+            fileSize,
+            truncated,
+        }));
+    }
+
+    // Returns an end index (exclusive) into buffer[start..end) that excludes an incomplete trailing UTF-8
+    // sequence, so decoding the window never yields a replacement char from a half-written final character.
+    private static int TrimPartialTrailingUtf8(byte[] buffer, int start, int end)
+    {
+        var i = end - 1;
+        while (i >= start && (buffer[i] & 0xC0) == 0x80)
+        {
+            i--; // step back over continuation bytes (10xxxxxx) to the lead byte
+        }
+
+        if (i < start)
+        {
+            return end;
+        }
+
+        var lead = buffer[i];
+        var expected =
+            (lead & 0x80) == 0x00 ? 1 : // 0xxxxxxx
+            (lead & 0xE0) == 0xC0 ? 2 : // 110xxxxx
+            (lead & 0xF0) == 0xE0 ? 3 : // 1110xxxx
+            (lead & 0xF8) == 0xF0 ? 4 : // 11110xxx
+            0;                          // not a valid lead byte
+
+        if (expected == 0)
+        {
+            return end;
+        }
+
+        // Keep everything when the final character is complete; otherwise drop the incomplete lead+continuations.
+        return end - i >= expected ? end : i;
     }
 
     private async Task<IpcAck> CheckUpdateAsync(CancellationToken ct)

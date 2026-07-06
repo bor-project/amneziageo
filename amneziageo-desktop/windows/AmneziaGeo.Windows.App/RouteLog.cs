@@ -10,8 +10,11 @@ internal static class RouteLog
     /// </summary>
     public const string SettingKey = "route-log";
 
-    // Roll the file past this size; previous generation kept as routes.log.1.
+    // Roll the file past this size, keeping RetainedBackups numbered generations (routes.log.1..N).
     private const long MaxBytes = 8_000_000;
+
+    // Rotated generations kept alongside the live routes.log (routes.log.1 = newest backup).
+    private const int RetainedBackups = 5;
 
     private static readonly object Gate = new();
     private static volatile bool _enabled;
@@ -74,22 +77,34 @@ internal static class RouteLog
         }
     }
 
-    // Caller holds Gate. Rolls routes.log to .1 past MaxBytes.
+    // Caller holds Gate. Past MaxBytes, rotates routes.log -> .1, shifting older backups up (.k -> .k+1) and
+    // dropping the oldest, giving the routing log the same bounded footprint the agent Serilog log already has.
     private static void Roll()
     {
         try
         {
             var info = new FileInfo(FilePath);
-            if (info.Exists && info.Length > MaxBytes)
+            if (!info.Exists || info.Length <= MaxBytes)
             {
-                var backup = FilePath + ".1";
-                if (File.Exists(backup))
-                {
-                    File.Delete(backup);
-                }
-
-                File.Move(FilePath, backup);
+                return;
             }
+
+            var oldest = $"{FilePath}.{RetainedBackups}";
+            if (File.Exists(oldest))
+            {
+                File.Delete(oldest);
+            }
+
+            for (var k = RetainedBackups - 1; k >= 1; k--)
+            {
+                var from = $"{FilePath}.{k}";
+                if (File.Exists(from))
+                {
+                    File.Move(from, $"{FilePath}.{k + 1}");
+                }
+            }
+
+            File.Move(FilePath, $"{FilePath}.1");
         }
         catch
         {

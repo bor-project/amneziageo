@@ -356,11 +356,11 @@ internal sealed class TunnelRunner(
         if (applied)
         {
             _ = Task.Run(() => FlushDnsWhenTunnelUpAsync(name, proxy, sessionCts.Token));
-            // No connect-time mass pre-resolve of the geosite list: geo routes are restored from the DB
-            // cache (DomainTracker.SeedFromCache) and anything new is resolved on-demand per DNS query on
-            // the thread pool. The old full-list live resolve here saturated the tunnel DNS path (1.1.1.1)
-            // for minutes and starved real traffic (the "seed storm"). The address cache is refreshed when
-            // routing lists change, not at connect. (DnsProxy.SeedRoutesAsync is kept for easy revert.)
+            // Lazy model: nothing is pre-resolved or restored at connect (no DB warm start). The in-memory
+            // rule-backed cache is populated purely on demand per DNS query; a matched name resolves through
+            // the tunnel resolver on first use and self-heals (re-resolve + evict) while actively used. This
+            // also avoids the old "seed storm" that saturated the tunnel DNS path at connect.
+            // (DnsProxy.SeedRoutesAsync is kept for easy revert but intentionally not invoked.)
         }
 
         // App route watcher pins matched apps' TCP remote IPs into the tracker.

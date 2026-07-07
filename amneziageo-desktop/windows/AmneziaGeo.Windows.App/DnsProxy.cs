@@ -32,6 +32,10 @@ internal sealed class DnsProxy
     // Minimum gap between background revalidations of the same domain, so a chatty client cannot storm the
     // (lossy) tunnel resolver.
     private const int RevalidateMinIntervalMs = 60_000;
+    // Negative cache: how long a name proven to match NO geo rule is remembered as "bypass" so the matcher
+    // isn't re-run on every query. Bounded, and cleared wholesale on a matcher rebuild (list edit), so a
+    // domain newly added to a list is re-evaluated promptly.
+    private const int BypassTtlSeconds = 600;
 
     // Fallback loopback aliases when 127.0.0.1:53 is taken by another resolver.
     private static readonly IPAddress[] V4Candidates = [IPAddress.Loopback, IPAddress.Parse("127.0.0.2")];
@@ -46,6 +50,9 @@ internal sealed class DnsProxy
     private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _inflight = new(StringComparer.Ordinal);
     // Per-name Environment.TickCount64 of the last background revalidate, to rate-limit them.
     private readonly ConcurrentDictionary<string, long> _lastRevalidate = new(StringComparer.Ordinal);
+    // Names proven to match no geo rule -> resolved locally and never tunneled/re-resolved. Value is the
+    // Environment.TickCount64 expiry. Short-circuits the matcher on repeat queries; cleared on matcher rebuild.
+    private readonly ConcurrentDictionary<string, long> _bypass = new(StringComparer.Ordinal);
     // Bounds concurrent background revalidations so a burst of first-served domains cannot park many pool
     // threads (each Forward blocks up to UpstreamTimeoutMs) and starve the Handle path.
     private readonly SemaphoreSlim _revalidateSlots = new(4, 4);
@@ -145,6 +152,31 @@ internal sealed class DnsProxy
     public void ClearCache()
     {
         _cache.Clear();
+        _bypass.Clear();
+    }
+
+    // Whether a name is currently negative-cached as matching no geo rule.
+    private bool IsBypassed(string name)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        if (_bypass.TryGetValue(key, out var expiry))
+        {
+            if (expiry > Environment.TickCount64)
+            {
+                return true;
+            }
+
+            _bypass.TryRemove(new KeyValuePair<string, long>(key, expiry));
+        }
+
+        return false;
+    }
+
+    // Records a name as matching no geo rule, so the matcher is skipped until the entry expires or the lists change.
+    private void MarkBypassed(string name)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        _bypass[key] = Environment.TickCount64 + (BypassTtlSeconds * 1000L);
     }
 
     /// <summary>
@@ -158,6 +190,8 @@ internal sealed class DnsProxy
 
         // Drop cached answers: a newly matched name may have a pre-match entry from the local resolver.
         _cache.Clear();
+        // Drop negative-cache entries: a name previously bypassed may now be in a rule (or vice versa).
+        _bypass.Clear();
 
         _logger.LogInformation("geo cache: domain matcher rebuilt live ({Count} rule(s))", domains.Count);
         if (RouteLog.Enabled)
@@ -319,9 +353,18 @@ internal sealed class DnsProxy
             // Local/LAN names resolve via the LAN resolver and stay off the tunnel.
             var isLocal = name is not null && _lanUpstream is not null && IsLocalName(name);
 
+            // Negative cache: a name already proven to be in no geo rule bypasses the matcher and the tunnel.
+            var bypassed = name is not null && IsBypassed(name);
+
             // Matched names resolve via the clean tunnel resolver; others use the local resolver.
-            var geoMatch = !isLocal && name is not null ? _matcher.Match(name) : null;
+            var geoMatch = !isLocal && !bypassed && name is not null ? _matcher.Match(name) : null;
             var matched = geoMatch is not null;
+
+            // Remember a non-local miss so the matcher isn't re-run for it until the lists change.
+            if (name is not null && !isLocal && !bypassed && !matched)
+            {
+                MarkBypassed(name);
+            }
 
             // Per-request trace; matched subset at debug for diagnosability.
             if (name is not null)
@@ -474,7 +517,9 @@ internal sealed class DnsProxy
                 .ToList();
             if (ips.Count > 0)
             {
-                tracker.Add(name, ips);
+                // Re-resolve REPLACES (evicts dropped/dead IPs) rather than accumulating, so an actively-used
+                // domain heals a stale CDN address instead of piling more on.
+                tracker.Replace(name, ips);
             }
         }
         catch

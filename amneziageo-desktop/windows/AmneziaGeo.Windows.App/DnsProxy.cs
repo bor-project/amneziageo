@@ -32,6 +32,17 @@ internal sealed class DnsProxy
     // Minimum gap between background revalidations of the same domain, so a chatty client cannot storm the
     // (lossy) tunnel resolver.
     private const int RevalidateMinIntervalMs = 60_000;
+    // Negative cache: how long a name proven to match NO geo rule is remembered as "bypass" so the matcher
+    // isn't re-run on every query. Bounded, and cleared wholesale on a matcher rebuild (list edit), so a
+    // domain newly added to a list is re-evaluated promptly.
+    private const int BypassTtlSeconds = 600;
+    // Reachability probe (serve-known heal): a short TCP handshake to a domain's last-good IPs decides whether
+    // the cached set still connects BEFORE any re-resolve. 443 is the near-universal port for tunneled web/CDN
+    // hosts; a completed handshake or a refusal (RST) both prove the path+host are alive, only silence is dead.
+    // The re-resolve is gated on this failing, so a working IP is left pinned instead of churned every window.
+    private const int ProbePort = 443;
+    private const int ProbeTimeoutMs = 3000;
+    private const int MaxProbeIps = 3;
 
     // Fallback loopback aliases when 127.0.0.1:53 is taken by another resolver.
     private static readonly IPAddress[] V4Candidates = [IPAddress.Loopback, IPAddress.Parse("127.0.0.2")];
@@ -46,6 +57,9 @@ internal sealed class DnsProxy
     private readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _inflight = new(StringComparer.Ordinal);
     // Per-name Environment.TickCount64 of the last background revalidate, to rate-limit them.
     private readonly ConcurrentDictionary<string, long> _lastRevalidate = new(StringComparer.Ordinal);
+    // Names proven to match no geo rule -> resolved locally and never tunneled/re-resolved. Value is the
+    // Environment.TickCount64 expiry. Short-circuits the matcher on repeat queries; cleared on matcher rebuild.
+    private readonly ConcurrentDictionary<string, long> _bypass = new(StringComparer.Ordinal);
     // Bounds concurrent background revalidations so a burst of first-served domains cannot park many pool
     // threads (each Forward blocks up to UpstreamTimeoutMs) and starve the Handle path.
     private readonly SemaphoreSlim _revalidateSlots = new(4, 4);
@@ -145,6 +159,31 @@ internal sealed class DnsProxy
     public void ClearCache()
     {
         _cache.Clear();
+        _bypass.Clear();
+    }
+
+    // Whether a name is currently negative-cached as matching no geo rule.
+    private bool IsBypassed(string name)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        if (_bypass.TryGetValue(key, out var expiry))
+        {
+            if (expiry > Environment.TickCount64)
+            {
+                return true;
+            }
+
+            _bypass.TryRemove(new KeyValuePair<string, long>(key, expiry));
+        }
+
+        return false;
+    }
+
+    // Records a name as matching no geo rule, so the matcher is skipped until the entry expires or the lists change.
+    private void MarkBypassed(string name)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        _bypass[key] = Environment.TickCount64 + (BypassTtlSeconds * 1000L);
     }
 
     /// <summary>
@@ -158,6 +197,8 @@ internal sealed class DnsProxy
 
         // Drop cached answers: a newly matched name may have a pre-match entry from the local resolver.
         _cache.Clear();
+        // Drop negative-cache entries: a name previously bypassed may now be in a rule (or vice versa).
+        _bypass.Clear();
 
         _logger.LogInformation("geo cache: domain matcher rebuilt live ({Count} rule(s))", domains.Count);
         if (RouteLog.Enabled)
@@ -319,9 +360,18 @@ internal sealed class DnsProxy
             // Local/LAN names resolve via the LAN resolver and stay off the tunnel.
             var isLocal = name is not null && _lanUpstream is not null && IsLocalName(name);
 
+            // Negative cache: a name already proven to be in no geo rule bypasses the matcher and the tunnel.
+            var bypassed = name is not null && IsBypassed(name);
+
             // Matched names resolve via the clean tunnel resolver; others use the local resolver.
-            var geoMatch = !isLocal && name is not null ? _matcher.Match(name) : null;
+            var geoMatch = !isLocal && !bypassed && name is not null ? _matcher.Match(name) : null;
             var matched = geoMatch is not null;
+
+            // Remember a non-local miss so the matcher isn't re-run for it until the lists change.
+            if (name is not null && !isLocal && !bypassed && !matched)
+            {
+                MarkBypassed(name);
+            }
 
             // Per-request trace; matched subset at debug for diagnosability.
             if (name is not null)
@@ -355,14 +405,26 @@ internal sealed class DnsProxy
             {
                 // Already-tracked domain: its IPs are installed as /32 routes and carrying traffic. Answer
                 // instantly from that last-good set instead of re-querying the tunnel resolver, which rides
-                // the same lossy underlay and would stall the client for seconds. Refresh in the background
-                // to pick up new CDN IPs. Cache the synthetic answer (short TTL) so repeat queries take the
-                // lock-free cache path, and treat it as already-handled so the route step below is skipped
-                // (routes for a known domain are already installed).
+                // the same lossy underlay and would stall the client for seconds. In the background, probe
+                // that set's reachability and re-resolve ONLY if it is dead - a working CDN IP is left pinned
+                // (no churn on the lossy resolver). Cache the synthetic answer (short TTL) so repeat queries
+                // take the lock-free cache path, and treat it as already-handled so the route step below is
+                // skipped (routes for a known domain are already installed).
                 response = DnsMessage.BuildAAnswer(query, known, ServeKnownTtlSeconds);
                 fromCache = true;
                 StoreInCache(name, type, response);
-                TriggerRevalidate(name!);
+                TriggerReachabilityRefresh(name!, known);
+            }
+            else if (matched && type == TypeA && _tracker is not null
+                     && await _tracker.TryHydrateFromCacheAsync(name!, n => _matcher.IsTunneled(n)).ConfigureAwait(false) is { Count: > 0 } hydrated)
+            {
+                // Not in memory but cached in the DB from an earlier session: restore that last-good set and its
+                // routes without hitting the (lossy) tunnel resolver, then background-probe it as with a
+                // serve-known hit. The hydrate installed the routes, so the Track step below is skipped.
+                response = DnsMessage.BuildAAnswer(query, hydrated, ServeKnownTtlSeconds);
+                fromCache = true;
+                StoreInCache(name, type, response);
+                TriggerReachabilityRefresh(name!, hydrated);
             }
             else
             {
@@ -433,10 +495,10 @@ internal sealed class DnsProxy
         }
     }
 
-    // Refreshes a tracked domain's IPs off the client's query path. Rate-limited per name and resolved
-    // straight to the tunnel resolver (bypassing the serve-known branch above so new IPs are actually
-    // discovered). A lost query is fine - the domain keeps serving its last-good set and we retry next window.
-    private void TriggerRevalidate(string name)
+    // Schedules a reachability-gated refresh off the client's query path. Rate-limited per name so a chatty
+    // client cannot storm the probe/resolver. The refresh only re-resolves when the last-good set is proven
+    // dead - a working set is left pinned (this is the optimization over the old blind per-window re-resolve).
+    private void TriggerReachabilityRefresh(string name, IReadOnlyList<string> ips)
     {
         var tracker = _tracker;
         if (tracker is null)
@@ -452,39 +514,161 @@ internal sealed class DnsProxy
             return;
         }
 
-        _ = RevalidateAsync(name, tracker);
+        _ = ReachabilityRefreshAsync(name, ips, tracker);
     }
 
-    // Background per-domain refresh, off the client's query path: bounded by _revalidateSlots and resolved
-    // straight to the tunnel resolver (bypassing the serve-known branch so new IPs are discovered). Async, so
-    // waiting on a lossy resolver parks a Task rather than a pool thread.
-    private async Task RevalidateAsync(string name, DomainTracker tracker)
+    // Off the query path: probe the domain's last-good IPs and re-resolve ONLY if none is reachable through
+    // the tunnel. A live probe means the cached value still connects, so we resolve nothing (no churn on the
+    // lossy resolver). If the set looks dead, we DON'T evict blindly - first we re-resolve, and that query
+    // doubles as a connectivity check: if the resolver itself is unreachable the whole tunnel path is down
+    // (not these IPs), so we keep the cached set and evict nothing. Only when the resolver answers with a
+    // DIFFERENT set is the edge genuinely dead -> Replace (evict dead, install fresh, rebuild allowed-ips =
+    // the "save") and drop the synthetic serve-known entry. If the resolver re-confirms the SAME set, the
+    // probe miss was transient and we leave it pinned. This guards against erroneous eviction/re-resolve when
+    // connectivity - not the address - is what dropped. Bounded by _revalidateSlots; async so a lossy
+    // probe/resolve parks a Task, not a pool thread.
+    private async Task ReachabilityRefreshAsync(string name, IReadOnlyList<string> ips, DomainTracker tracker)
     {
         if (!await _revalidateSlots.WaitAsync(0).ConfigureAwait(false))
         {
-            return; // too many revalidations in flight; the per-name window retries this later
+            return; // too many refreshes in flight; the per-name window retries this later
         }
 
         try
         {
-            var response = await ForwardAsync(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary).ConfigureAwait(false);
-            var ips = DnsMessage.Addresses(response)
+            if (await ProbeAnyReachableAsync(ips).ConfigureAwait(false))
+            {
+                return; // cached value still connects - no re-resolve
+            }
+
+            // The last-good set did not answer. Don't evict it yet - re-resolve through the tunnel first, and
+            // let that query double as a connectivity check. ForwardAsync throws when the resolver/path is
+            // unreachable, i.e. the whole tunnel is down rather than these IPs being dead; in that case we keep
+            // the cached set and evict nothing (a transient outage must never blackhole a live domain).
+            byte[] response;
+            try
+            {
+                response = await ForwardAsync(DnsMessage.BuildQuery(name, TypeA), _tunnelUpstream, _tunnelUpstreamSecondary).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug("reachability heal {Name}: resolver unreachable ({Reason}) - path down, keeping cached set", name, ex.Message);
+                return;
+            }
+
+            var fresh = DnsMessage.Addresses(response)
                 .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
                 .Select(a => a.ToString())
                 .ToList();
-            if (ips.Count > 0)
+            if (fresh.Count == 0)
             {
-                tracker.Add(name, ips);
+                return; // resolver answered but gave no A records: keep the old set (never blackhole)
+            }
+
+            // Connectivity is proven (the resolver answered), yet it still hands out the same IPs the probe
+            // just missed: the miss was transient (congestion/underlay drop), the set is not actually dead.
+            // Evicting/rebuilding here would be the erroneous deletion + churn we want to avoid.
+            if (SameV4Set(ips, fresh))
+            {
+                _logger.LogDebug("reachability heal {Name}: resolver re-confirms same set - transient probe miss, no evict", name);
+                return;
+            }
+
+            // Genuinely dead: the resolver moved the domain to a different set. Replace evicts the dropped/dead
+            // IPs and installs the fresh ones - this is the save of the new value.
+            tracker.Replace(name, fresh);
+
+            // Drop the short synthetic serve-known answer so the next client query serves the fresh set at
+            // once instead of the now-dead IP for up to ServeKnownTtlSeconds.
+            _cache.TryRemove(CacheKey(name, TypeA), out _);
+
+            _logger.LogInformation("reachability heal {Name}: last-good set unreachable -> re-resolved to {Ips}", name, string.Join(", ", fresh));
+            if (RouteLog.Enabled)
+            {
+                RouteLog.Note($"heal {name.TrimEnd('.').ToLowerInvariant()}: dead set -> [{string.Join(",", fresh)}]");
             }
         }
         catch
         {
-            // Background refresh; a lost query just means we try again on the next window.
+            // Background refresh; a lost probe/query just means we try again on the next window.
         }
         finally
         {
             _revalidateSlots.Release();
         }
+    }
+
+    // TCP reachability probe: a SYN to :443 on the last-good IPs through the tunnel (their /32s are already
+    // routed there), racing the first few in parallel so a dead set fails fast within one short deadline. A
+    // completed handshake OR a refusal (RST) both prove the path+host are alive; only silence (timeout /
+    // unreachable) is dead. First live IP wins and cancels the rest.
+    private static async Task<bool> ProbeAnyReachableAsync(IReadOnlyList<string> ips)
+    {
+        var targets = ips
+            .Where(ip => IPAddress.TryParse(ip, out var a) && a.AddressFamily == AddressFamily.InterNetwork)
+            .Take(MaxProbeIps)
+            .Select(IPAddress.Parse)
+            .ToList();
+        if (targets.Count == 0)
+        {
+            return false;
+        }
+
+        using var cts = new CancellationTokenSource(ProbeTimeoutMs);
+        var probes = targets.Select(addr => ProbeOneAsync(addr, cts.Token)).ToList();
+        while (probes.Count > 0)
+        {
+            var done = await Task.WhenAny(probes).ConfigureAwait(false);
+            probes.Remove(done);
+            if (done.Result)
+            {
+                cts.Cancel(); // one live IP is enough; stop the remaining probes
+                return true;
+            }
+        }
+
+        return false; // nothing answered: the set is dead from this exit
+    }
+
+    private static async Task<bool> ProbeOneAsync(IPAddress addr, CancellationToken ct)
+    {
+        using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        try
+        {
+            await socket.ConnectAsync(new IPEndPoint(addr, ProbePort), ct).ConfigureAwait(false);
+            return true; // handshake completed: reachable
+        }
+        catch (SocketException se) when (se.SocketErrorCode == SocketError.ConnectionRefused)
+        {
+            return true; // RST: the host answered, the path is alive
+        }
+        catch
+        {
+            return false; // timeout / unreachable / cancelled: not reachable via this probe
+        }
+    }
+
+    // True when the fresh v4 answer is the SAME set (order-independent) as the domain's current v4 IPs. Used
+    // to tell a transient probe miss (resolver re-confirms these IPs) from a dead edge (resolver moved it), so
+    // a congestion blip doesn't evict a still-advertised address.
+    private static bool SameV4Set(IReadOnlyList<string> current, IReadOnlyList<string> fresh)
+    {
+        var curV4 = new HashSet<string>(current.Where(ip => !ip.Contains(':')), StringComparer.OrdinalIgnoreCase);
+        var freshV4 = fresh.Where(ip => !ip.Contains(':')).ToList();
+        if (freshV4.Count != curV4.Count)
+        {
+            return false;
+        }
+
+        foreach (var ip in freshV4)
+        {
+            if (!curV4.Contains(ip))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Whether a name resolves via the LAN resolver and stays off the tunnel.

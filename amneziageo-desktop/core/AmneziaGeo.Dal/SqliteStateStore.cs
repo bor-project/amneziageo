@@ -1020,6 +1020,45 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task<DomainResolution?> GetDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default)
+    {
+        var ips = new List<string>();
+        DateTimeOffset? resolvedAt = null;
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                // Point lookup served by the (tunnel, domain) prefix of the UNIQUE(tunnel, domain, ip) index.
+                command.CommandText = "SELECT ip, updated_at FROM domain_ips WHERE tunnel = $tunnel AND domain = $domain;";
+                command.Parameters.AddWithValue("$tunnel", tunnel);
+                command.Parameters.AddWithValue("$domain", domain);
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        ips.Add(reader.GetString(0));
+                        // Resolved-at is the freshest write across the domain's IP rows.
+                        var rowResolvedAt = DateTimeOffset.Parse(reader.GetString(1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+                        if (resolvedAt is null || rowResolvedAt > resolvedAt)
+                        {
+                            resolvedAt = rowResolvedAt;
+                        }
+                    }
+                }
+            }
+        }
+
+        return ips.Count > 0 ? new DomainResolution(domain, ips, resolvedAt) : null;
+    }
+
+    /// <inheritdoc/>
     public async Task SaveBalancerAsync(BalancerGroup balancer, CancellationToken ct = default)
     {
         var timestamp = Timestamp();

@@ -177,6 +177,13 @@ public interface IStateStore
     Task DeleteDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns a single tunnel/domain's cached resolution, or null when none is stored. Backs the on-demand
+    /// cache hydrate: a queried domain's last-good IPs are restored without a re-resolve. The lookup is served
+    /// by the (tunnel, domain) prefix of the UNIQUE(tunnel, domain, ip) index, so it stays a point read.
+    /// </summary>
+    Task<DomainResolution?> GetDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts or updates a failover balancer group.
     /// </summary>
     Task SaveBalancerAsync(BalancerGroup balancer, CancellationToken ct = default);

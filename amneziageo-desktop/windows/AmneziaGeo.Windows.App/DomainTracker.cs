@@ -6,12 +6,13 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Resolves tunneled domains to IPs on demand and keeps only a live, in-memory set of RULE-BACKED
-/// resolutions (their /32 routes + allowed-ips). This build is deliberately lazy: nothing is pre-resolved
-/// and nothing is persisted to the DB. The dictionary is populated purely by DNS queries that matched a geo
-/// rule; a name that is NOT in any rule never lands here (it bypasses the tunnel and is cached negatively by
-/// the DNS proxy). An actively-used domain self-heals via <see cref="Replace"/> (re-resolve + evict), so a
-/// stale/dead CDN IP is dropped rather than accumulated.
+/// Resolves tunneled domains to IPs on demand and keeps a live, in-memory set of RULE-BACKED resolutions
+/// (their /32 routes + allowed-ips). Resolutions are persisted to the domain_ips table and restored LAZILY:
+/// nothing is pre-resolved or bulk warm-started, and a matched domain is hydrated from the DB only when it is
+/// actually queried (<see cref="TryHydrateFromCacheAsync"/>), so memory holds just what this session used. A
+/// name that is NOT in any rule never lands here (it bypasses the tunnel, negatively cached by the DNS proxy).
+/// An actively-used domain self-heals via <see cref="Replace"/> (reachability-gated re-resolve + evict) and
+/// every change is written back, so a stale/dead CDN IP is dropped rather than accumulated.
 /// </summary>
 internal sealed class DomainTracker(
     IStateStore store,
@@ -44,6 +45,14 @@ internal sealed class DomainTracker(
     private volatile Action<IReadOnlyList<GeoDomain>, CancellationToken>? _onGeoDomainsChanged;
 
     private uint? _interfaceIndex;
+
+    // The routing list currently projected onto this tunnel; tags persisted rows so a list's cached resolutions
+    // are cleaned when the list is removed (domain_ips.list_id). Read/written under _lock. 0 = none/unknown.
+    private long _activeListId;
+
+    // Serialises this tunnel's resolution writes so a later change never lands in the DB before an earlier one.
+    private readonly object _persistLock = new();
+    private Task _persistTail = Task.CompletedTask;
 
     // Kept only so any awaiter of WarmStartCompleted (e.g. the retained DnsProxy.SeedRoutesAsync) never hangs;
     // this build has no DB warm start - the in-memory cache is populated purely on demand.
@@ -109,7 +118,7 @@ internal sealed class DomainTracker(
     /// never dropped here, so a partial or transient answer cannot blackhole a working address. Eviction of a
     /// stale IP happens only via <see cref="Replace"/> (re-resolve) or <see cref="Remove"/> (left the lists).
     /// </summary>
-    public void Add(string domain, IReadOnlyList<string> ips)
+    public void Add(string domain, IReadOnlyList<string> ips, bool persist = true)
     {
         lock (_lock)
         {
@@ -167,6 +176,15 @@ internal sealed class DomainTracker(
 
             // Advertise only the newly added IPs incrementally so route-before-answer stays O(new).
             uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+
+            // Persist the domain's full current set. Skipped when hydrating (persist:false) - it already came
+            // from the DB, so re-writing the same rows would be pointless churn.
+            if (persist)
+            {
+                var snapshot = union.ToList();
+                var listId = _activeListId;
+                EnqueuePersist(() => store.SaveDomainResolutionAsync(tunnelName, new DomainResolution(key, snapshot), listId));
+            }
         }
     }
 
@@ -258,6 +276,11 @@ internal sealed class DomainTracker(
             {
                 RouteLog.Note($"re-resolve {key} -> [{string.Join(",", next)}] (evicted {stale?.Count ?? 0})");
             }
+
+            // Persist the re-resolved set so the heal survives a restart.
+            var snapshot = next.ToList();
+            var listId = _activeListId;
+            EnqueuePersist(() => store.SaveDomainResolutionAsync(tunnelName, new DomainResolution(key, snapshot), listId));
         }
     }
 
@@ -299,6 +322,9 @@ internal sealed class DomainTracker(
 
             _current.Remove(key);
 
+            // Forget the persisted resolution too (domain left the routing lists).
+            EnqueuePersist(() => store.DeleteDomainResolutionAsync(tunnelName, key));
+
             var index = EnsureIndex();
             if (index is not null && stale is not null)
             {
@@ -311,6 +337,85 @@ internal sealed class DomainTracker(
             {
                 RouteLog.Note($"untrack {key} (-{stale?.Count ?? 0} route(s))");
             }
+        }
+    }
+
+    /// <summary>
+    /// Hydrates a single matched domain from the persisted cache on demand (no bulk warm start). When the
+    /// domain is not already tracked, its last-good IPs are loaded from the DB and installed like a fresh
+    /// <see cref="Add"/> - so a queried domain seen in a previous session skips the (lossy) tunnel resolver.
+    /// Returns the routable v4 IPs for a serve-known answer, or null when nothing is cached (caller resolves).
+    /// </summary>
+    public async Task<IReadOnlyList<string>?> TryHydrateFromCacheAsync(string domain, Func<string, bool> isStillTunneled, CancellationToken ct = default)
+    {
+        var key = domain.TrimEnd('.').ToLowerInvariant();
+        lock (_lock)
+        {
+            if (_current.ContainsKey(key))
+            {
+                return null; // already in memory; the caller's KnownIps path serves it
+            }
+        }
+
+        DomainResolution? cached;
+        try
+        {
+            cached = await store.GetDomainResolutionAsync(tunnelName, key, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "domain cache lookup failed for {Domain}", key);
+            return null;
+        }
+
+        if (cached is null || cached.Ips.Count == 0)
+        {
+            return null; // nothing cached -> caller resolves through the tunnel
+        }
+
+        // Re-check membership after the await: a list edit during the DB read may have swapped the matcher so
+        // this domain just left the lists (same guard as the resolve/Track path) - never pin a departed domain.
+        if (!isStillTunneled(domain))
+        {
+            return null;
+        }
+
+        // Install the cached set's routes/allowed-ips without a re-resolve; persist:false since it is the DB.
+        // Isolated like Track: an IPC/route failure during tunnel churn must not drop the query - returning null
+        // falls the caller through to a real resolve (which answers SERVFAIL) instead of leaving it unanswered.
+        try
+        {
+            Add(key, cached.Ips, persist: false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "hydrate route install failed for {Domain}", key);
+            return null;
+        }
+
+        return KnownIps(key);
+    }
+
+    // Serialises this tunnel's resolution writes so a later change never lands in the DB before an earlier one.
+    private void EnqueuePersist(Func<Task> op)
+    {
+        lock (_persistLock)
+        {
+            _persistTail = _persistTail.ContinueWith(
+                async _ =>
+                {
+                    try
+                    {
+                        await op().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogDebug(ex, "persist domain resolution failed for {Tunnel}", tunnelName);
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default).Unwrap();
         }
     }
 
@@ -328,8 +433,22 @@ internal sealed class DomainTracker(
                 await Task.Delay(500, ct);
             }
 
-            // No DB warm start in this build; release any awaiter immediately.
+            // No bulk DB warm start: resolutions are hydrated lazily per queried domain. Release any awaiter.
             _warmStart.TrySetResult();
+
+            // Seed the active routing list id so persisted rows are tagged for list-scoped cleanup.
+            try
+            {
+                var listId = await store.GetActiveRoutingListIdAsync(tunnelName) ?? 0;
+                lock (_lock)
+                {
+                    _activeListId = listId;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "initial active routing list id lookup failed for {Tunnel}", tunnelName);
+            }
 
             // Leave _knownGeneration null so the first poll reconciles geoip deltas and seeds the matcher.
             var pollInterval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 15), 1, 60));
@@ -343,6 +462,12 @@ internal sealed class DomainTracker(
                     if (current is not null && current.Generation != _knownGeneration)
                     {
                         ReconcileStaticRoutes(current.Routes);
+                        // Tag persisted rows with the new list id BEFORE the matcher rebuild: a domain newly
+                        // matched under the new list must persist with the correct list_id, not the previous one.
+                        lock (_lock)
+                        {
+                            _activeListId = current.ListId;
+                        }
                         // Rebuild the matcher and prune domains that left the lists. Newly listed domains are
                         // NOT pre-resolved - they resolve on demand when first queried.
                         _onGeoDomainsChanged?.Invoke(current.Domains, ct);

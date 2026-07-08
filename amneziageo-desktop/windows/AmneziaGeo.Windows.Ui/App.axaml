@@ -246,6 +246,9 @@
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,7" />
       <Setter Property="FontSize" Value="13" />
+      <!-- Fill the pane width like ComboBox.field, so form fields line up with the combos above/below
+           them. An authored Width still wins (Stretch is ignored when a Width is set). -->
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
 
     <!-- Pin text-input border on the template PART in every state. -->

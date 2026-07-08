@@ -7,6 +7,7 @@
         x:CompileBindings="True"
         x:DataType="vm:MainWindowViewModel"
         Design.DataContext="{x:Static vm:DesignData.MainWindow}"
+        Design.Width="987" Design.Height="1300"
         Title="AmneziaGeo"
         Width="987" Height="610"
         MinWidth="800" MinHeight="560"
@@ -172,8 +173,11 @@
     <Grid IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
       <Grid.ColumnDefinitions>
         <!-- Section rail column, drag-resizable via the GridSplitter.
-             MaxWidth capped so a wide rail can't starve the content pane and clip its right-side controls. -->
-        <ColumnDefinition Width="260" MinWidth="210" MaxWidth="360" />
+             MaxWidth capped so that even at the rail's widest the content pane keeps its MinWidth at the
+             window's MinWidth: railMax(320) + splitter(5) + contentMin(440) + hMargins(24) = 789 <= Window.MinWidth(800).
+             With the old 360 cap a wide rail + small window pushed the content below its min (hscroll is
+             Disabled), so its widest fixed control (the 320px segmented toggle) spilled left/down out of the pane. -->
+        <ColumnDefinition Width="260" MinWidth="210" MaxWidth="320" />
         <ColumnDefinition Width="Auto" />
         <!-- Content floored: the splitter can never starve it below its min, so the
              disabled-hscroll pane fits/wraps instead of clipping right-side controls. -->
@@ -309,10 +313,15 @@
 
       <!-- Content pane. -->
       <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
-        <!-- Inset on the ScrollViewer so a section can bind its height to the viewport. -->
+        <!-- ALL insets live on the inner Grid's Margin, none on the ScrollViewer. A ScrollViewer Padding is
+             applied asymmetrically between the measure and arrange passes, so the padded side is pushed past
+             the presenter's clip: horizontally it shoved stretched fields off the edge; vertically the
+             bottom 16px of a scrolled-to-max section (e.g. the config «Удалить» button) landed below the
+             viewport's clip and was unreachable even at max scroll. A Grid Margin is applied identically in
+             both passes, so the top+bottom inset survives and the last control always scrolls fully into view. -->
         <!-- Never scroll sideways: long values (source URLs) trim/wrap instead of overflowing the card. -->
-        <ScrollViewer x:Name="ContentScroll" Padding="18,16" HorizontalScrollBarVisibility="Disabled">
-          <Grid>
+        <ScrollViewer x:Name="ContentScroll" HorizontalScrollBarVisibility="Disabled">
+          <Grid Margin="18,16">
 
             <!-- PROFILE SECTION -->
             <StackPanel IsVisible="{Binding IsSettingsProfile}" Spacing="14">

@@ -431,6 +431,9 @@
                     <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                                Text="{l:Tr Main_RoutingPickerHint}" />
                   </StackPanel>
+
+                  <!-- Agent rejection from the header Save (config/routing commit), so it is not silently lost (#143). -->
+                  <TextBlock Text="{Binding EditStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <!-- Delete. -->

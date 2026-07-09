@@ -33,8 +33,8 @@ internal static class DesignData
     public static MainWindowViewModel MainWindow { get; } = CreateMainWindow();
 
     // No-op agent delegates: the sub-view-models never talk to a live agent at design time.
-    private static Task NoProfileSave(string _, string __) => Task.CompletedTask;
-    private static Task NoAssignRouting(string _, long? __, bool ___) => Task.CompletedTask;
+    private static Task<IpcAck> NoProfileSave(string _, string __) => Task.FromResult(new IpcAck(true, string.Empty));
+    private static Task<IpcAck> NoAssignRouting(string _, long? __, bool ___) => Task.FromResult(new IpcAck(true, string.Empty));
     private static Task NoSelectProfile(string _) => Task.CompletedTask;
     private static Task NoSetConnection(string _, bool __) => Task.CompletedTask;
     private static Task<IpcAck> NoRemoveConfig(string _) => Task.FromResult(new IpcAck(true, string.Empty));

@@ -90,6 +90,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     }
 
     /// <inheritdoc />
+    public bool CanCommit() => true;
+
+    /// <inheritdoc />
     public void CaptureBaseline()
     {
         _baseLocalDns = LocalDns ?? string.Empty;

@@ -195,6 +195,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return false;
         }
 
+        // Do not persist a rule-less list; the pre-#143 auto-save refused it too (review regression guard).
+        if (Rules.Count == 0)
+        {
+            StatusMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
+            return false;
+        }
+
         IsBusy = true;
         try
         {
@@ -261,6 +268,24 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             IsDirty = dirty;
             DirtyChanged?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    /// <inheritdoc />
+    public bool CanCommit()
+    {
+        if (Name.Trim().Length == 0)
+        {
+            StatusMessage = Loc.Instance.Get("RoutingEditor_EnterRuleName");
+            return false;
+        }
+
+        if (Rules.Count == 0)
+        {
+            StatusMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
+            return false;
+        }
+
+        return true;
     }
 
     /// <inheritdoc />

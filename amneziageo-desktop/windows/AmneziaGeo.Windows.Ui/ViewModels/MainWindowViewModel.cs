@@ -26,7 +26,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _toggleInFlight;
     private string? _lastNotice;
     private string? _pendingOpenProfile;
-    private System.Threading.CancellationTokenSource? _profileRenameDebounce;
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
     private string? _geoBannerSignature;
@@ -350,11 +349,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Atomic per-item edit model (#143): aggregates the open item's edit scopes into IsEditing + Save/Cancel.
     private readonly EditController _editController = new();
 
-    // Host-owned edit scopes for the config section's inline fields (#143), built in the ctor and registered by
-    // RefreshEditScopes while the config section is active. _baseConfigRename is the rename field's baseline.
+    // Host-owned edit scopes for the config / profile sections' inline fields (#143), built in the ctor and
+    // registered by RefreshEditScopes while that section is active. The _base* fields are the rename baselines.
     private DelegateEditScope? _configRenameScope;
     private DelegateEditScope? _sectionConfigScope;
+    private DelegateEditScope? _profileRenameScope;
     private string _baseConfigRename = string.Empty;
+    private string _baseProfileRename = string.Empty;
 
     /// <summary>
     /// ctor
@@ -374,6 +375,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             () => { },
             CancelSectionConfig,
             CommitSectionConfigAsync);
+        _profileRenameScope = new DelegateEditScope(
+            () => !string.Equals(ProfileRename ?? string.Empty, _baseProfileRename, StringComparison.Ordinal),
+            () => _baseProfileRename = ProfileRename ?? string.Empty,
+            () => ProfileRename = _baseProfileRename,
+            CommitProfileRenameAsync);
         // Seed backing fields from prefs without echoing OnChanged.
         _isDark = prefs.IsDark;
         _settingsSection = prefs.SettingsSection;
@@ -649,6 +655,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsEditing));
         SaveEditCommand.NotifyCanExecuteChanged();
         CancelEditCommand.NotifyCanExecuteChanged();
+        CreateProfileCommand.NotifyCanExecuteChanged();
         NotifyCanToggleConnection();
     }
 
@@ -658,6 +665,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         switch (SettingsSection)
         {
+            case "profile":
+                // Config / routing selections (BalancerItemViewModel) commit first; rename LAST so the
+                // config/routing ops still key by the old profile name.
+                _editController.SetScopes(OpenProfile, _profileRenameScope);
+                break;
             case "routing":
                 _editController.SetScopes(RoutingEditor, RoutingSettings);
                 break;
@@ -966,45 +978,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _suppressOpenChoice = false;
     }
 
-    // Live-preview the profile rename in the combo.
+    // The rename field changed: re-evaluate the profile item's dirtiness (no auto-save - the header Save commits).
     partial void OnProfileRenameChanged(string value)
     {
-        _profileRenameDebounce?.Cancel();
-
-        if (OpenProfile is null)
-        {
-            return;
-        }
-
-        var identity = OpenProfile.Name;
-        var display = string.IsNullOrWhiteSpace(value) ? identity : value;
-        var option = ProfileOptions.FirstOrDefault(
-            o => o.IsReal && string.Equals(o.Identity, identity, StringComparison.Ordinal));
-        if (option is not null)
-        {
-            option.Name = display;
-        }
-
-        var cts = new System.Threading.CancellationTokenSource();
-        _profileRenameDebounce = cts;
-        _ = DebounceRenameProfileAsync(cts.Token);
-    }
-
-    private async Task DebounceRenameProfileAsync(System.Threading.CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(700, token);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        if (!token.IsCancellationRequested)
-        {
-            await RenameProfile();
-        }
+        _profileRenameScope?.RaiseDirtyChanged();
     }
 
     // Reset the option label back to the persisted name.
@@ -1186,6 +1163,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 ResetProfileOptionLabel(oldValue.Name);
             }
 
+            // Set the rename baseline before the field so seeding it does not read as a dirty edit (#143).
+            _baseProfileRename = newValue?.Name ?? string.Empty;
             ProfileRename = newValue?.Name ?? string.Empty;
             ProfileRenameStatus = string.Empty;
             // Reflect the profile's routing list into the Routing section too (mirrors OpenConfig above), so
@@ -1207,6 +1186,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         // Mirror the open profile into the Profile-section combo so it shows «— не выбрано —» / the name.
         SyncOpenProfileChoice();
+
+        // Re-point the edit model at the newly-open profile (its config/routing selections + the rename field).
+        RefreshEditScopes();
 
         // The rule editor / per-routing settings belong to the standalone Routing section now, not to a
         // profile, so opening/closing a profile no longer touches RoutingEditor.
@@ -2447,7 +2429,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // The button is disabled while the catalogue is empty (a profile needs a config to dial), so there is
     // always a config to assign here: prefer the current working profile's config, else the first in the
     // catalogue.
-    [RelayCommand(CanExecute = nameof(HasConfigs))]
+    // Disabled while the catalogue is empty (a profile needs a config) and while another item is being edited
+    // (#143), so creating a new profile cannot abandon an unsaved edit.
+    private bool CanCreateProfile => HasConfigs && !IsEditing;
+
+    [RelayCommand(CanExecute = nameof(CanCreateProfile))]
     private async Task CreateProfile()
     {
         var config = ActiveProfile is { Config.Length: > 0 } active
@@ -2687,24 +2673,28 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Auto-rename the open profile (#116): called from the debounce when the name field settles. On success
-    // the editor stays open on the renamed profile - adopting the new name on the live instance lets the next
-    // snapshot reconcile it in place (SyncBalancers matches by name) instead of dropping the row and closing
-    // the page, so the user can keep typing. On a refused rename (name taken, or it is the running profile)
-    // the view stays put, shows why, and the live combo preview reverts to the persisted name.
-    [RelayCommand]
-    private async Task RenameProfile()
+    // Commit the open profile's rename through the agent (#143 header Save). On OK the live instance adopts the
+    // new name so the next snapshot reconciles it in place (SyncBalancers matches by name) instead of dropping
+    // the row. An empty name is rejected (the item stays dirty); a refused rename shows why and reverts the
+    // combo label to the persisted name.
+    private async Task<bool> CommitProfileRenameAsync()
     {
         var profile = OpenProfile;
         if (profile is null)
         {
-            return;
+            return true;
         }
 
         var next = (ProfileRename ?? string.Empty).Trim();
-        if (next.Length == 0 || string.Equals(next, profile.Name, StringComparison.Ordinal))
+        if (next.Length == 0)
         {
-            return;
+            ProfileRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
+            return false;
+        }
+
+        if (string.Equals(next, profile.Name, StringComparison.Ordinal))
+        {
+            return true;
         }
 
         ProfileRenameStatus = string.Empty;
@@ -2712,12 +2702,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (ack.Ok)
         {
             profile.Name = next;
+            return true;
         }
-        else
-        {
-            ProfileRenameStatus = ack.Message;
-            ResetProfileOptionLabel(profile.Name);
-        }
+
+        ProfileRenameStatus = ack.Message;
+        ResetProfileOptionLabel(profile.Name);
+        return false;
     }
 
     private async Task AssignRoutingAsync(string profile, long? listId, bool useRouting)

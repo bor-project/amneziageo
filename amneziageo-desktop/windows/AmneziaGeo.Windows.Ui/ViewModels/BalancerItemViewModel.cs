@@ -12,7 +12,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// A single profile row in the list: it owns exactly one configuration plus its routing-list assignment
 /// and connection state. Mutations are dispatched as IPC commands to the agent via the provided delegates.
 /// </summary>
-internal sealed partial class BalancerItemViewModel : ViewModelBase
+internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
 {
     private readonly Func<string, string, Task> _saveProfile;
     private readonly Func<string, long?, bool, Task> _assignRouting;
@@ -22,6 +22,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
     private bool _suppress;
     private bool _suppressNextRoutingNone;
     private bool? _pendingRunning;
+
+    // Baseline of the editable selections captured when the row is seeded / committed (#143); the profile is
+    // dirty when the config / routing-list / use-routing selection differs from it.
+    private string _baseConfigName = string.Empty;
+    private long? _baseRoutingId;
+    private bool _baseUseRouting;
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -158,49 +164,61 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         {
             Name = entry.Name;
             Status = entry.Status;
-            Config = entry.Config;
 
-            // Keep the assigned config selectable even if it's not in the catalogue.
-            var effectiveOptions = configOptions;
-            if (entry.Config.Length > 0
-                && !configOptions.Any(option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal)))
+            // While the user is mid-edit on this profile (#143), do NOT reseed the edited selections from the
+            // snapshot - that would wipe the pending config / routing change. Name + Status still update.
+            if (!IsDirty)
             {
-                var augmented = configOptions.ToList();
-                augmented.Add(new ConfigChoice(entry.Config));
-                effectiveOptions = augmented;
-            }
+                Config = entry.Config;
 
-            if (!ConfigOptions.SequenceEqual(effectiveOptions))
-            {
-                ConfigOptions.Clear();
-                foreach (var option in effectiveOptions)
+                // Keep the assigned config selectable even if it's not in the catalogue.
+                var effectiveOptions = configOptions;
+                if (entry.Config.Length > 0
+                    && !configOptions.Any(option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal)))
                 {
-                    ConfigOptions.Add(option);
+                    var augmented = configOptions.ToList();
+                    augmented.Add(new ConfigChoice(entry.Config));
+                    effectiveOptions = augmented;
                 }
-            }
 
-            SelectedConfig = ConfigOptions.FirstOrDefault(
-                    option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal))
-                ?? ConfigChoice.None;
-
-            if (!RoutingListOptions.SequenceEqual(routingOptions))
-            {
-                // Arm the one-shot flag before Clear() fires a None echo.
-                _suppressNextRoutingNone = SelectedRoutingList.IsReal;
-                RoutingListOptions.Clear();
-                foreach (var option in routingOptions)
+                if (!ConfigOptions.SequenceEqual(effectiveOptions))
                 {
-                    RoutingListOptions.Add(option);
+                    ConfigOptions.Clear();
+                    foreach (var option in effectiveOptions)
+                    {
+                        ConfigOptions.Add(option);
+                    }
                 }
+
+                SelectedConfig = ConfigOptions.FirstOrDefault(
+                        option => option.IsReal && string.Equals(option.Name, entry.Config, StringComparison.Ordinal))
+                    ?? ConfigChoice.None;
+
+                if (!RoutingListOptions.SequenceEqual(routingOptions))
+                {
+                    // Arm the one-shot flag before Clear() fires a None echo.
+                    _suppressNextRoutingNone = SelectedRoutingList.IsReal;
+                    RoutingListOptions.Clear();
+                    foreach (var option in routingOptions)
+                    {
+                        RoutingListOptions.Add(option);
+                    }
+                }
+
+                SelectedRoutingList = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
+
+                UseRouting = entry.UseRouting && SelectedRoutingList.IsReal;
             }
-
-            SelectedRoutingList = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
-
-            UseRouting = entry.UseRouting && SelectedRoutingList.IsReal;
         }
         finally
         {
             _suppress = false;
+        }
+
+        // Seeded from the snapshot (not mid-edit): this backend state is the clean baseline (#143).
+        if (!IsDirty)
+        {
+            CaptureBaseline();
         }
 
         // Clear the optimistic status once the real status matches.
@@ -238,16 +256,8 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             return;
         }
 
-        if (newValue.IsReal && !string.Equals(newValue.Name, Config, StringComparison.Ordinal))
-        {
-            Config = newValue.Name;
-            _ = _saveProfile(Name, newValue.Name);
-        }
-        else if (newValue.IsNone && Config.Length > 0)
-        {
-            Config = string.Empty;
-            _ = _saveProfile(Name, string.Empty);
-        }
+        // Hold the change in the buffer; the header Save commits it (#143).
+        MarkDirty();
     }
 
     partial void OnSelectedRoutingListChanged(RoutingListChoice? oldValue, RoutingListChoice newValue)
@@ -266,12 +276,13 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
         }
         _suppressNextRoutingNone = false;
 
+        // Picking «Полный туннель» (none) forces the use-routing toggle off; kept as buffer state, not persisted.
         if (!newValue.IsReal && UseRouting)
         {
             UseRouting = false;
         }
 
-        _ = _assignRouting(Name, newValue.IsReal ? newValue.Id : null, UseRouting && newValue.IsReal);
+        MarkDirty();
     }
 
     partial void OnUseRoutingChanged(bool value)
@@ -287,6 +298,88 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase
             return;
         }
 
-        _ = _assignRouting(Name, SelectedRoutingList.Id, value);
+        MarkDirty();
+    }
+
+    // ---- IEditScope (#143): config / routing-list / use-routing edits are held in the buffer and committed
+    // together by the header Save (config via OpAddBalancer, routing via OpAssignRouting), reverted by Cancel. ----
+
+    /// <inheritdoc />
+    public bool IsDirty { get; private set; }
+
+    /// <inheritdoc />
+    public event EventHandler? DirtyChanged;
+
+    private void MarkDirty()
+    {
+        if (_suppress)
+        {
+            return;
+        }
+
+        var dirty = !string.Equals(CurrentConfigName(), _baseConfigName, StringComparison.Ordinal)
+            || CurrentRoutingId() != _baseRoutingId
+            || UseRouting != _baseUseRouting;
+        if (dirty != IsDirty)
+        {
+            IsDirty = dirty;
+            DirtyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private string CurrentConfigName() => SelectedConfig is { IsReal: true } config ? config.Name : string.Empty;
+
+    private long? CurrentRoutingId() => SelectedRoutingList is { IsReal: true } list ? list.Id : null;
+
+    /// <inheritdoc />
+    public void CaptureBaseline()
+    {
+        _baseConfigName = CurrentConfigName();
+        _baseRoutingId = CurrentRoutingId();
+        _baseUseRouting = UseRouting;
+        if (IsDirty)
+        {
+            IsDirty = false;
+            DirtyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Revert()
+    {
+        _suppress = true;
+        try
+        {
+            SelectedConfig = ConfigOptions.FirstOrDefault(option => option.IsReal && string.Equals(option.Name, _baseConfigName, StringComparison.Ordinal)) ?? ConfigChoice.None;
+            SelectedRoutingList = _baseRoutingId is { } id
+                ? RoutingListOptions.FirstOrDefault(option => option.Id == id) ?? RoutingListChoice.None
+                : RoutingListChoice.None;
+            UseRouting = _baseUseRouting && SelectedRoutingList.IsReal;
+        }
+        finally
+        {
+            _suppress = false;
+        }
+
+        MarkDirty();
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> CommitAsync()
+    {
+        var configName = CurrentConfigName();
+        if (!string.Equals(configName, _baseConfigName, StringComparison.Ordinal))
+        {
+            Config = configName;
+            await _saveProfile(Name, configName);
+        }
+
+        var routingId = CurrentRoutingId();
+        if (routingId != _baseRoutingId || UseRouting != _baseUseRouting)
+        {
+            await _assignRouting(Name, routingId, UseRouting && routingId is not null);
+        }
+
+        return true;
     }
 }

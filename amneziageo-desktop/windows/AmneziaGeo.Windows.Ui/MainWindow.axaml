@@ -374,7 +374,7 @@
               <!-- Open profile's editor: rename + config picker + routing picker + delete. -->
               <StackPanel IsVisible="{Binding IsProfileDetail}" Spacing="16">
 
-                <!-- Rename: auto-saves debounced; no «Сохранить». -->
+                <!-- Rename: committed with the header Save (#143). -->
                 <StackPanel Spacing="6">
                   <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
@@ -436,7 +436,7 @@
                 <!-- Delete. -->
                 <StackPanel Spacing="6">
                   <TextBlock Classes="label" Text="{l:Tr Main_DeletionLabel}" />
-                  <Button Classes="danger" HorizontalAlignment="Left"
+                  <Button Classes="danger" HorizontalAlignment="Left" IsEnabled="{Binding !IsEditing}"
                           Command="{Binding DeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                              Text="{l:Tr Main_DeleteProfileHint}" />
@@ -479,7 +479,7 @@
                            Text="{l:Tr Main_NoConfigsHint}" />
               </StackPanel>
 
-              <!-- Standalone import form (Row 3). Auto-saves when text parses and name is set. -->
+              <!-- Standalone import form (Row 3). Imported with the header Save once text parses + name is set (#143). -->
               <Border Grid.Row="3" Margin="0,14,0,0" VerticalAlignment="Stretch"
                       IsVisible="{Binding IsCreatingSectionConfig}"
                       Background="{DynamicResource AgInsetBrush}"
@@ -515,7 +515,7 @@
 
               <!-- Open config (Row 2): name editor + .conf export/editor + proxy + delete. -->
               <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsConfigManage}" Spacing="14">
-                <!-- Config name: per-keystroke so the required-field border reacts at once; auto-saves debounced. -->
+                <!-- Config name: per-keystroke so the required-field border reacts at once; committed with the header Save (#143). -->
                 <StackPanel Spacing="2">
                   <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
                   <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
@@ -622,7 +622,7 @@
                                            FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
                     </Border>
                   </StackPanel>
-                  <!-- Auto-saves on change. -->
+                  <!-- Committed atomically with the header Save (#143). -->
                   <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                              TextWrapping="Wrap" />
                   <StackPanel Spacing="6">

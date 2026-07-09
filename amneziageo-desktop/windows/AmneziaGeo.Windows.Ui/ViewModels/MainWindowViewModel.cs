@@ -772,12 +772,34 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Local pre-commit check for the config rename (#143): reject an empty name before any scope is persisted.
+    // A name is taken if any config OR profile already uses it: the agent enforces one shared namespace
+    // (AgentStatusBroker rename/copy checks configRepo.ExistsAsync || store.GetBalancerAsync). Ordinal, so this
+    // is never STRICTER than the agent - a case-variant it would still reject just falls through to the server,
+    // keeping the check a safe best-effort. Call only after confirming the new name differs from the current one.
+    private bool IsNameTaken(string name) =>
+        _configNames.Any(n => string.Equals(n, name, StringComparison.Ordinal))
+        || Balancers.Any(b => string.Equals(b.Name, name, StringComparison.Ordinal));
+
+    // Local pre-commit check for the config rename (#143): reject an empty or already-taken name before any
+    // scope is persisted, so a bad name aborts the whole Save in the pre-flight pass (shrinks the non-atomic
+    // partial-commit window - a taken name no longer lands after a sibling .conf/transport commit).
     private bool CanCommitConfigRename()
     {
-        if (OpenConfig is not null && (ConfigRename ?? string.Empty).Trim().Length == 0)
+        if (OpenConfig is null)
+        {
+            return true;
+        }
+
+        var next = (ConfigRename ?? string.Empty).Trim();
+        if (next.Length == 0)
         {
             ConfigRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
+            return false;
+        }
+
+        if (!string.Equals(next, OpenConfig, StringComparison.Ordinal) && IsNameTaken(next))
+        {
+            ConfigRenameStatus = Loc.Instance.Get("Agent_NameTaken", next);
             return false;
         }
 
@@ -2699,12 +2721,26 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Local pre-commit check for the profile rename (#143): reject an empty name before any scope is persisted.
+    // Local pre-commit check for the profile rename (#143): reject an empty or already-taken name before any
+    // scope is persisted (the rename commits after the config/routing scope, so a taken name would otherwise
+    // land after those already persisted). The agent still allows renaming a RUNNING profile, so no such guard.
     private bool CanCommitProfileRename()
     {
-        if (OpenProfile is not null && (ProfileRename ?? string.Empty).Trim().Length == 0)
+        if (OpenProfile is null)
+        {
+            return true;
+        }
+
+        var next = (ProfileRename ?? string.Empty).Trim();
+        if (next.Length == 0)
         {
             ProfileRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
+            return false;
+        }
+
+        if (!string.Equals(next, OpenProfile.Name, StringComparison.Ordinal) && IsNameTaken(next))
+        {
+            ProfileRenameStatus = Loc.Instance.Get("Agent_NameTaken", next);
             return false;
         }
 

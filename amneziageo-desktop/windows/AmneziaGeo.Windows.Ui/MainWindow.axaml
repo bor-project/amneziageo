@@ -133,12 +133,20 @@
                      HorizontalAlignment="Center" VerticalAlignment="Center"
                      Foreground="{DynamicResource AgMutedBrush}" />
 
-          <!-- Back to Home. -->
-          <Button Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
-                  Command="{Binding NavHomeCommand}" ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
-            <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
-                      Foreground="{DynamicResource AgMutedBrush}" />
-          </Button>
+          <!-- Back to Home + atomic-edit Save/Cancel (#143): the Save/Cancel pair sits to the right of the back
+               arrow and appears only while the open item is dirty; navigation (incl. back) is locked meanwhile. -->
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left" VerticalAlignment="Center">
+            <Button Classes="backbtn" VerticalAlignment="Center"
+                    Command="{Binding NavHomeCommand}" IsEnabled="{Binding !IsEditing}"
+                    ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
+              <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
+                        Foreground="{DynamicResource AgMutedBrush}" />
+            </Button>
+            <Button Classes="accent" Content="{l:Tr Main_SaveButton}" VerticalAlignment="Center"
+                    Command="{Binding SaveEditCommand}" IsVisible="{Binding IsEditing}" />
+            <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Center"
+                    Command="{Binding CancelEditCommand}" IsVisible="{Binding IsEditing}" />
+          </StackPanel>
 
           <!-- Animated connect / disconnect control. -->
           <Button Classes="powerctl" HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -187,7 +195,8 @@
       <!-- Section rail. -->
       <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
         <ScrollViewer>
-          <StackPanel Margin="12,12">
+          <!-- Section rail locks while the open item is dirty (#143): can't leave to another section mid-edit. -->
+          <StackPanel Margin="12,12" IsEnabled="{Binding !IsEditing}">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="profile">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
@@ -349,6 +358,7 @@
               <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
                 <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                          IsEnabled="{Binding !IsEditing}"
                           ItemsSource="{Binding ProfileOptions}"
                           SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
                   <ComboBox.ItemTemplate>
@@ -455,6 +465,7 @@
               <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6">
                 <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                          IsEnabled="{Binding !IsEditing}"
                           ItemsSource="{Binding ConfigCatalogueOptions}"
                           SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
                   <ComboBox.ItemTemplate>
@@ -646,7 +657,8 @@
                         Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
                 </Border>
-                <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateRoutingListCommand}">
+                <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateRoutingListCommand}"
+                        IsEnabled="{Binding !IsEditing}">
                   <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Text="+" />
                     <TextBlock Text="{l:Tr Main_NewListButton}" />
@@ -657,6 +669,7 @@
               <StackPanel Spacing="6">
                 <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" />
                 <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                          IsEnabled="{Binding !IsEditing}"
                           ItemsSource="{Binding RoutingCatalogueOptions}"
                           SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
                   <ComboBox.ItemTemplate>
@@ -822,14 +835,14 @@
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
                     </Grid>
 
-                    <!-- Auto-saves on change. -->
+                    <!-- Edits commit atomically with the header Save (#143). -->
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                                TextWrapping="Wrap" />
                   </StackPanel>
                 </Border>
 
                 <Button Classes="danger" HorizontalAlignment="Left"
-                        IsVisible="{Binding !RoutingEditor.IsNew}"
+                        IsVisible="{Binding !RoutingEditor.IsNew}" IsEnabled="{Binding !IsEditing}"
                         Command="{Binding DeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
               </StackPanel>
             </StackPanel>

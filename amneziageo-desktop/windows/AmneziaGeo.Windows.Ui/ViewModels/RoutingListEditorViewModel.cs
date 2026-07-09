@@ -4,31 +4,31 @@ using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs). Edits are
-/// persisted automatically via a debounced save through the agent.
+/// Editor for a shared routing list: name + rules (geo categories or manual domains / cidrs). Edits are held
+/// in the buffer and persisted atomically through the agent on the header Save (#143).
 /// </summary>
-internal sealed partial class RoutingListEditorViewModel : ViewModelBase
+internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditScope
 {
     private readonly AgentConnection _connection;
     private readonly Action<long>? _onSaved;
-    private readonly DispatcherTimer _autoSaveTimer;
     private long _id;
 
     // All geo category tokens from the last list-geo response.
     private readonly List<string> _allGeoTokens = [];
 
-    // Auto-save suppressed during construction and initial load.
-    private bool _suppressAutoSave = true;
+    // Dirty tracking suppressed during construction, initial load, and revert (#143).
+    private bool _seeding = true;
 
-    // Consecutive failed auto-saves; bounds retries.
-    private int _saveFailures;
+    // Baseline captured on load / commit; the list is dirty when Name or Rules differ from it (a new draft
+    // stays dirty until its first save).
+    private string _baseName = string.Empty;
+    private List<string> _baseRules = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNameMissing))]
@@ -72,13 +72,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         _connection = connection;
         _onSaved = onSaved;
         _id = id;
-        _autoSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
-        _autoSaveTimer.Tick += OnAutoSaveTick;
         Rules.CollectionChanged += (_, _) =>
         {
-            // Re-derive suggestions and queue the save.
+            // Re-derive suggestions and re-evaluate dirtiness (#143) - no auto-save.
             ApplySuggestionFilter();
-            ScheduleAutoSave();
+            MarkDirty();
         };
         Name = name;
     }
@@ -147,8 +145,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
             }
         }
 
-        // Seeding done; edits from here on auto-save.
-        _suppressAutoSave = false;
+        // Seeding done: snapshot the loaded state as the clean baseline; edits from here mark the item dirty.
+        _seeding = false;
+        CaptureBaseline();
     }
 
     /// <summary>
@@ -221,7 +220,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
     /// </summary>
     public async Task<bool> DeleteAsync()
     {
-        CancelPendingSave();
         if (_id == 0)
         {
             return true;
@@ -240,23 +238,83 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// Cancels a pending debounced auto-save.
-    /// </summary>
-    public void CancelPendingSave() => _autoSaveTimer.Stop();
+    /// <inheritdoc />
+    public bool IsDirty { get; private set; }
+
+    /// <inheritdoc />
+    public event EventHandler? DirtyChanged;
+
+    // Re-evaluate dirtiness against the baseline (a new draft stays dirty until first saved). Skipped while
+    // seeding / reverting so those bulk field writes do not flip the flag mid-way (#143).
+    private void MarkDirty()
+    {
+        if (_seeding)
+        {
+            return;
+        }
+
+        var dirty = IsNew
+            || !string.Equals(Name, _baseName, StringComparison.Ordinal)
+            || !Rules.SequenceEqual(_baseRules, StringComparer.Ordinal);
+        if (dirty != IsDirty)
+        {
+            IsDirty = dirty;
+            DirtyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <inheritdoc />
+    public void CaptureBaseline()
+    {
+        _baseName = Name;
+        _baseRules = Rules.ToList();
+        MarkDirty();
+    }
+
+    /// <inheritdoc />
+    public void Revert()
+    {
+        _seeding = true;
+        try
+        {
+            Name = _baseName;
+            Rules.Clear();
+            foreach (var rule in _baseRules)
+            {
+                Rules.Add(rule);
+            }
+
+            RuleInput = string.Empty;
+            StatusMessage = string.Empty;
+        }
+        finally
+        {
+            _seeding = false;
+        }
+
+        ApplySuggestionFilter();
+        MarkDirty();
+    }
 
     /// <summary>
-    /// Called when the editor is detached. Flushes a persisted list with a queued edit; abandons a draft.
+    /// Persists the list through the agent (#143 header Save). On a new list's first save it adopts the real
+    /// id, clears IsNew, and notifies the host so its per-routing settings editor is built. Returns success.
     /// </summary>
-    public void DetachAutoSave()
+    public async Task<bool> CommitAsync()
     {
-        var hadPending = _autoSaveTimer.IsEnabled;
-        _autoSaveTimer.Stop();
-        if (hadPending && _id != 0 && Name.Trim().Length != 0 && Rules.Count != 0)
+        var wasNew = _id == 0;
+        if (!await SaveAsync())
         {
-            // Persist the last edit; no _onSaved needed.
-            _ = SaveAsync();
+            return false;
         }
+
+        if (wasNew && _id != 0)
+        {
+            IsNew = false;
+            _onSaved?.Invoke(_id);
+        }
+
+        return true;
     }
 
     [RelayCommand]
@@ -472,67 +530,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase
 
     partial void OnNameChanged(string value)
     {
-        ScheduleAutoSave();
-    }
-
-    // Restart the debounce; no-op while seeding.
-    private void ScheduleAutoSave()
-    {
-        if (_suppressAutoSave)
-        {
-            return;
-        }
-
-        _autoSaveTimer.Stop();
-        _autoSaveTimer.Start();
-    }
-
-    private async void OnAutoSaveTick(object? sender, EventArgs e)
-    {
-        _autoSaveTimer.Stop();
-        await AutoSaveAsync();
-    }
-
-    private async Task AutoSaveAsync()
-    {
-        // Nothing to persist until the list has a name.
-        if (Name.Trim().Length == 0)
-        {
-            return;
-        }
-
-        // Do not save an empty list; hint what is missing.
-        if (Rules.Count == 0)
-        {
-            StatusMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
-            return;
-        }
-
-        // Retry after the debounce if a save is in flight.
-        if (IsBusy)
-        {
-            ScheduleAutoSave();
-            return;
-        }
-
-        // _onSaved fires once, when a new list is first persisted.
-        var wasNew = _id == 0;
-
-        if (await SaveAsync())
-        {
-            _saveFailures = 0;
-            if (wasNew && _id != 0)
-            {
-                // Clear IsNew before notifying the host.
-                IsNew = false;
-                _onSaved?.Invoke(_id);
-            }
-        }
-        else if (++_saveFailures <= 2)
-        {
-            // Retry shortly on a transient rejection.
-            ScheduleAutoSave();
-        }
+        MarkDirty();
     }
 
     private static readonly string[] KnownPrefixes = ["geosite:", "geoip:", "domain:", "cidr:", "app:"];

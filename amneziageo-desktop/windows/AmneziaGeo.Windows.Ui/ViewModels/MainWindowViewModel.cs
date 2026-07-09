@@ -349,6 +349,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private readonly UiPreferences _prefs;
 
+    // Atomic per-item edit model (#143): aggregates the open item's edit scopes into IsEditing + Save/Cancel.
+    private readonly EditController _editController = new();
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -356,6 +359,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _connection = connection;
         _prefs = prefs;
+        _editController.EditingChanged += (_, _) => OnEditingChanged();
         // Seed backing fields from prefs without echoing OnChanged.
         _isDark = prefs.IsDark;
         _settingsSection = prefs.SettingsSection;
@@ -425,7 +429,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
         : Loc.Instance.Get("MainVm_NoAgentConnection");
 
-    public bool CanToggleConnection => IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
+    public bool CanToggleConnection => IsConnected && !IsEditing && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
 
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
@@ -611,6 +615,70 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void SelectSettings(string section)
     {
         SettingsSection = section;
+    }
+
+    // ---- Atomic per-item edit model (#143): a dirty item blocks navigation; the header Save/Cancel commit or
+    // revert the whole item at once. Only the item-editor sections (profile / config / routing) participate;
+    // general / logs / sources and theme / language stay instant. ----
+
+    /// <summary>
+    /// True while the open settings item holds an uncommitted change. Blocks navigation to other items /
+    /// sections and shows the header Save / Cancel.
+    /// </summary>
+    public bool IsEditing => _editController.IsEditing;
+
+    private bool CanSaveEdit => IsEditing;
+
+    // A scope's dirtiness (or the active scope set) changed: refresh IsEditing and everything gated on it.
+    private void OnEditingChanged()
+    {
+        OnPropertyChanged(nameof(IsEditing));
+        SaveEditCommand.NotifyCanExecuteChanged();
+        CancelEditCommand.NotifyCanExecuteChanged();
+        NotifyCanToggleConnection();
+    }
+
+    // Re-point the edit controller at the scopes of the item open in the active section. Navigation is blocked
+    // while editing, so this only runs from a clean state (section / item switch) or once a Save/Cancel settles.
+    private void RefreshEditScopes()
+    {
+        switch (SettingsSection)
+        {
+            case "routing":
+                _editController.SetScopes(RoutingEditor, RoutingSettings);
+                break;
+            default:
+                // Config and profile join the model in later stages; other sections stay instant (#143 scope).
+                _editController.SetScopes();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Commits every dirty scope of the open item through the agent. On success IsEditing clears and navigation
+    /// unblocks; a rejected commit leaves the item dirty with its own status shown.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSaveEdit))]
+    private async Task SaveEdit()
+    {
+        await _editController.SaveAsync();
+    }
+
+    /// <summary>
+    /// Reverts every dirty scope of the open item to its last committed values, then discards an unsaved
+    /// new-item draft (a brand-new routing list has no committed baseline to fall back to).
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSaveEdit))]
+    private void CancelEdit()
+    {
+        _editController.Cancel();
+
+        if (RoutingEditor is { IsNew: true })
+        {
+            RoutingEditor = null;
+            RoutingSettings = null;
+            EditRoutingList = null;
+        }
     }
 
     [RelayCommand]
@@ -994,6 +1062,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
     {
         SyncCatalogueRouting();
+        RefreshEditScopes();
+    }
+
+    // The per-routing settings editor was (re)built or cleared: re-point the edit controller (#143).
+    partial void OnRoutingSettingsChanged(RoutingSettingsViewModel? oldValue, RoutingSettingsViewModel? newValue)
+    {
+        RefreshEditScopes();
     }
 
     // Mirror the Routing section's state into its combo without echoing the pick back: a selected real list
@@ -1162,22 +1237,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SyncCatalogueRouting();
     }
 
-    // When the routing editor is swapped out (list switch, close, profile change, disconnect), detach its
-    // auto-save: a persisted list with a queued edit is flushed so navigating away does not lose it, while an
-    // un-persisted "+ Новый список" draft is abandoned (so it leaves no orphan).
-    partial void OnRoutingEditorChanging(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
-    {
-        oldValue?.DetachAutoSave();
-    }
-
-    // The per-routing settings (DNS / exclusions / all-UDP) auto-save on a ~700ms debounce (#116). Flush a
-    // still-pending edit before swapping this editor out (list switch / create / delete / disconnect) so an
-    // edit typed just before navigating away is persisted rather than lost to the debounce window.
-    partial void OnRoutingSettingsChanging(RoutingSettingsViewModel? oldValue, RoutingSettingsViewModel? newValue)
-    {
-        oldValue?.FlushPendingSave();
-    }
-
     // Same for the config's transport editor: flush a still-pending WebSocket/MTU edit before the editor is
     // replaced (config switch / rename / delete), so it is persisted rather than dropped by the debounce (#116).
     partial void OnConfigTransportChanging(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
@@ -1209,6 +1268,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             _ = RefreshLogFilesAsync();
         }
+
+        // Re-point the edit model at the new section's open item (only profile/config/routing carry scopes).
+        RefreshEditScopes();
     }
 
     [RelayCommand(CanExecute = nameof(CanToggleConnection))]

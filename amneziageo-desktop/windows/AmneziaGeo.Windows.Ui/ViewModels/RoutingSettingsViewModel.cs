@@ -13,10 +13,14 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// Loaded through the agent and saved as a block; the list's rule set lives separately in
 /// RoutingListEditorViewModel. Applies on the next connect.
 /// </summary>
-internal sealed partial class RoutingSettingsViewModel : ViewModelBase
+internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditScope
 {
     private readonly AgentConnection _connection;
-    private readonly Debouncer _saveDebounce;
+
+    // Baseline captured on load / commit; the fields are dirty when they differ from it (#143).
+    private string _baseLocalDns = string.Empty;
+    private string _baseExclusions = string.Empty;
+    private bool _baseAllUdp;
 
     [ObservableProperty]
     private string _localDns = string.Empty;
@@ -43,13 +47,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
     {
         _connection = connection;
         ListId = listId;
-        _saveDebounce = new Debouncer(700, SaveAsync);
     }
-
-    /// <summary>
-    /// Persist a pending debounced edit at once.
-    /// </summary>
-    public void FlushPendingSave() => _saveDebounce.Flush();
 
     /// <summary>
     /// The routing list id these settings belong to.
@@ -57,9 +55,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
     public long ListId { get; }
 
     /// <summary>
-    /// True if the user changed DNS / exclusions / all-UDP since the last load or save.
+    /// True when DNS / exclusions / all-UDP differ from the last loaded or committed values (#143).
     /// </summary>
-    public bool Dirty { get; private set; }
+    public bool IsDirty { get; private set; }
+
+    /// <inheritdoc />
+    public event EventHandler? DirtyChanged;
 
     partial void OnLocalDnsChanged(string value) => OnEdited();
 
@@ -67,16 +68,57 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
 
     partial void OnAllUdpChanged(bool value) => OnEdited();
 
-    // Persist automatically on any edit; the save is debounced.
-    private void OnEdited()
+    // A field changed: recompute dirtiness against the baseline. No auto-save - the header Save/Cancel commits
+    // or reverts the whole item at once (#143), which is what keeps a mid-type edit from persisting per keystroke.
+    private void OnEdited() => RecomputeDirty();
+
+    private void RecomputeDirty()
     {
         if (_loading)
         {
             return;
         }
 
-        Dirty = true;
-        _saveDebounce.Schedule();
+        var dirty = !string.Equals(LocalDns, _baseLocalDns, StringComparison.Ordinal)
+            || !string.Equals(Exclusions, _baseExclusions, StringComparison.Ordinal)
+            || AllUdp != _baseAllUdp;
+        if (dirty != IsDirty)
+        {
+            IsDirty = dirty;
+            DirtyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <inheritdoc />
+    public void CaptureBaseline()
+    {
+        _baseLocalDns = LocalDns ?? string.Empty;
+        _baseExclusions = Exclusions ?? string.Empty;
+        _baseAllUdp = AllUdp;
+        if (IsDirty)
+        {
+            IsDirty = false;
+            DirtyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Revert()
+    {
+        _loading = true;
+        try
+        {
+            LocalDns = _baseLocalDns;
+            Exclusions = _baseExclusions;
+            AllUdp = _baseAllUdp;
+            StatusMessage = string.Empty;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        RecomputeDirty();
     }
 
     /// <summary>
@@ -113,16 +155,16 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
         finally
         {
             _loading = false;
-            Dirty = false;
+            CaptureBaseline();
             IsBusy = false;
         }
     }
 
     /// <summary>
-    /// Saves DNS + exclusions + all-UDP for this list as one block; applies on reconnect.
+    /// Persists DNS + exclusions + all-UDP for this list as one block (#143 header Save); applies on reconnect.
+    /// Returns whether the agent accepted it.
     /// </summary>
-    [RelayCommand]
-    public async Task SaveAsync()
+    public async Task<bool> CommitAsync()
     {
         IsBusy = true;
         try
@@ -136,10 +178,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase
                 "split",
             ]));
             StatusMessage = ack.Message;
-            if (ack.Ok)
-            {
-                Dirty = false;
-            }
+            return ack.Ok;
         }
         finally
         {

@@ -57,6 +57,19 @@ internal sealed class EditController
     /// </summary>
     public async Task<bool> SaveAsync()
     {
+        // Pre-flight: validate every dirty scope's local (non-IPC) rules BEFORE persisting any of them. A
+        // multi-scope item (e.g. config = .conf + transport + rename) commits one IPC per scope with no
+        // cross-scope transaction, so without this pass a late scope's local rejection (invalid port, empty
+        // name, ...) would leave the earlier scopes already persisted and no longer revertable (#143 review).
+        foreach (var scope in _scopes.ToArray())
+        {
+            if (scope.IsDirty && !scope.CanCommit())
+            {
+                RaiseEditingChanged();
+                return false;
+            }
+        }
+
         foreach (var scope in _scopes.ToArray())
         {
             if (!scope.IsDirty)

@@ -14,8 +14,8 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// </summary>
 internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
 {
-    private readonly Func<string, string, Task> _saveProfile;
-    private readonly Func<string, long?, bool, Task> _assignRouting;
+    private readonly Func<string, string, Task<IpcAck>> _saveProfile;
+    private readonly Func<string, long?, bool, Task<IpcAck>> _assignRouting;
     private readonly Func<string, Task> _selectProfile;
     private readonly Func<string, bool, Task> _setProfileConnection;
     private readonly Func<string, Task<IpcAck>> _removeConfig;
@@ -62,12 +62,16 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     [NotifyPropertyChangedFor(nameof(CanToggleRouting))]
     private bool _useRouting;
 
+    // Surfaces an agent rejection from the header Save (config/routing commit) so it is not silently lost (#143).
+    [ObservableProperty]
+    private string _editStatus = string.Empty;
+
     /// <summary>
     /// ctor
     /// </summary>
     public BalancerItemViewModel(
-        Func<string, string, Task> saveProfile,
-        Func<string, long?, bool, Task> assignRouting,
+        Func<string, string, Task<IpcAck>> saveProfile,
+        Func<string, long?, bool, Task<IpcAck>> assignRouting,
         Func<string, Task> selectProfile,
         Func<string, bool, Task> setProfileConnection,
         Func<string, Task<IpcAck>> removeConfig)
@@ -215,6 +219,11 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
             _suppress = false;
         }
 
+        // The one-shot routing-None echo guard is only meaningful during the suppressed reseed above (where the
+        // _suppress guard already absorbs the Clear() echo); clear any leftover arming so a catalogue change with
+        // no realized combo can't leave it armed and later swallow a genuine «Полный туннель» pick (#143 review).
+        _suppressNextRoutingNone = false;
+
         // Seeded from the snapshot (not mid-edit): this backend state is the clean baseline (#143).
         if (!IsDirty)
         {
@@ -332,6 +341,9 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     private long? CurrentRoutingId() => SelectedRoutingList is { IsReal: true } list ? list.Id : null;
 
     /// <inheritdoc />
+    public bool CanCommit() => true;
+
+    /// <inheritdoc />
     public void CaptureBaseline()
     {
         _baseConfigName = CurrentConfigName();
@@ -355,6 +367,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
                 ? RoutingListOptions.FirstOrDefault(option => option.Id == id) ?? RoutingListChoice.None
                 : RoutingListChoice.None;
             UseRouting = _baseUseRouting && SelectedRoutingList.IsReal;
+            EditStatus = string.Empty;
         }
         finally
         {
@@ -371,15 +384,26 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
         if (!string.Equals(configName, _baseConfigName, StringComparison.Ordinal))
         {
             Config = configName;
-            await _saveProfile(Name, configName);
+            var ack = await _saveProfile(Name, configName);
+            if (!ack.Ok)
+            {
+                EditStatus = ack.Message;
+                return false;
+            }
         }
 
         var routingId = CurrentRoutingId();
         if (routingId != _baseRoutingId || UseRouting != _baseUseRouting)
         {
-            await _assignRouting(Name, routingId, UseRouting && routingId is not null);
+            var ack = await _assignRouting(Name, routingId, UseRouting && routingId is not null);
+            if (!ack.Ok)
+            {
+                EditStatus = ack.Message;
+                return false;
+            }
         }
 
+        EditStatus = string.Empty;
         return true;
     }
 }

@@ -228,6 +228,26 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         }
     }
 
+    /// <inheritdoc />
+    public bool CanCommit()
+    {
+        if (UseWebSocket && (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535))
+        {
+            StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
+            return false;
+        }
+
+        // MTU: empty = default; validate 576-1500.
+        var mtuVal = Mtu.Trim();
+        if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
+        {
+            StatusMessage = Loc.Instance.Get("Transport_InvalidMtu");
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Persists the transport settings through the agent (#143 header Save); returns whether it succeeded. An
     /// invalid port / MTU fails without a write and surfaces its reason, keeping the item dirty. Applies on
@@ -235,24 +255,16 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// </summary>
     public async Task<bool> CommitAsync()
     {
+        if (!CanCommit())
+        {
+            return false;
+        }
+
         IsBusy = true;
         try
         {
-            if (UseWebSocket && (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var validate) || validate is < 1 or > 65535))
-            {
-                StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
-                return false;
-            }
-
             var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
-
-            // MTU: empty = default 1380; validate 576-1500.
             var mtuVal = Mtu.Trim();
-            if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
-            {
-                StatusMessage = Loc.Instance.Get("Transport_InvalidMtu");
-                return false;
-            }
 
             // Fold the host + auth mode / inputs into the stored address string. Collapse a bare host equal to the Endpoint host to empty; a URL form is sent verbatim.
             var composed = ComposeAddress(wsPort);

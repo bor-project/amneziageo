@@ -369,17 +369,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             () => !string.Equals(ConfigRename ?? string.Empty, _baseConfigRename, StringComparison.Ordinal),
             () => _baseConfigRename = ConfigRename ?? string.Empty,
             () => ConfigRename = _baseConfigRename,
-            CommitConfigRenameAsync);
+            CommitConfigRenameAsync,
+            CanCommitConfigRename);
         _sectionConfigScope = new DelegateEditScope(
             () => IsCreatingSectionConfig,
             () => { },
             CancelSectionConfig,
-            CommitSectionConfigAsync);
+            CommitSectionConfigAsync,
+            CanCommitSectionConfig);
         _profileRenameScope = new DelegateEditScope(
             () => !string.Equals(ProfileRename ?? string.Empty, _baseProfileRename, StringComparison.Ordinal),
             () => _baseProfileRename = ProfileRename ?? string.Empty,
             () => ProfileRename = _baseProfileRename,
-            CommitProfileRenameAsync);
+            CommitProfileRenameAsync,
+            CanCommitProfileRename);
         // Seed backing fields from prefs without echoing OnChanged.
         _isDark = prefs.IsDark;
         _settingsSection = prefs.SettingsSection;
@@ -767,6 +770,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             ConfigDeleteStatus = ack.Message;
         }
+    }
+
+    // Local pre-commit check for the config rename (#143): reject an empty name before any scope is persisted.
+    private bool CanCommitConfigRename()
+    {
+        if (OpenConfig is not null && (ConfigRename ?? string.Empty).Trim().Length == 0)
+        {
+            ConfigRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
+            return false;
+        }
+
+        return true;
     }
 
     // Commit the open config's rename through the agent (#143 header Save). Keyed by the current name; on OK it
@@ -2511,9 +2526,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return UniqueDefaultName(Loc.Instance.Get("MainVm_NewListDefaultName"), taken);
     }
 
-    private async Task SaveBalancerAsync(string name, string config)
+    private async Task<IpcAck> SaveBalancerAsync(string name, string config)
     {
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, [name, config]));
+        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, [name, config]));
     }
 
     private async Task<IpcAck> ImportConfigAsync(string name, string confText)
@@ -2556,13 +2571,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SectionConfigStatus = string.Empty;
     }
 
-    // Header Save (#143) for the create form: import the recognised config, or fail (kept dirty) if the text is
-    // not a valid config or the required name is missing.
-    private async Task<bool> CommitSectionConfigAsync()
+    // Local pre-commit check for the import form (#143): the text must parse and the name be set.
+    private bool CanCommitSectionConfig()
     {
         if (!CanSaveSectionConfig)
         {
             SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
+            return false;
+        }
+
+        return true;
+    }
+
+    // Header Save (#143) for the create form: import the recognised config, or fail (kept dirty) if the text is
+    // not a valid config or the required name is missing.
+    private async Task<bool> CommitSectionConfigAsync()
+    {
+        if (!CanCommitSectionConfig())
+        {
             return false;
         }
 
@@ -2673,6 +2699,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // Local pre-commit check for the profile rename (#143): reject an empty name before any scope is persisted.
+    private bool CanCommitProfileRename()
+    {
+        if (OpenProfile is not null && (ProfileRename ?? string.Empty).Trim().Length == 0)
+        {
+            ProfileRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
+            return false;
+        }
+
+        return true;
+    }
+
     // Commit the open profile's rename through the agent (#143 header Save). On OK the live instance adopts the
     // new name so the next snapshot reconciles it in place (SyncBalancers matches by name) instead of dropping
     // the row. An empty name is rejected (the item stays dirty); a refused rename shows why and reverts the
@@ -2710,7 +2748,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return false;
     }
 
-    private async Task AssignRoutingAsync(string profile, long? listId, bool useRouting)
+    private async Task<IpcAck> AssignRoutingAsync(string profile, long? listId, bool useRouting)
     {
         var args = new[]
         {
@@ -2718,7 +2756,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none",
             useRouting ? "on" : "off",
         };
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, args));
+        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, args));
     }
 
     private async Task SelectProfileAsync(string profile)

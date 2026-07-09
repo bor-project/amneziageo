@@ -19,6 +19,13 @@ internal interface IEditScope
     /// <summary>Raised whenever <see cref="IsDirty"/> may have changed.</summary>
     event EventHandler? DirtyChanged;
 
+    /// <summary>
+    /// Runs the pending edit's local (non-IPC) validation, surfacing its own status on failure. The controller
+    /// calls this for every dirty scope BEFORE persisting any, so a local rejection aborts the whole Save
+    /// without leaving a multi-scope item half-committed. Scopes with no local validation return true.
+    /// </summary>
+    bool CanCommit();
+
     /// <summary>Snapshots the current field values as the new clean baseline.</summary>
     void CaptureBaseline();
 
@@ -40,13 +47,15 @@ internal sealed class DelegateEditScope : IEditScope
     private readonly Action _capture;
     private readonly Action _revert;
     private readonly Func<Task<bool>> _commit;
+    private readonly Func<bool>? _canCommit;
 
-    public DelegateEditScope(Func<bool> isDirty, Action capture, Action revert, Func<Task<bool>> commit)
+    public DelegateEditScope(Func<bool> isDirty, Action capture, Action revert, Func<Task<bool>> commit, Func<bool>? canCommit = null)
     {
         _isDirty = isDirty;
         _capture = capture;
         _revert = revert;
         _commit = commit;
+        _canCommit = canCommit;
     }
 
     public bool IsDirty => _isDirty();
@@ -55,6 +64,8 @@ internal sealed class DelegateEditScope : IEditScope
 
     /// <summary>The host raises this after its OnXChanged handler updates the underlying value.</summary>
     public void RaiseDirtyChanged() => DirtyChanged?.Invoke(this, EventArgs.Empty);
+
+    public bool CanCommit() => _canCommit?.Invoke() ?? true;
 
     public void CaptureBaseline() => _capture();
 

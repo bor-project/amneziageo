@@ -169,15 +169,12 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
 
     private async Task<bool> SaveEditInternalAsync()
     {
-        var text = Payload.Trim();
-        if (text.Length == 0
-            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
-            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
+        if (!CanCommit())
         {
-            StatusMessage = Loc.Instance.Get("ExportVm_NotWireGuardConfig");
             return false;
         }
 
+        var text = Payload.Trim();
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpEditConfig, [ConfigName, text]));
         if (!ack.Ok)
         {
@@ -203,6 +200,26 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     public event EventHandler? DirtyChanged;
 
     partial void OnIsEditingChanged(bool value) => DirtyChanged?.Invoke(this, EventArgs.Empty);
+
+    /// <inheritdoc />
+    public bool CanCommit()
+    {
+        if (!IsEditing)
+        {
+            return true;
+        }
+
+        var text = Payload.Trim();
+        if (text.Length == 0
+            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
+            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
+        {
+            StatusMessage = Loc.Instance.Get("ExportVm_NotWireGuardConfig");
+            return false;
+        }
+
+        return true;
+    }
 
     /// <inheritdoc />
     public void CaptureBaseline()

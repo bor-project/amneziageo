@@ -7,3 +7,7 @@ ba-publish/
 dist/
 BaPayloads.generated.wxs
 *.wixpdb
+
+# Local-only deploy tooling for the private update channel — kept out of VCS.
+deploy.ps1
+publish-nginx.ps1

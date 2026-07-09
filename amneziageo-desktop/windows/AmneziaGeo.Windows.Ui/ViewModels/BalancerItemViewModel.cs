@@ -27,7 +27,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     // dirty when the config / routing-list / use-routing selection differs from it.
     private string _baseConfigName = string.Empty;
     private long? _baseRoutingId;
-    private bool _baseUseRouting;
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -55,12 +54,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     private bool _otherActive;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanToggleRouting))]
     private RoutingListChoice _selectedRoutingList = RoutingListChoice.None;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanToggleRouting))]
-    private bool _useRouting;
 
     // Surfaces an agent rejection from the header Save (config/routing commit) so it is not silently lost (#143).
     [ObservableProperty]
@@ -111,11 +105,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     /// (tapping switches to this one), otherwise "Подключить".
     /// </summary>
     public string ConnectActionText => OtherActive ? Loc.Instance.Get("Balancer_SwitchAction") : Loc.Instance.Get("Balancer_ConnectAction");
-
-    /// <summary>
-    /// True when a real routing list is selected and the toggle can flip use_routing on.
-    /// </summary>
-    public bool CanToggleRouting => SelectedRoutingList.IsReal;
 
     /// <summary>
     /// Whether the profile has a configuration assigned.
@@ -209,9 +198,11 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
                     }
                 }
 
-                SelectedRoutingList = RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None;
-
-                UseRouting = entry.UseRouting && SelectedRoutingList.IsReal;
+                // A routing list is shown as selected only when it is actually in use: selecting a list now
+                // implies use_routing on, and «Полный туннель» (none) implies off - the separate toggle is gone.
+                SelectedRoutingList = entry.UseRouting
+                    ? RoutingListOptions.FirstOrDefault(option => option.Id == entry.RoutingListId) ?? RoutingListChoice.None
+                    : RoutingListChoice.None;
             }
         }
         finally
@@ -285,28 +276,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
         }
         _suppressNextRoutingNone = false;
 
-        // Picking «Полный туннель» (none) forces the use-routing toggle off; kept as buffer state, not persisted.
-        if (!newValue.IsReal && UseRouting)
-        {
-            UseRouting = false;
-        }
-
-        MarkDirty();
-    }
-
-    partial void OnUseRoutingChanged(bool value)
-    {
-        if (_suppress)
-        {
-            return;
-        }
-
-        if (value && SelectedRoutingList.IsNone)
-        {
-            UseRouting = false;
-            return;
-        }
-
         MarkDirty();
     }
 
@@ -327,8 +296,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
         }
 
         var dirty = !string.Equals(CurrentConfigName(), _baseConfigName, StringComparison.Ordinal)
-            || CurrentRoutingId() != _baseRoutingId
-            || UseRouting != _baseUseRouting;
+            || CurrentRoutingId() != _baseRoutingId;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -354,7 +322,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     {
         _baseConfigName = CurrentConfigName();
         _baseRoutingId = CurrentRoutingId();
-        _baseUseRouting = UseRouting;
         if (IsDirty)
         {
             IsDirty = false;
@@ -372,7 +339,6 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
             SelectedRoutingList = _baseRoutingId is { } id
                 ? RoutingListOptions.FirstOrDefault(option => option.Id == id) ?? RoutingListChoice.None
                 : RoutingListChoice.None;
-            UseRouting = _baseUseRouting && SelectedRoutingList.IsReal;
             EditStatus = string.Empty;
         }
         finally
@@ -399,9 +365,10 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
         }
 
         var routingId = CurrentRoutingId();
-        if (routingId != _baseRoutingId || UseRouting != _baseUseRouting)
+        if (routingId != _baseRoutingId)
         {
-            var ack = await _assignRouting(Name, routingId, UseRouting && routingId is not null);
+            // Selecting a list implies use_routing on; «Полный туннель» (none) implies off - the toggle is gone.
+            var ack = await _assignRouting(Name, routingId, routingId is not null);
             if (!ack.Ok)
             {
                 EditStatus = ack.Message;

@@ -119,6 +119,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             return;
         }
 
+        // Any edit clears a stale validation / status line (#3).
+        StatusMessage = string.Empty;
+
         var dirty = UseWebSocket != _baseUseWebSocket
             || !string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
             || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
@@ -179,7 +182,14 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// The configuration name being edited.
     /// </summary>
-    public string ConfigName { get; }
+    public string ConfigName { get; private set; }
+
+    /// <summary>
+    /// Retargets these settings at a (newly-created) config name before committing them. Used by the config
+    /// create form, which builds the transport editor before the config exists and only knows the final name
+    /// at save time (#143).
+    /// </summary>
+    public void Retarget(string name) => ConfigName = name;
 
     /// <summary>
     /// True when the login+password auth mode is selected (mode 1).

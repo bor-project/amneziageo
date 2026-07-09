@@ -355,20 +355,17 @@
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Удалить</value>
   </data>
-  <data name="Main_DeleteConfigConfirm" xml:space="preserve">
-    <value>Удалить конфигурацию «{0}»? Действие необратимо.</value>
-  </data>
-  <data name="Main_DeleteProfileConfirm" xml:space="preserve">
-    <value>Удалить профиль «{0}»? Действие необратимо.</value>
-  </data>
-  <data name="Main_DeleteListConfirm" xml:space="preserve">
-    <value>Удалить список «{0}»? Действие необратимо.</value>
+  <data name="Main_PendingDeleteHint" xml:space="preserve">
+    <value>Помечено на удаление. Нажмите «Сохранить», чтобы удалить, или «Отмена», чтобы оставить.</value>
   </data>
   <data name="Main_ConfigInUse" xml:space="preserve">
     <value>Нельзя удалить: конфигурация используется в профилях:</value>
   </data>
   <data name="Main_RoutingInUse" xml:space="preserve">
     <value>Нельзя удалить: список маршрутизации используется в профилях:</value>
+  </data>
+  <data name="Main_ProfileInUse" xml:space="preserve">
+    <value>Нельзя удалить: профиль подключён. Сначала отключите его.</value>
   </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>УДАЛЕНИЕ</value>
@@ -583,9 +580,6 @@
   <data name="Main_RoutingPasteTooltip" xml:space="preserve">
     <value>Импортировать список из буфера обмена</value>
   </data>
-  <data name="Main_RoutingPickerHint" xml:space="preserve">
-    <value>«Полный туннель» — весь трафик идёт через VPN. Выберите список, чтобы направлять через VPN только его записи. Правила списков редактируются в разделе «Маршрутизация».</value>
-  </data>
   <data name="Main_RoutingSection" xml:space="preserve">
     <value>МАРШРУТИЗАЦИЯ</value>
   </data>
@@ -657,9 +651,6 @@
   </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>ОБНОВЛЕНИЕ</value>
-  </data>
-  <data name="Main_UseSelectedList" xml:space="preserve">
-    <value>Использовать выбранный список</value>
   </data>
   <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
     <value>Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)</value>

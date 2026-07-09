@@ -193,7 +193,6 @@ internal static class DesignData
 
         profile.SelectedConfig = configChoices.FirstOrDefault(c => c.IsReal && c.Name == config) ?? ConfigChoice.None;
         profile.SelectedRoutingList = routing;
-        profile.UseRouting = routing.IsReal;
         return profile;
     }
 

@@ -332,6 +332,12 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
+            if (!dirty)
+            {
+                // Returned to baseline (via Cancel or by re-selecting the original): drop any stale commit error.
+                EditStatus = string.Empty;
+            }
+
             DirtyChanged?.Invoke(this, EventArgs.Empty);
         }
     }

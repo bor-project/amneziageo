@@ -220,6 +220,12 @@
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
   </data>
+  <data name="Main_SmartDownloadTitle" xml:space="preserve">
+    <value>Умная маршрутизация загрузок</value>
+  </data>
+  <data name="Main_SmartDownloadHint" xml:space="preserve">
+    <value>Качает обновления гео-баз напрямую, мимо туннеля, когда источник так доступен - без лишнего плеча через VPN-сервер. Если прямой путь заблокирован, идёт через туннель. Применяется при следующем подключении.</value>
+  </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Версия движка Amnezia</value>
   </data>

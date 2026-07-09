@@ -761,6 +761,17 @@
                            Text="{l:Tr Main_NoRoutingListsHint}" />
               </StackPanel>
 
+              <!-- Global: route geo downloads around the tunnel when reachable (#152). -->
+              <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="9" Padding="12">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
+                    <TextBlock Text="{l:Tr Main_SmartDownloadTitle}" FontSize="13.5" />
+                    <TextBlock Text="{l:Tr Main_SmartDownloadHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding SmartDownloadRouting, Mode=TwoWay}" />
+                </Grid>
+              </Border>
+
               <!-- Rule editor for the selected/new list. -->
               <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="12">
                 <Border Background="Transparent"

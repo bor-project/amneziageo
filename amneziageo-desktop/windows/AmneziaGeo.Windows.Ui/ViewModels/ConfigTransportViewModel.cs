@@ -3,18 +3,26 @@ using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
 /// The WebSocket (UDP-over-TCP / wstunnel) transport settings for a config: a toggle, the server address, the TLS port, an authorization mode (none / basic login+password / path token) with its inputs, and a server-setup hint. The mode + inputs are folded into one stored address string on save and parsed back on load. Saving sends set-websocket.
 /// </summary>
-internal sealed partial class ConfigTransportViewModel : ViewModelBase
+internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditScope
 {
     private readonly AgentConnection _connection;
     private readonly string _endpoint;
-    private readonly Debouncer _saveDebounce;
+
+    // Baseline captured on load / commit / import; the transport is dirty when a field differs from it (#143).
+    private bool _baseUseWebSocket;
+    private string _baseWebSocketHost = string.Empty;
+    private string _baseWebSocketPort = string.Empty;
+    private int _baseAuthMode;
+    private string _baseWebSocketUser = string.Empty;
+    private string _baseWebSocketPassword = string.Empty;
+    private string _baseWebSocketToken = string.Empty;
+    private string _baseMtu = string.Empty;
 
     [ObservableProperty]
     private bool _useWebSocket;
@@ -60,7 +68,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     public ConfigTransportViewModel(AgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu)
     {
         _connection = connection;
-        _saveDebounce = new Debouncer(700, SaveAsync);
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
@@ -74,39 +81,100 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         _webSocketPassword = password;
         _webSocketToken = token;
         _webSocketPort = (port > 0 ? port : webSocketPort).ToString(CultureInfo.InvariantCulture);
+
+        // Seeded (backing fields set, no OnChanged fired): this state is the clean baseline (#143).
+        CaptureBaseline();
     }
 
-    // Auto-save: field changes persist through the agent, debounced and flushed on teardown. _applying suppresses per-field saves during ApplyImport.
+    // Dirty tracking suppressed while applying an import / reverting so those bulk field writes do not flip the
+    // flag mid-way (#143). Field changes mark the item dirty; the header Save commits, the header Cancel reverts.
     private bool _applying;
 
-    partial void OnUseWebSocketChanged(bool value) => AutoSave();
+    partial void OnUseWebSocketChanged(bool value) => MarkDirty();
 
-    partial void OnWebSocketHostChanged(string value) => AutoSave();
+    partial void OnWebSocketHostChanged(string value) => MarkDirty();
 
-    partial void OnWebSocketPortChanged(string value) => AutoSave();
+    partial void OnWebSocketPortChanged(string value) => MarkDirty();
 
-    partial void OnAuthModeChanged(int value) => AutoSave();
+    partial void OnAuthModeChanged(int value) => MarkDirty();
 
-    partial void OnWebSocketUserChanged(string value) => AutoSave();
+    partial void OnWebSocketUserChanged(string value) => MarkDirty();
 
-    partial void OnWebSocketPasswordChanged(string value) => AutoSave();
+    partial void OnWebSocketPasswordChanged(string value) => MarkDirty();
 
-    partial void OnWebSocketTokenChanged(string value) => AutoSave();
+    partial void OnWebSocketTokenChanged(string value) => MarkDirty();
 
-    partial void OnMtuChanged(string value) => AutoSave();
+    partial void OnMtuChanged(string value) => MarkDirty();
 
-    private void AutoSave()
+    /// <inheritdoc />
+    public bool IsDirty { get; private set; }
+
+    /// <inheritdoc />
+    public event EventHandler? DirtyChanged;
+
+    private void MarkDirty()
     {
-        if (!_applying)
+        if (_applying)
         {
-            _saveDebounce.Schedule();
+            return;
+        }
+
+        var dirty = UseWebSocket != _baseUseWebSocket
+            || !string.Equals(WebSocketHost, _baseWebSocketHost, StringComparison.Ordinal)
+            || !string.Equals(WebSocketPort, _baseWebSocketPort, StringComparison.Ordinal)
+            || AuthMode != _baseAuthMode
+            || !string.Equals(WebSocketUser, _baseWebSocketUser, StringComparison.Ordinal)
+            || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
+            || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal)
+            || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal);
+        if (dirty != IsDirty)
+        {
+            IsDirty = dirty;
+            DirtyChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
-    /// <summary>
-    /// Persist a still-pending debounced edit at once. The host calls this before this editor is replaced so a typed edit is not lost.
-    /// </summary>
-    public void FlushPendingSave() => _saveDebounce.Flush();
+    /// <inheritdoc />
+    public void CaptureBaseline()
+    {
+        _baseUseWebSocket = UseWebSocket;
+        _baseWebSocketHost = WebSocketHost ?? string.Empty;
+        _baseWebSocketPort = WebSocketPort ?? string.Empty;
+        _baseAuthMode = AuthMode;
+        _baseWebSocketUser = WebSocketUser ?? string.Empty;
+        _baseWebSocketPassword = WebSocketPassword ?? string.Empty;
+        _baseWebSocketToken = WebSocketToken ?? string.Empty;
+        _baseMtu = Mtu ?? string.Empty;
+        if (IsDirty)
+        {
+            IsDirty = false;
+            DirtyChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Revert()
+    {
+        _applying = true;
+        try
+        {
+            UseWebSocket = _baseUseWebSocket;
+            WebSocketHost = _baseWebSocketHost;
+            WebSocketPort = _baseWebSocketPort;
+            AuthMode = _baseAuthMode;
+            WebSocketUser = _baseWebSocketUser;
+            WebSocketPassword = _baseWebSocketPassword;
+            WebSocketToken = _baseWebSocketToken;
+            Mtu = _baseMtu;
+            StatusMessage = string.Empty;
+        }
+        finally
+        {
+            _applying = false;
+        }
+
+        MarkDirty();
+    }
 
     /// <summary>
     /// The configuration name being edited.
@@ -161,10 +229,11 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Saves the transport settings through the agent; returns whether it succeeded. Applies on reconnect.
+    /// Persists the transport settings through the agent (#143 header Save); returns whether it succeeded. An
+    /// invalid port / MTU fails without a write and surfaces its reason, keeping the item dirty. Applies on
+    /// reconnect.
     /// </summary>
-    [RelayCommand]
-    private async Task SaveAsync()
+    public async Task<bool> CommitAsync()
     {
         IsBusy = true;
         try
@@ -172,7 +241,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
             if (UseWebSocket && (!int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var validate) || validate is < 1 or > 65535))
             {
                 StatusMessage = Loc.Instance.Get("Transport_InvalidPort");
-                return;
+                return false;
             }
 
             var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 443;
@@ -182,7 +251,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
             if (mtuVal.Length > 0 && (!int.TryParse(mtuVal, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mtu) || mtu is < 576 or > 1500))
             {
                 StatusMessage = Loc.Instance.Get("Transport_InvalidMtu");
-                return;
+                return false;
             }
 
             // Fold the host + auth mode / inputs into the stored address string. Collapse a bare host equal to the Endpoint host to empty; a URL form is sent verbatim.
@@ -191,6 +260,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
                 [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal]));
             StatusMessage = ack.Message;
+            return ack.Ok;
         }
         finally
         {
@@ -213,7 +283,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Applies an imported WebSocket blob to the editable fields; auto-save then persists it (one save, not one per field). Returns whether the text was a recognisable blob.
+    /// Applies an imported WebSocket blob to the editable fields; the change is held in the buffer and persisted
+    /// by the header Save (#143), not auto-saved. Returns whether the text was a recognisable blob.
     /// </summary>
     public bool ApplyImport(string text)
     {
@@ -241,7 +312,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase
         }
 
         StatusMessage = Loc.Instance.Get("Transport_Imported");
-        _ = SaveAsync();
+        MarkDirty();
         return true;
     }
 

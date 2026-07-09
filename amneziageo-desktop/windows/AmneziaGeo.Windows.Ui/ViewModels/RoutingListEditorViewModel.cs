@@ -40,6 +40,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    // Required-field validation ("enter a name", "add at least one entry"), shown in red and cleared on any
+    // edit (#2/#3). Kept separate from StatusMessage so import/success notices stay neutral, not red.
+    [ObservableProperty]
+    private string _validationMessage = string.Empty;
+
     [ObservableProperty]
     private bool _isBusy;
 
@@ -191,14 +196,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         var trimmed = Name.Trim();
         if (trimmed.Length == 0)
         {
-            StatusMessage = Loc.Instance.Get("RoutingEditor_EnterRuleName");
+            ValidationMessage = Loc.Instance.Get("RoutingEditor_EnterRuleName");
             return false;
         }
 
         // Do not persist a rule-less list; the pre-#143 auto-save refused it too (review regression guard).
         if (Rules.Count == 0)
         {
-            StatusMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
+            ValidationMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
             return false;
         }
 
@@ -260,6 +265,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return;
         }
 
+        // Any edit clears a stale required-field validation line (#3).
+        ValidationMessage = string.Empty;
+
         var dirty = IsNew
             || !string.Equals(Name, _baseName, StringComparison.Ordinal)
             || !Rules.SequenceEqual(_baseRules, StringComparer.Ordinal);
@@ -275,13 +283,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     {
         if (Name.Trim().Length == 0)
         {
-            StatusMessage = Loc.Instance.Get("RoutingEditor_EnterRuleName");
+            ValidationMessage = Loc.Instance.Get("RoutingEditor_EnterRuleName");
             return false;
         }
 
         if (Rules.Count == 0)
         {
-            StatusMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
+            ValidationMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
             return false;
         }
 
@@ -311,6 +319,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
             RuleInput = string.Empty;
             StatusMessage = string.Empty;
+            ValidationMessage = string.Empty;
         }
         finally
         {

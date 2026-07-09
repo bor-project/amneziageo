@@ -52,7 +52,13 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// The routing list id these settings belong to.
     /// </summary>
-    public long ListId { get; }
+    public long ListId { get; private set; }
+
+    /// <summary>
+    /// Retargets these settings at a (newly-created) list id before committing them. Used when a new-list draft
+    /// is first saved: the draft's settings were built against id 0 and must now target the real id (#5).
+    /// </summary>
+    public void Retarget(long id) => ListId = id;
 
     /// <summary>
     /// True when DNS / exclusions / all-UDP differ from the last loaded or committed values (#143).
@@ -78,6 +84,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         {
             return;
         }
+
+        // Any edit clears a stale validation / status line (#3).
+        StatusMessage = string.Empty;
 
         var dirty = !string.Equals(LocalDns, _baseLocalDns, StringComparison.Ordinal)
             || !string.Equals(Exclusions, _baseExclusions, StringComparison.Ordinal)

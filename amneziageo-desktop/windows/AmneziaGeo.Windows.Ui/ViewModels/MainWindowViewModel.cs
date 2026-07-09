@@ -138,29 +138,22 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
 
-    // Two-step delete confirmation (#143): the trigger arms _*DeletePending (showing a confirm/cancel pair and
-    // the neutral _*DeletePrompt); confirm performs the delete, cancel just disarms - no agent side effect. The
-    // _*DeleteStatus lines carry the error-coloured "used by profiles" list or an agent rejection.
+    // Inline delete confirm (#4): the section's Delete trigger arms _*DeletePending after its guard, which swaps
+    // the Delete button in place for a [Confirm][Cancel] pair (Confirm performs the agent delete + opens the next
+    // item, Cancel just disarms). Delete is intentionally NOT part of IsEditing - it is a self-contained inline
+    // action, not the header Save/Cancel. A BLOCKED delete (config/list used by profiles, or a connected profile)
+    // is not armed; _*DeleteStatus shows the error-coloured reason to the RIGHT of the trigger instead.
     [ObservableProperty]
     private bool _configDeletePending;
 
     [ObservableProperty]
-    private string _configDeletePrompt = string.Empty;
-
-    [ObservableProperty]
     private bool _profileDeletePending;
-
-    [ObservableProperty]
-    private string _profileDeletePrompt = string.Empty;
 
     [ObservableProperty]
     private string _profileDeleteStatus = string.Empty;
 
     [ObservableProperty]
     private bool _routingDeletePending;
-
-    [ObservableProperty]
-    private string _routingDeletePrompt = string.Empty;
 
     [ObservableProperty]
     private string _routingDeleteStatus = string.Empty;
@@ -253,6 +246,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private string _sectionConfigStatus = string.Empty;
+
+    // Transport (MTU / WebSocket proxy) editor for the config create form (#143): built by BeginSectionConfig
+    // so the user can set MTU + proxy right when adding a config, applied to the just-created config on Save.
+    [ObservableProperty]
+    private ConfigTransportViewModel? _sectionConfigTransport;
 
 
     [ObservableProperty]
@@ -679,10 +677,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private bool CanSaveEdit => IsEditing;
 
+    /// <summary>
+    /// Navigation lock: set while editing (a pending edit OR a pending deletion is a dirty scope, so both feed
+    /// IsEditing). The back arrow and the section rail stay locked until the header Save/Cancel resolve it.
+    /// </summary>
+    public bool NavLocked => IsEditing;
+
     // A scope's dirtiness (or the active scope set) changed: refresh IsEditing and everything gated on it.
     private void OnEditingChanged()
     {
         OnPropertyChanged(nameof(IsEditing));
+        OnPropertyChanged(nameof(NavLocked));
         SaveEditCommand.NotifyCanExecuteChanged();
         CancelEditCommand.NotifyCanExecuteChanged();
         CreateProfileCommand.NotifyCanExecuteChanged();
@@ -750,8 +755,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Step 1 of the config delete (#143): a config that any profile still binds cannot be deleted - surface the
-    // blocking profiles in an error line instead of arming the confirm. Otherwise arm the confirm/cancel pair.
+    // The config Delete trigger (#143): a config that any profile still binds cannot be deleted - surface the
+    // blocking profiles in an error line instead of arming. Otherwise arm the inline confirm/cancel pair that
+    // replaces the Delete button in place (#4).
     [RelayCommand]
     private void RequestDeleteOpenConfig()
     {
@@ -768,10 +774,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        ConfigDeletePrompt = Loc.Instance.Get("Main_DeleteConfigConfirm", OpenConfig);
         ConfigDeletePending = true;
     }
 
+    // Inline Cancel: disarm the config delete confirm.
     [RelayCommand]
     private void CancelDeleteConfig()
     {
@@ -779,8 +785,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigDeleteStatus = string.Empty;
     }
 
-    // Step 2: perform the delete. The usage guard is re-checked (a profile may have picked up the config since
-    // the confirm was armed). On success the next remaining config opens so the section is never left empty.
+    // Inline Confirm: perform the delete. The usage guard is re-checked (a profile may have picked up the config
+    // since the confirm was armed). On success the next remaining config opens so the section is never left empty.
     [RelayCommand]
     private async Task ConfirmDeleteOpenConfig()
     {
@@ -904,8 +910,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // The rename field changed: re-evaluate the config item's dirtiness (no auto-save - the header Save commits).
+    // Any edit clears a stale validation line (#3).
     partial void OnConfigRenameChanged(string value)
     {
+        ConfigRenameStatus = string.Empty;
         _configRenameScope?.RaiseDirtyChanged();
     }
 
@@ -1079,8 +1087,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // The rename field changed: re-evaluate the profile item's dirtiness (no auto-save - the header Save commits).
+    // Any edit clears a stale validation line (#3).
     partial void OnProfileRenameChanged(string value)
     {
+        ProfileRenameStatus = string.Empty;
         _profileRenameScope?.RaiseDirtyChanged();
     }
 
@@ -1229,9 +1239,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // so re-selecting it will not rebuild it (BuildSectionRoutingEditor short-circuits on the same real id).
     private void OnSectionRoutingEditorSaved(long id)
     {
-        var settings = new RoutingSettingsViewModel(_connection, id);
-        RoutingSettings = settings;
-        _ = settings.LoadAsync();
+        // The draft's settings editor was built up-front (#5); retarget it at the real id so its (possibly
+        // edited) fields commit to the created list. The EditController still holds THIS instance in its scope
+        // snapshot, so it must be retargeted in place, not replaced. Only build+load a fresh one if somehow
+        // absent (defensive - a draft always has one now).
+        if (RoutingSettings is { } draft)
+        {
+            draft.Retarget(id);
+        }
+        else
+        {
+            var settings = new RoutingSettingsViewModel(_connection, id);
+            RoutingSettings = settings;
+            _ = settings.LoadAsync();
+        }
 
         var created = RoutingLists.FirstOrDefault(r => r.Id == id);
         if (created is not null)
@@ -1358,10 +1379,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _prefs.SettingsSection = value;
         _prefs.Save();
 
-        // Changing section disarms any pending delete confirmation in the section being left (#143).
+        // Changing section disarms any pending delete confirmation AND clears any blocked-delete reason line in
+        // the section being left, so a stale red error does not linger on return (#3/#4).
         ConfigDeletePending = false;
         ProfileDeletePending = false;
         RoutingDeletePending = false;
+        ConfigDeleteStatus = string.Empty;
+        ProfileDeleteStatus = string.Empty;
+        RoutingDeleteStatus = string.Empty;
 
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.
         if (value == "logs")
@@ -2657,6 +2682,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SectionConfigName = _sectionConfigDefaultName;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
+        // Transport (MTU / WebSocket) editor so the proxy can be set right when adding a config (#143). The config
+        // does not exist yet (no endpoint), so it seeds from defaults; Save retargets it at the final name and
+        // applies it after the import. A left-at-defaults transport stays clean, so no set-websocket is sent.
+        SectionConfigTransport = new ConfigTransportViewModel(_connection, SectionConfigName, string.Empty, false, string.Empty, 443, 0);
         IsCreatingSectionConfig = true;
     }
 
@@ -2667,14 +2696,26 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SectionConfigName = string.Empty;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
+        SectionConfigTransport = null;
     }
 
-    // Local pre-commit check for the import form (#143): the text must parse and the name be set.
+    // Editing the new-config name or text clears a stale validation / status line (#3).
+    partial void OnSectionConfigNameChanged(string value) => SectionConfigStatus = string.Empty;
+
+    partial void OnSectionConfigTextChanged(string value) => SectionConfigStatus = string.Empty;
+
+    // Local pre-commit check for the import form (#143): the text must parse, the name be set, and (if the user
+    // touched them) the create-form transport's MTU / port be valid - all before any IPC.
     private bool CanCommitSectionConfig()
     {
         if (!CanSaveSectionConfig)
         {
             SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
+            return false;
+        }
+
+        if (SectionConfigTransport is { IsDirty: true } transport && !transport.CanCommit())
+        {
             return false;
         }
 
@@ -2725,10 +2766,23 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
                 return false;
             }
 
+            // Apply the create-form transport (MTU / WebSocket proxy) to the just-created config. Only when the
+            // user actually touched it (a defaults-only editor stays clean). The config exists now, so a rejected
+            // transport does not undo the import - surface it as a notice and still open the config to fix there.
+            if (SectionConfigTransport is { IsDirty: true } transport)
+            {
+                transport.Retarget(name);
+                if (!await transport.CommitAsync())
+                {
+                    ShowNotice(transport.StatusMessage);
+                }
+            }
+
             IsCreatingSectionConfig = false;
             SectionConfigName = string.Empty;
             SectionConfigText = string.Empty;
             SectionConfigStatus = string.Empty;
+            SectionConfigTransport = null;
             // Open the just-imported config once its row lands in the next snapshot, so the transport editor
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
@@ -2742,7 +2796,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     // --- Routing settings section: standalone list CRUD (independent of any profile). ---
 
-    // "+ Новый список": show a fresh create-editor; per-routing settings are built once it is first saved.
+    // "+ Новый список": show a fresh create-editor with the SAME form as an existing list - rules AND the
+    // per-routing traffic settings (DNS / exclusions / all-UDP) - just with empty fields, so everything can be
+    // set up before the first save (#5). The draft settings target id 0 until the list is created, then get
+    // retargeted at the real id by OnSectionRoutingEditorSaved.
     [RelayCommand]
     private void CreateRoutingList()
     {
@@ -2760,11 +2817,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         editor.Name = UniqueRoutingListName();
         RoutingEditor = editor;
         _ = editor.LoadAsync();
+
+        // Draft traffic settings (id 0, no load - a new list has none server-side). They commit with the list on
+        // the header Save, once retargeted at the created id (#5).
+        RoutingSettings = new RoutingSettingsViewModel(_connection, 0);
     }
 
-    // Step 1 of the routing-list delete (#143): a list any profile references cannot be deleted (the agent
-    // would silently orphan those profiles) - surface them in an error line. A new unsaved draft has nothing
-    // persisted, so it is not offered here (the button is hidden while IsNew). Otherwise arm the confirm.
+    // The routing-list Delete trigger (#143): a list any profile references cannot be deleted (the agent would
+    // silently orphan those profiles) - surface them in an error line. A new unsaved draft has nothing persisted,
+    // so it is not offered here (the button is hidden while IsNew). Otherwise arm the inline confirm/cancel pair
+    // that replaces the Delete button in place (#4).
     [RelayCommand]
     private void RequestDeleteSectionRoutingList()
     {
@@ -2781,10 +2843,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        RoutingDeletePrompt = Loc.Instance.Get("Main_DeleteListConfirm", RoutingEditor.Name);
         RoutingDeletePending = true;
     }
 
+    // Inline Cancel: disarm the routing-list delete confirm.
     [RelayCommand]
     private void CancelDeleteRouting()
     {
@@ -2792,8 +2854,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RoutingDeleteStatus = string.Empty;
     }
 
-    // Step 2: delete the shared list. The usage guard is re-checked, then on success the next remaining list is
-    // selected (or the editor cleared when it was the last one) so the section is never left empty.
+    // Inline Confirm: delete the shared list. The usage guard is re-checked, then on success the next remaining
+    // list is selected (or the editor cleared when it was the last one) so the section is never left empty.
     [RelayCommand]
     private async Task ConfirmDeleteSectionRoutingList()
     {
@@ -2830,8 +2892,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Step 1 of the profile delete (#143): arm the confirm/cancel pair. Nothing references a profile, so there
-    // is no usage guard - but the agent refuses to delete the running tunnel, surfaced on confirm.
+    // The profile Delete trigger (#4/#6): a profile that is currently connected (in use) cannot be deleted -
+    // surface why instead of arming. Otherwise arm the inline confirm/cancel pair that replaces the Delete
+    // button in place.
     [RelayCommand]
     private void RequestDeleteOpenProfile()
     {
@@ -2841,10 +2904,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         ProfileDeleteStatus = string.Empty;
-        ProfileDeletePrompt = Loc.Instance.Get("Main_DeleteProfileConfirm", OpenProfile.Name);
+        if (OpenProfile.IsRunning)
+        {
+            ProfileDeleteStatus = Loc.Instance.Get("Main_ProfileInUse");
+            return;
+        }
+
         ProfileDeletePending = true;
     }
 
+    // Inline Cancel: disarm the profile delete confirm.
     [RelayCommand]
     private void CancelDeleteProfile()
     {
@@ -2852,8 +2921,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ProfileDeleteStatus = string.Empty;
     }
 
-    // Step 2: delete the profile. On success the next remaining profile opens (or the list, when it was the
-    // last); a rejected delete (e.g. the running tunnel) keeps the view put and shows why.
+    // Inline Confirm: delete the profile. The in-use guard is re-checked (the profile may have been connected
+    // since the confirm was armed). On success the next remaining profile opens (or the list, when it was the
+    // last); a rejected delete keeps the view put and shows why.
     [RelayCommand]
     private async Task ConfirmDeleteOpenProfile()
     {
@@ -2864,6 +2934,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         var profile = OpenProfile;
+        if (profile.IsRunning)
+        {
+            ProfileDeleteStatus = Loc.Instance.Get("Main_ProfileInUse");
+            return;
+        }
+
         var ack = await _connection.SendCommandAsync(
             new IpcCommand(IpcContract.OpRemoveBalancer, [profile.Name]));
         if (!ack.Ok)

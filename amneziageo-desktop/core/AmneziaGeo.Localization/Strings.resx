@@ -355,20 +355,17 @@
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Delete</value>
   </data>
-  <data name="Main_DeleteConfigConfirm" xml:space="preserve">
-    <value>Delete configuration «{0}»? This cannot be undone.</value>
-  </data>
-  <data name="Main_DeleteProfileConfirm" xml:space="preserve">
-    <value>Delete profile «{0}»? This cannot be undone.</value>
-  </data>
-  <data name="Main_DeleteListConfirm" xml:space="preserve">
-    <value>Delete list «{0}»? This cannot be undone.</value>
+  <data name="Main_PendingDeleteHint" xml:space="preserve">
+    <value>Marked for deletion. Press Save to delete, or Cancel to keep it.</value>
   </data>
   <data name="Main_ConfigInUse" xml:space="preserve">
     <value>Cannot delete: the configuration is used by profiles:</value>
   </data>
   <data name="Main_RoutingInUse" xml:space="preserve">
     <value>Cannot delete: the routing list is used by profiles:</value>
+  </data>
+  <data name="Main_ProfileInUse" xml:space="preserve">
+    <value>Cannot delete: the profile is connected. Disconnect it first.</value>
   </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>DELETION</value>
@@ -583,9 +580,6 @@
   <data name="Main_RoutingPasteTooltip" xml:space="preserve">
     <value>Import the list from clipboard</value>
   </data>
-  <data name="Main_RoutingPickerHint" xml:space="preserve">
-    <value>«Full tunnel» — all traffic goes through the VPN. Pick a list to route only its entries through the VPN. List rules are edited in the «Routing» section.</value>
-  </data>
   <data name="Main_RoutingSection" xml:space="preserve">
     <value>ROUTING</value>
   </data>
@@ -657,9 +651,6 @@
   </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>UPDATE</value>
-  </data>
-  <data name="Main_UseSelectedList" xml:space="preserve">
-    <value>Use the selected list</value>
   </data>
   <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
     <value>Use WebSocket (UDP over TCP, bypass UDP blocking)</value>

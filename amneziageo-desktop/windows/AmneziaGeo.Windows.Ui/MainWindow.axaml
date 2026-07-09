@@ -137,7 +137,7 @@
                arrow and appears only while the open item is dirty; navigation (incl. back) is locked meanwhile. -->
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left" VerticalAlignment="Center">
             <Button Classes="backbtn" VerticalAlignment="Center"
-                    Command="{Binding NavHomeCommand}" IsEnabled="{Binding !IsEditing}"
+                    Command="{Binding NavHomeCommand}" IsEnabled="{Binding !NavLocked}"
                     ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
               <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
                         Foreground="{DynamicResource AgMutedBrush}" />
@@ -146,6 +146,8 @@
                     Command="{Binding SaveEditCommand}" IsVisible="{Binding IsEditing}" />
             <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Center"
                     Command="{Binding CancelEditCommand}" IsVisible="{Binding IsEditing}" />
+            <!-- The header carries only the atomic-edit Save/Cancel. Deletion is confirmed inline, in place of
+                 each section's Delete button (#4), not here. -->
           </StackPanel>
 
           <!-- Animated connect / disconnect control. -->
@@ -195,8 +197,8 @@
       <!-- Section rail. -->
       <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
         <ScrollViewer>
-          <!-- Section rail locks while the open item is dirty (#143): can't leave to another section mid-edit. -->
-          <StackPanel Margin="12,12" IsEnabled="{Binding !IsEditing}">
+          <!-- Section rail locks while the open item is dirty OR a delete confirmation is armed (#143). -->
+          <StackPanel Margin="12,12" IsEnabled="{Binding !NavLocked}">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="profile">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
@@ -383,7 +385,8 @@
                            Text="{Binding ProfileRename, Mode=TwoWay}" />
                   <TextBlock Classes="fieldwarn" IsVisible="{Binding ProfileNameMissing}"
                              Text="{l:Tr Main_RequiredEmptyWarning}" />
-                  <TextBlock Text="{Binding ProfileRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding ProfileRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                             IsVisible="{Binding ProfileRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
 
                 <!-- Config + routing pickers for the open profile. -->
@@ -421,40 +424,35 @@
                         </DataTemplate>
                       </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding CanToggleRouting}">
-                      <ToggleSwitch Grid.Column="0" IsChecked="{Binding UseRouting, Mode=TwoWay}"
-                                    OnContent="" OffContent="" MinWidth="0" />
-                      <TextBlock Grid.Column="1" Margin="11,0,0,0"
-                                 Text="{l:Tr Main_UseSelectedList}" FontSize="12.5" FontWeight="Medium"
-                                 VerticalAlignment="Center" />
-                    </Grid>
-                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="{l:Tr Main_RoutingPickerHint}" />
                   </StackPanel>
 
-                  <!-- Agent rejection from the header Save (config/routing commit), so it is not silently lost (#143). -->
-                  <TextBlock Text="{Binding EditStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                  <!-- Agent rejection from the header Save (config/routing commit), so it is not silently lost (#143).
+                       Hidden while empty so it does not add a blank gap before the next section (#3). -->
+                  <TextBlock Text="{Binding EditStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                             IsVisible="{Binding EditStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
 
-                <!-- Delete: two-step confirm/cancel (#143). -->
+                <!-- Delete: trigger + inline error; when allowed, the trigger is replaced in place by the inline
+                     Confirm/Cancel pair (#4). -->
                 <StackPanel Spacing="6">
                   <TextBlock Classes="label" Text="{l:Tr Main_DeletionLabel}" />
-                  <Button Classes="danger" HorizontalAlignment="Left"
-                          IsVisible="{Binding !ProfileDeletePending}" IsEnabled="{Binding !IsEditing}"
-                          Command="{Binding RequestDeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
-                  <StackPanel IsVisible="{Binding ProfileDeletePending}" Spacing="6">
-                    <TextBlock Classes="fieldwarn" Text="{Binding ProfileDeletePrompt}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Classes="danger" Command="{Binding ConfirmDeleteOpenProfileCommand}"
-                              Content="{l:Tr Main_ConfirmDeleteButton}" />
-                      <Button Classes="softbtn" Command="{Binding CancelDeleteProfileCommand}"
-                              Content="{l:Tr Main_CancelButton}" />
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <!-- Delete trigger; when armed, the inline Confirm/Cancel pair replaces it in place (#4). -->
+                    <Button Classes="danger" HorizontalAlignment="Left" VerticalAlignment="Top"
+                            IsVisible="{Binding !ProfileDeletePending}" IsEnabled="{Binding !IsEditing}"
+                            Command="{Binding RequestDeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ProfileDeletePending}">
+                      <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
+                              Command="{Binding ConfirmDeleteOpenProfileCommand}" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
+                              Command="{Binding CancelDeleteProfileCommand}" />
                     </StackPanel>
+                    <TextBlock Text="{Binding ProfileDeleteStatus}" Classes="fieldwarn" FontSize="12"
+                               VerticalAlignment="Center" TextWrapping="Wrap"
+                               IsVisible="{Binding ProfileDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                              Text="{l:Tr Main_DeleteProfileHint}" />
-                  <TextBlock Text="{Binding ProfileDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                             IsVisible="{Binding ProfileDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
               </StackPanel>
             </StackPanel>
@@ -511,14 +509,61 @@
                   </StackPanel>
                   <!-- Buttons sized to content, centred. -->
                   <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,10,0,0">
-                    <TextBlock Text="{Binding SectionConfigStatus}" Classes="muted" FontSize="11.5"
-                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" />
+                    <TextBlock Text="{Binding SectionConfigStatus}" Classes="fieldwarn" FontSize="11.5"
+                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                               IsVisible="{Binding SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
                       <Button Classes="softbtn" Content="{l:Tr Main_FileButton}" Click="OnSectionConfigBrowse" />
                       <Button Classes="softbtn" Content="{l:Tr Main_CameraButton}" Click="OnSectionConfigCamera" />
                       <Button Classes="softbtn" Content="{l:Tr Main_ConfigEditButton}" Click="OnSectionConfigEdit"
                               ToolTip.Tip="{l:Tr Main_ConfigEditButtonTooltip}" />
                     </StackPanel>
+                  </StackPanel>
+                  <!-- MTU + WebSocket proxy for the new config, applied to it on the header Save (#143). -->
+                  <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" Spacing="10"
+                              DataContext="{Binding SectionConfigTransport}" x:DataType="vm:ConfigTransportViewModel">
+                    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+                      <StackPanel Spacing="10">
+                        <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
+                        <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}" IsChecked="{Binding UseWebSocket}" />
+                        <Grid ColumnDefinitions="Auto,Auto,*">
+                          <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                          <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
+                          <TextBlock Grid.Column="2" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                                     TextWrapping="Wrap" Margin="8,0,0,0" Text="{l:Tr Main_MtuHint}" />
+                        </Grid>
+                        <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
+                          <StackPanel Spacing="2">
+                            <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
+                            <TextBox Text="{Binding WebSocketHost}" Watermark="{l:Tr Main_ServerHostWatermark}" />
+                          </StackPanel>
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{l:Tr Main_ServerPortLabel}" VerticalAlignment="Center" />
+                            <TextBox Width="90" Text="{Binding WebSocketPort}" />
+                          </StackPanel>
+                          <StackPanel Spacing="2">
+                            <TextBlock Text="{l:Tr Main_AuthLabel}" />
+                            <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
+                              <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
+                              <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
+                              <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
+                            </ComboBox>
+                          </StackPanel>
+                          <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
+                            <TextBlock Text="{l:Tr Main_LoginLabel}" />
+                            <TextBox Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
+                            <TextBlock Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
+                            <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
+                          </StackPanel>
+                          <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
+                            <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
+                            <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
+                          </StackPanel>
+                        </StackPanel>
+                        <TextBlock Text="{Binding StatusMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      </StackPanel>
+                    </Border>
                   </StackPanel>
                   <TextBox Classes="field" Margin="0,10,0,0" IsReadOnly="True"
                            Text="{Binding SectionConfigText}" AcceptsReturn="True" TextWrapping="Wrap"
@@ -537,7 +582,8 @@
                            Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
                   <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
                              Text="{l:Tr Main_RequiredEmptyWarning}" />
-                  <TextBlock Text="{Binding ConfigRenameStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                             IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
 
                 <!-- .conf text + export. -->
@@ -598,12 +644,12 @@
                   <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}"
                             IsChecked="{Binding UseWebSocket}" />
                   <!-- MTU applies to any transport, not just WSS. Kept outside the WebSocket block. -->
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" />
-                    <TextBox Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
-                    <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
-                               Text="{l:Tr Main_MtuHint}" />
-                  </StackPanel>
+                  <Grid ColumnDefinitions="Auto,Auto,*">
+                    <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                               TextWrapping="Wrap" Margin="8,0,0,0" Text="{l:Tr Main_MtuHint}" />
+                  </Grid>
                   <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
                     <StackPanel Spacing="2">
                       <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
@@ -658,20 +704,22 @@
                 <StackPanel Spacing="10">
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                              Text="{l:Tr Main_DeleteConfigHint}" />
-                  <Button Classes="danger" Content="{l:Tr Main_DeleteConfigButton}" HorizontalAlignment="Left"
-                          IsVisible="{Binding !ConfigDeletePending}"
-                          Command="{Binding RequestDeleteOpenConfigCommand}" IsEnabled="{Binding !IsEditing}" />
-                  <StackPanel IsVisible="{Binding ConfigDeletePending}" Spacing="6">
-                    <TextBlock Classes="fieldwarn" Text="{Binding ConfigDeletePrompt}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Classes="danger" Command="{Binding ConfirmDeleteOpenConfigCommand}"
-                              Content="{l:Tr Main_ConfirmDeleteButton}" />
-                      <Button Classes="softbtn" Command="{Binding CancelDeleteConfigCommand}"
-                              Content="{l:Tr Main_CancelButton}" />
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <!-- Delete trigger; when armed, the inline Confirm/Cancel pair replaces it in place (#4). -->
+                    <Button Classes="danger" Content="{l:Tr Main_DeleteConfigButton}" HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            IsVisible="{Binding !ConfigDeletePending}"
+                            Command="{Binding RequestDeleteOpenConfigCommand}" IsEnabled="{Binding !IsEditing}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ConfigDeletePending}">
+                      <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
+                              Command="{Binding ConfirmDeleteOpenConfigCommand}" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
+                              Command="{Binding CancelDeleteConfigCommand}" />
                     </StackPanel>
+                    <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12"
+                               VerticalAlignment="Center" TextWrapping="Wrap"
+                               IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
-                  <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                             IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
               </StackPanel>
             </Grid>
@@ -776,6 +824,9 @@
                     </StackPanel>
 
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                    <!-- Required-field validation ("add at least one entry"), red; clears on any edit (#2/#3). -->
+                    <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                               IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                     <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
                       <Grid ColumnDefinitions="*,Auto">
@@ -868,22 +919,23 @@
                   </StackPanel>
                 </Border>
 
-                <!-- Delete: two-step confirm/cancel (#143). Hidden for an unsaved new-list draft. -->
+                <!-- Delete: trigger + inline error. When armed, the inline Confirm/Cancel pair replaces the
+                     trigger in place (#4). Hidden for an unsaved new-list draft. -->
                 <StackPanel Spacing="6" IsVisible="{Binding !RoutingEditor.IsNew}">
-                  <Button Classes="danger" HorizontalAlignment="Left"
-                          IsVisible="{Binding !RoutingDeletePending}" IsEnabled="{Binding !IsEditing}"
-                          Command="{Binding RequestDeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
-                  <StackPanel IsVisible="{Binding RoutingDeletePending}" Spacing="6">
-                    <TextBlock Classes="fieldwarn" Text="{Binding RoutingDeletePrompt}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Classes="danger" Command="{Binding ConfirmDeleteSectionRoutingListCommand}"
-                              Content="{l:Tr Main_ConfirmDeleteButton}" />
-                      <Button Classes="softbtn" Command="{Binding CancelDeleteRoutingCommand}"
-                              Content="{l:Tr Main_CancelButton}" />
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Classes="danger" HorizontalAlignment="Left" VerticalAlignment="Top"
+                            IsVisible="{Binding !RoutingDeletePending}" IsEnabled="{Binding !IsEditing}"
+                            Command="{Binding RequestDeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding RoutingDeletePending}">
+                      <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
+                              Command="{Binding ConfirmDeleteSectionRoutingListCommand}" />
+                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
+                              Command="{Binding CancelDeleteRoutingCommand}" />
                     </StackPanel>
+                    <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12"
+                               VerticalAlignment="Center" TextWrapping="Wrap"
+                               IsVisible="{Binding RoutingDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   </StackPanel>
-                  <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                             IsVisible="{Binding RoutingDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
               </StackPanel>
             </StackPanel>

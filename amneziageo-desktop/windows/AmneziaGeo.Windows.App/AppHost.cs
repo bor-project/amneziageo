@@ -72,6 +72,7 @@ internal static class AppHost
         services.AddSingleton<HttpClient>();
         services.AddSingleton<ServiceManager>();
         services.AddSingleton<RouteManager>();
+        services.AddSingleton<DownloadRouteOptimizer>();
         services.AddSingleton<UapiClient>();
         services.AddSingleton<DnsConfigurator>();
         services.AddSingleton<NetworkReconciler>();

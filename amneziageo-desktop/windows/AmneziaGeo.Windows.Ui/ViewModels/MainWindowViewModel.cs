@@ -280,6 +280,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _routeLogEnabled;
 
+    [ObservableProperty]
+    private bool _smartDownloadRouting;
+
     /// <summary>
     /// UI language options.
     /// </summary>
@@ -1576,6 +1579,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         GeoCacheValidityHours = snapshot.GeoCacheValidityHours;
         LogLevelLabel = LabelForLogToken(snapshot.LogLevel);
         RouteLogEnabled = snapshot.RouteLog;
+        SmartDownloadRouting = snapshot.SmartDownloadRouting;
         _suppressSettingPush = false;
 
         ApplyUpdateState(snapshot);
@@ -1982,6 +1986,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("route-log", value);
+        }
+    }
+
+    partial void OnSmartDownloadRoutingChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("smart-download-routing", value);
         }
     }
 

@@ -34,4 +34,6 @@ public sealed record StatusSnapshot(
     // Current log verbosity token: "info" (default), "debug", or "trace".
     string LogLevel = "info",
     // Whether the dedicated routing log (routes.log) is currently recording.
-    bool RouteLog = false);
+    bool RouteLog = false,
+    // Whether geo-source downloads bypass the tunnel when the direct path is reachable.
+    bool SmartDownloadRouting = false);

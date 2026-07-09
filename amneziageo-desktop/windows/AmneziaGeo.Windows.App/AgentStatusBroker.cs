@@ -2208,7 +2208,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             AppSettings.EngineVersion,
             settings.TunnelAllUdp,
             settings.LogLevel,
-            settings.RouteLog);
+            settings.RouteLog,
+            settings.SmartDownloadRouting);
     }
 
     private static string MemberDisplayStatus(string groupStatus, bool isActive)

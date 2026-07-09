@@ -74,4 +74,9 @@ internal sealed record AppSettings
     /// Whether the dedicated routing log is recording.
     /// </summary>
     public bool RouteLog { get; init; }
+
+    /// <summary>
+    /// Route geo-source downloads around the tunnel when the direct path is reachable.
+    /// </summary>
+    public bool SmartDownloadRouting { get; init; }
 }

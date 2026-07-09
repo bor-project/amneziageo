@@ -2145,7 +2145,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             // /passive: a single progress UI, no prompts. The display level propagates to the upgrade's
             // related-bundle uninstall, so the old version is removed WITHOUT its own second installer
             // window flashing alongside the new one. UseShellExecute lets the bundle elevate (UAC) once.
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Arguments = "/passive" });
+            // LAUNCHAFTER=1 tells the bundle's BA to restart the app once the update is applied (#155).
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Arguments = "/passive LAUNCHAFTER=1" });
 
             // Quit so the installer can replace the app's in-use files.
             if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)

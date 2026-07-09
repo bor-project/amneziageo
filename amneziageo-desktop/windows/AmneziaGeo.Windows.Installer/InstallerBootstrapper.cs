@@ -308,10 +308,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             _result = importOk ? 0 : 1;
             var heading = importOk ? SuccessText(_action) : Loc.Instance.Get("InstallerBa_InstalledButConfigFailed");
             _vm.CompleteWithGeo(importOk, heading, string.Join(Environment.NewLine, lines));
-            if (!_interactive)
-            {
-                Application.Current?.Shutdown();
-            }
+            AfterComplete(importOk);
         });
     }
 
@@ -452,11 +449,53 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnUserClose()
     {
-        if (_vm.LaunchOnClose && _vm.ShowLaunchOption)
+        // The launch-after choice is honoured automatically on a successful install/update (AfterComplete),
+        // so the Done screen's Close button only ever needs to shut the installer down.
+        Application.Current?.Shutdown();
+    }
+
+    /// <summary>
+    /// After a completed run: on a successful install/update, honour the launch-after choice by starting the
+    /// app and closing the installer without stopping on the Done screen (#165 interactive checkbox, #155
+    /// passive update). Otherwise leave the Done screen up; in a non-interactive run there is no one to click
+    /// Close, so shut down.
+    /// </summary>
+    private void AfterComplete(bool ok)
+    {
+        if (ok && ShouldLaunchAfter())
         {
             LaunchApp();
+            Application.Current?.Shutdown();
+            return;
         }
-        Application.Current?.Shutdown();
+
+        if (!_interactive)
+        {
+            Application.Current?.Shutdown();
+        }
+    }
+
+    /// <summary>
+    /// Whether to start the app after a successful run. Install/update only. An interactive run follows the
+    /// options-step checkbox (#165). A non-interactive run launches when the in-app updater asked for it
+    /// (LAUNCHAFTER=1) or when it is a passive update - the display level the in-app updater uses - so it works
+    /// even for an update kicked off by an app build that predates the flag; a fully silent (/quiet) run never
+    /// launches (#155).
+    /// </summary>
+    private bool ShouldLaunchAfter()
+    {
+        if (_action is not (InstallerAction.Install or InstallerAction.Update))
+        {
+            return false;
+        }
+
+        if (_interactive)
+        {
+            return _vm.LaunchOnClose;
+        }
+
+        return string.Equals(engine.GetVariableString("LAUNCHAFTER"), "1", StringComparison.Ordinal)
+            || (_action == InstallerAction.Update && _command.Display == Display.Passive);
     }
 
     private static void LaunchApp()
@@ -483,10 +522,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         _dispatcher.BeginInvoke(() =>
         {
             _vm.Complete(ok, message);
-            if (!_interactive)
-            {
-                Application.Current?.Shutdown();
-            }
+            AfterComplete(ok);
         });
     }
 

@@ -352,6 +352,24 @@
   <data name="Main_DeleteProfileHint" xml:space="preserve">
     <value>The profile is deleted together with its settings. A running profile must be disconnected first.</value>
   </data>
+  <data name="Main_ConfirmDeleteButton" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Main_DeleteConfigConfirm" xml:space="preserve">
+    <value>Delete configuration «{0}»? This cannot be undone.</value>
+  </data>
+  <data name="Main_DeleteProfileConfirm" xml:space="preserve">
+    <value>Delete profile «{0}»? This cannot be undone.</value>
+  </data>
+  <data name="Main_DeleteListConfirm" xml:space="preserve">
+    <value>Delete list «{0}»? This cannot be undone.</value>
+  </data>
+  <data name="Main_ConfigInUse" xml:space="preserve">
+    <value>Cannot delete: the configuration is used by profiles:</value>
+  </data>
+  <data name="Main_RoutingInUse" xml:space="preserve">
+    <value>Cannot delete: the routing list is used by profiles:</value>
+  </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>DELETION</value>
   </data>

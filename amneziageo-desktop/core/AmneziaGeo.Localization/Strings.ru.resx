@@ -352,6 +352,24 @@
   <data name="Main_DeleteProfileHint" xml:space="preserve">
     <value>Профиль удалится вместе со своими настройками. Запущенный профиль нужно сначала отключить.</value>
   </data>
+  <data name="Main_ConfirmDeleteButton" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="Main_DeleteConfigConfirm" xml:space="preserve">
+    <value>Удалить конфигурацию «{0}»? Действие необратимо.</value>
+  </data>
+  <data name="Main_DeleteProfileConfirm" xml:space="preserve">
+    <value>Удалить профиль «{0}»? Действие необратимо.</value>
+  </data>
+  <data name="Main_DeleteListConfirm" xml:space="preserve">
+    <value>Удалить список «{0}»? Действие необратимо.</value>
+  </data>
+  <data name="Main_ConfigInUse" xml:space="preserve">
+    <value>Нельзя удалить: конфигурация используется в профилях:</value>
+  </data>
+  <data name="Main_RoutingInUse" xml:space="preserve">
+    <value>Нельзя удалить: список маршрутизации используется в профилях:</value>
+  </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>УДАЛЕНИЕ</value>
   </data>

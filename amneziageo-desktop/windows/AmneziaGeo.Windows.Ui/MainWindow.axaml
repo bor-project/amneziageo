@@ -436,13 +436,25 @@
                   <TextBlock Text="{Binding EditStatus}" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                 </StackPanel>
 
-                <!-- Delete. -->
+                <!-- Delete: two-step confirm/cancel (#143). -->
                 <StackPanel Spacing="6">
                   <TextBlock Classes="label" Text="{l:Tr Main_DeletionLabel}" />
-                  <Button Classes="danger" HorizontalAlignment="Left" IsEnabled="{Binding !IsEditing}"
-                          Command="{Binding DeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
+                  <Button Classes="danger" HorizontalAlignment="Left"
+                          IsVisible="{Binding !ProfileDeletePending}" IsEnabled="{Binding !IsEditing}"
+                          Command="{Binding RequestDeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
+                  <StackPanel IsVisible="{Binding ProfileDeletePending}" Spacing="6">
+                    <TextBlock Classes="fieldwarn" Text="{Binding ProfileDeletePrompt}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Classes="danger" Command="{Binding ConfirmDeleteOpenProfileCommand}"
+                              Content="{l:Tr Main_ConfirmDeleteButton}" />
+                      <Button Classes="softbtn" Command="{Binding CancelDeleteProfileCommand}"
+                              Content="{l:Tr Main_CancelButton}" />
+                    </StackPanel>
+                  </StackPanel>
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                              Text="{l:Tr Main_DeleteProfileHint}" />
+                  <TextBlock Text="{Binding ProfileDeleteStatus}" Classes="fieldwarn" FontSize="12"
+                             IsVisible="{Binding ProfileDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
               </StackPanel>
             </StackPanel>
@@ -647,8 +659,19 @@
                   <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                              Text="{l:Tr Main_DeleteConfigHint}" />
                   <Button Classes="danger" Content="{l:Tr Main_DeleteConfigButton}" HorizontalAlignment="Left"
-                          Command="{Binding DeleteOpenConfigCommand}" IsEnabled="{Binding !IsEditing}" />
-                  <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                          IsVisible="{Binding !ConfigDeletePending}"
+                          Command="{Binding RequestDeleteOpenConfigCommand}" IsEnabled="{Binding !IsEditing}" />
+                  <StackPanel IsVisible="{Binding ConfigDeletePending}" Spacing="6">
+                    <TextBlock Classes="fieldwarn" Text="{Binding ConfigDeletePrompt}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Classes="danger" Command="{Binding ConfirmDeleteOpenConfigCommand}"
+                              Content="{l:Tr Main_ConfirmDeleteButton}" />
+                      <Button Classes="softbtn" Command="{Binding CancelDeleteConfigCommand}"
+                              Content="{l:Tr Main_CancelButton}" />
+                    </StackPanel>
+                  </StackPanel>
+                  <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12"
+                             IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
               </StackPanel>
             </Grid>
@@ -845,9 +868,23 @@
                   </StackPanel>
                 </Border>
 
-                <Button Classes="danger" HorizontalAlignment="Left"
-                        IsVisible="{Binding !RoutingEditor.IsNew}" IsEnabled="{Binding !IsEditing}"
-                        Command="{Binding DeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
+                <!-- Delete: two-step confirm/cancel (#143). Hidden for an unsaved new-list draft. -->
+                <StackPanel Spacing="6" IsVisible="{Binding !RoutingEditor.IsNew}">
+                  <Button Classes="danger" HorizontalAlignment="Left"
+                          IsVisible="{Binding !RoutingDeletePending}" IsEnabled="{Binding !IsEditing}"
+                          Command="{Binding RequestDeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
+                  <StackPanel IsVisible="{Binding RoutingDeletePending}" Spacing="6">
+                    <TextBlock Classes="fieldwarn" Text="{Binding RoutingDeletePrompt}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Classes="danger" Command="{Binding ConfirmDeleteSectionRoutingListCommand}"
+                              Content="{l:Tr Main_ConfirmDeleteButton}" />
+                      <Button Classes="softbtn" Command="{Binding CancelDeleteRoutingCommand}"
+                              Content="{l:Tr Main_CancelButton}" />
+                    </StackPanel>
+                  </StackPanel>
+                  <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12"
+                             IsVisible="{Binding RoutingDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
               </StackPanel>
             </StackPanel>
 

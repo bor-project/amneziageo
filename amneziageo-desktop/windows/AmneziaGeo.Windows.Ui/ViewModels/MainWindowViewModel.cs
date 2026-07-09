@@ -138,6 +138,33 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
 
+    // Two-step delete confirmation (#143): the trigger arms _*DeletePending (showing a confirm/cancel pair and
+    // the neutral _*DeletePrompt); confirm performs the delete, cancel just disarms - no agent side effect. The
+    // _*DeleteStatus lines carry the error-coloured "used by profiles" list or an agent rejection.
+    [ObservableProperty]
+    private bool _configDeletePending;
+
+    [ObservableProperty]
+    private string _configDeletePrompt = string.Empty;
+
+    [ObservableProperty]
+    private bool _profileDeletePending;
+
+    [ObservableProperty]
+    private string _profileDeletePrompt = string.Empty;
+
+    [ObservableProperty]
+    private string _profileDeleteStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool _routingDeletePending;
+
+    [ObservableProperty]
+    private string _routingDeletePrompt = string.Empty;
+
+    [ObservableProperty]
+    private string _routingDeleteStatus = string.Empty;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ConfigNameMissing))]
     private string _configRename = string.Empty;
@@ -723,8 +750,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // Step 1 of the config delete (#143): a config that any profile still binds cannot be deleted - surface the
+    // blocking profiles in an error line instead of arming the confirm. Otherwise arm the confirm/cancel pair.
     [RelayCommand]
-    private async Task DeleteOpenConfig()
+    private void RequestDeleteOpenConfig()
     {
         if (OpenConfig is null)
         {
@@ -732,45 +761,78 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         ConfigDeleteStatus = string.Empty;
+        var users = ProfilesUsingConfig(OpenConfig);
+        if (users.Count > 0)
+        {
+            ConfigDeleteStatus = FormatInUse("Main_ConfigInUse", users);
+            return;
+        }
+
+        ConfigDeletePrompt = Loc.Instance.Get("Main_DeleteConfigConfirm", OpenConfig);
+        ConfigDeletePending = true;
+    }
+
+    [RelayCommand]
+    private void CancelDeleteConfig()
+    {
+        ConfigDeletePending = false;
+        ConfigDeleteStatus = string.Empty;
+    }
+
+    // Step 2: perform the delete. The usage guard is re-checked (a profile may have picked up the config since
+    // the confirm was armed). On success the next remaining config opens so the section is never left empty.
+    [RelayCommand]
+    private async Task ConfirmDeleteOpenConfig()
+    {
+        ConfigDeletePending = false;
+        if (OpenConfig is null)
+        {
+            return;
+        }
+
         var config = OpenConfig;
-
-        // No open profile: remove from the catalogue.
-        if (OpenProfile is null)
+        var users = ProfilesUsingConfig(config);
+        if (users.Count > 0)
         {
-            var catalogueAck = await RemoveConfigAsync(config);
-            if (catalogueAck.Ok)
-            {
-                OpenConfig = null;
-            }
-            else
-            {
-                ConfigDeleteStatus = catalogueAck.Message;
-            }
-
+            ConfigDeleteStatus = FormatInUse("Main_ConfigInUse", users);
             return;
         }
 
-        // Shared config: detach from this profile if others still use it.
-        var sharedByOthers = Balancers.Any(b =>
-            !ReferenceEquals(b, OpenProfile) && string.Equals(b.Config, config, StringComparison.Ordinal));
-        if (sharedByOthers)
-        {
-            await SaveBalancerAsync(OpenProfile.Name, string.Empty);
-            OpenConfig = null;
-            return;
-        }
-
-        // Last user of the config: delete it from the catalogue.
-        var ack = await OpenProfile.DeleteConfigAsync(config);
-        if (ack.Ok)
-        {
-            OpenConfig = null;
-        }
-        else
+        var ack = await RemoveConfigAsync(config);
+        if (!ack.Ok)
         {
             ConfigDeleteStatus = ack.Message;
+            return;
         }
+
+        OpenConfig = NextConfigAfter(config);
     }
+
+    // Profiles (by display name) whose persisted configuration is this one; drives the config delete guard.
+    private List<string> ProfilesUsingConfig(string config) =>
+        Balancers.Where(b => string.Equals(b.Config, config, StringComparison.Ordinal))
+            .Select(b => b.Name)
+            .ToList();
+
+    // Profiles whose assigned routing list is this id (regardless of the use-routing toggle - the row still
+    // references the list). Reliable because delete is gated on !IsEditing, so no profile is mid-edit.
+    private List<string> ProfilesUsingRouting(long id) =>
+        Balancers.Where(b => b.SelectedRoutingList.Id == id)
+            .Select(b => b.Name)
+            .ToList();
+
+    // "Cannot delete: …used by profiles:" followed by one bulleted profile per line (error-coloured in the UI).
+    private static string FormatInUse(string headerKey, IReadOnlyList<string> profiles) =>
+        Loc.Instance.Get(headerKey) + "\n" + string.Join("\n", profiles.Select(p => "• " + p));
+
+    // The first config that is not the one just deleted (still present in the collection until the next
+    // snapshot drops it), or null when it was the last one.
+    private string? NextConfigAfter(string deleted) =>
+        Configs.FirstOrDefault(c => !string.Equals(c.Name, deleted, StringComparison.Ordinal))?.Name;
+
+    // The first profile instance that is not the one just deleted, or null when it was the last one.
+    private BalancerItemViewModel? NextProfileAfter(BalancerItemViewModel deleted) =>
+        Balancers.FirstOrDefault(b => !ReferenceEquals(b, deleted));
 
     // A name is taken if any config OR profile already uses it: the agent enforces one shared namespace
     // (AgentStatusBroker rename/copy checks configRepo.ExistsAsync || store.GetBalancerAsync). Ordinal, so this
@@ -850,6 +912,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     partial void OnOpenConfigChanged(string? value)
     {
         ConfigDeleteStatus = string.Empty;
+        ConfigDeletePending = false;
         // Set the rename baseline before the field so seeding it does not read as a dirty edit (#143).
         _baseConfigRename = value ?? string.Empty;
         ConfigRename = value ?? string.Empty;
@@ -1036,6 +1099,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // selected list. A null pick is ignored (combo-rebuild artifact); the create-new path is a command.
     partial void OnEditRoutingListChanged(RoutingListSummaryViewModel? value)
     {
+        // Switching (or clearing) the selected list disarms any pending delete confirmation (#143).
+        RoutingDeletePending = false;
+        RoutingDeleteStatus = string.Empty;
+
         if (value is null)
         {
             return;
@@ -1182,6 +1249,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // instance is safe because the snapshot reconcile keeps the same BalancerItemViewModel instances.
     partial void OnOpenProfileChanged(BalancerItemViewModel? oldValue, BalancerItemViewModel? newValue)
     {
+        // Leaving the profile disarms any pending delete confirmation (#143).
+        ProfileDeletePending = false;
+        ProfileDeleteStatus = string.Empty;
+
         // Open the profile's single configuration so its editors (text / proxy) are available on the rail.
         OpenConfig = string.IsNullOrEmpty(newValue?.Config) ? null : newValue!.Config;
 
@@ -1286,6 +1357,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _prefs.SettingsSection = value;
         _prefs.Save();
+
+        // Changing section disarms any pending delete confirmation in the section being left (#143).
+        ConfigDeletePending = false;
+        ProfileDeletePending = false;
+        RoutingDeletePending = false;
 
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.
         if (value == "logs")
@@ -2686,39 +2762,117 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _ = editor.LoadAsync();
     }
 
-    // "Удалить список" in the Routing section: delete the shared list, then clear the section editor.
+    // Step 1 of the routing-list delete (#143): a list any profile references cannot be deleted (the agent
+    // would silently orphan those profiles) - surface them in an error line. A new unsaved draft has nothing
+    // persisted, so it is not offered here (the button is hidden while IsNew). Otherwise arm the confirm.
     [RelayCommand]
-    private async Task DeleteSectionRoutingList()
+    private void RequestDeleteSectionRoutingList()
     {
+        if (RoutingEditor is null || RoutingEditor.IsNew)
+        {
+            return;
+        }
+
+        RoutingDeleteStatus = string.Empty;
+        var users = ProfilesUsingRouting(RoutingEditor.Id);
+        if (users.Count > 0)
+        {
+            RoutingDeleteStatus = FormatInUse("Main_RoutingInUse", users);
+            return;
+        }
+
+        RoutingDeletePrompt = Loc.Instance.Get("Main_DeleteListConfirm", RoutingEditor.Name);
+        RoutingDeletePending = true;
+    }
+
+    [RelayCommand]
+    private void CancelDeleteRouting()
+    {
+        RoutingDeletePending = false;
+        RoutingDeleteStatus = string.Empty;
+    }
+
+    // Step 2: delete the shared list. The usage guard is re-checked, then on success the next remaining list is
+    // selected (or the editor cleared when it was the last one) so the section is never left empty.
+    [RelayCommand]
+    private async Task ConfirmDeleteSectionRoutingList()
+    {
+        RoutingDeletePending = false;
         if (RoutingEditor is null)
         {
             return;
         }
 
-        if (await RoutingEditor.DeleteAsync())
+        var deletedId = RoutingEditor.Id;
+        var users = ProfilesUsingRouting(deletedId);
+        if (users.Count > 0)
         {
+            RoutingDeleteStatus = FormatInUse("Main_RoutingInUse", users);
+            return;
+        }
+
+        if (!await RoutingEditor.DeleteAsync())
+        {
+            RoutingDeleteStatus = RoutingEditor.StatusMessage;
+            return;
+        }
+
+        var next = RoutingLists.FirstOrDefault(r => r.Id != deletedId);
+        if (next is not null)
+        {
+            EditRoutingList = next;
+        }
+        else
+        {
+            EditRoutingList = null;
             RoutingEditor = null;
             RoutingSettings = null;
-            EditRoutingList = null;
         }
     }
 
-    // Delete the profile currently open in the detail view, then fall back to the profiles list. The
-    // agent refuses while the profile is the running tunnel, so on a non-OK ack the view stays put.
+    // Step 1 of the profile delete (#143): arm the confirm/cancel pair. Nothing references a profile, so there
+    // is no usage guard - but the agent refuses to delete the running tunnel, surfaced on confirm.
     [RelayCommand]
-    private async Task DeleteOpenProfile()
+    private void RequestDeleteOpenProfile()
     {
         if (OpenProfile is null)
         {
             return;
         }
 
-        var ack = await _connection.SendCommandAsync(
-            new IpcCommand(IpcContract.OpRemoveBalancer, [OpenProfile.Name]));
-        if (ack.Ok)
+        ProfileDeleteStatus = string.Empty;
+        ProfileDeletePrompt = Loc.Instance.Get("Main_DeleteProfileConfirm", OpenProfile.Name);
+        ProfileDeletePending = true;
+    }
+
+    [RelayCommand]
+    private void CancelDeleteProfile()
+    {
+        ProfileDeletePending = false;
+        ProfileDeleteStatus = string.Empty;
+    }
+
+    // Step 2: delete the profile. On success the next remaining profile opens (or the list, when it was the
+    // last); a rejected delete (e.g. the running tunnel) keeps the view put and shows why.
+    [RelayCommand]
+    private async Task ConfirmDeleteOpenProfile()
+    {
+        ProfileDeletePending = false;
+        if (OpenProfile is null)
         {
-            OpenProfile = null;
+            return;
         }
+
+        var profile = OpenProfile;
+        var ack = await _connection.SendCommandAsync(
+            new IpcCommand(IpcContract.OpRemoveBalancer, [profile.Name]));
+        if (!ack.Ok)
+        {
+            ProfileDeleteStatus = ack.Message;
+            return;
+        }
+
+        OpenProfile = NextProfileAfter(profile);
     }
 
     // Local pre-commit check for the profile rename (#143): reject an empty or already-taken name before any

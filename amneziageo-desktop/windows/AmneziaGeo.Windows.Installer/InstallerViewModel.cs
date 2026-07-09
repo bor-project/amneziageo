@@ -266,9 +266,9 @@ public sealed class InstallerViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Show the launch checkbox after a successful install or update.
+    /// Show the launch-after checkbox on the options step (before applying), for install/update only (#165).
     /// </summary>
-    public bool ShowLaunchOption => Phase == Phase.Done && _success && _action is InstallerAction.Install or InstallerAction.Update;
+    public bool ShowLaunchOnInstall => ShowOptionsStep && _pendingAction is InstallerAction.Install or InstallerAction.Update;
 
     /// <summary>
     /// True while the list download runs with no percentage.
@@ -403,7 +403,6 @@ public sealed class InstallerViewModel : ObservableObject
         IsIndeterminate = false;
         Phase = Phase.Done;
         Raise(nameof(DoneSucceeded));
-        Raise(nameof(ShowLaunchOption));
     }
 
     /// <summary>
@@ -554,6 +553,6 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowDeleteConfigOption));
         Raise(nameof(ShowConfigFileOption));
         Raise(nameof(ShowConflictPolicy));
-        Raise(nameof(ShowLaunchOption));
+        Raise(nameof(ShowLaunchOnInstall));
     }
 }

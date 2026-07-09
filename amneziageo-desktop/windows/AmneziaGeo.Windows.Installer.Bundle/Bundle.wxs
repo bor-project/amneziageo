@@ -33,6 +33,9 @@
     <Variable Name="REPLACEDB" Value="" />
     <Variable Name="SEEDDBPATH" Value="" />
     <Variable Name="DELETECONFIG" Value="" />
+    <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
+         app once the update is applied. Default 0; overridable from the command line like REPLACEDB. -->
+    <Variable Name="LAUNCHAFTER" Value="0" />
 
     <!-- Custom out-of-proc BA: the .exe is named directly; every other file from its self-contained
          publish is supplied via the generated BaPayloads PayloadGroup. -->
@@ -63,6 +66,9 @@
     <Variable Name="REPLACEDB" Value="" />
     <Variable Name="SEEDDBPATH" Value="" />
     <Variable Name="DELETECONFIG" Value="" />
+    <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
+         app once the update is applied. Default 0; overridable from the command line like REPLACEDB. -->
+    <Variable Name="LAUNCHAFTER" Value="0" />
 
     <BootstrapperApplication SourceFile="$(var.BaExe)">
       <PayloadGroupRef Id="BaPayloads" />

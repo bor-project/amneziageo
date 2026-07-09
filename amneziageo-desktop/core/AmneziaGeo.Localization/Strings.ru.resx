@@ -1216,8 +1216,8 @@
   <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
     <value>Скачать обновления файлов баз гео</value>
   </data>
-  <data name="InstallerUi_LaunchAmneziaGeo" xml:space="preserve">
-    <value>Запустить AmneziaGeo</value>
+  <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
+    <value>Запустить AmneziaGeo после установки</value>
   </data>
   <data name="InstallerUi_Remove" xml:space="preserve">
     <value>Удалить</value>

@@ -1216,8 +1216,8 @@ No - keep the current settings.</value>
   <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
     <value>Download geo database file updates</value>
   </data>
-  <data name="InstallerUi_LaunchAmneziaGeo" xml:space="preserve">
-    <value>Launch AmneziaGeo</value>
+  <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
+    <value>Launch AmneziaGeo after install</value>
   </data>
   <data name="InstallerUi_Remove" xml:space="preserve">
     <value>Remove</value>

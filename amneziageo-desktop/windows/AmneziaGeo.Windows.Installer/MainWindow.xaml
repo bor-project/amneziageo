@@ -12,6 +12,8 @@
 
   <Window.Resources>
     <BooleanToVisibilityConverter x:Key="B2V" />
+    <!-- #151: hides while keeping layout space, so the progress bar does not shift down. -->
+    <l:BoolToVisibilityHiddenConverter x:Key="B2VH" />
   </Window.Resources>
 
   <Grid Margin="18">
@@ -49,17 +51,14 @@
           <TextBlock Text="{Binding Progress, StringFormat={}{0}%}"
                      Style="{StaticResource MutedTextBlock}"
                      HorizontalAlignment="Right" Margin="0,8,0,0"
-                     Visibility="{Binding ShowPercent, Converter={StaticResource B2V}}" />
+                     Visibility="{Binding ShowPercent, Converter={StaticResource B2VH}}" />
         </StackPanel>
 
-        <!-- Done -->
+        <!-- Done. The launch-after choice now lives on the options step (#165); when it is on, a
+             successful install/update auto-closes here and starts the app, so this screen is only
+             reached when launch is off or the run failed - just a Close button. -->
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
                     Visibility="{Binding ShowDone, Converter={StaticResource B2V}}">
-          <CheckBox Content="{l:Tr InstallerUi_LaunchAmneziaGeo}"
-                    IsChecked="{Binding LaunchOnClose}"
-                    Margin="0,0,12,0"
-                    VerticalAlignment="Center"
-                    Visibility="{Binding ShowLaunchOption, Converter={StaticResource B2V}}" />
           <Button Content="{l:Tr InstallerUi_Close}" Style="{StaticResource AccentButton}" Command="{Binding CloseCommand}" />
         </StackPanel>
 
@@ -111,6 +110,12 @@
                     IsChecked="{Binding DownloadLists}"
                     Margin="0,0,0,12"
                     Visibility="{Binding ShowDownloadOption, Converter={StaticResource B2V}}" />
+          <!-- #165: launch-after choice up front (install/update only). When on, a successful run
+               closes the installer and starts the app instead of showing the Done screen. -->
+          <CheckBox Content="{l:Tr InstallerUi_LaunchAfterInstall}"
+                    IsChecked="{Binding LaunchOnClose}"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ShowLaunchOnInstall, Converter={StaticResource B2V}}" />
           <!-- #105/#114: wipe the runtime configuration (ProgramData\AmneziaGeo). The label is contextual -
                «Сбросить настройки» on install/update/repair, «Удалить конфигурацию и кэш» on removal. Off by
                default so a plain (re)install keeps the user's profiles and settings. -->

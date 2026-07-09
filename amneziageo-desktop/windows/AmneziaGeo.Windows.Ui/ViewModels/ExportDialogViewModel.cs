@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// <summary>
 /// View model for the export dialog: fetches a config's wg-quick text from the agent and renders it as raw .conf or an Amnezia vpn:// link, with a matching QR code, for copy / save.
 /// </summary>
-internal sealed partial class ExportDialogViewModel : ViewModelBase
+internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
 {
     private readonly AgentConnection _connection;
     private string _confText = string.Empty;
@@ -165,7 +165,9 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
 
     // "Сохранить": persist the edited .conf in place (edit-config), then lock + re-render.
     [RelayCommand]
-    private async Task SaveEdit()
+    private async Task SaveEdit() => await SaveEditInternalAsync();
+
+    private async Task<bool> SaveEditInternalAsync()
     {
         var text = Payload.Trim();
         if (text.Length == 0
@@ -173,19 +175,51 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase
             || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
         {
             StatusMessage = Loc.Instance.Get("ExportVm_NotWireGuardConfig");
-            return;
+            return false;
         }
 
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpEditConfig, [ConfigName, text]));
         if (!ack.Ok)
         {
             StatusMessage = ack.Message;
-            return;
+            return false;
         }
 
         _confText = text;
         IsEditing = false;
         Refresh();
         StatusMessage = Loc.Instance.Get("ExportVm_Saved");
+        return true;
     }
+
+    // ---- IEditScope (#143): the .conf inline editor already commits explicitly; joining the edit model blocks
+    // navigation while a .conf edit is open (previously switching config mid-edit silently discarded it) and lets
+    // the header Save/Cancel drive it too. "Dirty" == in edit mode; Begin/Save/Cancel keep their local buttons. ----
+
+    /// <inheritdoc />
+    public bool IsDirty => IsEditing;
+
+    /// <inheritdoc />
+    public event EventHandler? DirtyChanged;
+
+    partial void OnIsEditingChanged(bool value) => DirtyChanged?.Invoke(this, EventArgs.Empty);
+
+    /// <inheritdoc />
+    public void CaptureBaseline()
+    {
+        // Nothing to capture: IsEditing is itself the dirty flag, cleared by Save (commit) or Cancel (revert).
+    }
+
+    /// <inheritdoc />
+    public void Revert()
+    {
+        if (IsEditing)
+        {
+            IsEditing = false;
+            Refresh();
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<bool> CommitAsync() => IsEditing ? SaveEditInternalAsync() : Task.FromResult(true);
 }

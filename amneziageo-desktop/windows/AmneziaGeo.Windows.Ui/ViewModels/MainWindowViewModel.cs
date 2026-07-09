@@ -27,7 +27,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string? _lastNotice;
     private string? _pendingOpenProfile;
     private System.Threading.CancellationTokenSource? _profileRenameDebounce;
-    private System.Threading.CancellationTokenSource? _configRenameDebounce;
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
     private string? _geoBannerSignature;
@@ -35,7 +34,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private long? _pendingEditRoutingListId;
     private string? _pendingOpenConfig;
     private string _sectionConfigDefaultName = string.Empty;
-    private System.Threading.CancellationTokenSource? _sectionConfigAutoSaveDebounce;
     private bool _sectionConfigSaving;
     private bool _suppressActiveChoice;
     private bool _suppressOpenChoice;
@@ -352,6 +350,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Atomic per-item edit model (#143): aggregates the open item's edit scopes into IsEditing + Save/Cancel.
     private readonly EditController _editController = new();
 
+    // Host-owned edit scopes for the config section's inline fields (#143), built in the ctor and registered by
+    // RefreshEditScopes while the config section is active. _baseConfigRename is the rename field's baseline.
+    private DelegateEditScope? _configRenameScope;
+    private DelegateEditScope? _sectionConfigScope;
+    private string _baseConfigRename = string.Empty;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -360,6 +364,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _connection = connection;
         _prefs = prefs;
         _editController.EditingChanged += (_, _) => OnEditingChanged();
+        _configRenameScope = new DelegateEditScope(
+            () => !string.Equals(ConfigRename ?? string.Empty, _baseConfigRename, StringComparison.Ordinal),
+            () => _baseConfigRename = ConfigRename ?? string.Empty,
+            () => ConfigRename = _baseConfigRename,
+            CommitConfigRenameAsync);
+        _sectionConfigScope = new DelegateEditScope(
+            () => IsCreatingSectionConfig,
+            () => { },
+            CancelSectionConfig,
+            CommitSectionConfigAsync);
         // Seed backing fields from prefs without echoing OnChanged.
         _isDark = prefs.IsDark;
         _settingsSection = prefs.SettingsSection;
@@ -647,8 +661,21 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             case "routing":
                 _editController.SetScopes(RoutingEditor, RoutingSettings);
                 break;
+            case "config":
+                // Creating a new config: only the import-form scope. Editing an existing config: the .conf
+                // editor + transport + rename - rename LAST so the .conf/transport ops still key by the old name.
+                if (IsCreatingSectionConfig)
+                {
+                    _editController.SetScopes(_sectionConfigScope);
+                }
+                else
+                {
+                    _editController.SetScopes(ConfigExport, ConfigTransport, _configRenameScope);
+                }
+
+                break;
             default:
-                // Config and profile join the model in later stages; other sections stay instant (#143 scope).
+                // Profile joins the model in a later stage; other sections stay instant (#143 scope).
                 _editController.SetScopes();
                 break;
         }
@@ -730,19 +757,27 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand]
-    private async Task RenameConfig()
+    // Commit the open config's rename through the agent (#143 header Save). Keyed by the current name; on OK it
+    // pins _pendingOpenConfig so the next snapshot re-opens the renamed row. An empty name is rejected (the item
+    // stays dirty and the field shows its required-warning).
+    private async Task<bool> CommitConfigRenameAsync()
     {
         var current = OpenConfig;
         if (current is null)
         {
-            return;
+            return true;
         }
 
         var next = (ConfigRename ?? string.Empty).Trim();
-        if (next.Length == 0 || string.Equals(next, current, StringComparison.Ordinal))
+        if (next.Length == 0)
         {
-            return;
+            ConfigRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
+            return false;
+        }
+
+        if (string.Equals(next, current, StringComparison.Ordinal))
+        {
+            return true;
         }
 
         ConfigRenameStatus = string.Empty;
@@ -750,59 +785,24 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (ack.Ok)
         {
             _pendingOpenConfig = next;
+            return true;
         }
-        else
-        {
-            ConfigRenameStatus = ack.Message;
-        }
+
+        ConfigRenameStatus = ack.Message;
+        return false;
     }
 
+    // The rename field changed: re-evaluate the config item's dirtiness (no auto-save - the header Save commits).
     partial void OnConfigRenameChanged(string value)
     {
-        _configRenameDebounce?.Cancel();
-
-        if (OpenConfig is null)
-        {
-            return;
-        }
-
-        // Don't rename while the .conf editor has unsaved edits.
-        if (ConfigExport is { IsEditing: true })
-        {
-            return;
-        }
-
-        var next = (value ?? string.Empty).Trim();
-        if (next.Length == 0 || string.Equals(next, OpenConfig, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var cts = new System.Threading.CancellationTokenSource();
-        _configRenameDebounce = cts;
-        _ = DebounceRenameConfigAsync(cts.Token);
-    }
-
-    private async Task DebounceRenameConfigAsync(System.Threading.CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(700, token);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        if (!token.IsCancellationRequested)
-        {
-            await RenameConfig();
-        }
+        _configRenameScope?.RaiseDirtyChanged();
     }
 
     partial void OnOpenConfigChanged(string? value)
     {
         ConfigDeleteStatus = string.Empty;
+        // Set the rename baseline before the field so seeding it does not read as a dirty edit (#143).
+        _baseConfigRename = value ?? string.Empty;
         ConfigRename = value ?? string.Empty;
         ConfigRenameStatus = string.Empty;
         SyncCatalogueConfig();
@@ -839,6 +839,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     partial void OnIsCreatingSectionConfigChanged(bool value)
     {
         SyncCatalogueConfig();
+        RefreshEditScopes();
     }
 
     private void SyncCatalogueConfig()
@@ -1237,11 +1238,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SyncCatalogueRouting();
     }
 
-    // Same for the config's transport editor: flush a still-pending WebSocket/MTU edit before the editor is
-    // replaced (config switch / rename / delete), so it is persisted rather than dropped by the debounce (#116).
-    partial void OnConfigTransportChanging(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
+    // The config's transport / .conf editors were (re)built or cleared: re-point the edit controller (#143).
+    partial void OnConfigTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
     {
-        oldValue?.FlushPendingSave();
+        RefreshEditScopes();
+    }
+
+    partial void OnConfigExportChanged(ExportDialogViewModel? oldValue, ExportDialogViewModel? newValue)
+    {
+        RefreshEditScopes();
     }
 
     [RelayCommand]
@@ -2537,13 +2542,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     // --- Config settings section: standalone "+ Новая конфигурация" import (adds to the shared catalogue
     // without a profile). The file / QR / camera pickers and the editor dialog are window concerns that fill
-    // SectionConfigText; there is no «Сохранить» - a recognised config with a (required) name auto-saves
-    // (debounced) and opens for management (#118). ---
+    // SectionConfigText; the header Save (#143) imports a recognised config with a (required) name and opens it
+    // for management, and the header Cancel discards the draft. ---
 
     [RelayCommand]
     private void BeginSectionConfig()
     {
-        _sectionConfigAutoSaveDebounce?.Cancel();
         // Close any open config first so only the create form shows (the redirect from a profile's picker can
         // arrive with a config still open), and so the combo lands on «+ Новая конфигурация», not a real row.
         OpenConfig = null;
@@ -2557,74 +2561,44 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         IsCreatingSectionConfig = true;
     }
 
-    // Not a command any more (the «Отмена» button is gone, #118); still called when the catalogue combo leaves
-    // the create form (OnSelectedCatalogueConfigChanged).
+    // Discards the create-form draft. Called by the header Cancel (#143 revert) and on disconnect.
     private void CancelSectionConfig()
     {
-        _sectionConfigAutoSaveDebounce?.Cancel();
         IsCreatingSectionConfig = false;
         SectionConfigName = string.Empty;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
     }
 
-    // The config text is read-only, so it only changes atomically (file / QR / camera / editor dialog); it and
-    // the name each schedule a debounced auto-save. Once the text parses and the (required) name is set the
-    // config is imported and opened - replacing the old «Сохранить» button (#118).
-    partial void OnSectionConfigTextChanged(string value) => ScheduleSectionConfigAutoSave();
-
-    partial void OnSectionConfigNameChanged(string value) => ScheduleSectionConfigAutoSave();
-
-    private void ScheduleSectionConfigAutoSave()
+    // Header Save (#143) for the create form: import the recognised config, or fail (kept dirty) if the text is
+    // not a valid config or the required name is missing.
+    private async Task<bool> CommitSectionConfigAsync()
     {
-        _sectionConfigAutoSaveDebounce?.Cancel();
-        if (!IsCreatingSectionConfig || !CanSaveSectionConfig)
+        if (!CanSaveSectionConfig)
         {
-            return;
+            SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
+            return false;
         }
 
-        var cts = new System.Threading.CancellationTokenSource();
-        _sectionConfigAutoSaveDebounce = cts;
-        _ = DebounceAutoSaveSectionConfigAsync(cts.Token);
+        return await SaveSectionConfig();
     }
 
-    // Wait out the debounce, then import the config unless a newer change cancelled this timer, emptied the
-    // (required) name, or the save already ran (it flips IsCreatingSectionConfig off).
-    private async Task DebounceAutoSaveSectionConfigAsync(System.Threading.CancellationToken token)
+    // Adds the recognised config to the catalogue and opens it (via _pendingOpenConfig on the next snapshot).
+    // Returns whether the import succeeded.
+    private async Task<bool> SaveSectionConfig()
     {
-        try
-        {
-            await Task.Delay(400, token);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        if (!token.IsCancellationRequested && IsCreatingSectionConfig && CanSaveSectionConfig)
-        {
-            await SaveSectionConfig();
-        }
-    }
-
-    // Adds the recognised config to the catalogue and opens it. No longer a command (the «Сохранить» button is
-    // gone, #118); invoked by the debounced auto-save above.
-    private async Task SaveSectionConfig()
-    {
-        // Re-entrancy guard: the import below is awaited while the form is still open and populated, so a change
-        // during that await can schedule a second debounce that re-enters here and imports the config twice
-        // (#118 review). Only the first save runs; a re-entry no-ops until it completes. UI-thread only.
+        // Re-entrancy guard: the import below is awaited while the form is still open and populated; guard against
+        // a second overlapping save re-entering here and importing the config twice (#118 review). UI-thread only.
         if (_sectionConfigSaving)
         {
-            return;
+            return false;
         }
 
-        _sectionConfigAutoSaveDebounce?.Cancel();
         var imported = VpnLinkCodec.TryDecode(SectionConfigText);
         if (imported is null)
         {
             SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
-            return;
+            return false;
         }
 
         var name = !string.IsNullOrWhiteSpace(SectionConfigName)
@@ -2638,7 +2612,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             if (!ack.Ok)
             {
                 SectionConfigStatus = ack.Message;
-                return;
+                return false;
             }
 
             IsCreatingSectionConfig = false;
@@ -2648,6 +2622,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             // Open the just-imported config once its row lands in the next snapshot, so the transport editor
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
+            return true;
         }
         finally
         {

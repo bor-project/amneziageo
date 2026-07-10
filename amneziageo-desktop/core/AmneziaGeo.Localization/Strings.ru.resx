@@ -310,9 +310,6 @@
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Закрыть</value>
   </data>
-  <data name="Main_CollectLogsButton" xml:space="preserve">
-    <value>Собрать логи…</value>
-  </data>
   <data name="Main_LogFileLabel" xml:space="preserve">
     <value>Файл:</value>
   </data>
@@ -433,9 +430,6 @@
   <data name="Main_InstallButton" xml:space="preserve">
     <value>Установить</value>
   </data>
-  <data name="Main_LevelLabel" xml:space="preserve">
-    <value>Уровень:</value>
-  </data>
   <data name="Main_ListNameLabel" xml:space="preserve">
     <value>ИМЯ СПИСКА</value>
   </data>
@@ -451,23 +445,11 @@
   <data name="Main_LogEmptyHint" xml:space="preserve">
     <value>Журнал появится, когда агент начнёт работу.</value>
   </data>
-  <data name="Main_LogSeverityAll" xml:space="preserve">
-    <value>Все</value>
-  </data>
-  <data name="Main_LogSeverityError" xml:space="preserve">
-    <value>Только ошибки</value>
-  </data>
-  <data name="Main_LogSeverityInfo" xml:space="preserve">
-    <value>Информация и выше</value>
-  </data>
-  <data name="Main_LogSeverityWarn" xml:space="preserve">
-    <value>Предупреждения и выше</value>
-  </data>
   <data name="Main_LogVerbosityHint" xml:space="preserve">
     <value>«Трасса» фиксирует каждый шаг подключения и тайминги - для диагностики в поддержке.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
-    <value>Подробность записи</value>
+    <value>Уровень</value>
   </data>
   <data name="Main_LoginLabel" xml:space="preserve">
     <value>Логин:</value>
@@ -584,10 +566,10 @@
     <value>Переименовать</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>Отдельный журнал маршрутов, разрешений адресов и того, куда идут запросы (routes.log) - чтобы понять, почему сайт не открывается или грузится медленно. Попадает в архив для поддержки.</value>
+    <value>Отдельный журнал маршрутов, разрешений адресов и того, куда идут запросы (routes.log) - чтобы понять, почему сайт не открывается или грузится медленно.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
-    <value>Лог маршрутизации</value>
+    <value>Логировать подключения</value>
   </data>
   <data name="Main_RoutingCopyTooltip" xml:space="preserve">
     <value>Скопировать список в буфер обмена</value>
@@ -642,12 +624,6 @@
   </data>
   <data name="Main_SourcesSection" xml:space="preserve">
     <value>ИСТОЧНИКИ GEO</value>
-  </data>
-  <data name="Main_SupportLogsHint" xml:space="preserve">
-    <value>Собрать логи обоих процессов в один архив (секреты вырезаны) для отправки в поддержку.</value>
-  </data>
-  <data name="Main_SupportLogsTitle" xml:space="preserve">
-    <value>Логи для поддержки</value>
   </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
     <value>MTU туннеля:</value>
@@ -787,12 +763,6 @@
   <data name="MainCode_DeleteDatabase" xml:space="preserve">
     <value>Удалить базу</value>
   </data>
-  <data name="MainCode_LogsCollectedAndSaved" xml:space="preserve">
-    <value>Логи собраны и сохранены.</value>
-  </data>
-  <data name="MainCode_LogsSaveFailed" xml:space="preserve">
-    <value>Не удалось сохранить логи: {0}</value>
-  </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR распознан, но это не конфигурация</value>
   </data>
@@ -811,9 +781,6 @@
   <data name="MainCode_SaveConfigTitle" xml:space="preserve">
     <value>Сохранить конфигурацию</value>
   </data>
-  <data name="MainCode_SaveLogsForSupportTitle" xml:space="preserve">
-    <value>Сохранить логи для поддержки</value>
-  </data>
   <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
     <value>Сохранить список маршрутизации</value>
   </data>
@@ -828,9 +795,6 @@
   </data>
   <data name="MainCode_WebSocketSettingsTitle" xml:space="preserve">
     <value>Настройки WebSocket</value>
-  </data>
-  <data name="MainCode_ZipArchive" xml:space="preserve">
-    <value>ZIP-архив</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Не распознано (.conf или vpn://)</value>
@@ -852,9 +816,6 @@
   </data>
   <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
     <value>Выберите профиль</value>
-  </data>
-  <data name="MainVm_DiagnosticsFailed" xml:space="preserve">
-    <value>Не удалось собрать логи.</value>
   </data>
   <data name="MainVm_Disconnect" xml:space="preserve">
     <value>Отключить</value>

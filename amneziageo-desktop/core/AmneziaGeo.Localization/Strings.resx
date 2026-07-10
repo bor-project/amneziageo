@@ -310,9 +310,6 @@
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Close</value>
   </data>
-  <data name="Main_CollectLogsButton" xml:space="preserve">
-    <value>Collect logs…</value>
-  </data>
   <data name="Main_LogFileLabel" xml:space="preserve">
     <value>File:</value>
   </data>
@@ -433,9 +430,6 @@
   <data name="Main_InstallButton" xml:space="preserve">
     <value>Install</value>
   </data>
-  <data name="Main_LevelLabel" xml:space="preserve">
-    <value>Level:</value>
-  </data>
   <data name="Main_ListNameLabel" xml:space="preserve">
     <value>LIST NAME</value>
   </data>
@@ -451,23 +445,11 @@
   <data name="Main_LogEmptyHint" xml:space="preserve">
     <value>The log will appear once the agent starts working.</value>
   </data>
-  <data name="Main_LogSeverityAll" xml:space="preserve">
-    <value>All</value>
-  </data>
-  <data name="Main_LogSeverityError" xml:space="preserve">
-    <value>Errors only</value>
-  </data>
-  <data name="Main_LogSeverityInfo" xml:space="preserve">
-    <value>Info and above</value>
-  </data>
-  <data name="Main_LogSeverityWarn" xml:space="preserve">
-    <value>Warnings and above</value>
-  </data>
   <data name="Main_LogVerbosityHint" xml:space="preserve">
     <value>«Trace» records every connection step and timing - for support diagnosis.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
-    <value>Record verbosity</value>
+    <value>Level</value>
   </data>
   <data name="Main_LoginLabel" xml:space="preserve">
     <value>Login:</value>
@@ -584,10 +566,10 @@
     <value>Rename</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>A separate log of routes, address resolutions, and where requests go (routes.log) - to understand why a site does not open or loads slowly. Included in the support archive.</value>
+    <value>A separate log of routes, address resolutions, and where requests go (routes.log) - to understand why a site does not open or loads slowly.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
-    <value>Routing log</value>
+    <value>Log connections</value>
   </data>
   <data name="Main_RoutingCopyTooltip" xml:space="preserve">
     <value>Copy the list to clipboard</value>
@@ -642,12 +624,6 @@
   </data>
   <data name="Main_SourcesSection" xml:space="preserve">
     <value>GEO SOURCES</value>
-  </data>
-  <data name="Main_SupportLogsHint" xml:space="preserve">
-    <value>Collect both processes' logs into a single archive (secrets stripped) to send to support.</value>
-  </data>
-  <data name="Main_SupportLogsTitle" xml:space="preserve">
-    <value>Logs for support</value>
   </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
     <value>Tunnel MTU:</value>
@@ -787,12 +763,6 @@
   <data name="MainCode_DeleteDatabase" xml:space="preserve">
     <value>Delete database</value>
   </data>
-  <data name="MainCode_LogsCollectedAndSaved" xml:space="preserve">
-    <value>Logs collected and saved.</value>
-  </data>
-  <data name="MainCode_LogsSaveFailed" xml:space="preserve">
-    <value>Failed to save logs: {0}</value>
-  </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR recognized, but it is not a configuration</value>
   </data>
@@ -811,9 +781,6 @@
   <data name="MainCode_SaveConfigTitle" xml:space="preserve">
     <value>Save configuration</value>
   </data>
-  <data name="MainCode_SaveLogsForSupportTitle" xml:space="preserve">
-    <value>Save logs for support</value>
-  </data>
   <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
     <value>Save routing list</value>
   </data>
@@ -828,9 +795,6 @@
   </data>
   <data name="MainCode_WebSocketSettingsTitle" xml:space="preserve">
     <value>WebSocket settings</value>
-  </data>
-  <data name="MainCode_ZipArchive" xml:space="preserve">
-    <value>ZIP archive</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Not recognized (.conf or vpn://)</value>
@@ -852,9 +816,6 @@
   </data>
   <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
     <value>Select a profile</value>
-  </data>
-  <data name="MainVm_DiagnosticsFailed" xml:space="preserve">
-    <value>Could not collect logs.</value>
   </data>
   <data name="MainVm_Disconnect" xml:space="preserve">
     <value>Disconnect</value>

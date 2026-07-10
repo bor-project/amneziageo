@@ -31,9 +31,7 @@ public sealed record StatusSnapshot(
     string EngineVersion = "",
     // When set, all UDP is routed through the tunnel while in split mode.
     bool TunnelAllUdp = false,
-    // Current log verbosity token: "info" (default), "debug", or "trace".
-    string LogLevel = "info",
+    // Current log verbosity token: "error" (default), "info", "debug", or "trace".
+    string LogLevel = "error",
     // Whether the dedicated routing log (routes.log) is currently recording.
-    bool RouteLog = false,
-    // Whether geo-source downloads bypass the tunnel when the direct path is reachable.
-    bool SmartDownloadRouting = false);
+    bool RouteLog = false);

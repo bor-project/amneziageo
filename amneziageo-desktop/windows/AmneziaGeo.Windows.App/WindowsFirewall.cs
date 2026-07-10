@@ -17,8 +17,6 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const byte WeightDhcp = 4;
     private const byte WeightLoopback = 8;
     private const byte WeightTun = 10;
-    // QUIC block outranks tunnel permit (10) but not the app hard-permit (14).
-    private const byte WeightQuicBlock = 12;
     private const byte WeightApp = 14;
     private const byte WeightHyperV = 14;
 
@@ -81,9 +79,6 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             try
             {
                 CreateSublayer(engine);
-
-                // Block QUIC (UDP/443) on tunnel so HTTP/3 falls back to TCP.
-                BlockTunnelQuic(engine, luid);
 
                 if (killSwitch)
                 {
@@ -360,28 +355,6 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 logger.LogWarning("kill-switch: Hyper-V permit not installed (0x{Code:X8}); continuing", rc);
                 return;
             }
-        }
-    }
-
-    private void BlockTunnelQuic(IntPtr engine, ulong luid)
-    {
-        // Block QUIC (UDP/443) egressing the tunnel; v4 only (AAAA denied at proxy).
-        var luidPtr = Marshal.AllocHGlobal(sizeof(ulong));
-        try
-        {
-            Marshal.WriteInt64(luidPtr, (long)luid);
-            var cond = new[]
-            {
-                Condition(CondIpLocalInterface, MatchEqual, FwpUint64, (ulong)luidPtr),
-                Condition(CondIpProtocol, MatchEqual, FwpUint8, ProtocolUdp),
-                Condition(CondIpRemotePort, MatchEqual, FwpUint16, 443),
-            };
-
-            Add(engine, LayerAleAuthConnectV4, WeightQuicBlock, ActionBlock, 0, cond, "Block QUIC (UDP/443) on tunnel");
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(luidPtr);
         }
     }
 

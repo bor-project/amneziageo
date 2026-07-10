@@ -9,17 +9,22 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class LogLevelController
 {
     /// <summary>
-    /// The switch Serilog is configured to obey (AppHost binds MinimumLevel.ControlledBy to it).
+    /// The default verbosity token.
     /// </summary>
-    public LoggingLevelSwitch Switch { get; } = new(LogEventLevel.Information);
+    public const string DefaultToken = "error";
 
     /// <summary>
-    /// The current level as a persisted token ("info" / "debug" / "trace").
+    /// The switch Serilog is configured to obey (AppHost binds MinimumLevel.ControlledBy to it).
+    /// </summary>
+    public LoggingLevelSwitch Switch { get; } = new(LogEventLevel.Error);
+
+    /// <summary>
+    /// The current level as a persisted token ("error" / "info" / "debug" / "trace").
     /// </summary>
     public string Current => Format(Switch.MinimumLevel);
 
     /// <summary>
-    /// Applies a token to the live switch. Unknown tokens fall back to Information.
+    /// Applies a token to the live switch. Unknown tokens fall back to Error.
     /// </summary>
     public void Set(string? token)
     {
@@ -35,7 +40,8 @@ internal sealed class LogLevelController
         {
             "trace" => LogEventLevel.Verbose,
             "debug" => LogEventLevel.Debug,
-            _ => LogEventLevel.Information,
+            "info" => LogEventLevel.Information,
+            _ => LogEventLevel.Error,
         };
     }
 
@@ -48,15 +54,16 @@ internal sealed class LogLevelController
         {
             LogEventLevel.Verbose => "trace",
             LogEventLevel.Debug => "debug",
-            _ => "info",
+            LogEventLevel.Information => "info",
+            _ => DefaultToken,
         };
     }
 
     /// <summary>
-    /// Whether a token is one of the three exposed levels.
+    /// Whether a token is one of the four exposed levels.
     /// </summary>
     public static bool IsValid(string? token)
     {
-        return token is "info" or "debug" or "trace";
+        return token is "error" or "info" or "debug" or "trace";
     }
 }

@@ -66,17 +66,12 @@ internal sealed record AppSettings
     public bool TunnelAllUdp { get; init; }
 
     /// <summary>
-    /// Log verbosity token: info, debug, or trace.
+    /// Log verbosity token: error, info, debug, or trace.
     /// </summary>
-    public string LogLevel { get; init; } = "info";
+    public string LogLevel { get; init; } = LogLevelController.DefaultToken;
 
     /// <summary>
     /// Whether the dedicated routing log is recording.
     /// </summary>
     public bool RouteLog { get; init; }
-
-    /// <summary>
-    /// Route geo-source downloads around the tunnel when the direct path is reachable.
-    /// </summary>
-    public bool SmartDownloadRouting { get; init; }
 }

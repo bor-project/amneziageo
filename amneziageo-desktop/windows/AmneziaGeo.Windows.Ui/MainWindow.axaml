@@ -526,12 +526,15 @@
                       <StackPanel Spacing="10">
                         <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
                         <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}" IsChecked="{Binding UseWebSocket}" />
-                        <Grid ColumnDefinitions="Auto,Auto,*">
-                          <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                          <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
-                          <TextBlock Grid.Column="2" Classes="muted" FontSize="11" VerticalAlignment="Center"
-                                     TextWrapping="Wrap" Margin="8,0,0,0" Text="{l:Tr Main_MtuHint}" />
-                        </Grid>
+                        <!-- Hint sits on its own wrapped line: in the narrow card a third Auto/star column
+                             pushed the row past the panel edge. -->
+                        <StackPanel Spacing="4">
+                          <Grid ColumnDefinitions="Auto,Auto">
+                            <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
+                          </Grid>
+                          <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
+                        </StackPanel>
                         <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
                           <StackPanel Spacing="2">
                             <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
@@ -644,12 +647,13 @@
                   <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}"
                             IsChecked="{Binding UseWebSocket}" />
                   <!-- MTU applies to any transport, not just WSS. Kept outside the WebSocket block. -->
-                  <Grid ColumnDefinitions="Auto,Auto,*">
-                    <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                    <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="2" Classes="muted" FontSize="11" VerticalAlignment="Center"
-                               TextWrapping="Wrap" Margin="8,0,0,0" Text="{l:Tr Main_MtuHint}" />
-                  </Grid>
+                  <StackPanel Spacing="4">
+                    <Grid ColumnDefinitions="Auto,Auto">
+                      <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                      <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
+                  </StackPanel>
                   <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
                     <StackPanel Spacing="2">
                       <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
@@ -1211,11 +1215,14 @@
                       <StackPanel Spacing="6" IsVisible="{Binding UpdateAvailable}">
                         <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                        <!-- Found -> downloading -> downloaded: installing is an explicit second click (#154). -->
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                          <Button Classes="accent" Content="{l:Tr Main_DownloadAndInstallButton}" Command="{Binding InstallUpdateCommand}"
-                                  IsEnabled="{Binding !UpdateDownloading}" />
+                          <Button Classes="accent" Content="{l:Tr Main_DownloadButton}" Command="{Binding DownloadUpdateCommand}"
+                                  IsVisible="{Binding !UpdateDownloaded}" IsEnabled="{Binding !UpdateDownloading}" />
                           <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
                                      FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />
+                          <Button Classes="accent" Content="{l:Tr Main_InstallButton}" Command="{Binding ApplyUpdateCommand}"
+                                  IsVisible="{Binding UpdateDownloaded}" />
                         </StackPanel>
                       </StackPanel>
                     </StackPanel>
@@ -1269,9 +1276,19 @@
           <TextBlock Grid.Column="1" Text="{Binding UpdateBannerText}"
                      Foreground="White" FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
-          <Button Grid.Column="2" Classes="radiopick" Command="{Binding InstallUpdateCommand}"
-                  Content="{l:Tr Main_UpdateButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                  Margin="10,0,0,0" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                      Margin="10,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Foreground="White"
+                       FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                       IsVisible="{Binding UpdateDownloading}" />
+            <Button Classes="radiopick" Command="{Binding DownloadUpdateCommand}"
+                    Content="{l:Tr Main_DownloadButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                    VerticalAlignment="Center" IsVisible="{Binding !UpdateDownloaded}"
+                    IsEnabled="{Binding !UpdateDownloading}" />
+            <Button Classes="radiopick" Command="{Binding ApplyUpdateCommand}"
+                    Content="{l:Tr Main_InstallButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                    VerticalAlignment="Center" IsVisible="{Binding UpdateDownloaded}" />
+          </StackPanel>
           <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissUpdateBannerCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
                   VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />

@@ -70,22 +70,6 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Path to the bundled default-configuration database laid next to the agent by the installer.
-    /// </summary>
-    public static string SeedDbFile()
-    {
-        return Path.Combine(AppContext.BaseDirectory, "state.db.seed");
-    }
-
-    /// <summary>
-    /// Marker file: presence means the bundled default DB should replace an existing one on conflict.
-    /// </summary>
-    public static string SeedReplaceFlagFile()
-    {
-        return Path.Combine(AppContext.BaseDirectory, "state.db.seed.replace");
-    }
-
-    /// <summary>
     /// Path to a tunnel's persisted DNS-redirect state used to revert NIC DNS after a stop.
     /// </summary>
     public static string DnsStateFile(string name)

@@ -36,13 +36,6 @@ public static class AppEntry
         };
         using (var host = AppHost.Build(agentTarget))
         {
-            // Seed DB is applied only by the privileged agent so it lands with SYSTEM ownership.
-            if (agentTarget is not null)
-            {
-                SeedImporter.TryApply(
-                    host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SeedImporter"));
-            }
-
             await EnsureStoreAsync(host.Services);
             if (agentTarget is not null)
             {

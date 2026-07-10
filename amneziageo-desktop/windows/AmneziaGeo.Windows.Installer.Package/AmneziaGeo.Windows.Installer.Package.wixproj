@@ -12,11 +12,7 @@
          build-installer.ps1, sourced from installer.config.json) gates the ARP/shortcut icon: "false"
          omits it entirely. -->
     <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
-    <!-- HasDefaultDb / DefaultDbFile / ReplaceFlagFile come from build-installer.ps1 (installer.config.json
-         -> defaultConfigDb, #54). HasDefaultDb=false (default) preprocesses the seed components out entirely;
-         the two file paths are only referenced inside that <?if?>, so they stay empty for a plain build. -->
-    <HasDefaultDb Condition="'$(HasDefaultDb)' == ''">false</HasDefaultDb>
-    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon);HasDefaultDb=$(HasDefaultDb);DefaultDbFile=$(DefaultDbFile);ReplaceFlagFile=$(ReplaceFlagFile)</DefineConstants>
+    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon)</DefineConstants>
   </PropertyGroup>
 
   <Target Name="EnsureStageDir" BeforeTargets="Build"

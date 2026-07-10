@@ -56,10 +56,6 @@ public sealed class InstallerViewModel : ObservableObject
     private bool _indeterminate;
     private bool _launchOnClose = true;
     private string _geoResult = string.Empty;
-    private string _configPath = string.Empty;
-    private bool _hasExistingConfig;
-    private bool _pickedIsBundle;
-    private int _conflictPolicyIndex;
     private InstallerAction? _pendingAction;
 
     /// <summary>
@@ -83,7 +79,6 @@ public sealed class InstallerViewModel : ObservableObject
         });
         BackCommand = new RelayCommand(() => PendingAction = null);
         CloseCommand = new RelayCommand(() => _close());
-        PickConfigCommand = new RelayCommand(PickConfig);
     }
 
     public ICommand InstallCommand { get; }
@@ -224,13 +219,7 @@ public sealed class InstallerViewModel : ObservableObject
     public bool DeleteConfig
     {
         get => _deleteConfig;
-        set
-        {
-            if (Set(ref _deleteConfig, value))
-            {
-                Raise(nameof(ShowConflictPolicy));
-            }
-        }
+        set => Set(ref _deleteConfig, value);
     }
 
     /// <summary>
@@ -307,10 +296,9 @@ public sealed class InstallerViewModel : ObservableObject
     /// <summary>
     /// Apply detection result to the view state.
     /// </summary>
-    public void SetDetected(InstallState state, string? installedVersion, bool hasExistingConfig)
+    public void SetDetected(InstallState state, string? installedVersion)
     {
         State = state;
-        HasExistingConfig = hasExistingConfig;
         VersionText = string.IsNullOrEmpty(installedVersion) ? string.Empty : Loc.Instance.Get("InstallerVm_InstalledVersion", installedVersion);
         SubText = state switch
         {
@@ -351,15 +339,6 @@ public sealed class InstallerViewModel : ObservableObject
         {
             Progress = percent;
         }
-    }
-
-    /// <summary>
-    /// Switch to the applying-configuration view.
-    /// </summary>
-    public void BeginConfigImport()
-    {
-        SubText = Loc.Instance.Get("InstallerVm_ImportingConfig");
-        IsIndeterminate = true;
     }
 
     /// <summary>
@@ -420,124 +399,6 @@ public sealed class InstallerViewModel : ObservableObject
         Complete(success, message);
     }
 
-    /// <summary>
-    /// Open a file picker for a configuration file (a portable bundle or a single config).
-    /// </summary>
-    public ICommand PickConfigCommand { get; }
-
-    /// <summary>
-    /// User-selected configuration file to apply through the agent import path after install.
-    /// </summary>
-    public string ConfigPath
-    {
-        get => _configPath;
-        private set
-        {
-            if (Set(ref _configPath, value))
-            {
-                Raise(nameof(ConfigFileLabel));
-                Raise(nameof(ShowConflictPolicy));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Caption next to the picker.
-    /// </summary>
-    public string ConfigFileLabel => string.IsNullOrEmpty(ConfigPath)
-        ? Loc.Instance.Get("InstallerVm_ConfigFileNone")
-        : Loc.Instance.Get("InstallerVm_ConfigFileSelected", System.IO.Path.GetFileName(ConfigPath));
-
-    /// <summary>
-    /// Show the configuration-file picker on the options step.
-    /// </summary>
-    public bool ShowConfigFileOption => ShowOptionsStep && IsApplyAction;
-
-    /// <summary>
-    /// True when a runtime configuration already exists on the machine (state.db present) - a picked bundle
-    /// may collide with it, so the user is asked how to resolve that.
-    /// </summary>
-    public bool HasExistingConfig
-    {
-        get => _hasExistingConfig;
-        private set
-        {
-            if (Set(ref _hasExistingConfig, value))
-            {
-                Raise(nameof(ShowConflictPolicy));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Name-conflict policy for the import: 0 add-as-new (default), 1 replace, 2 skip, 3 merge.
-    /// </summary>
-    public int ConflictPolicyIndex
-    {
-        get => _conflictPolicyIndex;
-        set => Set(ref _conflictPolicyIndex, value);
-    }
-
-    /// <summary>
-    /// The agent import policy token for the chosen index (mirrors the in-app bundle import dialog).
-    /// </summary>
-    public string ConflictPolicy => ConflictPolicyIndex switch { 1 => "replace", 2 => "skip", 3 => "merge", _ => "new" };
-
-    /// <summary>
-    /// Whether the picked file is a portable bundle (JSON). The conflict policy only applies to a bundle; a
-    /// single wg-quick config is imported by name (import-config), which has no policy, so the selector is
-    /// hidden for it rather than shown as a no-op.
-    /// </summary>
-    public bool PickedIsBundle
-    {
-        get => _pickedIsBundle;
-        private set
-        {
-            if (Set(ref _pickedIsBundle, value))
-            {
-                Raise(nameof(ShowConflictPolicy));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Ask - inline on the options step, never in a separate dialog - how to resolve name collisions. Shown
-    /// only when a bundle is picked, a configuration already exists, and the run is not wiping it first (a wipe
-    /// leaves nothing to collide with).
-    /// </summary>
-    public bool ShowConflictPolicy => ShowConfigFileOption && PickedIsBundle && HasExistingConfig && !DeleteConfig;
-
-    private void PickConfig()
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = Loc.Instance.Get("InstallerVm_ConfigFileDialogTitle"),
-            Filter = Loc.Instance.Get("InstallerVm_ConfigFileDialogFilter"),
-            CheckFileExists = true,
-        };
-        if (dialog.ShowDialog() == true)
-        {
-            ConfigPath = dialog.FileName;
-            PickedIsBundle = LooksLikeBundle(ConfigPath);
-        }
-    }
-
-    /// <summary>
-    /// A portable bundle is a JSON object; anything else is a single wg-quick config. Mirrors the routing test
-    /// the bootstrapper uses at import time so the inline policy is offered exactly for the bundle path.
-    /// </summary>
-    internal static bool LooksLikeBundle(string path)
-    {
-        try
-        {
-            return System.IO.File.ReadAllText(path).TrimStart().StartsWith('{');
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private void RaiseVisibility()
     {
         Raise(nameof(ShowActionButtons));
@@ -551,8 +412,6 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowDone));
         Raise(nameof(ShowDownloadOption));
         Raise(nameof(ShowDeleteConfigOption));
-        Raise(nameof(ShowConfigFileOption));
-        Raise(nameof(ShowConflictPolicy));
         Raise(nameof(ShowLaunchOnInstall));
     }
 }

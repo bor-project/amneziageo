@@ -39,18 +39,6 @@
     <MajorUpgrade AllowDowngrades="yes" />
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- Replace-on-conflict choice for a bundled default config DB (#54), passed by the Burn bundle
-         (REPLACEDB -> SEEDREPLACE). "1" => lay state.db.seed.replace so the agent overwrites an existing
-         state.db; anything else => keep the existing DB. Secure so it survives into the elevated execute
-         sequence. Only meaningful when a default DB is bundled (HasDefaultDb). -->
-    <Property Id="SEEDREPLACE" Value="0" Secure="yes" />
-
-    <!-- User-selected default-DB path (#55): the BA file-picker or a SEEDDBPATH=... command-line argument,
-         passed by the bundle. Recorded in the registry (below) so the agent prefers it over the bundled
-         state.db.seed. Empty (the default) => no override, use the bundled seed. Secure so it survives into
-         the elevated execute sequence. -->
-    <Property Id="SEEDDBPATH" Secure="yes" />
-
     <!-- "Delete configuration on removal" choice (#105), passed by the Burn bundle from the BA checkbox
          (DELETECONFIG). "1" => wipe the runtime data tree on full removal (AgWipeConfig below); anything else
          (incl. the default 0) => keep it, so a reinstall preserves the user's profiles/settings. Secure so it
@@ -70,10 +58,6 @@
       <ComponentGroupRef Id="Payload" />
       <ComponentRef Id="AgentServiceExe" />
       <ComponentRef Id="GuiShortcut" />
-<?if $(var.HasDefaultDb) = "true" ?>
-      <ComponentRef Id="DefaultDbSeed" />
-      <ComponentRef Id="DefaultDbReplaceFlag" />
-<?endif?>
     </Feature>
 
     <!-- App icon (same .ico embedded into Ui.exe) for the shortcuts and the Add/Remove Programs entry.
@@ -87,8 +71,8 @@
     <!-- On full removal (including the remove phase of a major upgrade) mop up any leftover transient
          per-tunnel services. The active tunnel is already torn down by the AmneziaGeoAgent service's
          own graceful stop (ServiceControl below), which reverts its routes / DNS / firewall; this only
-         catches a per-tunnel service orphaned by an agent crash. Runs the installed agent exe with
-         --uninstall-cleanup, which enumerates and deletes the "AmneziaGeo$*" services in-process via the
+         catches a per-tunnel service orphaned by an agent crash. Runs the installed agent exe with the
+         uninstall-cleanup verb, which enumerates and deletes the "AmneziaGeo$*" services in-process via the
          Service Control Manager API (no powershell/sc.exe child, keeping the AV footprint low - #167).
          Sequenced Before RemoveFiles so the exe is still on disk. Fixed verb (no installer properties), so
          the action needs no deferred CustomActionData. DEFERRED + Impersonate="no" runs it as SYSTEM on
@@ -105,11 +89,11 @@
          «Удалить конфигурацию и кэш» on removal, or «Сбросить настройки» on install/update/repair (start the
          app from a clean config). Off by default, so a plain (un)install keeps profiles/settings. The WHOLE
          tree is removed, not just state.db: leaving legacy Configurations\*.conf behind would let them migrate
-         back into a fresh DB. Runs the installed agent exe with --wipe-config, which removes the tree in-process
-         via the file API with a short retry (no powershell child - #167). Deferred + Impersonate="no" runs it as
-         SYSTEM (the data is owned by the service account); sequenced Before RemoveFiles so the exe is still on
-         disk, yet AFTER StopServices has stopped the agent (its process exit unlocks state.db) and before the
-         service is (re)started, so a fresh config is seeded after the wipe, not before. On a fresh install / a
+         back into a fresh DB. Runs the installed agent exe with the wipe-config verb, which removes the tree
+         in-process via the file API with a short retry (no powershell child - #167). Deferred + Impersonate="no"
+         runs it as SYSTEM (the data is owned by the service account); sequenced Before RemoveFiles so the exe is
+         still on disk, yet AFTER StopServices has stopped the agent (its process exit unlocks state.db) and
+         before the service is (re)started. On a fresh install / a
          machine with no config the tree is absent (and the exe not yet laid), so the action is a Return="ignore"
          no-op. The exe's retry loop (~3s) rides out the narrow window where the service is SCM-stopped but its
          process has not yet released state.db / the current log file. -->
@@ -136,20 +120,6 @@
       </Files>
     </ComponentGroup>
 
-<?if $(var.HasDefaultDb) = "true" ?>
-    <!-- Optional prebuilt default-configuration database (installer.config.json -> defaultConfigDb, #54).
-         Laid next to the agent as state.db.seed; the agent (SYSTEM, first run) copies it into
-         ProgramData\AmneziaGeo\state.db when none exists (SeedImporter). state.db.seed.replace is laid
-         ONLY when SEEDREPLACE=1 (the replace-on-conflict choice from the bundle); its presence tells the
-         agent to overwrite an existing DB instead of keeping it. -->
-    <Component Id="DefaultDbSeed" Directory="INSTALLFOLDER">
-      <File Id="DefaultDbSeedFile" Source="$(var.DefaultDbFile)" Name="state.db.seed" KeyPath="yes" />
-    </Component>
-    <Component Id="DefaultDbReplaceFlag" Directory="INSTALLFOLDER" Condition="SEEDREPLACE = &quot;1&quot;">
-      <File Id="DefaultDbReplaceFlagFile" Source="$(var.ReplaceFlagFile)" Name="state.db.seed.replace" KeyPath="yes" />
-    </Component>
-<?endif?>
-
     <!-- The backend agent, registered as the LocalSystem auto-start service the GUI talks to.
          Service name MUST match TunnelPaths.AgentServiceName() ("AmneziaGeoAgent") so the in-app
          service controls line up. The agent flag with no launch target (see Arguments below) ships a
@@ -173,9 +143,6 @@
                       Stop="both"
                       Remove="uninstall"
                       Wait="yes" />
-      <!-- #55: record the user-selected default-DB path so the agent (SeedImporter.ResolveSeedSource) prefers
-           it over the bundled state.db.seed on first run. Empty => no override. Removed on uninstall. -->
-      <RegistryValue Root="HKLM" Key="Software\AmneziaGeo" Name="SeedSource" Type="string" Value="[SEEDDBPATH]" />
     </Component>
 
     <!-- Shortcuts to the unprivileged GUI (Ui.exe itself is harvested with the payload): one on the

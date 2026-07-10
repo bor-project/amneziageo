@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Avalonia.Controls;
@@ -121,131 +120,6 @@ public sealed partial class MainWindow : Window
 
         var files = await StorageProvider.OpenFilePickerAsync(options);
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
-    }
-
-    // Copy the export payload to the clipboard (window concern).
-    private async void OnConfigExportCopy(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel { ConfigExport: { } vm })
-        {
-            return;
-        }
-
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is not null)
-        {
-            await clipboard.SetTextAsync(vm.Payload);
-            vm.StatusMessage = Loc.Instance.Get("MainCode_CopiedToClipboard");
-        }
-    }
-
-    // Save the export payload to a picked file.
-    private async void OnConfigExportSave(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel { ConfigExport: { } vm })
-        {
-            return;
-        }
-
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = Loc.Instance.Get("MainCode_SaveConfigTitle"),
-            SuggestedFileName = vm.SuggestedFileName,
-        });
-        if (file is null)
-        {
-            return;
-        }
-
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(vm.Payload);
-        vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
-    }
-
-    // WebSocket settings share (copy / save / paste / load).
-    private async void OnWsExportCopy(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
-        {
-            return;
-        }
-
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is not null)
-        {
-            await clipboard.SetTextAsync(vm.BuildTransferPayload());
-            vm.StatusMessage = Loc.Instance.Get("MainCode_CopiedToClipboard");
-        }
-    }
-
-    private async void OnWsExportSave(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
-        {
-            return;
-        }
-
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = Loc.Instance.Get("MainCode_SaveWebSocketTitle"),
-            SuggestedFileName = vm.SuggestedFileName,
-        });
-        if (file is null)
-        {
-            return;
-        }
-
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(vm.BuildTransferPayload());
-        vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
-    }
-
-    private async void OnWsImportPaste(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
-        {
-            return;
-        }
-
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is null)
-        {
-            return;
-        }
-
-        var text = await clipboard.TryGetTextAsync();
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            vm.StatusMessage = Loc.Instance.Get("MainCode_ClipboardNoText");
-            return;
-        }
-
-        vm.ApplyImport(text);
-    }
-
-    private async void OnWsImportFile(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { DataContext: ConfigTransportViewModel vm })
-        {
-            return;
-        }
-
-        var path = await PickFileAsync(Loc.Instance.Get("MainCode_WebSocketSettingsTitle"), "txt", "conf");
-        if (path is null)
-        {
-            return;
-        }
-
-        try
-        {
-            vm.ApplyImport(await File.ReadAllTextAsync(path));
-        }
-        catch (Exception ex)
-        {
-            vm.StatusMessage = ex.Message;
-        }
     }
 
     // Routing-list share (copy / save / paste / load).
@@ -475,20 +349,6 @@ public sealed partial class MainWindow : Window
 
         var dialog = new BundleImportDialog { DataContext = new BundleImportDialogViewModel(vm.Connection) };
         await dialog.ShowDialog(this);
-    }
-
-    // Opens the README shipped next to the exe (ws-server setup and other help).
-    private void OnOpenReadme(object? sender, RoutedEventArgs e)
-    {
-        var path = Path.Combine(AppContext.BaseDirectory, "README.md");
-        try
-        {
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            (DataContext as MainWindowViewModel)?.ShowTransientNotice(Loc.Instance.Get("MainCode_ReadmeOpenFailed", ex.Message));
-        }
     }
 
     /// <summary>

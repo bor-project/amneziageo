@@ -172,24 +172,6 @@
   <data name="ConfigEditor_SaveButton" xml:space="preserve">
     <value>Сохранить</value>
   </data>
-  <data name="Export_CloseButton" xml:space="preserve">
-    <value>Закрыть</value>
-  </data>
-  <data name="Export_ConfFileTab" xml:space="preserve">
-    <value>Файл .conf</value>
-  </data>
-  <data name="Export_CopyButton" xml:space="preserve">
-    <value>Копировать</value>
-  </data>
-  <data name="Export_LinkTab" xml:space="preserve">
-    <value>Ссылка vpn://</value>
-  </data>
-  <data name="Export_SaveButton" xml:space="preserve">
-    <value>Сохранить...</value>
-  </data>
-  <data name="Export_WindowTitle" xml:space="preserve">
-    <value>Экспорт конфигурации</value>
-  </data>
   <data name="Main_AccessTokenLabel" xml:space="preserve">
     <value>Токен доступа:</value>
   </data>
@@ -229,12 +211,6 @@
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>Использовать IPv6</value>
   </data>
-  <data name="Main_SmartDownloadTitle" xml:space="preserve">
-    <value>Умная маршрутизация загрузок</value>
-  </data>
-  <data name="Main_SmartDownloadHint" xml:space="preserve">
-    <value>Качает обновления гео-баз напрямую, мимо туннеля, когда источник так доступен - без лишнего плеча через VPN-сервер. Если прямой путь заблокирован, идёт через туннель. Применяется при следующем подключении.</value>
-  </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Версия движка Amnezia</value>
   </data>
@@ -273,12 +249,6 @@
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
-  </data>
-  <data name="Main_OpenReadmeButton" xml:space="preserve">
-    <value>Открыть README</value>
-  </data>
-  <data name="Main_WsServerReadmeHint" xml:space="preserve">
-    <value>Настройка ws-сервера описана в README.md рядом с приложением.</value>
   </data>
   <data name="Main_CameraButton" xml:space="preserve">
     <value>Камера</value>
@@ -325,8 +295,14 @@
   <data name="Main_ConfEditHint" xml:space="preserve">
     <value>Должны быть секции [Interface] и [Peer]. Гео и маршруты профиля сохранятся.</value>
   </data>
-  <data name="Main_ConfFileTab" xml:space="preserve">
-    <value>Файл .conf</value>
+  <data name="Main_QrConfTab" xml:space="preserve">
+    <value>QR: файл .conf</value>
+  </data>
+  <data name="Main_QrLinkTab" xml:space="preserve">
+    <value>QR: ссылка vpn://</value>
+  </data>
+  <data name="Main_ConfigTextTab" xml:space="preserve">
+    <value>Конфиг</value>
   </data>
   <data name="Main_ConfigLabel" xml:space="preserve">
     <value>КОНФИГУРАЦИЯ</value>
@@ -391,9 +367,6 @@
   <data name="Main_DownloadButton" xml:space="preserve">
     <value>Скачать</value>
   </data>
-  <data name="Main_EditButton" xml:space="preserve">
-    <value>Изменить</value>
-  </data>
   <data name="Main_EntriesLabel" xml:space="preserve">
     <value>ЗАПИСИ</value>
   </data>
@@ -446,7 +419,7 @@
     <value>Журнал появится, когда агент начнёт работу.</value>
   </data>
   <data name="Main_LogVerbosityHint" xml:space="preserve">
-    <value>«Трасса» фиксирует каждый шаг подключения и тайминги - для диагностики в поддержке.</value>
+    <value>Определяет подробность журналирования.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Уровень</value>
@@ -521,7 +494,7 @@
     <value>ПРОКСИ (WEBSOCKET)</value>
   </data>
   <data name="Main_QrUnavailableHint" xml:space="preserve">
-    <value>Конфигурация не помещается в QR-код. Используйте «Сохранить в файл…» или ссылку vpn://.</value>
+    <value>Конфигурация не помещается в QR-код. Используйте вкладку «Конфиг» или ссылку vpn://.</value>
   </data>
   <data name="Main_RailConfigSubtitle" xml:space="preserve">
     <value>Каталог серверов</value>
@@ -566,7 +539,7 @@
     <value>Переименовать</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>Отдельный журнал маршрутов, разрешений адресов и того, куда идут запросы (routes.log) - чтобы понять, почему сайт не открывается или грузится медленно.</value>
+    <value>Записывает маршруты и разрешения адресов в отдельный журнал routes.log.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
     <value>Логировать подключения</value>
@@ -646,15 +619,6 @@
   <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
     <value>Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)</value>
   </data>
-  <data name="Main_VpnLinkTab" xml:space="preserve">
-    <value>Ссылка vpn://</value>
-  </data>
-  <data name="Main_WsCopyTooltip" xml:space="preserve">
-    <value>Скопировать настройки в буфер обмена</value>
-  </data>
-  <data name="Main_WsPasteTooltip" xml:space="preserve">
-    <value>Импортировать настройки из буфера обмена</value>
-  </data>
   <data name="Qr_CloseButton" xml:space="preserve">
     <value>Закрыть</value>
   </data>
@@ -727,15 +691,6 @@
   <data name="Exclusions_NoActiveLocalSubnets" xml:space="preserve">
     <value>Активные локальные сети не обнаружены.</value>
   </data>
-  <data name="ExportCode_CopiedToClipboard" xml:space="preserve">
-    <value>Скопировано в буфер обмена.</value>
-  </data>
-  <data name="ExportCode_SaveConfigTitle" xml:space="preserve">
-    <value>Сохранить конфигурацию</value>
-  </data>
-  <data name="ExportCode_Saved" xml:space="preserve">
-    <value>Сохранено.</value>
-  </data>
   <data name="ExportVm_NotWireGuardConfig" xml:space="preserve">
     <value>Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).</value>
   </data>
@@ -775,26 +730,14 @@
   <data name="MainCode_RoutingListTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
   </data>
-  <data name="MainCode_ReadmeOpenFailed" xml:space="preserve">
-    <value>Не удалось открыть README: {0}</value>
-  </data>
-  <data name="MainCode_SaveConfigTitle" xml:space="preserve">
-    <value>Сохранить конфигурацию</value>
-  </data>
   <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
     <value>Сохранить список маршрутизации</value>
-  </data>
-  <data name="MainCode_SaveWebSocketTitle" xml:space="preserve">
-    <value>Сохранить настройки WebSocket</value>
   </data>
   <data name="MainCode_Saved" xml:space="preserve">
     <value>Сохранено.</value>
   </data>
   <data name="MainCode_UpdateDatabase" xml:space="preserve">
     <value>Обновить базу</value>
-  </data>
-  <data name="MainCode_WebSocketSettingsTitle" xml:space="preserve">
-    <value>Настройки WebSocket</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Не распознано (.conf или vpn://)</value>
@@ -820,26 +763,8 @@
   <data name="MainVm_Disconnect" xml:space="preserve">
     <value>Отключить</value>
   </data>
-  <data name="MainVm_LogLevelDebug" xml:space="preserve">
-    <value>Отладка</value>
-  </data>
-  <data name="MainVm_LogLevelNormal" xml:space="preserve">
-    <value>Обычный</value>
-  </data>
   <data name="MainVm_LogSearchMatches" xml:space="preserve">
     <value>совпадений: {0}</value>
-  </data>
-  <data name="MainVm_LogTypeAgent" xml:space="preserve">
-    <value>агент</value>
-  </data>
-  <data name="MainVm_LogTypeOther" xml:space="preserve">
-    <value>прочее</value>
-  </data>
-  <data name="MainVm_LogTypeRoutes" xml:space="preserve">
-    <value>маршруты</value>
-  </data>
-  <data name="MainVm_LogLevelTrace" xml:space="preserve">
-    <value>Трасса</value>
   </data>
   <data name="MainVm_NewProfileDefaultName" xml:space="preserve">
     <value>Новый профиль</value>
@@ -985,17 +910,11 @@
   <data name="Status_Preempted" xml:space="preserve">
     <value>Вытеснено</value>
   </data>
-  <data name="Transport_Imported" xml:space="preserve">
-    <value>Импортировано - нажмите «Сохранить», чтобы применить.</value>
-  </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU: 576-1500 (пусто = 1280).</value>
   </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Укажите корректный порт WebSocket (1-65535).</value>
-  </data>
-  <data name="Transport_NotWebSocketBlob" xml:space="preserve">
-    <value>Не похоже на настройки WebSocket.</value>
   </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Доступна версия {0}</value>

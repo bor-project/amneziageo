@@ -8,23 +8,41 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// View model for the export dialog: fetches a config's wg-quick text from the agent and renders it as raw .conf or an Amnezia vpn:// link, with a matching QR code, for copy / save.
+/// What the config area shows.
+/// </summary>
+internal enum ConfigViewMode
+{
+    /// <summary>QR of the raw .conf text.</summary>
+    QrConf,
+
+    /// <summary>QR of the Amnezia vpn:// link.</summary>
+    QrLink,
+
+    /// <summary>The .conf text, editable in place.</summary>
+    Text,
+}
+
+/// <summary>
+/// View model for the config area: fetches a config's wg-quick text from the agent and shows it either as a QR (of the raw .conf or of an Amnezia vpn:// link) or as the text itself, edited in place under the atomic edit model (#143).
 /// </summary>
 internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
 {
     private readonly AgentConnection _connection;
+    private string _baseConfText = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsQrConf))]
+    [NotifyPropertyChangedFor(nameof(IsQrLink))]
+    [NotifyPropertyChangedFor(nameof(IsText))]
+    [NotifyPropertyChangedFor(nameof(ShowQr))]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    private ConfigViewMode _mode;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDirty))]
     private string _confText = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsConf))]
-    [NotifyPropertyChangedFor(nameof(IsLink))]
-    private bool _asLink;
-
-    [ObservableProperty]
-    private string _payload = string.Empty;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasQr))]
     [NotifyPropertyChangedFor(nameof(ShowQr))]
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private Bitmap? _qrImage;
@@ -36,12 +54,6 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private bool _isReady;
 
-    // Inline editing of the .conf text; "Сохранить" persists in place.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowQr))]
-    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
-    private bool _isEditing;
-
     /// <summary>
     /// ctor
     /// </summary>
@@ -52,42 +64,37 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     }
 
     /// <summary>
-    /// The config being exported.
+    /// The config being shown.
     /// </summary>
     public string ConfigName { get; }
 
     /// <summary>
-    /// Whether the raw .conf form is selected.
+    /// Whether the .conf QR is selected.
     /// </summary>
-    public bool IsConf => !AsLink;
+    public bool IsQrConf => Mode == ConfigViewMode.QrConf;
 
     /// <summary>
-    /// Whether the vpn:// link form is selected.
+    /// Whether the vpn:// link QR is selected.
     /// </summary>
-    public bool IsLink => AsLink;
+    public bool IsQrLink => Mode == ConfigViewMode.QrLink;
 
     /// <summary>
-    /// Whether a QR code was rendered for the current payload.
+    /// Whether the config text is selected.
     /// </summary>
-    public bool HasQr => QrImage is not null;
+    public bool IsText => Mode == ConfigViewMode.Text;
 
     /// <summary>
-    /// Whether the QR is shown: a QR exists and the text is not being edited.
+    /// Whether a QR is rendered for the selected mode.
     /// </summary>
-    public bool ShowQr => QrImage is not null && !IsEditing;
+    public bool ShowQr => !IsText && QrImage is not null;
 
     /// <summary>
-    /// Whether the payload is loaded but no QR could be produced (the config is too large to encode) and we are not editing.
+    /// Whether the config is loaded but no QR could be produced (it is too large to encode).
     /// </summary>
-    public bool QrUnavailable => IsReady && !IsEditing && QrImage is null;
+    public bool QrUnavailable => IsReady && !IsText && QrImage is null;
 
     /// <summary>
-    /// A suggested file name for the current form.
-    /// </summary>
-    public string SuggestedFileName => AsLink ? $"{ConfigName}.vpn.txt" : $"{ConfigName}.conf";
-
-    /// <summary>
-    /// Loads the config text from the agent and renders the initial form.
+    /// Loads the config text from the agent and renders its QR.
     /// </summary>
     public async Task LoadAsync()
     {
@@ -98,118 +105,72 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
             return;
         }
 
-        _confText = ack.Message;
+        Seed(ack.Message);
+    }
+
+    /// <summary>
+    /// Adopts the config text as the clean baseline and renders its QR.
+    /// </summary>
+    public void Seed(string confText)
+    {
+        // Baseline before the field, so seeding it does not read as a dirty edit (#143).
+        _baseConfText = confText;
+        ConfText = confText;
         IsReady = true;
         Refresh();
     }
 
-    partial void OnAsLinkChanged(bool value)
+    partial void OnModeChanged(ConfigViewMode value) => Refresh();
+
+    partial void OnConfTextChanged(string value)
     {
-        Refresh();
+        // Any edit clears a stale validation / status line (#3).
+        StatusMessage = string.Empty;
+        DirtyChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    // Re-encodes the baseline for the selected QR mode. The text mode carries no QR, so it skips the work.
     private void Refresh()
     {
-        if (!IsReady)
+        if (!IsReady || IsText)
         {
             return;
         }
 
-        Payload = AsLink ? VpnLinkCodec.Encode(_confText, ConfigName) : _confText;
+        var payload = IsQrLink ? VpnLinkCodec.Encode(_baseConfText, ConfigName) : _baseConfText;
         try
         {
-            QrImage = QrCodec.Generate(Payload);
-            StatusMessage = string.Empty;
+            QrImage = QrCodec.Generate(payload);
         }
         catch (Exception)
         {
             // Too large to encode as a QR.
             QrImage = null;
-            StatusMessage = string.Empty;
         }
     }
 
     [RelayCommand]
-    private void ShowConf()
-    {
-        AsLink = false;
-    }
+    private void ShowQrConf() => Mode = ConfigViewMode.QrConf;
 
     [RelayCommand]
-    private void ShowLink()
-    {
-        AsLink = true;
-    }
+    private void ShowQrLink() => Mode = ConfigViewMode.QrLink;
 
-    // "Изменить": unlock the .conf text for editing.
     [RelayCommand]
-    private void BeginEdit()
-    {
-        if (!IsReady)
-        {
-            return;
-        }
+    private void ShowText() => Mode = ConfigViewMode.Text;
 
-        AsLink = false;
-        StatusMessage = string.Empty;
-        IsEditing = true;
-    }
-
-    // "Отмена": discard edits, revert the text, lock it again.
-    [RelayCommand]
-    private void CancelEdit()
-    {
-        IsEditing = false;
-        Refresh();
-    }
-
-    // "Сохранить": persist the edited .conf in place (edit-config), then lock + re-render.
-    [RelayCommand]
-    private async Task SaveEdit() => await SaveEditInternalAsync();
-
-    private async Task<bool> SaveEditInternalAsync()
-    {
-        if (!CanCommit())
-        {
-            return false;
-        }
-
-        var text = Payload.Trim();
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpEditConfig, [ConfigName, text]));
-        if (!ack.Ok)
-        {
-            StatusMessage = ack.Message;
-            return false;
-        }
-
-        _confText = text;
-        IsEditing = false;
-        Refresh();
-        StatusMessage = Loc.Instance.Get("ExportVm_Saved");
-        return true;
-    }
-
-    // ---- IEditScope (#143): the .conf inline editor already commits explicitly; joining the edit model blocks
-    // navigation while a .conf edit is open (previously switching config mid-edit silently discarded it) and lets
-    // the header Save/Cancel drive it too. "Dirty" == in edit mode; Begin/Save/Cancel keep their local buttons. ----
+    // ---- IEditScope (#143): the .conf text is edited in place, with no local Save. Typing marks the config
+    // item dirty, which blocks navigation and hands the commit to the header Save / Cancel. ----
 
     /// <inheritdoc />
-    public bool IsDirty => IsEditing;
+    public bool IsDirty => !string.Equals(ConfText, _baseConfText, StringComparison.Ordinal);
 
     /// <inheritdoc />
     public event EventHandler? DirtyChanged;
 
-    partial void OnIsEditingChanged(bool value) => DirtyChanged?.Invoke(this, EventArgs.Empty);
-
     /// <inheritdoc />
     public bool CanCommit()
     {
-        if (!IsEditing)
-        {
-            return true;
-        }
-
-        var text = Payload.Trim();
+        var text = ConfText.Trim();
         if (text.Length == 0
             || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
             || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
@@ -224,19 +185,35 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     /// <inheritdoc />
     public void CaptureBaseline()
     {
-        // Nothing to capture: IsEditing is itself the dirty flag, cleared by Save (commit) or Cancel (revert).
+        _baseConfText = ConfText;
+        OnPropertyChanged(nameof(IsDirty));
     }
 
     /// <inheritdoc />
     public void Revert()
     {
-        if (IsEditing)
-        {
-            IsEditing = false;
-            Refresh();
-        }
+        ConfText = _baseConfText;
     }
 
     /// <inheritdoc />
-    public Task<bool> CommitAsync() => IsEditing ? SaveEditInternalAsync() : Task.FromResult(true);
+    public async Task<bool> CommitAsync()
+    {
+        if (!CanCommit())
+        {
+            return false;
+        }
+
+        var text = ConfText.Trim();
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpEditConfig, [ConfigName, text]));
+        if (!ack.Ok)
+        {
+            StatusMessage = ack.Message;
+            return false;
+        }
+
+        _baseConfText = text;
+        ConfText = text;
+        StatusMessage = Loc.Instance.Get("ExportVm_Saved");
+        return true;
+    }
 }

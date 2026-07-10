@@ -172,24 +172,6 @@
   <data name="ConfigEditor_SaveButton" xml:space="preserve">
     <value>Save</value>
   </data>
-  <data name="Export_CloseButton" xml:space="preserve">
-    <value>Close</value>
-  </data>
-  <data name="Export_ConfFileTab" xml:space="preserve">
-    <value>.conf file</value>
-  </data>
-  <data name="Export_CopyButton" xml:space="preserve">
-    <value>Copy</value>
-  </data>
-  <data name="Export_LinkTab" xml:space="preserve">
-    <value>vpn:// link</value>
-  </data>
-  <data name="Export_SaveButton" xml:space="preserve">
-    <value>Save...</value>
-  </data>
-  <data name="Export_WindowTitle" xml:space="preserve">
-    <value>Export configuration</value>
-  </data>
   <data name="Main_AccessTokenLabel" xml:space="preserve">
     <value>Access token:</value>
   </data>
@@ -229,12 +211,6 @@
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>Use IPv6</value>
   </data>
-  <data name="Main_SmartDownloadTitle" xml:space="preserve">
-    <value>Smart download routing</value>
-  </data>
-  <data name="Main_SmartDownloadHint" xml:space="preserve">
-    <value>Fetches geo-database updates directly, around the tunnel, when the source is reachable that way - avoiding the extra hop through the VPN server. Falls back to the tunnel when the direct path is blocked. Applies on the next connect.</value>
-  </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Amnezia engine version</value>
   </data>
@@ -273,12 +249,6 @@
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Select profiles, configurations, and routing lists to transfer to another device, or import a previously exported file.</value>
-  </data>
-  <data name="Main_OpenReadmeButton" xml:space="preserve">
-    <value>Open README</value>
-  </data>
-  <data name="Main_WsServerReadmeHint" xml:space="preserve">
-    <value>Server-side wstunnel setup is described in README.md next to the app.</value>
   </data>
   <data name="Main_CameraButton" xml:space="preserve">
     <value>Camera</value>
@@ -325,8 +295,14 @@
   <data name="Main_ConfEditHint" xml:space="preserve">
     <value>It must have [Interface] and [Peer] sections. The profile's geo and routes are preserved.</value>
   </data>
-  <data name="Main_ConfFileTab" xml:space="preserve">
-    <value>.conf file</value>
+  <data name="Main_QrConfTab" xml:space="preserve">
+    <value>QR: .conf file</value>
+  </data>
+  <data name="Main_QrLinkTab" xml:space="preserve">
+    <value>QR: vpn:// link</value>
+  </data>
+  <data name="Main_ConfigTextTab" xml:space="preserve">
+    <value>Config</value>
   </data>
   <data name="Main_ConfigLabel" xml:space="preserve">
     <value>CONFIGURATION</value>
@@ -391,9 +367,6 @@
   <data name="Main_DownloadButton" xml:space="preserve">
     <value>Download</value>
   </data>
-  <data name="Main_EditButton" xml:space="preserve">
-    <value>Edit</value>
-  </data>
   <data name="Main_EntriesLabel" xml:space="preserve">
     <value>ENTRIES</value>
   </data>
@@ -446,7 +419,7 @@
     <value>The log will appear once the agent starts working.</value>
   </data>
   <data name="Main_LogVerbosityHint" xml:space="preserve">
-    <value>«Trace» records every connection step and timing - for support diagnosis.</value>
+    <value>Determines the logging verbosity.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Level</value>
@@ -521,7 +494,7 @@
     <value>PROXY (WEBSOCKET)</value>
   </data>
   <data name="Main_QrUnavailableHint" xml:space="preserve">
-    <value>The configuration does not fit in a QR code. Use «Save to file…» or the vpn:// link.</value>
+    <value>The configuration does not fit in a QR code. Use the «Config» tab or the vpn:// link.</value>
   </data>
   <data name="Main_RailConfigSubtitle" xml:space="preserve">
     <value>Server catalogue</value>
@@ -566,7 +539,7 @@
     <value>Rename</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>A separate log of routes, address resolutions, and where requests go (routes.log) - to understand why a site does not open or loads slowly.</value>
+    <value>Records routes and address resolutions to a separate log, routes.log.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
     <value>Log connections</value>
@@ -646,15 +619,6 @@
   <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
     <value>Use WebSocket (UDP over TCP, bypass UDP blocking)</value>
   </data>
-  <data name="Main_VpnLinkTab" xml:space="preserve">
-    <value>vpn:// link</value>
-  </data>
-  <data name="Main_WsCopyTooltip" xml:space="preserve">
-    <value>Copy settings to clipboard</value>
-  </data>
-  <data name="Main_WsPasteTooltip" xml:space="preserve">
-    <value>Import settings from clipboard</value>
-  </data>
   <data name="Qr_CloseButton" xml:space="preserve">
     <value>Close</value>
   </data>
@@ -727,15 +691,6 @@
   <data name="Exclusions_NoActiveLocalSubnets" xml:space="preserve">
     <value>No active local subnets found.</value>
   </data>
-  <data name="ExportCode_CopiedToClipboard" xml:space="preserve">
-    <value>Copied to clipboard.</value>
-  </data>
-  <data name="ExportCode_SaveConfigTitle" xml:space="preserve">
-    <value>Save configuration</value>
-  </data>
-  <data name="ExportCode_Saved" xml:space="preserve">
-    <value>Saved.</value>
-  </data>
   <data name="ExportVm_NotWireGuardConfig" xml:space="preserve">
     <value>Doesn't look like a WireGuard/AmneziaWG configuration (needs [Interface] and [Peer]).</value>
   </data>
@@ -775,26 +730,14 @@
   <data name="MainCode_RoutingListTitle" xml:space="preserve">
     <value>Routing list</value>
   </data>
-  <data name="MainCode_ReadmeOpenFailed" xml:space="preserve">
-    <value>Failed to open README: {0}</value>
-  </data>
-  <data name="MainCode_SaveConfigTitle" xml:space="preserve">
-    <value>Save configuration</value>
-  </data>
   <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
     <value>Save routing list</value>
-  </data>
-  <data name="MainCode_SaveWebSocketTitle" xml:space="preserve">
-    <value>Save WebSocket settings</value>
   </data>
   <data name="MainCode_Saved" xml:space="preserve">
     <value>Saved.</value>
   </data>
   <data name="MainCode_UpdateDatabase" xml:space="preserve">
     <value>Update database</value>
-  </data>
-  <data name="MainCode_WebSocketSettingsTitle" xml:space="preserve">
-    <value>WebSocket settings</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Not recognized (.conf or vpn://)</value>
@@ -820,26 +763,8 @@
   <data name="MainVm_Disconnect" xml:space="preserve">
     <value>Disconnect</value>
   </data>
-  <data name="MainVm_LogLevelDebug" xml:space="preserve">
-    <value>Debug</value>
-  </data>
-  <data name="MainVm_LogLevelNormal" xml:space="preserve">
-    <value>Normal</value>
-  </data>
   <data name="MainVm_LogSearchMatches" xml:space="preserve">
     <value>{0} match(es)</value>
-  </data>
-  <data name="MainVm_LogTypeAgent" xml:space="preserve">
-    <value>agent</value>
-  </data>
-  <data name="MainVm_LogTypeOther" xml:space="preserve">
-    <value>other</value>
-  </data>
-  <data name="MainVm_LogTypeRoutes" xml:space="preserve">
-    <value>routes</value>
-  </data>
-  <data name="MainVm_LogLevelTrace" xml:space="preserve">
-    <value>Trace</value>
   </data>
   <data name="MainVm_NewProfileDefaultName" xml:space="preserve">
     <value>New profile</value>
@@ -985,17 +910,11 @@
   <data name="Status_Preempted" xml:space="preserve">
     <value>Preempted</value>
   </data>
-  <data name="Transport_Imported" xml:space="preserve">
-    <value>Imported - press "Save" to apply.</value>
-  </data>
   <data name="Transport_InvalidMtu" xml:space="preserve">
     <value>MTU: 576-1500 (empty = 1280).</value>
   </data>
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Enter a valid WebSocket port (1-65535).</value>
-  </data>
-  <data name="Transport_NotWebSocketBlob" xml:space="preserve">
-    <value>This does not look like WebSocket settings.</value>
   </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Version {0} available</value>

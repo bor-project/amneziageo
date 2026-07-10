@@ -576,7 +576,7 @@
                 </DockPanel>
               </Border>
 
-              <!-- Open config (Row 2): name editor + .conf export/editor + proxy + delete. -->
+              <!-- Open config (Row 2): name editor + QR / .conf text + proxy + delete. -->
               <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsConfigManage}" Spacing="14">
                 <!-- Config name: per-keystroke so the required-field border reacts at once; committed with the header Save (#143). -->
                 <StackPanel Spacing="2">
@@ -589,20 +589,23 @@
                              IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
 
-                <!-- .conf text + export. -->
+                <!-- QR of the .conf / of the vpn:// link, or the .conf text itself. The text is edited in place and
+                     committed by the header Save (#143), so the mode switch locks while it is dirty. -->
                 <StackPanel Spacing="10" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
                   <Border Background="{DynamicResource AgInsetBrush}"
                           BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                           CornerRadius="9" Padding="3" HorizontalAlignment="Center"
-                          IsEnabled="{Binding !IsEditing}">
-                    <UniformGrid Columns="2" Width="320">
-                      <Button Classes="seg" Classes.active="{Binding IsConf}" Command="{Binding ShowConfCommand}"
-                              Content="{l:Tr Main_ConfFileTab}" HorizontalAlignment="Stretch" />
-                      <Button Classes="seg" Classes.active="{Binding IsLink}" Command="{Binding ShowLinkCommand}"
-                              Content="{l:Tr Main_VpnLinkTab}" HorizontalAlignment="Stretch" />
+                          IsEnabled="{Binding !IsDirty}">
+                    <UniformGrid Columns="3" MinWidth="360">
+                      <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
+                              Content="{l:Tr Main_QrConfTab}" HorizontalAlignment="Stretch" />
+                      <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
+                              Content="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Stretch" />
+                      <Button Classes="seg" Classes.active="{Binding IsText}" Command="{Binding ShowTextCommand}"
+                              Content="{l:Tr Main_ConfigTextTab}" HorizontalAlignment="Stretch" />
                     </UniformGrid>
                   </Border>
-                  <TextBlock IsVisible="{Binding IsEditing}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                  <TextBlock IsVisible="{Binding IsText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                              Text="{l:Tr Main_ConfEditHint}" />
                   <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
                           IsVisible="{Binding ShowQr}">
@@ -616,8 +619,8 @@
                   </Border>
                   <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
                           CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
-                          IsVisible="{Binding IsEditing}">
-                    <TextBox Text="{Binding Payload, Mode=TwoWay}" IsReadOnly="{Binding !IsEditing}"
+                          IsVisible="{Binding IsText}" IsEnabled="{Binding IsReady}">
+                    <TextBox Text="{Binding ConfText, Mode=TwoWay}"
                              AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
                              VerticalContentAlignment="Top" Height="240"
                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -625,18 +628,6 @@
                              BorderThickness="0" Background="Transparent"
                              FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
                   </Border>
-                  <WrapPanel HorizontalAlignment="Center">
-                    <Button Classes="softbtn" Content="{l:Tr Main_EditButton}" Command="{Binding BeginEditCommand}" Margin="4"
-                            IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveEditCommand}" Margin="4"
-                            IsVisible="{Binding IsEditing}" />
-                    <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelEditCommand}" Margin="4"
-                            IsVisible="{Binding IsEditing}" />
-                    <Button Classes="softbtn" Content="{l:Tr Main_CopyButton}" Click="OnConfigExportCopy" Margin="4"
-                            IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                    <Button Classes="softbtn" Content="{l:Tr Main_SaveToFileButton}" Click="OnConfigExportSave" Margin="4"
-                            IsVisible="{Binding !IsEditing}" IsEnabled="{Binding IsReady}" />
-                  </WrapPanel>
                   <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                              HorizontalAlignment="Center" TextAlignment="Center" />
                 </StackPanel>
@@ -682,26 +673,10 @@
                       <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
                       <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
                     </StackPanel>
-                    <StackPanel Spacing="6">
-                      <TextBlock Text="{l:Tr Main_WsServerReadmeHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                      <Button Classes="softbtn" HorizontalAlignment="Left"
-                              Content="{l:Tr Main_OpenReadmeButton}" Click="OnOpenReadme" />
-                    </StackPanel>
                   </StackPanel>
                   <!-- Committed atomically with the header Save (#143). -->
                   <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                              TextWrapping="Wrap" />
-                  <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="{l:Tr Main_ImportExportLabel}" />
-                    <WrapPanel>
-                      <Button Classes="softbtn" Content="{l:Tr Main_CopyButton}" Margin="0,0,6,6"
-                              Click="OnWsExportCopy" ToolTip.Tip="{l:Tr Main_WsCopyTooltip}" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_SaveToFileButton}" Margin="0,0,6,6" Click="OnWsExportSave" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_PasteButton}" Margin="0,0,6,6"
-                              Click="OnWsImportPaste" ToolTip.Tip="{l:Tr Main_WsPasteTooltip}" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_LoadFileButton}" Margin="0,0,6,6" Click="OnWsImportFile" />
-                    </WrapPanel>
-                  </StackPanel>
                 </StackPanel>
 
                 <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
@@ -765,17 +740,6 @@
                 <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                            Text="{l:Tr Main_NoRoutingListsHint}" />
               </StackPanel>
-
-              <!-- Global: route geo downloads around the tunnel when reachable (#152). -->
-              <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="9" Padding="12">
-                <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                    <TextBlock Text="{l:Tr Main_SmartDownloadTitle}" FontSize="13.5" />
-                    <TextBlock Text="{l:Tr Main_SmartDownloadHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                  </StackPanel>
-                  <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding SmartDownloadRouting, Mode=TwoWay}" />
-                </Grid>
-              </Border>
 
               <!-- Rule editor for the selected/new list. -->
               <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="12">
@@ -1085,7 +1049,7 @@
                       </StackPanel>
                       <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="150"
                                 ItemsSource="{Binding LogLevels}"
-                                SelectedItem="{Binding LogLevelLabel, Mode=TwoWay}" />
+                                SelectedItem="{Binding LogLevel, Mode=TwoWay}" />
                     </Grid>
                   </Border>
                   <!-- Routing log: toggleable log of route changes and DNS resolutions. -->

@@ -129,7 +129,7 @@ internal static class DesignData
         vm.HasSources = true;
 
         // --- Logs ---
-        vm.LogFiles.Add(new LogFileChoice("ageo-20260708_001.log", "agent", 147865, "2026-07-08 20:30"));
+        vm.LogFiles.Add(new LogFileChoice("ageo.log", "agent", 147865, "2026-07-08 20:30"));
         vm.LogFiles.Add(new LogFileChoice("routes.log", "routes", 26317, "2026-07-08 20:16"));
         // SelectedLogFile is left null on purpose: selecting a file kicks off an agent read. The viewer text is
         // seeded directly instead so it shows without a round-trip.
@@ -196,23 +196,11 @@ internal static class DesignData
         return profile;
     }
 
-    // A ready-to-display export: the .conf text pre-loaded and its QR rendered, so no agent load is needed.
+    // A ready-to-display config area: the .conf text pre-loaded and its QR rendered, so no agent load is needed.
     private static ExportDialogViewModel ReadyExport(AgentConnection connection, string name, string conf)
     {
-        var export = new ExportDialogViewModel(connection, name)
-        {
-            Payload = conf,
-            IsReady = true,
-        };
-        try
-        {
-            export.QrImage = QrCodec.Generate(conf);
-        }
-        catch
-        {
-            // No QR at design time is fine; the view falls back to its "unavailable" hint.
-        }
-
+        var export = new ExportDialogViewModel(connection, name);
+        export.Seed(conf);
         return export;
     }
 

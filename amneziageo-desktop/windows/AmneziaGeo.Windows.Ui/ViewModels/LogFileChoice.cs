@@ -1,5 +1,3 @@
-using AmneziaGeo.Localization;
-
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
@@ -9,17 +7,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 internal sealed record LogFileChoice(string Name, string Type, long Size, string Modified)
 {
     /// <summary>
-    /// Localized coarse type of the file (agent log vs routing log).
+    /// Combo-box label.
     /// </summary>
-    public string TypeLabel => Type switch
-    {
-        "agent" => Loc.Instance.Get("MainVm_LogTypeAgent"),
-        "routes" => Loc.Instance.Get("MainVm_LogTypeRoutes"),
-        _ => Loc.Instance.Get("MainVm_LogTypeOther"),
-    };
-
-    /// <summary>
-    /// Combo-box label: the file name tagged with its localized type.
-    /// </summary>
-    public string Display => $"{Name}  ·  {TypeLabel}";
+    public string Display => Name;
 }

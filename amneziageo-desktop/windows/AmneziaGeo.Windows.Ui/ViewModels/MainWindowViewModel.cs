@@ -262,19 +262,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<int> GeoCheckIntervals { get; } = [6, 12, 24, 48, 168];
 
+    // Verbosity token shown when the agent reports nothing usable.
+    private const string DefaultLogLevel = "error";
+
     /// <summary>
-    /// Log verbosity options.
+    /// Log verbosity options. The tokens are the same in every language.
     /// </summary>
-    public ObservableCollection<string> LogLevels { get; } = [Loc.Instance.Get("MainVm_LogLevelNormal"), Loc.Instance.Get("MainVm_LogLevelDebug"), Loc.Instance.Get("MainVm_LogLevelTrace")];
+    public ObservableCollection<string> LogLevels { get; } = [DefaultLogLevel, "info", "debug", "trace"];
 
     [ObservableProperty]
-    private string _logLevelLabel = Loc.Instance.Get("MainVm_LogLevelNormal");
+    private string _logLevel = DefaultLogLevel;
 
     [ObservableProperty]
     private bool _routeLogEnabled;
-
-    [ObservableProperty]
-    private bool _smartDownloadRouting;
 
     /// <summary>
     /// UI language options.
@@ -1578,9 +1578,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         GeoAutoCheck = snapshot.GeoAutoCheck;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
-        LogLevelLabel = LabelForLogToken(snapshot.LogLevel);
+        LogLevel = KnownLogLevel(snapshot.LogLevel);
         RouteLogEnabled = snapshot.RouteLog;
-        SmartDownloadRouting = snapshot.SmartDownloadRouting;
         _suppressSettingPush = false;
 
         ApplyUpdateState(snapshot);
@@ -1925,12 +1924,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    partial void OnLogLevelLabelChanged(string value)
+    partial void OnLogLevelChanged(string value)
     {
         if (!_suppressSettingPush)
         {
-            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
-                ["log-level", TokenForLogLabel(value)]));
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["log-level", value]));
         }
     }
 
@@ -1942,39 +1940,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    partial void OnSmartDownloadRoutingChanged(bool value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync("smart-download-routing", value);
-        }
-    }
-
-    // Maps the persisted verbosity token to its display label and back. An unknown token shows as "Обычный"
-    // so the combo never goes null (which, two-way bound, would push an empty value back).
-    private static string LabelForLogToken(string token)
+    // Falls an unrecognised token back to the default, so the combo never goes null - which, two-way bound,
+    // would push an empty value back.
+    private static string KnownLogLevel(string token)
     {
         return token switch
         {
-            "trace" => Loc.Instance.Get("MainVm_LogLevelTrace"),
-            "debug" => Loc.Instance.Get("MainVm_LogLevelDebug"),
-            _ => Loc.Instance.Get("MainVm_LogLevelNormal"),
+            "trace" or "debug" or "info" => token,
+            _ => DefaultLogLevel,
         };
-    }
-
-    private static string TokenForLogLabel(string label)
-    {
-        if (string.Equals(label, Loc.Instance.Get("MainVm_LogLevelTrace"), StringComparison.Ordinal))
-        {
-            return "trace";
-        }
-
-        if (string.Equals(label, Loc.Instance.Get("MainVm_LogLevelDebug"), StringComparison.Ordinal))
-        {
-            return "debug";
-        }
-
-        return "info";
     }
 
     // Keeps the interval combo able to display whatever the agent reports: an out-of-band value (e.g. set
@@ -2001,13 +1975,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value ? "on" : "off"]));
     }
 
-    /// <summary>
-    /// Shows a transient notice on behalf of the window code-behind.
-    /// </summary>
-    public void ShowTransientNotice(string message)
-    {
-        ShowNotice(message);
-    }
 
     /// <summary>
     /// Whether an update URL is configured (baked into the build from installer.config.json). When false the

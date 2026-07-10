@@ -249,54 +249,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     }
 
     /// <summary>
-    /// A suggested file name when exporting these settings.
-    /// </summary>
-    public string SuggestedFileName => $"{ConfigName}-websocket.txt";
-
-    /// <summary>
-    /// Serialises the current WebSocket settings to a portable blob for copy / save.
-    /// </summary>
-    public string BuildTransferPayload()
-    {
-        var port = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) && p is > 0 and <= 65535 ? p : 443;
-        return Services.PortableTransfer.EncodeWebSocket(UseWebSocket, port, ComposeAddress(port));
-    }
-
-    /// <summary>
-    /// Applies an imported WebSocket blob to the editable fields; the change is held in the buffer and persisted
-    /// by the header Save (#143), not auto-saved. Returns whether the text was a recognisable blob.
-    /// </summary>
-    public bool ApplyImport(string text)
-    {
-        if (!Services.PortableTransfer.TryDecodeWebSocket(text, out var enabled, out var port, out var host))
-        {
-            StatusMessage = Loc.Instance.Get("Transport_NotWebSocketBlob");
-            return false;
-        }
-
-        _applying = true;
-        try
-        {
-            UseWebSocket = enabled;
-            var (parsedHost, parsedPort, user, password, token, mode) = ParseStored(host);
-            WebSocketHost = string.IsNullOrWhiteSpace(parsedHost) ? EndpointHost(_endpoint) : parsedHost;
-            WebSocketPort = (parsedPort > 0 ? parsedPort : port).ToString(CultureInfo.InvariantCulture);
-            AuthMode = mode;
-            WebSocketUser = user;
-            WebSocketPassword = password;
-            WebSocketToken = token;
-        }
-        finally
-        {
-            _applying = false;
-        }
-
-        StatusMessage = Loc.Instance.Get("Transport_Imported");
-        MarkDirty();
-        return true;
-    }
-
-    /// <summary>
     /// Builds the stored address from the host field and the selected auth mode: a bare host when no auth, a wss://user:pass@host:port URL for login+password (user/pass percent-escaped), or a wss://host:port/token URL for a token. The port is baked into any URL form so it is not lost to the wss default (443).
     /// </summary>
     private string ComposeAddress(int port)

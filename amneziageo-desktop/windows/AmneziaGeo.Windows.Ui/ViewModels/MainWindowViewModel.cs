@@ -320,9 +320,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private IReadOnlyList<string> _logLines = [];
 
-    [ObservableProperty]
-    private int _logSeverity;
-
     /// <summary>
     /// On-disk log files offered in the viewer's file picker (agent rolls + routing log), newest first.
     /// </summary>
@@ -1621,27 +1618,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return !(selectedProfile is not null && ReferenceEquals(selectedProfile, boundProfile));
     }
 
-    partial void OnLogSeverityChanged(int value)
-    {
-        RebuildLogText();
-    }
-
-    // Rebuilds the journal text from the raw lines applying the severity filter and the search query, newest
-    // first so the latest activity stays visible at the top without scrolling.
+    // Rebuilds the journal text from the raw lines applying the search query, newest first so the latest
+    // activity stays visible at the top without scrolling.
     private void RebuildLogText()
     {
-        var threshold = LogSeverity;
         var query = SearchQuery;
         var hasQuery = !string.IsNullOrWhiteSpace(query);
 
         var shown = new List<string>();
         foreach (var line in _logLines)
         {
-            if (threshold > 0 && LineRank(line) < threshold)
-            {
-                continue;
-            }
-
             if (hasQuery && !line.Contains(query, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -1889,34 +1875,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         long FileSize,
         bool Truncated);
 
-    // Severity rank of a rendered log line: trace/debug = 0, info = 1, warn = 2, error/fatal = 3. Two formats
-    // reach here - the agent journal ring ("HH:mm:ss LVL message", level at offset 9) and the on-disk file the
-    // viewer reads ("<iso timestamp> [LVL] message", level bracketed; ISO lines start "yyyy-"). Unparseable
-    // lines rank as info so they are never hidden by a relaxed filter yet drop out under the errors-only view.
-    private static int LineRank(string line)
-    {
-        string code;
-        if (line.Length >= 5 && line[4] == '-')
-        {
-            var open = line.IndexOf('[');
-            code = open >= 0 && open + 4 < line.Length && line[open + 4] == ']'
-                ? line.Substring(open + 1, 3)
-                : string.Empty;
-        }
-        else
-        {
-            code = line.Length >= 12 ? line.Substring(9, 3) : string.Empty;
-        }
-
-        return code switch
-        {
-            "TRC" or "DBG" or "VRB" => 0,
-            "WRN" => 2,
-            "ERR" or "FTL" => 3,
-            _ => 1,
-        };
-    }
-
     /// <summary>
     /// Shows a transient notice banner that auto-hides after 5 seconds. Re-arms only when the notice
     /// text changes, so a persistent condition is not re-shown on every snapshot (and a dismissed
@@ -2044,25 +2002,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Asks the agent to build a redacted diagnostics bundle (#82) and returns the agent-side zip path (under
-    /// ProgramData, readable by this UI) so the window can copy it to a user-chosen file. Returns null on
-    /// failure, after showing a notice. The build runs agent-side because only SYSTEM can read both
-    /// processes' logs.
-    /// </summary>
-    public async Task<string?> RequestDiagnosticsAsync()
-    {
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCollectDiagnostics, []));
-        if (!ack.Ok)
-        {
-            ShowNotice(string.IsNullOrWhiteSpace(ack.Message) ? Loc.Instance.Get("MainVm_DiagnosticsFailed") : ack.Message);
-            return null;
-        }
-
-        return ack.Message;
-    }
-
-    /// <summary>
-    /// Shows a transient notice on behalf of the window code-behind (e.g. after saving the diagnostics bundle).
+    /// Shows a transient notice on behalf of the window code-behind.
     /// </summary>
     public void ShowTransientNotice(string message)
     {

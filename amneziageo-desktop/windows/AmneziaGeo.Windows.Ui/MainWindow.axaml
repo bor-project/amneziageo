@@ -1073,18 +1073,7 @@
             <StackPanel IsVisible="{Binding IsSettingsLogs}">
                 <StackPanel>
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,9">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Grid.Column="0" Text="{l:Tr Main_AgentLogSection}" Classes="section" VerticalAlignment="Center" />
-                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <TextBlock Text="{l:Tr Main_LevelLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-                        <ComboBox SelectedIndex="{Binding LogSeverity, Mode=TwoWay}" MinWidth="150">
-                          <ComboBoxItem Content="{l:Tr Main_LogSeverityAll}" />
-                          <ComboBoxItem Content="{l:Tr Main_LogSeverityInfo}" />
-                          <ComboBoxItem Content="{l:Tr Main_LogSeverityWarn}" />
-                          <ComboBoxItem Content="{l:Tr Main_LogSeverityError}" />
-                        </ComboBox>
-                      </StackPanel>
-                    </Grid>
+                    <TextBlock Text="{l:Tr Main_AgentLogSection}" Classes="section" />
                   </Border>
                   <!-- Capture verbosity: minimum level WRITTEN to the log; applies live. -->
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
@@ -1108,18 +1097,6 @@
                                    Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
                       </StackPanel>
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
-                    </Grid>
-                  </Border>
-                  <!-- Support export: redacted diagnostics zip. -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="{l:Tr Main_SupportLogsTitle}" FontSize="13.5" />
-                        <TextBlock Text="{l:Tr Main_SupportLogsHint}"
-                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
-                      </StackPanel>
-                      <Button Grid.Column="1" Classes="softbtn" VerticalAlignment="Center"
-                              Content="{l:Tr Main_CollectLogsButton}" Click="OnCollectLogs" />
                     </Grid>
                   </Border>
                   <!-- Viewer toolbar: file picker + live-tail follow, then search over the shown tail. -->

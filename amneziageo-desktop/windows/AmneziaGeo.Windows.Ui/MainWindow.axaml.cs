@@ -477,44 +477,6 @@ public sealed partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
-    // «Собрать логи»: ask the agent for a redacted diagnostics zip, then save a copy.
-    private async void OnCollectLogs(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainWindowViewModel vm)
-        {
-            return;
-        }
-
-        var sourcePath = await vm.RequestDiagnosticsAsync();
-        if (sourcePath is null)
-        {
-            return;
-        }
-
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = Loc.Instance.Get("MainCode_SaveLogsForSupportTitle"),
-            SuggestedFileName = Path.GetFileName(sourcePath),
-            FileTypeChoices = [new FilePickerFileType(Loc.Instance.Get("MainCode_ZipArchive")) { Patterns = ["*.zip"] }],
-        });
-        if (file is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await using var input = File.OpenRead(sourcePath);
-            await using var output = await file.OpenWriteAsync();
-            await input.CopyToAsync(output);
-            vm.ShowTransientNotice(Loc.Instance.Get("MainCode_LogsCollectedAndSaved"));
-        }
-        catch (Exception ex)
-        {
-            vm.ShowTransientNotice(Loc.Instance.Get("MainCode_LogsSaveFailed", ex.Message));
-        }
-    }
-
     // Opens the README shipped next to the exe (ws-server setup and other help).
     private void OnOpenReadme(object? sender, RoutedEventArgs e)
     {

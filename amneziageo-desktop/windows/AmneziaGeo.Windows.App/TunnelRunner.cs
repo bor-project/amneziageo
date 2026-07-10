@@ -15,7 +15,6 @@ internal sealed class TunnelRunner(
     IStateStore store,
     SettingsStore settings,
     RouteManager routes,
-    DownloadRouteOptimizer downloadRoutes,
     UapiClient uapi,
     DnsConfigurator dns,
     NetworkReconciler reconciler,
@@ -312,14 +311,6 @@ internal sealed class TunnelRunner(
         logger.LogDebug("connect {Name}: dns proxy {State}, tracker={Tracker} [{Elapsed} ms]",
             name, proxy?.BoundV4 is not null ? $"bound {proxy.BoundV4}" : "unavailable", tracker is not null, connectSw.ElapsedMilliseconds);
 
-        // Pin geo-source hosts direct while the system resolver is still the LAN one, before DNS is
-        // redirected to the proxy. Reverted on teardown. Only in full tunnel (split already leaves them direct).
-        IReadOnlyList<IPAddress> geoDirect = [];
-        if (appSettings.SmartDownloadRouting && !geoSplit)
-        {
-            geoDirect = await downloadRoutes.ApplyAsync(name, sessionCts.Token);
-        }
-
         // Strip DNS from config; we apply it on the adapter ourselves.
         config = WgConfigEditor.RemoveDns(config);
 
@@ -353,7 +344,7 @@ internal sealed class TunnelRunner(
         logger.LogDebug("connect {Name}: routes - endpoint {Endpoint} excluded={Excluded}, lan-exclusions={Lan} [{Elapsed} ms]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
-        // WFP: block QUIC egress (HTTP/3 falls back to TCP); kill-switch on in full tunnel, off in split.
+        // WFP kill-switch: on in full tunnel, off in split. QUIC follows the same routes as TCP.
         var killSwitch = !geoSplit;
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
@@ -440,11 +431,6 @@ internal sealed class TunnelRunner(
             if (lanExcluded)
             {
                 routes.RemoveLanExclusions(name);
-            }
-
-            if (geoDirect.Count > 0)
-            {
-                downloadRoutes.Revert(name, geoDirect);
             }
         }
     }

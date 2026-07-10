@@ -34,18 +34,19 @@ internal static class AppHost
         builder.Services.AddSerilog(config => config
             .MinimumLevel.ControlledBy(logLevel.Switch)
             .Enrich.FromLogContext()
+            // Both the agent and each per-tunnel service process append to the same file; the pid attributes
+            // the line.
+            .Enrich.WithProperty("Pid", Environment.ProcessId)
             .WriteTo.Console()
             .WriteTo.File(
-                Path.Combine(TunnelPaths.LogDirectory(), "ageo-.log"),
-                // Pinned greppable line format: ISO timestamp + 3-char level + message, one entry per line
-                // (exceptions append on following lines). Explicit so the on-disk format the log viewer and
-                // grep rely on cannot drift with Serilog's default template.
-                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-                rollingInterval: RollingInterval.Day,
-                // Cap on-disk footprint: a long Trace session must not fill the disk.
-                fileSizeLimitBytes: 25_000_000,
-                rollOnFileSizeLimit: true,
-                retainedFileCountLimit: 10)
+                Path.Combine(TunnelPaths.LogDirectory(), "ageo.log"),
+                // Pinned greppable line format: ISO timestamp + 3-char level + pid + message, one entry per
+                // line (exceptions append on following lines). Explicit so the on-disk format the log viewer
+                // and grep rely on cannot drift with Serilog's default template.
+                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [pid {Pid}] {Message:lj}{NewLine}{Exception}",
+                // One file: no roll by day or by size, shared across the processes that write it.
+                rollingInterval: RollingInterval.Infinite,
+                shared: true)
             .WriteTo.Sink(new RingBufferSink(logBuffer)));
 
         RegisterServices(builder.Services);
@@ -72,7 +73,6 @@ internal static class AppHost
         services.AddSingleton<HttpClient>();
         services.AddSingleton<ServiceManager>();
         services.AddSingleton<RouteManager>();
-        services.AddSingleton<DownloadRouteOptimizer>();
         services.AddSingleton<UapiClient>();
         services.AddSingleton<DnsConfigurator>();
         services.AddSingleton<NetworkReconciler>();

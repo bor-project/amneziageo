@@ -82,30 +82,11 @@
         </StackPanel>
 
         <!-- Ready, step 2 (#114): configure the chosen action, then Continue / Back. Which options appear is
-             per-action (install/update/repair: settings file + geo + reset; remove: only delete config). -->
+             per-action (install/update/repair: geo + reset; remove: only delete config). Configurations are
+             imported in the app itself, never here (#150). -->
         <StackPanel DockPanel.Dock="Bottom"
                     Visibility="{Binding ShowOptionsStep, Converter={StaticResource B2V}}">
           <TextBlock Text="{Binding OptionsHeading}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12" />
-          <!-- #123: pick a configuration file (a portable bundle or a single config); it is applied through the
-               same agent import path as the in-app import, not by swapping the SQLite database. -->
-          <StackPanel Orientation="Horizontal" Margin="0,0,0,12"
-                      Visibility="{Binding ShowConfigFileOption, Converter={StaticResource B2V}}">
-            <Button Content="{l:Tr InstallerUi_ConfigFile}" Command="{Binding PickConfigCommand}" Margin="0,0,10,0" />
-            <TextBlock Text="{Binding ConfigFileLabel}" Style="{StaticResource MutedTextBlock}"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          </StackPanel>
-          <!-- #123: when the picked file may collide with an existing configuration, resolve it inline here
-               (never a separate dialog) - the same four policies as the in-app bundle import. -->
-          <StackPanel Margin="0,0,0,12"
-                      Visibility="{Binding ShowConflictPolicy, Converter={StaticResource B2V}}">
-            <TextBlock Text="{l:Tr BundleImport_ConflictLabel}" Style="{StaticResource MutedTextBlock}" Margin="0,0,0,4" />
-            <ComboBox SelectedIndex="{Binding ConflictPolicyIndex, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
-              <ComboBoxItem Content="{l:Tr BundleImport_ConflictAddNew}" />
-              <ComboBoxItem Content="{l:Tr BundleImport_ConflictReplace}" />
-              <ComboBoxItem Content="{l:Tr BundleImport_ConflictSkip}" />
-              <ComboBoxItem Content="{l:Tr BundleImport_ConflictMerge}" />
-            </ComboBox>
-          </StackPanel>
           <CheckBox Content="{l:Tr InstallerUi_DownloadGeoDbUpdates}"
                     IsChecked="{Binding DownloadLists}"
                     Margin="0,0,0,12"

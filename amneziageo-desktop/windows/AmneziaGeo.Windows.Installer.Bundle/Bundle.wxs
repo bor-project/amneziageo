@@ -13,11 +13,8 @@
   elements/content) and a <Bundle> cannot be split, so the whole element is duplicated under <?if?>:
   the HasIcon branch carries IconSourceFile, the other omits it (no icon). Only one branch compiles.
 
-  #54 (default config DB): HasDefaultDb tells the BA whether this bundle carries a prebuilt state.db.
-  REPLACEDB is the replace-on-conflict choice - overridable from the command line (REPLACEDB=1 replace
-  / 0 skip); empty (the default) means "ask in the GUI, skip when silent". The BA resolves it before
-  planning and it flows into the MSI as the SEEDREPLACE property. These two <Variable>s and the
-  <MsiProperty> are duplicated into both <?if?> branches along with the rest of the <Bundle>.
+  Every <Variable> and <MsiProperty> is duplicated into both <?if?> branches along with the rest of
+  the <Bundle>.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
@@ -29,12 +26,9 @@
           IconSourceFile="$(var.IconFile)"
           Compressed="yes">
 
-    <Variable Name="HasDefaultDb" Value="$(var.HasDefaultDb)" />
-    <Variable Name="REPLACEDB" Value="" />
-    <Variable Name="SEEDDBPATH" Value="" />
     <Variable Name="DELETECONFIG" Value="" />
     <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
-         app once the update is applied. Default 0; overridable from the command line like REPLACEDB. -->
+         app once the update is applied. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" />
 
     <!-- Custom out-of-proc BA: the .exe is named directly; every other file from its self-contained
@@ -49,8 +43,6 @@
                   SourceFile="$(var.MsiPath)"
                   Vital="yes"
                   Compressed="yes">
-        <MsiProperty Name="SEEDREPLACE" Value="[REPLACEDB]" />
-        <MsiProperty Name="SEEDDBPATH" Value="[SEEDDBPATH]" />
         <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
       </MsiPackage>
     </Chain>
@@ -62,12 +54,9 @@
           UpgradeCode="A7E1C4F2-9B3D-4E6A-8C15-2F7D9A0B6E34"
           Compressed="yes">
 
-    <Variable Name="HasDefaultDb" Value="$(var.HasDefaultDb)" />
-    <Variable Name="REPLACEDB" Value="" />
-    <Variable Name="SEEDDBPATH" Value="" />
     <Variable Name="DELETECONFIG" Value="" />
     <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
-         app once the update is applied. Default 0; overridable from the command line like REPLACEDB. -->
+         app once the update is applied. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" />
 
     <BootstrapperApplication SourceFile="$(var.BaExe)">
@@ -79,8 +68,6 @@
                   SourceFile="$(var.MsiPath)"
                   Vital="yes"
                   Compressed="yes">
-        <MsiProperty Name="SEEDREPLACE" Value="[REPLACEDB]" />
-        <MsiProperty Name="SEEDDBPATH" Value="[SEEDDBPATH]" />
         <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
       </MsiPackage>
     </Chain>

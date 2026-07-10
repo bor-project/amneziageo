@@ -391,8 +391,8 @@
   <data name="Main_DnsWatermark" xml:space="preserve">
     <value>напр. 1.1.1.1, 8.8.8.8</value>
   </data>
-  <data name="Main_DownloadAndInstallButton" xml:space="preserve">
-    <value>Скачать и установить</value>
+  <data name="Main_DownloadButton" xml:space="preserve">
+    <value>Скачать</value>
   </data>
   <data name="Main_EditButton" xml:space="preserve">
     <value>Изменить</value>
@@ -429,6 +429,9 @@
   </data>
   <data name="Main_ImportExportSection" xml:space="preserve">
     <value>ИМПОРТ / ЭКСПОРТ</value>
+  </data>
+  <data name="Main_InstallButton" xml:space="preserve">
+    <value>Установить</value>
   </data>
   <data name="Main_LevelLabel" xml:space="preserve">
     <value>Уровень:</value>
@@ -473,7 +476,7 @@
     <value>логин</value>
   </data>
   <data name="Main_MtuHint" xml:space="preserve">
-    <value>576-1500, по умолчанию 1280 (безопасно почти для любой сети). На чистом канале можно поднять до 1420 ради скорости; если TLS-хендшейк всё равно зависает - понизьте ещё.</value>
+    <value>576-1500, по умолчанию 1420. При использовании прокси рекомендуется 1280.</value>
   </data>
   <data name="Main_NameLabel" xml:space="preserve">
     <value>НАЗВАНИЕ</value>
@@ -654,9 +657,6 @@
   </data>
   <data name="Main_UpdateAvailableBadge" xml:space="preserve">
     <value>● Доступно обновление</value>
-  </data>
-  <data name="Main_UpdateButton" xml:space="preserve">
-    <value>Обновить</value>
   </data>
   <data name="Main_UpdateDatabaseTooltip" xml:space="preserve">
     <value>Обновить базу</value>
@@ -912,6 +912,9 @@
   </data>
   <data name="MainVm_UpdateLaunching" xml:space="preserve">
     <value>Запуск установщика…</value>
+  </data>
+  <data name="MainVm_UpdateReadyToInstall" xml:space="preserve">
+    <value>Обновление скачано - можно устанавливать.</value>
   </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
     <value>— не выбрано —</value>
@@ -1181,22 +1184,8 @@
   <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
     <value>Не удалось обновить базы гео ({0}). Можно сделать это позже в приложении.</value>
   </data>
-  <data name="InstallerBa_ConfigImportFailed" xml:space="preserve">
-    <value>Не удалось применить конфигурацию: {0}</value>
-  </data>
-  <data name="InstallerBa_InstalledButConfigFailed" xml:space="preserve">
-    <value>Установка завершена, но конфигурацию применить не удалось.</value>
-  </data>
   <data name="InstallerBa_PlanFailed" xml:space="preserve">
     <value>Не удалось спланировать операцию.</value>
-  </data>
-  <data name="InstallerBa_ReplaceDbPrompt" xml:space="preserve">
-    <value>В системе уже есть сохранённые настройки AmneziaGeo (state.db).
-
-Заменить их рекомендованными настройками из установщика?
-
-Да - заменить (текущие настройки будут потеряны).
-Нет - оставить текущие настройки.</value>
   </data>
   <data name="InstallerBa_StopAppFailed" xml:space="preserve">
     <value>Не удалось остановить запущенное приложение AmneziaGeo. Закройте его и повторите.</value>
@@ -1227,9 +1216,6 @@
   </data>
   <data name="InstallerUi_Repair" xml:space="preserve">
     <value>Восстановить</value>
-  </data>
-  <data name="InstallerUi_ConfigFile" xml:space="preserve">
-    <value>Файл конфигурации…</value>
   </data>
   <data name="InstallerUi_Update" xml:space="preserve">
     <value>Обновить</value>
@@ -1272,21 +1258,6 @@
   </data>
   <data name="InstallerVm_Repairing" xml:space="preserve">
     <value>Восстановление…</value>
-  </data>
-  <data name="InstallerVm_ConfigFileDialogFilter" xml:space="preserve">
-    <value>Конфигурация AmneziaGeo (*.agbundle.json;*.json;*.conf;*.vpn.txt)|*.agbundle.json;*.json;*.conf;*.vpn.txt|Все файлы (*.*)|*.*</value>
-  </data>
-  <data name="InstallerVm_ConfigFileDialogTitle" xml:space="preserve">
-    <value>Выберите файл конфигурации</value>
-  </data>
-  <data name="InstallerVm_ConfigFileNone" xml:space="preserve">
-    <value>Файл конфигурации не выбран.</value>
-  </data>
-  <data name="InstallerVm_ConfigFileSelected" xml:space="preserve">
-    <value>Файл конфигурации: {0}</value>
-  </data>
-  <data name="InstallerVm_ImportingConfig" xml:space="preserve">
-    <value>Применение конфигурации…</value>
   </data>
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Обновление…</value>

@@ -28,6 +28,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string? _pendingOpenProfile;
     private string _updateSetupUrl = string.Empty;
     private string? _bannerUpdateVersion;
+    private string? _downloadedSetupPath;
+    private string? _downloadedVersion;
     private string? _geoBannerSignature;
     private bool _suppressActivePush;
     private long? _pendingEditRoutingListId;
@@ -211,6 +213,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _updateDownloading;
+
+    [ObservableProperty]
+    private bool _updateDownloaded;
 
     [ObservableProperty]
     private int _updateDownloadPercent;
@@ -2084,6 +2089,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         UpdateDescription = snapshot.UpdateDescription;
         _updateSetupUrl = snapshot.UpdateSetupUrl;
 
+        // A newly offered version invalidates the setup downloaded for the previous one.
+        if (UpdateDownloaded && !string.Equals(snapshot.UpdateVersion, _downloadedVersion, StringComparison.Ordinal))
+        {
+            UpdateDownloaded = false;
+            _downloadedSetupPath = null;
+            _downloadedVersion = null;
+        }
+
         if (snapshot.UpdateAvailable && !string.IsNullOrEmpty(snapshot.UpdateVersion))
         {
             if (!string.Equals(snapshot.UpdateVersion, _bannerUpdateVersion, StringComparison.Ordinal))
@@ -2109,28 +2122,56 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         UpdateStatus = ack.Message;
     }
 
+    /// <summary>
+    /// Downloads the setup and stops. Installing is a separate, explicit step (#154).
+    /// </summary>
     [RelayCommand]
-    private async Task InstallUpdate()
+    private async Task DownloadUpdate()
     {
-        if (string.IsNullOrEmpty(_updateSetupUrl) || UpdateDownloading)
+        if (string.IsNullOrEmpty(_updateSetupUrl) || UpdateDownloading || UpdateDownloaded)
         {
             return;
         }
 
-        UpdateBannerVisible = false;
         UpdateDownloading = true;
         UpdateDownloadPercent = 0;
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloading");
         try
         {
-            var path = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p));
-            UpdateStatus = Loc.Instance.Get("MainVm_UpdateLaunching");
+            _downloadedSetupPath = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p));
+            _downloadedVersion = UpdateVersion;
+            UpdateDownloaded = true;
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateReadyToInstall");
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
+        }
+        finally
+        {
+            UpdateDownloading = false;
+        }
+    }
 
+    /// <summary>
+    /// Launches the already-downloaded setup and quits the app.
+    /// </summary>
+    [RelayCommand]
+    private void ApplyUpdate()
+    {
+        if (!UpdateDownloaded || string.IsNullOrEmpty(_downloadedSetupPath))
+        {
+            return;
+        }
+
+        UpdateStatus = Loc.Instance.Get("MainVm_UpdateLaunching");
+        try
+        {
             // /passive: a single progress UI, no prompts. The display level propagates to the upgrade's
             // related-bundle uninstall, so the old version is removed WITHOUT its own second installer
             // window flashing alongside the new one. UseShellExecute lets the bundle elevate (UAC) once.
             // LAUNCHAFTER=1 tells the bundle's BA to restart the app once the update is applied (#155).
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Arguments = "/passive LAUNCHAFTER=1" });
+            Process.Start(new ProcessStartInfo(_downloadedSetupPath) { UseShellExecute = true, Arguments = "/passive LAUNCHAFTER=1" });
 
             // Quit so the installer can replace the app's in-use files.
             if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
@@ -2141,10 +2182,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
-        }
-        finally
-        {
-            UpdateDownloading = false;
         }
     }
 

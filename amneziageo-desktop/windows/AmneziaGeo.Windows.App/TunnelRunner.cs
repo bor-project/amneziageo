@@ -23,14 +23,11 @@ internal sealed class TunnelRunner(
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
-    // 1280 - the IPv6-minimum floor. On lossy/policed underlays larger frames drop disproportionately
-    // (measured on .39: ~20% loss at 1400B vs ~8% at 64B to the server), so a smaller MTU lowers the
-    // per-packet drop rate and the cost of each full-segment retransmit; 1420 black-holes TLS handshakes.
-    private const int DefaultMtu = 1280;
+    // Effective MTU when a config has no explicit value.
+    private const int DefaultMtu = 1420;
 
-    // Former default. A config still storing exactly this is treated as "follow DefaultMtu", so lowering
-    // the default takes effect for existing configs too, without clobbering a user's explicit MTU choice.
-    private const int LegacyDefaultMtu = 1380;
+    // Former default; a config storing exactly this follows DefaultMtu.
+    private const int LegacyDefaultMtu = 1280;
 
     // Proactively refresh the peer handshake/NAT mapping so a lossy underlay can't let the session age out.
     private const int DefaultKeepaliveSeconds = 25;

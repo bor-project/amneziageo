@@ -86,31 +86,6 @@ $hasIcon = if ($iconAbs) { 'true' } else { 'false' }
 $iconProps   = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$iconAbs") } else { @('-p:HasIcon=false') }
 $updateProps = if ($updateUrl) { @("-p:UpdateUrl=$updateUrl") } else { @() }
 
-# ---- default configuration database (installer.config.json -> defaultConfigDb): an optional prebuilt
-# state.db bundled into the MSI as state.db.seed and deployed by the agent on first run (#54). Null/empty
-# => no DB is bundled (current behaviour). A configured-but-missing path is a config error: fail loudly,
-# like iconPath. ----
-$dbAbs = ''
-if ($cfg -and $cfg.defaultConfigDb) {
-    $p = [string]$cfg.defaultConfigDb
-    $dbAbs = if ([System.IO.Path]::IsPathRooted($p)) { $p } else { Join-Path $bundleDir $p }
-    $dbAbs = [System.IO.Path]::GetFullPath($dbAbs)
-    if (-not (Test-Path $dbAbs)) { throw "defaultConfigDb '$p' set in installer.config.json but not found at $dbAbs" }
-}
-$hasDb = if ($dbAbs) { 'true' } else { 'false' }
-
-# Props for the MSI/bundle. When a DB is bundled the MSI also lays an empty marker as state.db.seed.replace
-# ONLY when SEEDREPLACE=1 (a component condition); its presence tells the agent to overwrite an existing
-# state.db rather than keep it. The marker is created OUTSIDE the publish stage so it is not harvested into
-# the unconditional payload. HasDefaultDb is enough for the bundle; the MSI also needs the file paths.
-$dbProps = @("-p:HasDefaultDb=$hasDb")
-if ($hasDb -eq 'true') {
-    $seedFlag = Join-Path $bundleDir 'obj-seed\seed.replace.flag'
-    New-Item -ItemType Directory -Force -Path (Split-Path $seedFlag -Parent) | Out-Null
-    [System.IO.File]::WriteAllBytes($seedFlag, [byte[]]@())   # 0-byte marker (works on PS 5.1 and pwsh)
-    $dbProps += @("-p:DefaultDbFile=$dbAbs", "-p:ReplaceFlagFile=$seedFlag")
-}
-
 # ---- build matrix (arch x selfContained). Flags override installer.config.json -> build.* ----
 $cfgArch = if ($cfg -and $cfg.build -and $cfg.build.arch) { @($cfg.build.arch | ForEach-Object { [string]$_ }) } else { @('x64') }
 $cfgSc   = if ($cfg -and $cfg.build -and $null -ne $cfg.build.selfContained) { @($cfg.build.selfContained | ForEach-Object { [bool]$_ }) } else { @($false) }
@@ -256,7 +231,7 @@ function Build-Variant {
 
     # ---- 2. build the MSI from the stage (per-arch Platform => per-arch bin\ and output name) ----
     Write-Host '== build MSI =='
-    dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:StageDir=$stage "-p:HasIcon=$hasIcon" $dbProps
+    dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:StageDir=$stage "-p:HasIcon=$hasIcon"
     if ($LASTEXITCODE -ne 0) { throw "MSI build failed ($LASTEXITCODE)" }
 
     $msiBin = Join-Path (Split-Path $msiProj -Parent) (Join-Path 'bin' $Arch)
@@ -300,7 +275,7 @@ function Build-Variant {
 
     # ---- 5. build the bundle (per-arch Platform => per-arch bin\) ----
     Write-Host '== build bundle =='
-    dotnet build $bundleProj -c $Configuration -p:Platform=$Arch -p:BundleVersion=$version -p:BaExe=$baExe -p:MsiPath=$($msi.FullName) $iconProps $dbProps
+    dotnet build $bundleProj -c $Configuration -p:Platform=$Arch -p:BundleVersion=$version -p:BaExe=$baExe -p:MsiPath=$($msi.FullName) $iconProps
     if ($LASTEXITCODE -ne 0) { throw "Bundle build failed ($LASTEXITCODE)" }
 
     $bundleBin = Join-Path $bundleDir (Join-Path 'bin' $Arch)

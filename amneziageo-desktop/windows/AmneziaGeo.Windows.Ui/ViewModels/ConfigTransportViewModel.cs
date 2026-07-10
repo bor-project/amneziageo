@@ -66,7 +66,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
-        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1280";
+        _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1420";
 
         // Parse the stored address; default the host to the config's Endpoint host.
         var (host, port, user, password, token, mode) = ParseStored(webSocketHost);

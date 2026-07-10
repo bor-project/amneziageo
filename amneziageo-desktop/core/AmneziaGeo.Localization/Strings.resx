@@ -391,8 +391,8 @@
   <data name="Main_DnsWatermark" xml:space="preserve">
     <value>e.g. 1.1.1.1, 8.8.8.8</value>
   </data>
-  <data name="Main_DownloadAndInstallButton" xml:space="preserve">
-    <value>Download and install</value>
+  <data name="Main_DownloadButton" xml:space="preserve">
+    <value>Download</value>
   </data>
   <data name="Main_EditButton" xml:space="preserve">
     <value>Edit</value>
@@ -429,6 +429,9 @@
   </data>
   <data name="Main_ImportExportSection" xml:space="preserve">
     <value>IMPORT / EXPORT</value>
+  </data>
+  <data name="Main_InstallButton" xml:space="preserve">
+    <value>Install</value>
   </data>
   <data name="Main_LevelLabel" xml:space="preserve">
     <value>Level:</value>
@@ -473,7 +476,7 @@
     <value>login</value>
   </data>
   <data name="Main_MtuHint" xml:space="preserve">
-    <value>576-1500, default 1280 (safe for almost any network). On a clean link you can raise it to 1420 for speed; if the TLS handshake still stalls - lower it further.</value>
+    <value>576-1500, default 1420. With a proxy, 1280 is recommended.</value>
   </data>
   <data name="Main_NameLabel" xml:space="preserve">
     <value>NAME</value>
@@ -654,9 +657,6 @@
   </data>
   <data name="Main_UpdateAvailableBadge" xml:space="preserve">
     <value>● Update available</value>
-  </data>
-  <data name="Main_UpdateButton" xml:space="preserve">
-    <value>Update</value>
   </data>
   <data name="Main_UpdateDatabaseTooltip" xml:space="preserve">
     <value>Update the database</value>
@@ -912,6 +912,9 @@
   </data>
   <data name="MainVm_UpdateLaunching" xml:space="preserve">
     <value>Launching installer…</value>
+  </data>
+  <data name="MainVm_UpdateReadyToInstall" xml:space="preserve">
+    <value>Update downloaded - ready to install.</value>
   </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
     <value>— none —</value>
@@ -1181,22 +1184,8 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
     <value>Failed to update the geo databases ({0}). You can do this later in the application.</value>
   </data>
-  <data name="InstallerBa_ConfigImportFailed" xml:space="preserve">
-    <value>Failed to apply the configuration: {0}</value>
-  </data>
-  <data name="InstallerBa_InstalledButConfigFailed" xml:space="preserve">
-    <value>Installation complete, but the configuration could not be applied.</value>
-  </data>
   <data name="InstallerBa_PlanFailed" xml:space="preserve">
     <value>Failed to plan the operation.</value>
-  </data>
-  <data name="InstallerBa_ReplaceDbPrompt" xml:space="preserve">
-    <value>Saved AmneziaGeo settings already exist on this system (state.db).
-
-Replace them with the recommended settings from the installer?
-
-Yes - replace (current settings will be lost).
-No - keep the current settings.</value>
   </data>
   <data name="InstallerBa_StopAppFailed" xml:space="preserve">
     <value>Failed to stop the running AmneziaGeo application. Close it and try again.</value>
@@ -1227,9 +1216,6 @@ No - keep the current settings.</value>
   </data>
   <data name="InstallerUi_Repair" xml:space="preserve">
     <value>Repair</value>
-  </data>
-  <data name="InstallerUi_ConfigFile" xml:space="preserve">
-    <value>Configuration file…</value>
   </data>
   <data name="InstallerUi_Update" xml:space="preserve">
     <value>Update</value>
@@ -1272,21 +1258,6 @@ No - keep the current settings.</value>
   </data>
   <data name="InstallerVm_Repairing" xml:space="preserve">
     <value>Repairing…</value>
-  </data>
-  <data name="InstallerVm_ConfigFileDialogFilter" xml:space="preserve">
-    <value>AmneziaGeo configuration (*.agbundle.json;*.json;*.conf;*.vpn.txt)|*.agbundle.json;*.json;*.conf;*.vpn.txt|All files (*.*)|*.*</value>
-  </data>
-  <data name="InstallerVm_ConfigFileDialogTitle" xml:space="preserve">
-    <value>Select a configuration file</value>
-  </data>
-  <data name="InstallerVm_ConfigFileNone" xml:space="preserve">
-    <value>No configuration file selected.</value>
-  </data>
-  <data name="InstallerVm_ConfigFileSelected" xml:space="preserve">
-    <value>Configuration file: {0}</value>
-  </data>
-  <data name="InstallerVm_ImportingConfig" xml:space="preserve">
-    <value>Applying configuration…</value>
   </data>
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Updating…</value>

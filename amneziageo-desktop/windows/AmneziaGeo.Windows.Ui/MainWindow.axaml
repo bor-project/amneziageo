@@ -678,10 +678,11 @@
                       <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
                       <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
                     </StackPanel>
-                    <Border Background="{DynamicResource AgInsetBrush}" CornerRadius="6" Padding="8">
-                      <SelectableTextBlock Text="{Binding ServerHint}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"
-                                           FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
-                    </Border>
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="{l:Tr Main_WsServerReadmeHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                      <Button Classes="softbtn" HorizontalAlignment="Left"
+                              Content="{l:Tr Main_OpenReadmeButton}" Click="OnOpenReadme" />
+                    </StackPanel>
                   </StackPanel>
                   <!-- Committed atomically with the header Save (#143). -->
                   <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
@@ -984,22 +985,6 @@
                         <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
                       </StackPanel>
                     </Grid>
-                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                        <TextBlock Text="{l:Tr Main_CacheValidityTitle}" FontSize="13.5" />
-                        <TextBlock Text="{l:Tr Main_CacheValidityHint}"
-                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                      </StackPanel>
-                      <ComboBox Grid.Column="1" Classes="field" Width="92" VerticalAlignment="Center"
-                                ItemsSource="{Binding GeoCacheValidities}"
-                                SelectedItem="{Binding GeoCacheValidityHours, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                          <DataTemplate x:DataType="x:Int32">
-                            <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
-                          </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                      </ComboBox>
-                    </Grid>
                     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
 
                     <TextBlock Classes="label" Text="{l:Tr Main_AddDatabaseLabel}" />
@@ -1176,7 +1161,9 @@
                   <!-- Theme -->
                   <Grid ColumnDefinitions="*,Auto" Margin="0,11">
                     <TextBlock Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Classes="softbtn" Content="{Binding ThemeLabel}" Command="{Binding ToggleThemeCommand}" />
+                    <ComboBox Grid.Column="1" MinWidth="150" VerticalAlignment="Center"
+                              ItemsSource="{Binding Themes}"
+                              SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}" />
                   </Grid>
 
                   <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />

@@ -76,6 +76,9 @@
   <data name="Theme_Light" xml:space="preserve">
     <value>Light</value>
   </data>
+  <data name="Theme_System" xml:space="preserve">
+    <value>System</value>
+  </data>
   <data name="About_Section" xml:space="preserve">
     <value>ABOUT</value>
   </data>
@@ -265,11 +268,11 @@
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Select profiles, configurations, and routing lists to transfer to another device, or import a previously exported file.</value>
   </data>
-  <data name="Main_CacheValidityHint" xml:space="preserve">
-    <value>After how long the data is considered stale and refreshed in the background. Manual «Update all» always checks.</value>
+  <data name="Main_OpenReadmeButton" xml:space="preserve">
+    <value>Open README</value>
   </data>
-  <data name="Main_CacheValidityTitle" xml:space="preserve">
-    <value>Address cache freshness</value>
+  <data name="Main_WsServerReadmeHint" xml:space="preserve">
+    <value>Server-side wstunnel setup is described in README.md next to the app.</value>
   </data>
   <data name="Main_CameraButton" xml:space="preserve">
     <value>Camera</value>
@@ -796,6 +799,9 @@
   <data name="MainCode_RoutingListTitle" xml:space="preserve">
     <value>Routing list</value>
   </data>
+  <data name="MainCode_ReadmeOpenFailed" xml:space="preserve">
+    <value>Failed to open README: {0}</value>
+  </data>
   <data name="MainCode_SaveConfigTitle" xml:space="preserve">
     <value>Save configuration</value>
   </data>
@@ -1008,21 +1014,6 @@
   </data>
   <data name="Status_Preempted" xml:space="preserve">
     <value>Preempted</value>
-  </data>
-  <data name="Transport_HintBasicAuth" xml:space="preserve">
-    <value>"Login and password" authorization: the client sends an Authorization: Basic header. On the server, enable verification - wstunnel is started with --restrict-config &lt;yaml&gt;, where the allowed login/password (Authorization) is set. The login/password do NOT have to match the AmneziaWG config.</value>
-  </data>
-  <data name="Transport_HintCert" xml:space="preserve">
-    <value>Where fullchain/privkey is the server's existing certificate.</value>
-  </data>
-  <data name="Transport_HintFirewall" xml:space="preserve">
-    <value>Open TCP {0} in the firewall. The client will tunnel AmneziaWG UDP into this WebSocket.</value>
-  </data>
-  <data name="Transport_HintIntro" xml:space="preserve">
-    <value>On the server: install wstunnel and run it as a service with the command</value>
-  </data>
-  <data name="Transport_HintTokenAuth" xml:space="preserve">
-    <value>"Token" authorization: the access token in the URL must EXACTLY match --restrict-http-upgrade-path-prefix on the server (and it also blocks blind scanning).</value>
   </data>
   <data name="Transport_Imported" xml:space="preserve">
     <value>Imported - press "Save" to apply.</value>

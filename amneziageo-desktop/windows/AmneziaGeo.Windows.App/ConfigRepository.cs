@@ -208,6 +208,8 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         await store.RemoveConfigExclusionsAsync(name, ct);
         await store.RemoveDomainResolutionsAsync(name, ct);
 
+        RemoveLegacyConfigFile(name);
+
         foreach (var profileName in await store.ListBalancerNamesAsync(ct))
         {
             var profile = await store.GetBalancerAsync(profileName, ct);
@@ -217,6 +219,24 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
             }
 
             await store.SaveBalancerAsync(profile with { Config = string.Empty }, ct);
+        }
+    }
+
+    // Убирает файл конфигурации с диска, иначе миграция вернёт удалённый конфиг после перезапуска.
+    private static void RemoveLegacyConfigFile(string name)
+    {
+        var path = Path.Combine(TunnelPaths.ConfigurationsDirectory(), name + ".conf");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
         }
     }
 

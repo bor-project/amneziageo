@@ -28,29 +28,24 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _useWebSocket;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ServerHint))]
     private string _webSocketHost = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ServerHint))]
     private string _webSocketPort = "443";
 
     // Authorization mode: 0 = none, 1 = basic, 2 = path token.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBasicAuth))]
     [NotifyPropertyChangedFor(nameof(IsTokenAuth))]
-    [NotifyPropertyChangedFor(nameof(ServerHint))]
     private int _authMode;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ServerHint))]
     private string _webSocketUser = string.Empty;
 
     [ObservableProperty]
     private string _webSocketPassword = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ServerHint))]
     private string _webSocketToken = string.Empty;
 
     [ObservableProperty]
@@ -200,43 +195,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// True when the path-token auth mode is selected (mode 2).
     /// </summary>
     public bool IsTokenAuth => AuthMode == 2;
-
-    /// <summary>
-    /// The exact wstunnel server command for this config's server, so the user can stand up the matching
-    /// endpoint. The auth mode tailors it: a token shows --restrict-http-upgrade-path-prefix (and the
-    /// matching path goes in the client URL); login+password adds the credentials note; without either the
-    /// destination is restricted instead. The token and --restrict-to flags do not combine on the CLI.
-    /// </summary>
-    public string ServerHint
-    {
-        get
-        {
-            var awgPort = EndpointPort(_endpoint);
-            var wsPort = int.TryParse(WebSocketPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) && p is > 0 and <= 65535 ? p : 443;
-            var token = WebSocketToken.Trim().Trim('/');
-            var restrictLine = IsTokenAuth && token.Length > 0
-                ? $"  --restrict-http-upgrade-path-prefix {token} \\\n"
-                : $"  --restrict-to 127.0.0.1:{awgPort} \\\n";
-            var hint =
-                Loc.Instance.Get("Transport_HintIntro") + "\n\n" +
-                $"wstunnel server wss://0.0.0.0:{wsPort} \\\n" +
-                restrictLine +
-                $"  --tls-certificate <fullchain.pem> --tls-private-key <privkey.pem>\n\n" +
-                Loc.Instance.Get("Transport_HintCert") + " " +
-                Loc.Instance.Get("Transport_HintFirewall", wsPort);
-
-            if (IsBasicAuth && WebSocketUser.Trim().Length > 0)
-            {
-                hint += "\n\n" + Loc.Instance.Get("Transport_HintBasicAuth");
-            }
-            else if (IsTokenAuth && token.Length > 0)
-            {
-                hint += "\n\n" + Loc.Instance.Get("Transport_HintTokenAuth");
-            }
-
-            return hint;
-        }
-    }
 
     /// <inheritdoc />
     public bool CanCommit()
@@ -424,18 +382,6 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         }
 
         return value;
-    }
-
-    private static int EndpointPort(string endpoint)
-    {
-        var colon = endpoint.LastIndexOf(':');
-        if (colon >= 0 && colon < endpoint.Length - 1
-            && int.TryParse(endpoint[(colon + 1)..].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var port))
-        {
-            return port;
-        }
-
-        return 9080;
     }
 
     private static string EndpointHost(string endpoint)

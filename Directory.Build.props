@@ -7,4 +7,14 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
+  <!-- PE version-resource metadata (#167): blank Company/Product/Description reads as an unknown binary to
+       AV/SmartScreen heuristics. Keep the publisher name stable so signing reputation accrues to one identity. -->
+  <PropertyGroup>
+    <Company>AmneziaGeo</Company>
+    <Product>AmneziaGeo</Product>
+    <Authors>AmneziaGeo</Authors>
+    <Description>AmneziaGeo - geo-aware VPN client for Windows.</Description>
+    <Copyright>Copyright (c) AmneziaGeo</Copyright>
+  </PropertyGroup>
+
 </Project>

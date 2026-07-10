@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Avalonia.Controls;
@@ -511,6 +512,20 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             vm.ShowTransientNotice(Loc.Instance.Get("MainCode_LogsSaveFailed", ex.Message));
+        }
+    }
+
+    // Opens the README shipped next to the exe (ws-server setup and other help).
+    private void OnOpenReadme(object? sender, RoutedEventArgs e)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "README.md");
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            (DataContext as MainWindowViewModel)?.ShowTransientNotice(Loc.Instance.Get("MainCode_ReadmeOpenFailed", ex.Message));
         }
     }
 

@@ -182,10 +182,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string _settingsSection = "profile";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ThemeLabel))]
-    private bool _isDark;
-
-    [ObservableProperty]
     private bool _noticeVisible;
 
     [ObservableProperty]
@@ -261,14 +257,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<int> GeoCheckIntervals { get; } = [6, 12, 24, 48, 168];
 
-    [ObservableProperty]
-    private int _geoCacheValidityHours = 24;
-
-    /// <summary>
-    /// Preset cache validity options (hours).
-    /// </summary>
-    public ObservableCollection<int> GeoCacheValidities { get; } = [6, 12, 24, 48, 72, 168];
-
     /// <summary>
     /// Log verbosity options.
     /// </summary>
@@ -290,6 +278,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private int _selectedLanguageIndex;
+
+    /// <summary>
+    /// UI theme options.
+    /// </summary>
+    public ObservableCollection<string> Themes { get; } = [Loc.Instance.Get("Theme_System"), Loc.Instance.Get("Theme_Light"), Loc.Instance.Get("Theme_Dark")];
+
+    [ObservableProperty]
+    private int _selectedThemeIndex;
 
     [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
@@ -412,7 +408,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             CommitProfileRenameAsync,
             CanCommitProfileRename);
         // Seed backing fields from prefs without echoing OnChanged.
-        _isDark = prefs.IsDark;
+        _selectedThemeIndex = IndexForTheme(prefs.Theme);
         _settingsSection = prefs.SettingsSection;
         _selectedLanguageIndex = IndexForLanguage(prefs.Language);
         Loc.Instance.CultureChanged += OnCultureChanged;
@@ -484,11 +480,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
-    private static readonly IBrush _circleBorderAmber = new SolidColorBrush(Color.FromRgb(0xF0, 0xD3, 0xA8));
     private static readonly IBrush _glyphGray = new SolidColorBrush(Color.FromRgb(0x7B, 0x81, 0x8D));
-    private static readonly IBrush _glyphAmber = new SolidColorBrush(Color.FromRgb(0xE0, 0x90, 0x2F));
     private static readonly IBrush _textBlue = new SolidColorBrush(Color.FromRgb(0x1A, 0x50, 0xB0));
-    private static readonly IBrush _textAmber = new SolidColorBrush(Color.FromRgb(0xB8, 0x72, 0x1F));
     private static readonly IBrush _textGray = new SolidColorBrush(Color.FromRgb(0x5B, 0x61, 0x6E));
     private static readonly IBrush _hintBrush = new SolidColorBrush(Color.FromRgb(0x9A, 0xA0, 0xAB));
 
@@ -501,6 +494,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     };
 
     public bool IsConnecting => ConnState == 1;
+
+    // Кнопка подключения: переход читается как его цель - подключение синее как активное, отключение серое как отключённое (#162).
+    private int ConnVisual => ConnState == 1 ? (IsTunnelActive ? 0 : 2) : ConnState;
 
     public bool IsConnectingOut => IsConnecting && IsTunnelActive;
 
@@ -521,13 +517,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
-    public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
+    public IBrush ConnectCircleBrush => ConnVisual == 2 ? _circleBlue : Brushes.White;
 
-    public IBrush ConnectCircleBorderBrush => ConnState switch { 2 => Brushes.Transparent, 1 => _circleBorderAmber, _ => _circleBorderGray };
+    public IBrush ConnectCircleBorderBrush => ConnVisual == 2 ? Brushes.Transparent : _circleBorderGray;
 
-    public IBrush ConnectCircleForeground => ConnState switch { 2 => Brushes.White, 1 => _glyphAmber, _ => _glyphGray };
+    public IBrush ConnectCircleForeground => ConnVisual == 2 ? Brushes.White : _glyphGray;
 
-    public IBrush ConnectStatusBrush => ConnState switch { 2 => _textBlue, 1 => _textAmber, _ => _textGray };
+    public IBrush ConnectStatusBrush => ConnVisual == 2 ? _textBlue : _textGray;
 
     public IBrush ConnectHintBrush => _hintBrush;
 
@@ -582,11 +578,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool HasRoutingEditor => RoutingEditor is not null;
 
-    /// <summary>
-    /// Current theme label shown on the toggle button.
-    /// </summary>
-    public string ThemeLabel => IsDark ? Loc.Instance.Get("Theme_Dark") : Loc.Instance.Get("Theme_Light");
-
     public string UpdateVersionBadgeText => Loc.Instance.Get("Main_UpdateAvailableVersion", UpdateVersion);
 
     public string UpdateBannerText => Loc.Instance.Get("Main_UpdateBanner", UpdateVersion);
@@ -615,12 +606,56 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Loc.Instance.SetCulture(token);
     }
 
+    private static int IndexForTheme(string? token) => token?.Trim().ToLowerInvariant() switch
+    {
+        "light" => 1,
+        "dark" => 2,
+        _ => 0,
+    };
+
+    private static string TokenForThemeIndex(int index) => index switch
+    {
+        1 => "light",
+        2 => "dark",
+        _ => string.Empty,
+    };
+
+    private static ThemeVariant ThemeVariantForIndex(int index) => index switch
+    {
+        1 => ThemeVariant.Light,
+        2 => ThemeVariant.Dark,
+        _ => ThemeVariant.Default,
+    };
+
+    partial void OnSelectedThemeIndexChanged(int value)
+    {
+        if (value < 0)
+        {
+            return;
+        }
+
+        _prefs.Theme = TokenForThemeIndex(value);
+        _prefs.Save();
+        if (Application.Current is not null)
+        {
+            Application.Current.RequestedThemeVariant = ThemeVariantForIndex(value);
+        }
+    }
+
     private void OnCultureChanged()
     {
         // Refresh the localized "System" entry in the language combo.
         if (Languages.Count > 0)
         {
             Languages[0] = Loc.Instance.Get("Lang_System");
+        }
+
+        // Re-localize the theme options.
+        if (Themes.Count >= 3)
+        {
+            Themes[0] = Loc.Instance.Get("Theme_System");
+            Themes[1] = Loc.Instance.Get("Theme_Light");
+            Themes[2] = Loc.Instance.Get("Theme_Dark");
         }
 
         // Re-raise all computed labels on a language change.
@@ -758,9 +793,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // The config Delete trigger (#143): a config that any profile still binds cannot be deleted - surface the
-    // blocking profiles in an error line instead of arming. Otherwise arm the inline confirm/cancel pair that
-    // replaces the Delete button in place (#4).
+    // The config Delete trigger (#147): deletion unbinds the config from any profile that references it; the agent
+    // refuses only when it is the config of the running profile. Arm the inline confirm/cancel pair (#4).
     [RelayCommand]
     private void RequestDeleteOpenConfig()
     {
@@ -770,13 +804,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         ConfigDeleteStatus = string.Empty;
-        var users = ProfilesUsingConfig(OpenConfig);
-        if (users.Count > 0)
-        {
-            ConfigDeleteStatus = FormatInUse("Main_ConfigInUse", users);
-            return;
-        }
-
         ConfigDeletePending = true;
     }
 
@@ -788,8 +815,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ConfigDeleteStatus = string.Empty;
     }
 
-    // Inline Confirm: perform the delete. The usage guard is re-checked (a profile may have picked up the config
-    // since the confirm was armed). On success the next remaining config opens so the section is never left empty.
+    // Inline Confirm: perform the delete. The agent unbinds the config from referencing profiles and refuses only
+    // when it is the running profile's config. On success the next remaining config opens so the section is never left empty.
     [RelayCommand]
     private async Task ConfirmDeleteOpenConfig()
     {
@@ -800,13 +827,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         var config = OpenConfig;
-        var users = ProfilesUsingConfig(config);
-        if (users.Count > 0)
-        {
-            ConfigDeleteStatus = FormatInUse("Main_ConfigInUse", users);
-            return;
-        }
-
         var ack = await RemoveConfigAsync(config);
         if (!ack.Ok)
         {
@@ -816,12 +836,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         OpenConfig = NextConfigAfter(config);
     }
-
-    // Profiles (by display name) whose persisted configuration is this one; drives the config delete guard.
-    private List<string> ProfilesUsingConfig(string config) =>
-        Balancers.Where(b => string.Equals(b.Config, config, StringComparison.Ordinal))
-            .Select(b => b.Name)
-            .ToList();
 
     // Profiles whose assigned routing list is this id (regardless of the use-routing toggle - the row still
     // references the list). Reliable because delete is gated on !IsEditing, so no profile is mid-edit.
@@ -1363,19 +1377,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RefreshEditScopes();
     }
 
-    [RelayCommand]
-    private void ToggleTheme()
-    {
-        IsDark = !IsDark;
-        if (Application.Current is not null)
-        {
-            Application.Current.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
-        }
-
-        _prefs.IsDark = IsDark;
-        _prefs.Save();
-    }
-
     // Persist the selected settings section (#51) whenever it changes.
     partial void OnSettingsSectionChanged(string value)
     {
@@ -1575,8 +1576,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         GeoAutoCheck = snapshot.GeoAutoCheck;
         EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
         GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
-        EnsureGeoValidity(snapshot.GeoCacheValidityHours);
-        GeoCacheValidityHours = snapshot.GeoCacheValidityHours;
         LogLevelLabel = LabelForLogToken(snapshot.LogLevel);
         RouteLogEnabled = snapshot.RouteLog;
         SmartDownloadRouting = snapshot.SmartDownloadRouting;
@@ -1963,15 +1962,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    partial void OnGeoCacheValidityHoursChanged(int value)
-    {
-        if (!_suppressSettingPush && value > 0)
-        {
-            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
-                ["geo-cache-validity-hours", value.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
-        }
-    }
-
     partial void OnLogLevelLabelChanged(string value)
     {
         if (!_suppressSettingPush)
@@ -2022,24 +2012,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         return "info";
-    }
-
-    // Keeps the validity combo able to display whatever the agent reports (an out-of-band value set via CLI),
-    // mirroring EnsureGeoInterval, so the ComboBox SelectedItem never goes null and writes 0 back.
-    private void EnsureGeoValidity(int hours)
-    {
-        if (hours <= 0 || GeoCacheValidities.Contains(hours))
-        {
-            return;
-        }
-
-        var index = 0;
-        while (index < GeoCacheValidities.Count && GeoCacheValidities[index] < hours)
-        {
-            index++;
-        }
-
-        GeoCacheValidities.Insert(index, hours);
     }
 
     // Keeps the interval combo able to display whatever the agent reports: an out-of-band value (e.g. set

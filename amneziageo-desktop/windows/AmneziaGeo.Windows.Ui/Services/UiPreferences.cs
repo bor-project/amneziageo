@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace AmneziaGeo.Windows.Ui.Services;
 
@@ -10,9 +11,15 @@ namespace AmneziaGeo.Windows.Ui.Services;
 internal sealed class UiPreferences
 {
     /// <summary>
-    /// Dark theme when true, light when false.
+    /// Тема: пусто = системная, "light" или "dark".
     /// </summary>
-    public bool IsDark { get; set; }
+    public string Theme { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Legacy: булев флаг тёмной темы; читается только для миграции в Theme.
+    /// </summary>
+    [JsonPropertyName("IsDark")]
+    public bool? IsDark { get; set; }
 
     /// <summary>
     /// Window width.
@@ -56,7 +63,14 @@ internal sealed class UiPreferences
     {
         try
         {
-            return JsonSerializer.Deserialize<UiPreferences>(File.ReadAllText(FilePath)) ?? new UiPreferences();
+            var prefs = JsonSerializer.Deserialize<UiPreferences>(File.ReadAllText(FilePath)) ?? new UiPreferences();
+            if (string.IsNullOrEmpty(prefs.Theme) && prefs.IsDark.HasValue)
+            {
+                prefs.Theme = prefs.IsDark.Value ? "dark" : "light";
+            }
+
+            prefs.IsDark = null;
+            return prefs;
         }
         catch
         {

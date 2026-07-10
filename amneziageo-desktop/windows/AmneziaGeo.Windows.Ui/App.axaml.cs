@@ -47,7 +47,12 @@ public sealed partial class App : Application
             // Restore UI preferences before any window shows.
             var prefs = UiPreferences.Load();
             _prefs = prefs;
-            RequestedThemeVariant = prefs.IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
+            RequestedThemeVariant = prefs.Theme switch
+            {
+                "light" => ThemeVariant.Light,
+                "dark" => ThemeVariant.Dark,
+                _ => ThemeVariant.Default,
+            };
 
             // Apply UI language before the first frame.
             Loc.Instance.ApplyStartupCulture(prefs.Language);

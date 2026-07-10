@@ -76,6 +76,9 @@
   <data name="Theme_Light" xml:space="preserve">
     <value>Светлая</value>
   </data>
+  <data name="Theme_System" xml:space="preserve">
+    <value>Системная</value>
+  </data>
   <data name="About_Section" xml:space="preserve">
     <value>О ПРИЛОЖЕНИИ</value>
   </data>
@@ -265,11 +268,11 @@
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
   </data>
-  <data name="Main_CacheValidityHint" xml:space="preserve">
-    <value>Через сколько данные считаются устаревшими и обновляются в фоне. Ручное «Обновить все» проверяет всегда.</value>
+  <data name="Main_OpenReadmeButton" xml:space="preserve">
+    <value>Открыть README</value>
   </data>
-  <data name="Main_CacheValidityTitle" xml:space="preserve">
-    <value>Актуальность кэша адресов</value>
+  <data name="Main_WsServerReadmeHint" xml:space="preserve">
+    <value>Настройка ws-сервера описана в README.md рядом с приложением.</value>
   </data>
   <data name="Main_CameraButton" xml:space="preserve">
     <value>Камера</value>
@@ -796,6 +799,9 @@
   <data name="MainCode_RoutingListTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
   </data>
+  <data name="MainCode_ReadmeOpenFailed" xml:space="preserve">
+    <value>Не удалось открыть README: {0}</value>
+  </data>
   <data name="MainCode_SaveConfigTitle" xml:space="preserve">
     <value>Сохранить конфигурацию</value>
   </data>
@@ -1008,21 +1014,6 @@
   </data>
   <data name="Status_Preempted" xml:space="preserve">
     <value>Вытеснено</value>
-  </data>
-  <data name="Transport_HintBasicAuth" xml:space="preserve">
-    <value>Авторизация «логин и пароль»: клиент шлёт заголовок Authorization: Basic. На сервере включите проверку - wstunnel запускают с --restrict-config &lt;yaml&gt;, где задают разрешённый логин/пароль (Authorization). Логин/пароль НЕ обязаны совпадать с конфигом AmneziaWG.</value>
-  </data>
-  <data name="Transport_HintCert" xml:space="preserve">
-    <value>Где fullchain/privkey - уже имеющийся сертификат сервера.</value>
-  </data>
-  <data name="Transport_HintFirewall" xml:space="preserve">
-    <value>Откройте TCP {0} в фаерволе. Клиент завернёт UDP AmneziaWG в этот WebSocket.</value>
-  </data>
-  <data name="Transport_HintIntro" xml:space="preserve">
-    <value>На сервере: установите wstunnel и запустите его как службу с командой</value>
-  </data>
-  <data name="Transport_HintTokenAuth" xml:space="preserve">
-    <value>Авторизация «токен»: токен доступа в URL должен ТОЧНО совпадать с --restrict-http-upgrade-path-prefix на сервере (и заодно отсекает слепое сканирование).</value>
   </data>
   <data name="Transport_Imported" xml:space="preserve">
     <value>Импортировано - нажмите «Сохранить», чтобы применить.</value>

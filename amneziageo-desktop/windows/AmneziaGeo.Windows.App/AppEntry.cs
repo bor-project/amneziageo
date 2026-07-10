@@ -15,6 +15,18 @@ public static class AppEntry
     /// </summary>
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
+        // Installer maintenance verbs (invoked by the MSI custom actions as SYSTEM) run standalone, before the
+        // DI host / DB init, so they never recreate or lock the very data they may be removing (#167).
+        switch (args)
+        {
+            case ["--uninstall-cleanup"]:
+                InstallerMaintenance.RemoveTransientServices();
+                return 0;
+            case ["--wipe-config"]:
+                InstallerMaintenance.WipeRuntimeData();
+                return 0;
+        }
+
         // "--agent <name>" seeds a launch target; bare "--agent" idles with no target and picks up the persisted selection.
         var agentTarget = args switch
         {

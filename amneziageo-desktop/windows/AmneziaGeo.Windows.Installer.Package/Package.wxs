@@ -87,15 +87,15 @@
     <!-- On full removal (including the remove phase of a major upgrade) mop up any leftover transient
          per-tunnel services. The active tunnel is already torn down by the AmneziaGeoAgent service's
          own graceful stop (ServiceControl below), which reverts its routes / DNS / firewall; this only
-         catches a per-tunnel service orphaned by an agent crash. Fixed names only (no installer
-         properties), so the action needs no deferred CustomActionData. Runs DEFERRED in the system
-         context (Impersonate="no") so the powershell child lands on session 0, not the user's desktop —
-         otherwise it flashes a console window mid-(un)install (visible during an in-app update's upgrade).
-         -WindowStyle Hidden/-NonInteractive harden that. Best-effort: Return="ignore" so a hiccup never
-         blocks uninstall. -->
+         catches a per-tunnel service orphaned by an agent crash. Runs the installed agent exe with
+         --uninstall-cleanup, which enumerates and deletes the "AmneziaGeo$*" services in-process via the
+         Service Control Manager API (no powershell/sc.exe child, keeping the AV footprint low - #167).
+         Sequenced Before RemoveFiles so the exe is still on disk. Fixed verb (no installer properties), so
+         the action needs no deferred CustomActionData. DEFERRED + Impersonate="no" runs it as SYSTEM on
+         session 0. Best-effort: Return="ignore" so a hiccup never blocks uninstall. -->
     <CustomAction Id="AgCleanup"
-                  Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command &quot;Get-Service 'AmneziaGeo$*' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue; sc.exe delete $_.Name }&quot;"
+                  FileRef="AppExe"
+                  ExeCommand="--uninstall-cleanup"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
@@ -105,23 +105,23 @@
          «Удалить конфигурацию и кэш» on removal, or «Сбросить настройки» on install/update/repair (start the
          app from a clean config). Off by default, so a plain (un)install keeps profiles/settings. The WHOLE
          tree is removed, not just state.db: leaving legacy Configurations\*.conf behind would let them migrate
-         back into a fresh DB. Deferred + Impersonate="no" so it runs as SYSTEM (the data is owned by the
-         service account) and AFTER StopServices has stopped the agent (its process exit unlocks state.db) but
-         before the service is (re)started, so a fresh config is seeded after the wipe, not before. On a fresh
-         install / a machine with no config the tree is absent and the action is a no-op. $env:ProgramData is
-         resolved by the child process, so no CustomActionData is needed. Best-effort (Return="ignore"): a
-         hiccup never blocks the operation. The retry loop (up to ~3s) rides out the narrow window where the
-         service is already SCM-stopped but its process has not yet fully released state.db / the current log
-         file, so the wipe does not silently leave those two behind. -->
+         back into a fresh DB. Runs the installed agent exe with --wipe-config, which removes the tree in-process
+         via the file API with a short retry (no powershell child - #167). Deferred + Impersonate="no" runs it as
+         SYSTEM (the data is owned by the service account); sequenced Before RemoveFiles so the exe is still on
+         disk, yet AFTER StopServices has stopped the agent (its process exit unlocks state.db) and before the
+         service is (re)started, so a fresh config is seeded after the wipe, not before. On a fresh install / a
+         machine with no config the tree is absent (and the exe not yet laid), so the action is a Return="ignore"
+         no-op. The exe's retry loop (~3s) rides out the narrow window where the service is SCM-stopped but its
+         process has not yet released state.db / the current log file. -->
     <CustomAction Id="AgWipeConfig"
-                  Directory="SystemFolder"
-                  ExeCommand="powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command &quot;$d = Join-Path $env:ProgramData 'AmneziaGeo'; for ($i = 0; $i -lt 10 -and (Test-Path $d); $i++) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path $d) { Start-Sleep -Milliseconds 300 } }&quot;"
+                  FileRef="AppExe"
+                  ExeCommand="--wipe-config"
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="AgCleanup" Before="RemoveFiles" Condition="REMOVE=&quot;ALL&quot;" />
-      <Custom Action="AgWipeConfig" After="RemoveFiles" Condition="DELETECONFIG=&quot;1&quot;" />
+      <Custom Action="AgWipeConfig" Before="RemoveFiles" Condition="DELETECONFIG=&quot;1&quot;" />
     </InstallExecuteSequence>
   </Package>
 

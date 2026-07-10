@@ -925,6 +925,15 @@
                       <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
                     </Grid>
 
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
+                        <TextBlock Text="{l:Tr Main_UseIpv6Title}" FontSize="13.5" />
+                        <TextBlock Text="{l:Tr Main_UseIpv6Hint}"
+                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
+                    </Grid>
+
                     <!-- Edits commit atomically with the header Save (#143). -->
                     <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
                                TextWrapping="Wrap" />

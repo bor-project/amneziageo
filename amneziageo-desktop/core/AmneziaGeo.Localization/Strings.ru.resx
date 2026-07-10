@@ -223,6 +223,12 @@
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
   </data>
+  <data name="Main_UseIpv6Hint" xml:space="preserve">
+    <value>Маршрутизировать для этого списка ещё и IPv6. Выключено - туннель остаётся IPv4-only (AAAA откатывается на IPv4). Включайте, только если конфиг сервера объявляет IPv6-адрес. Применяется при следующем подключении.</value>
+  </data>
+  <data name="Main_UseIpv6Title" xml:space="preserve">
+    <value>Использовать IPv6</value>
+  </data>
   <data name="Main_SmartDownloadTitle" xml:space="preserve">
     <value>Умная маршрутизация загрузок</value>
   </data>

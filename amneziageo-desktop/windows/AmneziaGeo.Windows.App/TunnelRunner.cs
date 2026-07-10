@@ -128,10 +128,17 @@ internal sealed class TunnelRunner(
         logger.LogDebug("connect {Name}: geo loaded - split={Split} routes={Routes} domains={Domains} apps={Apps} [{Elapsed} ms]",
             name, geoSplit, geoRoutes.Count, domains.Count, apps.Count, connectSw.ElapsedMilliseconds);
 
-        // IPv4-only tunnel. AAAA is answered NODATA so clients fall back to A, and the adapter carries no
-        // IPv6 address or routes. Halves the DNS/route work and closes the v6 leak/blackhole a half-configured
-        // dual stack would open. (Was config-derived via HasIpv6Address; forced on while the tunnel is v4-only.)
-        var stripV6 = true;
+        // Routing list owns DNS/exclusions/AllUdp/IPv6 when assigned; else per-config defaults. Loaded early
+        // because the IPv6 opt-in below gates the v6-strip that runs before the routing block proper.
+        var activeRoutingListId = await store.GetActiveRoutingListIdAsync(name);
+        var routingSettings = activeRoutingListId is long activeListId
+            ? await store.GetRoutingSettingsAsync(activeListId)
+            : null;
+
+        // Route IPv6 only when the active routing list opts in (#149); otherwise the tunnel stays v4-only:
+        // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
+        // A partial dual stack would open a v6 leak/blackhole, so the whole v6 path is gated on this one flag.
+        var stripV6 = !(routingSettings?.UseIpv6 ?? false);
 
         // Domain tracking only in split mode.
         var trackDomains = geoSplit && domains.Count > 0;
@@ -208,12 +215,6 @@ internal sealed class TunnelRunner(
             name, allowedIps.Count, effectiveMtu, useWebSocket, connectSw.ElapsedMilliseconds);
 
         var appSettings = await settings.LoadAsync();
-
-        // Routing list owns DNS/exclusions/AllUdp when assigned; else per-config defaults.
-        var activeRoutingListId = await store.GetActiveRoutingListIdAsync(name);
-        var routingSettings = activeRoutingListId is long activeListId
-            ? await store.GetRoutingSettingsAsync(activeListId)
-            : null;
 
         // All-UDP catch-all (split-only); from the routing list or the global setting.
         var allUdp = geoSplit && (routingSettings?.AllUdp ?? appSettings.TunnelAllUdp);

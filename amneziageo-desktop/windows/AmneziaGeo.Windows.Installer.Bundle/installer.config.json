@@ -7,7 +7,6 @@
   },
   "iconPath": "../AmneziaGeo.Windows.Ui/Assets/AmneziaGeo.ico",
   "updateUrl": null,
-  "defaultConfigDb": null,
   "signingCert": {
     "subject": "AmneziaGeo (Self-Signed Dev)",
     "timestampUrl": null

@@ -21,6 +21,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     private string _baseLocalDns = string.Empty;
     private string _baseExclusions = string.Empty;
     private bool _baseAllUdp;
+    private bool _baseUseIpv6;
 
     [ObservableProperty]
     private string _localDns = string.Empty;
@@ -30,6 +31,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
     [ObservableProperty]
     private bool _allUdp;
+
+    [ObservableProperty]
+    private bool _useIpv6;
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -74,6 +78,8 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
     partial void OnAllUdpChanged(bool value) => OnEdited();
 
+    partial void OnUseIpv6Changed(bool value) => OnEdited();
+
     // A field changed: recompute dirtiness against the baseline. No auto-save - the header Save/Cancel commits
     // or reverts the whole item at once (#143), which is what keeps a mid-type edit from persisting per keystroke.
     private void OnEdited() => RecomputeDirty();
@@ -90,7 +96,8 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
         var dirty = !string.Equals(LocalDns, _baseLocalDns, StringComparison.Ordinal)
             || !string.Equals(Exclusions, _baseExclusions, StringComparison.Ordinal)
-            || AllUdp != _baseAllUdp;
+            || AllUdp != _baseAllUdp
+            || UseIpv6 != _baseUseIpv6;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -107,6 +114,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         _baseLocalDns = LocalDns ?? string.Empty;
         _baseExclusions = Exclusions ?? string.Empty;
         _baseAllUdp = AllUdp;
+        _baseUseIpv6 = UseIpv6;
         if (IsDirty)
         {
             IsDirty = false;
@@ -123,6 +131,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             LocalDns = _baseLocalDns;
             Exclusions = _baseExclusions;
             AllUdp = _baseAllUdp;
+            UseIpv6 = _baseUseIpv6;
             StatusMessage = string.Empty;
         }
         finally
@@ -158,6 +167,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
                 LocalDns = root.TryGetProperty("localDns", out var dns) ? dns.GetString() ?? string.Empty : string.Empty;
                 Exclusions = root.TryGetProperty("exclusions", out var ex) ? ex.GetString() ?? string.Empty : string.Empty;
                 AllUdp = root.TryGetProperty("allUdp", out var udp) && udp.ValueKind == JsonValueKind.True;
+                UseIpv6 = root.TryGetProperty("useIpv6", out var v6) && v6.ValueKind == JsonValueKind.True;
             }
             catch (JsonException)
             {
@@ -188,6 +198,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
                 (Exclusions ?? string.Empty).Trim(),
                 AllUdp ? "on" : "off",
                 "split",
+                UseIpv6 ? "on" : "off",
             ]));
             StatusMessage = ack.Message;
             return ack.Ok;

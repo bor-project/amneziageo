@@ -65,7 +65,7 @@ internal static class PortableBundle
     /// <summary>
     /// A routing list's traffic policy. Mode is always "split" here.
     /// </summary>
-    public sealed record RoutingSettingsBlock(string LocalDns, string Exclusions, bool AllUdp);
+    public sealed record RoutingSettingsBlock(string LocalDns, string Exclusions, bool AllUdp, bool UseIpv6 = false);
 
     /// <summary>
     /// A thin profile reference: bound config and routing list by name; either may be null.

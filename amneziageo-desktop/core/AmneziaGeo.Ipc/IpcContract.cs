@@ -109,14 +109,14 @@ public static class IpcContract
     /// <summary>
     /// Command to set a routing list's traffic settings. Args: routing list id, then optional local DNS
     /// (comma/space-separated; empty = auto-detect), exclusions (one entry per line / comma-separated),
-    /// all-UDP ("on"/"off"), mode ("split"/"full"). An all-default tuple clears the row. Applies on the
-    /// next connect.
+    /// all-UDP ("on"/"off"), mode ("split"/"full"), use-IPv6 ("on"/"off"). An all-default tuple clears the
+    /// row. Applies on the next connect.
     /// </summary>
     public const string OpSetRoutingSettings = "set-routing-settings";
 
     /// <summary>
     /// Command to fetch a routing list's traffic settings. Args: routing list id. The ack message holds a
-    /// JSON object { localDns, exclusions, allUdp, mode } (defaults when no row is stored).
+    /// JSON object { localDns, exclusions, allUdp, mode, useIpv6 } (defaults when no row is stored).
     /// </summary>
     public const string OpGetRoutingSettings = "get-routing-settings";
 

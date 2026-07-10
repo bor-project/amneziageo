@@ -167,6 +167,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         exclusions TEXT NOT NULL DEFAULT '',
                         all_udp    INTEGER NOT NULL DEFAULT 0,
                         mode       TEXT NOT NULL DEFAULT 'split',
+                        use_ipv6   INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
                     """;
@@ -208,6 +209,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // Routing list a cached resolution belongs to (0 = none/unknown); lets a list's cache be cleaned on removal.
             await TryAlterAsync(connection, "ALTER TABLE domain_ips ADD COLUMN list_id INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+
+            // Per-list IPv6 opt-in (#149); off keeps the tunnel v4-only.
+            await TryAlterAsync(connection, "ALTER TABLE routing_settings ADD COLUMN use_ipv6 INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
         }
     }
 
@@ -1933,7 +1937,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT local_dns, exclusions, all_udp, mode FROM routing_settings WHERE list_id = $id;";
+                command.CommandText = "SELECT local_dns, exclusions, all_udp, mode, use_ipv6 FROM routing_settings WHERE list_id = $id;";
                 command.Parameters.AddWithValue("$id", routingListId);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1944,7 +1948,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new RoutingSettings(routingListId, reader.GetString(0), reader.GetString(1), reader.GetInt32(2) != 0, reader.GetString(3));
+                    return new RoutingSettings(routingListId, reader.GetString(0), reader.GetString(1), reader.GetInt32(2) != 0, reader.GetString(3), reader.GetInt32(4) != 0);
                 }
             }
         }
@@ -1963,13 +1967,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO routing_settings (list_id, local_dns, exclusions, all_udp, mode, updated_at)
-                    VALUES ($id, $dns, $excl, $udp, $mode, $updated)
+                    INSERT INTO routing_settings (list_id, local_dns, exclusions, all_udp, mode, use_ipv6, updated_at)
+                    VALUES ($id, $dns, $excl, $udp, $mode, $v6, $updated)
                     ON CONFLICT(list_id) DO UPDATE SET
                         local_dns  = excluded.local_dns,
                         exclusions = excluded.exclusions,
                         all_udp    = excluded.all_udp,
                         mode       = excluded.mode,
+                        use_ipv6   = excluded.use_ipv6,
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$id", settings.ListId);
@@ -1977,6 +1982,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$excl", settings.Exclusions);
                 command.Parameters.AddWithValue("$udp", settings.AllUdp ? 1 : 0);
                 command.Parameters.AddWithValue("$mode", settings.Mode);
+                command.Parameters.AddWithValue("$v6", settings.UseIpv6 ? 1 : 0);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

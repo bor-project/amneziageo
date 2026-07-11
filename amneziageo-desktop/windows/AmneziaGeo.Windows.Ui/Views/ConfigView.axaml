@@ -1,0 +1,253 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
+             x:Class="AmneziaGeo.Windows.Ui.Views.ConfigView"
+             x:CompileBindings="True"
+             x:DataType="vm:ConfigViewModel">
+  <!-- Grid so the import form fills the pane height (MinHeight bound to the scroll viewport in the shell). -->
+  <Grid RowDefinitions="Auto,Auto,Auto,*">
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto">
+      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center" />
+      <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+              Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+        <TextBlock Text="{Binding Configs.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+      </Border>
+      <Button Grid.Column="3" Classes="softbtn" Command="{Binding BeginSectionConfigCommand}"
+              IsEnabled="{Binding !IsEditing}">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <TextBlock Text="+" />
+          <TextBlock Text="{l:Tr Main_NewConfigButton}" />
+        </StackPanel>
+      </Button>
+    </Grid>
+
+    <!-- Config catalogue combo: «- не выбрано -» then saved configs. -->
+    <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6">
+      <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
+      <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                IsEnabled="{Binding !IsEditing}"
+                ItemsSource="{Binding ConfigCatalogueOptions}"
+                SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ConfigChoice">
+            <TextBlock Text="{Binding Name}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                 Text="{l:Tr Main_NoConfigsHint}" />
+    </StackPanel>
+
+    <!-- Standalone import form (Row 3). Imported with the header Save once text parses + name is set (#143). -->
+    <Border Grid.Row="3" Margin="0,14,0,0" VerticalAlignment="Stretch"
+            IsVisible="{Binding IsCreatingSectionConfig}"
+            Background="{DynamicResource AgInsetBrush}"
+            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="9" Padding="10">
+      <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Top" Spacing="6">
+          <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" />
+          <TextBox Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
+                   Text="{Binding SectionConfigName, Mode=TwoWay}"
+                   Watermark="{l:Tr Main_ConfigNameWatermark}" />
+          <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
+                     Text="{l:Tr Main_RequiredEmptyWarning}" />
+        </StackPanel>
+        <!-- Buttons sized to content, centred. -->
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,10,0,0">
+          <TextBlock Text="{Binding SectionConfigStatus}" Classes="fieldwarn" FontSize="11.5"
+                     TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                     IsVisible="{Binding SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+            <Button Classes="softbtn" Content="{l:Tr Main_FileButton}" Click="OnSectionConfigBrowse" />
+            <Button Classes="softbtn" Content="{l:Tr Main_CameraButton}" Click="OnSectionConfigCamera" />
+            <Button Classes="softbtn" Content="{l:Tr Main_ConfigEditButton}" Click="OnSectionConfigEdit"
+                    ToolTip.Tip="{l:Tr Main_ConfigEditButtonTooltip}" />
+          </StackPanel>
+        </StackPanel>
+        <!-- MTU + WebSocket proxy for the new config, applied to it on the header Save (#143). -->
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" Spacing="10"
+                    DataContext="{Binding SectionConfigTransport}" x:DataType="vm:ConfigTransportViewModel">
+          <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
+              <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}" IsChecked="{Binding UseWebSocket}" />
+              <!-- Hint sits on its own wrapped line: in the narrow card a third Auto/star column
+                   pushed the row past the panel edge. -->
+              <StackPanel Spacing="4">
+                <Grid ColumnDefinitions="Auto,Auto">
+                  <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                  <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
+                </Grid>
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
+              </StackPanel>
+              <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
+                  <TextBox Text="{Binding WebSocketHost}" Watermark="{l:Tr Main_ServerHostWatermark}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="{l:Tr Main_ServerPortLabel}" VerticalAlignment="Center" />
+                  <TextBox Width="90" Text="{Binding WebSocketPort}" />
+                </StackPanel>
+                <StackPanel Spacing="2">
+                  <TextBlock Text="{l:Tr Main_AuthLabel}" />
+                  <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
+                    <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
+                    <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
+                    <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
+                  </ComboBox>
+                </StackPanel>
+                <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
+                  <TextBlock Text="{l:Tr Main_LoginLabel}" />
+                  <TextBox Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
+                  <TextBlock Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
+                  <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
+                </StackPanel>
+                <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
+                  <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
+                  <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
+                </StackPanel>
+              </StackPanel>
+              <TextBlock Text="{Binding StatusMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                         IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+        <TextBox Classes="field" Margin="0,10,0,0" IsReadOnly="True"
+                 Text="{Binding SectionConfigText}" AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalAlignment="Stretch" MinHeight="180"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 Watermark="{l:Tr Main_ConfigTextWatermark}" />
+      </DockPanel>
+    </Border>
+
+    <!-- Open config (Row 2): name editor + QR / .conf text + proxy + delete. -->
+    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsConfigManage}" Spacing="14">
+      <!-- Config name: per-keystroke so the required-field border reacts at once; committed with the header Save (#143). -->
+      <StackPanel Spacing="2">
+        <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
+        <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
+                 Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
+        <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
+                   Text="{l:Tr Main_RequiredEmptyWarning}" />
+        <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                   IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
+
+      <!-- QR of the .conf / of the vpn:// link, or the .conf text itself. The text is edited in place and
+           committed by the header Save (#143), so the mode switch locks while it is dirty. -->
+      <StackPanel Spacing="10" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
+        <Border Background="{DynamicResource AgInsetBrush}"
+                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                CornerRadius="9" Padding="3" HorizontalAlignment="Center"
+                IsEnabled="{Binding !IsDirty}">
+          <UniformGrid Columns="3" MinWidth="360">
+            <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
+                    Content="{l:Tr Main_QrConfTab}" HorizontalAlignment="Stretch" />
+            <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
+                    Content="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Stretch" />
+            <Button Classes="seg" Classes.active="{Binding IsText}" Command="{Binding ShowTextCommand}"
+                    Content="{l:Tr Main_ConfigTextTab}" HorizontalAlignment="Stretch" />
+          </UniformGrid>
+        </Border>
+        <TextBlock IsVisible="{Binding IsText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                   Text="{l:Tr Main_ConfEditHint}" />
+        <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+                IsVisible="{Binding ShowQr}">
+          <Image Source="{Binding QrImage}" Width="220" Height="220" />
+        </Border>
+        <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
+          <TextBlock Text="{l:Tr Main_QrUnavailableHint}"
+                     Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
+        </Border>
+        <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+                IsVisible="{Binding IsText}" IsEnabled="{Binding IsReady}">
+          <TextBox Text="{Binding ConfText, Mode=TwoWay}"
+                   AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                   VerticalContentAlignment="Top" Height="240"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   BorderThickness="0" Background="Transparent"
+                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+        </Border>
+        <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                   HorizontalAlignment="Center" TextAlignment="Center" />
+      </StackPanel>
+
+      <!-- Proxy (WebSocket). -->
+      <StackPanel Spacing="10" DataContext="{Binding ConfigTransport}" x:DataType="vm:ConfigTransportViewModel">
+        <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
+        <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}"
+                  IsChecked="{Binding UseWebSocket}" />
+        <!-- MTU applies to any transport, not just WSS. Kept outside the WebSocket block. -->
+        <StackPanel Spacing="4">
+          <Grid ColumnDefinitions="Auto,Auto">
+            <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
+          </Grid>
+          <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
+        </StackPanel>
+        <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
+            <TextBox Text="{Binding WebSocketHost}"
+                     Watermark="{l:Tr Main_ServerHostWatermark}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{l:Tr Main_ServerPortLabel}" VerticalAlignment="Center" />
+            <TextBox Width="90" Text="{Binding WebSocketPort}" />
+          </StackPanel>
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:Tr Main_AuthLabel}" />
+            <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
+              <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
+              <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
+              <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
+            </ComboBox>
+          </StackPanel>
+          <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
+            <TextBlock Text="{l:Tr Main_LoginLabel}" />
+            <TextBox Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
+            <TextBlock Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
+            <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
+          </StackPanel>
+          <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
+            <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
+            <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
+          </StackPanel>
+        </StackPanel>
+        <!-- Committed atomically with the header Save (#143). -->
+        <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
+      <StackPanel Spacing="10">
+        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                   Text="{l:Tr Main_DeleteConfigHint}" />
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <!-- Delete trigger; when armed, the inline Confirm/Cancel pair replaces it in place (#4). -->
+          <Button Classes="danger" Content="{l:Tr Main_DeleteConfigButton}" HorizontalAlignment="Left"
+                  VerticalAlignment="Top"
+                  IsVisible="{Binding !ConfigDeletePending}"
+                  Command="{Binding RequestDeleteOpenConfigCommand}" IsEnabled="{Binding !IsEditing}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ConfigDeletePending}">
+            <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
+                    Command="{Binding ConfirmDeleteOpenConfigCommand}" />
+            <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
+                    Command="{Binding CancelDeleteConfigCommand}" />
+          </StackPanel>
+          <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12"
+                     VerticalAlignment="Center" TextWrapping="Wrap"
+                     IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>

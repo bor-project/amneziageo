@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:svc="clr-namespace:AmneziaGeo.Windows.Ui.Services"
         xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
+        xmlns:views="clr-namespace:AmneziaGeo.Windows.Ui.Views"
         xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
         x:Class="AmneziaGeo.Windows.Ui.MainWindow"
         x:CompileBindings="True"
@@ -49,9 +50,9 @@
         <!-- Centered column: power button + status/hint + profile combo. -->
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18">
           <Button Classes="powerbig" HorizontalAlignment="Center"
-                  Command="{Binding ToggleConnectionCommand}"
-                  IsEnabled="{Binding CanToggleConnection}"
-                  ToolTip.Tip="{Binding ConnectHint}">
+                  Command="{Binding Home.ToggleConnectionCommand}"
+                  IsEnabled="{Binding Home.CanToggleConnection}"
+                  ToolTip.Tip="{Binding Home.ConnectHint}">
             <Grid Width="236" Height="236">
               <Ellipse Width="236" Height="236" Stroke="{DynamicResource AgBorderBrush}"
                        StrokeThickness="1" Opacity="0.7" />
@@ -60,30 +61,30 @@
               <Ellipse Width="158" Height="158" Stroke="{DynamicResource AgBorder2Brush}"
                        StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
               <!-- Accent ring-wave overlays during connect / disconnect. -->
-              <Ellipse Classes="ring r1" Classes.waveout="{Binding IsConnectingOut}"
-                       Classes.wavein="{Binding IsConnectingIn}"
-                       Width="158" Height="158" Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
+              <Ellipse Classes="ring r1" Classes.waveout="{Binding Home.IsConnectingOut}"
+                       Classes.wavein="{Binding Home.IsConnectingIn}"
+                       Width="158" Height="158" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
                        HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Ellipse Classes="ring r2" Classes.waveout="{Binding IsConnectingOut}"
-                       Classes.wavein="{Binding IsConnectingIn}"
-                       Width="196" Height="196" Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
+              <Ellipse Classes="ring r2" Classes.waveout="{Binding Home.IsConnectingOut}"
+                       Classes.wavein="{Binding Home.IsConnectingIn}"
+                       Width="196" Height="196" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
                        HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Ellipse Classes="ring r3" Classes.waveout="{Binding IsConnectingOut}"
-                       Classes.wavein="{Binding IsConnectingIn}"
-                       Width="236" Height="236" Stroke="{Binding ConnectCircleForeground}" StrokeThickness="2"
+              <Ellipse Classes="ring r3" Classes.waveout="{Binding Home.IsConnectingOut}"
+                       Classes.wavein="{Binding Home.IsConnectingIn}"
+                       Width="236" Height="236" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
                        HorizontalAlignment="Center" VerticalAlignment="Center" />
               <Border Width="132" Height="132" CornerRadius="66"
-                      Background="{Binding ConnectCircleBrush}"
-                      BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="2"
+                      Background="{Binding Home.ConnectCircleBrush}"
+                      BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="2"
                       HorizontalAlignment="Center" VerticalAlignment="Center"
                       BoxShadow="0 8 24 0 #1F000000">
                 <Panel>
                   <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="54" Height="54"
-                            Foreground="{Binding ConnectCircleForeground}"
-                            IsVisible="{Binding !IsConnecting}"
+                            Foreground="{Binding Home.ConnectCircleForeground}"
+                            IsVisible="{Binding !Home.IsConnecting}"
                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  <Ellipse Classes.pulse="{Binding IsConnecting}" Width="44" Height="44"
-                           IsVisible="{Binding IsConnecting}" Fill="{Binding ConnectCircleForeground}"
+                  <Ellipse Classes.pulse="{Binding Home.IsConnecting}" Width="44" Height="44"
+                           IsVisible="{Binding Home.IsConnecting}" Fill="{Binding Home.ConnectCircleForeground}"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Panel>
               </Border>
@@ -91,17 +92,17 @@
           </Button>
 
           <StackPanel HorizontalAlignment="Center" Spacing="4" Margin="0,4,0,0">
-            <TextBlock Text="{Binding AgentStatusText}" FontSize="17" FontWeight="SemiBold"
-                       HorizontalAlignment="Center" Foreground="{Binding ConnectStatusBrush}" />
-            <TextBlock Text="{Binding ConnectHint}" FontSize="12.5"
-                       HorizontalAlignment="Center" Foreground="{Binding ConnectHintBrush}" />
+            <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="17" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" Foreground="{Binding Home.ConnectStatusBrush}" />
+            <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
+                       HorizontalAlignment="Center" Foreground="{Binding Home.ConnectHintBrush}" />
           </StackPanel>
 
           <!-- Profile picker: «- не выбрано -» then saved profiles. -->
           <StackPanel HorizontalAlignment="Center" Spacing="6" Width="300" Margin="0,6,0,0">
             <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                      ItemsSource="{Binding ProfileOptions}"
-                      SelectedItem="{Binding ActiveProfileChoice, Mode=TwoWay}">
+                      ItemsSource="{Binding Profile.ProfileOptions}"
+                      SelectedItem="{Binding Home.ActiveProfileChoice, Mode=TwoWay}">
               <ComboBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ProfileChoice">
                   <TextBlock Text="{Binding Name}" />
@@ -113,7 +114,7 @@
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
                        Text="{l:Tr Main_NoProfilesHint}" />
             <!-- Profiles exist but none usable: hint to pick one. -->
-            <TextBlock IsVisible="{Binding ShowSelectConfigHint}" Classes="muted" FontSize="12"
+            <TextBlock IsVisible="{Binding Home.ShowSelectConfigHint}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
                        Text="{l:Tr Main_HomeSelectConfigHint}" />
           </StackPanel>
@@ -153,28 +154,28 @@
           <!-- Animated connect / disconnect control. -->
           <Button Classes="powerctl" HorizontalAlignment="Right" VerticalAlignment="Center"
                   MinWidth="150" HorizontalContentAlignment="Left"
-                  Command="{Binding ToggleConnectionCommand}"
-                  IsEnabled="{Binding CanToggleConnection}"
-                  ToolTip.Tip="{Binding ConnectHint}">
+                  Command="{Binding Home.ToggleConnectionCommand}"
+                  IsEnabled="{Binding Home.CanToggleConnection}"
+                  ToolTip.Tip="{Binding Home.ConnectHint}">
             <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
               <Panel Width="28" Height="28">
-                <Ellipse Classes="connspin" Classes.spinning="{Binding IsConnecting}"
-                         Width="26" Height="26" Stroke="{Binding ConnectCircleForeground}"
+                <Ellipse Classes="connspin" Classes.spinning="{Binding Home.IsConnecting}"
+                         Width="26" Height="26" Stroke="{Binding Home.ConnectCircleForeground}"
                          StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
                          HorizontalAlignment="Center" VerticalAlignment="Center" />
                 <Border Width="22" Height="22" CornerRadius="11"
-                        Background="{Binding ConnectCircleBrush}"
-                        BorderBrush="{Binding ConnectCircleBorderBrush}" BorderThickness="1"
+                        Background="{Binding Home.ConnectCircleBrush}"
+                        BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="1"
                         HorizontalAlignment="Center" VerticalAlignment="Center">
                   <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
-                            Foreground="{Binding ConnectCircleForeground}"
-                            IsVisible="{Binding !IsConnecting}"
+                            Foreground="{Binding Home.ConnectCircleForeground}"
+                            IsVisible="{Binding !Home.IsConnecting}"
                             HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
               </Panel>
               <!-- Short status only. -->
-              <TextBlock Text="{Binding AgentStatusText}" FontSize="12" FontWeight="SemiBold"
-                         Foreground="{Binding ConnectStatusBrush}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="12" FontWeight="SemiBold"
+                         Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
         </Grid>
@@ -335,870 +336,35 @@
           <Grid Margin="18,16">
 
             <!-- PROFILE SECTION -->
-            <StackPanel IsVisible="{Binding IsSettingsProfile}" Spacing="14">
-              <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ProfileSection}" VerticalAlignment="Center" />
-                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                        Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-                </Border>
-                <!-- «+ Профиль» disabled when the catalogue is empty. -->
-                <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateProfileCommand}">
-                  <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="+" />
-                    <TextBlock Text="{l:Tr Main_ProfileAddButton}" />
-                  </StackPanel>
-                </Button>
-              </Grid>
+            <Panel IsVisible="{Binding IsSettingsProfile}">
+              <views:ProfileView DataContext="{Binding Profile}" />
+            </Panel>
 
-              <!-- No configurations yet: explain what to do first. -->
-              <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12.5"
-                         TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"
-                         Margin="0,24,0,8" MaxWidth="360"
-                         Text="{l:Tr Main_ProfileNeedsConfigHint}" />
-
-              <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
-                <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
-                <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                          IsEnabled="{Binding !IsEditing}"
-                          ItemsSource="{Binding ProfileOptions}"
-                          SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ProfileChoice">
-                      <TextBlock Text="{Binding Name}" />
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-                <TextBlock IsVisible="{Binding ShowNoProfilesYetHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="{l:Tr Main_NoProfilesYetHint}" />
-              </StackPanel>
-
-              <!-- Open profile's editor: rename + config picker + routing picker + delete. -->
-              <StackPanel IsVisible="{Binding IsProfileDetail}" Spacing="16">
-
-                <!-- Rename: committed with the header Save (#143). -->
-                <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
-                  <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="{l:Tr Main_ProfileRenameHint}" />
-                  <TextBox Classes="field" Classes.invalid="{Binding ProfileNameMissing}"
-                           Text="{Binding ProfileRename, Mode=TwoWay}" />
-                  <TextBlock Classes="fieldwarn" IsVisible="{Binding ProfileNameMissing}"
-                             Text="{l:Tr Main_RequiredEmptyWarning}" />
-                  <TextBlock Text="{Binding ProfileRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
-                             IsVisible="{Binding ProfileRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                </StackPanel>
-
-                <!-- Config + routing pickers for the open profile. -->
-                <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:ProfileItemViewModel" Spacing="16">
-
-                  <!-- Config picker: «- не выбрано -» then saved configs. -->
-                  <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="{l:Tr Main_ConfigLabel}" />
-                    <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                              ItemsSource="{Binding ConfigOptions}"
-                              SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
-                      <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ConfigChoice">
-                          <TextBlock Text="{Binding Name}" />
-                        </DataTemplate>
-                      </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <TextBlock IsVisible="{Binding !HasConfig}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="{l:Tr Main_ProfileNoConfigHint}" />
-                  </StackPanel>
-
-                  <!-- Routing picker: None means «Полный туннель». -->
-                  <StackPanel Spacing="6">
-                    <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
-                    <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                              ItemsSource="{Binding RoutingListOptions}"
-                              SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
-                      <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:RoutingListChoice">
-                          <!-- Relabel the "none" sentinel as «Полный туннель». -->
-                          <Panel>
-                            <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
-                            <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
-                          </Panel>
-                        </DataTemplate>
-                      </ComboBox.ItemTemplate>
-                    </ComboBox>
-                  </StackPanel>
-
-                  <!-- Agent rejection from the header Save (config/routing commit), so it is not silently lost (#143).
-                       Hidden while empty so it does not add a blank gap before the next section (#3). -->
-                  <TextBlock Text="{Binding EditStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
-                             IsVisible="{Binding EditStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                </StackPanel>
-
-                <!-- Delete: trigger + inline error; when allowed, the trigger is replaced in place by the inline
-                     Confirm/Cancel pair (#4). -->
-                <StackPanel Spacing="6">
-                  <TextBlock Classes="label" Text="{l:Tr Main_DeletionLabel}" />
-                  <StackPanel Orientation="Horizontal" Spacing="12">
-                    <!-- Delete trigger; when armed, the inline Confirm/Cancel pair replaces it in place (#4). -->
-                    <Button Classes="danger" HorizontalAlignment="Left" VerticalAlignment="Top"
-                            IsVisible="{Binding !ProfileDeletePending}" IsEnabled="{Binding !IsEditing}"
-                            Command="{Binding RequestDeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ProfileDeletePending}">
-                      <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
-                              Command="{Binding ConfirmDeleteOpenProfileCommand}" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
-                              Command="{Binding CancelDeleteProfileCommand}" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding ProfileDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                               VerticalAlignment="Center" TextWrapping="Wrap"
-                               IsVisible="{Binding ProfileDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                  </StackPanel>
-                  <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="{l:Tr Main_DeleteProfileHint}" />
-                </StackPanel>
-              </StackPanel>
-            </StackPanel>
-
-            <!-- CONFIG SECTION: Grid so the import form fills the pane height. -->
-            <Grid IsVisible="{Binding IsSettingsConfig}" RowDefinitions="Auto,Auto,Auto,*"
-                  MinHeight="{Binding #ContentScroll.Viewport.Height}">
-              <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center" />
-                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                        Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Configs.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-                </Border>
-                <Button Grid.Column="3" Classes="softbtn" Command="{Binding BeginSectionConfigCommand}"
-                        IsEnabled="{Binding !IsEditing}">
-                  <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="+" />
-                    <TextBlock Text="{l:Tr Main_NewConfigButton}" />
-                  </StackPanel>
-                </Button>
-              </Grid>
-
-              <!-- Config catalogue combo: «- не выбрано -» then saved configs. -->
-              <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6">
-                <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
-                <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                          IsEnabled="{Binding !IsEditing}"
-                          ItemsSource="{Binding ConfigCatalogueOptions}"
-                          SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ConfigChoice">
-                      <TextBlock Text="{Binding Name}" />
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-                <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="{l:Tr Main_NoConfigsHint}" />
-              </StackPanel>
-
-              <!-- Standalone import form (Row 3). Imported with the header Save once text parses + name is set (#143). -->
-              <Border Grid.Row="3" Margin="0,14,0,0" VerticalAlignment="Stretch"
-                      IsVisible="{Binding IsCreatingSectionConfig}"
-                      Background="{DynamicResource AgInsetBrush}"
-                      BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                      CornerRadius="9" Padding="10">
-                <DockPanel LastChildFill="True">
-                  <StackPanel DockPanel.Dock="Top" Spacing="6">
-                    <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" />
-                    <TextBox Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
-                             Text="{Binding SectionConfigName, Mode=TwoWay}"
-                             Watermark="{l:Tr Main_ConfigNameWatermark}" />
-                    <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
-                               Text="{l:Tr Main_RequiredEmptyWarning}" />
-                  </StackPanel>
-                  <!-- Buttons sized to content, centred. -->
-                  <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,10,0,0">
-                    <TextBlock Text="{Binding SectionConfigStatus}" Classes="fieldwarn" FontSize="11.5"
-                               TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
-                               IsVisible="{Binding SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                      <Button Classes="softbtn" Content="{l:Tr Main_FileButton}" Click="OnSectionConfigBrowse" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_CameraButton}" Click="OnSectionConfigCamera" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_ConfigEditButton}" Click="OnSectionConfigEdit"
-                              ToolTip.Tip="{l:Tr Main_ConfigEditButtonTooltip}" />
-                    </StackPanel>
-                  </StackPanel>
-                  <!-- MTU + WebSocket proxy for the new config, applied to it on the header Save (#143). -->
-                  <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" Spacing="10"
-                              DataContext="{Binding SectionConfigTransport}" x:DataType="vm:ConfigTransportViewModel">
-                    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
-                      <StackPanel Spacing="10">
-                        <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
-                        <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}" IsChecked="{Binding UseWebSocket}" />
-                        <!-- Hint sits on its own wrapped line: in the narrow card a third Auto/star column
-                             pushed the row past the panel edge. -->
-                        <StackPanel Spacing="4">
-                          <Grid ColumnDefinitions="Auto,Auto">
-                            <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
-                          </Grid>
-                          <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
-                        </StackPanel>
-                        <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
-                          <StackPanel Spacing="2">
-                            <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
-                            <TextBox Text="{Binding WebSocketHost}" Watermark="{l:Tr Main_ServerHostWatermark}" />
-                          </StackPanel>
-                          <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="{l:Tr Main_ServerPortLabel}" VerticalAlignment="Center" />
-                            <TextBox Width="90" Text="{Binding WebSocketPort}" />
-                          </StackPanel>
-                          <StackPanel Spacing="2">
-                            <TextBlock Text="{l:Tr Main_AuthLabel}" />
-                            <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
-                              <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
-                              <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
-                              <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
-                            </ComboBox>
-                          </StackPanel>
-                          <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
-                            <TextBlock Text="{l:Tr Main_LoginLabel}" />
-                            <TextBox Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
-                            <TextBlock Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
-                            <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
-                          </StackPanel>
-                          <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
-                            <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
-                            <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
-                          </StackPanel>
-                        </StackPanel>
-                        <TextBlock Text="{Binding StatusMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
-                                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                      </StackPanel>
-                    </Border>
-                  </StackPanel>
-                  <TextBox Classes="field" Margin="0,10,0,0" IsReadOnly="True"
-                           Text="{Binding SectionConfigText}" AcceptsReturn="True" TextWrapping="Wrap"
-                           VerticalAlignment="Stretch" MinHeight="180"
-                           ScrollViewer.VerticalScrollBarVisibility="Auto"
-                           Watermark="{l:Tr Main_ConfigTextWatermark}" />
-                </DockPanel>
-              </Border>
-
-              <!-- Open config (Row 2): name editor + QR / .conf text + proxy + delete. -->
-              <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsConfigManage}" Spacing="14">
-                <!-- Config name: per-keystroke so the required-field border reacts at once; committed with the header Save (#143). -->
-                <StackPanel Spacing="2">
-                  <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
-                  <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
-                           Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
-                  <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
-                             Text="{l:Tr Main_RequiredEmptyWarning}" />
-                  <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
-                             IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                </StackPanel>
-
-                <!-- QR of the .conf / of the vpn:// link, or the .conf text itself. The text is edited in place and
-                     committed by the header Save (#143), so the mode switch locks while it is dirty. -->
-                <StackPanel Spacing="10" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
-                  <Border Background="{DynamicResource AgInsetBrush}"
-                          BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                          CornerRadius="9" Padding="3" HorizontalAlignment="Center"
-                          IsEnabled="{Binding !IsDirty}">
-                    <UniformGrid Columns="3" MinWidth="360">
-                      <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
-                              Content="{l:Tr Main_QrConfTab}" HorizontalAlignment="Stretch" />
-                      <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
-                              Content="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Stretch" />
-                      <Button Classes="seg" Classes.active="{Binding IsText}" Command="{Binding ShowTextCommand}"
-                              Content="{l:Tr Main_ConfigTextTab}" HorizontalAlignment="Stretch" />
-                    </UniformGrid>
-                  </Border>
-                  <TextBlock IsVisible="{Binding IsText}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="{l:Tr Main_ConfEditHint}" />
-                  <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
-                          IsVisible="{Binding ShowQr}">
-                    <Image Source="{Binding QrImage}" Width="220" Height="220" />
-                  </Border>
-                  <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
-                          BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                          CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
-                    <TextBlock Text="{l:Tr Main_QrUnavailableHint}"
-                               Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
-                  </Border>
-                  <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                          CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
-                          IsVisible="{Binding IsText}" IsEnabled="{Binding IsReady}">
-                    <TextBox Text="{Binding ConfText, Mode=TwoWay}"
-                             AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-                             VerticalContentAlignment="Top" Height="240"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             BorderThickness="0" Background="Transparent"
-                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
-                  </Border>
-                  <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                             HorizontalAlignment="Center" TextAlignment="Center" />
-                </StackPanel>
-
-                <!-- Proxy (WebSocket). -->
-                <StackPanel Spacing="10" DataContext="{Binding ConfigTransport}" x:DataType="vm:ConfigTransportViewModel">
-                  <TextBlock Classes="label" Text="{l:Tr Main_ProxyWebSocketLabel}" />
-                  <CheckBox Content="{l:Tr Main_UseWebSocketCheckbox}"
-                            IsChecked="{Binding UseWebSocket}" />
-                  <!-- MTU applies to any transport, not just WSS. Kept outside the WebSocket block. -->
-                  <StackPanel Spacing="4">
-                    <Grid ColumnDefinitions="Auto,Auto">
-                      <TextBlock Grid.Column="0" Text="{l:Tr Main_TunnelMtuLabel}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                      <TextBox Grid.Column="1" Width="90" Text="{Binding Mtu}" VerticalAlignment="Center" />
-                    </Grid>
-                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
-                  </StackPanel>
-                  <StackPanel IsVisible="{Binding UseWebSocket}" Spacing="8" Margin="22,0,0,0">
-                    <StackPanel Spacing="2">
-                      <TextBlock Text="{l:Tr Main_ServerHostLabel}" />
-                      <TextBox Text="{Binding WebSocketHost}"
-                               Watermark="{l:Tr Main_ServerHostWatermark}" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <TextBlock Text="{l:Tr Main_ServerPortLabel}" VerticalAlignment="Center" />
-                      <TextBox Width="90" Text="{Binding WebSocketPort}" />
-                    </StackPanel>
-                    <StackPanel Spacing="2">
-                      <TextBlock Text="{l:Tr Main_AuthLabel}" />
-                      <ComboBox SelectedIndex="{Binding AuthMode, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="220">
-                        <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
-                        <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
-                        <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
-                      </ComboBox>
-                    </StackPanel>
-                    <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
-                      <TextBlock Text="{l:Tr Main_LoginLabel}" />
-                      <TextBox Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
-                      <TextBlock Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
-                      <TextBox Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
-                    </StackPanel>
-                    <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
-                      <TextBlock Text="{l:Tr Main_AccessTokenLabel}" />
-                      <TextBox Text="{Binding WebSocketToken}" Watermark="{l:Tr Main_AccessTokenWatermark}" />
-                    </StackPanel>
-                  </StackPanel>
-                  <!-- Committed atomically with the header Save (#143). -->
-                  <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
-                             TextWrapping="Wrap" />
-                </StackPanel>
-
-                <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
-
-                <StackPanel Spacing="10">
-                  <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                             Text="{l:Tr Main_DeleteConfigHint}" />
-                  <StackPanel Orientation="Horizontal" Spacing="12">
-                    <!-- Delete trigger; when armed, the inline Confirm/Cancel pair replaces it in place (#4). -->
-                    <Button Classes="danger" Content="{l:Tr Main_DeleteConfigButton}" HorizontalAlignment="Left"
-                            VerticalAlignment="Top"
-                            IsVisible="{Binding !ConfigDeletePending}"
-                            Command="{Binding RequestDeleteOpenConfigCommand}" IsEnabled="{Binding !IsEditing}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ConfigDeletePending}">
-                      <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
-                              Command="{Binding ConfirmDeleteOpenConfigCommand}" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
-                              Command="{Binding CancelDeleteConfigCommand}" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                               VerticalAlignment="Center" TextWrapping="Wrap"
-                               IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                  </StackPanel>
-                </StackPanel>
-              </StackPanel>
-            </Grid>
+            <!-- CONFIG SECTION: MinHeight fills the import form to the scroll viewport. -->
+            <Panel IsVisible="{Binding IsSettingsConfig}">
+              <views:ConfigView DataContext="{Binding Config}"
+                                MinHeight="{Binding #ContentScroll.Viewport.Height}" />
+            </Panel>
 
             <!-- ROUTING SECTION -->
-            <StackPanel IsVisible="{Binding IsSettingsRouting}" Spacing="14">
-              <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-                <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_RoutingSection}" VerticalAlignment="Center" />
-                <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                        Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                  <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-                </Border>
-                <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateRoutingListCommand}"
-                        IsEnabled="{Binding !IsEditing}">
-                  <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Text="+" />
-                    <TextBlock Text="{l:Tr Main_NewListButton}" />
-                  </StackPanel>
-                </Button>
-              </Grid>
-
-              <StackPanel Spacing="6">
-                <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" />
-                <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                          IsEnabled="{Binding !IsEditing}"
-                          ItemsSource="{Binding RoutingCatalogueOptions}"
-                          SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:RoutingListChoice">
-                      <!-- «- не выбрано -» for the none sentinel. -->
-                      <Panel>
-                        <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
-                        <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
-                      </Panel>
-                    </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-                <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                           Text="{l:Tr Main_NoRoutingListsHint}" />
-              </StackPanel>
-
-              <!-- Rule editor for the selected/new list. -->
-              <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="12">
-                <Border Background="Transparent"
-                        BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                        CornerRadius="9" Padding="12">
-                  <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
-                      <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
-                               Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
-                      <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
-                                 Text="{l:Tr Main_RequiredEmptyWarning}" />
-                    </StackPanel>
-
-                    <!-- Per-app tunneling. -->
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
-                      <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Button Grid.Column="0" Classes="softbtn" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
-                          <Button.Flyout>
-                            <MenuFlyout>
-                              <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
-                              <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
-                              <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
-                              <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
-                            </MenuFlyout>
-                          </Button.Flyout>
-                        </Button>
-                        <AutoCompleteBox Grid.Column="1" Margin="0,0,8,0"
-                                         Watermark="{Binding AppWatermark}"
-                                         Text="{Binding AppInput, Mode=TwoWay}"
-                                         SelectedItem="{Binding AppSelected, Mode=TwoWay}"
-                                         ItemsSource="{Binding AppSuggestions}"
-                                         FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                                         IsEnabled="{Binding IsAppPickerActive}" />
-                        <Button Grid.Column="2" Classes="accent" Command="{Binding AddAppCommand}"
-                                IsEnabled="{Binding IsAppPickerActive}">
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <TextBlock Text="+" />
-                            <TextBlock Text="{l:Tr Main_AddButton}" />
-                          </StackPanel>
-                        </Button>
-                      </Grid>
-                    </StackPanel>
-
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
-                      <Grid ColumnDefinitions="*,Auto">
-                        <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
-                                         Watermark="{l:Tr Main_AddEntryWatermark}"
-                                         Text="{Binding RuleInput, Mode=TwoWay}"
-                                         ItemsSource="{Binding GeoSuggestions}"
-                                         FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
-                        <Button Grid.Column="1" Classes="accent" Command="{Binding AddRuleCommand}">
-                          <StackPanel Orientation="Horizontal" Spacing="4">
-                            <TextBlock Text="+" />
-                            <TextBlock Text="{l:Tr Main_AddButton}" />
-                          </StackPanel>
-                        </Button>
-                      </Grid>
-                    </StackPanel>
-
-                    <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                    <!-- Required-field validation ("add at least one entry"), red; clears on any edit (#2/#3). -->
-                    <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
-                               IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-                    <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
-                      <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
-                        <Button Grid.Column="1" Classes="icon" Content="{l:Tr Main_ClearButton}" FontSize="11"
-                                Command="{Binding ClearRulesCommand}"
-                                ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}" />
-                      </Grid>
-                      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                              Background="{DynamicResource AgPanelBrush}" CornerRadius="10">
-                        <ItemsControl ItemsSource="{Binding Rules}" Margin="8,8">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="x:String">
-                              <Border Background="{DynamicResource AgInsetBrush}"
-                                      BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                      CornerRadius="8" Padding="10,7" Margin="0,3">
-                                <Grid ColumnDefinitions="*,Auto">
-                                  <TextBlock Grid.Column="0" Text="{Binding}" Classes="mono" FontSize="12.5"
-                                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                  <Button Grid.Column="1" Classes="icon" Content="✕"
-                                          Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).RemoveRuleCommand}"
-                                          CommandParameter="{Binding}" />
-                                </Grid>
-                              </Border>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </Border>
-                    </StackPanel>
-
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="{l:Tr Main_ImportExportLabel}" />
-                      <WrapPanel>
-                        <Button Classes="softbtn" Content="{l:Tr Main_CopyButton}" Margin="0,0,6,6"
-                                Click="OnRoutingExportCopy" ToolTip.Tip="{l:Tr Main_RoutingCopyTooltip}" />
-                        <Button Classes="softbtn" Content="{l:Tr Main_SaveToFileButton}" Margin="0,0,6,6"
-                                Click="OnRoutingExportSave" />
-                        <Button Classes="softbtn" Content="{l:Tr Main_ShowQrButton}" Margin="0,0,6,6"
-                                Click="OnRoutingShowQr" ToolTip.Tip="{l:Tr Main_ShowQrTooltip}" />
-                        <Button Classes="softbtn" Content="{l:Tr Main_PasteButton}" Margin="0,0,6,6"
-                                Click="OnRoutingImportPaste" ToolTip.Tip="{l:Tr Main_RoutingPasteTooltip}" />
-                        <Button Classes="softbtn" Content="{l:Tr Main_LoadFileButton}" Margin="0,0,6,6"
-                                Click="OnRoutingImportFile" />
-                      </WrapPanel>
-                    </StackPanel>
-                  </StackPanel>
-                </Border>
-
-                <!-- Per-routing traffic settings: local DNS + exclusions + all-UDP. -->
-                <Border Background="Transparent"
-                        BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                        CornerRadius="9" Padding="12" IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
-                  <StackPanel Spacing="12" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
-                    <TextBlock Classes="label" Text="{l:Tr Main_ListTrafficLabel}" />
-
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="DNS" />
-                      <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                                 Text="{l:Tr Main_DnsHint}" />
-                      <TextBox Classes="field" Text="{Binding LocalDns, Mode=TwoWay}"
-                               Watermark="{l:Tr Main_DnsWatermark}" />
-                    </StackPanel>
-
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="label" Text="{l:Tr Main_ExclusionsLabel}" />
-                      <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                                 Text="{l:Tr Main_ExclusionsHint}" />
-                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="{l:Tr Main_AddLocalSubnetsButton}"
-                              Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}" />
-                      <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
-                               VerticalContentAlignment="Top"
-                               ScrollViewer.VerticalScrollBarVisibility="Auto"
-                               FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
-                               Text="{Binding Exclusions, Mode=TwoWay}"
-                               Watermark="corp.local&#x0a;nas&#x0a;10.50.0.0/16&#x0a;192.168.10.5" />
-                    </StackPanel>
-
-                    <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                        <TextBlock Text="{l:Tr Main_AllUdpTitle}" FontSize="13.5" />
-                        <TextBlock Text="{l:Tr Main_AllUdpHint}"
-                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                      </StackPanel>
-                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
-                    </Grid>
-
-                    <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                        <TextBlock Text="{l:Tr Main_UseIpv6Title}" FontSize="13.5" />
-                        <TextBlock Text="{l:Tr Main_UseIpv6Hint}"
-                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                      </StackPanel>
-                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
-                    </Grid>
-
-                    <!-- Edits commit atomically with the header Save (#143). -->
-                    <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
-                </Border>
-
-                <!-- Delete: trigger + inline error. When armed, the inline Confirm/Cancel pair replaces the
-                     trigger in place (#4). Hidden for an unsaved new-list draft. -->
-                <StackPanel Spacing="6" IsVisible="{Binding !RoutingEditor.IsNew}">
-                  <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Button Classes="danger" HorizontalAlignment="Left" VerticalAlignment="Top"
-                            IsVisible="{Binding !RoutingDeletePending}" IsEnabled="{Binding !IsEditing}"
-                            Command="{Binding RequestDeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding RoutingDeletePending}">
-                      <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
-                              Command="{Binding ConfirmDeleteSectionRoutingListCommand}" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
-                              Command="{Binding CancelDeleteRoutingCommand}" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                               VerticalAlignment="Center" TextWrapping="Wrap"
-                               IsVisible="{Binding RoutingDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                  </StackPanel>
-                </StackPanel>
-              </StackPanel>
-            </StackPanel>
+            <Panel IsVisible="{Binding IsSettingsRouting}">
+              <views:RoutingView DataContext="{Binding Routing}" />
+            </Panel>
 
             <!-- SOURCES SECTION -->
-            <StackPanel IsVisible="{Binding IsSettingsSources}">
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Text="{l:Tr Main_SourcesSection}" Classes="section" VerticalAlignment="Center" />
-                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                        <Button Classes="softbtn" Command="{Binding CheckSourcesCommand}" Content="{l:Tr Main_CheckUpdatesButton}" />
-                        <Button Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="{l:Tr Main_UpdateAllButton}" />
-                      </StackPanel>
-                    </Grid>
-                  </Border>
-
-                  <StackPanel Margin="0,12" Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-                        <TextBlock Text="{l:Tr Main_AutoCheckTitle}" FontSize="13.5" />
-                        <TextBlock Text="{l:Tr Main_AutoCheckHint}"
-                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-                      </StackPanel>
-                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <ComboBox Classes="field" Width="92" VerticalAlignment="Center"
-                                  IsEnabled="{Binding GeoAutoCheck}"
-                                  ItemsSource="{Binding GeoCheckIntervals}"
-                                  SelectedItem="{Binding GeoCheckIntervalHours, Mode=TwoWay}">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="x:Int32">
-                              <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
-                            </DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
-                      </StackPanel>
-                    </Grid>
-                    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
-
-                    <TextBlock Classes="label" Text="{l:Tr Main_AddDatabaseLabel}" />
-                    <Grid ColumnDefinitions="Auto,*,Auto">
-                      <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
-                                ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
-                                IsEnabled="{Binding !SourceKindLocked}"
-                                ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
-                      <TextBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
-                               Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
-                      <Button Grid.Column="2" Classes="accent" Command="{Binding AddSourceCommand}">
-                        <StackPanel Orientation="Horizontal" Spacing="4">
-                          <TextBlock Text="+" />
-                          <TextBlock Text="{l:Tr Main_AddButton}" />
-                        </StackPanel>
-                      </Button>
-                    </Grid>
-                    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                               Text="{l:Tr Main_GeoKindsHint}" />
-
-                    <TextBlock Classes="label" Text="{l:Tr Main_SourcesLabel}" Margin="0,6,0,0" />
-                    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                            Background="{DynamicResource AgInsetBrush}" CornerRadius="12">
-                      <StackPanel Margin="10,10">
-                        <ItemsControl ItemsSource="{Binding Sources}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:SourceItemViewModel">
-                              <Border Background="{DynamicResource AgPanelBrush}"
-                                      BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                                      CornerRadius="9" Padding="11,9" Margin="0,3"
-                                      ContextRequested="OnSourceRowContext"
-                                      ToolTip.Tip="{l:Tr Main_SourceRowTooltip}">
-                                <StackPanel>
-                                  <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditing}">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                      <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
-                                      <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
-                                                 TextTrimming="CharacterEllipsis" />
-                                      <TextBlock Text="{l:Tr Main_UpdateAvailableBadge}" FontSize="11" FontWeight="SemiBold"
-                                                 Foreground="{DynamicResource AgAccentBrush}" Margin="0,3,0,0"
-                                                 IsVisible="{Binding ShowUpdateBadge}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2"
-                                                VerticalAlignment="Center" Margin="8,0,0,0">
-                                      <Button Classes="icon" VerticalAlignment="Center"
-                                              Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
-                                              ToolTip.Tip="{l:Tr Main_UpdateDatabaseTooltip}">
-                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                                          <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
-                                                     FontSize="11.5" VerticalAlignment="Center" />
-                                          <PathIcon Classes.spin="{Binding Updating}" Data="{DynamicResource AgRefreshGeometry}"
-                                                    Width="14" Height="14" />
-                                        </StackPanel>
-                                      </Button>
-                                      <Button Classes="icon" VerticalAlignment="Center"
-                                              Click="OnSourceKebab" ToolTip.Tip="{l:Tr Main_ActionsTooltip}">
-                                        <TextBlock Text="⋮" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
-                                      </Button>
-                                    </StackPanel>
-                                  </Grid>
-                                  <StackPanel IsVisible="{Binding IsEditing}" Spacing="6">
-                                    <Grid ColumnDefinitions="Auto,*">
-                                      <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
-                                                ItemsSource="{Binding Kinds}" SelectedItem="{Binding EditKind, Mode=TwoWay}" />
-                                      <TextBox Grid.Column="1" Classes="field"
-                                               Text="{Binding EditUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
-                                    </Grid>
-                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-                                      <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveEditCommand}" />
-                                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelEditCommand}" />
-                                    </StackPanel>
-                                  </StackPanel>
-                                </StackPanel>
-                              </Border>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <TextBlock IsVisible="{Binding !HasSources}"
-                                   Text="{l:Tr Main_NoSourcesHint}"
-                                   Classes="muted" FontSize="12" Margin="2,8" TextWrapping="Wrap" />
-                      </StackPanel>
-                    </Border>
-                  </StackPanel>
-            </StackPanel>
+            <Panel IsVisible="{Binding IsSettingsSources}">
+              <views:SourcesView DataContext="{Binding Sources}" />
+            </Panel>
 
             <!-- LOGS SECTION -->
-            <StackPanel IsVisible="{Binding IsSettingsLogs}">
-                <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,9">
-                    <TextBlock Text="{l:Tr Main_AgentLogSection}" Classes="section" />
-                  </Border>
-                  <!-- Capture verbosity: minimum level WRITTEN to the log; applies live. -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontSize="13.5" />
-                        <TextBlock Text="{l:Tr Main_LogVerbosityHint}"
-                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
-                      </StackPanel>
-                      <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="150"
-                                ItemsSource="{Binding LogLevels}"
-                                SelectedItem="{Binding LogLevel, Mode=TwoWay}" />
-                    </Grid>
-                  </Border>
-                  <!-- Routing log: toggleable log of route changes and DNS resolutions. -->
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                        <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
-                        <TextBlock Text="{l:Tr Main_RouteLogHint}"
-                                   Classes="muted" FontSize="11.5" TextWrapping="Wrap" MaxWidth="380" HorizontalAlignment="Left" />
-                      </StackPanel>
-                      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
-                    </Grid>
-                  </Border>
-                  <!-- Viewer toolbar: file picker + live-tail follow, then search over the shown tail. -->
-                  <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" Margin="0,12,0,0" VerticalAlignment="Center">
-                    <TextBlock Grid.Column="0" Text="{l:Tr Main_LogFileLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-                    <ComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch"
-                              ItemsSource="{Binding LogFiles}" SelectedItem="{Binding SelectedLogFile, Mode=TwoWay}">
-                      <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:LogFileChoice">
-                          <TextBlock Text="{Binding Display}" />
-                        </DataTemplate>
-                      </ComboBox.ItemTemplate>
-                    </ComboBox>
-                    <TextBlock Grid.Column="2" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-                    <ToggleSwitch Grid.Column="3" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
-                  </Grid>
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,8,0,0" VerticalAlignment="Center">
-                    <TextBox Grid.Column="0" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
-                             Watermark="{l:Tr Main_LogSearchWatermark}" />
-                    <TextBlock Grid.Column="1" Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5"
-                               VerticalAlignment="Center" />
-                  </Grid>
-                  <Button Classes="softbtn" Margin="0,10,0,0" HorizontalAlignment="Center"
-                          Content="{l:Tr Main_LogLoadOlderButton}" Command="{Binding LoadOlderLogCommand}"
-                          IsVisible="{Binding LogCanPageOlder}" />
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                          Background="{DynamicResource AgInsetBrush}" Margin="0,12,0,15"
-                          CornerRadius="12" MaxHeight="520">
-                    <Panel>
-                      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
-                                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                             FontSize="11.5" LineHeight="18"
-                                             Foreground="{DynamicResource AgMutedBrush}"
-                                             TextWrapping="Wrap" Margin="16,13" />
-                      </ScrollViewer>
-                      <TextBlock IsVisible="{Binding !HasLogs}" Classes="muted" FontSize="12"
-                                 Text="{l:Tr Main_LogEmptyHint}"
-                                 Margin="18,15" VerticalAlignment="Top" />
-                    </Panel>
-                  </Border>
-                </StackPanel>
-            </StackPanel>
+            <Panel IsVisible="{Binding IsSettingsLogs}">
+              <views:LogsView DataContext="{Binding Logs}" />
+            </Panel>
 
-            <!-- GENERAL SECTION (+ About) -->
-            <StackPanel IsVisible="{Binding IsSettingsGeneral}" Spacing="14">
-                <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-                    <TextBlock Text="{l:Tr General_Section}" Classes="section" />
-                  </Border>
-
-                  <!-- Theme -->
-                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
-                    <TextBlock Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
-                    <ComboBox Grid.Column="1" MinWidth="150" VerticalAlignment="Center"
-                              ItemsSource="{Binding Themes}"
-                              SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}" />
-                  </Grid>
-
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
-
-                  <!-- Language: live switch. -->
-                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
-                    <TextBlock Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
-                    <ComboBox Grid.Column="1" MinWidth="150" VerticalAlignment="Center"
-                              ItemsSource="{Binding Languages}"
-                              SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}" />
-                  </Grid>
-                </StackPanel>
-
-              <!-- About folded into General. -->
-                <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-                    <TextBlock Text="{l:Tr About_Section}" Classes="section" />
-                  </Border>
-                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
-                    <TextBlock Text="{l:Tr About_Version}" FontSize="13.5" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
-                  </Grid>
-
-                  <Grid ColumnDefinitions="*,Auto" Margin="0,11">
-                    <TextBlock Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
-                  </Grid>
-
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,12"
-                          IsVisible="{Binding HasUpdateUrl}">
-                    <StackPanel Spacing="9">
-                      <TextBlock Text="{l:Tr Main_UpdateSection}" Classes="section" />
-                      <Button Classes="softbtn" HorizontalAlignment="Left" Content="{l:Tr Main_CheckUpdatesButton}"
-                              Command="{Binding CheckUpdateCommand}" />
-                      <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                      <StackPanel Spacing="6" IsVisible="{Binding UpdateAvailable}">
-                        <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                        <!-- Found -> downloading -> downloaded: installing is an explicit second click (#154). -->
-                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                          <Button Classes="accent" Content="{l:Tr Main_DownloadButton}" Command="{Binding DownloadUpdateCommand}"
-                                  IsVisible="{Binding !UpdateDownloaded}" IsEnabled="{Binding !UpdateDownloading}" />
-                          <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
-                                     FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />
-                          <Button Classes="accent" Content="{l:Tr Main_InstallButton}" Command="{Binding ApplyUpdateCommand}"
-                                  IsVisible="{Binding UpdateDownloaded}" />
-                        </StackPanel>
-                      </StackPanel>
-                    </StackPanel>
-                  </Border>
-                </StackPanel>
-
-              <!-- Selective export/import: portable JSON bundle of profiles, configs, routing lists. -->
-                <StackPanel>
-                  <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-                    <TextBlock Text="{l:Tr Main_ImportExportSection}" Classes="section" />
-                  </Border>
-                  <StackPanel Margin="0,11" Spacing="10">
-                    <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
-                               Text="{l:Tr Main_BundleHint}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Classes="softbtn" Content="{l:Tr Main_ExportButton}" Click="OnOpenBundleExport" />
-                      <Button Classes="softbtn" Content="{l:Tr Main_ImportButton}" Click="OnOpenBundleImport" />
-                    </StackPanel>
-                  </StackPanel>
-                </StackPanel>
-            </StackPanel>
+            <!-- GENERAL SECTION -->
+            <Panel IsVisible="{Binding IsSettingsGeneral}">
+              <views:GeneralView DataContext="{Binding General}" />
+            </Panel>
 
           </Grid>
         </ScrollViewer>
@@ -1209,59 +375,59 @@
     <StackPanel ZIndex="50" VerticalAlignment="Top" HorizontalAlignment="Center"
                 Margin="12,24,12,0" MaxWidth="560" Spacing="6">
 
-      <Border IsVisible="{Binding NoticeVisible}"
+      <Border IsVisible="{Binding Home.NoticeVisible}"
               Background="{DynamicResource AgAccentBrush}"
               CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
-          <TextBlock Grid.Column="1" Text="{Binding NoticeText}" Foreground="White"
+          <TextBlock Grid.Column="1" Text="{Binding Home.NoticeText}" Foreground="White"
                      FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
-          <Button Grid.Column="2" Classes="radiopick" Command="{Binding DismissNoticeCommand}"
+          <Button Grid.Column="2" Classes="radiopick" Command="{Binding Home.DismissNoticeCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
                   VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />
         </Grid>
       </Border>
 
-      <Border IsVisible="{Binding UpdateBannerVisible}"
+      <Border IsVisible="{Binding General.UpdateBannerVisible}"
               Background="{DynamicResource AgAccentBrush}"
               CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
         <Grid ColumnDefinitions="Auto,*,Auto,Auto">
           <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
-          <TextBlock Grid.Column="1" Text="{Binding UpdateBannerText}"
+          <TextBlock Grid.Column="1" Text="{Binding General.UpdateBannerText}"
                      Foreground="White" FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
           <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
                       Margin="10,0,0,0" VerticalAlignment="Center">
-            <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Foreground="White"
+            <TextBlock Text="{Binding General.UpdateDownloadPercent, StringFormat='{}{0}%'}" Foreground="White"
                        FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
-                       IsVisible="{Binding UpdateDownloading}" />
-            <Button Classes="radiopick" Command="{Binding DownloadUpdateCommand}"
+                       IsVisible="{Binding General.UpdateDownloading}" />
+            <Button Classes="radiopick" Command="{Binding General.DownloadUpdateCommand}"
                     Content="{l:Tr Main_DownloadButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                    VerticalAlignment="Center" IsVisible="{Binding !UpdateDownloaded}"
-                    IsEnabled="{Binding !UpdateDownloading}" />
-            <Button Classes="radiopick" Command="{Binding ApplyUpdateCommand}"
+                    VerticalAlignment="Center" IsVisible="{Binding !General.UpdateDownloaded}"
+                    IsEnabled="{Binding !General.UpdateDownloading}" />
+            <Button Classes="radiopick" Command="{Binding General.ApplyUpdateCommand}"
                     Content="{l:Tr Main_InstallButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                    VerticalAlignment="Center" IsVisible="{Binding UpdateDownloaded}" />
+                    VerticalAlignment="Center" IsVisible="{Binding General.UpdateDownloaded}" />
           </StackPanel>
-          <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissUpdateBannerCommand}"
+          <Button Grid.Column="3" Classes="radiopick" Command="{Binding General.DismissUpdateBannerCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
                   VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />
         </Grid>
       </Border>
 
-      <Border IsVisible="{Binding GeoUpdateBannerVisible}"
+      <Border IsVisible="{Binding Sources.GeoUpdateBannerVisible}"
               Background="{DynamicResource AgAccentBrush}"
               CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
         <Grid ColumnDefinitions="Auto,*,Auto,Auto">
           <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
-          <TextBlock Grid.Column="1" Text="{Binding GeoUpdateBannerText}"
+          <TextBlock Grid.Column="1" Text="{Binding Sources.GeoUpdateBannerText}"
                      Foreground="White" FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
-          <Button Grid.Column="2" Classes="radiopick" Command="{Binding UpdateGeoNowCommand}"
+          <Button Grid.Column="2" Classes="radiopick" Command="{Binding Sources.UpdateGeoNowCommand}"
                   Content="{l:Tr Main_UpdateNowButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
                   Margin="10,0,0,0" VerticalAlignment="Center" />
-          <Button Grid.Column="3" Classes="radiopick" Command="{Binding DismissGeoUpdateBannerCommand}"
+          <Button Grid.Column="3" Classes="radiopick" Command="{Binding Sources.DismissGeoUpdateBannerCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="6,0,0,0"
                   VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_GeoDismissTooltip}" />
         </Grid>

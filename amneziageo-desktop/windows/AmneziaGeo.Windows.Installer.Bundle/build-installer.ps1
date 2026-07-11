@@ -161,8 +161,16 @@ function Invoke-Sign {
     if ($sc.timestampUrl)   { $a += @('/tr', [string]$sc.timestampUrl, '/td', 'SHA256') }
     $a += $Files
     Write-Host "== sign $($Files.Count) file(s): $((($Files | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')) =="
-    & (Resolve-Signtool) @a
-    if ($LASTEXITCODE -ne 0) { throw "signtool failed ($LASTEXITCODE)" }
+    # Retry transient signtool failures (AV file-lock on freshly written outputs, timestamp-server hiccups).
+    $tool = Resolve-Signtool
+    $attempts = 4
+    for ($i = 1; $i -le $attempts; $i++) {
+        & $tool @a
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($i -eq $attempts) { throw "signtool failed ($LASTEXITCODE) after $attempts attempts" }
+        Write-Host "   signtool failed ($LASTEXITCODE), retry $i/$($attempts - 1) in $(2 * $i)s"
+        Start-Sleep -Seconds (2 * $i)
+    }
 }
 
 # Sign OUR OWN binaries (everything named AmneziaGeo.*) under a publish folder. Third-party and .NET

@@ -994,33 +994,47 @@
                                       CornerRadius="9" Padding="11,9" Margin="0,3"
                                       ContextRequested="OnSourceRowContext"
                                       ToolTip.Tip="{l:Tr Main_SourceRowTooltip}">
-                                <Grid ColumnDefinitions="*,Auto">
-                                  <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{l:Tr Main_UpdateAvailableBadge}" FontSize="11" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource AgAccentBrush}" Margin="0,3,0,0"
-                                               IsVisible="{Binding ShowUpdateBadge}" />
+                                <StackPanel>
+                                  <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditing}">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                      <TextBlock Classes="srctitle" Text="{Binding Detail}" FontSize="12.5" FontWeight="SemiBold" />
+                                      <TextBlock Text="{Binding Url}" FontSize="11" Classes="muted mono"
+                                                 TextTrimming="CharacterEllipsis" />
+                                      <TextBlock Text="{l:Tr Main_UpdateAvailableBadge}" FontSize="11" FontWeight="SemiBold"
+                                                 Foreground="{DynamicResource AgAccentBrush}" Margin="0,3,0,0"
+                                                 IsVisible="{Binding ShowUpdateBadge}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2"
+                                                VerticalAlignment="Center" Margin="8,0,0,0">
+                                      <Button Classes="icon" VerticalAlignment="Center"
+                                              Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
+                                              ToolTip.Tip="{l:Tr Main_UpdateDatabaseTooltip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                          <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
+                                                     FontSize="11.5" VerticalAlignment="Center" />
+                                          <PathIcon Classes.spin="{Binding Updating}" Data="{DynamicResource AgRefreshGeometry}"
+                                                    Width="14" Height="14" />
+                                        </StackPanel>
+                                      </Button>
+                                      <Button Classes="icon" VerticalAlignment="Center"
+                                              Click="OnSourceKebab" ToolTip.Tip="{l:Tr Main_ActionsTooltip}">
+                                        <TextBlock Text="⋮" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                                      </Button>
+                                    </StackPanel>
+                                  </Grid>
+                                  <StackPanel IsVisible="{Binding IsEditing}" Spacing="6">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                      <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
+                                                ItemsSource="{Binding Kinds}" SelectedItem="{Binding EditKind, Mode=TwoWay}" />
+                                      <TextBox Grid.Column="1" Classes="field"
+                                               Text="{Binding EditUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                                      <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveEditCommand}" />
+                                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelEditCommand}" />
+                                    </StackPanel>
                                   </StackPanel>
-                                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2"
-                                              VerticalAlignment="Center" Margin="8,0,0,0">
-                                    <Button Classes="icon" VerticalAlignment="Center"
-                                            Command="{Binding UpdateCommand}" IsEnabled="{Binding !Updating}"
-                                            ToolTip.Tip="{l:Tr Main_UpdateDatabaseTooltip}">
-                                      <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding ProgressText}" IsVisible="{Binding ShowProgress}"
-                                                   FontSize="11.5" VerticalAlignment="Center" />
-                                        <PathIcon Classes.spin="{Binding Updating}" Data="{DynamicResource AgRefreshGeometry}"
-                                                  Width="14" Height="14" />
-                                      </StackPanel>
-                                    </Button>
-                                    <Button Classes="icon" VerticalAlignment="Center"
-                                            Click="OnSourceKebab" ToolTip.Tip="{l:Tr Main_ActionsTooltip}">
-                                      <TextBlock Text="⋮" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
-                                    </Button>
-                                  </StackPanel>
-                                </Grid>
+                                </StackPanel>
                               </Border>
                             </DataTemplate>
                           </ItemsControl.ItemTemplate>

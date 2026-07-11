@@ -718,6 +718,9 @@
   <data name="MainCode_DeleteDatabase" xml:space="preserve">
     <value>Удалить базу</value>
   </data>
+  <data name="MainCode_EditDatabase" xml:space="preserve">
+    <value>Изменить источник</value>
+  </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR распознан, но это не конфигурация</value>
   </data>
@@ -1016,6 +1019,9 @@
   </data>
   <data name="Agent_SourceCheckFailed" xml:space="preserve">
     <value>{0}: не удалось проверить.</value>
+  </data>
+  <data name="Agent_SourceEdited" xml:space="preserve">
+    <value>источник изменён: {0}</value>
   </data>
   <data name="Agent_SourceRemoved" xml:space="preserve">
     <value>удалён {0}</value>

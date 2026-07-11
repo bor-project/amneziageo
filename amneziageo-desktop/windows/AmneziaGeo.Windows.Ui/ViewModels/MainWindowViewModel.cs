@@ -2324,7 +2324,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var existing = Sources.FirstOrDefault(s => string.Equals(s.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new SourceItemViewModel(SendUpdateSourceAsync, SendRemoveSourceAsync) { Name = entry.Name };
+                existing = new SourceItemViewModel(SendUpdateSourceAsync, SendRemoveSourceAsync, SendEditSourceAsync) { Name = entry.Name };
                 Sources.Insert(Math.Min(i, Sources.Count), existing);
             }
             else
@@ -3051,6 +3051,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private Task SendRemoveSourceAsync(SourceItemViewModel source)
     {
         return _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveSource, [source.Name]));
+    }
+
+    private Task SendEditSourceAsync(SourceItemViewModel source)
+    {
+        return _connection.SendCommandAsync(new IpcCommand(IpcContract.OpEditSource, [source.Name, source.EditKind, source.EditUrl]));
     }
 
     [RelayCommand]

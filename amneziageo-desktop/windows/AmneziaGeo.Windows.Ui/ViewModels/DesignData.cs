@@ -112,14 +112,14 @@ internal static class DesignData
         vm.HasProfiles = true;
 
         // --- Geo sources ---
-        vm.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp)
+        vm.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp, NoSourceOp)
         {
             Kind = "geosite",
             CategoryCount = 1513,
             Updated = "2026-07-05 11:47",
             Url = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat",
         });
-        vm.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp)
+        vm.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp, NoSourceOp)
         {
             Kind = "geoip",
             CategoryCount = 260,

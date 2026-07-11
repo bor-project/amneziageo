@@ -12,15 +12,25 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
 {
     private readonly Func<SourceItemViewModel, Task> _update;
     private readonly Func<SourceItemViewModel, Task> _remove;
+    private readonly Func<SourceItemViewModel, Task> _edit;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public SourceItemViewModel(Func<SourceItemViewModel, Task> update, Func<SourceItemViewModel, Task> remove)
+    public SourceItemViewModel(
+        Func<SourceItemViewModel, Task> update,
+        Func<SourceItemViewModel, Task> remove,
+        Func<SourceItemViewModel, Task> edit)
     {
         _update = update;
         _remove = remove;
+        _edit = edit;
     }
+
+    /// <summary>
+    /// The source kinds offered while editing.
+    /// </summary>
+    public IReadOnlyList<string> Kinds { get; } = ["geosite", "geoip"];
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -88,6 +98,24 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     /// </summary>
     public string ProgressText => $"{Progress}%";
 
+    /// <summary>
+    /// True while the row shows its inline kind/url editor.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isEditing;
+
+    /// <summary>
+    /// The kind being edited in the inline editor.
+    /// </summary>
+    [ObservableProperty]
+    private string _editKind = string.Empty;
+
+    /// <summary>
+    /// The url being edited in the inline editor.
+    /// </summary>
+    [ObservableProperty]
+    private string _editUrl = string.Empty;
+
     [RelayCommand]
     private Task Update()
     {
@@ -98,5 +126,33 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     private Task Remove()
     {
         return _remove(this);
+    }
+
+    [RelayCommand]
+    private void BeginEdit()
+    {
+        EditKind = Kind;
+        EditUrl = Url;
+        IsEditing = true;
+    }
+
+    [RelayCommand]
+    private void CancelEdit()
+    {
+        IsEditing = false;
+    }
+
+    [RelayCommand]
+    private async Task SaveEdit()
+    {
+        var url = EditUrl.Trim();
+        if (url.Length == 0)
+        {
+            return;
+        }
+
+        EditUrl = url;
+        await _edit(this);
+        IsEditing = false;
     }
 }

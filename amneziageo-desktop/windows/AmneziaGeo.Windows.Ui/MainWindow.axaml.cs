@@ -379,14 +379,19 @@ public sealed partial class MainWindow : Window
         e.Handled = true;
     }
 
-    // Builds the per-source action menu (update / delete). Commands assigned directly from the row's VM
-    // because flyout MenuItems do not reliably inherit the row's DataContext in Avalonia 11.
+    // Builds the per-source action menu (update / edit / delete). Commands assigned directly from the row's
+    // VM because flyout MenuItems do not reliably inherit the row's DataContext in Avalonia 11.
     private static void ShowSourceMenu(Control target, SourceItemViewModel source, bool atPointer)
     {
         var update = new MenuItem
         {
             Header = Loc.Instance.Get("MainCode_UpdateDatabase"),
             Command = source.UpdateCommand,
+        };
+        var edit = new MenuItem
+        {
+            Header = Loc.Instance.Get("MainCode_EditDatabase"),
+            Command = source.BeginEditCommand,
         };
         var delete = new MenuItem
         {
@@ -395,6 +400,7 @@ public sealed partial class MainWindow : Window
         };
         var flyout = new MenuFlyout();
         flyout.Items.Add(update);
+        flyout.Items.Add(edit);
         flyout.Items.Add(delete);
         flyout.ShowAt(target, showAtPointer: atPointer);
     }

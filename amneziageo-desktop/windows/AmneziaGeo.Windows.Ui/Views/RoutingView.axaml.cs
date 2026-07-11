@@ -26,6 +26,12 @@ internal sealed partial class RoutingView : UserControl
 
     private Window? Owner => TopLevel.GetTopLevel(this) as Window;
 
+    // Autosave the open list when focus leaves one of its fields.
+    private void OnRoutingFieldBlur(object? sender, RoutedEventArgs e)
+    {
+        (DataContext as RoutingViewModel)?.AutoSaveOnBlur();
+    }
+
     // Routing-list share (copy / save / paste / load).
     private async void OnRoutingExportCopy(object? sender, RoutedEventArgs e)
     {

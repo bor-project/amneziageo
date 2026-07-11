@@ -44,6 +44,15 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     // True while LoadAsync seeds the fields.
     private bool _loading;
 
+    // Autosave: toggles persist at once, text fields on blur; a reconnect need surfaces via the standard banner.
+    private bool _committing;
+    private bool _commitPending;
+
+    /// <summary>
+    /// When set, edits persist through the agent as they happen (toggles at once, text on blur).
+    /// </summary>
+    public bool AutoSave { get; set; }
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -76,9 +85,17 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
     partial void OnExclusionsChanged(string value) => OnEdited();
 
-    partial void OnAllUdpChanged(bool value) => OnEdited();
+    partial void OnAllUdpChanged(bool value)
+    {
+        OnEdited();
+        FireAutoSave();
+    }
 
-    partial void OnUseIpv6Changed(bool value) => OnEdited();
+    partial void OnUseIpv6Changed(bool value)
+    {
+        OnEdited();
+        FireAutoSave();
+    }
 
     // A field changed: recompute dirtiness against the baseline. No auto-save - the header Save/Cancel commits
     // or reverts the whole item at once (#143), which is what keeps a mid-type edit from persisting per keystroke.
@@ -200,12 +217,63 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
                 "split",
                 UseIpv6 ? "on" : "off",
             ]));
-            StatusMessage = ack.Message;
+            // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
+            StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
         }
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    // Fire-and-forget autosave for a toggle change (skipped while loading).
+    private void FireAutoSave()
+    {
+        if (AutoSave && !_loading)
+        {
+            _ = AutoSaveAsync();
+        }
+    }
+
+    /// <summary>
+    /// Serialized autosave: persists the traffic block through the agent, re-running when an edit lands mid-commit.
+    /// A draft whose list is not yet created (id 0) is skipped; it flushes once the list is saved and retargeted.
+    /// </summary>
+    public async Task AutoSaveAsync()
+    {
+        if (_loading || !AutoSave || ListId <= 0)
+        {
+            return;
+        }
+
+        if (_committing)
+        {
+            _commitPending = true;
+            return;
+        }
+
+        _committing = true;
+        try
+        {
+            do
+            {
+                _commitPending = false;
+                if (!IsDirty)
+                {
+                    break;
+                }
+
+                if (await CommitAsync() && !_commitPending)
+                {
+                    CaptureBaseline();
+                }
+            }
+            while (_commitPending);
+        }
+        finally
+        {
+            _committing = false;
         }
     }
 
@@ -241,6 +309,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             {
                 lines.AddRange(added);
                 Exclusions = string.Join(Environment.NewLine, lines);
+                await AutoSaveAsync();
             }
 
             StatusMessage = added.Count > 0

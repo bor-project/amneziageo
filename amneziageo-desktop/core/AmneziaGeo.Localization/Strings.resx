@@ -59,7 +59,10 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="General_Section" xml:space="preserve">
-    <value>GENERAL</value>
+    <value>General</value>
+  </data>
+  <data name="Main_AppearanceTitle" xml:space="preserve">
+    <value>Appearance</value>
   </data>
   <data name="General_Theme" xml:space="preserve">
     <value>Theme</value>
@@ -80,7 +83,7 @@
     <value>System</value>
   </data>
   <data name="About_Section" xml:space="preserve">
-    <value>ABOUT</value>
+    <value>About</value>
   </data>
   <data name="About_Version" xml:space="preserve">
     <value>App version</value>
@@ -173,7 +176,7 @@
     <value>Save</value>
   </data>
   <data name="Main_AccessTokenLabel" xml:space="preserve">
-    <value>Access token:</value>
+    <value>TOKEN</value>
   </data>
   <data name="Main_AccessTokenWatermark" xml:space="preserve">
     <value>access token</value>
@@ -185,7 +188,7 @@
     <value>Add</value>
   </data>
   <data name="Main_AddDatabaseLabel" xml:space="preserve">
-    <value>ADD A DATABASE</value>
+    <value>Add a database</value>
   </data>
   <data name="Main_AddEntryLabel" xml:space="preserve">
     <value>ADD AN ENTRY (GEO CATEGORY, DOMAIN OR CIDR)</value>
@@ -197,7 +200,13 @@
     <value>Add local networks</value>
   </data>
   <data name="Main_AgentLogSection" xml:space="preserve">
-    <value>AGENT LOG</value>
+    <value>Agent log</value>
+  </data>
+  <data name="Main_LogCaptureTitle" xml:space="preserve">
+    <value>Log settings</value>
+  </data>
+  <data name="Main_LogViewerTitle" xml:space="preserve">
+    <value>Log viewer</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
     <value>Routes ALL outgoing UDP datagrams into the tunnel while selective routing is active. Needed for real-time media (voice calls, online games) whose server addresses arrive via signaling rather than DNS. The local network and the tunnel channel itself are excluded.</value>
@@ -230,7 +239,7 @@
     <value>Login and password</value>
   </data>
   <data name="Main_AuthLabel" xml:space="preserve">
-    <value>Authorization:</value>
+    <value>AUTHORIZATION</value>
   </data>
   <data name="Main_AuthNone" xml:space="preserve">
     <value>No authorization</value>
@@ -251,7 +260,7 @@
     <value>Select profiles, configurations, and routing lists to transfer to another device, or import a previously exported file.</value>
   </data>
   <data name="Main_CameraButton" xml:space="preserve">
-    <value>Camera</value>
+    <value>Scan QR code</value>
   </data>
   <data name="Main_CancelButton" xml:space="preserve">
     <value>Cancel</value>
@@ -292,9 +301,6 @@
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Search in log</value>
   </data>
-  <data name="Main_ConfEditHint" xml:space="preserve">
-    <value>It must have [Interface] and [Peer] sections. The profile's geo and routes are preserved.</value>
-  </data>
   <data name="Main_QrConfTab" xml:space="preserve">
     <value>QR: .conf file</value>
   </data>
@@ -311,13 +317,10 @@
     <value>CONFIGURATION NAME</value>
   </data>
   <data name="Main_ConfigSection" xml:space="preserve">
-    <value>CONFIGURATIONS</value>
+    <value>Configurations</value>
   </data>
   <data name="Main_ConfigEditButton" xml:space="preserve">
-    <value>Edit</value>
-  </data>
-  <data name="Main_ConfigEditButtonTooltip" xml:space="preserve">
-    <value>Enter / edit the configuration text in the large editor</value>
+    <value>Enter manually</value>
   </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
     <value>The configuration will appear here</value>
@@ -329,13 +332,40 @@
     <value>Delete configuration</value>
   </data>
   <data name="Main_DeleteConfigHint" xml:space="preserve">
-    <value>Remove the configuration from the catalogue. The agent will refuse while it is used by any profile or a running tunnel — unlink it first.</value>
+    <value>First unlink it from profiles and stop the tunnel using it.</value>
+  </data>
+  <data name="Main_DeleteConfigTitle" xml:space="preserve">
+    <value>Delete configuration</value>
+  </data>
+  <data name="Main_DeleteConfigPrompt" xml:space="preserve">
+    <value>Remove the configuration "{0}" from the catalogue. This action cannot be undone.</value>
   </data>
   <data name="Main_DeleteListButton" xml:space="preserve">
     <value>Delete list</value>
   </data>
+  <data name="Main_DeleteListTitle" xml:space="preserve">
+    <value>Delete list</value>
+  </data>
+  <data name="Main_DeleteListPrompt" xml:space="preserve">
+    <value>Remove this routing list from the catalogue. This cannot be undone.</value>
+  </data>
+  <data name="Main_DeleteListHint" xml:space="preserve">
+    <value>A list assigned to profiles cannot be deleted.</value>
+  </data>
+  <data name="Main_RoutingListCardTitle" xml:space="preserve">
+    <value>Routing list</value>
+  </data>
   <data name="Main_DeleteProfileButton" xml:space="preserve">
     <value>Delete profile</value>
+  </data>
+  <data name="Main_DeleteProfileTitle" xml:space="preserve">
+    <value>Delete profile</value>
+  </data>
+  <data name="Main_DeleteProfilePrompt" xml:space="preserve">
+    <value>Remove this profile from the catalogue. This cannot be undone.</value>
+  </data>
+  <data name="Main_ProfileSettingsTitle" xml:space="preserve">
+    <value>Profile settings</value>
   </data>
   <data name="Main_DeleteProfileHint" xml:space="preserve">
     <value>The profile is deleted together with its settings. A running profile must be disconnected first.</value>
@@ -380,7 +410,28 @@
     <value>Export…</value>
   </data>
   <data name="Main_FileButton" xml:space="preserve">
-    <value>File</value>
+    <value>Load file</value>
+  </data>
+  <data name="Main_AddConfigTitle" xml:space="preserve">
+    <value>Add a configuration</value>
+  </data>
+  <data name="Main_AddConfigSubtitle" xml:space="preserve">
+    <value>Choose a method</value>
+  </data>
+  <data name="Main_ChangeMethodButton" xml:space="preserve">
+    <value>Change method</value>
+  </data>
+  <data name="Main_MethodLabel" xml:space="preserve">
+    <value>Method: {0}</value>
+  </data>
+  <data name="Main_MethodManual" xml:space="preserve">
+    <value>manual</value>
+  </data>
+  <data name="Main_MethodCamera" xml:space="preserve">
+    <value>camera</value>
+  </data>
+  <data name="Main_UnsavedChanges" xml:space="preserve">
+    <value>Unsaved changes</value>
   </data>
   <data name="Main_FullTunnel" xml:space="preserve">
     <value>Full tunnel</value>
@@ -389,7 +440,7 @@
     <value>Later - you can update it in settings</value>
   </data>
   <data name="Main_GeoKindsHint" xml:space="preserve">
-    <value>geosite - domain categories, geoip - countries. The file is downloaded immediately. The ⟳ icon updates a database, «Update all» - all at once; right-click a database - delete.</value>
+    <value>geosite - domain categories, geoip - countries.</value>
   </data>
   <data name="Main_ImportButton" xml:space="preserve">
     <value>Import…</value>
@@ -398,7 +449,7 @@
     <value>IMPORT / EXPORT</value>
   </data>
   <data name="Main_ImportExportSection" xml:space="preserve">
-    <value>IMPORT / EXPORT</value>
+    <value>Import / export</value>
   </data>
   <data name="Main_InstallButton" xml:space="preserve">
     <value>Install</value>
@@ -410,7 +461,7 @@
     <value>e.g. my-list</value>
   </data>
   <data name="Main_ListTrafficLabel" xml:space="preserve">
-    <value>TRAFFIC OF THIS LIST</value>
+    <value>Traffic of this list</value>
   </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Load file…</value>
@@ -425,7 +476,7 @@
     <value>Level</value>
   </data>
   <data name="Main_LoginLabel" xml:space="preserve">
-    <value>Login:</value>
+    <value>LOGIN</value>
   </data>
   <data name="Main_LoginWatermark" xml:space="preserve">
     <value>login</value>
@@ -467,7 +518,7 @@
     <value>— not selected —</value>
   </data>
   <data name="Main_PasswordLabel" xml:space="preserve">
-    <value>Password:</value>
+    <value>PASSWORD</value>
   </data>
   <data name="Main_PasswordWatermark" xml:space="preserve">
     <value>password</value>
@@ -488,10 +539,31 @@
     <value>A new name for this profile. A running profile cannot be renamed.</value>
   </data>
   <data name="Main_ProfileSection" xml:space="preserve">
-    <value>PROFILE</value>
+    <value>Profile</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
-    <value>PROXY (WEBSOCKET)</value>
+    <value>WebSocket proxy</value>
+  </data>
+  <data name="Main_ProxyWebSocketHint" xml:space="preserve">
+    <value>Carries UDP over TCP and helps when UDP is blocked.</value>
+  </data>
+  <data name="Main_UseWebSocketToggle" xml:space="preserve">
+    <value>Use proxy</value>
+  </data>
+  <data name="Main_ExportConfigTitle" xml:space="preserve">
+    <value>Export configuration</value>
+  </data>
+  <data name="Main_ExportConfigSubtitle" xml:space="preserve">
+    <value>Choose a transfer format</value>
+  </data>
+  <data name="Main_QrPrivateKeyWarning" xml:space="preserve">
+    <value>The QR code contains a private key. Do not share it with anyone.</value>
+  </data>
+  <data name="Main_CopyContentButton" xml:space="preserve">
+    <value>Copy contents</value>
+  </data>
+  <data name="Main_DownloadQrButton" xml:space="preserve">
+    <value>Download QR</value>
   </data>
   <data name="Main_QrUnavailableHint" xml:space="preserve">
     <value>The configuration does not fit in a QR code. Use the «Config» tab or the vpn:// link.</value>
@@ -554,7 +626,7 @@
     <value>Import the list from clipboard</value>
   </data>
   <data name="Main_RoutingSection" xml:space="preserve">
-    <value>ROUTING</value>
+    <value>Routing</value>
   </data>
   <data name="Main_SaveButton" xml:space="preserve">
     <value>Save</value>
@@ -566,13 +638,13 @@
     <value>Save to file…</value>
   </data>
   <data name="Main_ServerHostLabel" xml:space="preserve">
-    <value>Server address (host):</value>
+    <value>HOST</value>
   </data>
   <data name="Main_ServerHostWatermark" xml:space="preserve">
-    <value>same as on the server, e.g. wss-front.example.com</value>
+    <value>proxy.example.com</value>
   </data>
   <data name="Main_ServerPortLabel" xml:space="preserve">
-    <value>Server port (TLS):</value>
+    <value>PORT</value>
   </data>
   <data name="Main_SettingsTooltip" xml:space="preserve">
     <value>Settings</value>
@@ -593,13 +665,13 @@
     <value>Right-click or ⋮ — update / delete the database</value>
   </data>
   <data name="Main_SourcesLabel" xml:space="preserve">
-    <value>SOURCES</value>
+    <value>Sources</value>
   </data>
   <data name="Main_SourcesSection" xml:space="preserve">
-    <value>GEO SOURCES</value>
+    <value>Geo sources</value>
   </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
-    <value>Tunnel MTU:</value>
+    <value>TUNNEL MTU</value>
   </data>
   <data name="Main_UpdateAllButton" xml:space="preserve">
     <value>Update all</value>
@@ -614,7 +686,7 @@
     <value>Update now</value>
   </data>
   <data name="Main_UpdateSection" xml:space="preserve">
-    <value>UPDATE</value>
+    <value>Update</value>
   </data>
   <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
     <value>Use WebSocket (UDP over TCP, bypass UDP blocking)</value>
@@ -716,10 +788,10 @@
     <value>Copied to clipboard.</value>
   </data>
   <data name="MainCode_DeleteDatabase" xml:space="preserve">
-    <value>Delete database</value>
+    <value>Delete</value>
   </data>
   <data name="MainCode_EditDatabase" xml:space="preserve">
-    <value>Edit source</value>
+    <value>Edit</value>
   </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR recognized, but it is not a configuration</value>
@@ -740,7 +812,7 @@
     <value>Saved.</value>
   </data>
   <data name="MainCode_UpdateDatabase" xml:space="preserve">
-    <value>Update database</value>
+    <value>Update</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Not recognized (.conf or vpn://)</value>

@@ -5,15 +5,16 @@
              x:Class="AmneziaGeo.Windows.Ui.Views.RoutingView"
              x:CompileBindings="True"
              x:DataType="vm:RoutingViewModel">
-  <StackPanel Spacing="14">
+  <!-- Edits autosave: rules / toggles at once, text fields on blur (LostFocus). -->
+  <StackPanel Spacing="14" LostFocus="OnRoutingFieldBlur">
+    <!-- Header: section title + count pill + new-list button. -->
     <Grid ColumnDefinitions="Auto,Auto,*,Auto">
       <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_RoutingSection}" VerticalAlignment="Center" />
       <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
               Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
         <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
       </Border>
-      <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateRoutingListCommand}"
-              IsEnabled="{Binding !IsEditing}">
+      <Button Grid.Column="3" Classes="accent" Width="180" Command="{Binding CreateRoutingListCommand}">
         <StackPanel Orientation="Horizontal" Spacing="4">
           <TextBlock Text="+" />
           <TextBlock Text="{l:Tr Main_NewListButton}" />
@@ -21,10 +22,10 @@
       </Button>
     </Grid>
 
+    <!-- Routing-list catalogue combo: «- не выбрано -» then saved lists. -->
     <StackPanel Spacing="6">
       <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" />
       <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                IsEnabled="{Binding !IsEditing}"
                 ItemsSource="{Binding RoutingCatalogueOptions}"
                 SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
         <ComboBox.ItemTemplate>
@@ -41,13 +42,16 @@
                  Text="{l:Tr Main_NoRoutingListsHint}" />
     </StackPanel>
 
-    <!-- Rule editor for the selected/new list. -->
-    <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="12">
-      <Border Background="Transparent"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="9" Padding="12">
-        <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-          <StackPanel Spacing="6">
+    <!-- Editor for the selected / new list. -->
+    <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="14">
+
+      <!-- Rules card: name + per-app tunneling + geo/domain/cidr entries + import/export. -->
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent">
+        <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
+          <TextBlock Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15" />
+
+          <StackPanel Spacing="2">
             <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
             <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
                      Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
@@ -59,7 +63,7 @@
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
             <Grid ColumnDefinitions="Auto,*,Auto">
-              <Button Grid.Column="0" Classes="softbtn" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
+              <Button Grid.Column="0" Classes="softbtn" Width="130" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
                 <Button.Flyout>
                   <MenuFlyout>
                     <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
@@ -76,7 +80,7 @@
                                ItemsSource="{Binding AppSuggestions}"
                                FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
                                IsEnabled="{Binding IsAppPickerActive}" />
-              <Button Grid.Column="2" Classes="accent" Command="{Binding AddAppCommand}"
+              <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddAppCommand}"
                       IsEnabled="{Binding IsAppPickerActive}">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="+" />
@@ -86,6 +90,7 @@
             </Grid>
           </StackPanel>
 
+          <!-- Add a geo category / domain / cidr entry. -->
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
             <Grid ColumnDefinitions="*,Auto">
@@ -94,7 +99,7 @@
                                Text="{Binding RuleInput, Mode=TwoWay}"
                                ItemsSource="{Binding GeoSuggestions}"
                                FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
-              <Button Grid.Column="1" Classes="accent" Command="{Binding AddRuleCommand}">
+              <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="+" />
                   <TextBlock Text="{l:Tr Main_AddButton}" />
@@ -103,8 +108,9 @@
             </Grid>
           </StackPanel>
 
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-          <!-- Required-field validation ("add at least one entry"), red; clears on any edit (#2/#3). -->
+          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                     IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <!-- Required-field validation, red; clears on any edit (#2/#3). -->
           <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
@@ -155,12 +161,12 @@
         </StackPanel>
       </Border>
 
-      <!-- Per-routing traffic settings: local DNS + exclusions + all-UDP. -->
-      <Border Background="Transparent"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="9" Padding="12" IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
-        <StackPanel Spacing="12" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
-          <TextBlock Classes="label" Text="{l:Tr Main_ListTrafficLabel}" />
+      <!-- Per-routing traffic card: local DNS + exclusions + all-UDP + IPv6. -->
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent"
+              IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
+          <TextBlock Text="{l:Tr Main_ListTrafficLabel}" FontWeight="SemiBold" FontSize="15" />
 
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="DNS" />
@@ -202,30 +208,44 @@
             <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
           </Grid>
 
-          <!-- Edits commit atomically with the header Save (#143). -->
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12"
-                     TextWrapping="Wrap" />
+          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                     IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
       </Border>
 
-      <!-- Delete: trigger + inline error. When armed, the inline Confirm/Cancel pair replaces the
-           trigger in place (#4). Hidden for an unsaved new-list draft. -->
-      <StackPanel Spacing="6" IsVisible="{Binding !RoutingEditor.IsNew}">
-        <StackPanel Orientation="Horizontal" Spacing="12">
-          <Button Classes="danger" HorizontalAlignment="Left" VerticalAlignment="Top"
-                  IsVisible="{Binding !RoutingDeletePending}" IsEnabled="{Binding !IsEditing}"
-                  Command="{Binding RequestDeleteSectionRoutingListCommand}" Content="{l:Tr Main_DeleteListButton}" />
-          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding RoutingDeletePending}">
-            <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
-                    Command="{Binding ConfirmDeleteSectionRoutingListCommand}" />
-            <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
-                    Command="{Binding CancelDeleteRoutingCommand}" />
-          </StackPanel>
-          <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                     VerticalAlignment="Center" TextWrapping="Wrap"
+      <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
+           the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). Hidden for an
+           unsaved new-list draft. -->
+      <Border Background="Transparent"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" IsVisible="{Binding !RoutingEditor.IsNew}">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0">
+              <TextBlock Text="{l:Tr Main_DeleteListTitle}" FontWeight="SemiBold" FontSize="13.5" />
+              <TextBlock Text="{l:Tr Main_DeleteListPrompt}" FontSize="12" TextWrapping="Wrap" />
+              <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteListHint}" />
+            </StackPanel>
+            <Grid Grid.Column="1" Width="180" VerticalAlignment="Center"
+                  ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_DeleteListButton}"
+                      IsVisible="{Binding !RoutingDeletePending}"
+                      Command="{Binding RequestDeleteSectionRoutingListCommand}" />
+              <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_ConfirmDeleteButton}"
+                      IsVisible="{Binding RoutingDeletePending}"
+                      Command="{Binding ConfirmDeleteSectionRoutingListCommand}" />
+              <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_CancelButton}"
+                      IsVisible="{Binding RoutingDeletePending}"
+                      Command="{Binding CancelDeleteRoutingCommand}" />
+            </Grid>
+          </Grid>
+          <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding RoutingDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
-      </StackPanel>
+      </Border>
     </StackPanel>
   </StackPanel>
 </UserControl>

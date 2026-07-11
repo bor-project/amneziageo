@@ -9,8 +9,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
 /// Routing screen: the routing-list catalogue, the rule/per-routing editors, and list CRUD. The shared
-/// catalogue edit-lock (<see cref="MainWindowViewModel.IsEditing"/>), the profile list, and the edit-scope
-/// re-point live on the shell, reached through <c>_host</c>.
+/// catalogue and the profile list live on the shell, reached through <c>_host</c>.
 /// </summary>
 internal sealed partial class RoutingViewModel : ViewModelBase
 {
@@ -64,11 +63,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool HasRoutingEditor => RoutingEditor is not null;
 
     /// <summary>
-    /// The shared catalogue edit-lock, surfaced for this screen's controls.
-    /// </summary>
-    public bool IsEditing => _host.IsEditing;
-
-    /// <summary>
     /// Reconciles the routing-list catalogue from the snapshot.
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
@@ -89,18 +83,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         SyncCatalogueRouting();
     }
 
-    // Re-raise IsEditing when the shared edit-lock flips (the shell owns EditController).
-    public void NotifyIsEditingChanged()
+    // Autosave the open list's dirty editor + traffic settings when focus leaves a field.
+    public void AutoSaveOnBlur()
     {
-        OnPropertyChanged(nameof(IsEditing));
-    }
-
-    // Discards an unsaved new-list draft (the shell's Cancel path, #143).
-    public void CancelNewDraft()
-    {
-        RoutingEditor = null;
-        RoutingSettings = null;
-        EditRoutingList = null;
+        _ = RoutingEditor?.AutoSaveAsync();
+        _ = RoutingSettings?.AutoSaveAsync();
     }
 
     // Reflect a profile's assigned routing list into this section: a real list opens there (its rule /
@@ -163,18 +150,48 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
     }
 
-    // The section rule-editor instance changed (new draft created, real list opened, or closed): re-mirror
-    // the combo and re-point the shared edit controller (#143).
+    // The section rule-editor instance changed (new draft created, real list opened, or closed): re-mirror the
+    // combo and re-hook the edit listeners that clear a stale "cannot delete" block.
     partial void OnRoutingEditorChanged(RoutingListEditorViewModel? oldValue, RoutingListEditorViewModel? newValue)
     {
+        if (oldValue is not null)
+        {
+            oldValue.PropertyChanged -= OnEditPropertyChanged;
+            oldValue.Rules.CollectionChanged -= OnEditCollectionChanged;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.PropertyChanged += OnEditPropertyChanged;
+            newValue.Rules.CollectionChanged += OnEditCollectionChanged;
+        }
+
         SyncCatalogueRouting();
-        _host.RefreshEditScopes();
     }
 
-    // The per-routing settings editor was (re)built or cleared: re-point the shared edit controller (#143).
+    // The per-routing settings editor changed: re-hook the edit listener that clears a stale "cannot delete" block.
     partial void OnRoutingSettingsChanged(RoutingSettingsViewModel? oldValue, RoutingSettingsViewModel? newValue)
     {
-        _host.RefreshEditScopes();
+        if (oldValue is not null)
+        {
+            oldValue.PropertyChanged -= OnEditPropertyChanged;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.PropertyChanged += OnEditPropertyChanged;
+        }
+    }
+
+    // Any edit to the open list (a field or the rule set) clears a lingering delete-blocked / delete-failed line.
+    private void OnEditPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        RoutingDeleteStatus = string.Empty;
+    }
+
+    private void OnEditCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        RoutingDeleteStatus = string.Empty;
     }
 
     // Mirror the Routing section's state into its combo without echoing the pick back: a selected real list
@@ -237,11 +254,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             return;
         }
 
-        var editor = new RoutingListEditorViewModel(_connection, id, name, OnSectionRoutingEditorSaved);
+        var editor = new RoutingListEditorViewModel(_connection, id, name, OnSectionRoutingEditorSaved) { AutoSave = true };
         RoutingEditor = editor;
         _ = editor.LoadAsync();
 
-        var settings = new RoutingSettingsViewModel(_connection, id);
+        var settings = new RoutingSettingsViewModel(_connection, id) { AutoSave = true };
         RoutingSettings = settings;
         _ = settings.LoadAsync();
     }
@@ -255,10 +272,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         if (RoutingSettings is { } draft)
         {
             draft.Retarget(id);
+            // Flush traffic edits made before the list existed - they were held while the id was 0.
+            _ = draft.AutoSaveAsync();
         }
         else
         {
-            var settings = new RoutingSettingsViewModel(_connection, id);
+            var settings = new RoutingSettingsViewModel(_connection, id) { AutoSave = true };
             RoutingSettings = settings;
             _ = settings.LoadAsync();
         }
@@ -363,12 +382,13 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         // Pre-fill a unique default name (#117) so the required-name field is never empty on open. Set before
         // LoadAsync, while the editor still suppresses auto-save, so seeding the name does not schedule a save.
         editor.Name = UniqueRoutingListName();
+        editor.AutoSave = true;
         RoutingEditor = editor;
         _ = editor.LoadAsync();
 
-        // Draft traffic settings (id 0, no load - a new list has none server-side). They commit with the list
-        // on the header Save, once retargeted at the created id (#5).
-        RoutingSettings = new RoutingSettingsViewModel(_connection, 0);
+        // Draft traffic settings (id 0, no load - a new list has none server-side). Their autosave is held until
+        // the list is created and retargeted at the real id, then flushed (#5).
+        RoutingSettings = new RoutingSettingsViewModel(_connection, 0) { AutoSave = true };
     }
 
     // The routing-list Delete trigger (#143): a list any profile references cannot be deleted - surface them in

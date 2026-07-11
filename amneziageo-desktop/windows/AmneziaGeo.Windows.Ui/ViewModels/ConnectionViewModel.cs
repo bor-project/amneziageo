@@ -10,8 +10,8 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
 /// Home screen: the connection card (power control, status, active-profile picker), the tray-icon colour, and
-/// the top-center notice banner. The profile catalogue, the config-completeness flags, and the atomic
-/// edit-lock (<see cref="MainWindowViewModel.IsEditing"/>) live on the shell, reached through <c>_host</c>.
+/// the top-center notice banner. The profile catalogue and the config-completeness flags live on the shell,
+/// reached through <c>_host</c>.
 /// </summary>
 internal sealed partial class ConnectionViewModel : ViewModelBase
 {
@@ -109,7 +109,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
         : Loc.Instance.Get("MainVm_NoAgentConnection");
 
-    public bool CanToggleConnection => IsConnected && !_host.IsEditing && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
+    public bool CanToggleConnection => IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
 
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
@@ -259,12 +259,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
 
         ShowNotice(notice);
-    }
-
-    // Re-raise CanToggleConnection when the shared edit-lock flips (the shell owns EditController).
-    public void NotifyIsEditingChanged()
-    {
-        NotifyCanToggleConnection();
     }
 
     // Re-raise the host-derived hint after the shell recomputes HasProfiles on a snapshot.

@@ -9,9 +9,8 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
 /// Config screen: the shared configuration catalogue, the open-config manage editors (.conf / transport /
-/// rename / delete), and the standalone "+ Новая конфигурация" import form. The atomic edit-lock
-/// (<see cref="MainWindowViewModel.IsEditing"/>), the shared-namespace name check, and the edit-scope re-point
-/// live on the shell, reached through <c>_host</c>.
+/// rename / delete), and the standalone "+ Новая конфигурация" import form. The shared-namespace name check
+/// lives on the shell, reached through <c>_host</c>.
 /// </summary>
 internal sealed partial class ConfigViewModel : ViewModelBase
 {
@@ -20,13 +19,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     private IReadOnlyList<string> _configNames = [];
     private string? _pendingOpenConfig;
+    private string? _configBeforeCreate;
+    private bool _autoSaving;
+    private bool _autoSavePending;
     private string _sectionConfigDefaultName = string.Empty;
     private bool _sectionConfigSaving;
     private bool _suppressCatalogueConfig;
 
-    // Host-owned edit scopes registered by RefreshEditScopes while the config section is active (#143).
-    private readonly DelegateEditScope _configRenameScope;
-    private readonly DelegateEditScope _sectionConfigScope;
+    // Rename baseline: the open config's persisted name; a differing ConfigRename autosaves on blur.
     private string _baseConfigRename = string.Empty;
 
     [ObservableProperty]
@@ -34,6 +34,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConfigManage))]
+    [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -75,6 +76,17 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     private ConfigTransportViewModel? _sectionConfigTransport;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsImportPicker))]
+    [NotifyPropertyChangedFor(nameof(IsImportManual))]
+    [NotifyPropertyChangedFor(nameof(IsImportCamera))]
+    [NotifyPropertyChangedFor(nameof(SectionMethodLabel))]
+    private ConfigImportMethod _importMethod = ConfigImportMethod.Picker;
+
+    // Live QR scanner for the create form; non-null only while the camera method is active.
+    [ObservableProperty]
+    private ScanViewModel? _sectionScan;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -82,18 +94,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         _host = host;
         _connection = connection;
-        _configRenameScope = new DelegateEditScope(
-            () => !string.Equals(ConfigRename ?? string.Empty, _baseConfigRename, StringComparison.Ordinal),
-            () => _baseConfigRename = ConfigRename ?? string.Empty,
-            () => ConfigRename = _baseConfigRename,
-            CommitConfigRenameAsync,
-            CanCommitConfigRename);
-        _sectionConfigScope = new DelegateEditScope(
-            () => IsCreatingSectionConfig,
-            () => { },
-            CancelSectionConfig,
-            CommitSectionConfigAsync,
-            CanCommitSectionConfig);
     }
 
     /// <summary>
@@ -108,24 +108,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public IReadOnlyList<string> ConfigNames => _configNames;
 
-    /// <summary>
-    /// The rename scope, registered into the shared edit controller while an existing config is open.
-    /// </summary>
-    public IEditScope RenameScope => _configRenameScope;
-
-    /// <summary>
-    /// The import-form scope, registered into the shared edit controller while creating a config.
-    /// </summary>
-    public IEditScope SectionConfigScope => _sectionConfigScope;
-
     public bool HasConfigs => Configs.Count > 0;
 
-    /// <summary>
-    /// The shared atomic edit-lock, surfaced for this screen's controls.
-    /// </summary>
-    public bool IsEditing => _host.IsEditing;
-
     public bool IsConfigManage => OpenConfig is not null;
+
+    /// <summary>
+    /// Delete-card prompt naming the open config.
+    /// </summary>
+    public string DeleteConfigPrompt => Loc.Instance.Get("Main_DeleteConfigPrompt", OpenConfig ?? string.Empty);
 
     public bool ConfigNameMissing => string.IsNullOrWhiteSpace(ConfigRename);
 
@@ -138,11 +128,18 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public bool CanSaveSectionConfig =>
         VpnLinkCodec.TryDecode(SectionConfigText) is not null && !string.IsNullOrWhiteSpace(SectionConfigName);
 
-    // Re-raise IsEditing when the shared edit-lock flips (the shell owns EditController).
-    public void NotifyIsEditingChanged()
+    public bool IsImportPicker => ImportMethod == ConfigImportMethod.Picker;
+
+    public bool IsImportManual => ImportMethod == ConfigImportMethod.Manual;
+
+    public bool IsImportCamera => ImportMethod == ConfigImportMethod.Camera;
+
+    public string SectionMethodLabel => ImportMethod switch
     {
-        OnPropertyChanged(nameof(IsEditing));
-    }
+        ConfigImportMethod.Manual => Loc.Instance.Get("Main_MethodLabel", Loc.Instance.Get("Main_MethodManual")),
+        ConfigImportMethod.Camera => Loc.Instance.Get("Main_MethodLabel", Loc.Instance.Get("Main_MethodCamera")),
+        _ => string.Empty,
+    };
 
     /// <summary>
     /// Reconciles the config catalogue from the snapshot.
@@ -219,6 +216,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _pendingOpenConfig = null;
         _configNames = [];
         IsCreatingSectionConfig = false;
+        ImportMethod = ConfigImportMethod.Picker;
+        SectionScan = null;
         ReconcileConfigCatalogueOptions();
         SyncCatalogueConfig();
     }
@@ -245,6 +244,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0);
+        ConfigTransport.AutoSave = true;
     }
 
     partial void OnSelectedCatalogueConfigChanged(ConfigChoice? value)
@@ -265,26 +265,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     partial void OnIsCreatingSectionConfigChanged(bool value)
     {
         SyncCatalogueConfig();
-        _host.RefreshEditScopes();
     }
 
-    // The config's transport / .conf editors were (re)built or cleared: re-point the edit controller (#143).
-    partial void OnConfigTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
-    {
-        _host.RefreshEditScopes();
-    }
-
-    partial void OnConfigExportChanged(ExportDialogViewModel? oldValue, ExportDialogViewModel? newValue)
-    {
-        _host.RefreshEditScopes();
-    }
-
-    // The rename field changed: re-evaluate the config item's dirtiness (no auto-save - the header Save commits).
-    // Any edit clears a stale validation line (#3).
+    // The rename field changed: clear a stale validation line (#3). It autosaves on blur, not per keystroke.
     partial void OnConfigRenameChanged(string value)
     {
         ConfigRenameStatus = string.Empty;
-        _configRenameScope.RaiseDirtyChanged();
     }
 
     // Editing the new-config name or text clears a stale validation / status line (#3).
@@ -407,33 +393,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         OpenConfig = NextConfigAfter(config);
     }
 
-    // Local pre-commit check for the config rename (#143): reject an empty or already-taken name before any
-    // scope is persisted, so a bad name aborts the whole Save in the pre-flight pass (shrinks the non-atomic
-    // partial-commit window - a taken name no longer lands after a sibling .conf/transport commit).
-    private bool CanCommitConfigRename()
-    {
-        if (OpenConfig is null)
-        {
-            return true;
-        }
-
-        var next = (ConfigRename ?? string.Empty).Trim();
-        if (next.Length == 0)
-        {
-            ConfigRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
-            return false;
-        }
-
-        if (!string.Equals(next, OpenConfig, StringComparison.Ordinal) && _host.IsNameTaken(next))
-        {
-            ConfigRenameStatus = Loc.Instance.Get("Agent_NameTaken", next);
-            return false;
-        }
-
-        return true;
-    }
-
-    // Commit the open config's rename through the agent (#143 header Save). Keyed by the current name; on OK it
+    // Commit the open config's rename through the agent. Keyed by the current name; on OK it
     // pins _pendingOpenConfig so the next snapshot re-opens the renamed row. An empty name is rejected (the item
     // stays dirty and the field shows its required-warning).
     private async Task<bool> CommitConfigRenameAsync()
@@ -460,6 +420,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRenameConfig, [current, next]));
         if (ack.Ok)
         {
+            _baseConfigRename = next;
             _pendingOpenConfig = next;
             return true;
         }
@@ -468,17 +429,16 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         return false;
     }
 
-    // --- Config settings section: standalone "+ Новая конфигурация" import (adds to the shared catalogue
-    // without a profile). The file / QR / camera pickers and the editor dialog are window concerns that fill
-    // SectionConfigText; the header Save (#143) imports a recognised config with a (required) name and opens it
-    // for management, and the header Cancel discards the draft. ---
+    // Config settings section: standalone "+ Новая конфигурация" import (file / QR-scan / manual, all inline).
 
     [RelayCommand]
     private void BeginSectionConfig()
     {
-        // Close any open config first so only the create form shows (the redirect from a profile's picker can
-        // arrive with a config still open), and so the combo lands on «+ Новая конфигурация», not a real row.
+        // Remember the open config so Cancel restores it (or «— не выбрано —»). Close it so only the create form shows.
+        _configBeforeCreate = OpenConfig;
         OpenConfig = null;
+        // Drop any just-saved pending open so a re-opened form does not resolve it into the manage panel.
+        _pendingOpenConfig = null;
         // Pre-fill a unique default name (like a new profile, #117) so the required-name field is never empty
         // on open; the user can accept it or type over it. Clearing it turns the box red and blocks the save.
         // Remember the default so an import can still overwrite it with the config's own name (SectionConfigNameIsDefault).
@@ -490,6 +450,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         // does not exist yet (no endpoint), so it seeds from defaults; Save retargets it at the final name and
         // applies it after the import. A left-at-defaults transport stays clean, so no set-websocket is sent.
         SectionConfigTransport = new ConfigTransportViewModel(_connection, SectionConfigName, string.Empty, false, string.Empty, 443, 0);
+        ImportMethod = ConfigImportMethod.Picker;
+        SectionScan = null;
         IsCreatingSectionConfig = true;
     }
 
@@ -501,36 +463,128 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
         SectionConfigTransport = null;
+        ImportMethod = ConfigImportMethod.Picker;
+        SectionScan = null;
     }
 
-    // Local pre-commit check for the import form (#143): the text must parse, the name be set, and (if the user
-    // touched them) the create-form transport's MTU / port be valid - all before any IPC.
-    private bool CanCommitSectionConfig()
+    // Switch the create form to manual entry.
+    [RelayCommand]
+    private void BeginManualImport()
     {
-        if (!CanSaveSectionConfig)
-        {
-            SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
-            return false;
-        }
-
-        if (SectionConfigTransport is { IsDirty: true } transport && !transport.CanCommit())
-        {
-            return false;
-        }
-
-        return true;
+        ImportMethod = ConfigImportMethod.Manual;
     }
 
-    // Header Save (#143) for the create form: import the recognised config, or fail (kept dirty) if the text is
-    // not a valid config or the required name is missing.
-    private async Task<bool> CommitSectionConfigAsync()
+    // Switch the create form to the live QR scanner.
+    [RelayCommand]
+    private void BeginCameraImport()
     {
-        if (!CanCommitSectionConfig())
+        SectionScan = new ScanViewModel(ApplyScannedConfig);
+        ImportMethod = ConfigImportMethod.Camera;
+    }
+
+    // Return to the method picker from manual / camera, discarding the drafted text.
+    [RelayCommand]
+    private void ChangeMethod()
+    {
+        SectionConfigText = string.Empty;
+        SectionConfigStatus = string.Empty;
+        SectionScan = null;
+        ImportMethod = ConfigImportMethod.Picker;
+    }
+
+    // Footer Cancel: discard the draft and restore the config open before "+ Новая" (or «— не выбрано —»).
+    [RelayCommand]
+    private void CancelNewConfig()
+    {
+        CancelSectionConfig();
+        OpenConfig = _configBeforeCreate;
+    }
+
+    // Footer Save: import the drafted config.
+    [RelayCommand]
+    private async Task SaveNewConfig()
+    {
+        await SaveSectionConfig();
+    }
+
+    // Discard the create draft when the config section is left for another one.
+    public void AbandonCreate()
+    {
+        if (IsCreatingSectionConfig)
         {
-            return false;
+            CancelSectionConfig();
+            OpenConfig = _configBeforeCreate;
+        }
+    }
+
+    // Commits the open config's dirty fields when focus leaves one (autosave, existing config only). A blur that
+    // arrives mid-commit re-runs once the in-flight commit settles, so the last field is never dropped.
+    public async void AutoSaveOnBlur()
+    {
+        if (OpenConfig is null)
+        {
+            return;
         }
 
-        return await SaveSectionConfig();
+        if (_autoSaving)
+        {
+            _autoSavePending = true;
+            return;
+        }
+
+        _autoSaving = true;
+        try
+        {
+            do
+            {
+                _autoSavePending = false;
+
+                if (ConfigExport is { IsDirty: true } export)
+                {
+                    await export.CommitAsync();
+                }
+
+                if (ConfigTransport is { } transport)
+                {
+                    await transport.AutoSaveAsync();
+                }
+
+                // Rename last so the .conf / transport ops still key by the old name.
+                if (!string.Equals(ConfigRename ?? string.Empty, _baseConfigRename, StringComparison.Ordinal))
+                {
+                    await CommitConfigRenameAsync();
+                }
+            }
+            while (_autoSavePending);
+        }
+        finally
+        {
+            _autoSaving = false;
+        }
+    }
+
+    // Fill the create form from a scanned QR and show it for review.
+    private void ApplyScannedConfig(VpnLinkCodec.Imported imported)
+    {
+        SectionConfigText = imported.ConfText;
+        if (SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(imported.Name))
+        {
+            SectionConfigName = imported.Name!;
+        }
+
+        SectionConfigStatus = string.Empty;
+        SectionScan = null;
+        ImportMethod = ConfigImportMethod.Manual;
+    }
+
+    // Stops the live scanner when the create form leaves view (section change / home / hide).
+    public void StopScan()
+    {
+        if (ImportMethod == ConfigImportMethod.Camera)
+        {
+            SectionScan = null;
+            ImportMethod = ConfigImportMethod.Picker;
+        }
     }
 
     // Adds the recognised config to the catalogue and opens it (via _pendingOpenConfig on the next snapshot).
@@ -621,4 +675,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             }
         }
     }
+}
+
+/// <summary>
+/// Config create-form import method.
+/// </summary>
+internal enum ConfigImportMethod
+{
+    Picker,
+    Manual,
+    Camera,
 }

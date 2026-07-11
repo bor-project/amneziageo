@@ -15,6 +15,7 @@ internal sealed class QrCameraScanner(Action<Bitmap> onPreview, Action<string> o
 {
     private CaptureDevice? _device;
     private volatile bool _busy;
+    private volatile bool _disposed;
     private string? _last;
 
     /// <summary>
@@ -29,8 +30,22 @@ internal sealed class QrCameraScanner(Action<Bitmap> onPreview, Action<string> o
             throw new InvalidOperationException(Loc.Instance.Get("QrScanner_CameraNotFound"));
         }
 
-        _device = await descriptor.OpenAsync(descriptor.Characteristics[0], OnFrameAsync);
-        await _device.StartAsync();
+        // Dispose may fire while the camera is still opening (await below); tear the device down instead of
+        // leaking it. _device stays null until the opened device survives the disposed check.
+        var device = await descriptor.OpenAsync(descriptor.Characteristics[0], OnFrameAsync);
+        if (_disposed)
+        {
+            await device.DisposeAsync();
+            return;
+        }
+
+        _device = device;
+        await device.StartAsync();
+        if (_disposed)
+        {
+            _device = null;
+            await StopDeviceAsync(device);
+        }
     }
 
     private async Task OnFrameAsync(PixelBufferScope scope)
@@ -71,18 +86,24 @@ internal sealed class QrCameraScanner(Action<Bitmap> onPreview, Action<string> o
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        if (_device is not null)
+        _disposed = true;
+        var device = _device;
+        _device = null;
+        if (device is not null)
         {
-            try
-            {
-                await _device.StopAsync();
-            }
-            catch (Exception)
-            {
-            }
+            await StopDeviceAsync(device);
+        }
+    }
 
-            await _device.DisposeAsync();
-            _device = null;
+    private static async Task StopDeviceAsync(CaptureDevice device)
+    {
+        try
+        {
+            await device.StopAsync();
+            await device.DisposeAsync();
+        }
+        catch (Exception)
+        {
         }
     }
 }

@@ -6,14 +6,14 @@
              x:CompileBindings="True"
              x:DataType="vm:ProfileViewModel">
   <StackPanel Spacing="14">
+    <!-- Header: section title + count pill + new-profile button. -->
     <Grid ColumnDefinitions="Auto,Auto,*,Auto">
       <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ProfileSection}" VerticalAlignment="Center" />
       <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
               Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
         <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
       </Border>
-      <!-- «+ Профиль» disabled when the catalogue is empty. -->
-      <Button Grid.Column="3" Classes="softbtn" Command="{Binding CreateProfileCommand}">
+      <Button Grid.Column="3" Classes="accent" Width="180" Command="{Binding CreateProfileCommand}">
         <StackPanel Orientation="Horizontal" Spacing="4">
           <TextBlock Text="+" />
           <TextBlock Text="{l:Tr Main_ProfileAddButton}" />
@@ -27,10 +27,10 @@
                Margin="0,24,0,8" MaxWidth="360"
                Text="{l:Tr Main_ProfileNeedsConfigHint}" />
 
+    <!-- Profile catalogue combo: «- не выбрано -» then saved profiles. -->
     <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
       <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
       <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                IsEnabled="{Binding !IsEditing}"
                 ItemsSource="{Binding ProfileOptions}"
                 SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
         <ComboBox.ItemTemplate>
@@ -43,87 +43,104 @@
                  Text="{l:Tr Main_NoProfilesYetHint}" />
     </StackPanel>
 
-    <!-- Open profile's editor: rename + config picker + routing picker + delete. -->
-    <StackPanel IsVisible="{Binding IsProfileDetail}" Spacing="16">
+    <!-- Open profile's editor. Name autosaves on blur; config / routing picks autosave at once. -->
+    <StackPanel IsVisible="{Binding IsProfileDetail}" Spacing="14" LostFocus="OnProfileFieldBlur">
 
-      <!-- Rename: committed with the header Save (#143). -->
-      <StackPanel Spacing="6">
-        <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
-        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                   Text="{l:Tr Main_ProfileRenameHint}" />
-        <TextBox Classes="field" Classes.invalid="{Binding ProfileNameMissing}"
-                 Text="{Binding ProfileRename, Mode=TwoWay}" />
-        <TextBlock Classes="fieldwarn" IsVisible="{Binding ProfileNameMissing}"
-                   Text="{l:Tr Main_RequiredEmptyWarning}" />
-        <TextBlock Text="{Binding ProfileRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
-                   IsVisible="{Binding ProfileRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-      </StackPanel>
+      <!-- Settings card: name + config picker + routing picker. Committed with the header Save (#143). -->
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent">
+        <StackPanel Spacing="14">
+          <TextBlock Text="{l:Tr Main_ProfileSettingsTitle}" FontWeight="SemiBold" FontSize="15" />
 
-      <!-- Config + routing pickers for the open profile. -->
-      <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:ProfileItemViewModel" Spacing="16">
-
-        <!-- Config picker: «- не выбрано -» then saved configs. -->
-        <StackPanel Spacing="6">
-          <TextBlock Classes="label" Text="{l:Tr Main_ConfigLabel}" />
-          <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                    ItemsSource="{Binding ConfigOptions}"
-                    SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:ConfigChoice">
-                <TextBlock Text="{Binding Name}" />
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
-          <TextBlock IsVisible="{Binding !HasConfig}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     Text="{l:Tr Main_ProfileNoConfigHint}" />
-        </StackPanel>
-
-        <!-- Routing picker: None means «Полный туннель». -->
-        <StackPanel Spacing="6">
-          <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
-          <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                    ItemsSource="{Binding RoutingListOptions}"
-                    SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:RoutingListChoice">
-                <!-- Relabel the "none" sentinel as «Полный туннель». -->
-                <Panel>
-                  <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
-                  <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
-                </Panel>
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
-        </StackPanel>
-
-        <!-- Agent rejection from the header Save (config/routing commit), so it is not silently lost (#143).
-             Hidden while empty so it does not add a blank gap before the next section (#3). -->
-        <TextBlock Text="{Binding EditStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
-                   IsVisible="{Binding EditStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-      </StackPanel>
-
-      <!-- Delete: trigger + inline error; when allowed, the trigger is replaced in place by the inline
-           Confirm/Cancel pair (#4). -->
-      <StackPanel Spacing="6">
-        <TextBlock Classes="label" Text="{l:Tr Main_DeletionLabel}" />
-        <StackPanel Orientation="Horizontal" Spacing="12">
-          <!-- Delete trigger; when armed, the inline Confirm/Cancel pair replaces it in place (#4). -->
-          <Button Classes="danger" HorizontalAlignment="Left" VerticalAlignment="Top"
-                  IsVisible="{Binding !ProfileDeletePending}" IsEnabled="{Binding !IsEditing}"
-                  Command="{Binding RequestDeleteOpenProfileCommand}" Content="{l:Tr Main_DeleteProfileButton}" />
-          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ProfileDeletePending}">
-            <Button Classes="danger" Content="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Top"
-                    Command="{Binding ConfirmDeleteOpenProfileCommand}" />
-            <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Top"
-                    Command="{Binding CancelDeleteProfileCommand}" />
+          <!-- Rename. -->
+          <StackPanel Spacing="4">
+            <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
+            <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                       Text="{l:Tr Main_ProfileRenameHint}" />
+            <TextBox Classes="field" Classes.invalid="{Binding ProfileNameMissing}"
+                     Text="{Binding ProfileRename, Mode=TwoWay}" />
+            <TextBlock Classes="fieldwarn" IsVisible="{Binding ProfileNameMissing}"
+                       Text="{l:Tr Main_RequiredEmptyWarning}" />
+            <TextBlock Text="{Binding ProfileRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                       IsVisible="{Binding ProfileRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
-          <TextBlock Text="{Binding ProfileDeleteStatus}" Classes="fieldwarn" FontSize="12"
-                     VerticalAlignment="Center" TextWrapping="Wrap"
+
+          <!-- Config + routing pickers for the open profile. -->
+          <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:ProfileItemViewModel" Spacing="14">
+
+            <!-- Config picker: «- не выбрано -» then saved configs. -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="{l:Tr Main_ConfigLabel}" />
+              <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                        ItemsSource="{Binding ConfigOptions}"
+                        SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ConfigChoice">
+                    <TextBlock Text="{Binding Name}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock IsVisible="{Binding !HasConfig}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                         Text="{l:Tr Main_ProfileNoConfigHint}" />
+            </StackPanel>
+
+            <!-- Routing picker: None means «Полный туннель». -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
+              <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                        ItemsSource="{Binding RoutingListOptions}"
+                        SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RoutingListChoice">
+                    <!-- Relabel the "none" sentinel as «Полный туннель». -->
+                    <Panel>
+                      <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
+                      <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
+                    </Panel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+
+            <!-- Agent rejection from the header Save (config/routing commit), so it is not silently lost (#143). -->
+            <TextBlock Text="{Binding EditStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                       IsVisible="{Binding EditStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
+           the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
+      <Border Background="Transparent"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0">
+              <TextBlock Text="{l:Tr Main_DeleteProfileTitle}" FontWeight="SemiBold" FontSize="13.5" />
+              <TextBlock Text="{l:Tr Main_DeleteProfilePrompt}" FontSize="12" TextWrapping="Wrap" />
+              <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteProfileHint}" />
+            </StackPanel>
+            <Grid Grid.Column="1" Width="180" VerticalAlignment="Center"
+                  ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_DeleteProfileButton}"
+                      IsVisible="{Binding !ProfileDeletePending}"
+                      Command="{Binding RequestDeleteOpenProfileCommand}" />
+              <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_ConfirmDeleteButton}"
+                      IsVisible="{Binding ProfileDeletePending}"
+                      Command="{Binding ConfirmDeleteOpenProfileCommand}" />
+              <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_CancelButton}"
+                      IsVisible="{Binding ProfileDeletePending}"
+                      Command="{Binding CancelDeleteProfileCommand}" />
+            </Grid>
+          </Grid>
+          <TextBlock Text="{Binding ProfileDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding ProfileDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
-        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                   Text="{l:Tr Main_DeleteProfileHint}" />
-      </StackPanel>
+      </Border>
     </StackPanel>
   </StackPanel>
 </UserControl>

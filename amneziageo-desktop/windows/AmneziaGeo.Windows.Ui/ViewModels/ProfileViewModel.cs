@@ -10,8 +10,8 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// <summary>
 /// Profile screen: the profile catalogue (profile = config × routing), the open-profile editor (rename /
 /// config picker / routing picker / delete), and profile creation. The connection card's active-profile
-/// selection, the atomic edit-lock (<see cref="MainWindowViewModel.IsEditing"/>), the config catalogue, and
-/// the shared-namespace name check live on the shell, reached through <c>_host</c>.
+/// selection, the config catalogue, and the shared-namespace name check live on the shell, reached through
+/// <c>_host</c>.
 /// </summary>
 internal sealed partial class ProfileViewModel : ViewModelBase
 {
@@ -20,11 +20,6 @@ internal sealed partial class ProfileViewModel : ViewModelBase
 
     private string? _pendingOpenProfile;
     private bool _suppressOpenChoice;
-
-    // Host-owned edit scope for the inline rename field (#143), registered by RefreshEditScopes while the
-    // profile section is active. _baseProfileRename is the rename baseline.
-    private readonly DelegateEditScope _profileRenameScope;
-    private string _baseProfileRename = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
@@ -53,12 +48,6 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     {
         _host = host;
         _connection = connection;
-        _profileRenameScope = new DelegateEditScope(
-            () => !string.Equals(ProfileRename ?? string.Empty, _baseProfileRename, StringComparison.Ordinal),
-            () => _baseProfileRename = ProfileRename ?? string.Empty,
-            () => ProfileRename = _baseProfileRename,
-            CommitProfileRenameAsync,
-            CanCommitProfileRename);
     }
 
     /// <summary>
@@ -68,19 +57,9 @@ internal sealed partial class ProfileViewModel : ViewModelBase
 
     public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None];
 
-    /// <summary>
-    /// The rename scope, registered into the shared edit controller while a profile is open.
-    /// </summary>
-    public IEditScope RenameScope => _profileRenameScope;
-
     public bool IsProfileDetail => OpenProfile is not null;
 
     public bool ProfileNameMissing => string.IsNullOrWhiteSpace(ProfileRename);
-
-    /// <summary>
-    /// The shared atomic edit-lock, surfaced for this screen's controls.
-    /// </summary>
-    public bool IsEditing => _host.IsEditing;
 
     /// <summary>
     /// Whether the config catalogue is non-empty, surfaced for this screen's hints and the add button.
@@ -88,13 +67,6 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     public bool HasConfigs => _host.HasConfigs;
 
     public bool ShowNoProfilesYetHint => _host.ShowNoProfilesYetHint;
-
-    // Re-raise IsEditing (and the create gate) when the shared edit-lock flips (the shell owns EditController).
-    public void NotifyIsEditingChanged()
-    {
-        OnPropertyChanged(nameof(IsEditing));
-        CreateProfileCommand.NotifyCanExecuteChanged();
-    }
 
     // Re-raise the host-derived flags after the shell recomputes them on a snapshot.
     public void NotifyHostFlagsChanged()
@@ -205,8 +177,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
                 ResetProfileOptionLabel(oldValue.Name);
             }
 
-            // Set the rename baseline before the field so seeding it does not read as a dirty edit (#143).
-            _baseProfileRename = newValue?.Name ?? string.Empty;
+            // Seed the rename field from the persisted name; it autosaves on blur.
             ProfileRename = newValue?.Name ?? string.Empty;
             ProfileRenameStatus = string.Empty;
             // Reflect the profile's routing list into the Routing section too (mirrors OpenConfig above), so
@@ -216,21 +187,21 @@ internal sealed partial class ProfileViewModel : ViewModelBase
             _host.Routing.OpenForProfile(newValue);
         }
 
+        // Only the open profile autosaves its config / routing picks; the other catalogue rows stay passive.
         if (oldValue is not null)
         {
             oldValue.PropertyChanged -= OnOpenProfilePropertyChanged;
+            oldValue.AutoSave = false;
         }
 
         if (newValue is not null)
         {
             newValue.PropertyChanged += OnOpenProfilePropertyChanged;
+            newValue.AutoSave = true;
         }
 
         // Mirror the open profile into the Profile-section combo so it shows «— не выбрано —» / the name.
         SyncOpenProfileChoice();
-
-        // Re-point the edit model at the newly-open profile (its config/routing selections + the rename field).
-        _host.RefreshEditScopes();
     }
 
     private void OnOpenProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -253,12 +224,28 @@ internal sealed partial class ProfileViewModel : ViewModelBase
             : null;
     }
 
-    // The rename field changed: re-evaluate the profile item's dirtiness (no auto-save - the header Save commits).
-    // Any edit clears a stale validation line (#3).
+    // The rename field changed: clear a stale validation line (#3). It autosaves on blur, not per keystroke.
     partial void OnProfileRenameChanged(string value)
     {
         ProfileRenameStatus = string.Empty;
-        _profileRenameScope.RaiseDirtyChanged();
+    }
+
+    // Autosave the open profile's rename when focus leaves the name field. An empty or unchanged name is skipped
+    // (the empty-name border already flags it); the agent rejects a taken name and its reason is surfaced.
+    public async void AutoSaveOnBlur()
+    {
+        if (OpenProfile is null)
+        {
+            return;
+        }
+
+        var next = (ProfileRename ?? string.Empty).Trim();
+        if (next.Length == 0 || string.Equals(next, OpenProfile.Name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await CommitProfileRenameAsync();
     }
 
     private void SyncOpenProfileChoice()
@@ -352,10 +339,9 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     }
 
     // "+ Профиль": create a profile pre-assigned a configuration (#113), then auto-open it so it can be tuned.
-    // Disabled while the catalogue is empty (a profile needs a config to dial) and while another item is being
-    // edited (#143), so creating a new profile cannot abandon an unsaved edit. There is always a config to
+    // Disabled while the catalogue is empty (a profile needs a config to dial). There is always a config to
     // assign here: prefer the current working profile's config, else the first in the catalogue.
-    private bool CanCreateProfile => _host.HasConfigs && !_host.IsEditing;
+    private bool CanCreateProfile => _host.HasConfigs;
 
     [RelayCommand(CanExecute = nameof(CanCreateProfile))]
     private async Task CreateProfile()
@@ -451,33 +437,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         OpenProfile = NextProfileAfter(profile);
     }
 
-    // Local pre-commit check for the profile rename (#143): reject an empty or already-taken name before any
-    // scope is persisted (the rename commits after the config/routing scope, so a taken name would otherwise
-    // land after those already persisted). The agent still allows renaming a RUNNING profile, so no such guard.
-    private bool CanCommitProfileRename()
-    {
-        if (OpenProfile is null)
-        {
-            return true;
-        }
-
-        var next = (ProfileRename ?? string.Empty).Trim();
-        if (next.Length == 0)
-        {
-            ProfileRenameStatus = Loc.Instance.Get("Main_RequiredEmptyWarning");
-            return false;
-        }
-
-        if (!string.Equals(next, OpenProfile.Name, StringComparison.Ordinal) && _host.IsNameTaken(next))
-        {
-            ProfileRenameStatus = Loc.Instance.Get("Agent_NameTaken", next);
-            return false;
-        }
-
-        return true;
-    }
-
-    // Commit the open profile's rename through the agent (#143 header Save). On OK the live instance adopts the
+    // Commit the open profile's rename through the agent. On OK the live instance adopts the
     // new name so the next snapshot reconciles it in place (Apply matches by name) instead of dropping the row.
     // An empty name is rejected (the item stays dirty); a refused rename shows why and reverts the combo label
     // to the persisted name.

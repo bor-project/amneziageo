@@ -2,7 +2,6 @@ using System.Net;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
-using AmneziaGeo.Windows.Engine;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -20,7 +19,7 @@ internal sealed class Cli(
     UapiClient uapi,
     NetworkReconciler reconciler,
     TunnelRunner tunnelRunner,
-    BalancerRunner balancerRunner,
+    ProfileRunner profileRunner,
     BackupService backupService,
     GeoConfigurator geoConfigurator,
     LogLevelController logLevel)
@@ -115,16 +114,16 @@ internal sealed class Cli(
                 return await ConfigEditAsync(name, path);
             case ["config-remove", var name]:
                 return await ConfigRemoveAsync(name);
-            case ["balancer-add", var name]:
-                return await BalancerAddAsync(name, string.Empty);
-            case ["balancer-add", var name, var config]:
-                return await BalancerAddAsync(name, config);
-            case ["balancer-list"]:
-                return await BalancerListAsync();
-            case ["balancer-show", var name]:
-                return await BalancerShowAsync(name);
-            case ["balancer-remove", var name]:
-                return await BalancerRemoveAsync(name);
+            case ["profile-add", var name]:
+                return await ProfileAddAsync(name, string.Empty);
+            case ["profile-add", var name, var config]:
+                return await ProfileAddAsync(name, config);
+            case ["profile-list"]:
+                return await ProfileListAsync();
+            case ["profile-show", var name]:
+                return await ProfileShowAsync(name);
+            case ["profile-remove", var name]:
+                return await ProfileRemoveAsync(name);
             case ["routing-list-add", var listName, .. var listRules]:
                 return await RoutingListAddAsync(listName, listRules);
             case ["assign-routing", var profile, var list, var toggle]:
@@ -137,18 +136,18 @@ internal sealed class Cli(
                 return await IpcCmdAsync(IpcContract.OpSetConnection, ["connect"]);
             case ["disconnect"]:
                 return await IpcCmdAsync(IpcContract.OpSetConnection, ["disconnect"]);
-            case ["balancer-run", var name]:
-                return await BalancerRunAsync(name);
+            case ["profile-run", var name]:
+                return await ProfileRunAsync(name);
             case ["ipc-probe"]:
                 return await IpcProbeAsync();
             case ["ipc-ui-probe", var seconds]:
                 return await IpcUiProbeAsync(seconds);
             case ["ipc-cmd", var op, .. var cmdArgs]:
                 return await IpcCmdAsync(op, cmdArgs);
-            case ["balancer-state"]:
-                return await BalancerStateAsync(null);
-            case ["balancer-state", var name]:
-                return await BalancerStateAsync(name);
+            case ["profile-state"]:
+                return await ProfileStateAsync(null);
+            case ["profile-state", var name]:
+                return await ProfileStateAsync(name);
             case ["backup", var path]:
                 return await backupService.BackupAsync(path);
             case ["restore", var path]:
@@ -156,7 +155,8 @@ internal sealed class Cli(
             case ["restore", var path, "--force"]:
                 return await backupService.RestoreAsync(path, true);
             default:
-                await RunDemoAsync();
+                Console.WriteLine("AmneziaGeo Windows host");
+                Console.WriteLine($"State DB: {TunnelPaths.StateDbFile()}");
                 return 0;
         }
     }
@@ -421,7 +421,7 @@ internal sealed class Cli(
         return 0;
     }
 
-    private async Task<int> BalancerAddAsync(string name, string config)
+    private async Task<int> ProfileAddAsync(string name, string config)
     {
         if (!string.IsNullOrEmpty(config) && !await configRepo.ExistsAsync(config))
         {
@@ -429,35 +429,35 @@ internal sealed class Cli(
             return 1;
         }
 
-        await store.SaveBalancerAsync(new BalancerGroup(name, config));
+        await store.SaveProfileAsync(new Profile(name, config));
         Console.WriteLine($"saved profile {name}: config={(config.Length > 0 ? config : "(none)")}");
         return 0;
     }
 
-    private async Task<int> BalancerListAsync()
+    private async Task<int> ProfileListAsync()
     {
-        foreach (var name in await store.ListBalancerNamesAsync())
+        foreach (var name in await store.ListProfileNamesAsync())
         {
-            var balancer = await store.GetBalancerAsync(name);
-            if (balancer is not null)
+            var profile = await store.GetProfileAsync(name);
+            if (profile is not null)
             {
-                Console.WriteLine($"{name}\t{(balancer.Config.Length > 0 ? balancer.Config : "(none)")}");
+                Console.WriteLine($"{name}\t{(profile.Config.Length > 0 ? profile.Config : "(none)")}");
             }
         }
 
         return 0;
     }
 
-    private async Task<int> BalancerShowAsync(string name)
+    private async Task<int> ProfileShowAsync(string name)
     {
-        var balancer = await store.GetBalancerAsync(name);
-        if (balancer is null)
+        var profile = await store.GetProfileAsync(name);
+        if (profile is null)
         {
-            Console.WriteLine($"unknown balancer: {name}");
+            Console.WriteLine($"unknown profile: {name}");
             return 1;
         }
 
-        var config = balancer.Config;
+        var config = profile.Config;
         if (config.Length == 0)
         {
             Console.WriteLine($"profile {name} (no configuration)");
@@ -469,19 +469,19 @@ internal sealed class Cli(
         return 0;
     }
 
-    private async Task<int> BalancerRemoveAsync(string name)
+    private async Task<int> ProfileRemoveAsync(string name)
     {
-        await store.RemoveBalancerAsync(name);
-        Console.WriteLine($"removed balancer {name}");
+        await store.RemoveProfileAsync(name);
+        Console.WriteLine($"removed profile {name}");
         return 0;
     }
 
-    private async Task<int> BalancerRunAsync(string name)
+    private async Task<int> ProfileRunAsync(string name)
     {
-        var balancer = await store.GetBalancerAsync(name);
-        if (balancer is null)
+        var profile = await store.GetProfileAsync(name);
+        if (profile is null)
         {
-            Console.WriteLine($"unknown balancer: {name}");
+            Console.WriteLine($"unknown profile: {name}");
             return 1;
         }
 
@@ -492,17 +492,17 @@ internal sealed class Cli(
                 e.Cancel = true;
                 cts.Cancel();
             };
-            await balancerRunner.RunAsync(balancer, cts.Token);
+            await profileRunner.RunAsync(profile, cts.Token);
         }
 
         return 0;
     }
 
-    private async Task<int> BalancerStateAsync(string? name)
+    private async Task<int> ProfileStateAsync(string? name)
     {
         if (name is null)
         {
-            foreach (var state in await store.ListBalancerStatesAsync())
+            foreach (var state in await store.ListProfileStatesAsync())
             {
                 PrintState(state);
             }
@@ -510,7 +510,7 @@ internal sealed class Cli(
             return 0;
         }
 
-        var single = await store.GetBalancerStateAsync(name);
+        var single = await store.GetProfileStateAsync(name);
         if (single is null)
         {
             Console.WriteLine($"no live state for {name}");
@@ -557,10 +557,10 @@ internal sealed class Cli(
                 Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\t{config.Status}");
             }
 
-            foreach (var balancer in snapshot.Balancers)
+            foreach (var profile in snapshot.Profiles)
             {
-                var routing = balancer.UseRouting ? balancer.RoutingListId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "on" : "off";
-                Console.WriteLine($"profile\t{balancer.Name}\t{balancer.Status}\tconfig={(balancer.Config.Length > 0 ? balancer.Config : "(none)")}\trouting={routing}");
+                var routing = profile.UseRouting ? profile.RoutingListId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "on" : "off";
+                Console.WriteLine($"profile\t{profile.Name}\t{profile.Status}\tconfig={(profile.Config.Length > 0 ? profile.Config : "(none)")}\trouting={routing}");
             }
 
             foreach (var list in snapshot.RoutingLists ?? [])
@@ -654,7 +654,7 @@ internal sealed class Cli(
 
     private async Task<int> AssignRoutingAsync(string profile, string list, string toggle)
     {
-        if (await store.GetBalancerAsync(profile) is null)
+        if (await store.GetProfileAsync(profile) is null)
         {
             Console.WriteLine($"unknown profile: {profile}");
             return 1;
@@ -716,26 +716,6 @@ internal sealed class Cli(
         }
     }
 
-    private async Task RunDemoAsync()
-    {
-        var (publicKey, privateKey) = WireGuardEngine.GenerateKeypair();
-
-        var profile = new TunnelProfile(
-            Name: "default",
-            PrivateKey: privateKey,
-            PublicKey: publicKey,
-            Endpoint: string.Empty,
-            Rules: [new GeoRule(GeoRuleKind.GeoSite, "geosite:openai")]);
-
-        await store.SaveProfileAsync(profile);
-        var profiles = await store.ListProfileNamesAsync();
-
-        Console.WriteLine("AmneziaGeo Windows host - hello");
-        Console.WriteLine($"State DB: {TunnelPaths.StateDbFile()}");
-        Console.WriteLine($"Profiles: {string.Join(", ", profiles)}");
-        Console.WriteLine($"Generated public key: {publicKey}");
-    }
-
     private static string EndpointLabel(string config)
     {
         foreach (var line in config.Split('\n'))
@@ -770,8 +750,8 @@ internal sealed class Cli(
         return kind is null ? null : new GeoRule(kind.Value, value);
     }
 
-    private static void PrintState(BalancerState state)
+    private static void PrintState(ProfileState state)
     {
-        Console.WriteLine($"{state.Group}\t{state.Status}\t{state.ActiveMember ?? "(none)"}\t{state.UpdatedAt:u}");
+        Console.WriteLine($"{state.Name}\t{state.Status}\t{state.UpdatedAt:u}");
     }
 }

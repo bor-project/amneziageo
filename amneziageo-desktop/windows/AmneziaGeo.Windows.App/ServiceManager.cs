@@ -149,7 +149,7 @@ internal sealed class ServiceManager
     }
 
     /// <summary>
-    /// Installs the always-on agent service bound to a balancer or single-config target.
+    /// Installs the always-on agent service bound to a profile or single-config target.
     /// </summary>
     public int InstallAgent(string target)
     {

@@ -86,7 +86,7 @@ internal static class AppHost
         services.AddSingleton<UpdateChecker>();
         services.AddSingleton<UpdateState>();
         services.AddSingleton<TunnelRunner>();
-        services.AddSingleton<BalancerRunner>();
+        services.AddSingleton<ProfileRunner>();
         services.AddSingleton<BackupService>();
         services.AddSingleton<DiagnosticsCollector>();
         services.AddSingleton<AgentStatusBroker>();

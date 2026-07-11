@@ -178,20 +178,20 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
         await store.RemoveDomainResolutionsAsync(oldName, ct);
 
-        foreach (var profileName in await store.ListBalancerNamesAsync(ct))
+        foreach (var profileName in await store.ListProfileNamesAsync(ct))
         {
-            var profile = await store.GetBalancerAsync(profileName, ct);
+            var profile = await store.GetProfileAsync(profileName, ct);
             if (profile is null || !string.Equals(profile.Config, oldName, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            await store.SaveBalancerAsync(profile with { Config = newName }, ct);
+            await store.SaveProfileAsync(profile with { Config = newName }, ct);
         }
     }
 
     /// <summary>
-    /// Deletes a configuration, its service, geo settings, resolutions, and balancer memberships.
+    /// Deletes a configuration, its service, geo settings, resolutions, and profile bindings.
     /// </summary>
     public async Task RemoveAsync(string name, CancellationToken ct = default)
     {
@@ -210,15 +210,15 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
         RemoveLegacyConfigFile(name);
 
-        foreach (var profileName in await store.ListBalancerNamesAsync(ct))
+        foreach (var profileName in await store.ListProfileNamesAsync(ct))
         {
-            var profile = await store.GetBalancerAsync(profileName, ct);
+            var profile = await store.GetProfileAsync(profileName, ct);
             if (profile is null || !string.Equals(profile.Config, name, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            await store.SaveBalancerAsync(profile with { Config = string.Empty }, ct);
+            await store.SaveProfileAsync(profile with { Config = string.Empty }, ct);
         }
     }
 

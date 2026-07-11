@@ -16,9 +16,9 @@
       "commandName": "Project",
       "commandLineArgs": "update-sources"
     },
-    "balancer-run": {
+    "profile-run": {
       "commandName": "Project",
-      "commandLineArgs": "balancer-run test"
+      "commandLineArgs": "profile-run test"
     }
   }
 }

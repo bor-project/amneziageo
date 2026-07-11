@@ -11,42 +11,27 @@ public interface IStateStore
     Task InitializeAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the named profile, or null if absent.
-    /// </summary>
-    Task<TunnelProfile?> GetProfileAsync(string name, CancellationToken ct = default);
-
-    /// <summary>
-    /// Inserts or updates a profile.
-    /// </summary>
-    Task SaveProfileAsync(TunnelProfile profile, CancellationToken ct = default);
-
-    /// <summary>
-    /// Returns all stored profile names.
-    /// </summary>
-    Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Returns the config's own geo settings, ignoring any live balancer projection.
+    /// Returns the config's own geo settings, ignoring any live profile projection.
     /// </summary>
     Task<TunnelGeo?> GetTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the geo set the running tunnel should apply: balancer projection if present, else the config's own split.
+    /// Returns the geo set the running tunnel should apply: profile projection if present, else the config's own split.
     /// </summary>
     Task<TunnelGeo?> GetActiveTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates the config's own geo settings. Leaves any live balancer projection untouched.
+    /// Inserts or updates the config's own geo settings. Leaves any live profile projection untouched.
     /// </summary>
     Task SaveTunnelGeoAsync(TunnelGeo geo, CancellationToken ct = default);
 
     /// <summary>
-    /// Stores a balancer routing projection and marks it live. routingListId is the source list (null for full-tunnel / no-list).
+    /// Stores a profile routing projection and marks it live. routingListId is the source list (null for full-tunnel / no-list).
     /// </summary>
     Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// Drops the live balancer projection, reverting to the config's own split. No-op when no row exists.
+    /// Drops the live profile projection, reverting to the config's own split. No-op when no row exists.
     /// </summary>
     Task ClearTunnelProjectionAsync(string name, CancellationToken ct = default);
 
@@ -184,24 +169,24 @@ public interface IStateStore
     Task<DomainResolution?> GetDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates a failover balancer group.
+    /// Inserts or updates a profile.
     /// </summary>
-    Task SaveBalancerAsync(BalancerGroup balancer, CancellationToken ct = default);
+    Task SaveProfileAsync(Profile profile, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the named balancer group, or null if absent.
+    /// Returns the named profile, or null if absent.
     /// </summary>
-    Task<BalancerGroup?> GetBalancerAsync(string name, CancellationToken ct = default);
+    Task<Profile?> GetProfileAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns all stored balancer names.
+    /// Returns all stored profile names.
     /// </summary>
-    Task<IReadOnlyList<string>> ListBalancerNamesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Removes a balancer group by name.
+    /// Removes a profile by name.
     /// </summary>
-    Task RemoveBalancerAsync(string name, CancellationToken ct = default);
+    Task RemoveProfileAsync(string name, CancellationToken ct = default);
 
     /// <summary>
     /// Inserts or updates a routing list. Returns the row id.
@@ -254,11 +239,6 @@ public interface IStateStore
     Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// One-time idempotent migration: seeds each assigned routing list with traffic settings from its member config and the legacy global all-UDP flag.
-    /// </summary>
-    Task MigrateConfigSettingsToRoutingAsync(CancellationToken ct = default);
-
-    /// <summary>
     /// Returns the assigned routing list id (or null) and the use-routing flag for a profile.
     /// </summary>
     Task<(long? RoutingListId, bool UseRouting)> GetProfileRoutingAsync(string profile, CancellationToken ct = default);
@@ -294,19 +274,19 @@ public interface IStateStore
     Task SetSettingAsync(string key, string value, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates the live runtime state for a balancer group.
+    /// Inserts or updates the live runtime state for a profile.
     /// </summary>
-    Task SaveBalancerStateAsync(BalancerState state, CancellationToken ct = default);
+    Task SaveProfileStateAsync(ProfileState state, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the live runtime state for a balancer group, or null if absent.
+    /// Returns the live runtime state for a profile, or null if absent.
     /// </summary>
-    Task<BalancerState?> GetBalancerStateAsync(string group, CancellationToken ct = default);
+    Task<ProfileState?> GetProfileStateAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the live runtime state for every balancer group.
+    /// Returns the live runtime state for every profile.
     /// </summary>
-    Task<IReadOnlyList<BalancerState>> ListBalancerStatesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ProfileState>> ListProfileStatesAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Writes a consistent snapshot of the database to the given destination path.

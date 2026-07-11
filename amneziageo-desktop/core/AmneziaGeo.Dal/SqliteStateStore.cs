@@ -30,16 +30,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    CREATE TABLE IF NOT EXISTS profiles (
-                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name        TEXT NOT NULL UNIQUE,
-                        private_key TEXT NOT NULL,
-                        public_key  TEXT NOT NULL,
-                        endpoint    TEXT NOT NULL,
-                        rules_json  TEXT NOT NULL,
-                        updated_at  TEXT NOT NULL
-                    );
-
                     CREATE TABLE IF NOT EXISTS geo_files (
                         id             INTEGER PRIMARY KEY AUTOINCREMENT,
                         name           TEXT NOT NULL UNIQUE,
@@ -117,15 +107,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at TEXT NOT NULL
                     );
 
-                    CREATE TABLE IF NOT EXISTS balancers (
-                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name            TEXT NOT NULL,
-                        position        INTEGER NOT NULL,
-                        member          TEXT NOT NULL,
-                        recheck_seconds INTEGER NOT NULL,
-                        mode            TEXT NOT NULL DEFAULT 'priority',
-                        updated_at      TEXT NOT NULL,
-                        UNIQUE (name, position)
+                    CREATE TABLE IF NOT EXISTS profiles (
+                        name            TEXT PRIMARY KEY,
+                        config          TEXT NOT NULL,
+                        routing_list_id INTEGER,
+                        use_routing     INTEGER NOT NULL DEFAULT 0,
+                        updated_at      TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS settings (
@@ -135,12 +122,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at TEXT NOT NULL
                     );
 
-                    CREATE TABLE IF NOT EXISTS balancer_state (
-                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                        group_name    TEXT NOT NULL UNIQUE,
-                        status        TEXT NOT NULL,
-                        active_member TEXT,
-                        updated_at    TEXT NOT NULL
+                    CREATE TABLE IF NOT EXISTS profile_state (
+                        name       TEXT PRIMARY KEY,
+                        status     TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
                     );
 
                     CREATE TABLE IF NOT EXISTS routing_lists (
@@ -174,14 +159,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
-            await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN mode TEXT NOT NULL DEFAULT 'priority';", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN routing_list_id INTEGER;", ct).ConfigureAwait(false);
-            await TryAlterAsync(connection, "ALTER TABLE balancers ADD COLUMN use_routing INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
-
-            // Collapse to one config per profile (balancer removed): drop non-primary rows.
-            await TryAlterAsync(connection, "DELETE FROM balancers WHERE position > 0;", ct).ConfigureAwait(false);
-
-            // Projection columns hold the live balancer routing; user columns hold config intent.
+            // Projection columns hold the live profile routing; user columns hold config intent.
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN projected INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_split INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE tunnel_geo ADD COLUMN proj_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
@@ -229,102 +207,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
             }
         }
-    }
-
-    /// <inheritdoc/>
-    public async Task SaveProfileAsync(TunnelProfile profile, CancellationToken ct = default)
-    {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
-        {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-
-            var command = connection.CreateCommand();
-            await using (command.ConfigureAwait(false))
-            {
-                command.CommandText =
-                    """
-                    INSERT INTO profiles (name, private_key, public_key, endpoint, rules_json, updated_at)
-                    VALUES ($name, $priv, $pub, $endpoint, $rules, $updated)
-                    ON CONFLICT(name) DO UPDATE SET
-                        private_key = excluded.private_key,
-                        public_key  = excluded.public_key,
-                        endpoint    = excluded.endpoint,
-                        rules_json  = excluded.rules_json,
-                        updated_at  = excluded.updated_at;
-                    """;
-                command.Parameters.AddWithValue("$name", profile.Name);
-                command.Parameters.AddWithValue("$priv", profile.PrivateKey);
-                command.Parameters.AddWithValue("$pub", profile.PublicKey);
-                command.Parameters.AddWithValue("$endpoint", profile.Endpoint);
-                command.Parameters.AddWithValue("$rules", JsonSerializer.Serialize(profile.Rules));
-                command.Parameters.AddWithValue("$updated", Timestamp());
-                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    public async Task<TunnelProfile?> GetProfileAsync(string name, CancellationToken ct = default)
-    {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
-        {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-
-            var command = connection.CreateCommand();
-            await using (command.ConfigureAwait(false))
-            {
-                command.CommandText =
-                    """
-                    SELECT private_key, public_key, endpoint, rules_json
-                    FROM profiles
-                    WHERE name = $name;
-                    """;
-                command.Parameters.AddWithValue("$name", name);
-
-                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                await using (reader.ConfigureAwait(false))
-                {
-                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        return null;
-                    }
-
-                    var rules = JsonSerializer.Deserialize<List<GeoRule>>(reader.GetString(3)) ?? [];
-                    return new TunnelProfile(name, reader.GetString(0), reader.GetString(1), reader.GetString(2), rules);
-                }
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default)
-    {
-        var names = new List<string>();
-
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
-        {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-
-            var command = connection.CreateCommand();
-            await using (command.ConfigureAwait(false))
-            {
-                command.CommandText = "SELECT name FROM profiles ORDER BY name;";
-
-                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                await using (reader.ConfigureAwait(false))
-                {
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        names.Add(reader.GetString(0));
-                    }
-                }
-            }
-        }
-
-        return names;
     }
 
     /// <inheritdoc/>
@@ -424,7 +306,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    // Active balancer projection wins; otherwise the config's own split. Projections carry no rules.
+                    // Active profile projection wins; otherwise the config's own split. Projections carry no rules.
                     if (reader.GetInt32(0) != 0)
                     {
                         var projRoutes = JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [];
@@ -1063,78 +945,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task SaveBalancerAsync(BalancerGroup balancer, CancellationToken ct = default)
-    {
-        var timestamp = Timestamp();
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
-        {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-
-            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
-            await using (transaction.ConfigureAwait(false))
-            {
-                // Preserve the routing assignment across re-saves (losing use_routing drops the split).
-                long? routingListId = null;
-                var useRouting = false;
-                var read = connection.CreateCommand();
-                await using (read.ConfigureAwait(false))
-                {
-                    read.Transaction = transaction;
-                    read.CommandText =
-                        """
-                        SELECT routing_list_id, use_routing
-                        FROM balancers
-                        WHERE name = $name
-                        ORDER BY position
-                        LIMIT 1;
-                        """;
-                    read.Parameters.AddWithValue("$name", balancer.Name);
-                    var reader = await read.ExecuteReaderAsync(ct).ConfigureAwait(false);
-                    await using (reader.ConfigureAwait(false))
-                    {
-                        if (await reader.ReadAsync(ct).ConfigureAwait(false))
-                        {
-                            routingListId = reader.IsDBNull(0) ? null : reader.GetInt64(0);
-                            useRouting = reader.GetInt32(1) != 0;
-                        }
-                    }
-                }
-
-                var delete = connection.CreateCommand();
-                await using (delete.ConfigureAwait(false))
-                {
-                    delete.Transaction = transaction;
-                    delete.CommandText = "DELETE FROM balancers WHERE name = $name;";
-                    delete.Parameters.AddWithValue("$name", balancer.Name);
-                    await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
-
-                // One row per profile (member column). recheck_seconds/mode are vestigial; write fixed values.
-                var insert = connection.CreateCommand();
-                await using (insert.ConfigureAwait(false))
-                {
-                    insert.Transaction = transaction;
-                    insert.CommandText =
-                        """
-                        INSERT INTO balancers (name, position, member, recheck_seconds, mode, routing_list_id, use_routing, updated_at)
-                        VALUES ($name, 0, $member, 60, 'priority', $list, $use, $updated);
-                        """;
-                    insert.Parameters.AddWithValue("$name", balancer.Name);
-                    insert.Parameters.AddWithValue("$member", balancer.Config);
-                    insert.Parameters.AddWithValue("$list", (object?)routingListId ?? DBNull.Value);
-                    insert.Parameters.AddWithValue("$use", useRouting ? 1 : 0);
-                    insert.Parameters.AddWithValue("$updated", timestamp);
-                    await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
-
-                await transaction.CommitAsync(ct).ConfigureAwait(false);
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    public async Task<BalancerGroup?> GetBalancerAsync(string name, CancellationToken ct = default)
+    public async Task SaveProfileAsync(Profile profile, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1144,14 +955,35 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
+                // Preserve the routing assignment across re-saves; only config/updated_at move.
                 command.CommandText =
                     """
-                    SELECT member
-                    FROM balancers
-                    WHERE name = $name
-                    ORDER BY position
-                    LIMIT 1;
+                    INSERT INTO profiles (name, config, routing_list_id, use_routing, updated_at)
+                    VALUES ($name, $config, NULL, 0, $updated)
+                    ON CONFLICT(name) DO UPDATE SET
+                        config     = excluded.config,
+                        updated_at = excluded.updated_at;
                     """;
+                command.Parameters.AddWithValue("$name", profile.Name);
+                command.Parameters.AddWithValue("$config", profile.Config);
+                command.Parameters.AddWithValue("$updated", Timestamp());
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Profile?> GetProfileAsync(string name, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT config FROM profiles WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1159,7 +991,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 {
                     if (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        return new BalancerGroup(name, reader.GetString(0));
+                        return new Profile(name, reader.GetString(0));
                     }
                 }
             }
@@ -1169,7 +1001,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<string>> ListBalancerNamesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default)
     {
         var names = new List<string>();
 
@@ -1181,7 +1013,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT DISTINCT name FROM balancers ORDER BY name;";
+                command.CommandText = "SELECT name FROM profiles ORDER BY name;";
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
@@ -1198,7 +1030,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task RemoveBalancerAsync(string name, CancellationToken ct = default)
+    public async Task RemoveProfileAsync(string name, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1208,7 +1040,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "DELETE FROM balancers WHERE name = $name;";
+                command.CommandText = "DELETE FROM profiles WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -1495,7 +1327,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task SaveBalancerStateAsync(BalancerState state, CancellationToken ct = default)
+    public async Task SaveProfileStateAsync(ProfileState state, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1507,16 +1339,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO balancer_state (group_name, status, active_member, updated_at)
-                    VALUES ($group, $status, $member, $updated)
-                    ON CONFLICT(group_name) DO UPDATE SET
-                        status        = excluded.status,
-                        active_member = excluded.active_member,
-                        updated_at    = excluded.updated_at;
+                    INSERT INTO profile_state (name, status, updated_at)
+                    VALUES ($name, $status, $updated)
+                    ON CONFLICT(name) DO UPDATE SET
+                        status     = excluded.status,
+                        updated_at = excluded.updated_at;
                     """;
-                command.Parameters.AddWithValue("$group", state.Group);
+                command.Parameters.AddWithValue("$name", state.Name);
                 command.Parameters.AddWithValue("$status", state.Status);
-                command.Parameters.AddWithValue("$member", (object?)state.ActiveMember ?? DBNull.Value);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -1524,7 +1354,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task<BalancerState?> GetBalancerStateAsync(string group, CancellationToken ct = default)
+    public async Task<ProfileState?> GetProfileStateAsync(string name, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1536,11 +1366,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT status, active_member, updated_at
-                    FROM balancer_state
-                    WHERE group_name = $group;
+                    SELECT status, updated_at
+                    FROM profile_state
+                    WHERE name = $name;
                     """;
-                command.Parameters.AddWithValue("$group", group);
+                command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
@@ -1550,16 +1380,16 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return ReadBalancerState(group, reader);
+                    return ReadProfileState(name, reader);
                 }
             }
         }
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<BalancerState>> ListBalancerStatesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<ProfileState>> ListProfileStatesAsync(CancellationToken ct = default)
     {
-        var states = new List<BalancerState>();
+        var states = new List<ProfileState>();
 
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1571,9 +1401,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT group_name, status, active_member, updated_at
-                    FROM balancer_state
-                    ORDER BY group_name;
+                    SELECT name, status, updated_at
+                    FROM profile_state
+                    ORDER BY name;
                     """;
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1581,7 +1411,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 {
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        states.Add(ReadBalancerState(reader.GetString(0), reader, 1));
+                        states.Add(ReadProfileState(reader.GetString(0), reader, 1));
                     }
                 }
             }
@@ -1813,7 +1643,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 await using (clearAssignments.ConfigureAwait(false))
                 {
                     clearAssignments.Transaction = transaction;
-                    clearAssignments.CommandText = "UPDATE balancers SET routing_list_id = NULL, use_routing = 0 WHERE routing_list_id = $id;";
+                    clearAssignments.CommandText = "UPDATE profiles SET routing_list_id = NULL, use_routing = 0 WHERE routing_list_id = $id;";
                     clearAssignments.Parameters.AddWithValue("$id", id);
                     await clearAssignments.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 }
@@ -1911,7 +1741,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT DISTINCT routing_list_id FROM balancers WHERE routing_list_id IS NOT NULL;";
+                command.CommandText = "SELECT DISTINCT routing_list_id FROM profiles WHERE routing_list_id IS NOT NULL;";
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
                 {
@@ -2008,56 +1838,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task MigrateConfigSettingsToRoutingAsync(CancellationToken ct = default)
-    {
-        var connection = new SqliteConnection(_connectionString);
-        await using (connection.ConfigureAwait(false))
-        {
-            await connection.OpenAsync(ct).ConfigureAwait(false);
-
-            // Legacy global all-UDP flag. Default off.
-            var globalAllUdp = 0;
-            var readUdp = connection.CreateCommand();
-            await using (readUdp.ConfigureAwait(false))
-            {
-                readUdp.CommandText = "SELECT value FROM settings WHERE key = 'tunnel-all-udp';";
-                if (await readUdp.ExecuteScalarAsync(ct).ConfigureAwait(false) is string v
-                    && (v.Equals("true", StringComparison.OrdinalIgnoreCase) || v == "1"
-                        || v.Equals("on", StringComparison.OrdinalIgnoreCase) || v.Equals("yes", StringComparison.OrdinalIgnoreCase)))
-                {
-                    globalAllUdp = 1;
-                }
-            }
-
-            // Seed settings from member config + global all-UDP, only for lists with no row yet.
-            var migrate = connection.CreateCommand();
-            await using (migrate.ConfigureAwait(false))
-            {
-                migrate.CommandText =
-                    """
-                    INSERT INTO routing_settings (list_id, local_dns, exclusions, all_udp, mode, updated_at)
-                    SELECT b.routing_list_id,
-                           COALESCE(d.servers, ''),
-                           COALESCE(x.exclusions, ''),
-                           $udp,
-                           'split',
-                           $now
-                    FROM (SELECT routing_list_id, member FROM balancers
-                          WHERE routing_list_id IS NOT NULL
-                          GROUP BY routing_list_id) b
-                    LEFT JOIN config_dns d ON d.name = b.member
-                    LEFT JOIN config_exclusions x ON x.name = b.member
-                    WHERE NOT EXISTS (SELECT 1 FROM routing_settings rs WHERE rs.list_id = b.routing_list_id)
-                      AND (COALESCE(d.servers, '') <> '' OR COALESCE(x.exclusions, '') <> '' OR $udp = 1);
-                    """;
-                migrate.Parameters.AddWithValue("$udp", globalAllUdp);
-                migrate.Parameters.AddWithValue("$now", Timestamp());
-                await migrate.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-        }
-    }
-
-    /// <inheritdoc/>
     public async Task<(long? RoutingListId, bool UseRouting)> GetProfileRoutingAsync(string profile, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -2071,10 +1851,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     SELECT routing_list_id, use_routing
-                    FROM balancers
-                    WHERE name = $name
-                    ORDER BY position
-                    LIMIT 1;
+                    FROM profiles
+                    WHERE name = $name;
                     """;
                 command.Parameters.AddWithValue("$name", profile);
 
@@ -2107,7 +1885,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    UPDATE balancers
+                    UPDATE profiles
                     SET routing_list_id = $list, use_routing = $use, updated_at = $updated
                     WHERE name = $name;
                     """;
@@ -2215,10 +1993,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             reader.GetString(offset + 5));
     }
 
-    private static BalancerState ReadBalancerState(string group, SqliteDataReader reader, int offset = 0)
+    private static ProfileState ReadProfileState(string name, SqliteDataReader reader, int offset = 0)
     {
-        var member = reader.IsDBNull(offset + 1) ? null : reader.GetString(offset + 1);
-        var updatedAt = DateTimeOffset.Parse(reader.GetString(offset + 2), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        return new BalancerState(group, reader.GetString(offset), member, updatedAt);
+        var updatedAt = DateTimeOffset.Parse(reader.GetString(offset + 1), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+        return new ProfileState(name, reader.GetString(offset), updatedAt);
     }
 }

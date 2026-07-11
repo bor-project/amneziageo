@@ -105,11 +105,11 @@ internal static class DesignData
             configChoices, routingChoices, RoutingListChoice.None);
         var homeProfile = NewProfile("Дом (RU)", "nl-amsterdam", ConnectionStatus.Disconnected,
             configChoices, routingChoices, new RoutingListChoice(mediaList.Id, mediaList.Name));
-        vm.Balancers.Add(workProfile);
-        vm.Balancers.Add(homeProfile);
+        vm.Profiles.Add(workProfile);
+        vm.Profiles.Add(homeProfile);
         vm.ProfileOptions.Add(new ProfileChoice(workProfile.Name));
         vm.ProfileOptions.Add(new ProfileChoice(homeProfile.Name));
-        vm.HasBalancers = true;
+        vm.HasProfiles = true;
 
         // --- Geo sources ---
         vm.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp)
@@ -167,7 +167,7 @@ internal static class DesignData
         return vm;
     }
 
-    private static BalancerItemViewModel NewProfile(
+    private static ProfileItemViewModel NewProfile(
         string name,
         string config,
         string status,
@@ -175,7 +175,7 @@ internal static class DesignData
         RoutingListChoice[] routingChoices,
         RoutingListChoice routing)
     {
-        var profile = new BalancerItemViewModel(NoProfileSave, NoAssignRouting, NoSelectProfile, NoSetConnection, NoRemoveConfig)
+        var profile = new ProfileItemViewModel(NoProfileSave, NoAssignRouting, NoSelectProfile, NoSetConnection, NoRemoveConfig)
         {
             Name = name,
             Config = config,

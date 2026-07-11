@@ -640,13 +640,13 @@
   <data name="Scan_Title" xml:space="preserve">
     <value>Сканировать QR с камеры</value>
   </data>
-  <data name="Balancer_ConnectAction" xml:space="preserve">
+  <data name="Profile_ConnectAction" xml:space="preserve">
     <value>Подключить</value>
   </data>
-  <data name="Balancer_NoConfig" xml:space="preserve">
+  <data name="Profile_NoConfig" xml:space="preserve">
     <value>нет конфигурации</value>
   </data>
-  <data name="Balancer_SwitchAction" xml:space="preserve">
+  <data name="Profile_SwitchAction" xml:space="preserve">
     <value>Переключить</value>
   </data>
   <data name="BundleExportCode_CopiedToClipboard" xml:space="preserve">

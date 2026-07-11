@@ -39,7 +39,7 @@ public static class IpcContract
     /// Command to save a profile: args are name and its single configuration name
     /// (an empty configuration name leaves the profile without a configuration).
     /// </summary>
-    public const string OpAddBalancer = "add-balancer";
+    public const string OpAddProfile = "add-profile";
 
     /// <summary>
     /// Command to set a config's geo split-tunnel settings: args are name, on/off, then rule tokens.
@@ -131,7 +131,7 @@ public static class IpcContract
     public const string OpSetSetting = "set-setting";
 
     /// <summary>
-    /// Command to choose the active profile (balancer or single config) the agent binds to. Args: name.
+    /// Command to choose the active profile (or single config) the agent binds to. Args: name.
     /// If connected, the agent switches to it; otherwise it becomes the target the next connect uses.
     /// </summary>
     public const string OpSelectProfile = "set-profile";
@@ -188,18 +188,18 @@ public static class IpcContract
 
     /// <summary>
     /// Command to delete a stored config by name, with its service, geo settings, resolutions, and
-    /// balancer memberships. Args: name. Refused if the config is a member of the running profile.
+    /// profile bindings. Args: name. Refused if the config is bound to the running profile.
     /// </summary>
     public const string OpRemoveConfig = "remove-config";
 
     /// <summary>
-    /// Command to delete a profile (balancer) by name. Args: name. Refused if it is the running profile.
+    /// Command to delete a profile by name. Args: name. Refused if it is the running profile.
     /// </summary>
-    public const string OpRemoveBalancer = "remove-balancer";
+    public const string OpRemoveProfile = "remove-profile";
 
     /// <summary>
     /// Command to rename a config. Args: current name, new name. Carries the config's geo, transport,
-    /// resolutions, and balancer memberships across. Refused if in use by the running tunnel.
+    /// resolutions, and profile bindings across. Refused if in use by the running tunnel.
     /// </summary>
     public const string OpRenameConfig = "rename-config";
 
@@ -210,7 +210,7 @@ public static class IpcContract
     public const string OpCopyConfig = "copy-config";
 
     /// <summary>
-    /// Command to rename a profile (balancer). Args: current name, new name. Carries the profile's
+    /// Command to rename a profile. Args: current name, new name. Carries the profile's
     /// routing assignment and selection/binding across. Refused if it is the running profile.
     /// </summary>
     public const string OpRenameProfile = "rename-profile";

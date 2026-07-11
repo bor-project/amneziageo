@@ -6,7 +6,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Runs the profile config and re-runs on each change.
 /// </summary>
-internal sealed class BalancerRunner(
+internal sealed class ProfileRunner(
     ServiceManager serviceManager,
     UapiClient uapi,
     ConfigRepository configRepo,
@@ -14,14 +14,14 @@ internal sealed class BalancerRunner(
     SettingsStore settingsStore,
     IStateStore store,
     AgentControl control,
-    ILogger<BalancerRunner> logger)
+    ILogger<ProfileRunner> logger)
 {
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
     // No-handshake/no-rx window: data-driven unreachable signal.
     private static readonly TimeSpan _noResponseWindow = TimeSpan.FromSeconds(12);
 
-    private BalancerGroup _group = null!;
+    private Profile _group = null!;
     private AppSettings _settings = new();
 
     // Liveness tracking. rx progress proves the tunnel is carrying data even mid-rekey; a re-dial only fires
@@ -34,7 +34,7 @@ internal sealed class BalancerRunner(
     /// <summary>
     /// Runs sessions per target change.
     /// </summary>
-    public async Task RunAsync(BalancerGroup initial, CancellationToken ct)
+    public async Task RunAsync(Profile initial, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -52,7 +52,7 @@ internal sealed class BalancerRunner(
                 if (!control.Running)
                 {
                     Stop(group.Config);
-                    await SetStateAsync("disconnected", null);
+                    await SetStateAsync("disconnected");
                     await IdleAsync(linked.Token);
                     continue;
                 }
@@ -74,26 +74,26 @@ internal sealed class BalancerRunner(
                     // Don't let a transient fault kill the supervisor.
                     logger.LogError(ex, "tunnel session failed: {Reason}; retrying", ex.Message);
                     Stop(group.Config);
-                    await SetStateAsync("disconnected", null);
+                    await SetStateAsync("disconnected");
                     await DelayAsync(_livenessPoll, linked.Token);
                 }
             }
         }
     }
 
-    private async Task<BalancerGroup?> ResolveAsync(BalancerGroup initial, CancellationToken ct)
+    private async Task<Profile?> ResolveAsync(Profile initial, CancellationToken ct)
     {
         // Latch the running target so a new selection doesn't switch until reconnect.
         var name = (control.Running ? control.RunningTarget : control.Target) ?? control.Target ?? initial.Name;
-        var balancer = await store.GetBalancerAsync(name, ct);
-        if (balancer is not null)
+        var profile = await store.GetProfileAsync(name, ct);
+        if (profile is not null)
         {
-            return balancer;
+            return profile;
         }
 
         if (await configRepo.ExistsAsync(name, ct))
         {
-            return new BalancerGroup(name, name);
+            return new Profile(name, name);
         }
 
         // Broken binding: clear the dangling selection and idle.
@@ -101,10 +101,10 @@ internal sealed class BalancerRunner(
         {
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
             control.ClearTarget();
-            logger.LogInformation("target '{Group}' does not exist; cleared binding, idling", name);
+            logger.LogInformation("target '{Profile}' does not exist; cleared binding, idling", name);
         }
 
-        return new BalancerGroup(string.Empty, string.Empty);
+        return new Profile(string.Empty, string.Empty);
     }
 
     private static async Task IdleAsync(CancellationToken token)
@@ -118,7 +118,7 @@ internal sealed class BalancerRunner(
         }
     }
 
-    private async Task RunSessionAsync(BalancerGroup group, CancellationToken ct)
+    private async Task RunSessionAsync(Profile group, CancellationToken ct)
     {
         _settings = await settingsStore.LoadAsync(ct);
         var config = group.Config;
@@ -131,7 +131,7 @@ internal sealed class BalancerRunner(
                 logger.LogWarning("profile {Profile} has no configuration", group.Name);
             }
 
-            await SetStateAsync("disconnected", null);
+            await SetStateAsync("disconnected");
 
             // Fail the connect instead of perpetual "connecting…".
             if (control.Running)
@@ -146,7 +146,7 @@ internal sealed class BalancerRunner(
         if (!await configRepo.ExistsAsync(config, ct))
         {
             logger.LogError("missing config: {Config}", config);
-            await SetStateAsync("disconnected", null);
+            await SetStateAsync("disconnected");
 
             // Missing .conf: fail the connect.
             if (control.Running)
@@ -161,7 +161,7 @@ internal sealed class BalancerRunner(
         await ProjectRoutingAsync(group.Name, config, ct);
         Stop(config);
 
-        await SetStateAsync("connecting", null);
+        await SetStateAsync("connecting");
         if (!await TryConnectAsync(config, ct))
         {
             // Give up and raise the failed notice; supervisor idles after.
@@ -179,7 +179,7 @@ internal sealed class BalancerRunner(
                 }
 
                 Stop(config);
-                await SetStateAsync("disconnected", null);
+                await SetStateAsync("disconnected");
                 control.FailConnect();
             }
 
@@ -187,7 +187,7 @@ internal sealed class BalancerRunner(
         }
 
         logger.LogInformation("connected: {Config} ({Profile})", config, group.Name);
-        await SetStateAsync("connected", config);
+        await SetStateAsync("connected");
 
         _lastRxBytes = -1;
         _deadStreak = 0;
@@ -213,7 +213,7 @@ internal sealed class BalancerRunner(
                     logger.LogWarning("config {Config} unreachable ({Streak} consecutive misses); re-dialing", config, _deadStreak);
                     _deadStreak = 0;
                     _lastRxBytes = -1;
-                    await SetStateAsync("connecting", null);
+                    await SetStateAsync("connecting");
                     Stop(config);
                     if (!await TryConnectAsync(config, ct))
                     {
@@ -221,14 +221,14 @@ internal sealed class BalancerRunner(
                         {
                             logger.LogWarning("re-dial failed: {Config} unreachable", config);
                             Stop(config);
-                            await SetStateAsync("disconnected", null);
+                            await SetStateAsync("disconnected");
                             control.FailConnect();
                         }
 
                         return;
                     }
 
-                    await SetStateAsync("connected", config);
+                    await SetStateAsync("connected");
                     _lastRxBytes = -1;
                 }
                 else
@@ -242,17 +242,17 @@ internal sealed class BalancerRunner(
             // "disconnecting" only on a real user disconnect, not a re-run.
             if (!control.Running)
             {
-                await SetStateAsync("disconnecting", config);
+                await SetStateAsync("disconnecting");
             }
 
             Stop(config);
-            await SetStateAsync("disconnected", null);
+            await SetStateAsync("disconnected");
         }
     }
 
     private async Task ProjectRoutingAsync(string profile, string config, CancellationToken ct)
     {
-        if (await store.GetBalancerAsync(profile, ct) is null)
+        if (await store.GetProfileAsync(profile, ct) is null)
         {
             // Clear stale projection so a dead routing list doesn't leak into this tunnel.
             await store.ClearTunnelProjectionAsync(config, ct);
@@ -286,11 +286,11 @@ internal sealed class BalancerRunner(
         logger.LogInformation("projected full tunnel to {Config} (routing off)", config);
     }
 
-    private async Task SetStateAsync(string status, string? activeConfig)
+    private async Task SetStateAsync(string status)
     {
         try
         {
-            await store.SaveBalancerStateAsync(new BalancerState(_group.Name, status, activeConfig, DateTimeOffset.UtcNow));
+            await store.SaveProfileStateAsync(new ProfileState(_group.Name, status, DateTimeOffset.UtcNow));
         }
         catch (Exception ex)
         {

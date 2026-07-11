@@ -109,7 +109,7 @@
               </ComboBox.ItemTemplate>
             </ComboBox>
             <!-- No profiles: hint to add one in settings. -->
-            <TextBlock IsVisible="{Binding !HasBalancers}" Classes="muted" FontSize="12"
+            <TextBlock IsVisible="{Binding !HasProfiles}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
                        Text="{l:Tr Main_NoProfilesHint}" />
             <!-- Profiles exist but none usable: hint to pick one. -->
@@ -390,7 +390,7 @@
                 </StackPanel>
 
                 <!-- Config + routing pickers for the open profile. -->
-                <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:BalancerItemViewModel" Spacing="16">
+                <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:ProfileItemViewModel" Spacing="16">
 
                   <!-- Config picker: «- не выбрано -» then saved configs. -->
                   <StackPanel Spacing="6">

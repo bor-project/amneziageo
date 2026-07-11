@@ -1,7 +1,7 @@
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Control surface shared between the IPC broker and the balancer.
+/// Control surface shared between the IPC broker and the profile runner.
 /// </summary>
 internal sealed class AgentControl
 {

@@ -175,17 +175,17 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             }
         }
 
-        var profiles = await store.ListBalancerNamesAsync(ct);
+        var profiles = await store.ListProfileNamesAsync(ct);
         if (profiles.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine($"[profiles] ({profiles.Count})");
             foreach (var name in profiles)
             {
-                var balancer = await store.GetBalancerAsync(name, ct);
+                var profile = await store.GetProfileAsync(name, ct);
                 var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
                 var routing = listId is not null ? $"routing list {listId} ({(useRouting ? "on" : "off")})" : "no routing list";
-                sb.AppendLine($"  {name} -> config '{(string.IsNullOrEmpty(balancer?.Config) ? "(none)" : balancer!.Config)}', {routing}");
+                sb.AppendLine($"  {name} -> config '{(string.IsNullOrEmpty(profile?.Config) ? "(none)" : profile!.Config)}', {routing}");
             }
         }
 

@@ -7,7 +7,7 @@
 
 - .NET 10 SDK, собранный проект (Debug).
 - **Запуск от администратора** для команд, создающих службы/туннели/маршруты
-  (`install` / `start` / `stop` / `uninstall` / `balancer-run` / `agent-*`). Команды настроек,
+  (`install` / `start` / `stop` / `uninstall` / `profile-run` / `agent-*`). Команды настроек,
   конфигов и гео админа не требуют.
 - Состояние пишется в `C:\ProgramData\AmneziaGeo\state.db` (SYSTEM/админ-контекст).
   Неэлевированный процесс упрётся в `SQLite Error 8: attempt to write a readonly database` —
@@ -129,36 +129,35 @@ ageo uninstall proba
   станет серверным. DNS в full-tunnel приложение выставляет само (из строки `DNS=` конфига,
   через `DnsRedirector`), ручных команд не нужно. Проще всего: `scripts/vpn-on.ps1`.
 
-## Ступень 5 — балансировщик в foreground (АДМИН; узкие маршруты)
+## Ступень 5 — профиль в foreground (АДМИН; узкие маршруты)
 
 ```powershell
 ageo config-add m1 "C:\путь\conf-1.conf"
-ageo config-add m2 "C:\путь\conf-2.conf"
 ageo set-geo m1 on cidr:10.0.0.0/24
-ageo set-geo m2 on cidr:10.0.0.0/24
-ageo balancer-add test 30 m1 m2          # recheck 30с, приоритет m1 > m2
-ageo balancer-run test                   # foreground-цикл; Ctrl+C для остановки
+ageo profile-add test m1                  # профиль test поверх конфига m1
+ageo profile-run test                     # foreground-цикл; Ctrl+C для остановки
 ```
 
-В консоли: `connected: ...`, `member ... unreachable; failing over`, `switched to ...`.
-Останавливай **Ctrl+C** — тогда отработает `finally` и погасит активного члена. Если закрыть
-окно крестиком / убить процесс — активная служба-туннель **останется поднятой**.
+В консоли: `connected: ...`; при потере связи — `unreachable ... re-dialing` и повторный connect
+(авто-реконнект по liveness). Останавливай **Ctrl+C** — тогда отработает `finally` и погасит
+активный туннель. Если закрыть окно крестиком / убить процесс — активная служба-туннель
+**останется поднятой**.
 
-`balancer-run` — отладочный foreground. Боевой always-on режим — агент-служба (ступень 6).
+`profile-run` — отладочный foreground. Боевой always-on режим — агент-служба (ступень 6).
 
 ## Ступень 6 — агент-служба (АДМИН; всегда-онлайн)
 
-`balancer-run` живёт только пока открыто окно и не переживает выход/перезагрузку. Боевой режим —
+`profile-run` живёт только пока открыто окно и не переживает выход/перезагрузку. Боевой режим —
 **агент-служба**: одна always-on служба `AmneziaGeoAgent` (LocalSystem, автозапуск), ставится один
-раз с элевацией и переживает закрытие UI, разлогин и ребут. Агент гоняет одну активную «группу»
-(балансировщик **или** одиночный конфиг = группа из одного), а член-туннели создаёт/удаляет
-**эфемерно** (служба члена заводится на connect и сносится на disconnect/стопе). Лог —
+раз с элевацией и переживает закрытие UI, разлогин и ребут. Агент гоняет один активный профиль
+(профиль = один конфиг), а туннель создаёт/удаляет **эфемерно** (служба туннеля заводится на
+connect и сносится на disconnect/стопе). Лог —
 `C:\ProgramData\AmneziaGeo\logs\agent.log` (в службе нет консоли).
 
-Команды: `agent-install <target>` (target = имя балансировщика или конфига), `agent-start`,
+Команды: `agent-install <target>` (target = имя профиля или конфига), `agent-start`,
 `agent-stop`, `agent-status`, `agent-uninstall`.
 
-Одиночный конфиг (группа из 1), full-tunnel — **только за консолью**:
+Одиночный конфиг (профиль из одного), full-tunnel — **только за консолью**:
 
 ```powershell
 ageo config-add proba "C:\dev\tools\amnezia\amneziageo\.claude\tunnel-template.conf"
@@ -168,14 +167,14 @@ ageo agent-start
 ageo agent-status                         # STATE ... RUNNING
 ageo config-list                          # proba RUNNING — туннель подняла служба-член
 Get-Content C:\ProgramData\AmneziaGeo\logs\agent.log -Tail 15
-ageo agent-stop                           # гасит активного члена и удаляет его службу
+ageo agent-stop                           # гасит активный туннель и удаляет его службу
 ageo agent-uninstall
 ```
 
-Балансировщик (несколько членов) — то же самое, только `agent-install <имя-балансировщика>`:
+Профиль — то же самое, только `agent-install <имя-профиля>`:
 
 ```powershell
-ageo balancer-add bal 30 m1 m2
+ageo profile-add bal m1
 ageo agent-install bal
 ageo agent-start
 ```
@@ -191,7 +190,7 @@ ageo uninstall <name>
 ```
 
 Службы туннелей не удаляются автоматически при выходе из приложения — подчищай вручную
-(или `scripts/cleanup.ps1`). Под агентом член-службы эфемерны: агент сам их сносит на стопе.
+(или `scripts/cleanup.ps1`). Под агентом службы-туннели эфемерны: агент сам их сносит на стопе.
 
 ## Заметки
 

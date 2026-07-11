@@ -25,62 +25,55 @@ internal sealed partial class ConfigView : UserControl
         InitializeComponent();
     }
 
-    private Window? Owner => TopLevel.GetTopLevel(this) as Window;
-
-    // Config section import form: «Камера» scans a QR live.
-    private async void OnSectionConfigCamera(object? sender, RoutedEventArgs e)
+    // Autosave the open config when focus leaves one of its fields.
+    private void OnConfigFieldBlur(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not ConfigViewModel vm || Owner is not { } owner)
+        (DataContext as ConfigViewModel)?.AutoSaveOnBlur();
+    }
+
+    // Copy the export payload (vpn link or .conf text) to the clipboard.
+    private async void OnCopyExport(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ExportDialogViewModel vm)
         {
             return;
         }
 
-        var scan = new ScanDialogViewModel();
-        var dialog = new ScanDialog { DataContext = scan };
-        var ok = await dialog.ShowDialog<bool>(owner);
-        if (ok && scan.Result is not null)
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
         {
-            vm.SectionConfigText = scan.Result.ConfText;
-            if (vm.SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(scan.Result.Name))
-            {
-                vm.SectionConfigName = scan.Result.Name!;
-            }
-
-            vm.SectionConfigStatus = string.Empty; // clear any stale failure from a prior pick.
+            await clipboard.SetTextAsync(vm.Payload);
+            vm.StatusMessage = Loc.Instance.Get("QrCode_CopiedToClipboard");
         }
     }
 
-    // «Редактировать»: open the large editor seeded with the current text; on OK write it back.
-    private async void OnSectionConfigEdit(object? sender, RoutedEventArgs e)
+    // Save the rendered QR as a PNG.
+    private async void OnDownloadQr(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not ConfigViewModel vm || Owner is not { } owner)
+        if ((sender as Control)?.DataContext is not ExportDialogViewModel vm || vm.QrImage is not { } qr)
         {
             return;
         }
 
-        var editor = new ConfigEditorViewModel { Text = vm.SectionConfigText };
-        var dialog = new ConfigEditorDialog { DataContext = editor };
-        if (await dialog.ShowDialog<bool>(owner))
+        if (TopLevel.GetTopLevel(this) is not { } top)
         {
-            vm.SectionConfigText = editor.Text;
-            var imported = VpnLinkCodec.TryDecode(editor.Text);
-            if (imported is not null)
-            {
-                // Adopt the config's embedded name over the generic default.
-                if (vm.SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(imported.Name))
-                {
-                    vm.SectionConfigName = imported.Name!;
-                }
-
-                vm.SectionConfigStatus = string.Empty;
-            }
-            else
-            {
-                vm.SectionConfigStatus = string.IsNullOrWhiteSpace(editor.Text)
-                    ? string.Empty
-                    : Loc.Instance.Get("MainVm_ConfigNotRecognized");
-            }
+            return;
         }
+
+        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = Loc.Instance.Get("QrCode_SaveTitle"),
+            SuggestedFileName = vm.ConfigName + ".png",
+            DefaultExtension = "png",
+            FileTypeChoices = [new FilePickerFileType("PNG") { Patterns = ["*.png"] }],
+        });
+        if (file is null)
+        {
+            return;
+        }
+
+        await using var stream = await file.OpenWriteAsync();
+        qr.Save(stream);
+        vm.StatusMessage = Loc.Instance.Get("QrCode_Saved");
     }
 
     // Standalone config-import: adds a config to the shared catalogue without a profile.
@@ -114,11 +107,13 @@ internal sealed partial class ConfigView : UserControl
             {
                 vm.SectionConfigText = raw;
                 vm.SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
+                vm.ImportMethod = ConfigImportMethod.Manual;
                 return;
             }
 
             vm.SectionConfigText = imported.ConfText;
             vm.SectionConfigStatus = string.Empty;
+            vm.ImportMethod = ConfigImportMethod.Manual;
             if (vm.SectionConfigNameIsDefault)
             {
                 var name = !string.IsNullOrWhiteSpace(imported.Name)
@@ -158,8 +153,8 @@ internal sealed partial class ConfigView : UserControl
             vm.SectionConfigName = imported.Name!;
         }
 
-        // No status: a recognised QR auto-saves and the form closes.
         vm.SectionConfigStatus = string.Empty;
+        vm.ImportMethod = ConfigImportMethod.Manual;
     }
 
     private async Task<string?> PickFileAsync(string title, params string[] extensions)

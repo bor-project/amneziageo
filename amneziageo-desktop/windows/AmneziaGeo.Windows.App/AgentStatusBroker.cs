@@ -1022,10 +1022,18 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         await EnsureDefaultTargetAsync(name, ct);
         var changed = existing is null || !string.Equals(existing.Config, updated.Config, StringComparison.Ordinal);
 
-        // Only invalidate when the active profile changed.
+        // The active profile's config changed: a running tunnel needs a reconnect (flag the banner), a stopped
+        // one just re-reads on the next connect.
         if (changed && string.Equals(name, BoundTarget, StringComparison.Ordinal))
         {
-            control.Invalidate();
+            if (control.Running)
+            {
+                control.SetRestartRequired();
+            }
+            else
+            {
+                control.Invalidate();
+            }
         }
 
         logger.LogInformation("saved profile {Name} (config '{Config}')", name, config);

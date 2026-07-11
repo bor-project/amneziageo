@@ -134,21 +134,14 @@
                      HorizontalAlignment="Center" VerticalAlignment="Center"
                      Foreground="{DynamicResource AgMutedBrush}" />
 
-          <!-- Back to Home + atomic-edit Save/Cancel (#143): the Save/Cancel pair sits to the right of the back
-               arrow and appears only while the open item is dirty; navigation (incl. back) is locked meanwhile. -->
+          <!-- Back to Home. Every screen autosaves, so navigation is never locked; deletion is confirmed inline. -->
           <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left" VerticalAlignment="Center">
             <Button Classes="backbtn" VerticalAlignment="Center"
-                    Command="{Binding NavHomeCommand}" IsEnabled="{Binding !NavLocked}"
+                    Command="{Binding NavHomeCommand}"
                     ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
               <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
                         Foreground="{DynamicResource AgMutedBrush}" />
             </Button>
-            <Button Classes="accent" Content="{l:Tr Main_SaveButton}" VerticalAlignment="Center"
-                    Command="{Binding SaveEditCommand}" IsVisible="{Binding IsEditing}" />
-            <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" VerticalAlignment="Center"
-                    Command="{Binding CancelEditCommand}" IsVisible="{Binding IsEditing}" />
-            <!-- The header carries only the atomic-edit Save/Cancel. Deletion is confirmed inline, in place of
-                 each section's Delete button (#4), not here. -->
           </StackPanel>
 
           <!-- Animated connect / disconnect control. -->
@@ -198,8 +191,7 @@
       <!-- Section rail. -->
       <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
         <ScrollViewer>
-          <!-- Section rail locks while the open item is dirty OR a delete confirmation is armed (#143). -->
-          <StackPanel Margin="12,12" IsEnabled="{Binding !NavLocked}">
+          <StackPanel Margin="12,12">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="profile">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
@@ -325,6 +317,28 @@
 
       <!-- Content pane. -->
       <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
+        <DockPanel LastChildFill="True">
+          <!-- Static footer for the new-config create flow: Save / Cancel + unsaved indicator. -->
+          <Border DockPanel.Dock="Bottom" IsVisible="{Binding Config.IsCreatingSectionConfig}"
+                  Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
+                  BorderThickness="0,1,0,0" Height="52" Padding="18,0">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="methodpick" Content="{l:Tr Main_CancelButton}"
+                        Width="120"
+                        Command="{Binding Config.CancelNewConfigCommand}" />
+                <Button Classes="accent" Content="{l:Tr Main_SaveButton}"
+                        Width="120" Padding="6"
+                        Command="{Binding Config.SaveNewConfigCommand}"
+                        IsVisible="{Binding Config.IsImportManual}"
+                        IsEnabled="{Binding Config.CanSaveSectionConfig}" />
+              </StackPanel>
+            </Grid>
+          </Border>
         <!-- ALL insets live on the inner Grid's Margin, none on the ScrollViewer. A ScrollViewer Padding is
              applied asymmetrically between the measure and arrange passes, so the padded side is pushed past
              the presenter's clip: horizontally it shoved stretched fields off the edge; vertically the
@@ -340,10 +354,10 @@
               <views:ProfileView DataContext="{Binding Profile}" />
             </Panel>
 
-            <!-- CONFIG SECTION: MinHeight fills the import form to the scroll viewport. -->
+            <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 32px inset. -->
             <Panel IsVisible="{Binding IsSettingsConfig}">
               <views:ConfigView DataContext="{Binding Config}"
-                                MinHeight="{Binding #ContentScroll.Viewport.Height}" />
+                                MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}" />
             </Panel>
 
             <!-- ROUTING SECTION -->
@@ -368,6 +382,7 @@
 
           </Grid>
         </ScrollViewer>
+        </DockPanel>
       </Border>
     </Grid>
 

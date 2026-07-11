@@ -5,23 +5,29 @@
              x:Class="AmneziaGeo.Windows.Ui.Views.SourcesView"
              x:CompileBindings="True"
              x:DataType="vm:SourcesViewModel">
-  <StackPanel>
-    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="{l:Tr Main_SourcesSection}" Classes="section" VerticalAlignment="Center" />
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-          <Button Classes="softbtn" Command="{Binding CheckSourcesCommand}" Content="{l:Tr Main_CheckUpdatesButton}" />
-          <Button Classes="softbtn" Command="{Binding UpdateSourcesCommand}" Content="{l:Tr Main_UpdateAllButton}" />
-        </StackPanel>
-      </Grid>
-    </Border>
+  <StackPanel Spacing="14">
+    <!-- Header: section title + count pill + bulk actions. -->
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_SourcesSection}" VerticalAlignment="Center" />
+      <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+              Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+        <TextBlock Text="{Binding Sources.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+      </Border>
+      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
+        <Button Classes="methodpick" Width="170" Padding="18,6"
+                Command="{Binding CheckSourcesCommand}" Content="{l:Tr Main_CheckUpdatesButton}" />
+        <Button Classes="methodpick" Width="170" Padding="18,6"
+                Command="{Binding UpdateSourcesCommand}" Content="{l:Tr Main_UpdateAllButton}" />
+      </StackPanel>
+    </Grid>
 
-    <StackPanel Margin="0,12" Spacing="8">
-      <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+    <!-- Auto-update card. -->
+    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="16" Background="Transparent">
+      <Grid ColumnDefinitions="*,Auto">
         <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-          <TextBlock Text="{l:Tr Main_AutoCheckTitle}" FontSize="13.5" />
-          <TextBlock Text="{l:Tr Main_AutoCheckHint}"
-                     Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+          <TextBlock Text="{l:Tr Main_AutoCheckTitle}" FontWeight="SemiBold" FontSize="15" />
+          <TextBlock Text="{l:Tr Main_AutoCheckHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <ComboBox Classes="field" Width="92" VerticalAlignment="Center"
@@ -37,37 +43,47 @@
           <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
         </StackPanel>
       </Grid>
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+    </Border>
 
-      <TextBlock Classes="label" Text="{l:Tr Main_AddDatabaseLabel}" />
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
-                  ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
-                  IsEnabled="{Binding !SourceKindLocked}"
-                  ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
-        <TextBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
-                 Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
-        <Button Grid.Column="2" Classes="accent" Command="{Binding AddSourceCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <TextBlock Text="+" />
-            <TextBlock Text="{l:Tr Main_AddButton}" />
-          </StackPanel>
-        </Button>
-      </Grid>
-      <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                 Text="{l:Tr Main_GeoKindsHint}" />
+    <!-- Add-database card. -->
+    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="16" Background="Transparent">
+      <StackPanel Spacing="10">
+        <TextBlock Text="{l:Tr Main_AddDatabaseLabel}" FontWeight="SemiBold" FontSize="15" />
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
+                    ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
+                    IsEnabled="{Binding !SourceKindLocked}"
+                    ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
+          <TextBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
+                   Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
+          <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddSourceCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Text="+" />
+              <TextBlock Text="{l:Tr Main_AddButton}" />
+            </StackPanel>
+          </Button>
+        </Grid>
+        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_GeoKindsHint}" />
+      </StackPanel>
+    </Border>
 
-      <TextBlock Classes="label" Text="{l:Tr Main_SourcesLabel}" Margin="0,6,0,0" />
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              Background="{DynamicResource AgInsetBrush}" CornerRadius="12">
-        <StackPanel Margin="10,10">
-          <ItemsControl ItemsSource="{Binding Sources}">
+    <!-- Sources list card. -->
+    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="16" Background="Transparent">
+      <StackPanel Spacing="10">
+        <TextBlock Text="{l:Tr Main_SourcesLabel}" FontWeight="SemiBold" FontSize="15" />
+        <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                Background="{DynamicResource AgInsetBrush}" CornerRadius="10"
+                IsVisible="{Binding HasSources}">
+          <ItemsControl ItemsSource="{Binding Sources}" Margin="10,10">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:SourceItemViewModel">
                 <Border Background="{DynamicResource AgPanelBrush}"
                         BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                         CornerRadius="9" Padding="11,9" Margin="0,3"
                         ContextRequested="OnSourceRowContext"
+                        DoubleTapped="OnSourceRowDoubleTapped"
                         ToolTip.Tip="{l:Tr Main_SourceRowTooltip}">
                   <StackPanel>
                     <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsEditing}">
@@ -105,8 +121,8 @@
                                  Text="{Binding EditUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
                       </Grid>
                       <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-                        <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveEditCommand}" />
-                        <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelEditCommand}" />
+                        <Button Classes="accent" Width="100" Content="{l:Tr Main_SaveButton}" Command="{Binding SaveEditCommand}" />
+                        <Button Classes="methodpick" Width="100" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelEditCommand}" />
                       </StackPanel>
                     </StackPanel>
                   </StackPanel>
@@ -114,11 +130,11 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <TextBlock IsVisible="{Binding !HasSources}"
-                     Text="{l:Tr Main_NoSourcesHint}"
-                     Classes="muted" FontSize="12" Margin="2,8" TextWrapping="Wrap" />
-        </StackPanel>
-      </Border>
-    </StackPanel>
+        </Border>
+        <TextBlock IsVisible="{Binding !HasSources}"
+                   Text="{l:Tr Main_NoSourcesHint}"
+                   Classes="muted" FontSize="12" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
   </StackPanel>
 </UserControl>

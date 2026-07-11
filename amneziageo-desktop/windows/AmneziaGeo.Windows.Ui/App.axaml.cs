@@ -94,6 +94,9 @@ public sealed partial class App : Application
     // Close box hides to the tray; exit is via the tray.
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
     {
+        // Stop the create-form camera when the window leaves the screen.
+        _viewModel?.Config.StopScan();
+
         // Persist window size on every close.
         if (_window is not null && _prefs is not null)
         {

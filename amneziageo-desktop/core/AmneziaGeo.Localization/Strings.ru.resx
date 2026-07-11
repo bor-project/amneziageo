@@ -59,7 +59,10 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="General_Section" xml:space="preserve">
-    <value>ОБЩИЕ</value>
+    <value>Общие</value>
+  </data>
+  <data name="Main_AppearanceTitle" xml:space="preserve">
+    <value>Оформление</value>
   </data>
   <data name="General_Theme" xml:space="preserve">
     <value>Тема оформления</value>
@@ -80,7 +83,7 @@
     <value>Системная</value>
   </data>
   <data name="About_Section" xml:space="preserve">
-    <value>О ПРИЛОЖЕНИИ</value>
+    <value>О приложении</value>
   </data>
   <data name="About_Version" xml:space="preserve">
     <value>Версия приложения</value>
@@ -173,7 +176,7 @@
     <value>Сохранить</value>
   </data>
   <data name="Main_AccessTokenLabel" xml:space="preserve">
-    <value>Токен доступа:</value>
+    <value>ТОКЕН</value>
   </data>
   <data name="Main_AccessTokenWatermark" xml:space="preserve">
     <value>токен доступа</value>
@@ -185,7 +188,7 @@
     <value>Добавить</value>
   </data>
   <data name="Main_AddDatabaseLabel" xml:space="preserve">
-    <value>ДОБАВИТЬ БАЗУ</value>
+    <value>Добавить базу</value>
   </data>
   <data name="Main_AddEntryLabel" xml:space="preserve">
     <value>ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)</value>
@@ -197,7 +200,13 @@
     <value>Добавить локальные сети</value>
   </data>
   <data name="Main_AgentLogSection" xml:space="preserve">
-    <value>ЖУРНАЛ АГЕНТА</value>
+    <value>Журнал агента</value>
+  </data>
+  <data name="Main_LogCaptureTitle" xml:space="preserve">
+    <value>Настройки журнала</value>
+  </data>
+  <data name="Main_LogViewerTitle" xml:space="preserve">
+    <value>Просмотр журнала</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
     <value>Заворачивает в туннель ВСЕ исходящие UDP-датаграммы, пока активна выборочная маршрутизация. Нужно для real-time медиа (голосовые звонки, онлайн-игры), чьи адреса серверов приходят сигналингом, а не через DNS. Локальная сеть и сам канал туннеля исключаются.</value>
@@ -230,7 +239,7 @@
     <value>Логин и пароль</value>
   </data>
   <data name="Main_AuthLabel" xml:space="preserve">
-    <value>Авторизация:</value>
+    <value>АВТОРИЗАЦИЯ</value>
   </data>
   <data name="Main_AuthNone" xml:space="preserve">
     <value>Без авторизации</value>
@@ -251,7 +260,7 @@
     <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
   </data>
   <data name="Main_CameraButton" xml:space="preserve">
-    <value>Камера</value>
+    <value>Сканировать QR-код</value>
   </data>
   <data name="Main_CancelButton" xml:space="preserve">
     <value>Отмена</value>
@@ -292,9 +301,6 @@
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Поиск в логе</value>
   </data>
-  <data name="Main_ConfEditHint" xml:space="preserve">
-    <value>Должны быть секции [Interface] и [Peer]. Гео и маршруты профиля сохранятся.</value>
-  </data>
   <data name="Main_QrConfTab" xml:space="preserve">
     <value>QR: файл .conf</value>
   </data>
@@ -311,13 +317,10 @@
     <value>ИМЯ КОНФИГУРАЦИИ</value>
   </data>
   <data name="Main_ConfigSection" xml:space="preserve">
-    <value>КОНФИГУРАЦИИ</value>
+    <value>Конфигурации</value>
   </data>
   <data name="Main_ConfigEditButton" xml:space="preserve">
-    <value>Редактировать</value>
-  </data>
-  <data name="Main_ConfigEditButtonTooltip" xml:space="preserve">
-    <value>Ввести / отредактировать текст конфигурации в большом редакторе</value>
+    <value>Ввести вручную</value>
   </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
     <value>Здесь появится конфигурация</value>
@@ -329,13 +332,40 @@
     <value>Удалить конфигурацию</value>
   </data>
   <data name="Main_DeleteConfigHint" xml:space="preserve">
-    <value>Удалить конфигурацию из каталога. Агент откажет, пока она используется каким-либо профилем или запущенным туннелем — сначала отвяжите её.</value>
+    <value>Сначала отвяжите её от профилей и остановите использующий её туннель.</value>
+  </data>
+  <data name="Main_DeleteConfigTitle" xml:space="preserve">
+    <value>Удаление конфигурации</value>
+  </data>
+  <data name="Main_DeleteConfigPrompt" xml:space="preserve">
+    <value>Удалить конфигурацию «{0}» из каталога. Это действие нельзя отменить.</value>
   </data>
   <data name="Main_DeleteListButton" xml:space="preserve">
     <value>Удалить список</value>
   </data>
+  <data name="Main_DeleteListTitle" xml:space="preserve">
+    <value>Удаление списка</value>
+  </data>
+  <data name="Main_DeleteListPrompt" xml:space="preserve">
+    <value>Удалить этот список маршрутизации из каталога. Это действие нельзя отменить.</value>
+  </data>
+  <data name="Main_DeleteListHint" xml:space="preserve">
+    <value>Список, привязанный к профилям, удалить нельзя.</value>
+  </data>
+  <data name="Main_RoutingListCardTitle" xml:space="preserve">
+    <value>Список маршрутизации</value>
+  </data>
   <data name="Main_DeleteProfileButton" xml:space="preserve">
     <value>Удалить профиль</value>
+  </data>
+  <data name="Main_DeleteProfileTitle" xml:space="preserve">
+    <value>Удаление профиля</value>
+  </data>
+  <data name="Main_DeleteProfilePrompt" xml:space="preserve">
+    <value>Удалить этот профиль из каталога. Это действие нельзя отменить.</value>
+  </data>
+  <data name="Main_ProfileSettingsTitle" xml:space="preserve">
+    <value>Настройки профиля</value>
   </data>
   <data name="Main_DeleteProfileHint" xml:space="preserve">
     <value>Профиль удалится вместе со своими настройками. Запущенный профиль нужно сначала отключить.</value>
@@ -380,7 +410,28 @@
     <value>Экспорт…</value>
   </data>
   <data name="Main_FileButton" xml:space="preserve">
-    <value>Файл</value>
+    <value>Загрузить файл</value>
+  </data>
+  <data name="Main_AddConfigTitle" xml:space="preserve">
+    <value>Добавьте конфигурацию</value>
+  </data>
+  <data name="Main_AddConfigSubtitle" xml:space="preserve">
+    <value>Выберите удобный способ</value>
+  </data>
+  <data name="Main_ChangeMethodButton" xml:space="preserve">
+    <value>Изменить способ</value>
+  </data>
+  <data name="Main_MethodLabel" xml:space="preserve">
+    <value>Способ: {0}</value>
+  </data>
+  <data name="Main_MethodManual" xml:space="preserve">
+    <value>вручную</value>
+  </data>
+  <data name="Main_MethodCamera" xml:space="preserve">
+    <value>камера</value>
+  </data>
+  <data name="Main_UnsavedChanges" xml:space="preserve">
+    <value>Есть несохранённые изменения</value>
   </data>
   <data name="Main_FullTunnel" xml:space="preserve">
     <value>Полный туннель</value>
@@ -389,7 +440,7 @@
     <value>Позже - можно обновить в настройках</value>
   </data>
   <data name="Main_GeoKindsHint" xml:space="preserve">
-    <value>geosite - категории доменов, geoip - страны. Файл скачивается сразу. Значок ⟳ обновляет базу, «Обновить все» - все сразу; правый клик по базе - удалить.</value>
+    <value>geosite - категории доменов, geoip - страны.</value>
   </data>
   <data name="Main_ImportButton" xml:space="preserve">
     <value>Импорт…</value>
@@ -398,7 +449,7 @@
     <value>ИМПОРТ / ЭКСПОРТ</value>
   </data>
   <data name="Main_ImportExportSection" xml:space="preserve">
-    <value>ИМПОРТ / ЭКСПОРТ</value>
+    <value>Импорт / экспорт</value>
   </data>
   <data name="Main_InstallButton" xml:space="preserve">
     <value>Установить</value>
@@ -410,7 +461,7 @@
     <value>напр. мой-список</value>
   </data>
   <data name="Main_ListTrafficLabel" xml:space="preserve">
-    <value>ТРАФИК ЭТОГО СПИСКА</value>
+    <value>Трафик этого списка</value>
   </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Загрузить файл…</value>
@@ -425,7 +476,7 @@
     <value>Уровень</value>
   </data>
   <data name="Main_LoginLabel" xml:space="preserve">
-    <value>Логин:</value>
+    <value>ЛОГИН</value>
   </data>
   <data name="Main_LoginWatermark" xml:space="preserve">
     <value>логин</value>
@@ -467,7 +518,7 @@
     <value>— не выбрано —</value>
   </data>
   <data name="Main_PasswordLabel" xml:space="preserve">
-    <value>Пароль:</value>
+    <value>ПАРОЛЬ</value>
   </data>
   <data name="Main_PasswordWatermark" xml:space="preserve">
     <value>пароль</value>
@@ -488,10 +539,31 @@
     <value>Новое имя для этого профиля. Запущенный профиль переименовать нельзя.</value>
   </data>
   <data name="Main_ProfileSection" xml:space="preserve">
-    <value>ПРОФИЛЬ</value>
+    <value>Профиль</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
-    <value>ПРОКСИ (WEBSOCKET)</value>
+    <value>WebSocket-прокси</value>
+  </data>
+  <data name="Main_ProxyWebSocketHint" xml:space="preserve">
+    <value>Передаёт UDP поверх TCP и помогает при блокировке UDP.</value>
+  </data>
+  <data name="Main_UseWebSocketToggle" xml:space="preserve">
+    <value>Использовать прокси</value>
+  </data>
+  <data name="Main_ExportConfigTitle" xml:space="preserve">
+    <value>Экспорт конфигурации</value>
+  </data>
+  <data name="Main_ExportConfigSubtitle" xml:space="preserve">
+    <value>Выберите формат передачи</value>
+  </data>
+  <data name="Main_QrPrivateKeyWarning" xml:space="preserve">
+    <value>QR-код содержит приватный ключ. Не передавайте его посторонним.</value>
+  </data>
+  <data name="Main_CopyContentButton" xml:space="preserve">
+    <value>Скопировать содержимое</value>
+  </data>
+  <data name="Main_DownloadQrButton" xml:space="preserve">
+    <value>Скачать QR</value>
   </data>
   <data name="Main_QrUnavailableHint" xml:space="preserve">
     <value>Конфигурация не помещается в QR-код. Используйте вкладку «Конфиг» или ссылку vpn://.</value>
@@ -554,7 +626,7 @@
     <value>Импортировать список из буфера обмена</value>
   </data>
   <data name="Main_RoutingSection" xml:space="preserve">
-    <value>МАРШРУТИЗАЦИЯ</value>
+    <value>Маршрутизация</value>
   </data>
   <data name="Main_SaveButton" xml:space="preserve">
     <value>Сохранить</value>
@@ -566,13 +638,13 @@
     <value>Сохранить в файл…</value>
   </data>
   <data name="Main_ServerHostLabel" xml:space="preserve">
-    <value>Адрес сервера (host):</value>
+    <value>ХОСТ</value>
   </data>
   <data name="Main_ServerHostWatermark" xml:space="preserve">
-    <value>как у сервера, например wss-front.example.com</value>
+    <value>proxy.example.com</value>
   </data>
   <data name="Main_ServerPortLabel" xml:space="preserve">
-    <value>Порт сервера (TLS):</value>
+    <value>ПОРТ</value>
   </data>
   <data name="Main_SettingsTooltip" xml:space="preserve">
     <value>Настройки</value>
@@ -593,13 +665,13 @@
     <value>Правый клик или ⋮ — обновить / удалить базу</value>
   </data>
   <data name="Main_SourcesLabel" xml:space="preserve">
-    <value>ИСТОЧНИКИ</value>
+    <value>Источники</value>
   </data>
   <data name="Main_SourcesSection" xml:space="preserve">
-    <value>ИСТОЧНИКИ GEO</value>
+    <value>Источники geo</value>
   </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
-    <value>MTU туннеля:</value>
+    <value>MTU ТУННЕЛЯ</value>
   </data>
   <data name="Main_UpdateAllButton" xml:space="preserve">
     <value>Обновить все</value>
@@ -614,7 +686,7 @@
     <value>Обновить сейчас</value>
   </data>
   <data name="Main_UpdateSection" xml:space="preserve">
-    <value>ОБНОВЛЕНИЕ</value>
+    <value>Обновление</value>
   </data>
   <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
     <value>Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)</value>
@@ -716,10 +788,10 @@
     <value>Скопировано в буфер обмена.</value>
   </data>
   <data name="MainCode_DeleteDatabase" xml:space="preserve">
-    <value>Удалить базу</value>
+    <value>Удалить</value>
   </data>
   <data name="MainCode_EditDatabase" xml:space="preserve">
-    <value>Изменить источник</value>
+    <value>Изменить</value>
   </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR распознан, но это не конфигурация</value>
@@ -740,7 +812,7 @@
     <value>Сохранено.</value>
   </data>
   <data name="MainCode_UpdateDatabase" xml:space="preserve">
-    <value>Обновить базу</value>
+    <value>Обновить</value>
   </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Не распознано (.conf или vpn://)</value>

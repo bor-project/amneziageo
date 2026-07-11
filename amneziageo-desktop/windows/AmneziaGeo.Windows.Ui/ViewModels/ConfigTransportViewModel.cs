@@ -85,13 +85,29 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     // flag mid-way (#143). Field changes mark the item dirty; the header Save commits, the header Cancel reverts.
     private bool _applying;
 
-    partial void OnUseWebSocketChanged(bool value) => MarkDirty();
+    /// <summary>
+    /// Autosave the open-config transport: a toggle / combo commits at once, text fields on blur.
+    /// </summary>
+    public bool AutoSave { get; set; }
+
+    private bool _committing;
+    private bool _commitPending;
+
+    partial void OnUseWebSocketChanged(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
 
     partial void OnWebSocketHostChanged(string value) => MarkDirty();
 
     partial void OnWebSocketPortChanged(string value) => MarkDirty();
 
-    partial void OnAuthModeChanged(int value) => MarkDirty();
+    partial void OnAuthModeChanged(int value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
 
     partial void OnWebSocketUserChanged(string value) => MarkDirty();
 
@@ -239,12 +255,62 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
                 [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal]));
-            StatusMessage = ack.Message;
+            // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
+            StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
         }
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    // Toggle / combo autosave: fire-and-forget the serialized commit.
+    private void FireAutoSave()
+    {
+        if (AutoSave)
+        {
+            _ = AutoSaveAsync();
+        }
+    }
+
+    // Serialized autosave for the open config, shared by toggle changes and the field-blur handler. A change that
+    // arrives mid-commit re-runs once the in-flight commit settles, and the baseline is blessed only when the sent
+    // state is still current - so a value changed during the commit is resent, not silently marked clean.
+    public async Task AutoSaveAsync()
+    {
+        if (_applying)
+        {
+            return;
+        }
+
+        if (_committing)
+        {
+            _commitPending = true;
+            return;
+        }
+
+        _committing = true;
+        try
+        {
+            do
+            {
+                _commitPending = false;
+                if (!IsDirty)
+                {
+                    break;
+                }
+
+                if (await CommitAsync() && !_commitPending)
+                {
+                    CaptureBaseline();
+                }
+            }
+            while (_commitPending);
+        }
+        finally
+        {
+            _committing = false;
         }
     }
 

@@ -28,10 +28,9 @@
     </Style>
 
     <Style Selector="TextBlock.section">
-      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontSize" Value="18" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="LetterSpacing" Value="0.7" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
     </Style>
 
     <Style Selector="TextBlock.label">
@@ -56,7 +55,7 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
       <Setter Property="FontSize" Value="11.5" />
       <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="4,4" />
+      <Setter Property="Padding" Value="6" />
       <Setter Property="CornerRadius" Value="6" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -74,9 +73,10 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
       <Setter Property="FontSize" Value="11.5" />
       <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="Padding" Value="6" />
       <Setter Property="CornerRadius" Value="7" />
       <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.chip.active">
       <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
@@ -92,9 +92,24 @@
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
       <Setter Property="FontSize" Value="11.5" />
       <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="Padding" Value="6" />
       <Setter Property="CornerRadius" Value="7" />
       <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- Import-method picker button: outlined accent, roomy vertical padding. -->
+    <Style Selector="Button.methodpick">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
 
     <Style Selector="Button.accent">
@@ -103,8 +118,14 @@
       <Setter Property="Foreground" Value="White" />
       <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Padding" Value="14,4" />
+      <Setter Property="Padding" Value="6" />
       <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- Button icons follow the button's text colour. -->
+    <Style Selector="Button PathIcon">
+      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
     </Style>
 
     <!-- Destructive action. -->
@@ -115,9 +136,10 @@
       <Setter Property="Foreground" Value="#D64545" />
       <Setter Property="FontSize" Value="11.5" />
       <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="12,4" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="CornerRadius" Value="7" />
       <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="6" />
     </Style>
 
     <Style Selector="Button.icon">

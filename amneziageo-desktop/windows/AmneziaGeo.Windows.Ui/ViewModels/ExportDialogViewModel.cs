@@ -48,6 +48,9 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     private Bitmap? _qrImage;
 
     [ObservableProperty]
+    private string _linkText = string.Empty;
+
+    [ObservableProperty]
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
@@ -94,6 +97,11 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     public bool QrUnavailable => IsReady && !IsText && QrImage is null;
 
     /// <summary>
+    /// Content copied by the export card: the vpn link in link mode, otherwise the config text.
+    /// </summary>
+    public string Payload => IsQrLink ? LinkText : ConfText;
+
+    /// <summary>
     /// Loads the config text from the agent and renders its QR.
     /// </summary>
     public async Task LoadAsync()
@@ -134,10 +142,12 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     {
         if (!IsReady || IsText)
         {
+            LinkText = string.Empty;
             return;
         }
 
         var payload = IsQrLink ? VpnLinkCodec.Encode(_baseConfText, ConfigName) : _baseConfText;
+        LinkText = IsQrLink ? payload : string.Empty;
         try
         {
             QrImage = QrCodec.Generate(payload);

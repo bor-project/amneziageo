@@ -47,6 +47,18 @@ internal sealed partial class SourcesView : UserControl
         e.Handled = true;
     }
 
+    // Double-click a source row to edit it (same as the menu's "Изменить"); ignored while already editing.
+    private void OnSourceRowDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: SourceItemViewModel source } || source.IsEditing)
+        {
+            return;
+        }
+
+        source.BeginEditCommand.Execute(null);
+        e.Handled = true;
+    }
+
     // Builds the per-source action menu (update / edit / delete). Commands assigned directly from the row's
     // VM because flyout MenuItems do not reliably inherit the row's DataContext in Avalonia 11.
     private static void ShowSourceMenu(Control target, SourceItemViewModel source, bool atPointer)

@@ -28,6 +28,15 @@ internal sealed partial class ProfileItemViewModel : ViewModelBase, IEditScope
     private string _baseConfigName = string.Empty;
     private long? _baseRoutingId;
 
+    // Autosave: a config / routing pick persists at once; a reconnect need surfaces via the standard banner.
+    private bool _committing;
+    private bool _commitPending;
+
+    /// <summary>
+    /// When set, config / routing selections persist through the agent as they change (the open profile only).
+    /// </summary>
+    public bool AutoSave { get; set; }
+
     [ObservableProperty]
     private string _name = string.Empty;
 
@@ -256,8 +265,8 @@ internal sealed partial class ProfileItemViewModel : ViewModelBase, IEditScope
             return;
         }
 
-        // Hold the change in the buffer; the header Save commits it (#143).
         MarkDirty();
+        FireAutoSave();
     }
 
     partial void OnSelectedRoutingListChanged(RoutingListChoice? oldValue, RoutingListChoice newValue)
@@ -277,6 +286,57 @@ internal sealed partial class ProfileItemViewModel : ViewModelBase, IEditScope
         _suppressNextRoutingNone = false;
 
         MarkDirty();
+        FireAutoSave();
+    }
+
+    // Fire-and-forget autosave for a config / routing pick (skipped while the row is being reseeded).
+    private void FireAutoSave()
+    {
+        if (AutoSave && !_suppress)
+        {
+            _ = AutoSaveAsync();
+        }
+    }
+
+    /// <summary>
+    /// Serialized autosave: persists the config / routing change through the agent, re-running when a pick lands
+    /// mid-commit.
+    /// </summary>
+    public async Task AutoSaveAsync()
+    {
+        if (_suppress || !AutoSave)
+        {
+            return;
+        }
+
+        if (_committing)
+        {
+            _commitPending = true;
+            return;
+        }
+
+        _committing = true;
+        try
+        {
+            do
+            {
+                _commitPending = false;
+                if (!IsDirty)
+                {
+                    break;
+                }
+
+                if (await CommitAsync() && !_commitPending)
+                {
+                    CaptureBaseline();
+                }
+            }
+            while (_commitPending);
+        }
+        finally
+        {
+            _committing = false;
+        }
     }
 
     // ---- IEditScope (#143): config / routing-list / use-routing edits are held in the buffer and committed

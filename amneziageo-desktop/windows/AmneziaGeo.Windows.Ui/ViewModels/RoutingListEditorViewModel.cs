@@ -25,6 +25,15 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     // Dirty tracking suppressed during construction, initial load, and revert (#143).
     private bool _seeding = true;
 
+    // Autosave: edits persist as they happen; a reconnect need surfaces via the standard banner.
+    private bool _committing;
+    private bool _commitPending;
+
+    /// <summary>
+    /// When set, edits persist through the agent as they happen (rules at once, name on blur).
+    /// </summary>
+    public bool AutoSave { get; set; }
+
     // Baseline captured on load / commit; the list is dirty when Name or Rules differ from it (a new draft
     // stays dirty until its first save).
     private string _baseName = string.Empty;
@@ -79,9 +88,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _id = id;
         Rules.CollectionChanged += (_, _) =>
         {
-            // Re-derive suggestions and re-evaluate dirtiness (#143) - no auto-save.
             ApplySuggestionFilter();
             MarkDirty();
+            FireAutoSave();
         };
         Name = name;
     }
@@ -153,6 +162,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         // Seeding done: snapshot the loaded state as the clean baseline; edits from here mark the item dirty.
         _seeding = false;
         CaptureBaseline();
+
+        // Prime the default "running" source so the app picker works without first re-choosing it from the menu.
+        await LoadRunningAsync();
     }
 
     /// <summary>
@@ -218,7 +230,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                 _id = resultId;
             }
 
-            StatusMessage = ack.Ok ? Loc.Instance.Get("RoutingEditor_Saved") : ack.Message;
+            // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
+            StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;
         }
         finally
@@ -349,6 +362,61 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         }
 
         return true;
+    }
+
+    // Fire-and-forget autosave when a rule is added / removed (skipped while seeding the initial load).
+    private void FireAutoSave()
+    {
+        if (AutoSave && !_seeding)
+        {
+            _ = AutoSaveAsync();
+        }
+    }
+
+    /// <summary>
+    /// Serialized autosave: persists name + rules through the agent, re-running when an edit lands mid-commit. A
+    /// draft with no name or no rules stays unsaved silently - there is nothing to persist yet.
+    /// </summary>
+    public async Task AutoSaveAsync()
+    {
+        if (_seeding || !AutoSave)
+        {
+            return;
+        }
+
+        if (Name.Trim().Length == 0 || Rules.Count == 0)
+        {
+            return;
+        }
+
+        if (_committing)
+        {
+            _commitPending = true;
+            return;
+        }
+
+        _committing = true;
+        try
+        {
+            do
+            {
+                _commitPending = false;
+                if (!IsDirty)
+                {
+                    break;
+                }
+
+                if (await CommitAsync() && !_commitPending)
+                {
+                    CaptureBaseline();
+                }
+            }
+            while (_commitPending);
+        }
+        finally
+        {
+            _committing = false;
+        }
     }
 
     [RelayCommand]

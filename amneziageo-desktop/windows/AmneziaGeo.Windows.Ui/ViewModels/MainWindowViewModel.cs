@@ -16,11 +16,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private readonly AgentConnection _connection;
     private readonly UiPreferences _prefs;
 
-    // Atomic per-item edit model (#143): aggregates the open item's edit scopes into IsEditing + Save/Cancel.
-    // The scopes live on the child screen view-models (Config / Profile / Routing); the shell registers them
-    // via RefreshEditScopes while their section is active.
-    private readonly EditController _editController = new();
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
     private bool _hasConfigs;
@@ -57,7 +52,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Routing = new RoutingViewModel(this, connection);
         Home = new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, Home.ShowNotice, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
-        _editController.EditingChanged += (_, _) => OnEditingChanged();
         // Seed backing field from prefs without echoing OnChanged.
         _settingsSection = prefs.SettingsSection;
         _connection.Connected += OnConnected;
@@ -150,6 +144,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         Nav = "home";
         Profile.OpenProfile = null;
+        Config.AbandonCreate();
     }
 
     [RelayCommand]
@@ -168,96 +163,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void SelectSettings(string section)
     {
         SettingsSection = section;
-    }
-
-    // ---- Atomic per-item edit model (#143): a dirty item blocks navigation; the header Save/Cancel commit or
-    // revert the whole item at once. Only the item-editor sections (profile / config / routing) participate;
-    // general / logs / sources and theme / language stay instant. ----
-
-    /// <summary>
-    /// True while the open settings item holds an uncommitted change. Blocks navigation to other items /
-    /// sections and shows the header Save / Cancel.
-    /// </summary>
-    public bool IsEditing => _editController.IsEditing;
-
-    private bool CanSaveEdit => IsEditing;
-
-    /// <summary>
-    /// Navigation lock: set while editing (a pending edit OR a pending deletion is a dirty scope, so both feed
-    /// IsEditing). The back arrow and the section rail stay locked until the header Save/Cancel resolve it.
-    /// </summary>
-    public bool NavLocked => IsEditing;
-
-    // A scope's dirtiness (or the active scope set) changed: refresh IsEditing and everything gated on it.
-    private void OnEditingChanged()
-    {
-        OnPropertyChanged(nameof(IsEditing));
-        OnPropertyChanged(nameof(NavLocked));
-        Config.NotifyIsEditingChanged();
-        Profile.NotifyIsEditingChanged();
-        Routing.NotifyIsEditingChanged();
-        Home.NotifyIsEditingChanged();
-        SaveEditCommand.NotifyCanExecuteChanged();
-        CancelEditCommand.NotifyCanExecuteChanged();
-    }
-
-    // Re-point the edit controller at the scopes of the item open in the active section. Navigation is blocked
-    // while editing, so this only runs from a clean state (section / item switch) or once a Save/Cancel settles.
-    internal void RefreshEditScopes()
-    {
-        switch (SettingsSection)
-        {
-            case "profile":
-                // Config / routing selections (ProfileItemViewModel) commit first; rename LAST so the
-                // config/routing ops still key by the old profile name.
-                _editController.SetScopes(Profile.OpenProfile, Profile.RenameScope);
-                break;
-            case "routing":
-                _editController.SetScopes(Routing.RoutingEditor, Routing.RoutingSettings);
-                break;
-            case "config":
-                // Creating a new config: only the import-form scope. Editing an existing config: the .conf
-                // editor + transport + rename - rename LAST so the .conf/transport ops still key by the old name.
-                if (Config.IsCreatingSectionConfig)
-                {
-                    _editController.SetScopes(Config.SectionConfigScope);
-                }
-                else
-                {
-                    _editController.SetScopes(Config.ConfigExport, Config.ConfigTransport, Config.RenameScope);
-                }
-
-                break;
-            default:
-                // General / logs / sources stay instant - no edit scopes (#143).
-                _editController.SetScopes();
-                break;
-        }
-    }
-
-    /// <summary>
-    /// Commits every dirty scope of the open item through the agent. On success IsEditing clears and navigation
-    /// unblocks; a rejected commit leaves the item dirty with its own status shown.
-    /// </summary>
-    [RelayCommand(CanExecute = nameof(CanSaveEdit))]
-    private async Task SaveEdit()
-    {
-        await _editController.SaveAsync();
-    }
-
-    /// <summary>
-    /// Reverts every dirty scope of the open item to its last committed values, then discards an unsaved
-    /// new-item draft (a brand-new routing list has no committed baseline to fall back to).
-    /// </summary>
-    [RelayCommand(CanExecute = nameof(CanSaveEdit))]
-    private void CancelEdit()
-    {
-        _editController.Cancel();
-
-        if (Routing.RoutingEditor is { IsNew: true })
-        {
-            Routing.CancelNewDraft();
-        }
     }
 
     // A name is taken if any config OR profile already uses it: the agent enforces one shared namespace
@@ -283,11 +188,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Profile.ProfileDeleteStatus = string.Empty;
         Routing.RoutingDeleteStatus = string.Empty;
 
+        // Leaving config discards an in-progress new-config draft (and stops its scanner).
+        if (value != "config")
+        {
+            Config.AbandonCreate();
+        }
+
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.
         Logs.SetActive(value == "logs");
-
-        // Re-point the edit model at the new section's open item (only profile/config/routing carry scopes).
-        RefreshEditScopes();
     }
 
     private void OnConnected()

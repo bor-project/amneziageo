@@ -17,6 +17,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         DataSource = databasePath,
     }.ToString();
 
+    private const int SchemaVersion = 1;
+
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
@@ -24,6 +26,13 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         await using (connection.ConfigureAwait(false))
         {
             await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var schemaVersion = await ReadUserVersionAsync(connection, ct).ConfigureAwait(false);
+            if (schemaVersion != SchemaVersion)
+            {
+                // Prior or unversioned schema: reset to the clean normalized schema (#163, no legacy migration).
+                await DropAllTablesAsync(connection, ct).ConfigureAwait(false);
+            }
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -190,6 +199,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
             // Per-list IPv6 opt-in (#149); off keeps the tunnel v4-only.
             await TryAlterAsync(connection, "ALTER TABLE routing_settings ADD COLUMN use_ipv6 INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+
+            await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
         }
     }
 
@@ -205,6 +216,55 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             }
             catch (SqliteException)
             {
+            }
+        }
+    }
+
+    private static async Task<long> ReadUserVersionAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = "PRAGMA user_version;";
+            var value = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            return value is long version ? version : 0;
+        }
+    }
+
+    private static async Task SetUserVersionAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = $"PRAGMA user_version = {SchemaVersion};";
+            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task DropAllTablesAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var tables = new List<string>();
+        var select = connection.CreateCommand();
+        await using (select.ConfigureAwait(false))
+        {
+            select.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';";
+            var reader = await select.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            await using (reader.ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    tables.Add(reader.GetString(0));
+                }
+            }
+        }
+
+        foreach (var table in tables)
+        {
+            var drop = connection.CreateCommand();
+            await using (drop.ConfigureAwait(false))
+            {
+                drop.CommandText = $"DROP TABLE IF EXISTS \"{table}\";";
+                await drop.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
     }

@@ -26,10 +26,16 @@
   with the MSI MajorUpgrade/@AllowDowngrades this makes reinstall-same-code, update and downgrade all
   work.
 
+  CONFIG OVERLAY: an optional positional environment name (prod/test/dev/...) overlays
+  installer.config.<name>.json onto the base config (see installer-config.ps1). installer.config.local.json
+  is always overlaid when present. Precedence: CLI flags > env overlay > local overlay > installer.config.json.
+
   Usage (on the build machine):
-    pwsh -File build-installer.ps1 [-Configuration Release] [-Arch x64,arm64] [-SelfContained true,false] [-All] [-Rebuild] [-ListOnly]
+    pwsh -File build-installer.ps1 [<env>] [-Configuration Release] [-Arch x64,arm64] [-SelfContained true,false] [-All] [-Rebuild] [-ListOnly]
 #>
 param(
+    [Parameter(Position = 0)]
+    [string]$Environment,
     [string]$Configuration,
     [string[]]$Arch,
     [string[]]$SelfContained,
@@ -55,11 +61,11 @@ $genWxs    = Join-Path $bundleDir 'BaPayloads.generated.wxs'
 $dist      = Join-Path $bundleDir 'dist'
 $baExeName = 'AmneziaGeo.Windows.Installer.exe'
 
-# ---- installer config (installer.config.json): a real file the build honors. Every field is optional -
-# null/empty => that feature is off: no icon => no icon anywhere; no updateUrl => updates disabled (and
-# their UI hidden); no signingCert => the outputs are left unsigned. ----
-$cfgPath = Join-Path $bundleDir 'installer.config.json'
-$cfg = if (Test-Path $cfgPath) { Get-Content $cfgPath -Raw | ConvertFrom-Json } else { $null }
+# ---- installer config: base installer.config.json + local/env overlays (installer-config.ps1). Every field
+# is optional - null/empty => that feature is off: no icon => no icon anywhere; no updateUrl => updates
+# disabled (and their UI hidden); no signingCert => the outputs are left unsigned. ----
+. (Join-Path $bundleDir 'installer-config.ps1')
+$cfg = Read-InstallerConfig -BundleDir $bundleDir -Environment $Environment
 
 # ---- configuration (Debug/Release) and rebuild flag: config -> build.{configuration,rebuild},
 # overridden by -Configuration / -Rebuild. ----
@@ -111,7 +117,8 @@ Write-Host "== build matrix: $($variants.Count) variant(s) =="
 foreach ($v in $variants) {
     Write-Host ("   - win-{0} {1}" -f $v.Arch, $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
 }
-Write-Host "== config: configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); defaultDb=$(if ($hasDb -eq 'true') { $dbAbs } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+$hasLocal = Test-Path (Join-Path $bundleDir 'installer.config.local.json')
+Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
 if ($ListOnly) { return }
 
 # ---- Authenticode signing (installer.config.json -> signingCert). Off unless signingCert is set. ----

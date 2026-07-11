@@ -19,6 +19,13 @@ internal sealed class AgentBackgroundService(
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Reap orphaned tunnel services before reconcile: nothing is connected yet, so any leftover is a stray (#168).
+        var reaped = InstallerMaintenance.ReapTransientServices(null);
+        if (reaped.Count > 0)
+        {
+            logger.LogInformation("reaped {Count} orphaned tunnel service(s): {Names}", reaped.Count, string.Join(", ", reaped));
+        }
+
         reconciler.Reconcile();
 
         // Persisted selection wins over the launch arg; a dangling selection is dropped.

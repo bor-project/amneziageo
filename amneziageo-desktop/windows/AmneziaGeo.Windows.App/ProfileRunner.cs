@@ -160,6 +160,7 @@ internal sealed class ProfileRunner(
         }
 
         await ProjectRoutingAsync(group.Name, config, ct);
+        ReapForeignTunnels(config);
         Stop(config);
 
         await SetStateAsync("connecting");
@@ -465,6 +466,17 @@ internal sealed class ProfileRunner(
 
         var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec;
         return age < _settings.DeadThresholdSeconds;
+    }
+
+    // Gas any other per-tunnel service before raising this target, so two adapters never fight over routes (#168).
+    private void ReapForeignTunnels(string keep)
+    {
+        var reaped = InstallerMaintenance.ReapTransientServices(keep);
+        if (reaped.Count > 0)
+        {
+            logger.LogInformation("reaped {Count} foreign tunnel service(s) before connect: {Names}", reaped.Count, string.Join(", ", reaped));
+            reconciler.Reconcile();
+        }
     }
 
     private void Stop(string member)

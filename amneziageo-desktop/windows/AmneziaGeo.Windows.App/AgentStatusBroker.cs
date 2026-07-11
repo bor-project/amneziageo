@@ -2262,7 +2262,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             AppSettings.EngineVersion,
             settings.TunnelAllUdp,
             settings.LogLevel,
-            settings.RouteLog);
+            settings.RouteLog,
+            control.ConnectFailed ? control.ConnectFailReason.ToString() : string.Empty,
+            control.ConnectFailed ? (control.ConnectFailDetail ?? string.Empty) : string.Empty);
     }
 
     private static string ProfileDisplayStatus(string profileStatus)

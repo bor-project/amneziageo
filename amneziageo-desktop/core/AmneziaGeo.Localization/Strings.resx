@@ -781,6 +781,27 @@
   <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
     <value>Could not connect - the server did not respond.</value>
   </data>
+  <data name="MainVm_NoticeConnectFailed_ConfigMissing" xml:space="preserve">
+    <value>Could not connect: configuration not found.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ServiceStartFailed" xml:space="preserve">
+    <value>Could not start the tunnel service ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ServiceLaunchFailed" xml:space="preserve">
+    <value>The tunnel service did not start ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_UnderlayUnreachable" xml:space="preserve">
+    <value>Transport (wstunnel) did not come up - server unreachable.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_AdapterStartFailed" xml:space="preserve">
+    <value>Could not bring up the tunnel network adapter.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
+    <value>The server did not answer (no handshake) - unreachable or key rejected.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
+    <value>The connection timed out.</value>
+  </data>
   <data name="MainVm_NoticeProfileEmpty" xml:space="preserve">
     <value>Profile «{0}» is empty - add a configuration.</value>
   </data>

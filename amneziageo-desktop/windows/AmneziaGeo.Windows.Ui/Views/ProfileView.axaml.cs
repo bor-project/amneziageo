@@ -1,16 +1,16 @@
 using Avalonia.Controls;
 
-namespace AmneziaGeo.Windows.Ui;
+namespace AmneziaGeo.Windows.Ui.Views;
 
 /// <summary>
-/// The main window.
+/// Profile screen view.
 /// </summary>
-public sealed partial class MainWindow : Window
+internal sealed partial class ProfileView : UserControl
 {
     /// <summary>
     /// ctor
     /// </summary>
-    public MainWindow()
+    public ProfileView()
     {
         InitializeComponent();
     }

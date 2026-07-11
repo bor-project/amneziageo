@@ -84,7 +84,7 @@ public sealed partial class App : Application
 
             SetUpTrayIcon();
             // Recolour the tray icon on connection state change.
-            viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            viewModel.Home.PropertyChanged += OnViewModelPropertyChanged;
             viewModel.Start();
         }
 
@@ -114,9 +114,9 @@ public sealed partial class App : Application
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainWindowViewModel.TrayStatusColor) && _trayIcon is not null && _viewModel is not null)
+        if (e.PropertyName == nameof(ConnectionViewModel.TrayStatusColor) && _trayIcon is not null && _viewModel is not null)
         {
-            _trayIcon.Icon = BuildIcon(_viewModel.TrayStatusColor);
+            _trayIcon.Icon = BuildIcon(_viewModel.Home.TrayStatusColor);
         }
     }
 
@@ -137,7 +137,7 @@ public sealed partial class App : Application
         _trayIcon = new TrayIcon
         {
             // Starts grey (disconnected); recoloured on state change.
-            Icon = BuildIcon(_viewModel?.TrayStatusColor ?? _accent),
+            Icon = BuildIcon(_viewModel?.Home.TrayStatusColor ?? _accent),
             ToolTipText = "AmneziaGeo",
             Menu = menu,
             IsVisible = true,

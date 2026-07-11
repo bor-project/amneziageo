@@ -47,15 +47,18 @@ internal static class DesignData
         {
             Nav = "settings",
             SettingsSection = "profile",
-            // A live, connected session so the header + power control render "connected" instead of the
-            // "нет связи с агентом" first-run state.
-            IsConnected = true,
-            IsTunnelActive = true,
-            BoundStatus = ConnectionStatus.Connected,
-            BoundTarget = "de-frankfurt",
-            AppVersion = "AmneziaGeo 1.0.1.240",
-            AmneziaVersion = "AmneziaWG 1.5.0 · wstunnel 10.1.6",
         };
+
+        // A live, connected session so the header + power control render "connected" instead of the
+        // "нет связи с агентом" first-run state.
+        vm.Home.IsConnected = true;
+        vm.Home.IsTunnelActive = true;
+        vm.Home.BoundStatus = ConnectionStatus.Connected;
+        vm.Home.BoundTarget = "de-frankfurt";
+
+        // --- General: version/about (theme + language seed from prefs in the VM). ---
+        vm.General.AppVersion = "AmneziaGeo 1.0.1.240";
+        vm.General.AmneziaVersion = "AmneziaWG 1.5.0 · wstunnel 10.1.6";
 
         // --- Config catalogue ---
         var borConfig = new ConfigItemViewModel
@@ -69,16 +72,16 @@ internal static class DesignData
             Dns = "1.1.1.1, 2606:4700:4700::1111",
             Status = ConnectionStatus.Connected,
         };
-        vm.Configs.Add(borConfig);
-        vm.Configs.Add(new ConfigItemViewModel
+        vm.Config.Configs.Add(borConfig);
+        vm.Config.Configs.Add(new ConfigItemViewModel
         {
             Name = "nl-amsterdam",
             Endpoint = "vpn2.example.com:51820",
             Mtu = 1420,
             Status = ConnectionStatus.Idle,
         });
-        vm.ConfigCatalogueOptions.Add(new ConfigChoice("de-frankfurt"));
-        vm.ConfigCatalogueOptions.Add(new ConfigChoice("nl-amsterdam"));
+        vm.Config.ConfigCatalogueOptions.Add(new ConfigChoice("de-frankfurt"));
+        vm.Config.ConfigCatalogueOptions.Add(new ConfigChoice("nl-amsterdam"));
         vm.HasConfigs = true;
 
         // Shared option lists for the per-profile config / routing combos.
@@ -87,11 +90,11 @@ internal static class DesignData
         // --- Routing-list catalogue ---
         var rknList = new RoutingListSummaryViewModel { Id = 1, Name = "Обход РКН", RuleCount = 42, RouteCount = 131, DomainCount = 517 };
         var mediaList = new RoutingListSummaryViewModel { Id = 2, Name = "YouTube + Discord", RuleCount = 6, RouteCount = 74, DomainCount = 39 };
-        vm.RoutingLists.Add(rknList);
-        vm.RoutingLists.Add(mediaList);
-        vm.RoutingCatalogueOptions.Add(new RoutingListChoice(rknList.Id, rknList.Name));
-        vm.RoutingCatalogueOptions.Add(new RoutingListChoice(mediaList.Id, mediaList.Name));
-        vm.HasRoutingLists = true;
+        vm.Routing.RoutingLists.Add(rknList);
+        vm.Routing.RoutingLists.Add(mediaList);
+        vm.Routing.RoutingCatalogueOptions.Add(new RoutingListChoice(rknList.Id, rknList.Name));
+        vm.Routing.RoutingCatalogueOptions.Add(new RoutingListChoice(mediaList.Id, mediaList.Name));
+        vm.Routing.HasRoutingLists = true;
 
         RoutingListChoice[] routingChoices =
         [
@@ -105,42 +108,42 @@ internal static class DesignData
             configChoices, routingChoices, RoutingListChoice.None);
         var homeProfile = NewProfile("Дом (RU)", "nl-amsterdam", ConnectionStatus.Disconnected,
             configChoices, routingChoices, new RoutingListChoice(mediaList.Id, mediaList.Name));
-        vm.Profiles.Add(workProfile);
-        vm.Profiles.Add(homeProfile);
-        vm.ProfileOptions.Add(new ProfileChoice(workProfile.Name));
-        vm.ProfileOptions.Add(new ProfileChoice(homeProfile.Name));
+        vm.Profile.Profiles.Add(workProfile);
+        vm.Profile.Profiles.Add(homeProfile);
+        vm.Profile.ProfileOptions.Add(new ProfileChoice(workProfile.Name));
+        vm.Profile.ProfileOptions.Add(new ProfileChoice(homeProfile.Name));
         vm.HasProfiles = true;
 
         // --- Geo sources ---
-        vm.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp, NoSourceOp)
+        vm.Sources.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp, NoSourceOp)
         {
             Kind = "geosite",
             CategoryCount = 1513,
             Updated = "2026-07-05 11:47",
             Url = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat",
         });
-        vm.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp, NoSourceOp)
+        vm.Sources.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp, NoSourceOp)
         {
             Kind = "geoip",
             CategoryCount = 260,
             Updated = "2026-07-05 11:47",
             Url = "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat",
         });
-        vm.HasSources = true;
+        vm.Sources.HasSources = true;
 
         // --- Logs ---
-        vm.LogFiles.Add(new LogFileChoice("ageo.log", "agent", 147865, "2026-07-08 20:30"));
-        vm.LogFiles.Add(new LogFileChoice("routes.log", "routes", 26317, "2026-07-08 20:16"));
+        vm.Logs.LogFiles.Add(new LogFileChoice("ageo.log", "agent", 147865, "2026-07-08 20:30"));
+        vm.Logs.LogFiles.Add(new LogFileChoice("routes.log", "routes", 26317, "2026-07-08 20:16"));
         // SelectedLogFile is left null on purpose: selecting a file kicks off an agent read. The viewer text is
         // seeded directly instead so it shows without a round-trip.
-        vm.LogText = SampleLog;
-        vm.HasLogs = true;
+        vm.Logs.LogText = SampleLog;
+        vm.Logs.HasLogs = true;
 
         // --- Open the work profile: renders the Profile editor + the Config manage/transport editors. This
         // sets OpenConfig = "de-frankfurt", which builds a live ConfigTransport (from borConfig) and a stray
         // ExportDialog whose LoadAsync cannot reach the mock agent; the ready replacement below supersedes it.
-        vm.OpenProfile = workProfile;
-        vm.ConfigExport = ReadyExport(connection, "de-frankfurt", SampleConf);
+        vm.Profile.OpenProfile = workProfile;
+        vm.Config.ConfigExport = ReadyExport(connection, "de-frankfurt", SampleConf);
 
         // --- Routing section editor: hand-built so it carries sample rules without an agent round-trip.
         // Pre-assigning RoutingEditor makes the EditRoutingList selection below short-circuit
@@ -160,9 +163,9 @@ internal static class DesignData
         {
             routingEditor.Rules.Add(rule);
         }
-        vm.RoutingEditor = routingEditor;
-        vm.RoutingSettings = new RoutingSettingsViewModel(connection, rknList.Id);
-        vm.EditRoutingList = rknList;
+        vm.Routing.RoutingEditor = routingEditor;
+        vm.Routing.RoutingSettings = new RoutingSettingsViewModel(connection, rknList.Id);
+        vm.Routing.EditRoutingList = rknList;
 
         return vm;
     }

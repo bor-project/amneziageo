@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
+             x:Class="AmneziaGeo.Windows.Ui.Views.GeneralView"
+             x:CompileBindings="True"
+             x:DataType="vm:GeneralViewModel">
+  <StackPanel Spacing="14">
+    <StackPanel>
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
+        <TextBlock Text="{l:Tr General_Section}" Classes="section" />
+      </Border>
+
+      <!-- Theme -->
+      <Grid ColumnDefinitions="*,Auto" Margin="0,11">
+        <TextBlock Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
+        <ComboBox Grid.Column="1" MinWidth="150" VerticalAlignment="Center"
+                  ItemsSource="{Binding Themes}"
+                  SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}" />
+      </Grid>
+
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" />
+
+      <!-- Language: live switch. -->
+      <Grid ColumnDefinitions="*,Auto" Margin="0,11">
+        <TextBlock Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
+        <ComboBox Grid.Column="1" MinWidth="150" VerticalAlignment="Center"
+                  ItemsSource="{Binding Languages}"
+                  SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}" />
+      </Grid>
+    </StackPanel>
+
+    <!-- About folded into General. -->
+    <StackPanel>
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
+        <TextBlock Text="{l:Tr About_Section}" Classes="section" />
+      </Border>
+      <Grid ColumnDefinitions="*,Auto" Margin="0,11">
+        <TextBlock Text="{l:Tr About_Version}" FontSize="13.5" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
+      </Grid>
+
+      <Grid ColumnDefinitions="*,Auto" Margin="0,11">
+        <TextBlock Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5" VerticalAlignment="Center" />
+      </Grid>
+
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Padding="0,12"
+              IsVisible="{Binding HasUpdateUrl}">
+        <StackPanel Spacing="9">
+          <TextBlock Text="{l:Tr Main_UpdateSection}" Classes="section" />
+          <Button Classes="softbtn" HorizontalAlignment="Left" Content="{l:Tr Main_CheckUpdatesButton}"
+                  Command="{Binding CheckUpdateCommand}" />
+          <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+          <StackPanel Spacing="6" IsVisible="{Binding UpdateAvailable}">
+            <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+            <!-- Found -> downloading -> downloaded: installing is an explicit second click (#154). -->
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <Button Classes="accent" Content="{l:Tr Main_DownloadButton}" Command="{Binding DownloadUpdateCommand}"
+                      IsVisible="{Binding !UpdateDownloaded}" IsEnabled="{Binding !UpdateDownloading}" />
+              <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
+                         FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />
+              <Button Classes="accent" Content="{l:Tr Main_InstallButton}" Command="{Binding ApplyUpdateCommand}"
+                      IsVisible="{Binding UpdateDownloaded}" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <!-- Selective export/import: portable JSON bundle of profiles, configs, routing lists. -->
+    <StackPanel>
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,0,0,1" Padding="0,11">
+        <TextBlock Text="{l:Tr Main_ImportExportSection}" Classes="section" />
+      </Border>
+      <StackPanel Margin="0,11" Spacing="10">
+        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap"
+                   Text="{l:Tr Main_BundleHint}" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="softbtn" Content="{l:Tr Main_ExportButton}" Click="OnOpenBundleExport" />
+          <Button Classes="softbtn" Content="{l:Tr Main_ImportButton}" Click="OnOpenBundleImport" />
+        </StackPanel>
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

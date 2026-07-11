@@ -17,26 +17,46 @@ internal static class InstallerMaintenance
     /// </summary>
     public static void RemoveTransientServices()
     {
+        ReapTransientServices(null);
+    }
+
+    /// <summary>
+    /// Stops and deletes transient "AmneziaGeo$*" tunnel services except the one for keepBareName; returns the removed bare names.
+    /// </summary>
+    public static IReadOnlyList<string> ReapTransientServices(string? keepBareName)
+    {
+        var removed = new List<string>();
         var scm = OpenSCManager(null, null, ScManagerConnect | ScManagerEnumerateService);
         if (scm == IntPtr.Zero)
         {
-            return;
+            return removed;
         }
 
+        var keepServiceName = keepBareName is null ? null : TransientPrefix + keepBareName;
         try
         {
             foreach (var name in EnumerateServiceNames(scm))
             {
-                if (name.StartsWith(TransientPrefix, StringComparison.Ordinal))
+                if (!name.StartsWith(TransientPrefix, StringComparison.Ordinal))
                 {
-                    StopAndDelete(scm, name);
+                    continue;
                 }
+
+                if (keepServiceName is not null && string.Equals(name, keepServiceName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                StopAndDelete(scm, name);
+                removed.Add(name[TransientPrefix.Length..]);
             }
         }
         finally
         {
             CloseServiceHandle(scm);
         }
+
+        return removed;
     }
 
     /// <summary>

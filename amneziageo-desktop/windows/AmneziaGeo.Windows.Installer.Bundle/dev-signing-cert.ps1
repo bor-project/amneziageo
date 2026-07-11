@@ -20,6 +20,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Default the subject from the merged installer config (so the dev cert matches what the build selects),
+# unless -Subject was passed explicitly.
+if (-not $PSBoundParameters.ContainsKey('Subject')) {
+    . (Join-Path $PSScriptRoot 'installer-config.ps1')
+    $cfg = Read-InstallerConfig -BundleDir $PSScriptRoot
+    if ($cfg -and $cfg.signingCert -and $cfg.signingCert.subject) { $Subject = [string]$cfg.signingCert.subject }
+}
 $dn = "CN=$Subject"
 $codeSigningOid = '1.3.6.1.5.5.7.3.3'
 

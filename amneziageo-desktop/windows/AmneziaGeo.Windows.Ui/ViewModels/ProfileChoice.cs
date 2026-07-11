@@ -22,7 +22,7 @@ internal enum ProfileChoiceKind
 /// <summary>
 /// A profile pick for the main-window and Profile-section combo boxes. Identity is the stable key, Name is
 /// observable for a live rename preview, Kind distinguishes the synthetic none choice. The host resolves a
-/// real choice to its BalancerItemViewModel by Identity.
+/// real choice to its ProfileItemViewModel by Identity.
 /// </summary>
 internal sealed partial class ProfileChoice : ObservableObject
 {

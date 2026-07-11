@@ -12,25 +12,25 @@ if ($Stop) {
     Write-Host "stopping + removing the agent ..." -ForegroundColor Cyan
     ageo agent-stop | Out-Null
     ageo agent-uninstall | Out-Null
-    Write-Host "agent removed; it deletes its member tunnel service on stop." -ForegroundColor Yellow
+    Write-Host "agent removed; it deletes its tunnel service on stop." -ForegroundColor Yellow
     Write-Host "run cleanup.ps1 to drop the test config." -ForegroundColor Yellow
     return
 }
 
 Write-Host ("egress BEFORE (direct): " + (& curl.exe -s ifconfig.me/ip)) -ForegroundColor Cyan
 
-Write-Host "registering member config '$Target' (full tunnel) ..." -ForegroundColor Cyan
+Write-Host "registering config '$Target' (full tunnel) ..." -ForegroundColor Cyan
 ageo config-add $Target "$Conf" | Out-Null
 ageo set-geo $Target off | Out-Null
 
-Write-Host "installing + starting the agent (single config = group of 1) ..." -ForegroundColor Cyan
+Write-Host "installing + starting the agent (single-config profile) ..." -ForegroundColor Cyan
 ageo agent-install $Target | Out-Null
 ageo agent-start | Out-Null
 Start-Sleep -Seconds 10
 
 Write-Host "`nagent service:" -ForegroundColor Cyan
 ageo agent-status | Select-String "STATE"
-Write-Host "member tunnel service (created by the agent):" -ForegroundColor Cyan
+Write-Host "tunnel service (created by the agent):" -ForegroundColor Cyan
 ageo config-list
 Write-Host "`nagent log:" -ForegroundColor Cyan
 if (Test-Path $log) { Get-Content $log -Tail 15 } else { Write-Host "(no log yet)" }

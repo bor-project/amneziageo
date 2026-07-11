@@ -43,7 +43,7 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
     /// </summary>
     public BundleExportDialogViewModel(
         AgentConnection connection,
-        IReadOnlyList<BalancerItemViewModel> balancers,
+        IReadOnlyList<ProfileItemViewModel> profiles,
         IReadOnlyList<ConfigItemViewModel> configs,
         IReadOnlyList<RoutingListSummaryViewModel> routingLists)
     {
@@ -63,17 +63,17 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
             RoutingItems.Add(item);
         }
 
-        foreach (var balancer in balancers)
+        foreach (var profile in profiles)
         {
-            var item = new BundleItem { Name = balancer.Name, Detail = ProfileDetail(balancer) };
+            var item = new BundleItem { Name = profile.Name, Detail = ProfileDetail(profile) };
 
             // Resolved once, by name, from the collections just built above - the profile's checkbox then
             // drives these two dependents directly (cascade described on BundleItem.CheckedChanged).
-            var dependentConfig = balancer.Config.Length > 0
-                ? ConfigItems.FirstOrDefault(c => string.Equals(c.Name, balancer.Config, StringComparison.Ordinal))
+            var dependentConfig = profile.Config.Length > 0
+                ? ConfigItems.FirstOrDefault(c => string.Equals(c.Name, profile.Config, StringComparison.Ordinal))
                 : null;
-            var dependentRouting = balancer.SelectedRoutingList.IsReal
-                ? RoutingItems.FirstOrDefault(r => string.Equals(r.Name, balancer.SelectedRoutingList.Name, StringComparison.Ordinal))
+            var dependentRouting = profile.SelectedRoutingList.IsReal
+                ? RoutingItems.FirstOrDefault(r => string.Equals(r.Name, profile.SelectedRoutingList.Name, StringComparison.Ordinal))
                 : null;
 
             Wire(item, isChecked =>
@@ -163,17 +163,17 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
         CanExport = ProfileItems.Any(i => i.IsChecked) || ConfigItems.Any(i => i.IsChecked) || RoutingItems.Any(i => i.IsChecked);
     }
 
-    private static string ProfileDetail(BalancerItemViewModel balancer)
+    private static string ProfileDetail(ProfileItemViewModel profile)
     {
         var parts = new List<string>();
-        if (balancer.Config.Length > 0)
+        if (profile.Config.Length > 0)
         {
-            parts.Add(balancer.Config);
+            parts.Add(profile.Config);
         }
 
-        if (balancer.SelectedRoutingList.IsReal)
+        if (profile.SelectedRoutingList.IsReal)
         {
-            parts.Add(balancer.SelectedRoutingList.Name);
+            parts.Add(profile.SelectedRoutingList.Name);
         }
 
         return parts.Count > 0 ? string.Join(" · ", parts) : Loc.Instance.Get("BundleExportVm_NoConfiguration");

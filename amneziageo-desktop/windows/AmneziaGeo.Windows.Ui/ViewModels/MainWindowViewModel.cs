@@ -90,7 +90,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSelectConfigHint))]
     [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
-    private bool _hasBalancers;
+    private bool _hasProfiles;
 
     [ObservableProperty]
     private bool _hasRoutingLists;
@@ -102,7 +102,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
-    private BalancerItemViewModel? _openProfile;
+    private ProfileItemViewModel? _openProfile;
 
     [ObservableProperty]
     private ProfileChoice? _openProfileChoice = ProfileChoice.None;
@@ -110,7 +110,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
-    private BalancerItemViewModel? _activeProfile;
+    private ProfileItemViewModel? _activeProfile;
 
     [ObservableProperty]
     private ProfileChoice? _activeProfileChoice = ProfileChoice.None;
@@ -436,14 +436,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
 
     /// <summary>
-    /// Profile rows.
+    /// Profile rows (profile = config × routing).
     /// </summary>
-    public ObservableCollection<BalancerItemViewModel> Balancers { get; } = [];
-
-    /// <summary>
-    /// Profiles under the shell's name (profile = config × routing).
-    /// </summary>
-    public ObservableCollection<BalancerItemViewModel> Profiles => Balancers;
+    public ObservableCollection<ProfileItemViewModel> Profiles { get; } = [];
 
     public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None];
 
@@ -513,9 +508,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _ => Loc.Instance.Get("MainVm_ConnectHintClickToConnect"),
     };
 
-    public bool ShowSelectConfigHint => ConnState == 0 && HasBalancers && ActiveProfile is not { IsComplete: true };
+    public bool ShowSelectConfigHint => ConnState == 0 && HasProfiles && ActiveProfile is not { IsComplete: true };
 
-    public bool ShowNoProfilesYetHint => HasConfigs && !HasBalancers;
+    public bool ShowNoProfilesYetHint => HasConfigs && !HasProfiles;
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
@@ -741,7 +736,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         switch (SettingsSection)
         {
             case "profile":
-                // Config / routing selections (BalancerItemViewModel) commit first; rename LAST so the
+                // Config / routing selections (ProfileItemViewModel) commit first; rename LAST so the
                 // config/routing ops still key by the old profile name.
                 _editController.SetScopes(OpenProfile, _profileRenameScope);
                 break;
@@ -842,7 +837,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Profiles whose assigned routing list is this id (regardless of the use-routing toggle - the row still
     // references the list). Reliable because delete is gated on !IsEditing, so no profile is mid-edit.
     private List<string> ProfilesUsingRouting(long id) =>
-        Balancers.Where(b => b.SelectedRoutingList.Id == id)
+        Profiles.Where(b => b.SelectedRoutingList.Id == id)
             .Select(b => b.Name)
             .ToList();
 
@@ -856,16 +851,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Configs.FirstOrDefault(c => !string.Equals(c.Name, deleted, StringComparison.Ordinal))?.Name;
 
     // The first profile instance that is not the one just deleted, or null when it was the last one.
-    private BalancerItemViewModel? NextProfileAfter(BalancerItemViewModel deleted) =>
-        Balancers.FirstOrDefault(b => !ReferenceEquals(b, deleted));
+    private ProfileItemViewModel? NextProfileAfter(ProfileItemViewModel deleted) =>
+        Profiles.FirstOrDefault(b => !ReferenceEquals(b, deleted));
 
     // A name is taken if any config OR profile already uses it: the agent enforces one shared namespace
-    // (AgentStatusBroker rename/copy checks configRepo.ExistsAsync || store.GetBalancerAsync). Ordinal, so this
+    // (AgentStatusBroker rename/copy checks configRepo.ExistsAsync || store.GetProfileAsync). Ordinal, so this
     // is never STRICTER than the agent - a case-variant it would still reject just falls through to the server,
     // keeping the check a safe best-effort. Call only after confirming the new name differs from the current one.
     private bool IsNameTaken(string name) =>
         _configNames.Any(n => string.Equals(n, name, StringComparison.Ordinal))
-        || Balancers.Any(b => string.Equals(b.Name, name, StringComparison.Ordinal));
+        || Profiles.Any(b => string.Equals(b.Name, name, StringComparison.Ordinal));
 
     // Local pre-commit check for the config rename (#143): reject an empty or already-taken name before any
     // scope is persisted, so a bad name aborts the whole Save in the pre-flight pass (shrinks the non-atomic
@@ -1021,7 +1016,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    partial void OnActiveProfileChanged(BalancerItemViewModel? oldValue, BalancerItemViewModel? newValue)
+    partial void OnActiveProfileChanged(ProfileItemViewModel? oldValue, ProfileItemViewModel? newValue)
     {
         // Track the active profile's completeness.
         if (oldValue is not null)
@@ -1049,7 +1044,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void OnActiveProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(BalancerItemViewModel.Config) or nameof(BalancerItemViewModel.IsComplete))
+        if (e.PropertyName is nameof(ProfileItemViewModel.Config) or nameof(ProfileItemViewModel.IsComplete))
         {
             NotifyCanToggleConnection();
         }
@@ -1071,7 +1066,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         ActiveProfile = value.IsReal
-            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Identity, StringComparison.Ordinal))
+            ? Profiles.FirstOrDefault(b => string.Equals(b.Name, value.Identity, StringComparison.Ordinal))
             : null;
     }
 
@@ -1083,7 +1078,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         OpenProfile = value.IsReal
-            ? Balancers.FirstOrDefault(b => string.Equals(b.Name, value.Identity, StringComparison.Ordinal))
+            ? Profiles.FirstOrDefault(b => string.Equals(b.Name, value.Identity, StringComparison.Ordinal))
             : null;
     }
 
@@ -1286,8 +1281,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Track the open profile so its SelectedRoutingList drives the inline rule editor. Subscribing to the
-    // instance is safe because the snapshot reconcile keeps the same BalancerItemViewModel instances.
-    partial void OnOpenProfileChanged(BalancerItemViewModel? oldValue, BalancerItemViewModel? newValue)
+    // instance is safe because the snapshot reconcile keeps the same ProfileItemViewModel instances.
+    partial void OnOpenProfileChanged(ProfileItemViewModel? oldValue, ProfileItemViewModel? newValue)
     {
         // Leaving the profile disarms any pending delete confirmation (#143).
         ProfileDeletePending = false;
@@ -1344,7 +1339,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void OnOpenProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BalancerItemViewModel.Config))
+        if (e.PropertyName == nameof(ProfileItemViewModel.Config))
         {
             OpenConfig = string.IsNullOrEmpty(OpenProfile?.Config) ? null : OpenProfile!.Config;
         }
@@ -1353,7 +1348,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Reflect a profile's assigned routing list into the standalone Routing section: a real list opens there
     // (its rule / per-routing settings editors build via OnEditRoutingListChanged), while no list clears the
     // section. Mirrors how OnOpenProfileChanged opens the profile's configuration.
-    private void OpenProfileRouting(BalancerItemViewModel? profile)
+    private void OpenProfileRouting(ProfileItemViewModel? profile)
     {
         var choice = profile?.SelectedRoutingList;
         if (choice is { IsReal: true } && RoutingLists.FirstOrDefault(r => r.Id == choice.Id) is { } row)
@@ -1446,11 +1441,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             IsConnected = false;
             BoundStatus = ConnectionStatus.Disconnected;
             Configs.Clear();
-            Balancers.Clear();
+            Profiles.Clear();
             RoutingLists.Clear();
             Sources.Clear();
             HasConfigs = false;
-            HasBalancers = false;
+            HasProfiles = false;
             HasRoutingLists = false;
             HasSources = false;
             RoutingEditor = null;
@@ -1459,7 +1454,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             // lists. The combos null out with their cleared sources; clearing the targets here is explicit.
             OpenProfile = null;
             ActiveProfile = null;
-            // Drop the stale profile names from the combos (Balancers is now empty), leaving «— не выбрано —»
+            // Drop the stale profile names from the combos (Profiles is now empty), leaving «— не выбрано —»
             // and «+ Новый профиль»; the selections already re-mirrored to None via the nulls above.
             ReconcileProfileOptions();
             OpenConfig = null;
@@ -1510,9 +1505,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SyncConfigs(snapshot.Configs);
         SyncRoutingLists(snapshot.RoutingLists ?? []);
         SyncSources(snapshot.Sources ?? []);
-        SyncBalancers(snapshot.Balancers, snapshot.RoutingLists ?? []);
+        SyncProfiles(snapshot.Profiles, snapshot.RoutingLists ?? []);
         HasConfigs = Configs.Count > 0;
-        HasBalancers = Balancers.Count > 0;
+        HasProfiles = Profiles.Count > 0;
         HasRoutingLists = RoutingLists.Count > 0;
 
         // The agent stores the selected/bound target as EITHER a profile name or the bare config name the
@@ -1520,7 +1515,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // of band). A profile's name and its config name never coincide - they share one namespace - so we
         // match on either; otherwise the current target lights up no row at all (the reported bug).
         var selected = snapshot.SelectedTarget ?? snapshot.BoundTarget;
-        foreach (var item in Balancers)
+        foreach (var item in Profiles)
         {
             item.IsActive = ProfileMatchesTarget(item, selected);
             // A DIFFERENT profile is the live tunnel: this profile's connect button reads "Переключить".
@@ -1531,16 +1526,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // back. Prefer the agent's active/selected target; fall back to the last profile the user had
         // chosen (restored from prefs) so the window opens on it with connect still gated until present.
         _suppressActivePush = true;
-        var active = Balancers.FirstOrDefault(b => ProfileMatchesTarget(b, selected));
+        var active = Profiles.FirstOrDefault(b => ProfileMatchesTarget(b, selected));
         if (active is null && !string.IsNullOrEmpty(_prefs.LastProfile))
         {
-            active = Balancers.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastProfile, StringComparison.Ordinal));
+            active = Profiles.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastProfile, StringComparison.Ordinal));
         }
         if (active is not null)
         {
             ActiveProfile = active;
         }
-        else if (ActiveProfile is not null && !Balancers.Contains(ActiveProfile))
+        else if (ActiveProfile is not null && !Profiles.Contains(ActiveProfile))
         {
             // The chosen profile was removed elsewhere: drop the selection so connect re-gates.
             ActiveProfile = null;
@@ -1557,7 +1552,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             // Distinguish a memberless profile (nothing to dial) from a real reachability failure, so the
             // message is actionable instead of the misleading "сервер не ответил".
             var emptyProfile = snapshot.SelectedTarget is not null
-                && snapshot.Balancers.FirstOrDefault(b =>
+                && snapshot.Profiles.FirstOrDefault(b =>
                        string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Config.Length: 0 };
             notice = emptyProfile
                 ? Loc.Instance.Get("MainVm_NoticeProfileEmpty", snapshot.SelectedTarget)
@@ -1590,7 +1585,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     // A profile "is" the given target when the target equals its name or the config it wraps. The agent's
     // selected/bound target can be stored as either form, so the UI resolves both to the same profile row.
-    private static bool ProfileMatchesTarget(BalancerItemViewModel item, string? target)
+    private static bool ProfileMatchesTarget(ProfileItemViewModel item, string? target)
     {
         if (string.IsNullOrEmpty(target))
         {
@@ -1612,8 +1607,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return false;
         }
 
-        var selectedProfile = Balancers.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.SelectedTarget));
-        var boundProfile = Balancers.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.BoundTarget));
+        var selectedProfile = Profiles.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.SelectedTarget));
+        var boundProfile = Profiles.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.BoundTarget));
         return !(selectedProfile is not null && ReferenceEquals(selectedProfile, boundProfile));
     }
 
@@ -2366,7 +2361,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void SyncBalancers(IReadOnlyList<BalancerEntry> entries, IReadOnlyList<RoutingListEntry> routingLists)
+    private void SyncProfiles(IReadOnlyList<ProfileEntry> entries, IReadOnlyList<RoutingListEntry> routingLists)
     {
         var options = BuildRoutingOptions(routingLists);
         var configOptions = BuildConfigOptions();
@@ -2374,31 +2369,31 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // Reconcile in place, matching rows by name, so transient view state (the expanded
         // editor, combo selection) survives the snapshot pushes that follow every edit.
         var present = entries.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
-        for (var i = Balancers.Count - 1; i >= 0; i--)
+        for (var i = Profiles.Count - 1; i >= 0; i--)
         {
-            if (!present.Contains(Balancers[i].Name))
+            if (!present.Contains(Profiles[i].Name))
             {
-                Balancers.RemoveAt(i);
+                Profiles.RemoveAt(i);
             }
         }
 
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
-            var existing = Balancers.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
+            var existing = Profiles.FirstOrDefault(b => string.Equals(b.Name, entry.Name, StringComparison.Ordinal));
             if (existing is null)
             {
-                existing = new BalancerItemViewModel(SaveBalancerAsync, AssignRoutingAsync, SelectProfileAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
+                existing = new ProfileItemViewModel(SaveProfileAsync, AssignRoutingAsync, SelectProfileAsync, ToggleProfileConnectionAsync, RemoveConfigAsync);
                 existing.ApplyFromEntry(entry, options, configOptions);
-                Balancers.Insert(Math.Min(i, Balancers.Count), existing);
+                Profiles.Insert(Math.Min(i, Profiles.Count), existing);
                 continue;
             }
 
             existing.ApplyFromEntry(entry, options, configOptions);
-            var index = Balancers.IndexOf(existing);
+            var index = Profiles.IndexOf(existing);
             if (index != i)
             {
-                Balancers.Move(index, i);
+                Profiles.Move(index, i);
             }
         }
 
@@ -2407,7 +2402,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ReconcileProfileOptions();
 
         // If the profile opened in the detail view was removed elsewhere, fall back to the list.
-        if (OpenProfile is not null && !Balancers.Contains(OpenProfile))
+        if (OpenProfile is not null && !Profiles.Contains(OpenProfile))
         {
             OpenProfile = null;
         }
@@ -2416,7 +2411,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // picked immediately.
         if (_pendingOpenProfile is not null)
         {
-            var created = Balancers.FirstOrDefault(b => string.Equals(b.Name, _pendingOpenProfile, StringComparison.Ordinal));
+            var created = Profiles.FirstOrDefault(b => string.Equals(b.Name, _pendingOpenProfile, StringComparison.Ordinal));
             if (created is not null)
             {
                 OpenProfile = created;
@@ -2428,7 +2423,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SyncOpenProfileChoice();
     }
 
-    // Reconcile ProfileOptions in place from Balancers: keep «— не выбрано —» at [0] and reconcile the real
+    // Reconcile ProfileOptions in place from Profiles: keep «— не выбрано —» at [0] and reconcile the real
     // choices after it - dropping removed profiles, adding new ones, and reordering to match. Options are
     // matched by Identity (the persisted profile name), which stays stable across a live-typed rename, so an
     // in-progress rename preview (#110) is not clobbered by a snapshot push. Editing in place (rather than
@@ -2437,7 +2432,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void ReconcileProfileOptions()
     {
         const int head = 1; // None occupies [0].
-        var present = Balancers.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
+        var present = Profiles.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
         for (var i = ProfileOptions.Count - 1; i >= head; i--)
         {
             if (!present.Contains(ProfileOptions[i].Identity))
@@ -2446,9 +2441,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             }
         }
 
-        for (var i = 0; i < Balancers.Count; i++)
+        for (var i = 0; i < Profiles.Count; i++)
         {
-            var name = Balancers[i].Name;
+            var name = Profiles[i].Name;
             var slot = head + i;
             var existing = ProfileOptions.Skip(head).FirstOrDefault(o => string.Equals(o.Identity, name, StringComparison.Ordinal));
             if (existing is null)
@@ -2509,7 +2504,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         var name = UniqueProfileName();
         string[] args = config.Length > 0 ? [name, config] : [name];
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, args));
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddProfile, args));
         if (ack.Ok)
         {
             _pendingOpenProfile = name;
@@ -2519,7 +2514,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private string UniqueProfileName()
     {
         var baseName = Loc.Instance.Get("MainVm_NewProfileDefaultName");
-        var existing = Balancers.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
+        var existing = Profiles.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
         if (!existing.Contains(baseName))
         {
             return baseName;
@@ -2578,9 +2573,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return UniqueDefaultName(Loc.Instance.Get("MainVm_NewListDefaultName"), taken);
     }
 
-    private async Task<IpcAck> SaveBalancerAsync(string name, string config)
+    private async Task<IpcAck> SaveProfileAsync(string name, string config)
     {
-        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddBalancer, [name, config]));
+        return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddProfile, [name, config]));
     }
 
     private async Task<IpcAck> ImportConfigAsync(string name, string confText)
@@ -2870,7 +2865,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         var ack = await _connection.SendCommandAsync(
-            new IpcCommand(IpcContract.OpRemoveBalancer, [profile.Name]));
+            new IpcCommand(IpcContract.OpRemoveProfile, [profile.Name]));
         if (!ack.Ok)
         {
             ProfileDeleteStatus = ack.Message;
@@ -2907,7 +2902,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Commit the open profile's rename through the agent (#143 header Save). On OK the live instance adopts the
-    // new name so the next snapshot reconciles it in place (SyncBalancers matches by name) instead of dropping
+    // new name so the next snapshot reconciles it in place (SyncProfiles matches by name) instead of dropping
     // the row. An empty name is rejected (the item stays dirty); a refused rename shows why and reverts the
     // combo label to the persisted name.
     private async Task<bool> CommitProfileRenameAsync()

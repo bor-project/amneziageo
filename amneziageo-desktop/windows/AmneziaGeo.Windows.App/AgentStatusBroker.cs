@@ -236,7 +236,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return command.Op switch
             {
                 IpcContract.OpAddConfig => await AddConfigAsync(command.Args, ct),
-                IpcContract.OpAddBalancer => await AddBalancerAsync(command.Args, ct),
+                IpcContract.OpAddProfile => await AddProfileAsync(command.Args, ct),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
                 IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
@@ -263,7 +263,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpImportConfig => await ImportConfigAsync(command.Args, ct),
                 IpcContract.OpEditConfig => await EditConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
-                IpcContract.OpRemoveBalancer => await RemoveBalancerAsync(command.Args, ct),
+                IpcContract.OpRemoveProfile => await RemoveProfileAsync(command.Args, ct),
                 IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
                 IpcContract.OpCopyConfig => await CopyConfigAsync(command.Args, ct),
                 IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
@@ -358,8 +358,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var bound = BoundTarget;
         if (control.Running && bound is not null)
         {
-            var boundBalancer = await store.GetBalancerAsync(bound, ct);
-            if (boundBalancer is not null && string.Equals(boundBalancer.Config, name, StringComparison.Ordinal))
+            var boundProfile = await store.GetProfileAsync(bound, ct);
+            if (boundProfile is not null && string.Equals(boundProfile.Config, name, StringComparison.Ordinal))
             {
                 return new IpcAck(false, $"config {name} is in use by the running profile {bound}; disconnect first");
             }
@@ -371,15 +371,15 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, $"removed config {name}");
     }
 
-    private async Task<IpcAck> RemoveBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
+    private async Task<IpcAck> RemoveProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
-            return new IpcAck(false, "remove-balancer requires a name");
+            return new IpcAck(false, "remove-profile requires a name");
         }
 
         var name = args[0];
-        if (await store.GetBalancerAsync(name, ct) is null)
+        if (await store.GetProfileAsync(name, ct) is null)
         {
             return new IpcAck(false, $"unknown profile: {name}");
         }
@@ -390,7 +390,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"profile {name} is running; disconnect first");
         }
 
-        await store.RemoveBalancerAsync(name, ct);
+        await store.RemoveProfileAsync(name, ct);
         await ClearBindingIfTargetAsync(name, ct);
         logger.LogInformation("removed profile {Name}", name);
         return new IpcAck(true, $"removed profile {name}");
@@ -420,7 +420,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {source}");
         }
 
-        if (await configRepo.ExistsAsync(destination, ct) || await store.GetBalancerAsync(destination, ct) is not null)
+        if (await configRepo.ExistsAsync(destination, ct) || await store.GetProfileAsync(destination, ct) is not null)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", destination));
         }
@@ -449,7 +449,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {oldName}");
         }
 
-        if (await configRepo.ExistsAsync(newName, ct) || await store.GetBalancerAsync(newName, ct) is not null)
+        if (await configRepo.ExistsAsync(newName, ct) || await store.GetProfileAsync(newName, ct) is not null)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
@@ -487,13 +487,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(true, IpcMessage.Key("Agent_NameUnchanged"));
         }
 
-        var balancer = await store.GetBalancerAsync(oldName, ct);
-        if (balancer is null)
+        var profile = await store.GetProfileAsync(oldName, ct);
+        if (profile is null)
         {
             return new IpcAck(false, $"unknown profile: {oldName}");
         }
 
-        if (await store.GetBalancerAsync(newName, ct) is not null || await configRepo.ExistsAsync(newName, ct))
+        if (await store.GetProfileAsync(newName, ct) is not null || await configRepo.ExistsAsync(newName, ct))
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
@@ -503,8 +503,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var wasLiveTarget = control.Running && string.Equals(oldName, BoundTarget, StringComparison.Ordinal);
 
         // Carry routing assignment and selection across to the new name.
-        await store.SaveBalancerAsync(balancer with { Name = newName }, ct);
-        await store.RemoveBalancerAsync(oldName, ct);
+        await store.SaveProfileAsync(profile with { Name = newName }, ct);
+        await store.RemoveProfileAsync(oldName, ct);
 
         var (listId, useRouting) = await store.GetProfileRoutingAsync(oldName, ct);
         if (listId is not null || useRouting)
@@ -515,9 +515,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         // Carry the live status row so the renamed profile keeps showing its real state; without it the
         // bound status reads Disconnected (state is still keyed under the old name) until a reconnect.
-        if (await store.GetBalancerStateAsync(oldName, ct) is { } liveState)
+        if (await store.GetProfileStateAsync(oldName, ct) is { } liveState)
         {
-            await store.SaveBalancerStateAsync(liveState with { Group = newName }, ct);
+            await store.SaveProfileStateAsync(liveState with { Name = newName }, ct);
         }
 
         // Follow the rename in the live binding so the supervisor keeps resolving the profile: a stale
@@ -579,15 +579,15 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         foreach (var profileName in profileNames)
         {
-            var balancer = await store.GetBalancerAsync(profileName, ct);
-            if (balancer is null)
+            var profile = await store.GetProfileAsync(profileName, ct);
+            if (profile is null)
             {
                 continue;
             }
 
-            if (!string.IsNullOrEmpty(balancer.Config))
+            if (!string.IsNullOrEmpty(profile.Config))
             {
-                configNames.Add(balancer.Config);
+                configNames.Add(profile.Config);
             }
 
             var (listId, _) = await store.GetProfileRoutingAsync(profileName, ct);
@@ -667,8 +667,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var profileBlocks = new List<PortableBundle.ProfileBlock>();
         foreach (var name in profileNames)
         {
-            var balancer = await store.GetBalancerAsync(name, ct);
-            if (balancer is null)
+            var profile = await store.GetProfileAsync(name, ct);
+            if (profile is null)
             {
                 continue;
             }
@@ -682,7 +682,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
             profileBlocks.Add(new PortableBundle.ProfileBlock(
                 name,
-                string.IsNullOrEmpty(balancer.Config) ? null : balancer.Config,
+                string.IsNullOrEmpty(profile.Config) ? null : profile.Config,
                 routingListName,
                 useRouting));
         }
@@ -736,7 +736,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         // Config and profile names live in one global namespace (rename refuses a name used by either);
         // routing-list names are a separate space. Snapshots taken before import drive collision detection.
         var existingConfigs = new HashSet<string>(await configRepo.ListAsync(ct), StringComparer.Ordinal);
-        var existingProfiles = new HashSet<string>(await store.ListBalancerNamesAsync(ct), StringComparer.Ordinal);
+        var existingProfiles = new HashSet<string>(await store.ListProfileNamesAsync(ct), StringComparer.Ordinal);
         var existingLists = (await store.ListRoutingListsAsync(ct))
             .ToDictionary(l => l.Name, l => l, StringComparer.Ordinal);
 
@@ -876,10 +876,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 var boundConfig = config;
                 if (config.Length == 0)
                 {
-                    boundConfig = (await store.GetBalancerAsync(block.Name, ct))?.Config ?? string.Empty;
+                    boundConfig = (await store.GetProfileAsync(block.Name, ct))?.Config ?? string.Empty;
                 }
 
-                await store.SaveBalancerAsync(new BalancerGroup(block.Name, boundConfig), ct);
+                await store.SaveProfileAsync(new Profile(block.Name, boundConfig), ct);
 
                 // No auto-target here: bulk import must not steal the selection.
                 if (routingId is not null)
@@ -897,7 +897,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 renames.Add($"«{block.Name}» → «{finalName}»");
             }
 
-            await store.SaveBalancerAsync(new BalancerGroup(finalName, config), ct);
+            await store.SaveProfileAsync(new Profile(finalName, config), ct);
 
             // No auto-target here: bulk import must not steal the selection.
             if (routingId is not null)
@@ -941,9 +941,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     // True when a profile still binds the config.
     private async Task<bool> ConfigInUseAsync(string config, CancellationToken ct)
     {
-        foreach (var profileName in await store.ListBalancerNamesAsync(ct))
+        foreach (var profileName in await store.ListProfileNamesAsync(ct))
         {
-            var profile = await store.GetBalancerAsync(profileName, ct);
+            var profile = await store.GetProfileAsync(profileName, ct);
             if (profile is not null && string.Equals(profile.Config, config, StringComparison.Ordinal))
             {
                 return true;
@@ -1001,11 +1001,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         logger.LogInformation("auto-selected profile {Profile} as connection target (none was set)", name);
     }
 
-    private async Task<IpcAck> AddBalancerAsync(IReadOnlyList<string> args, CancellationToken ct)
+    private async Task<IpcAck> AddProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
-            return new IpcAck(false, "add-balancer requires a profile name");
+            return new IpcAck(false, "add-profile requires a profile name");
         }
 
         var name = args[0];
@@ -1015,9 +1015,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {config}");
         }
 
-        var existing = await store.GetBalancerAsync(name, ct);
-        var updated = new BalancerGroup(name, config);
-        await store.SaveBalancerAsync(updated, ct);
+        var existing = await store.GetProfileAsync(name, ct);
+        var updated = new Profile(name, config);
+        await store.SaveProfileAsync(updated, ct);
         await EnsureDefaultTargetAsync(name, ct);
         var changed = existing is null || !string.Equals(existing.Config, updated.Config, StringComparison.Ordinal);
 
@@ -1175,8 +1175,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return true;
         }
 
-        var balancer = await store.GetBalancerAsync(bound, ct);
-        return balancer is not null && string.Equals(balancer.Config, config, StringComparison.Ordinal);
+        var profile = await store.GetProfileAsync(bound, ct);
+        return profile is not null && string.Equals(profile.Config, config, StringComparison.Ordinal);
     }
 
     private async Task<IpcAck> ListGeoAsync(CancellationToken ct)
@@ -1337,8 +1337,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var profile = args[0];
-        var balancer = await store.GetBalancerAsync(profile, ct);
-        if (balancer is null)
+        if (await store.GetProfileAsync(profile, ct) is null)
         {
             return new IpcAck(false, $"unknown profile: {profile}");
         }
@@ -1400,7 +1399,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var name = args[0];
-        if (await store.GetBalancerAsync(name, ct) is null && !await configRepo.ExistsAsync(name, ct))
+        if (await store.GetProfileAsync(name, ct) is null && !await configRepo.ExistsAsync(name, ct))
         {
             return new IpcAck(false, $"unknown profile: {name}");
         }
@@ -2130,13 +2129,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
     private async Task<StatusSnapshot> BuildSnapshotAsync(CancellationToken ct)
     {
-        var states = await store.ListBalancerStatesAsync(ct);
+        var states = await store.ListProfileStatesAsync(ct);
 
-        // Derive each config's status from the bound group's state alone.
-        var boundState = BoundTarget is not null ? states.FirstOrDefault(s => s.Group == BoundTarget) : null;
+        // Derive each config's status from the bound profile's state alone.
+        var boundState = BoundTarget is not null ? states.FirstOrDefault(s => s.Name == BoundTarget) : null;
         var boundConfig = boundState is null
             ? null
-            : (await store.GetBalancerAsync(boundState.Group, ct))?.Config ?? boundState.Group;
+            : (await store.GetProfileAsync(boundState.Name, ct))?.Config ?? boundState.Name;
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
 
         var configs = new List<ConfigEntry>();
@@ -2150,27 +2149,27 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             // No row -> show the runtime default LAN bypass; saving freezes it.
             var exclusions = configEx?.Exclusions ?? string.Join('\n', routes.DefaultExclusionEntries());
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
-                ? MemberDisplayStatus(boundState.Status, string.Equals(name, boundState.ActiveMember, StringComparison.Ordinal))
+                ? ProfileDisplayStatus(boundState.Status)
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
             configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0));
         }
 
-        var balancers = new List<BalancerEntry>();
-        foreach (var name in await store.ListBalancerNamesAsync(ct))
+        var profiles = new List<ProfileEntry>();
+        foreach (var name in await store.ListProfileNamesAsync(ct))
         {
-            var balancer = await store.GetBalancerAsync(name, ct);
-            if (balancer is null)
+            var profile = await store.GetProfileAsync(name, ct);
+            if (profile is null)
             {
                 continue;
             }
 
-            var state = states.FirstOrDefault(item => item.Group == name);
+            var state = states.FirstOrDefault(item => item.Name == name);
             var (routingListId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
-            balancers.Add(new BalancerEntry(
+            profiles.Add(new ProfileEntry(
                 name,
                 state?.Status ?? ConnectionStatus.Disconnected,
-                balancer.Config,
+                profile.Config,
                 routingListId,
                 useRouting));
         }
@@ -2199,7 +2198,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var update = updateState.Latest;
-        return new StatusSnapshot(Version(), BoundTarget, configs, balancers, routingLists, control.Running, boundStatus, control.RestartRequired, control.Target, sources, logBuffer.Snapshot(),
+        return new StatusSnapshot(Version(), BoundTarget, configs, profiles, routingLists, control.Running, boundStatus, control.RestartRequired, control.Target, sources, logBuffer.Snapshot(),
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,
@@ -2215,13 +2214,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.RouteLog);
     }
 
-    private static string MemberDisplayStatus(string groupStatus, bool isActive)
+    private static string ProfileDisplayStatus(string profileStatus)
     {
-        return groupStatus switch
+        return profileStatus switch
         {
-            "connected" => isActive ? ConnectionStatus.Connected : ConnectionStatus.Idle,
+            "connected" => ConnectionStatus.Connected,
             "connecting" => ConnectionStatus.Connecting,
-            "disconnecting" => isActive ? ConnectionStatus.Disconnecting : ConnectionStatus.Idle,
+            "disconnecting" => ConnectionStatus.Disconnecting,
             _ => ConnectionStatus.Idle,
         };
     }

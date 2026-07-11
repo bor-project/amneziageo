@@ -6,7 +6,7 @@ namespace AmneziaGeo.Windows.Launcher;
 internal sealed class LauncherOptions
 {
     /// <summary>
-    /// The default balancer or config name to launch when none is passed on the command line.
+    /// The default profile or config name to launch when none is passed on the command line.
     /// </summary>
     public string? Target { get; set; }
 
@@ -31,7 +31,7 @@ internal sealed class LauncherOptions
     public RoutingListSpec[] RoutingLists { get; set; } = [];
 
     /// <summary>
-    /// Profiles (balancer groups) to ensure exist on startup, with optional routing-list assignment.
+    /// Profiles to ensure exist on startup, with optional routing-list assignment.
     /// </summary>
     public ProfileSpec[] Profiles { get; set; } = [];
 
@@ -89,7 +89,7 @@ internal sealed class RoutingListSpec
 }
 
 /// <summary>
-/// Bootstrap spec for a profile (balancer group).
+/// Bootstrap spec for a profile.
 /// </summary>
 internal sealed class ProfileSpec
 {
@@ -99,19 +99,9 @@ internal sealed class ProfileSpec
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Balancer mode: "priority" (default) or "latency".
+    /// The single config this profile binds.
     /// </summary>
-    public string Mode { get; set; } = "priority";
-
-    /// <summary>
-    /// Recheck interval in seconds.
-    /// </summary>
-    public int RecheckSeconds { get; set; } = 60;
-
-    /// <summary>
-    /// Member config names, in priority order.
-    /// </summary>
-    public string[] Members { get; set; } = [];
+    public string Config { get; set; } = string.Empty;
 
     /// <summary>
     /// Routing list to attach by name, or null to leave unassigned.

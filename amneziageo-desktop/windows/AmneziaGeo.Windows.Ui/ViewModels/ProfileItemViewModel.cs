@@ -12,7 +12,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// A single profile row in the list: it owns exactly one configuration plus its routing-list assignment
 /// and connection state. Mutations are dispatched as IPC commands to the agent via the provided delegates.
 /// </summary>
-internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
+internal sealed partial class ProfileItemViewModel : ViewModelBase, IEditScope
 {
     private readonly Func<string, string, Task<IpcAck>> _saveProfile;
     private readonly Func<string, long?, bool, Task<IpcAck>> _assignRouting;
@@ -63,7 +63,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     /// <summary>
     /// ctor
     /// </summary>
-    public BalancerItemViewModel(
+    public ProfileItemViewModel(
         Func<string, string, Task<IpcAck>> saveProfile,
         Func<string, long?, bool, Task<IpcAck>> assignRouting,
         Func<string, Task> selectProfile,
@@ -104,7 +104,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     /// Label for the per-profile connect button: "Переключить" when a DIFFERENT profile is the live tunnel
     /// (tapping switches to this one), otherwise "Подключить".
     /// </summary>
-    public string ConnectActionText => OtherActive ? Loc.Instance.Get("Balancer_SwitchAction") : Loc.Instance.Get("Balancer_ConnectAction");
+    public string ConnectActionText => OtherActive ? Loc.Instance.Get("Profile_SwitchAction") : Loc.Instance.Get("Profile_ConnectAction");
 
     /// <summary>
     /// Whether the profile has a configuration assigned.
@@ -116,7 +116,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     /// <summary>
     /// Collapsed-row summary: the configuration name, or a hint when none is set yet.
     /// </summary>
-    public string Detail => HasConfig ? Config : Loc.Instance.Get("Balancer_NoConfig");
+    public string Detail => HasConfig ? Config : Loc.Instance.Get("Profile_NoConfig");
 
     [RelayCommand]
     private Task Select()
@@ -148,7 +148,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     /// Populates view-model state from the agent-side entry without firing change-driven IPC calls.
     /// </summary>
     public void ApplyFromEntry(
-        BalancerEntry entry,
+        ProfileEntry entry,
         IReadOnlyList<RoutingListChoice> routingOptions,
         IReadOnlyList<ConfigChoice> configOptions)
     {
@@ -280,7 +280,7 @@ internal sealed partial class BalancerItemViewModel : ViewModelBase, IEditScope
     }
 
     // ---- IEditScope (#143): config / routing-list / use-routing edits are held in the buffer and committed
-    // together by the header Save (config via OpAddBalancer, routing via OpAssignRouting), reverted by Cancel. ----
+    // together by the header Save (config via OpAddProfile, routing via OpAssignRouting), reverted by Cancel. ----
 
     /// <inheritdoc />
     public bool IsDirty { get; private set; }

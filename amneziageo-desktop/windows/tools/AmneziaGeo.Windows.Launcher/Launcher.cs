@@ -102,27 +102,15 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
     {
         foreach (var profile in profiles)
         {
-            if (string.IsNullOrWhiteSpace(profile.Name) || profile.Members.Length == 0)
+            if (string.IsNullOrWhiteSpace(profile.Name) || string.IsNullOrWhiteSpace(profile.Config))
             {
                 continue;
             }
 
-            logger.LogInformation("ensuring profile '{Name}' ({Count} member(s))", profile.Name, profile.Members.Length);
+            logger.LogInformation("ensuring profile '{Name}' (config '{Config}')", profile.Name, profile.Config);
             try
             {
-                var addArgs = new List<string>
-                {
-                    "balancer-add",
-                    profile.Name,
-                    profile.RecheckSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                };
-                addArgs.AddRange(profile.Members);
-                AppEntry.RunAsync([.. addArgs]).GetAwaiter().GetResult();
-
-                if (!string.IsNullOrWhiteSpace(profile.Mode))
-                {
-                    AppEntry.RunAsync(["balancer-mode", profile.Name, profile.Mode]).GetAwaiter().GetResult();
-                }
+                AppEntry.RunAsync(["profile-add", profile.Name, profile.Config]).GetAwaiter().GetResult();
 
                 var listName = string.IsNullOrWhiteSpace(profile.RoutingList) ? "none" : profile.RoutingList;
                 AppEntry.RunAsync(["assign-routing", profile.Name, listName, profile.UseRouting ? "on" : "off"]).GetAwaiter().GetResult();

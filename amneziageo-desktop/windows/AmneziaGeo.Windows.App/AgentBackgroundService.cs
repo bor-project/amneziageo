@@ -5,13 +5,13 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Drives the balancer orchestrator for the agent's active group.
+/// Drives the profile runner for the agent's active profile.
 /// </summary>
 internal sealed class AgentBackgroundService(
     AgentTarget target,
     IStateStore store,
     ConfigRepository configRepo,
-    BalancerRunner runner,
+    ProfileRunner runner,
     AgentControl control,
     NetworkReconciler reconciler,
     ILogger<AgentBackgroundService> logger) : BackgroundService
@@ -24,7 +24,7 @@ internal sealed class AgentBackgroundService(
         // Persisted selection wins over the launch arg; a dangling selection is dropped.
         var stored = await store.GetSettingAsync(AgentControl.SelectedTargetKey, stoppingToken);
         var launch = !string.IsNullOrWhiteSpace(stored) ? stored! : target.Name;
-        var group = string.IsNullOrWhiteSpace(launch) ? null : await ResolveGroupAsync(launch, stoppingToken);
+        var group = string.IsNullOrWhiteSpace(launch) ? null : await ResolveProfileAsync(launch, stoppingToken);
         if (group is not null)
         {
             logger.LogInformation("agent starting: profile {Profile} (config '{Config}')", group.Name, group.Config);
@@ -45,21 +45,21 @@ internal sealed class AgentBackgroundService(
             logger.LogInformation("agent starting: no target configured yet; idling");
         }
 
-        await runner.RunAsync(group ?? new BalancerGroup(string.Empty, string.Empty), stoppingToken);
+        await runner.RunAsync(group ?? new Profile(string.Empty, string.Empty), stoppingToken);
         logger.LogInformation("agent stopped");
     }
 
-    private async Task<BalancerGroup?> ResolveGroupAsync(string target, CancellationToken ct)
+    private async Task<Profile?> ResolveProfileAsync(string target, CancellationToken ct)
     {
-        var balancer = await store.GetBalancerAsync(target, ct);
-        if (balancer is not null)
+        var profile = await store.GetProfileAsync(target, ct);
+        if (profile is not null)
         {
-            return balancer;
+            return profile;
         }
 
         if (await configRepo.ExistsAsync(target, ct))
         {
-            return new BalancerGroup(target, target);
+            return new Profile(target, target);
         }
 
         return null;

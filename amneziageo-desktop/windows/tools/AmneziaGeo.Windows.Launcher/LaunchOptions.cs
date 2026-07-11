@@ -16,7 +16,7 @@ internal sealed class LaunchOptions
     public bool RunUi { get; private set; }
 
     /// <summary>
-    /// The balancer or single-config name the agent should drive.
+    /// The profile or single-config name the agent should drive.
     /// </summary>
     public string? Target { get; private set; }
 

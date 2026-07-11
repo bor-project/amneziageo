@@ -61,8 +61,5 @@ public static class AppEntry
 
         // One-time: pull legacy on-disk wg-quick files into the database.
         await services.GetRequiredService<ConfigRepository>().MigrateLegacyConfigsAsync();
-
-        // One-time: move per-config DNS/exclusions and global all-UDP onto each profile's routing list.
-        await store.MigrateConfigSettingsToRoutingAsync();
     }
 }

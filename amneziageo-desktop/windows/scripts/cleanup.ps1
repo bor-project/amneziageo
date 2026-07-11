@@ -13,8 +13,8 @@ foreach ($c in 'proba', 'proba2', 'm1', 'm2', 'test', 'test2') {
     ageo config-remove $c 2>$null | Out-Null
 }
 
-Write-Host "removing test balancers ..." -ForegroundColor Cyan
-foreach ($b in 'test', 'bal') { ageo balancer-remove $b 2>$null | Out-Null }
+Write-Host "removing test profiles ..." -ForegroundColor Cyan
+foreach ($b in 'test', 'bal') { ageo profile-remove $b 2>$null | Out-Null }
 
 Write-Host "removing duplicate geo sources added during testing ..." -ForegroundColor Cyan
 foreach ($s in 'geoip-4', 'geosite-5') { ageo remove-source $s 2>$null | Out-Null }

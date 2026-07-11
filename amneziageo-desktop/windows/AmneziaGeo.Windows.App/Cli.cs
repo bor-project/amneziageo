@@ -88,6 +88,8 @@ internal sealed class Cli(
                 return await UpdateSourcesAsync();
             case ["remove-source", var name]:
                 return await RemoveSourceAsync(name);
+            case ["edit-source", var name, var kind, var url]:
+                return await EditSourceAsync(name, kind, url);
             case ["geo-files"]:
                 return await ListGeoFilesAsync();
             case ["geo-query", var kind, var key]:
@@ -212,6 +214,31 @@ internal sealed class Cli(
         }
 
         Console.WriteLine($"removed source {name}");
+        return 0;
+    }
+
+    private async Task<int> EditSourceAsync(string name, string kind, string url)
+    {
+        var existing = (await store.ListGeoSourcesAsync())
+            .FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+        if (existing is null)
+        {
+            Console.WriteLine($"unknown source: {name}");
+            return 1;
+        }
+
+        var normalizedKind = kind.Equals("geoip", StringComparison.OrdinalIgnoreCase) ? "geoip" : "geosite";
+        await store.SaveGeoSourceAsync(new GeoSource(existing.Name, normalizedKind, url, existing.Position));
+        if (!string.Equals(existing.Url, url, StringComparison.Ordinal))
+        {
+            var path = TunnelPaths.GeoDataFile(name);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
+        Console.WriteLine($"edited source {name} ({normalizedKind}) {url}");
         return 0;
     }
 

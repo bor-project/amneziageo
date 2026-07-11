@@ -718,6 +718,9 @@
   <data name="MainCode_DeleteDatabase" xml:space="preserve">
     <value>Delete database</value>
   </data>
+  <data name="MainCode_EditDatabase" xml:space="preserve">
+    <value>Edit source</value>
+  </data>
   <data name="MainCode_QrNotConfig" xml:space="preserve">
     <value>QR recognized, but it is not a configuration</value>
   </data>
@@ -1016,6 +1019,9 @@ Renamed on import: several names clashed with existing ones.</value>
   </data>
   <data name="Agent_SourceCheckFailed" xml:space="preserve">
     <value>{0}: could not check.</value>
+  </data>
+  <data name="Agent_SourceEdited" xml:space="preserve">
+    <value>source edited: {0}</value>
   </data>
   <data name="Agent_SourceRemoved" xml:space="preserve">
     <value>removed {0}</value>

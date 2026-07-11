@@ -255,6 +255,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpSelectProfile => await SelectProfileAsync(command.Args, ct),
                 IpcContract.OpAddSource => await AddSourceAsync(command.Args, ct),
                 IpcContract.OpRemoveSource => await RemoveSourceAsync(command.Args, ct),
+                IpcContract.OpEditSource => await EditSourceAsync(command.Args, ct),
                 IpcContract.OpUpdateSources => await UpdateSourcesAsync(ct),
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
                 IpcContract.OpCheckSources => await CheckSourcesAsync(ct),
@@ -1470,6 +1471,56 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         await geo.RematerializeAllRoutingListsAsync(ct);
         logger.LogInformation("removed geo source {Name}", name);
         return new IpcAck(true, IpcMessage.Key("Agent_SourceRemoved", name));
+    }
+
+    private async Task<IpcAck> EditSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 3)
+        {
+            return new IpcAck(false, "edit-source requires a name, a kind (geosite/geoip) and a url");
+        }
+
+        var name = args[0];
+        var kind = args[1].Equals("geoip", StringComparison.OrdinalIgnoreCase) ? "geoip" : "geosite";
+        var url = args[2].Trim();
+        if (url.Length == 0)
+        {
+            return new IpcAck(false, "url is required");
+        }
+
+        var existing = (await store.ListGeoSourcesAsync(ct))
+            .FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+        if (existing is null)
+        {
+            return new IpcAck(false, $"unknown source: {name}");
+        }
+
+        // Keep the opaque name and position; only kind/url change.
+        var source = new GeoSource(existing.Name, kind, url, existing.Position);
+        await store.SaveGeoSourceAsync(source, ct);
+
+        // On a url change the cached conditional-GET validators (keyed by the unchanged name) would make a
+        // new host falsely return 304 and keep the old data; drop the cached file to force a full download.
+        if (!string.Equals(existing.Url, url, StringComparison.Ordinal))
+        {
+            try
+            {
+                var path = TunnelPaths.GeoDataFile(name);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        logger.LogInformation("edited geo source {Name} ({Kind}) {Url}", name, kind, url);
+
+        // Download + re-materialize off the command path; the ack returns immediately.
+        EnqueueGeoRefresh([source], forceResolve: true);
+        return new IpcAck(true, IpcMessage.Key("Agent_SourceEdited", name));
     }
 
     private async Task<IpcAck> UpdateSourcesAsync(CancellationToken ct)

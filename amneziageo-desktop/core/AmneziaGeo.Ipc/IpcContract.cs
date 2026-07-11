@@ -147,6 +147,13 @@ public static class IpcContract
     public const string OpRemoveSource = "remove-source";
 
     /// <summary>
+    /// Command to edit a geo data source's kind and url in place, keeping its opaque name. Args: name,
+    /// kind (geosite/geoip), url. On a url change the cached file is dropped so the new url re-downloads
+    /// unconditionally; the source is then re-downloaded and re-materialized.
+    /// </summary>
+    public const string OpEditSource = "edit-source";
+
+    /// <summary>
     /// Command to re-download every geo data source and re-materialize the routing lists. No args.
     /// </summary>
     public const string OpUpdateSources = "update-sources";

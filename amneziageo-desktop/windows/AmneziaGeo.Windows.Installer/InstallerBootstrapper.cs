@@ -140,7 +140,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnPlanRelatedBundle(object? sender, PlanRelatedBundleEventArgs e)
     {
-        if (_launch == LaunchAction.Install)
+        if (_launch == LaunchAction.Install && _command.Relation == RelationType.None)
         {
             e.State = RequestState.Absent;
         }

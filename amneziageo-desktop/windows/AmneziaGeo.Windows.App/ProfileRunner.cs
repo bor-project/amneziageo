@@ -1,4 +1,5 @@
 using AmneziaGeo.Decl;
+using AmneziaGeo.Ipc;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -136,7 +137,7 @@ internal sealed class ProfileRunner(
             // Fail the connect instead of perpetual "connecting…".
             if (control.Running)
             {
-                control.FailConnect();
+                control.FailConnect(ConnectFailureReason.ProfileEmpty, string.Empty);
             }
 
             await IdleAsync(ct);
@@ -151,7 +152,7 @@ internal sealed class ProfileRunner(
             // Missing .conf: fail the connect.
             if (control.Running)
             {
-                control.FailConnect();
+                control.FailConnect(ConnectFailureReason.ConfigMissing, string.Empty);
             }
 
             await IdleAsync(ct);
@@ -162,25 +163,16 @@ internal sealed class ProfileRunner(
         Stop(config);
 
         await SetStateAsync("connecting");
-        if (!await TryConnectAsync(config, ct))
+        var outcome = await TryConnectAsync(config, ct);
+        if (!outcome.Ok)
         {
             // Give up and raise the failed notice; supervisor idles after.
             if (!ct.IsCancellationRequested)
             {
-                // Surface the service's failure reason if any.
-                var reason = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(config), ct);
-                if (string.IsNullOrEmpty(reason))
-                {
-                    logger.LogWarning("connect failed: {Config} unreachable for {Profile}", config, group.Name);
-                }
-                else
-                {
-                    logger.LogWarning("connect failed: {Config} ({Profile}) - {Reason}", config, group.Name, reason);
-                }
-
+                logger.LogWarning("connect failed: {Config} ({Profile}) - {Reason} {Detail}", config, group.Name, outcome.Reason, outcome.Detail);
                 Stop(config);
                 await SetStateAsync("disconnected");
-                control.FailConnect();
+                control.FailConnect(outcome.Reason, outcome.Detail);
             }
 
             return;
@@ -215,14 +207,15 @@ internal sealed class ProfileRunner(
                     _lastRxBytes = -1;
                     await SetStateAsync("connecting");
                     Stop(config);
-                    if (!await TryConnectAsync(config, ct))
+                    var redial = await TryConnectAsync(config, ct);
+                    if (!redial.Ok)
                     {
                         if (!ct.IsCancellationRequested)
                         {
-                            logger.LogWarning("re-dial failed: {Config} unreachable", config);
+                            logger.LogWarning("re-dial failed: {Config} unreachable - {Reason}", config, redial.Reason);
                             Stop(config);
                             await SetStateAsync("disconnected");
-                            control.FailConnect();
+                            control.FailConnect(redial.Reason, redial.Detail);
                         }
 
                         return;
@@ -298,15 +291,24 @@ internal sealed class ProfileRunner(
         }
     }
 
-    private async Task<bool> TryConnectAsync(string member, CancellationToken ct)
+    // Outcome of a single connect attempt with its classified reason.
+    private sealed record ConnectOutcome(bool Ok, ConnectFailureReason Reason, string Detail)
+    {
+        public static readonly ConnectOutcome Success = new(true, ConnectFailureReason.Unknown, string.Empty);
+        public static readonly ConnectOutcome Cancelled = new(false, ConnectFailureReason.Unknown, string.Empty);
+    }
+
+    private async Task<ConnectOutcome> TryConnectAsync(string member, CancellationToken ct)
     {
         // Clear prior reason so this run's failure isn't stale.
         await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(member), string.Empty, ct);
+        await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(member), string.Empty, ct);
 
         logger.LogInformation("connecting {Member}: creating and starting tunnel service", member);
         var created = serviceManager.CreateService(member);
         var started = serviceManager.StartQuiet(member);
-        if (created != 0 || started != 0)
+        var startFailed = created != 0 || started != 0;
+        if (startFailed)
         {
             logger.LogWarning("tunnel service {Member} did not start cleanly: sc create={Create} ({CreateMsg}), sc start={Start} ({StartMsg})",
                 member, created, ScError(created), started, ScError(started));
@@ -315,12 +317,13 @@ internal sealed class ProfileRunner(
         var start = DateTimeOffset.UtcNow;
         var deadline = start.AddSeconds(_settings.ConnectTimeoutSeconds);
         var sawService = false;
+        var serverSilent = false;
         var lastHeartbeat = start;
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (ct.IsCancellationRequested)
             {
-                return false;
+                return ConnectOutcome.Cancelled;
             }
 
             if (uapi.TryGetPeerStatus(member) is { } status)
@@ -332,7 +335,7 @@ internal sealed class ProfileRunner(
                 if (status.HandshakeSec > 0)
                 {
                     logger.LogInformation("{Member}: handshake received in {Sec}s", member, elapsed);
-                    return true;
+                    return ConnectOutcome.Success;
                 }
 
                 // Service responded: distinguishes launch failure from silent server.
@@ -354,6 +357,7 @@ internal sealed class ProfileRunner(
                 {
                     logger.LogWarning("{Member}: server did not answer - no handshake, 0 bytes received in {Sec}s (sent {Tx} B); unreachable",
                         member, (int)_noResponseWindow.TotalSeconds, status.TxBytes);
+                    serverSilent = true;
                     break;
                 }
             }
@@ -367,18 +371,61 @@ internal sealed class ProfileRunner(
             await DelayAsync(TimeSpan.FromSeconds(1), ct);
         }
 
-        // Never responded: surface why the service failed to launch.
-        if (!sawService)
+        if (ct.IsCancellationRequested)
         {
-            var reason = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(member), ct);
-            logger.LogWarning(
-                "{Member}: tunnel service never responded over UAPI within {Sec}s - it likely failed to launch (sc start={Start}: {StartMsg}){Reason}",
-                member, _settings.ConnectTimeoutSeconds, started, ScError(started),
-                string.IsNullOrWhiteSpace(reason) ? string.Empty : $"; reason: {reason}");
+            return ConnectOutcome.Cancelled;
         }
 
+        var outcome = await ClassifyFailureAsync(member, sawService, serverSilent, startFailed, created, started, ct);
         Stop(member);
-        return false;
+        return outcome;
+    }
+
+    // Classifies a failed connect attempt; the service's own stored reason wins over an inferred one.
+    private async Task<ConnectOutcome> ClassifyFailureAsync(string member, bool sawService, bool serverSilent, bool startFailed, int created, int started, CancellationToken ct)
+    {
+        if (serverSilent)
+        {
+            return new ConnectOutcome(false, ConnectFailureReason.NoHandshake, string.Empty);
+        }
+
+        // UAPI answered but no handshake before the deadline.
+        if (sawService)
+        {
+            return new ConnectOutcome(false, ConnectFailureReason.Timeout, string.Empty);
+        }
+
+        // Service never answered UAPI: prefer the reason it stored, else infer from the sc codes.
+        var storedReason = await store.GetSettingAsync(TunnelPaths.ConnectReasonKey(member), ct);
+        var storedMessage = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(member), ct);
+        logger.LogWarning(
+            "{Member}: tunnel service never responded over UAPI within {Sec}s - it likely failed to launch (sc start={Start}: {StartMsg}){Reason}",
+            member, _settings.ConnectTimeoutSeconds, started, ScError(started),
+            string.IsNullOrWhiteSpace(storedMessage) ? string.Empty : $"; reason: {storedMessage}");
+
+        if (Enum.TryParse<ConnectFailureReason>(storedReason, out var specific) && specific != ConnectFailureReason.Unknown)
+        {
+            return new ConnectOutcome(false, specific, TrimDetail(storedMessage));
+        }
+
+        if (startFailed)
+        {
+            return new ConnectOutcome(false, ConnectFailureReason.ServiceStartFailed, ScError(started != 0 ? started : created));
+        }
+
+        return new ConnectOutcome(false, ConnectFailureReason.ServiceLaunchFailed, ScError(started));
+    }
+
+    // Keep the surfaced detail short; the message never carries secrets but may be long.
+    private static string TrimDetail(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = message.Trim();
+        return trimmed.Length > 160 ? trimmed[..160] : trimmed;
     }
 
     // sc.exe error code names.

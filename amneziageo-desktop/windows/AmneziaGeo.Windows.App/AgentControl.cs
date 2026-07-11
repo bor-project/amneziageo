@@ -1,3 +1,5 @@
+using AmneziaGeo.Ipc;
+
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
@@ -16,6 +18,8 @@ internal sealed class AgentControl
     private volatile string? _target;
     private volatile string? _runningTarget;
     private volatile bool _connectFailed;
+    private volatile ConnectFailureReason _connectFailReason;
+    private volatile string? _connectFailDetail;
     private CancellationTokenSource _change = new();
 
     /// <summary>
@@ -44,6 +48,16 @@ internal sealed class AgentControl
     public bool ConnectFailed => _connectFailed;
 
     /// <summary>
+    /// Structured reason for the last failed connect.
+    /// </summary>
+    public ConnectFailureReason ConnectFailReason => _connectFailReason;
+
+    /// <summary>
+    /// Short cause label for the last failed connect.
+    /// </summary>
+    public string? ConnectFailDetail => _connectFailDetail;
+
+    /// <summary>
     /// Fires when the desired state or persisted configuration changes.
     /// </summary>
     public CancellationToken ChangeToken
@@ -64,6 +78,8 @@ internal sealed class AgentControl
     {
         _running = value;
         _connectFailed = false;
+        _connectFailReason = ConnectFailureReason.Unknown;
+        _connectFailDetail = null;
         if (value)
         {
             _runningTarget = _target;
@@ -116,10 +132,12 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Latches a failed connect and drops to stopped.
+    /// Latches a failed connect with its classified reason and drops to stopped.
     /// </summary>
-    public void FailConnect()
+    public void FailConnect(ConnectFailureReason reason, string? detail)
     {
+        _connectFailReason = reason;
+        _connectFailDetail = detail;
         _connectFailed = true;
         _running = false;
         _runningTarget = null;

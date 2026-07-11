@@ -1549,14 +1549,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         string? notice = null;
         if (snapshot.ConnectFailed)
         {
-            // Distinguish a memberless profile (nothing to dial) from a real reachability failure, so the
-            // message is actionable instead of the misleading "сервер не ответил".
-            var emptyProfile = snapshot.SelectedTarget is not null
-                && snapshot.Profiles.FirstOrDefault(b =>
-                       string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Config.Length: 0 };
-            notice = emptyProfile
-                ? Loc.Instance.Get("MainVm_NoticeProfileEmpty", snapshot.SelectedTarget)
-                : Loc.Instance.Get("MainVm_NoticeConnectFailed");
+            notice = ConnectFailureNotice(snapshot);
         }
         else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
         {
@@ -1581,6 +1574,47 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         ApplyGeoUpdateBanner();
 
         UpdateLogView(snapshot);
+    }
+
+    // Maps the agent's classified failure reason to a localized notice; a memberless profile keeps its own
+    // actionable message regardless of the reason.
+    private static string ConnectFailureNotice(StatusSnapshot snapshot)
+    {
+        var emptyProfile = snapshot.SelectedTarget is not null
+            && snapshot.Profiles.FirstOrDefault(b =>
+                   string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Config.Length: 0 };
+        if (emptyProfile)
+        {
+            return Loc.Instance.Get("MainVm_NoticeProfileEmpty", snapshot.SelectedTarget);
+        }
+
+        var key = ConnectFailureKey(snapshot.ConnectFailReason);
+        return NoticeUsesDetail(key)
+            ? Loc.Instance.Get(key, snapshot.ConnectFailDetail)
+            : Loc.Instance.Get(key);
+    }
+
+    // Reason token -> notice resource key; unknown or unclassified falls back to the generic message.
+    private static string ConnectFailureKey(string reasonToken)
+    {
+        return reasonToken switch
+        {
+            "ConfigMissing" => "MainVm_NoticeConnectFailed_ConfigMissing",
+            "ServiceStartFailed" => "MainVm_NoticeConnectFailed_ServiceStartFailed",
+            "ServiceLaunchFailed" => "MainVm_NoticeConnectFailed_ServiceLaunchFailed",
+            "UnderlayUnreachable" => "MainVm_NoticeConnectFailed_UnderlayUnreachable",
+            "AdapterStartFailed" => "MainVm_NoticeConnectFailed_AdapterStartFailed",
+            "NoHandshake" => "MainVm_NoticeConnectFailed_NoHandshake",
+            "Timeout" => "MainVm_NoticeConnectFailed_Timeout",
+            _ => "MainVm_NoticeConnectFailed",
+        };
+    }
+
+    // Notice keys that format the {0} detail.
+    private static bool NoticeUsesDetail(string key)
+    {
+        return key is "MainVm_NoticeConnectFailed_ServiceStartFailed"
+            or "MainVm_NoticeConnectFailed_ServiceLaunchFailed";
     }
 
     // A profile "is" the given target when the target equals its name or the config it wraps. The agent's

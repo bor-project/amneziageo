@@ -34,4 +34,8 @@ public sealed record StatusSnapshot(
     // Current log verbosity token: "error" (default), "info", "debug", or "trace".
     string LogLevel = "error",
     // Whether the dedicated routing log (routes.log) is currently recording.
-    bool RouteLog = false);
+    bool RouteLog = false,
+    // Structured connect-failure reason (ConnectFailureReason name); empty unless the last connect failed.
+    string ConnectFailReason = "",
+    // Short cause label for the failed connect (e.g. sc error name); never secrets.
+    string ConnectFailDetail = "");

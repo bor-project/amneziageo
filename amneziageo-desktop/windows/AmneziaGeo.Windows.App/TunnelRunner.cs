@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Engine;
 using Microsoft.Extensions.Logging;
 
@@ -44,9 +45,11 @@ internal sealed class TunnelRunner(
         {
             logger.LogError(ex, "connect {Name}: bring-up failed - {Reason}", name, ex.Message);
 
+            var reason = ex is ConnectFailureException cfe ? cfe.Reason : ConnectFailureReason.Unknown;
             try
             {
                 await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), ex.Message);
+                await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(name), reason.ToString());
             }
             catch
             {
@@ -67,7 +70,7 @@ internal sealed class TunnelRunner(
         }
 
         var config = await store.GetConfigTextAsync(name)
-            ?? throw new InvalidOperationException($"configuration '{name}' is not stored");
+            ?? throw new ConnectFailureException(ConnectFailureReason.ConfigMissing, $"configuration '{name}' is not stored");
         // Log length only - the config carries private keys.
         logger.LogTrace("connect {Name}: config loaded ({Length} chars) [{Elapsed} ms]", name, config.Length, connectSw.ElapsedMilliseconds);
 
@@ -386,7 +389,7 @@ internal sealed class TunnelRunner(
             wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials, loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
             if (wsTransport is null)
             {
-                throw new InvalidOperationException($"WebSocket transport (wstunnel) failed to start for {name}");
+                throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, $"WebSocket transport (wstunnel) failed to start for {name}");
             }
 
             config = WgConfigEditor.SetEndpoint(config, $"127.0.0.1:{wsTransport.LocalPort}");
@@ -404,6 +407,10 @@ internal sealed class TunnelRunner(
         try
         {
             WireGuardEngine.RunTunnelService(config, name);
+        }
+        catch (Exception ex) when (ex is not ConnectFailureException)
+        {
+            throw new ConnectFailureException(ConnectFailureReason.AdapterStartFailed, ex.Message, ex);
         }
         finally
         {

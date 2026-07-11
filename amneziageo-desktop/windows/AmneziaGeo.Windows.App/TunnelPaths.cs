@@ -22,11 +22,19 @@ internal static class TunnelPaths
     }
 
     /// <summary>
-    /// Settings key carrying the last connect-failure reason for a tunnel.
+    /// Settings key carrying the last connect-failure message for a tunnel.
     /// </summary>
     public static string ConnectMessageKey(string name)
     {
         return $"connect-error:{name}";
+    }
+
+    /// <summary>
+    /// Settings key carrying the structured connect-failure reason token for a tunnel.
+    /// </summary>
+    public static string ConnectReasonKey(string name)
+    {
+        return $"connect-reason:{name}";
     }
 
     /// <summary>

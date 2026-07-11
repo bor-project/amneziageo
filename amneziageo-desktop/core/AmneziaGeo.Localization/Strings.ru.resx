@@ -781,6 +781,27 @@
   <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
     <value>Не удалось подключиться - сервер не ответил.</value>
   </data>
+  <data name="MainVm_NoticeConnectFailed_ConfigMissing" xml:space="preserve">
+    <value>Не удалось подключиться: конфигурация не найдена.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ServiceStartFailed" xml:space="preserve">
+    <value>Не удалось запустить службу туннеля ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ServiceLaunchFailed" xml:space="preserve">
+    <value>Служба туннеля не запустилась ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_UnderlayUnreachable" xml:space="preserve">
+    <value>Транспорт (wstunnel) не поднялся - сервер недоступен.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_AdapterStartFailed" xml:space="preserve">
+    <value>Не удалось поднять сетевой адаптер туннеля.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
+    <value>Сервер не ответил (нет рукопожатия) - недоступен или отклонил ключ.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
+    <value>Время ожидания подключения истекло.</value>
+  </data>
   <data name="MainVm_NoticeProfileEmpty" xml:space="preserve">
     <value>Профиль «{0}» пуст - добавьте конфигурацию.</value>
   </data>

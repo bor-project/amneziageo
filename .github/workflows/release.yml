@@ -1,7 +1,8 @@
-# Builds the Windows installer in CI and signs it with SignPath (free code signing for OSS).
-# The build job produces an UNSIGNED bundle; the sign job submits it to SignPath and publishes the
-# signed result. Local signtool signing is disabled in CI via the installer.config.ci.json overlay
-# (signingCert = null), so the signing key never lives in the repo or on the runner.
+# Builds the Windows installer in CI and publishes it as a GitHub Release on every tag push (v*).
+# The build job produces an UNSIGNED bundle. Once SignPath is configured (SIGNPATH_ORGANIZATION_ID
+# variable + SIGNPATH_API_TOKEN secret) the sign job submits it to SignPath and the release ships signed;
+# until then the release is unsigned. The signing key never lives in the repo or on the runner
+# (installer.config.ci.json sets signingCert = null, so the local signtool path is skipped).
 name: build & sign release
 
 on:
@@ -42,9 +43,11 @@ jobs:
       - name: Build installer (unsigned)
         shell: pwsh
         # `ci` selects installer.config.ci.json (signingCert = null) so the local signtool path is skipped.
-        run: >
-          amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
-          ci -Arch x64 -SelfContained false
+        # On a tag push the version comes from the tag (v1.2.3.4 -> 1.2.3.4; use a 4-field tag); otherwise
+        # build-installer falls back to 1.0.1.<commit-count>.
+        run: |
+          $verArg = if ("$env:GITHUB_REF" -like 'refs/tags/v*') { @('-Version', ("$env:GITHUB_REF_NAME" -replace '^v','')) } else { @() }
+          amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1 ci @verArg -Arch x64 -SelfContained false
 
       - name: Upload unsigned installer
         id: upload
@@ -93,9 +96,9 @@ jobs:
   publish:
     needs: [build, sign]
     runs-on: ubuntu-latest
-    # Only publishes from CI once SignPath is wired up (same gate as the sign job). Until then releases are
-    # cut locally by deploy.ps1 (signed with the local cert); gating here keeps CI from clobbering them.
-    if: ${{ always() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/') && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    # Runs on every tag push once the build succeeded, whether or not the sign job ran: it prefers the
+    # signed installer and falls back to the unsigned one. Until SignPath is active the release is unsigned.
+    if: ${{ always() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     steps:
       - name: Download signed installer (if present)
         uses: actions/download-artifact@v4

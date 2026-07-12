@@ -196,6 +196,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.
         Logs.SetActive(value == "logs");
+
+        // Landing on a profile-scoped section with nothing open selects the current (active) profile, so the
+        // section shows its config / routing instead of an empty editor. Opening the profile cascades into the
+        // Config and Routing sections (OnOpenProfileChanged).
+        if (value is "profile" or "config" or "routing" && Profile.OpenProfile is null && Home.ActiveProfile is not null)
+        {
+            Profile.OpenProfile = Home.ActiveProfile;
+        }
     }
 
     private void OnConnected()

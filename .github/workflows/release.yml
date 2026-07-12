@@ -46,8 +46,13 @@ jobs:
         # On a tag push the version comes from the tag (v1.2.3.4 -> 1.2.3.4; use a 4-field tag); otherwise
         # build-installer falls back to 1.0.1.<commit-count>.
         run: |
-          $verArg = if ("$env:GITHUB_REF" -like 'refs/tags/v*') { @('-Version', ("$env:GITHUB_REF_NAME" -replace '^v','')) } else { @() }
-          amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1 ci @verArg -Arch x64 -SelfContained false
+          $script = 'amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1'
+          if ("$env:GITHUB_REF" -like 'refs/tags/v*') {
+            $ver = "$env:GITHUB_REF_NAME" -replace '^v',''
+            & $script ci -Version $ver -Arch x64 -SelfContained false
+          } else {
+            & $script ci -Arch x64 -SelfContained false
+          }
 
       - name: Upload unsigned installer
         id: upload

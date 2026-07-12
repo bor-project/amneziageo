@@ -30,23 +30,23 @@ internal static class AppHost
         var logLevel = new LogLevelController();
         builder.Services.AddSingleton(logLevel);
 
+        // Resettable file sink so the agent log can be cleared at runtime; shared as a singleton for the clear command.
+        // Pinned greppable line format: timestamp + 3-char level + source + message, one entry per line
+        // (exceptions append on following lines). Explicit so the on-disk format the log viewer and grep rely
+        // on cannot drift with Serilog's default template.
+        var logFileSink = new ResettableFileSink(
+            Path.Combine(TunnelPaths.LogDirectory(), "ageo.log"),
+            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Source:l} {Message:lj}{NewLine}{Exception}");
+        builder.Services.AddSingleton(logFileSink);
+
         builder.Logging.ClearProviders();
         builder.Services.AddSerilog(config => config
             .MinimumLevel.ControlledBy(logLevel.Switch)
             .Enrich.FromLogContext()
-            // Both the agent and each per-tunnel service process append to the same file; the pid attributes
-            // the line.
-            .Enrich.WithProperty("Pid", Environment.ProcessId)
+            // Source column: the logger's class name, derived from SourceContext.
+            .Enrich.With(new LogSourceEnricher())
             .WriteTo.Console()
-            .WriteTo.File(
-                Path.Combine(TunnelPaths.LogDirectory(), "ageo.log"),
-                // Pinned greppable line format: ISO timestamp + 3-char level + pid + message, one entry per
-                // line (exceptions append on following lines). Explicit so the on-disk format the log viewer
-                // and grep rely on cannot drift with Serilog's default template.
-                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [pid {Pid}] {Message:lj}{NewLine}{Exception}",
-                // One file: no roll by day or by size, shared across the processes that write it.
-                rollingInterval: RollingInterval.Infinite,
-                shared: true)
+            .WriteTo.Sink(logFileSink)
             .WriteTo.Sink(new RingBufferSink(logBuffer)));
 
         RegisterServices(builder.Services);

@@ -15,13 +15,20 @@ internal sealed class RingBufferSink(LogRingBuffer buffer) : ILogEventSink
         var message = logEvent.RenderMessage(CultureInfo.InvariantCulture);
         var line = string.Create(
             CultureInfo.InvariantCulture,
-            $"{logEvent.Timestamp.LocalDateTime:HH:mm:ss} {Level(logEvent.Level)} {message}");
+            $"{logEvent.Timestamp.LocalDateTime:HH:mm:ss} [{Level(logEvent.Level)}] {Source(logEvent)} {message}");
         if (logEvent.Exception is not null)
         {
             line += $" - {logEvent.Exception.Message}";
         }
 
         buffer.Add(line);
+    }
+
+    private static string Source(LogEvent logEvent)
+    {
+        return logEvent.Properties.TryGetValue("Source", out var value) && value is ScalarValue { Value: string source }
+            ? source
+            : "agent";
     }
 
     private static string Level(LogEventLevel level)

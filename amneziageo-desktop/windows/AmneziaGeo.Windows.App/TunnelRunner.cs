@@ -261,6 +261,30 @@ internal sealed class TunnelRunner(
         {
             exclusionDomains.Add(wsHost);
         }
+
+        // Plain-UDP endpoint: pin it to an IP resolved via the still-clean LAN resolver so the engine does no
+        // DNS at bring-up - full tunnel would otherwise resolve the host through the not-yet-up tunnel and die
+        // with "No such host". The stored config keeps the hostname; only this in-memory copy carries the IP.
+        // Keep the host on-LAN too, so if it stays a hostname the engine resolves it off-tunnel.
+        if (!useWebSocket && ParseEndpoint(WgConfigEditor.GetEndpoint(config)) is { } endpointParts
+            && !IPAddress.TryParse(endpointParts.Host, out _))
+        {
+            if (!exclusionDomains.Contains(endpointParts.Host))
+            {
+                exclusionDomains.Add(endpointParts.Host);
+            }
+
+            var pinnedIp = await PinEndpointAsync(name, endpointParts.Host);
+            if (pinnedIp is not null)
+            {
+                config = WgConfigEditor.SetEndpoint(config, $"{pinnedIp}:{endpointParts.Port}");
+                logger.LogInformation("endpoint {Host} pinned to {Ip} (pre-tunnel resolve)", endpointParts.Host, pinnedIp);
+            }
+            else
+            {
+                logger.LogWarning("endpoint {Host} unresolved pre-tunnel; engine resolves it via LAN", endpointParts.Host);
+            }
+        }
         // Default bypass = RFC1918 + connected subnets; a stored list is authoritative.
         var exclusionCidrs = !hasStoredExclusions
             ? new List<string>(routes.DefaultExclusionEntries())
@@ -287,7 +311,7 @@ internal sealed class TunnelRunner(
             }
         }
 
-        var proxy = StartProxy(trackDomains ? domains : [], stripV6, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
+        var proxy = StartProxy(trackDomains ? domains : [], stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
 
         // A geosite refresh rebuilds the proxy's matcher without a reconnect.
         if (trackDomains && proxy is not null && tracker is not null)
@@ -442,13 +466,18 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, bool stripV6, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
         var localIp = ParseFirst(localUpstream, tunnelIp);
         IPAddress? lanIp = lanUpstream.Count > 0 && IPAddress.TryParse(lanUpstream[0], out var li) ? li : null;
-        var proxy = new DnsProxy(domains, tunnelIp, localIp, lanIp, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary);
+        var lanPool = lanUpstream
+            .Select(s => IPAddress.TryParse(s, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork ? ip : null)
+            .Where(ip => ip is not null)
+            .Select(ip => ip!)
+            .ToList();
+        var proxy = new DnsProxy(domains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary);
         if (proxy.BoundV4 is null)
         {
             return null;
@@ -557,6 +586,77 @@ internal sealed class TunnelRunner(
             }
         }
         catch (SocketException)
+        {
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the endpoint host to an IPv4 in the clean pre-tunnel context, retrying a cold flap, and falls
+    /// back to the last-known-good IP; persists a fresh resolve as the new last-known-good.
+    /// </summary>
+    private async Task<IPAddress?> PinEndpointAsync(string name, string host)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var live = await ResolveHostV4Async(host);
+            if (live is not null)
+            {
+                try
+                {
+                    await store.SetSettingAsync(TunnelPaths.EndpointIpKey(name), live.ToString());
+                }
+                catch
+                {
+                }
+
+                return live;
+            }
+
+            await Task.Delay(400);
+        }
+
+        var cached = await ReadCachedEndpointAsync(name);
+        if (cached is not null)
+        {
+            logger.LogInformation("endpoint {Host} using last-known-good {Ip}", host, cached);
+        }
+
+        return cached;
+    }
+
+    private static async Task<IPAddress?> ResolveHostV4Async(string host)
+    {
+        try
+        {
+            foreach (var address in await Dns.GetHostAddressesAsync(host))
+            {
+                if (address.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return address;
+                }
+            }
+        }
+        catch (SocketException)
+        {
+        }
+
+        return null;
+    }
+
+    private async Task<IPAddress?> ReadCachedEndpointAsync(string name)
+    {
+        try
+        {
+            var stored = await store.GetSettingAsync(TunnelPaths.EndpointIpKey(name));
+            if (stored is not null && IPAddress.TryParse(stored, out var ip)
+                && ip.AddressFamily == AddressFamily.InterNetwork)
+            {
+                return ip;
+            }
+        }
+        catch
         {
         }
 

@@ -38,6 +38,14 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Settings key carrying the last-known-good resolved endpoint IP for a tunnel.
+    /// </summary>
+    public static string EndpointIpKey(string name)
+    {
+        return $"endpoint-ip:{name}";
+    }
+
+    /// <summary>
     /// Directory holding the stored wg-quick configs.
     /// </summary>
     public static string ConfigurationsDirectory()

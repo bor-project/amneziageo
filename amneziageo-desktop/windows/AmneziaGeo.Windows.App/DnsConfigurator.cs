@@ -16,12 +16,14 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     private string _name = string.Empty;
 
     /// <summary>
-    /// Reads the resolvers the system currently uses, so the proxy can forward non-geo queries upstream.
+    /// Reads every adapter's resolvers into a deduped pool (gateway adapter's first), so the proxy can race
+    /// non-geo queries across all providers - a multi-WAN box where one provider censors a name is answered
+    /// by another.
     /// </summary>
     public IReadOnlyList<string> CaptureUpstream()
     {
-        string[] gatewayDns = [];
-        string[] firstDns = [];
+        var gateway = new List<string>();
+        var others = new List<string>();
         foreach (var adapter in Adapters())
         {
             using (adapter)
@@ -32,19 +34,21 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
                     continue;
                 }
 
-                if (firstDns.Length == 0)
-                {
-                    firstDns = dns;
-                }
-
-                if (adapter["DefaultIPGateway"] is string[] { Length: > 0 } && gatewayDns.Length == 0)
-                {
-                    gatewayDns = dns;
-                }
+                var target = adapter["DefaultIPGateway"] is string[] { Length: > 0 } ? gateway : others;
+                target.AddRange(dns);
             }
         }
 
-        return gatewayDns.Length > 0 ? gatewayDns : firstDns;
+        var pool = new List<string>();
+        foreach (var server in gateway.Concat(others))
+        {
+            if (!pool.Contains(server))
+            {
+                pool.Add(server);
+            }
+        }
+
+        return pool;
     }
 
     /// <summary>

@@ -210,16 +210,30 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void RaiseMainWindow()
     {
+        // A silent / passive / uninstall run (incl. a sibling bundle Burn removes on upgrade) shows no window;
+        // Activate before the window is shown throws and kills the BA.
+        if (!_interactive)
+        {
+            return;
+        }
+
         _dispatcher.BeginInvoke(() =>
         {
-            if (_mainWindow is null)
+            if (_mainWindow is null || !_mainWindow.IsVisible)
             {
                 return;
             }
 
-            _mainWindow.Topmost = true;
-            _mainWindow.Activate();
-            _mainWindow.Topmost = false;
+            try
+            {
+                _mainWindow.Topmost = true;
+                _mainWindow.Activate();
+                _mainWindow.Topmost = false;
+            }
+            catch (InvalidOperationException)
+            {
+                // Window not shown yet.
+            }
         });
     }
 

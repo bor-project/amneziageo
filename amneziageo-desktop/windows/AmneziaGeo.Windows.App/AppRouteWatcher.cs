@@ -13,6 +13,9 @@ internal sealed class AppRouteWatcher
     // Poll ~1s: routes within a TCP retry.
     private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
 
+    // Cap the ancestry walk.
+    private const int MaxAncestryDepth = 8;
+
     // LISTEN state has no remote peer.
     private const uint MibTcpStateListen = 2;
     private const int AfInet = 2;
@@ -27,11 +30,15 @@ internal sealed class AppRouteWatcher
     private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _services = [];
 
-    // PID->path cache; stale entry only over-routes one IP.
-    private readonly Dictionary<uint, string?> _pathCache = [];
-
     // Log each remote once per session.
     private readonly HashSet<string> _loggedRemotes = new(StringComparer.Ordinal);
+
+    // Stop the ancestry walk at generic hosts so an app rule stays scoped to its own tree.
+    private static readonly HashSet<string> _ancestryStops = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "explorer.exe", "services.exe", "svchost.exe", "wininit.exe", "winlogon.exe",
+        "userinit.exe", "smss.exe", "csrss.exe", "lsass.exe",
+    };
 
     /// <summary>
     /// ctor
@@ -84,7 +91,7 @@ internal sealed class AppRouteWatcher
     /// <summary>
     /// Whether a PID matches the app rules.
     /// </summary>
-    internal bool MatchesPid(uint pid) => ResolveServicePids().Contains(pid) || MatchesByImage(pid);
+    internal bool MatchesPid(uint pid) => ResolveServicePids().Contains(pid) || MatchesByImageOrAncestor(pid, SnapshotProcessTree(), new Dictionary<uint, (string? Path, long Created)>());
 
     /// <summary>
     /// Has any matcher.
@@ -127,6 +134,12 @@ internal sealed class AppRouteWatcher
         // Re-resolve service PIDs each tick (services restart).
         var servicePids = ResolveServicePids();
 
+        // One process-tree snapshot per tick for ancestry matching.
+        var tree = SnapshotProcessTree();
+
+        // Per-tick pid -> (path, creation) cache; per-tick lifetime avoids cross-tick PID-reuse staleness.
+        var procCache = new Dictionary<uint, (string? Path, long Created)>();
+
         // Per-tick decision cache.
         var decision = new Dictionary<uint, bool>();
         var matchedIps = new List<string>();
@@ -135,7 +148,7 @@ internal sealed class AppRouteWatcher
         {
             if (!decision.TryGetValue(pid, out var matched))
             {
-                matched = servicePids.Contains(pid) || MatchesByImage(pid);
+                matched = servicePids.Contains(pid) || MatchesByImageOrAncestor(pid, tree, procCache);
                 decision[pid] = matched;
             }
 
@@ -167,10 +180,74 @@ internal sealed class AppRouteWatcher
         }
     }
 
-    // Image-path match for path=/dir=/name=; svc= handled by PID.
-    private bool MatchesByImage(uint pid)
+    // Match the owning image, or any ancestor's. WebView2/Electron/UWP apps run their networking in a
+    // shared child process whose own image sits outside the app; the rule matches up the parent chain.
+    private bool MatchesByImageOrAncestor(uint pid, IReadOnlyDictionary<uint, (uint Parent, string Name)> tree, Dictionary<uint, (string? Path, long Created)> cache)
     {
-        var path = ResolvePath(pid);
+        var current = pid;
+        var seen = new HashSet<uint>();
+        for (var depth = 0; current != 0 && depth < MaxAncestryDepth && seen.Add(current); depth++)
+        {
+            var proc = ResolveProc(current, cache);
+            if (MatchesImage(proc.Path))
+            {
+                return true;
+            }
+
+            if (!tree.TryGetValue(current, out var node) || _ancestryStops.Contains(node.Name))
+            {
+                break;
+            }
+
+            // Reject a recycled parent link: trust the stored parent PID only when the parent predates the
+            // child (Windows never clears an exited parent's PID, and PIDs are recycled).
+            var parent = ResolveProc(node.Parent, cache);
+            if (proc.Created == 0 || parent.Created == 0 || parent.Created > proc.Created)
+            {
+                break;
+            }
+
+            current = node.Parent;
+        }
+
+        return false;
+    }
+
+    // pid -> (parent pid, image name), one snapshot per tick.
+    private static Dictionary<uint, (uint Parent, string Name)> SnapshotProcessTree()
+    {
+        var map = new Dictionary<uint, (uint Parent, string Name)>();
+        var snapshot = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
+        if (snapshot == IntPtr.Zero || snapshot == InvalidHandleValue)
+        {
+            return map;
+        }
+
+        try
+        {
+            var entry = new ProcessEntry32 { dwSize = (uint)Marshal.SizeOf<ProcessEntry32>() };
+            if (!Process32First(snapshot, ref entry))
+            {
+                return map;
+            }
+
+            do
+            {
+                map[entry.th32ProcessID] = (entry.th32ParentProcessID, entry.szExeFile);
+            }
+            while (Process32Next(snapshot, ref entry));
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+
+        return map;
+    }
+
+    // Image-path match for path=/dir=/name=; svc= handled by PID.
+    private bool MatchesImage(string? path)
+    {
         if (path is null)
         {
             return false;
@@ -204,21 +281,16 @@ internal sealed class AppRouteWatcher
         return false;
     }
 
-    private string? ResolvePath(uint pid)
+    private static (string? Path, long Created) ResolveProc(uint pid, Dictionary<uint, (string? Path, long Created)> cache)
     {
-        if (_pathCache.TryGetValue(pid, out var cached))
+        if (cache.TryGetValue(pid, out var hit))
         {
-            return cached;
+            return hit;
         }
 
-        var path = QueryImagePath(pid);
-        if (_pathCache.Count > 4096)
-        {
-            _pathCache.Clear();
-        }
-
-        _pathCache[pid] = path;
-        return path;
+        var proc = QueryProc(pid);
+        cache[pid] = proc;
+        return proc;
     }
 
     private HashSet<uint> ResolveServicePids()
@@ -330,24 +402,27 @@ internal sealed class AppRouteWatcher
         return true;
     }
 
-    private static string? QueryImagePath(uint pid)
+    // Image path + creation time from one handle; creation time validates PID identity across the tree.
+    private static (string? Path, long Created) QueryProc(uint pid)
     {
         if (pid == 0)
         {
-            return null; // System Idle / kernel pseudo-PID
+            return (null, 0); // System Idle / kernel pseudo-PID
         }
 
         var handle = OpenProcess(ProcessQueryLimitedInformation, false, pid);
         if (handle == IntPtr.Zero)
         {
-            return null; // protected/elevated or already gone
+            return (null, 0); // protected/elevated or already gone
         }
 
         try
         {
             var capacity = 1024;
             var buffer = new System.Text.StringBuilder(capacity);
-            return QueryFullProcessImageName(handle, 0, buffer, ref capacity) ? buffer.ToString() : null;
+            var path = QueryFullProcessImageName(handle, 0, buffer, ref capacity) ? buffer.ToString() : null;
+            var created = GetProcessTimes(handle, out var creation, out _, out _, out _) ? creation : 0L;
+            return (path, created);
         }
         finally
         {
@@ -427,10 +502,28 @@ internal sealed class AppRouteWatcher
         public uint dwServiceFlags;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ProcessEntry32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const uint ScManagerConnect = 0x0001;
     private const uint ServiceQueryStatus = 0x0004;
     private const int ScStatusProcessInfo = 0;
+    private const uint Th32csSnapProcess = 0x00000002;
+    private static readonly IntPtr InvalidHandleValue = new(-1);
 
     [DllImport("iphlpapi.dll", SetLastError = true)]
     private static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int pdwSize, bool bOrder, int ulAf, int tableClass, int reserved);
@@ -441,6 +534,10 @@ internal sealed class AppRouteWatcher
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -459,4 +556,15 @@ internal sealed class AppRouteWatcher
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseServiceHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Process32First(IntPtr snapshot, ref ProcessEntry32 entry);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry32 entry);
 }

@@ -242,15 +242,12 @@
           </Panel>
 
           <!-- Config tab: the raw transfer payload, read-only and selectable. -->
-          <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                  CornerRadius="8" Background="{DynamicResource AgPanelBrush}" IsVisible="{Binding IsTransferText}">
-            <TextBox Text="{Binding TransferText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-                     VerticalContentAlignment="Top" Height="200"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     BorderThickness="0" Background="Transparent"
-                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
-          </Border>
+          <TextBox Classes="field" Text="{Binding TransferText}" IsReadOnly="True" AcceptsReturn="True"
+                   TextWrapping="NoWrap" IsVisible="{Binding IsTransferText}"
+                   VerticalContentAlignment="Top" Height="200"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
 
           <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                      HorizontalAlignment="Center" TextAlignment="Center"

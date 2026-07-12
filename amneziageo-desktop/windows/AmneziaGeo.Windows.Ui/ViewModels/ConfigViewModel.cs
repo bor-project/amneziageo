@@ -94,6 +94,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         _host = host;
         _connection = connection;
+        Loc.Instance.CultureChanged += OnCultureChanged;
+    }
+
+    private void OnCultureChanged()
+    {
+        OnPropertyChanged(nameof(DeleteConfigPrompt));
+        OnPropertyChanged(nameof(SectionMethodLabel));
     }
 
     /// <summary>

@@ -331,6 +331,19 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             engine.SetVariableString("DELETECONFIG", _vm.DeleteConfig ? "1" : "0", false);
         }
 
+        // Shortcut choices come from the view model - the checkboxes on an interactive run, or the per-user
+        // saved options otherwise (#183) - so a silent/passive update honours the last choice instead of
+        // resurrecting a removed shortcut. A command-line value (non-empty) wins.
+        if (string.IsNullOrEmpty(engine.GetVariableString("DESKTOPSHORTCUT")))
+        {
+            engine.SetVariableString("DESKTOPSHORTCUT", _vm.DesktopShortcut ? "1" : "0", false);
+        }
+
+        if (string.IsNullOrEmpty(engine.GetVariableString("STARTMENUSHORTCUT")))
+        {
+            engine.SetVariableString("STARTMENUSHORTCUT", _vm.StartMenuShortcut ? "1" : "0", false);
+        }
+
         _vm.BeginApply(action);
         engine.Plan(_launch);
     }

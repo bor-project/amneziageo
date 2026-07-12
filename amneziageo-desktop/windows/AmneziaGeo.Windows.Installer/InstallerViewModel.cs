@@ -55,6 +55,8 @@ public sealed class InstallerViewModel : ObservableObject
     private bool _deleteConfig;
     private bool _indeterminate;
     private bool _launchOnClose = true;
+    private bool _desktopShortcut = true;
+    private bool _startMenuShortcut = true;
     private string _geoResult = string.Empty;
     private InstallerAction? _pendingAction;
 
@@ -66,6 +68,13 @@ public sealed class InstallerViewModel : ObservableObject
         _invoke = invoke;
         _close = close;
 
+        // Seed from the per-user saved options so choices carry across installs (#183).
+        var opts = InstallerOptions.Load();
+        _downloadLists = opts.DownloadLists;
+        _launchOnClose = opts.LaunchAfter;
+        _desktopShortcut = opts.DesktopShortcut;
+        _startMenuShortcut = opts.StartMenuShortcut;
+
         InstallCommand = new RelayCommand(() => PendingAction = InstallerAction.Install);
         UpdateCommand = new RelayCommand(() => PendingAction = InstallerAction.Update);
         RepairCommand = new RelayCommand(() => PendingAction = InstallerAction.Repair);
@@ -74,6 +83,7 @@ public sealed class InstallerViewModel : ObservableObject
         {
             if (_pendingAction is { } action)
             {
+                PersistOptions();
                 _invoke(action);
             }
         });
@@ -260,6 +270,29 @@ public sealed class InstallerViewModel : ObservableObject
     public bool ShowLaunchOnInstall => ShowOptionsStep && _pendingAction is InstallerAction.Install or InstallerAction.Update;
 
     /// <summary>
+    /// Whether to create a desktop shortcut (#183).
+    /// </summary>
+    public bool DesktopShortcut
+    {
+        get => _desktopShortcut;
+        set => Set(ref _desktopShortcut, value);
+    }
+
+    /// <summary>
+    /// Whether to create a Start-menu shortcut (#183).
+    /// </summary>
+    public bool StartMenuShortcut
+    {
+        get => _startMenuShortcut;
+        set => Set(ref _startMenuShortcut, value);
+    }
+
+    /// <summary>
+    /// Show the shortcut checkboxes on the options step, for install/update/repair only - not removal (#183).
+    /// </summary>
+    public bool ShowShortcutOptions => ShowOptionsStep && IsApplyAction;
+
+    /// <summary>
     /// True while the list download runs with no percentage.
     /// </summary>
     public bool IsIndeterminate
@@ -399,6 +432,19 @@ public sealed class InstallerViewModel : ObservableObject
         Complete(success, message);
     }
 
+    // Persist the non-destructive choices so the next install/update/repair starts from them (#183). The
+    // reset/delete-config choice is intentionally not saved.
+    private void PersistOptions()
+    {
+        new InstallerOptions
+        {
+            DesktopShortcut = DesktopShortcut,
+            StartMenuShortcut = StartMenuShortcut,
+            LaunchAfter = LaunchOnClose,
+            DownloadLists = DownloadLists,
+        }.Save();
+    }
+
     private void RaiseVisibility()
     {
         Raise(nameof(ShowActionButtons));
@@ -413,5 +459,6 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowDownloadOption));
         Raise(nameof(ShowDeleteConfigOption));
         Raise(nameof(ShowLaunchOnInstall));
+        Raise(nameof(ShowShortcutOptions));
     }
 }

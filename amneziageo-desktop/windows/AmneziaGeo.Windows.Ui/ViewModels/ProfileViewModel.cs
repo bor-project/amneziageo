@@ -48,6 +48,15 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     {
         _host = host;
         _connection = connection;
+        Loc.Instance.CultureChanged += OnCultureChanged;
+    }
+
+    private void OnCultureChanged()
+    {
+        foreach (var profile in Profiles)
+        {
+            profile.RefreshLocalizedLabels();
+        }
     }
 
     /// <summary>

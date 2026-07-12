@@ -659,7 +659,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 var settings = await store.GetRoutingSettingsAsync(list.Id, ct);
                 if (settings is not null)
                 {
-                    settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.LocalDns, settings.Exclusions, settings.AllUdp, settings.UseIpv6);
+                    settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp, settings.UseIpv6);
                 }
 
                 routingBlocks.Add(new PortableBundle.RoutingBlock(name, rules, settingsBlock));
@@ -834,7 +834,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, rules, ct);
                 if (block.Settings is { } sE)
                 {
-                    await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.LocalDns, sE.Exclusions, sE.AllUdp, "split", sE.UseIpv6), ct);
+                    await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.Exclusions, sE.AllUdp, "split", sE.UseIpv6), ct);
                 }
 
                 routingMap[block.Name] = (existingList.Name, existingList.Id);
@@ -851,7 +851,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var newId = await geo.ApplyToRoutingListAsync(0, finalName, block.Rules, ct);
             if (block.Settings is { } s)
             {
-                await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.LocalDns, s.Exclusions, s.AllUdp, "split", s.UseIpv6), ct);
+                await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.Exclusions, s.AllUdp, "split", s.UseIpv6), ct);
             }
 
             routingMap[block.Name] = (finalName, newId);
@@ -1286,27 +1286,26 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown routing list: {id}");
         }
 
-        // Args after id: local DNS, exclusions, all-UDP, mode, use-IPv6. All optional; all-default clears the row.
-        var localDns = args.Count > 1 ? args[1].Trim() : string.Empty;
-        var exclusions = args.Count > 2 ? args[2].Trim() : string.Empty;
-        var udpArg = args.Count > 3 ? args[3].Trim().ToLowerInvariant() : "off";
+        // Args after id: exclusions, all-UDP, mode, use-IPv6. All optional; all-default clears the row.
+        var exclusions = args.Count > 1 ? args[1].Trim() : string.Empty;
+        var udpArg = args.Count > 2 ? args[2].Trim().ToLowerInvariant() : "off";
         var allUdp = udpArg is "on" or "1" or "true" or "yes";
-        var mode = args.Count > 4 ? args[4].Trim().ToLowerInvariant() : "split";
+        var mode = args.Count > 3 ? args[3].Trim().ToLowerInvariant() : "split";
         if (mode != "full")
         {
             mode = "split";
         }
 
-        var v6Arg = args.Count > 5 ? args[5].Trim().ToLowerInvariant() : "off";
+        var v6Arg = args.Count > 4 ? args[4].Trim().ToLowerInvariant() : "off";
         var useIpv6 = v6Arg is "on" or "1" or "true" or "yes";
 
-        if (localDns.Length == 0 && exclusions.Length == 0 && !allUdp && mode == "split" && !useIpv6)
+        if (exclusions.Length == 0 && !allUdp && mode == "split" && !useIpv6)
         {
             await store.RemoveRoutingSettingsAsync(id, ct);
         }
         else
         {
-            await store.SetRoutingSettingsAsync(new RoutingSettings(id, localDns, exclusions, allUdp, mode, useIpv6), ct);
+            await store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useIpv6), ct);
         }
 
         // Settings apply on a fresh tunnel; flag a reconnect when the running profile routes through this list.
@@ -1319,7 +1318,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        logger.LogInformation("set-routing-settings {Id}: dns='{Dns}', excl={Len} chars, allUdp={Udp}, mode={Mode}, useIpv6={V6}", id, localDns, exclusions.Length, allUdp, mode, useIpv6);
+        logger.LogInformation("set-routing-settings {Id}: excl={Len} chars, allUdp={Udp}, mode={Mode}, useIpv6={V6}", id, exclusions.Length, allUdp, mode, useIpv6);
         return new IpcAck(true, IpcMessage.Key("Agent_RoutingSettingsSaved"));
     }
 
@@ -1338,7 +1337,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var settings = await store.GetRoutingSettingsAsync(id, ct);
         var json = System.Text.Json.JsonSerializer.Serialize(new
         {
-            localDns = settings?.LocalDns ?? string.Empty,
             exclusions = settings?.Exclusions ?? string.Empty,
             allUdp = settings?.AllUdp ?? false,
             mode = settings?.Mode ?? "split",

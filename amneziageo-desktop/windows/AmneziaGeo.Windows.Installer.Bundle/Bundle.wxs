@@ -30,6 +30,10 @@
     <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
          app once the update is applied. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" />
+    <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
+         per-user saved options; a command-line value wins. -->
+    <Variable Name="DESKTOPSHORTCUT" Value="" />
+    <Variable Name="STARTMENUSHORTCUT" Value="" />
 
     <!-- Custom out-of-proc BA: the .exe is named directly; every other file from its self-contained
          publish is supplied via the generated BaPayloads PayloadGroup. -->
@@ -44,6 +48,8 @@
                   Vital="yes"
                   Compressed="yes">
         <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
+        <MsiProperty Name="DESKTOPSHORTCUT" Value="[DESKTOPSHORTCUT]" />
+        <MsiProperty Name="STARTMENUSHORTCUT" Value="[STARTMENUSHORTCUT]" />
       </MsiPackage>
     </Chain>
   </Bundle>
@@ -58,6 +64,10 @@
     <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
          app once the update is applied. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" />
+    <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
+         per-user saved options; a command-line value wins. -->
+    <Variable Name="DESKTOPSHORTCUT" Value="" />
+    <Variable Name="STARTMENUSHORTCUT" Value="" />
 
     <BootstrapperApplication SourceFile="$(var.BaExe)">
       <PayloadGroupRef Id="BaPayloads" />
@@ -69,6 +79,8 @@
                   Vital="yes"
                   Compressed="yes">
         <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
+        <MsiProperty Name="DESKTOPSHORTCUT" Value="[DESKTOPSHORTCUT]" />
+        <MsiProperty Name="STARTMENUSHORTCUT" Value="[STARTMENUSHORTCUT]" />
       </MsiPackage>
     </Chain>
   </Bundle>

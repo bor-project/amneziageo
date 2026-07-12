@@ -157,7 +157,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
                     CREATE TABLE IF NOT EXISTS routing_settings (
                         list_id    INTEGER PRIMARY KEY REFERENCES routing_lists(id) ON DELETE CASCADE,
-                        local_dns  TEXT NOT NULL DEFAULT '',
                         exclusions TEXT NOT NULL DEFAULT '',
                         all_udp    INTEGER NOT NULL DEFAULT 0,
                         mode       TEXT NOT NULL DEFAULT 'split',
@@ -1827,7 +1826,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT local_dns, exclusions, all_udp, mode, use_ipv6 FROM routing_settings WHERE list_id = $id;";
+                command.CommandText = "SELECT exclusions, all_udp, mode, use_ipv6 FROM routing_settings WHERE list_id = $id;";
                 command.Parameters.AddWithValue("$id", routingListId);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1838,7 +1837,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new RoutingSettings(routingListId, reader.GetString(0), reader.GetString(1), reader.GetInt32(2) != 0, reader.GetString(3), reader.GetInt32(4) != 0);
+                    return new RoutingSettings(routingListId, reader.GetString(0), reader.GetInt32(1) != 0, reader.GetString(2), reader.GetInt32(3) != 0);
                 }
             }
         }
@@ -1857,10 +1856,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO routing_settings (list_id, local_dns, exclusions, all_udp, mode, use_ipv6, updated_at)
-                    VALUES ($id, $dns, $excl, $udp, $mode, $v6, $updated)
+                    INSERT INTO routing_settings (list_id, exclusions, all_udp, mode, use_ipv6, updated_at)
+                    VALUES ($id, $excl, $udp, $mode, $v6, $updated)
                     ON CONFLICT(list_id) DO UPDATE SET
-                        local_dns  = excluded.local_dns,
                         exclusions = excluded.exclusions,
                         all_udp    = excluded.all_udp,
                         mode       = excluded.mode,
@@ -1868,7 +1866,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$id", settings.ListId);
-                command.Parameters.AddWithValue("$dns", settings.LocalDns);
                 command.Parameters.AddWithValue("$excl", settings.Exclusions);
                 command.Parameters.AddWithValue("$udp", settings.AllUdp ? 1 : 0);
                 command.Parameters.AddWithValue("$mode", settings.Mode);

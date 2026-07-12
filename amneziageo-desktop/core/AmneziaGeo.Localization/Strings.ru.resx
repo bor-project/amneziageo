@@ -286,6 +286,9 @@
   <data name="Main_ClearRulesTooltip" xml:space="preserve">
     <value>Удалить все записи списка</value>
   </data>
+  <data name="Main_SortRulesTooltip" xml:space="preserve">
+    <value>Сортировать записи по имени</value>
+  </data>
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Закрыть</value>
   </data>
@@ -367,6 +370,9 @@
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
   </data>
+  <data name="Main_RoutingLoading" xml:space="preserve">
+    <value>Загрузка…</value>
+  </data>
   <data name="Main_DeleteProfileButton" xml:space="preserve">
     <value>Удалить профиль</value>
   </data>
@@ -399,12 +405,6 @@
   </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>УДАЛЕНИЕ</value>
-  </data>
-  <data name="Main_DnsHint" xml:space="preserve">
-    <value>DNS для обычного (не-туннельного) трафика. Несколько — через запятую. Пусто — определять автоматически. Гео-домены резолвятся отдельным чистым DNS.</value>
-  </data>
-  <data name="Main_DnsWatermark" xml:space="preserve">
-    <value>напр. 1.1.1.1, 8.8.8.8</value>
   </data>
   <data name="Main_DownloadButton" xml:space="preserve">
     <value>Скачать</value>
@@ -1213,6 +1213,12 @@
   </data>
   <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
     <value>Запустить AmneziaGeo после установки</value>
+  </data>
+  <data name="InstallerUi_DesktopShortcut" xml:space="preserve">
+    <value>Ярлык на рабочем столе</value>
+  </data>
+  <data name="InstallerUi_StartMenuShortcut" xml:space="preserve">
+    <value>Ярлык в меню Пуск</value>
   </data>
   <data name="InstallerUi_Remove" xml:space="preserve">
     <value>Удалить</value>

@@ -286,6 +286,9 @@
   <data name="Main_ClearRulesTooltip" xml:space="preserve">
     <value>Delete all entries in the list</value>
   </data>
+  <data name="Main_SortRulesTooltip" xml:space="preserve">
+    <value>Sort entries by name</value>
+  </data>
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Close</value>
   </data>
@@ -367,6 +370,9 @@
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Routing list</value>
   </data>
+  <data name="Main_RoutingLoading" xml:space="preserve">
+    <value>Loading…</value>
+  </data>
   <data name="Main_DeleteProfileButton" xml:space="preserve">
     <value>Delete profile</value>
   </data>
@@ -399,12 +405,6 @@
   </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>DELETION</value>
-  </data>
-  <data name="Main_DnsHint" xml:space="preserve">
-    <value>DNS for ordinary (non-tunnel) traffic. Several — comma-separated. Empty — detect automatically. Geo domains are resolved via a separate clean DNS.</value>
-  </data>
-  <data name="Main_DnsWatermark" xml:space="preserve">
-    <value>e.g. 1.1.1.1, 8.8.8.8</value>
   </data>
   <data name="Main_DownloadButton" xml:space="preserve">
     <value>Download</value>
@@ -1213,6 +1213,12 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
     <value>Launch AmneziaGeo after install</value>
+  </data>
+  <data name="InstallerUi_DesktopShortcut" xml:space="preserve">
+    <value>Desktop shortcut</value>
+  </data>
+  <data name="InstallerUi_StartMenuShortcut" xml:space="preserve">
+    <value>Start menu shortcut</value>
   </data>
   <data name="InstallerUi_Remove" xml:space="preserve">
     <value>Remove</value>

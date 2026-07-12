@@ -219,9 +219,7 @@ internal sealed class TunnelRunner(
         var allUdp = geoSplit && (routingSettings?.AllUdp ?? appSettings.TunnelAllUdp);
 
         // Preferred-DNS overrides the system resolvers for non-tunneled names; empty = auto-detect.
-        var preferredDnsServers = routingSettings is not null
-            ? routingSettings.LocalDns
-            : (await store.GetConfigDnsAsync(name))?.Servers ?? string.Empty;
+        var preferredDnsServers = (await store.GetConfigDnsAsync(name))?.Servers ?? string.Empty;
         var preferredDns = ParseDnsServers(preferredDnsServers);
         // LAN resolver always captured; local names resolve here, not offshore.
         var lanResolvers = dns.CaptureUpstream();
@@ -314,10 +312,17 @@ internal sealed class TunnelRunner(
         var proxy = StartProxy(trackDomains ? domains : [], stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
 
         // Rebuild the proxy matcher live on a geosite refresh or list rule edit, even for a list that had no
-        // domains at connect.
+        // domains at connect. A rebuild that adds domains flushes the OS resolver cache so a name resolved
+        // direct before the edit is re-queried through the proxy and re-pointed onto the tunnel.
         if (geoSplit && proxy is not null && tracker is not null)
         {
-            tracker.SetGeoDomainSink((d, ct) => proxy.UpdateDomains(d, ct));
+            tracker.SetGeoDomainSink((d, ct) =>
+            {
+                if (proxy.UpdateDomains(d, ct))
+                {
+                    dns.FlushCache();
+                }
+            });
         }
 
         if (tracker is not null)

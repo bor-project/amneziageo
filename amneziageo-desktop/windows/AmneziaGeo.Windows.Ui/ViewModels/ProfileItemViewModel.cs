@@ -127,6 +127,16 @@ internal sealed partial class ProfileItemViewModel : ViewModelBase, IEditScope
     /// </summary>
     public string Detail => HasConfig ? Config : Loc.Instance.Get("Profile_NoConfig");
 
+    /// <summary>
+    /// Re-raises the localized computed labels after a language change.
+    /// </summary>
+    public void RefreshLocalizedLabels()
+    {
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(ConnectActionText));
+        OnPropertyChanged(nameof(Detail));
+    }
+
     [RelayCommand]
     private Task Select()
     {

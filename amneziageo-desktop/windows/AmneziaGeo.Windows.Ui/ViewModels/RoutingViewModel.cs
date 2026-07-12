@@ -55,6 +55,17 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         _host = host;
         _connection = connection;
+        Loc.Instance.CultureChanged += OnCultureChanged;
+    }
+
+    private void OnCultureChanged()
+    {
+        foreach (var list in RoutingLists)
+        {
+            list.RefreshLocalizedLabels();
+        }
+
+        RoutingEditor?.RefreshLocalizedLabels();
     }
 
     /// <summary>

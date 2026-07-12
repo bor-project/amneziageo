@@ -2,34 +2,32 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using AmneziaGeo.Windows.Ui.ViewModels;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Windows.Ui.ViewModels;
 
-namespace AmneziaGeo.Windows.Ui;
+namespace AmneziaGeo.Windows.Ui.Views;
 
 /// <summary>
-/// Modal dialog for the selective bundle export: check profiles, configs, and routing lists to
-/// bundle, then copy/save the resulting JSON.
+/// Inline selective bundle export: check profiles, configs and routing lists, then copy / save the JSON.
 /// </summary>
-public sealed partial class BundleExportDialog : Window
+internal sealed partial class BundleExportView : UserControl
 {
     /// <summary>
     /// ctor
     /// </summary>
-    public BundleExportDialog()
+    public BundleExportView()
     {
         InitializeComponent();
     }
 
     private async void OnCopy(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not BundleExportDialogViewModel vm)
+        if (DataContext is not BundleExportViewModel vm)
         {
             return;
         }
 
-        var clipboard = GetTopLevel(this)?.Clipboard;
-        if (clipboard is not null)
+        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
         {
             await clipboard.SetTextAsync(vm.Payload);
             vm.StatusMessage = Loc.Instance.Get("BundleExportCode_CopiedToClipboard");
@@ -38,12 +36,12 @@ public sealed partial class BundleExportDialog : Window
 
     private async void OnSaveFile(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not BundleExportDialogViewModel vm)
+        if (DataContext is not BundleExportViewModel vm || TopLevel.GetTopLevel(this) is not { } top)
         {
             return;
         }
 
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = Loc.Instance.Get("BundleExportCode_SaveBundleTitle"),
             SuggestedFileName = vm.SuggestedFileName,
@@ -57,15 +55,5 @@ public sealed partial class BundleExportDialog : Window
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(vm.Payload);
         vm.StatusMessage = Loc.Instance.Get("BundleExportCode_Saved");
-    }
-
-    private void OnDone(object? sender, RoutedEventArgs e)
-    {
-        Close(true);
-    }
-
-    private void OnCancel(object? sender, RoutedEventArgs e)
-    {
-        Close(false);
     }
 }

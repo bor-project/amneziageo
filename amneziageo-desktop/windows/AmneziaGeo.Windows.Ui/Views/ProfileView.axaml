@@ -13,7 +13,7 @@
               Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
         <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
       </Border>
-      <Button Grid.Column="3" Classes="accent" Width="180" Command="{Binding CreateProfileCommand}">
+      <Button Grid.Column="3" Classes="accent" Width="130" Command="{Binding CreateProfileCommand}">
         <StackPanel Orientation="Horizontal" Spacing="4">
           <TextBlock Text="+" />
           <TextBlock Text="{l:Tr Main_ProfileAddButton}" />

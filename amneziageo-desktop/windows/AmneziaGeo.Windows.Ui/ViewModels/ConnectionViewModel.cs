@@ -116,6 +116,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private static readonly IBrush _glyphGray = new SolidColorBrush(Color.FromRgb(0x7B, 0x81, 0x8D));
     private static readonly IBrush _textBlue = new SolidColorBrush(Color.FromRgb(0x1A, 0x50, 0xB0));
     private static readonly IBrush _textGray = new SolidColorBrush(Color.FromRgb(0x5B, 0x61, 0x6E));
+    private static readonly IBrush _orange = new SolidColorBrush(Color.FromRgb(0xE0, 0x90, 0x2F));
     private static readonly IBrush _hintBrush = new SolidColorBrush(Color.FromRgb(0x9A, 0xA0, 0xAB));
 
     // 0 = disconnected, 1 = transitioning, 2 = connected.
@@ -127,9 +128,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     };
 
     public bool IsConnecting => ConnState == 1;
-
-    // Кнопка подключения: переход читается как его цель - подключение синее как активное, отключение серое как отключённое (#162).
-    private int ConnVisual => ConnState == 1 ? (IsTunnelActive ? 0 : 2) : ConnState;
 
     public bool IsConnectingOut => IsConnecting && IsTunnelActive;
 
@@ -148,13 +146,29 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
-    public IBrush ConnectCircleBrush => ConnVisual == 2 ? _circleBlue : Brushes.White;
+    // Цвет по трём состояниям: отключено - серый, переход (подключение/отключение) - оранжевый, подключено - синий.
+    public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
 
-    public IBrush ConnectCircleBorderBrush => ConnVisual == 2 ? Brushes.Transparent : _circleBorderGray;
+    public IBrush ConnectCircleBorderBrush => ConnState switch
+    {
+        2 => Brushes.Transparent,
+        1 => _orange,
+        _ => _circleBorderGray,
+    };
 
-    public IBrush ConnectCircleForeground => ConnVisual == 2 ? Brushes.White : _glyphGray;
+    public IBrush ConnectCircleForeground => ConnState switch
+    {
+        2 => Brushes.White,
+        1 => _orange,
+        _ => _glyphGray,
+    };
 
-    public IBrush ConnectStatusBrush => ConnVisual == 2 ? _textBlue : _textGray;
+    public IBrush ConnectStatusBrush => ConnState switch
+    {
+        2 => _textBlue,
+        1 => _orange,
+        _ => _textGray,
+    };
 
     public IBrush ConnectHintBrush => _hintBrush;
 

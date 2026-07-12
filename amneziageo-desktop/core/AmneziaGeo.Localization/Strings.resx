@@ -101,7 +101,7 @@
     <value>CONFIGURATIONS</value>
   </data>
   <data name="BundleExport_CopyButton" xml:space="preserve">
-    <value>Copy</value>
+    <value>Copy content</value>
   </data>
   <data name="BundleExport_DoneButton" xml:space="preserve">
     <value>Done</value>
@@ -251,7 +251,7 @@
     <value>Periodically check sources for a new version and notify.</value>
   </data>
   <data name="Main_AutoCheckTitle" xml:space="preserve">
-    <value>Auto-check for updates</value>
+    <value>Update check</value>
   </data>
   <data name="Main_BackToProfilesTooltip" xml:space="preserve">
     <value>Back to profiles</value>
@@ -297,6 +297,18 @@
   </data>
   <data name="Main_LogLoadOlderButton" xml:space="preserve">
     <value>Load earlier</value>
+  </data>
+  <data name="Main_LogOlderTooltip" xml:space="preserve">
+    <value>Earlier entries</value>
+  </data>
+  <data name="Main_OpenLogsFolderButton" xml:space="preserve">
+    <value>Open folder</value>
+  </data>
+  <data name="Main_ClearLogButton" xml:space="preserve">
+    <value>Clear log</value>
+  </data>
+  <data name="Main_LogNewerTooltip" xml:space="preserve">
+    <value>Later entries</value>
   </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Search in log</value>
@@ -451,6 +463,15 @@
   <data name="Main_ImportExportSection" xml:space="preserve">
     <value>Import / export</value>
   </data>
+  <data name="Main_TransferSubtitle" xml:space="preserve">
+    <value>Choose a transfer format</value>
+  </data>
+  <data name="Main_TransferQrTab" xml:space="preserve">
+    <value>QR</value>
+  </data>
+  <data name="Main_TransferTextTab" xml:space="preserve">
+    <value>Config</value>
+  </data>
   <data name="Main_InstallButton" xml:space="preserve">
     <value>Install</value>
   </data>
@@ -491,7 +512,7 @@
     <value>Name (optional)</value>
   </data>
   <data name="Main_NewConfigButton" xml:space="preserve">
-    <value>New configuration</value>
+    <value>New config</value>
   </data>
   <data name="Main_NewConfigLabel" xml:space="preserve">
     <value>NEW CONFIGURATION</value>
@@ -651,6 +672,9 @@
   </data>
   <data name="Main_ShowQrButton" xml:space="preserve">
     <value>Show QR</value>
+  </data>
+  <data name="Main_HideQrButton" xml:space="preserve">
+    <value>Hide QR</value>
   </data>
   <data name="Main_ShowQrTooltip" xml:space="preserve">
     <value>Show the list's QR code for transfer</value>

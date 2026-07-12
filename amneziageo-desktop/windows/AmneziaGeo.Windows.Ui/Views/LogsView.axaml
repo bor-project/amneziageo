@@ -5,42 +5,68 @@
              x:Class="AmneziaGeo.Windows.Ui.Views.LogsView"
              x:CompileBindings="True"
              x:DataType="vm:LogsViewModel">
-  <StackPanel Spacing="14">
-    <!-- Header. -->
-    <TextBlock Classes="section" Text="{l:Tr Main_AgentLogSection}" />
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgChevronLeftGeometry">M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z</StreamGeometry>
+    <StreamGeometry x:Key="AgChevronRightGeometry">M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z</StreamGeometry>
+    <StreamGeometry x:Key="AgFolderGeometry">M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z</StreamGeometry>
+  </UserControl.Resources>
+  <!-- Fills the content viewport so only the log body scrolls (no second, window-level scrollbar). -->
+  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
 
-    <!-- Capture settings card: verbosity level + route log. Applies live. -->
-    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+    <!-- Header. -->
+    <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_AgentLogSection}" />
+
+    <!-- Capture settings card: verbosity level (left) + connection log (right), side by side. Applies live. -->
+    <Border Grid.Row="1" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
             CornerRadius="12" Padding="16" Background="Transparent">
       <StackPanel Spacing="14">
         <TextBlock Text="{l:Tr Main_LogCaptureTitle}" FontWeight="SemiBold" FontSize="15" />
 
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-            <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontSize="13.5" />
-            <TextBlock Text="{l:Tr Main_LogVerbosityHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="18">
+          <!-- Level. -->
+          <StackPanel Grid.Column="0" Spacing="8" VerticalAlignment="Center">
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontSize="13.5" />
+              <TextBlock Text="{l:Tr Main_LogVerbosityHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+            </StackPanel>
+            <ComboBox Classes="field" HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding LogLevels}" SelectedItem="{Binding LogLevel, Mode=TwoWay}" />
           </StackPanel>
-          <ComboBox Grid.Column="1" Classes="field" VerticalAlignment="Center" MinWidth="150"
-                    ItemsSource="{Binding LogLevels}" SelectedItem="{Binding LogLevel, Mode=TwoWay}" />
-        </Grid>
 
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-            <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
-            <TextBlock Text="{l:Tr Main_RouteLogHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-          </StackPanel>
-          <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
+          <Border Grid.Column="1" Width="1" Background="{DynamicResource AgBorderBrush}" Margin="0,2" />
+
+          <!-- Connection log toggle. -->
+          <Grid Grid.Column="2" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,12,0">
+              <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
+              <TextBlock Text="{l:Tr Main_RouteLogHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
+          </Grid>
         </Grid>
       </StackPanel>
     </Border>
 
-    <!-- Viewer card: file picker + live-tail follow, search over the shown tail, and the log itself. -->
-    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+    <!-- Viewer card: fills the remaining height; the log body owns the only scrollbar. -->
+    <Border Grid.Row="2" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
             CornerRadius="12" Padding="16" Background="Transparent">
-      <StackPanel Spacing="10">
-        <TextBlock Text="{l:Tr Main_LogViewerTitle}" FontWeight="SemiBold" FontSize="15" />
+      <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Text="{l:Tr Main_LogViewerTitle}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Button Classes="methodpick" Padding="14,6" Command="{Binding ClearLogCommand}"
+                    Content="{l:Tr Main_ClearLogButton}" />
+            <Button Classes="methodpick" Padding="14,6" Click="OnOpenLogsFolder">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgFolderGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_OpenLogsFolderButton}" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
 
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+        <!-- One row: file picker + search share the middle space equally, then older/newer nav and follow. -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,*,Auto,Auto,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center">
           <TextBlock Grid.Column="0" Text="{l:Tr Main_LogFileLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
           <ComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch"
                     ItemsSource="{Binding LogFiles}" SelectedItem="{Binding SelectedLogFile, Mode=TwoWay}">
@@ -50,23 +76,24 @@
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
-          <TextBlock Grid.Column="2" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-          <ToggleSwitch Grid.Column="3" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
-        </Grid>
-
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
-          <TextBox Grid.Column="0" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
+          <TextBox Grid.Column="2" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
                    Watermark="{l:Tr Main_LogSearchWatermark}" />
-          <TextBlock Grid.Column="1" Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5"
-                     VerticalAlignment="Center" />
+          <TextBlock Grid.Column="3" Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5"
+                     VerticalAlignment="Center" IsVisible="{Binding SearchSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+            <Button Classes="icon" Command="{Binding PageOlderCommand}" ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
+              <PathIcon Data="{DynamicResource AgChevronLeftGeometry}" Width="14" Height="14" />
+            </Button>
+            <Button Classes="icon" Command="{Binding PageNewerCommand}" ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
+              <PathIcon Data="{DynamicResource AgChevronRightGeometry}" Width="14" Height="14" />
+            </Button>
+          </StackPanel>
+          <TextBlock Grid.Column="5" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" Margin="6,0,0,0" />
+          <ToggleSwitch Grid.Column="6" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
         </Grid>
 
-        <Button Classes="softbtn" HorizontalAlignment="Center"
-                Content="{l:Tr Main_LogLoadOlderButton}" Command="{Binding LoadOlderLogCommand}"
-                IsVisible="{Binding LogCanPageOlder}" />
-
-        <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                Background="{DynamicResource AgInsetBrush}" CornerRadius="10" MaxHeight="520">
+        <Border Grid.Row="2" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
           <Panel>
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
               <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
@@ -80,7 +107,7 @@
                        Margin="16,13" VerticalAlignment="Top" />
           </Panel>
         </Border>
-      </StackPanel>
+      </Grid>
     </Border>
-  </StackPanel>
+  </Grid>
 </UserControl>

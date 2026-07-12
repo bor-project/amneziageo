@@ -144,9 +144,10 @@
             </Button>
           </StackPanel>
 
-          <!-- Animated connect / disconnect control. -->
+          <!-- Animated connect / disconnect control (right): soft pill, inner circle + text carry the state
+               colour (gray off, orange while switching, blue connected). -->
           <Button Classes="powerctl" HorizontalAlignment="Right" VerticalAlignment="Center"
-                  MinWidth="150" HorizontalContentAlignment="Left"
+                  Width="130" HorizontalContentAlignment="Left"
                   Command="{Binding Home.ToggleConnectionCommand}"
                   IsEnabled="{Binding Home.CanToggleConnection}"
                   ToolTip.Tip="{Binding Home.ConnectHint}">
@@ -370,9 +371,10 @@
               <views:SourcesView DataContext="{Binding Sources}" />
             </Panel>
 
-            <!-- LOGS SECTION -->
+            <!-- LOGS SECTION: fixed to the viewport (minus the Grid's 32px inset) so only the log body scrolls. -->
             <Panel IsVisible="{Binding IsSettingsLogs}">
-              <views:LogsView DataContext="{Binding Logs}" />
+              <views:LogsView DataContext="{Binding Logs}"
+                              Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}" />
             </Panel>
 
             <!-- GENERAL SECTION -->

@@ -101,7 +101,7 @@
     <value>КОНФИГУРАЦИИ</value>
   </data>
   <data name="BundleExport_CopyButton" xml:space="preserve">
-    <value>Копировать</value>
+    <value>Скопировать содержимое</value>
   </data>
   <data name="BundleExport_DoneButton" xml:space="preserve">
     <value>Готово</value>
@@ -251,7 +251,7 @@
     <value>Периодически проверять источники на новую версию и уведомлять.</value>
   </data>
   <data name="Main_AutoCheckTitle" xml:space="preserve">
-    <value>Автопроверка обновлений</value>
+    <value>Проверка обновлений</value>
   </data>
   <data name="Main_BackToProfilesTooltip" xml:space="preserve">
     <value>Назад к профилям</value>
@@ -297,6 +297,18 @@
   </data>
   <data name="Main_LogLoadOlderButton" xml:space="preserve">
     <value>Загрузить ранее</value>
+  </data>
+  <data name="Main_LogOlderTooltip" xml:space="preserve">
+    <value>Более ранние записи</value>
+  </data>
+  <data name="Main_OpenLogsFolderButton" xml:space="preserve">
+    <value>Открыть папку</value>
+  </data>
+  <data name="Main_ClearLogButton" xml:space="preserve">
+    <value>Очистить журнал</value>
+  </data>
+  <data name="Main_LogNewerTooltip" xml:space="preserve">
+    <value>Более поздние записи</value>
   </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Поиск в логе</value>
@@ -451,6 +463,15 @@
   <data name="Main_ImportExportSection" xml:space="preserve">
     <value>Импорт / экспорт</value>
   </data>
+  <data name="Main_TransferSubtitle" xml:space="preserve">
+    <value>Выберите формат передачи</value>
+  </data>
+  <data name="Main_TransferQrTab" xml:space="preserve">
+    <value>QR</value>
+  </data>
+  <data name="Main_TransferTextTab" xml:space="preserve">
+    <value>Конфиг</value>
+  </data>
   <data name="Main_InstallButton" xml:space="preserve">
     <value>Установить</value>
   </data>
@@ -491,7 +512,7 @@
     <value>Имя (необязательно)</value>
   </data>
   <data name="Main_NewConfigButton" xml:space="preserve">
-    <value>Новая конфигурация</value>
+    <value>Новый конфиг</value>
   </data>
   <data name="Main_NewConfigLabel" xml:space="preserve">
     <value>НОВАЯ КОНФИГУРАЦИЯ</value>
@@ -651,6 +672,9 @@
   </data>
   <data name="Main_ShowQrButton" xml:space="preserve">
     <value>Показать QR</value>
+  </data>
+  <data name="Main_HideQrButton" xml:space="preserve">
+    <value>Скрыть QR</value>
   </data>
   <data name="Main_ShowQrTooltip" xml:space="preserve">
     <value>Показать QR-код списка для переноса</value>

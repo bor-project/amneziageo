@@ -8,9 +8,9 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// View model for the bundle import dialog.
+/// View model for the bundle import view.
 /// </summary>
-internal sealed partial class BundleImportDialogViewModel : ViewModelBase
+internal sealed partial class BundleImportViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
 
@@ -30,7 +30,7 @@ internal sealed partial class BundleImportDialogViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public BundleImportDialogViewModel(AgentConnection connection)
+    public BundleImportViewModel(AgentConnection connection)
     {
         _connection = connection;
     }

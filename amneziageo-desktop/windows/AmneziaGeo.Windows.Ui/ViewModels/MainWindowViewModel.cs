@@ -46,7 +46,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _connection = connection;
         _prefs = prefs;
         Logs = new LogsViewModel(connection);
-        General = new GeneralViewModel(connection, prefs);
+        General = new GeneralViewModel(this, connection, prefs);
         Config = new ConfigViewModel(this, connection);
         Profile = new ProfileViewModel(this, connection);
         Routing = new RoutingViewModel(this, connection);

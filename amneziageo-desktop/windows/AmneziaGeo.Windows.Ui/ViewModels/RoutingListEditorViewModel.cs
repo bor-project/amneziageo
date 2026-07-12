@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Avalonia.Media.Imaging;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
@@ -289,6 +290,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             IsDirty = dirty;
             DirtyChanged?.Invoke(this, EventArgs.Empty);
         }
+
+        RefreshTransfer();
     }
 
     /// <inheritdoc />
@@ -601,6 +604,64 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// Serialises this list to a portable blob for copy / save / QR.
     /// </summary>
     public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, Rules);
+
+    // Transfer card mode: QR image vs raw payload text; both share the copy / paste / load / save actions.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTransferText))]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    private bool _isTransferQr = true;
+
+    public bool IsTransferText => !IsTransferQr;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    private Bitmap? _routingQrImage;
+
+    /// <summary>
+    /// QR tab active but the payload was too large to encode.
+    /// </summary>
+    public bool QrUnavailable => IsTransferQr && RoutingQrImage is null;
+
+    /// <summary>
+    /// Raw transfer payload shown in the Config tab; refreshed as the list changes.
+    /// </summary>
+    public string TransferText => BuildTransferPayload();
+
+    [RelayCommand]
+    private void ShowTransferQr()
+    {
+        IsTransferQr = true;
+        RoutingQrImage = TryBuildQr();
+    }
+
+    [RelayCommand]
+    private void ShowTransferText()
+    {
+        IsTransferQr = false;
+    }
+
+    // Keeps the QR / payload text in sync with the current list.
+    private void RefreshTransfer()
+    {
+        OnPropertyChanged(nameof(TransferText));
+        if (IsTransferQr)
+        {
+            RoutingQrImage = TryBuildQr();
+        }
+    }
+
+    private Bitmap? TryBuildQr()
+    {
+        try
+        {
+            return QrCodec.Generate(BuildTransferPayload());
+        }
+        catch
+        {
+            // Payload too large for a QR.
+            return null;
+        }
+    }
 
     /// <summary>
     /// Replaces this list's name + rules from an imported blob; the result auto-saves.

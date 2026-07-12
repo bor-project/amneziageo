@@ -3,32 +3,32 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using AmneziaGeo.Windows.Ui.ViewModels;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Windows.Ui.ViewModels;
 
-namespace AmneziaGeo.Windows.Ui;
+namespace AmneziaGeo.Windows.Ui.Views;
 
 /// <summary>
-/// Modal dialog for the selective bundle import: paste or load a bundle JSON and import it.
+/// Inline selective bundle import: paste or load a bundle JSON and import it.
 /// </summary>
-public sealed partial class BundleImportDialog : Window
+internal sealed partial class BundleImportView : UserControl
 {
     /// <summary>
     /// ctor
     /// </summary>
-    public BundleImportDialog()
+    public BundleImportView()
     {
         InitializeComponent();
     }
 
     private async void OnLoadFile(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not BundleImportDialogViewModel vm)
+        if (DataContext is not BundleImportViewModel vm || TopLevel.GetTopLevel(this) is not { } top)
         {
             return;
         }
 
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = Loc.Instance.Get("BundleImportCode_BundleFileTitle"),
             AllowMultiple = false,
@@ -49,10 +49,5 @@ public sealed partial class BundleImportDialog : Window
         {
             vm.StatusMessage = ex.Message;
         }
-    }
-
-    private void OnClose(object? sender, RoutedEventArgs e)
-    {
-        Close();
     }
 }

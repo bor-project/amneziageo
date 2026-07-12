@@ -37,6 +37,7 @@ param(
     [Parameter(Position = 0)]
     [string]$Environment,
     [string]$Configuration,
+    [string]$Version,
     [string[]]$Arch,
     [string[]]$SelfContained,
     [switch]$All,
@@ -221,10 +222,19 @@ function Build-Variant {
     Write-Host ''
     Write-Host "########## variant win-$Arch ($kind) ##########"
 
-    # ---- 0. clean all projects before building (rebuild flag) ----
+    # ---- 0. clean all projects before building (rebuild flag). Platform is a WiX concept: pass it only to
+    # the MSI/bundle; the SDK projects clean without it (Platform=arm64 on an SDK project fights their RID
+    # -> spurious NETSDK1032 noise). ----
     if ($rebuild) {
         Write-Host "== clean projects (rebuild) =="
-        foreach ($p in @($appProj, $uiProj, $baProj, $msiProj, $bundleProj)) {
+        # SDK projects: clean, then drop obj so each per-arch variant restores fresh. Switching arch between
+        # variants otherwise leaves a stale project.assets.json -> spurious NETSDK1047/1032 on the next clean.
+        foreach ($p in @($appProj, $uiProj, $baProj)) {
+            dotnet clean $p -c $Configuration -v q -nologo 2>$null
+            $objDir = Join-Path (Split-Path $p -Parent) 'obj'
+            if (Test-Path $objDir) { Remove-Item -Recurse -Force $objDir -ErrorAction SilentlyContinue }
+        }
+        foreach ($p in @($msiProj, $bundleProj)) {
             dotnet clean $p -c $Configuration -p:Platform=$Arch -v q -nologo 2>$null
         }
     }
@@ -307,11 +317,18 @@ function Build-Variant {
 
 Assert-SigningCert
 
-# ---- version: 1.0.1.<commit count> (4th field always increasing) ----
-$build = (& git -C $win rev-list --count HEAD).Trim()
-if (-not $build) { $build = '0' }
-$version = "1.0.1.$build"
-Write-Host "== bundle version $version =="
+# ---- version: -Version override (deploy.ps1 drives it), else 1.0.1.<commit count> ----
+if ($Version) {
+    if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "Invalid -Version '$Version' (expected N.N.N.N)." }
+    $version = $Version
+    Write-Host "== bundle version $version (explicit) =="
+}
+else {
+    $build = (& git -C $win rev-list --count HEAD).Trim()
+    if (-not $build) { $build = '0' }
+    $version = "1.0.1.$build"
+    Write-Host "== bundle version $version =="
+}
 
 # ---- AmneziaWG engine version: `git describe --tags` of the bundled amneziawg-windows submodule,
 # baked into the agent (App.csproj reads -p:AmneziaEngineVersion) so the UI can show it (tunnel.dll has

@@ -224,19 +224,20 @@
             </UniformGrid>
           </Border>
 
-          <!-- QR tab: the list rendered for scanning, or a too-large notice. -->
-          <StackPanel Spacing="10" HorizontalAlignment="Center" IsVisible="{Binding IsTransferQr}">
-            <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+          <!-- QR tab: fixed 240x240 stage so the image (or notice) appearing never reflows the card or jumps
+               the scroll; blank while the QR is still being built. -->
+          <Panel Height="240" IsVisible="{Binding IsTransferQr}">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
                     IsVisible="{Binding RoutingQrImage, Converter={x:Static ObjectConverters.IsNotNull}}">
               <Image Source="{Binding RoutingQrImage}" Width="220" Height="220" />
             </Border>
-            <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
                     BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                     CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
               <TextBlock Text="{l:Tr Main_QrUnavailableHint}" Classes="muted" FontSize="12"
                          TextAlignment="Center" TextWrapping="Wrap" />
             </Border>
-          </StackPanel>
+          </Panel>
 
           <!-- Config tab: the raw transfer payload, read-only and selectable. -->
           <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"

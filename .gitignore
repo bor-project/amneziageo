@@ -16,3 +16,6 @@ desktop.ini
 
 # Local scratch folders — not committed
 .local/
+
+# Local handoff notes — not committed
+HANDOFF.md

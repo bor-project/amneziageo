@@ -8,12 +8,23 @@
     <ProjectReference Include="..\AmneziaGeo.Windows.Engine\AmneziaGeo.Windows.Engine.csproj" />
   </ItemGroup>
 
+  <!-- Native deps keyed off the target arch: tunnel.dll (built by amneziawg-windows\build.cmd into
+       x64\ / arm64\) and wintun.dll (from the wintun zip: amd64\ / arm64\). -->
+  <PropertyGroup>
+    <TunnelArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</TunnelArch>
+    <TunnelArch Condition="'$(TunnelArch)' == ''">x64</TunnelArch>
+    <WintunArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</WintunArch>
+    <WintunArch Condition="'$(WintunArch)' == ''">amd64</WintunArch>
+  </PropertyGroup>
   <ItemGroup>
-    <None Include="..\amneziawg-windows\x64\tunnel.dll" Link="tunnel.dll" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\amneziawg-windows\.deps\wintun\bin\amd64\wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\amneziawg-windows\$(TunnelArch)\tunnel.dll" Link="tunnel.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\amneziawg-windows\.deps\wintun\bin\$(WintunArch)\wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
     <!-- wstunnel client (erebe/wstunnel v10): the UDP-over-TCP transport launched per tunnel when a
-         config enables WebSocket. Shipped next to the agent exe so TunnelPaths.WsTunnelExe() finds it. -->
-    <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest" />
+         config enables WebSocket. Shipped next to the agent exe so TunnelPaths.WsTunnelExe() finds it.
+         x64-only for now; an arm64 build ships without it (WebSocket transport unavailable) until an
+         arm64 wstunnel is added. -->
+    <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest"
+          Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -85,7 +96,8 @@
     <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.1.<build> so the
          running app reports the same version the self-update check compares against. -->
     <Version>1.0.1</Version>
-    <PlatformTarget>x64</PlatformTarget>
+    <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
+    <PlatformTarget Condition="'$(PlatformTarget)' == ''">x64</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

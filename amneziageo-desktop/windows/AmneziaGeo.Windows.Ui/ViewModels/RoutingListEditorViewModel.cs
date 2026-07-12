@@ -617,10 +617,15 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
     private Bitmap? _routingQrImage;
 
+    // Set once a QR build has run, so the too-large notice stays hidden before the first generation.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    private bool _qrAttempted;
+
     /// <summary>
-    /// QR tab active but the payload was too large to encode.
+    /// QR tab active, a build was attempted, and the payload was too large to encode.
     /// </summary>
-    public bool QrUnavailable => IsTransferQr && RoutingQrImage is null;
+    public bool QrUnavailable => IsTransferQr && QrAttempted && RoutingQrImage is null;
 
     /// <summary>
     /// Raw transfer payload shown in the Config tab; refreshed as the list changes.
@@ -631,7 +636,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private void ShowTransferQr()
     {
         IsTransferQr = true;
-        RoutingQrImage = TryBuildQr();
+        BuildQr();
     }
 
     [RelayCommand]
@@ -646,8 +651,16 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         OnPropertyChanged(nameof(TransferText));
         if (IsTransferQr)
         {
-            RoutingQrImage = TryBuildQr();
+            BuildQr();
         }
+    }
+
+    // Builds the QR for the current payload and records the attempt, so a null result reads as too-large
+    // only after a real generation.
+    private void BuildQr()
+    {
+        RoutingQrImage = TryBuildQr();
+        QrAttempted = true;
     }
 
     private Bitmap? TryBuildQr()

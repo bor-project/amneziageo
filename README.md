@@ -184,7 +184,9 @@ C# on .NET 10, Avalonia 11 (MVVM, CommunityToolkit), AmneziaWG (`amneziawg-go`, 
 
 ## Code signing
 
-Windows release binaries are signed with a certificate issued to the SignPath Foundation. Free code signing is provided by [SignPath.io](https://about.signpath.io/), with a certificate from the [SignPath Foundation](https://signpath.org/).
+AmneziaGeo is applying for free code signing from the SignPath Foundation. Until the certificate is issued, release binaries are unsigned, and Windows SmartScreen may warn on first run.
+
+Once approved, Windows release binaries will be signed with a certificate issued to the SignPath Foundation. Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 
 Signing policy: release artifacts are built only by the GitHub Actions pipeline in this repository, from tagged source, and signed by SignPath as part of that pipeline. No maintainer holds the signing key.
 

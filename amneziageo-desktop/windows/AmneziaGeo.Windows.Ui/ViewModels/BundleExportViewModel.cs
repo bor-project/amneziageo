@@ -14,9 +14,9 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// View model for the bundle export dialog.
+/// View model for the bundle export view.
 /// </summary>
-internal sealed partial class BundleExportDialogViewModel : ViewModelBase
+internal sealed partial class BundleExportViewModel : ViewModelBase
 {
     private static readonly JsonSerializerOptions _selectionOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -41,7 +41,7 @@ internal sealed partial class BundleExportDialogViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public BundleExportDialogViewModel(
+    public BundleExportViewModel(
         AgentConnection connection,
         IReadOnlyList<ProfileItemViewModel> profiles,
         IReadOnlyList<ConfigItemViewModel> configs,

@@ -29,8 +29,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Serializes log reads so overlapping heartbeat/user loads never interleave on the pipe.
     private readonly System.Threading.SemaphoreSlim _logReadGate = new(1, 1);
 
-    // Byte offset of the oldest line currently loaded; the anchor for paging further back.
-    private long? _logOldestOffset;
+    // Current shown window in byte space: [_windowFirst, _windowEnd) of a file of _fileSize bytes.
+    // _windowEnd == _fileSize means the window sits on the live tail.
+    private long _windowFirst;
+    private long _windowEnd;
+    private long _fileSize;
 
     // Once the file-backed viewer has loaded, the 300-line snapshot ring stops feeding the view.
     private bool _logViewerEngaged;
@@ -88,9 +91,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _logFollow = true;
 
-    // Whether content exists before the loaded window (enables "load earlier").
+    // Older content exists before the window (enables back paging).
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PageOlderCommand))]
     private bool _logCanPageOlder;
+
+    // Newer content exists after the window (enables forward paging).
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PageNewerCommand))]
+    private bool _logCanPageNewer;
 
     /// <summary>
     /// Human-readable match count for the log search box; empty when no query is active.
@@ -130,8 +139,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public void Reset()
     {
         _logViewerEngaged = false;
-        _logOldestOffset = null;
+        _windowFirst = 0;
+        _windowEnd = 0;
+        _fileSize = 0;
         LogCanPageOlder = false;
+        LogCanPageNewer = false;
         LogFiles.Clear();
         SelectedLogFile = null;
         _logLines = [];
@@ -139,16 +151,23 @@ internal sealed partial class LogsViewModel : ViewModelBase
         RebuildLogText();
     }
 
-    // Rebuilds the journal text from the raw lines applying the search query, newest first so the latest
-    // activity stays visible at the top without scrolling.
+    // Rebuilds the journal text from the raw lines applying the level filter and the search query, newest
+    // first so the latest activity stays visible at the top without scrolling.
     private void RebuildLogText()
     {
         var query = SearchQuery;
         var hasQuery = !string.IsNullOrWhiteSpace(query);
+        var threshold = SelectedThreshold(LogLevel);
 
         var shown = new List<string>();
         foreach (var line in _logLines)
         {
+            var severity = LineSeverity(line);
+            if (severity >= 0 && severity < threshold)
+            {
+                continue;
+            }
+
             if (hasQuery && !line.Contains(query, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -166,6 +185,50 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
         shown.Reverse();
         LogText = string.Join('\n', shown);
+    }
+
+    // Minimum severity shown for the picked verbosity level; anything below is hidden in the viewer.
+    private static int SelectedThreshold(string level)
+    {
+        return level switch
+        {
+            "trace" => 0,
+            "debug" => 1,
+            "info" => 2,
+            _ => 4,
+        };
+    }
+
+    // Severity parsed from a line's bracketed Serilog level token; -1 when the line carries none (route log,
+    // wrapped continuations) so it is never hidden by the level filter.
+    private static int LineSeverity(string line)
+    {
+        if (line.Contains("[ERR]", StringComparison.Ordinal) || line.Contains("[FTL]", StringComparison.Ordinal))
+        {
+            return 4;
+        }
+
+        if (line.Contains("[WRN]", StringComparison.Ordinal))
+        {
+            return 3;
+        }
+
+        if (line.Contains("[INF]", StringComparison.Ordinal))
+        {
+            return 2;
+        }
+
+        if (line.Contains("[DBG]", StringComparison.Ordinal))
+        {
+            return 1;
+        }
+
+        if (line.Contains("[VRB]", StringComparison.Ordinal) || line.Contains("[TRC]", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        return -1;
     }
 
     // Feeds the log view. Before the file-backed viewer is engaged the 300-line snapshot ring drives it (so
@@ -193,7 +256,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         if (IsActive && LogFollow && LogFiles.Count > 0
             && ReferenceEquals(SelectedLogFile, LogFiles[0]) && _logReadGate.CurrentCount > 0)
         {
-            _ = LoadLogTailAsync();
+            _ = LoadWindowAsync(null);
         }
     }
 
@@ -235,6 +298,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
                 return;
             }
 
+            // Show only the canonical logs by name; the size-roll generations (routes.log.1..5) are hidden
+            // so the picker offers one entry per log, not a pile of rotated files.
+            metas = metas?.Where(m => !m.Name.Contains(".log.", StringComparison.Ordinal)).ToList();
             if (metas is null || metas.Count == 0)
             {
                 return;
@@ -261,9 +327,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
             // reliably refreshes it.
             if (ReferenceEquals(SelectedLogFile, before))
             {
-                _logOldestOffset = null;
-                LogCanPageOlder = false;
-                await LoadLogTailAsync();
+                await LoadWindowAsync(null);
             }
         }
         finally
@@ -272,18 +336,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
     }
 
-    // Reads the selected log file over IPC: the live tail by default, or the window ending at the oldest
-    // loaded offset when paging older. Serialized so heartbeat and user loads never interleave on the pipe.
-    private async Task LoadLogTailAsync(bool older = false)
+    // Reads a byte window of the selected log file over IPC and makes it the shown page: the live tail when
+    // endOffset is null, otherwise the window ending at endOffset. Serialized so heartbeat and user loads
+    // never interleave on the pipe.
+    private async Task LoadWindowAsync(long? endOffset)
     {
         var file = SelectedLogFile;
         if (file is null)
-        {
-            return;
-        }
-
-        // Paging older needs an anchor; without one there is nothing before the loaded window.
-        if (older && _logOldestOffset is not > 0)
         {
             return;
         }
@@ -296,9 +355,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
                 file.Name,
                 LogTailBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
             };
-            if (older)
+            if (endOffset is > 0)
             {
-                args.Add(_logOldestOffset!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                args.Add(endOffset.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
 
             IpcAck ack;
@@ -331,17 +390,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
                 return;
             }
 
-            if (older)
-            {
-                _logLines = [.. payload.Lines, .. _logLines];
-            }
-            else
-            {
-                _logLines = payload.Lines;
-            }
-
-            _logOldestOffset = payload.FirstOffset;
+            _logLines = payload.Lines;
+            _windowFirst = payload.FirstOffset;
+            _fileSize = payload.FileSize;
+            _windowEnd = endOffset ?? payload.FileSize;
             LogCanPageOlder = payload.Truncated;
+            LogCanPageNewer = _windowEnd < payload.FileSize;
             HasLogs = _logLines.Count > 0;
             RebuildLogText();
         }
@@ -352,27 +406,65 @@ internal sealed partial class LogsViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task LoadOlderLog()
+    private async Task ClearLog()
     {
-        // Browsing history: stop the heartbeat from snapping back to the live tail and dropping what we page in.
-        LogFollow = false;
-        await LoadLogTailAsync(older: true);
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpClearLog, []));
+        }
+        catch
+        {
+            return;
+        }
+
+        // Re-list and re-read so the freshly emptied file replaces the shown tail.
+        await RefreshLogFilesAsync();
     }
+
+    [RelayCommand(CanExecute = nameof(CanPageOlder))]
+    private async Task PageOlder()
+    {
+        // Browsing history: stop the heartbeat from snapping back to the live tail and dropping the page.
+        LogFollow = false;
+        await LoadWindowAsync(_windowFirst);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanPageNewer))]
+    private async Task PageNewer()
+    {
+        var newEnd = _windowEnd + LogTailBytes;
+        if (newEnd >= _fileSize)
+        {
+            // Reached the newest page: snap to the live tail (OnLogFollowChanged reloads it).
+            LogFollow = true;
+            return;
+        }
+
+        LogFollow = false;
+        await LoadWindowAsync(newEnd);
+    }
+
+    private bool CanPageOlder => LogCanPageOlder;
+
+    private bool CanPageNewer => LogCanPageNewer;
 
     partial void OnSelectedLogFileChanged(LogFileChoice? value)
     {
-        // A different file (or a reselect) starts from the live tail again.
-        _logOldestOffset = null;
-        LogCanPageOlder = false;
         if (value is null)
         {
+            _windowFirst = 0;
+            _windowEnd = 0;
+            _fileSize = 0;
+            LogCanPageOlder = false;
+            LogCanPageNewer = false;
             _logLines = [];
             HasLogs = false;
             RebuildLogText();
             return;
         }
 
-        _ = LoadLogTailAsync();
+        // A different file (or a reselect) starts from the live tail again.
+        _ = LoadWindowAsync(null);
     }
 
     partial void OnSearchQueryChanged(string value)
@@ -382,15 +474,17 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnLogFollowChanged(bool value)
     {
-        // Re-enabling follow snaps back to the live tail (dropping any paged-older history).
+        // Re-enabling follow snaps back to the live tail (dropping any paged history).
         if (value)
         {
-            _ = LoadLogTailAsync();
+            _ = LoadWindowAsync(null);
         }
     }
 
     partial void OnLogLevelChanged(string value)
     {
+        // The level is both the capture verbosity (pushed to the agent) and the viewer's filter threshold.
+        RebuildLogText();
         if (!_suppressSettingPush)
         {
             _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["log-level", value]));

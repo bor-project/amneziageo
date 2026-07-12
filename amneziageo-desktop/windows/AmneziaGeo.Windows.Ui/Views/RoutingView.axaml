@@ -5,6 +5,12 @@
              x:Class="AmneziaGeo.Windows.Ui.Views.RoutingView"
              x:CompileBindings="True"
              x:DataType="vm:RoutingViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
+    <StreamGeometry x:Key="AgPasteGeometry">M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M7,7H17V5H19V19H5V5H7V7Z</StreamGeometry>
+    <StreamGeometry x:Key="AgUploadGeometry">M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z</StreamGeometry>
+    <StreamGeometry x:Key="AgDownloadGeometry">M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z</StreamGeometry>
+  </UserControl.Resources>
   <!-- Edits autosave: rules / toggles at once, text fields on blur (LostFocus). -->
   <StackPanel Spacing="14" LostFocus="OnRoutingFieldBlur">
     <!-- Header: section title + count pill + new-list button. -->
@@ -14,7 +20,7 @@
               Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
         <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
       </Border>
-      <Button Grid.Column="3" Classes="accent" Width="180" Command="{Binding CreateRoutingListCommand}">
+      <Button Grid.Column="3" Classes="accent" Width="130" Command="{Binding CreateRoutingListCommand}">
         <StackPanel Orientation="Horizontal" Spacing="4">
           <TextBlock Text="+" />
           <TextBlock Text="{l:Tr Main_NewListButton}" />
@@ -142,22 +148,6 @@
               </ItemsControl>
             </Border>
           </StackPanel>
-
-          <StackPanel Spacing="6">
-            <TextBlock Classes="label" Text="{l:Tr Main_ImportExportLabel}" />
-            <WrapPanel>
-              <Button Classes="softbtn" Content="{l:Tr Main_CopyButton}" Margin="0,0,6,6"
-                      Click="OnRoutingExportCopy" ToolTip.Tip="{l:Tr Main_RoutingCopyTooltip}" />
-              <Button Classes="softbtn" Content="{l:Tr Main_SaveToFileButton}" Margin="0,0,6,6"
-                      Click="OnRoutingExportSave" />
-              <Button Classes="softbtn" Content="{l:Tr Main_ShowQrButton}" Margin="0,0,6,6"
-                      Click="OnRoutingShowQr" ToolTip.Tip="{l:Tr Main_ShowQrTooltip}" />
-              <Button Classes="softbtn" Content="{l:Tr Main_PasteButton}" Margin="0,0,6,6"
-                      Click="OnRoutingImportPaste" ToolTip.Tip="{l:Tr Main_RoutingPasteTooltip}" />
-              <Button Classes="softbtn" Content="{l:Tr Main_LoadFileButton}" Margin="0,0,6,6"
-                      Click="OnRoutingImportFile" />
-            </WrapPanel>
-          </StackPanel>
         </StackPanel>
       </Border>
 
@@ -210,6 +200,90 @@
 
           <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Transfer card: QR / raw payload of the list, with copy / paste / load / save (replaces the modal). -->
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent">
+        <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:Tr Main_ImportExportSection}" FontWeight="SemiBold" FontSize="15" />
+            <TextBlock Text="{l:Tr Main_TransferSubtitle}" Classes="muted" FontSize="12" />
+          </StackPanel>
+
+          <!-- Segmented [QR | Конфиг]. -->
+          <Border Background="{DynamicResource AgInsetBrush}"
+                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                  CornerRadius="9" Padding="3" MaxWidth="420" HorizontalAlignment="Center">
+            <UniformGrid Columns="2">
+              <Button Classes="seg" Classes.active="{Binding IsTransferQr}" Command="{Binding ShowTransferQrCommand}"
+                      Content="{l:Tr Main_TransferQrTab}" HorizontalAlignment="Stretch" Padding="20,6" />
+              <Button Classes="seg" Classes.active="{Binding IsTransferText}" Command="{Binding ShowTransferTextCommand}"
+                      Content="{l:Tr Main_TransferTextTab}" HorizontalAlignment="Stretch" Padding="20,6" />
+            </UniformGrid>
+          </Border>
+
+          <!-- QR tab: the list rendered for scanning, or a too-large notice. -->
+          <StackPanel Spacing="10" HorizontalAlignment="Center" IsVisible="{Binding IsTransferQr}">
+            <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+                    IsVisible="{Binding RoutingQrImage, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <Image Source="{Binding RoutingQrImage}" Width="220" Height="220" />
+            </Border>
+            <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+                    BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
+              <TextBlock Text="{l:Tr Main_QrUnavailableHint}" Classes="muted" FontSize="12"
+                         TextAlignment="Center" TextWrapping="Wrap" />
+            </Border>
+          </StackPanel>
+
+          <!-- Config tab: the raw transfer payload, read-only and selectable. -->
+          <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                  CornerRadius="8" Background="{DynamicResource AgPanelBrush}" IsVisible="{Binding IsTransferText}">
+            <TextBox Text="{Binding TransferText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                     VerticalContentAlignment="Top" Height="200"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     BorderThickness="0" Background="Transparent"
+                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+          </Border>
+
+          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                     HorizontalAlignment="Center" TextAlignment="Center"
+                     IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+          <!-- Shared actions: copy / paste / load / save. -->
+          <WrapPanel HorizontalAlignment="Center">
+            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingExportCopy"
+                    IsVisible="{Binding IsTransferQr}"
+                    ToolTip.Tip="{l:Tr Main_RoutingCopyTooltip}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_CopyButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingImportPaste"
+                    IsVisible="{Binding IsTransferQr}"
+                    ToolTip.Tip="{l:Tr Main_RoutingPasteTooltip}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgPasteGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_PasteButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingImportFile">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgUploadGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_LoadFileButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="accent" Margin="4" Padding="14,6" Click="OnRoutingExportSave">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_SaveToFileButton}" />
+              </StackPanel>
+            </Button>
+          </WrapPanel>
         </StackPanel>
       </Border>
 

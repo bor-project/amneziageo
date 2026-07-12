@@ -24,8 +24,6 @@ internal sealed partial class RoutingView : UserControl
         InitializeComponent();
     }
 
-    private Window? Owner => TopLevel.GetTopLevel(this) as Window;
-
     // Autosave the open list when focus leaves one of its fields.
     private void OnRoutingFieldBlur(object? sender, RoutedEventArgs e)
     {
@@ -69,21 +67,6 @@ internal sealed partial class RoutingView : UserControl
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(vm.BuildTransferPayload());
         vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
-    }
-
-    // «Показать QR»: render the list as a QR on demand.
-    private async void OnRoutingShowQr(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { DataContext: RoutingListEditorViewModel vm } || Owner is not { } owner)
-        {
-            return;
-        }
-
-        var dialog = new QrDialog
-        {
-            DataContext = new QrDialogViewModel(Loc.Instance.Get("MainCode_RoutingListQrTitle"), vm.BuildTransferPayload(), vm.SuggestedFileName),
-        };
-        await dialog.ShowDialog(owner);
     }
 
     private async void OnRoutingImportPaste(object? sender, RoutedEventArgs e)

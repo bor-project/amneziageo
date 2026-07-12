@@ -17,6 +17,7 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// </summary>
 internal sealed partial class GeneralViewModel : ViewModelBase
 {
+    private readonly MainWindowViewModel _host;
     private readonly AgentConnection _connection;
     private readonly UiPreferences _prefs;
 
@@ -77,11 +78,25 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [ObservableProperty]
     private bool _updateBannerVisible;
 
+    // Selective bundle export/import shown inline instead of a modal dialog; back returns to the general page.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGeneralMain))]
+    [NotifyPropertyChangedFor(nameof(IsBundleExport))]
+    [NotifyPropertyChangedFor(nameof(IsBundleImport))]
+    private BundleMode _bundleMode;
+
+    [ObservableProperty]
+    private BundleExportViewModel? _bundleExport;
+
+    [ObservableProperty]
+    private BundleImportViewModel? _bundleImport;
+
     /// <summary>
     /// ctor
     /// </summary>
-    public GeneralViewModel(AgentConnection connection, UiPreferences prefs)
+    public GeneralViewModel(MainWindowViewModel host, AgentConnection connection, UiPreferences prefs)
     {
+        _host = host;
         _connection = connection;
         _prefs = prefs;
         // Seed backing fields from prefs without echoing OnChanged.
@@ -99,6 +114,15 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// update section and its check control are hidden - there is nothing to check against.
     /// </summary>
     public bool HasUpdateUrl => !string.IsNullOrWhiteSpace(UpdateUrl);
+
+    /// <summary>
+    /// Whether the normal general page is shown (not a bundle export/import sub-view).
+    /// </summary>
+    public bool IsGeneralMain => BundleMode == BundleMode.None;
+
+    public bool IsBundleExport => BundleMode == BundleMode.Export;
+
+    public bool IsBundleImport => BundleMode == BundleMode.Import;
 
     /// <summary>
     /// Applies the version and update-related snapshot fields; a freshly available version raises the banner.
@@ -216,6 +240,33 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         UpdateBannerVisible = false;
     }
 
+    // Open the selective bundle export inline: snapshot the current catalogue into a fresh export view model.
+    [RelayCommand]
+    private async Task OpenBundleExport()
+    {
+        var export = new BundleExportViewModel(_connection, _host.Profile.Profiles, _host.Config.Configs, _host.Routing.RoutingLists);
+        await export.LoadRoutingRulesAsync();
+        BundleExport = export;
+        BundleMode = BundleMode.Export;
+    }
+
+    // Open the bundle import inline.
+    [RelayCommand]
+    private void OpenBundleImport()
+    {
+        BundleImport = new BundleImportViewModel(_connection);
+        BundleMode = BundleMode.Import;
+    }
+
+    // Back from a bundle sub-view to the general page.
+    [RelayCommand]
+    private void CloseBundle()
+    {
+        BundleMode = BundleMode.None;
+        BundleExport = null;
+        BundleImport = null;
+    }
+
     partial void OnSelectedLanguageIndexChanged(int value)
     {
         var token = TokenForLanguageIndex(value);
@@ -326,4 +377,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         return path;
     }
+}
+
+/// <summary>
+/// Which inline view the general screen shows: the page, or a bundle export / import sub-view.
+/// </summary>
+internal enum BundleMode
+{
+    None,
+    Export,
+    Import,
 }

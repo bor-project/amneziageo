@@ -105,27 +105,22 @@ jobs:
     # signed installer and falls back to the unsigned one. Until SignPath is active the release is unsigned.
     if: ${{ always() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     steps:
-      - name: Download signed installer (if present)
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: installer-signed
-          path: signed
-
-      - name: Download unsigned installer
+      # Grab every artifact of this run into artifacts/<name>/ (installer-unsigned always exists; and
+      # installer-signed too once SignPath is active). Downloading by name would fail when the signed one
+      # is absent, so download all and pick below.
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: installer-unsigned
-          path: unsigned
+          path: artifacts
 
       - name: Build update manifest and setup asset
         shell: bash
         run: |
           set -euo pipefail
-          if compgen -G "signed/*.exe" > /dev/null; then
-            EXE=$(ls signed/*.exe | head -1); echo "using SIGNED installer: $EXE"
+          if compgen -G "artifacts/installer-signed/*.exe" > /dev/null; then
+            EXE=$(ls artifacts/installer-signed/*.exe | head -1); echo "using SIGNED installer: $EXE"
           else
-            EXE=$(ls unsigned/*.exe | head -1); echo "using UNSIGNED installer: $EXE"
+            EXE=$(ls artifacts/installer-unsigned/*.exe | head -1); echo "using UNSIGNED installer: $EXE"
           fi
           VER=$(basename "$EXE" | sed -n 's/^AmneziaGeo-\(.*\)-win-.*/\1/p')
           [ -n "$VER" ] || { echo "cannot parse version from $(basename "$EXE")"; exit 1; }

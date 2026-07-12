@@ -1203,6 +1203,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, string.Join('\n', lines));
     }
 
+    private static bool IsAppRule(string rule) => rule.StartsWith("app:", StringComparison.OrdinalIgnoreCase);
+
     private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 2)
@@ -1221,13 +1223,19 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "name is required");
         }
 
+        // App rules apply on a fresh tunnel; domains and geoip ranges the running tunnel picks up live.
+        var previousApps = id > 0 && await store.GetRoutingListAsync(id, ct) is { } previous
+            ? previous.Rules.Select(GeoConfigurator.Format).Where(IsAppRule).ToHashSet(StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
-        // Flag a reconnect when the running profile routes through this list.
+        // Flag a reconnect only when the running profile routes through this list and its app rules changed.
         if (control.Running && BoundTarget is not null)
         {
             var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
-            if (useRouting && listId == resultId)
+            var newApps = args.Skip(2).Where(IsAppRule).ToHashSet(StringComparer.Ordinal);
+            if (useRouting && listId == resultId && !newApps.SetEquals(previousApps))
             {
                 control.SetRestartRequired();
             }

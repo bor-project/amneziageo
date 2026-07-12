@@ -451,7 +451,8 @@ internal sealed class DomainTracker(
             }
 
             // Leave _knownGeneration null so the first poll reconciles geoip deltas and seeds the matcher.
-            var pollInterval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 15), 1, 60));
+            // Cap at 5s so a live routing-list edit lands quickly without a reconnect.
+            var pollInterval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 5), 1, 60));
             while (true)
             {
                 await Task.Delay(pollInterval, ct);

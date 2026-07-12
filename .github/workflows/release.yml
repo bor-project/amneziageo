@@ -1,0 +1,83 @@
+# Builds the Windows installer in CI and signs it with SignPath (free code signing for OSS).
+# The build job produces an UNSIGNED bundle; the sign job submits it to SignPath and publishes the
+# signed result. Local signtool signing is disabled in CI via the installer.config.ci.json overlay
+# (signingCert = null), so the signing key never lives in the repo or on the runner.
+name: build & sign release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # attach the signed installer to the GitHub Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout (submodules + tags)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0   # engine version = `git describe --tags` of the amneziawg-windows submodule
+
+      - name: Build the AmneziaWG engine (tunnel.dll)
+        # build.cmd bootstraps Go + llvm-mingw into .deps and emits x64\tunnel.dll. The DLL is gitignored
+        # (a build output, not vendored), so it must be built here before the .NET publish consumes it.
+        working-directory: amneziageo-desktop/windows/amneziawg-windows
+        shell: cmd
+        run: build.cmd
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # WiX v4/v5 is restored as an MSBuild SDK via the .wixproj PackageReferences during `dotnet build`.
+      # If a real run reports a missing extension, add: `dotnet tool install --global wix` here.
+
+      - name: Build installer (unsigned)
+        shell: pwsh
+        # `ci` selects installer.config.ci.json (signingCert = null) so the local signtool path is skipped.
+        run: >
+          amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
+          ci -Arch x64 -SelfContained false
+
+      - name: Upload unsigned installer
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-unsigned
+          path: amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
+          if-no-files-found: error
+
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    # Activates once the SignPath GitHub App is installed on the repo and the project is approved.
+    # On SignPath configure: an organization, project `amneziageo`, a signing policy, and an artifact
+    # configuration for the WiX Burn bundle (SignPath handles the engine detach/reattach). Then add the
+    # SIGNPATH_API_TOKEN repository secret and the SIGNPATH_ORGANIZATION_ID variable. Input names/version
+    # may need adjusting to the installed action release - see https://about.signpath.io/documentation.
+    steps:
+      - name: Submit to SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: amneziageo
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ needs.build.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Upload signed installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-signed
+          path: signed/*.exe
+          if-no-files-found: error

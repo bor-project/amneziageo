@@ -363,6 +363,19 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
     </Style>
 
+    <!-- Match AutoCompleteBox.field to TextBox.field via its inner text box. -->
+    <Style Selector="AutoCompleteBox.field">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="AutoCompleteBox.field /template/ TextBox#PART_TextBox">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+
     <!-- Compact, text-less toggle: drop the default (untranslated) "On/Off" labels and the
          WinUI-inherited wide MinWidth, so a switch is just the knob and never widens/clips its row. -->
     <Style Selector="ToggleSwitch">

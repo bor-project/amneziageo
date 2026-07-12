@@ -1,3 +1,4 @@
 {
-  "signingCert": null
+  "signingCert": null,
+  "updateUrl": "https://github.com/bor-project/amneziageo/releases/latest/download/update.json"
 }

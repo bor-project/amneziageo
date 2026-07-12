@@ -85,7 +85,7 @@
                   </MenuFlyout>
                 </Button.Flyout>
               </Button>
-              <AutoCompleteBox Grid.Column="1" Margin="0,0,8,0"
+              <AutoCompleteBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
                                Watermark="{Binding AppWatermark}"
                                Text="{Binding AppInput, Mode=TwoWay}"
                                SelectedItem="{Binding AppSelected, Mode=TwoWay}"
@@ -106,7 +106,7 @@
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
             <Grid ColumnDefinitions="*,Auto">
-              <AutoCompleteBox Grid.Column="0" Margin="0,0,8,0"
+              <AutoCompleteBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
                                Watermark="{l:Tr Main_AddEntryWatermark}"
                                Text="{Binding RuleInput, Mode=TwoWay}"
                                ItemsSource="{Binding GeoSuggestions}"

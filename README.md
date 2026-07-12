@@ -2,13 +2,13 @@
 
 > A lightweight AmneziaWG VPN client with geo-aware split tunneling: route only the destinations you choose (by domain, domain category, country, CIDR, or application) through a DPI-resistant tunnel and send everything else direct.
 
-![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
+![Platform](https://img.shields.io/badge/platform-Windows%20%28more%20planned%29-0078D6)
 ![.NET](https://img.shields.io/badge/.NET-10-512BD4)
 ![UI](https://img.shields.io/badge/UI-Avalonia%2011-8A2BE2)
 ![Engine](https://img.shields.io/badge/engine-AmneziaWG-2E7D32)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue)
 
-AmneziaGeo is a desktop VPN client built on AmneziaWG, the DPI-resistant fork of WireGuard. Unlike a plain WireGuard client, it decides what goes through the tunnel by domain, geosite category, country, CIDR, or application. It keeps that decision correct as CDNs rotate their IPs, and it can tunnel over WebSocket on TCP 443 when plain UDP is blocked.
+AmneziaGeo is a VPN client built on AmneziaWG, the DPI-resistant fork of WireGuard. It is a cross-platform project: the Windows client is available now, with Android, Linux, and Apple clients and a self-hostable server on the roadmap. Unlike a plain WireGuard client, it decides what goes through the tunnel by domain, geosite category, country, CIDR, or application. It keeps that decision correct as CDNs rotate their IPs, and it can tunnel over WebSocket on TCP 443 when plain UDP is blocked.
 
 ## The problem it solves
 
@@ -137,7 +137,7 @@ Discord text and voice now go through the tunnel over TCP 443, and everything el
 
 Shared code is organized per language. [`amneziageo-desktop/core`](amneziageo-desktop/core/) is a .NET class library referenced by the Windows, Linux, and Android heads through `<ProjectReference>` (not a submodule), and each head keeps its own solution. `AmneziaGeoKit` (Swift) is shared across the two Apple platforms. Git submodules are reserved for the upstream engines (`amneziawg-windows`, `amneziawg-apple`).
 
-A single C# codebase does not cover every platform, because platform VPN APIs differ. Apple (macOS and iOS) is one native Swift project, since NetworkExtension is native-only. C# covers Windows, Linux, Android, and all desktop UI and orchestration. The C# and Swift sides share concepts (config and geo logic) rather than code.
+A single C# codebase does not cover every platform, because platform VPN APIs differ. Apple (macOS and iOS) is one native Swift project, since NetworkExtension is native-only. C# covers Windows, Linux, and Android, along with the shared UI and orchestration. The C# and Swift sides share concepts (config and geo logic) rather than code.
 
 ## Roadmap
 

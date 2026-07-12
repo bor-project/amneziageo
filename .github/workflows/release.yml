@@ -1,7 +1,9 @@
-# Builds the Windows installer in CI and publishes it as a GitHub Release on every tag push (v*).
-# The build job produces an UNSIGNED bundle. Once SignPath is configured (SIGNPATH_ORGANIZATION_ID
-# variable + SIGNPATH_API_TOKEN secret) the sign job submits it to SignPath and the release ships signed;
-# until then the release is unsigned. The signing key never lives in the repo or on the runner
+# Builds the Windows installers in CI and publishes them as a GitHub Release on every tag push (v*).
+# The build job is a 2x2 matrix: {x64, arm64} x {fdd (framework-dependent), scd (self-contained)} = 4
+# installers, each its own runner (fail-fast off, so a broken arch still ships the ones that build).
+# Bundles are UNSIGNED. Once SignPath is configured (SIGNPATH_ORGANIZATION_ID variable +
+# SIGNPATH_API_TOKEN secret) the sign job submits them to SignPath and the release ships signed; until
+# then the release is unsigned. The signing key never lives in the repo or on the runner
 # (installer.config.ci.json sets signingCert = null, so the local signtool path is skipped).
 name: build & sign release
 
@@ -11,13 +13,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # attach the signed installer to the GitHub Release
+  contents: write   # attach the installers to the GitHub Release
 
 jobs:
   build:
     runs-on: windows-latest
-    outputs:
-      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    strategy:
+      fail-fast: false   # a broken arch (e.g. arm64) must not block the arches that do build
+      matrix:
+        include:
+          - { arch: x64,   sc: 'false', variant: fdd }
+          - { arch: x64,   sc: 'true',  variant: scd }
+          - { arch: arm64, sc: 'false', variant: fdd }
+          - { arch: arm64, sc: 'true',  variant: scd }
     steps:
       - name: Checkout (submodules + tags)
         uses: actions/checkout@v4
@@ -25,9 +33,33 @@ jobs:
           submodules: recursive
           fetch-depth: 0   # engine version = `git describe --tags` of the amneziawg-windows submodule
 
+      - name: Enable arm64 engine target
+        # The submodule pins upstream amnezia-vpn/amneziawg-windows, whose build.cmd builds x64+x86 only.
+        # For an arm64 build, append the arm64 build_plat call after the x86 one (a fork of the submodule
+        # would make this permanent; patching here keeps the pointer on upstream).
+        if: ${{ matrix.arch == 'arm64' }}
+        shell: pwsh
+        working-directory: amneziageo-desktop/windows/amneziawg-windows
+        run: |
+          $f = 'build.cmd'
+          $t = Get-Content $f -Raw
+          if ($t -notmatch 'build_plat arm64') {
+            $pattern = '(?m)^([ \t]*)call :build_plat x86 i686 386 \|\| goto :error[ \t]*$'
+            $t = [regex]::Replace($t, $pattern, {
+              param($m)
+              $i = $m.Groups[1].Value
+              "$i" + 'call :build_plat x86 i686 386 || goto :error' + "`r`n" + "$i" + 'call :build_plat arm64 aarch64 arm64 || goto :error'
+            })
+            Set-Content $f $t -NoNewline
+          }
+          if ((Get-Content $f -Raw) -notmatch 'build_plat arm64') { throw 'failed to inject arm64 build target into build.cmd' }
+          Get-Content $f | Select-String build_plat
+
       - name: Build the AmneziaWG engine (tunnel.dll)
-        # build.cmd bootstraps Go + llvm-mingw into .deps and emits x64\tunnel.dll. The DLL is gitignored
-        # (a build output, not vendored), so it must be built here before the .NET publish consumes it.
+        # build.cmd bootstraps Go + llvm-mingw + wintun into .deps and emits <arch>\tunnel.dll. The DLL is
+        # gitignored (a build output, not vendored), so it must be built here before the .NET publish
+        # consumes it. A fresh checkout has no .deps\prepared, so the wintun zip is downloaded and SHA
+        # verified in full (all arches) - the arm64 wintun.dll lands under .deps\wintun\bin\arm64\.
         working-directory: amneziageo-desktop/windows/amneziawg-windows
         shell: cmd
         run: build.cmd
@@ -49,16 +81,15 @@ jobs:
           $script = 'amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1'
           if ("$env:GITHUB_REF" -like 'refs/tags/v*') {
             $ver = "$env:GITHUB_REF_NAME" -replace '^v',''
-            & $script ci -Version $ver -Arch x64 -SelfContained false
+            & $script ci -Version $ver -Arch ${{ matrix.arch }} -SelfContained ${{ matrix.sc }}
           } else {
-            & $script ci -Arch x64 -SelfContained false
+            & $script ci -Arch ${{ matrix.arch }} -SelfContained ${{ matrix.sc }}
           }
 
       - name: Upload unsigned installer
-        id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: installer-unsigned
+          name: installer-unsigned-${{ matrix.arch }}-${{ matrix.variant }}
           path: amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
           if-no-files-found: error
 
@@ -66,15 +97,24 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     # Skipped until SignPath is wired up: gated on the SIGNPATH_ORGANIZATION_ID repository variable so the
-    # release pipeline still publishes an unsigned installer in the meantime. Set the variable (and the
-    # SIGNPATH_API_TOKEN secret) to activate signing.
+    # release pipeline still publishes unsigned installers in the meantime. Set the variable (and the
+    # SIGNPATH_API_TOKEN secret) to activate signing. NOTE: when enabled, this job must be turned into a
+    # matrix over the 4 build artifacts (one submission each) - it currently handles a single artifact.
     if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-    # Activates once the SignPath GitHub App is installed on the repo and the project is approved.
-    # On SignPath configure: an organization, project `amneziageo`, a signing policy, and an artifact
-    # configuration for the WiX Burn bundle (SignPath handles the engine detach/reattach). Then add the
-    # SIGNPATH_API_TOKEN repository secret and the SIGNPATH_ORGANIZATION_ID variable. Input names/version
-    # may need adjusting to the installed action release - see https://about.signpath.io/documentation.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64,   variant: fdd }
+          - { arch: x64,   variant: scd }
+          - { arch: arm64, variant: fdd }
+          - { arch: arm64, variant: scd }
     steps:
+      - name: Download the unsigned artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-unsigned-${{ matrix.arch }}-${{ matrix.variant }}
+          path: unsigned
       - name: Submit to SignPath
         uses: signpath/github-action-submit-signing-request@v1
         with:
@@ -83,54 +123,67 @@ jobs:
           project-slug: amneziageo
           signing-policy-slug: release-signing
           artifact-configuration-slug: installer
-          github-artifact-id: ${{ needs.build.outputs.artifact-id }}
+          artifact-path: unsigned
           wait-for-completion: true
           output-artifact-directory: signed
-
       - name: Upload signed installer
         uses: actions/upload-artifact@v4
         with:
-          name: installer-signed
+          name: installer-signed-${{ matrix.arch }}-${{ matrix.variant }}
           path: signed/*.exe
           if-no-files-found: error
 
-  # Publishes the GitHub Release that the app's auto-update reads. update.json + AmneziaGeoSetup.exe are
+  # Publishes the GitHub Release that the app's auto-update reads. update.json + the installers are
   # attached as assets; the app polls https://github.com/<repo>/releases/latest/download/update.json and
-  # resolves `setup` relative to it. Runs on a tag push once the build succeeded, whether or not signing
-  # ran, preferring the signed installer and falling back to the unsigned one.
+  # resolves `setup` relative to it. Runs on a tag push whether or not signing ran, preferring signed
+  # installers and falling back to the unsigned ones.
   publish:
     needs: [build, sign]
     runs-on: ubuntu-latest
-    # Runs on every tag push once the build succeeded, whether or not the sign job ran: it prefers the
-    # signed installer and falls back to the unsigned one. Until SignPath is active the release is unsigned.
-    if: ${{ always() && needs.build.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    # always() + tag: publish whatever built even if some arch failed or the sign job was skipped. It does
+    # NOT gate on needs.build.result, so a partial matrix (e.g. x64 ok, arm64 broken) still ships.
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
     steps:
-      # Grab every artifact of this run into artifacts/<name>/ (installer-unsigned always exists; and
-      # installer-signed too once SignPath is active). Downloading by name would fail when the signed one
-      # is absent, so download all and pick below.
+      # Grab every artifact of this run into artifacts/<name>/. Downloading by a specific name would fail
+      # when that arch/variant did not build, so download all and pick below.
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Build update manifest and setup asset
+      - name: Assemble release assets and update manifest
         shell: bash
         run: |
           set -euo pipefail
-          if compgen -G "artifacts/installer-signed/*.exe" > /dev/null; then
-            EXE=$(ls artifacts/installer-signed/*.exe | head -1); echo "using SIGNED installer: $EXE"
+          shopt -s nullglob
+          mkdir -p release
+          # Prefer signed over unsigned when both exist (signed dirs are globbed first; dedup by basename).
+          for f in artifacts/installer-signed-*/*.exe artifacts/installer-unsigned-*/*.exe; do
+            b=$(basename "$f")
+            if [ ! -e "release/$b" ]; then cp "$f" "release/$b"; echo "asset: $b"; fi
+          done
+          count=$(ls release/*.exe 2>/dev/null | wc -l)
+          [ "$count" -ge 1 ] || { echo "no installers built; nothing to publish"; exit 1; }
+          # Auto-update entry point = x64 framework-dependent (matches the currently deployed clients); the
+          # app fetches releases/latest/download/AmneziaGeoSetup.exe, resolved relative to update.json.
+          SETUP=$(ls release/AmneziaGeo-*-win-x64-fdd.exe 2>/dev/null | head -1 || true)
+          if [ -n "$SETUP" ]; then
+            VER=$(basename "$SETUP" | sed -n 's/^AmneziaGeo-\(.*\)-win-x64-fdd\.exe$/\1/p')
           else
-            EXE=$(ls artifacts/installer-unsigned/*.exe | head -1); echo "using UNSIGNED installer: $EXE"
+            SETUP=$(ls release/*.exe | head -1)
+            VER=$(basename "$SETUP" | sed -n 's/^AmneziaGeo-\(.*\)-win-.*\.exe$/\1/p')
+            echo "WARNING: x64-fdd absent; auto-update entry = $(basename "$SETUP")"
           fi
-          VER=$(basename "$EXE" | sed -n 's/^AmneziaGeo-\(.*\)-win-.*/\1/p')
-          [ -n "$VER" ] || { echo "cannot parse version from $(basename "$EXE")"; exit 1; }
-          cp "$EXE" AmneziaGeoSetup.exe
-          printf '{\n  "version": "%s",\n  "description": "AmneziaGeo %s",\n  "setup": "AmneziaGeoSetup.exe"\n}\n' "$VER" "$VER" > update.json
+          [ -n "$VER" ] || { echo "cannot parse version from $(basename "$SETUP")"; exit 1; }
+          cp "$SETUP" release/AmneziaGeoSetup.exe
+          printf '{\n  "version": "%s",\n  "description": "AmneziaGeo %s",\n  "setup": "AmneziaGeoSetup.exe"\n}\n' "$VER" "$VER" > release/update.json
           echo "VER=$VER" >> "$GITHUB_ENV"
-          echo "--- update.json ---"; cat update.json
+          echo "--- release/ ---"; ls -la release
+          echo "--- update.json ---"; cat release/update.json
 
       - name: Create or update the GitHub Release
         # This job does not checkout the repo, so gh has no git context: GH_REPO tells it the target repo.
+        # Delete-then-create makes the publish idempotent so a re-run yields a pristine asset set.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -138,5 +191,5 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          gh release create "$TAG" --latest --title "AmneziaGeo ${VER}" --notes "AmneziaGeo ${VER}" AmneziaGeoSetup.exe update.json \
-            || gh release upload "$TAG" AmneziaGeoSetup.exe update.json --clobber
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" --latest --title "AmneziaGeo ${VER}" --notes "AmneziaGeo ${VER}" release/*.exe release/update.json

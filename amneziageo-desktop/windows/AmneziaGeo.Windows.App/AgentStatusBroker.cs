@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogRingBuffer logBuffer, LogLevelController logLevel, DiagnosticsCollector diagnostics, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogRingBuffer logBuffer, LogLevelController logLevel, DiagnosticsCollector diagnostics, ResettableFileSink logFileSink, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -275,6 +275,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpCollectDiagnostics => await CollectDiagnosticsAsync(ct),
                 IpcContract.OpListLogs => ListLogs(),
                 IpcContract.OpReadLog => ReadLog(command.Args),
+                IpcContract.OpClearLog => ClearLog(),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -1943,6 +1944,33 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
     // Lists the on-disk log files for the in-app viewer (OpListLogs), newest generation first. The agent
     // reads these as SYSTEM so an unprivileged UI can view logs whose files it may not open directly.
+    private IpcAck ClearLog()
+    {
+        logFileSink.Reset();
+
+        // Drop every other on-disk log (routes.log + its rolled generations, any dated agent logs); the live
+        // ageo.log was just re-created empty by the sink, so it is kept.
+        var dir = TunnelPaths.LogDirectory();
+        var others = Directory.EnumerateFiles(dir, "routes.log*")
+            .Concat(Directory.EnumerateFiles(dir, "ageo*.log"))
+            .Where(p => !string.Equals(Path.GetFileName(p), "ageo.log", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        foreach (var path in others)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Held by another process; leave it.
+            }
+        }
+
+        logger.LogInformation("agent log cleared");
+        return new IpcAck(true, "log cleared");
+    }
+
     private static IpcAck ListLogs()
     {
         var files = DiagnosticsCollector.EnumerateLogFiles()

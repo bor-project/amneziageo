@@ -274,6 +274,11 @@ public static class IpcContract
     public const string OpReadLog = "read-log";
 
     /// <summary>
+    /// Command to clear the agent log (ageo.log): the agent closes, empties, and reopens the file. No args.
+    /// </summary>
+    public const string OpClearLog = "clear-log";
+
+    /// <summary>
     /// Sent once by the UI to mark its pipe connection as a presence-holding session. No args. The agent
     /// ties the tunnel's lifetime to UI presence and disconnects after a short grace when the last UI
     /// session drops. Transient command clients never send this.

@@ -100,7 +100,9 @@ public sealed class Loc : INotifyPropertyChanged
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
 
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+        // Empty name signals "all bindings changed"; Avalonia refreshes the indexer bindings only on that, not
+        // on the WPF "Item[]" convention.
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
         CultureChanged?.Invoke();
     }
 }

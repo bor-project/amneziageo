@@ -58,6 +58,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [ObservableProperty]
     private bool _isBusy;
 
+    [ObservableProperty]
+    private bool _isLoading;
+
     // Per-app tunneling add-row. App entries are stored as app: rule tokens.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAppPickerActive))]
@@ -89,6 +92,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _id = id;
         Rules.CollectionChanged += (_, _) =>
         {
+            if (_reordering)
+            {
+                return;
+            }
+
             ApplySuggestionFilter();
             MarkDirty();
             FireAutoSave();
@@ -142,30 +150,59 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     };
 
     /// <summary>
+    /// Re-raises the localized computed labels after a language change.
+    /// </summary>
+    public void RefreshLocalizedLabels()
+    {
+        OnPropertyChanged(nameof(AppWatermark));
+
+        // App suggestions bake a localized kind prefix at load; rebuild them for the new language.
+        if (AppSuggestions.Count > 0)
+        {
+            _ = ReloadAppSuggestionsAsync();
+        }
+    }
+
+    private Task ReloadAppSuggestionsAsync() => AppMode switch
+    {
+        "running" => LoadRunningAsync(),
+        "installed" => LoadInstalledSuggestionsAsync(),
+        _ => Task.CompletedTask,
+    };
+
+    /// <summary>
     /// Fetches geo category suggestions and the current rules for an existing list.
     /// </summary>
     public async Task LoadAsync()
     {
-        await RefreshSuggestionsAsync();
-
-        if (_id != 0)
+        IsLoading = true;
+        try
         {
-            var detail = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRoutingList, [_id.ToString(CultureInfo.InvariantCulture)]));
-            if (detail.Ok)
+            await RefreshSuggestionsAsync();
+
+            if (_id != 0)
             {
-                foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                var detail = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRoutingList, [_id.ToString(CultureInfo.InvariantCulture)]));
+                if (detail.Ok)
                 {
-                    Rules.Add(token);
+                    foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        Rules.Add(token);
+                    }
                 }
             }
+
+            // Seeding done: snapshot the loaded state as the clean baseline; edits from here mark the item dirty.
+            _seeding = false;
+            CaptureBaseline();
+
+            // Prime the default "running" source so the app picker works without first re-choosing it from the menu.
+            await LoadRunningAsync();
         }
-
-        // Seeding done: snapshot the loaded state as the clean baseline; edits from here mark the item dirty.
-        _seeding = false;
-        CaptureBaseline();
-
-        // Prime the default "running" source so the app picker works without first re-choosing it from the menu.
-        await LoadRunningAsync();
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     /// <summary>
@@ -455,6 +492,45 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         Rules.Clear();
     }
 
+    // Direction of the next sort; the first click sorts ascending.
+    private bool _sortDescending = true;
+
+    // Suppresses per-item side effects while a sort reorders the collection in place.
+    private bool _reordering;
+
+    /// <summary>
+    /// Reorders entries by name, flipping direction on each invocation.
+    /// </summary>
+    [RelayCommand]
+    private void SortRules()
+    {
+        _sortDescending = !_sortDescending;
+        var ordered = (_sortDescending
+                ? Rules.OrderByDescending(rule => rule, StringComparer.OrdinalIgnoreCase)
+                : Rules.OrderBy(rule => rule, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        _reordering = true;
+        try
+        {
+            for (var target = 0; target < ordered.Count; target++)
+            {
+                var current = Rules.IndexOf(ordered[target]);
+                if (current != target)
+                {
+                    Rules.Move(current, target);
+                }
+            }
+        }
+        finally
+        {
+            _reordering = false;
+        }
+
+        MarkDirty();
+        FireAutoSave();
+    }
+
     // Per-app tunneling: running autocomplete + token-add path.
 
     /// <summary>
@@ -474,6 +550,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         AppMode = "installed";
         AppInput = string.Empty;
         AppSelected = null;
+        await LoadInstalledSuggestionsAsync();
+    }
+
+    private async Task LoadInstalledSuggestionsAsync()
+    {
         // Run registry enumeration off the UI thread.
         var candidates = await Task.Run(InstalledApps.List);
         AppSuggestions.Clear();

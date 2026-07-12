@@ -47,6 +47,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public LogsViewModel(AgentConnection connection)
     {
         _connection = connection;
+        Loc.Instance.CultureChanged += OnCultureChanged;
+    }
+
+    private void OnCultureChanged()
+    {
+        OnPropertyChanged(nameof(SearchSummary));
     }
 
     /// <summary>

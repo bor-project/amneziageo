@@ -57,6 +57,12 @@
         <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
           <TextBlock Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15" />
 
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
+            <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
+                      Width="14" Height="14" Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
+          </StackPanel>
+
           <StackPanel Spacing="2">
             <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
             <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
@@ -121,9 +127,13 @@
                      IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
           <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
-              <Button Grid.Column="1" Classes="icon" Content="{l:Tr Main_ClearButton}" FontSize="11"
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+              <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="icon" Content="⇅" FontSize="13" Margin="6,0,0,0"
+                      VerticalAlignment="Center"
+                      Command="{Binding SortRulesCommand}"
+                      ToolTip.Tip="{l:Tr Main_SortRulesTooltip}" />
+              <Button Grid.Column="3" Classes="icon" Content="{l:Tr Main_ClearButton}" FontSize="11"
                       Command="{Binding ClearRulesCommand}"
                       ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}" />
             </Grid>
@@ -151,20 +161,12 @@
         </StackPanel>
       </Border>
 
-      <!-- Per-routing traffic card: local DNS + exclusions + all-UDP + IPv6. -->
+      <!-- Per-routing traffic card: exclusions + all-UDP + IPv6. -->
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" Background="Transparent"
               IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
         <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
           <TextBlock Text="{l:Tr Main_ListTrafficLabel}" FontWeight="SemiBold" FontSize="15" />
-
-          <StackPanel Spacing="6">
-            <TextBlock Classes="label" Text="DNS" />
-            <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                       Text="{l:Tr Main_DnsHint}" />
-            <TextBox Classes="field" Text="{Binding LocalDns, Mode=TwoWay}"
-                     Watermark="{l:Tr Main_DnsWatermark}" />
-          </StackPanel>
 
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="{l:Tr Main_ExclusionsLabel}" />
@@ -272,13 +274,15 @@
                 <TextBlock Text="{l:Tr Main_PasteButton}" />
               </StackPanel>
             </Button>
-            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingImportFile">
+            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingImportFile"
+                    IsVisible="{Binding IsTransferText}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgUploadGeometry}" Width="14" Height="14" />
                 <TextBlock Text="{l:Tr Main_LoadFileButton}" />
               </StackPanel>
             </Button>
-            <Button Classes="accent" Margin="4" Padding="14,6" Click="OnRoutingExportSave">
+            <Button Classes="accent" Margin="4" Padding="14,6" Click="OnRoutingExportSave"
+                    IsVisible="{Binding IsTransferText}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
                 <TextBlock Text="{l:Tr Main_SaveToFileButton}" />

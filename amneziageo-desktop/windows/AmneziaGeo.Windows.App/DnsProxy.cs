@@ -194,9 +194,10 @@ internal sealed class DnsProxy
     }
 
     /// <summary>
-    /// Rebuilds the domain matcher live from a refreshed rule set.
+    /// Rebuilds the domain matcher live from a refreshed rule set. Returns true when the set gained a domain,
+    /// so the caller can flush the OS resolver cache and force clients to re-query through the proxy.
     /// </summary>
-    public void UpdateDomains(IReadOnlyList<GeoDomain> domains, CancellationToken ct)
+    public bool UpdateDomains(IReadOnlyList<GeoDomain> domains, CancellationToken ct)
     {
         var previous = _domains;
         _matcher = new DomainMatcher(domains);
@@ -213,13 +214,25 @@ internal sealed class DnsProxy
             RouteLog.Note($"matcher rebuilt live: {domains.Count} rule(s)");
         }
 
+        var addedNew = HasAddedDomains(previous, domains);
         if (_tracker is not null && !ct.IsCancellationRequested)
         {
             // Actualization: drop domains that left the lists, then seed the ones that were added.
             PruneDepartedDomains();
             _ = SeedNewDomainsAsync(previous, domains, ct);
         }
+
+        return addedNew;
     }
+
+    // True when the new set contains a domain (any kind) absent from the previous set.
+    private static bool HasAddedDomains(IReadOnlyList<GeoDomain> previous, IReadOnlyList<GeoDomain> current)
+    {
+        var old = new HashSet<string>(previous.Select(DomainKey), StringComparer.Ordinal);
+        return current.Any(d => !old.Contains(DomainKey(d)));
+    }
+
+    private static string DomainKey(GeoDomain domain) => string.Concat(domain.Kind.ToString(), "|", domain.Value);
 
     // Removes tracked domains that no longer match any current routing rule. Union semantics of the
     // materialized set mean a domain contributed by several rules/categories survives until the LAST

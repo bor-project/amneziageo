@@ -45,6 +45,13 @@
          survives into the elevated execute sequence. -->
     <Property Id="DELETECONFIG" Value="0" Secure="yes" />
 
+    <!-- Optional shortcuts (#183): the BA passes DESKTOPSHORTCUT / STARTMENUSHORTCUT from the two checkboxes
+         (both default 1 = create). Each shortcut's component is gated on its property, so an unticked box lays
+         nothing down and a repair/upgrade with it unticked removes the existing one. Secure to survive into the
+         elevated execute sequence. -->
+    <Property Id="DESKTOPSHORTCUT" Value="1" Secure="yes" />
+    <Property Id="STARTMENUSHORTCUT" Value="1" Secure="yes" />
+
     <!-- ProgramFiles\AmneziaGeo (x64) for the binaries; a Start-menu folder for the shortcut. -->
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="AmneziaGeo" />
@@ -57,7 +64,8 @@
     <Feature Id="Main" Title="AmneziaGeo" Level="1">
       <ComponentGroupRef Id="Payload" />
       <ComponentRef Id="AgentServiceExe" />
-      <ComponentRef Id="GuiShortcut" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
     </Feature>
 
     <!-- App icon (same .ico embedded into Ui.exe) for the shortcuts and the Add/Remove Programs entry.
@@ -145,23 +153,15 @@
                       Wait="yes" />
     </Component>
 
-    <!-- Shortcuts to the unprivileged GUI (Ui.exe itself is harvested with the payload): one on the
-         (all-users) Desktop and one in the Start menu. Own component in the menu folder, with an HKCU
-         keypath (the per-user shortcut data) so the non-advertised shortcuts pass ICE43/ICE57; both
-         target the exe by path. System.AppUserModel.ID matches the ID the Ui process sets at startup, so
-         a taskbar pin keeps grouping with the running window across a major-upgrade file swap. -->
-    <Component Id="GuiShortcut" Directory="AgMenuFolder">
+    <!-- Shortcuts to the unprivileged GUI (Ui.exe itself is harvested with the payload). Split into two
+         optional components (#183): one in the Start menu, one on the (all-users) Desktop, each gated on its
+         BA property and each with its own HKCU keypath (the per-user shortcut data) so the non-advertised
+         shortcut passes ICE43/ICE57; both target the exe by path. System.AppUserModel.ID matches the ID the
+         Ui process sets at startup, so a taskbar pin keeps grouping with the running window across a
+         major-upgrade file swap. -->
+    <Component Id="StartMenuShortcut" Directory="AgMenuFolder" Condition="Installed OR STARTMENUSHORTCUT = 1">
 <?if $(var.HasIcon) = "true" ?>
       <Shortcut Id="UiStartMenuShortcut"
-                Name="AmneziaGeo"
-                Description="AmneziaGeo VPN"
-                Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
-                Icon="AgIcon.ico" IconIndex="0"
-                WorkingDirectory="INSTALLFOLDER">
-        <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
-      </Shortcut>
-      <Shortcut Id="UiDesktopShortcut"
-                Directory="DesktopFolder"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
@@ -177,8 +177,24 @@
                 WorkingDirectory="INSTALLFOLDER">
         <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
       </Shortcut>
+<?endif?>
+      <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"
+                     Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Condition="Installed OR DESKTOPSHORTCUT = 1">
+<?if $(var.HasIcon) = "true" ?>
       <Shortcut Id="UiDesktopShortcut"
-                Directory="DesktopFolder"
+                Name="AmneziaGeo"
+                Description="AmneziaGeo VPN"
+                Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
+                Icon="AgIcon.ico" IconIndex="0"
+                WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
+      </Shortcut>
+<?else?>
+      <Shortcut Id="UiDesktopShortcut"
                 Name="AmneziaGeo"
                 Description="AmneziaGeo VPN"
                 Target="[INSTALLFOLDER]AmneziaGeo.Windows.Ui.exe"
@@ -186,8 +202,7 @@
         <ShortcutProperty Key="System.AppUserModel.ID" Value="AmneziaGeo.AmneziaGeo" />
       </Shortcut>
 <?endif?>
-      <RemoveFolder Id="RemoveAgMenuFolder" On="uninstall" />
-      <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="installed"
+      <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="desktopshortcut"
                      Type="integer" Value="1" KeyPath="yes" />
     </Component>
   </Fragment>

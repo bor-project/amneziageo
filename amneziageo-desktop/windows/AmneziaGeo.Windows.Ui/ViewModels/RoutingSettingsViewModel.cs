@@ -8,23 +8,18 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// The per-routing-list traffic editor shown in the Routing settings section: preferred local DNS for
-/// non-tunneled names, the bypass-exclusions list, and whether all UDP is forced through the tunnel.
-/// Loaded through the agent and saved as a block; the list's rule set lives separately in
-/// RoutingListEditorViewModel. Applies on the next connect.
+/// The per-routing-list traffic editor shown in the Routing settings section: the bypass-exclusions list
+/// and whether all UDP is forced through the tunnel. Loaded through the agent and saved as a block; the
+/// list's rule set lives separately in RoutingListEditorViewModel. Applies on the next connect.
 /// </summary>
 internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditScope
 {
     private readonly AgentConnection _connection;
 
     // Baseline captured on load / commit; the fields are dirty when they differ from it (#143).
-    private string _baseLocalDns = string.Empty;
     private string _baseExclusions = string.Empty;
     private bool _baseAllUdp;
     private bool _baseUseIpv6;
-
-    [ObservableProperty]
-    private string _localDns = string.Empty;
 
     [ObservableProperty]
     private string _exclusions = string.Empty;
@@ -74,14 +69,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     public void Retarget(long id) => ListId = id;
 
     /// <summary>
-    /// True when DNS / exclusions / all-UDP differ from the last loaded or committed values (#143).
+    /// True when exclusions / all-UDP / IPv6 differ from the last loaded or committed values (#143).
     /// </summary>
     public bool IsDirty { get; private set; }
 
     /// <inheritdoc />
     public event EventHandler? DirtyChanged;
-
-    partial void OnLocalDnsChanged(string value) => OnEdited();
 
     partial void OnExclusionsChanged(string value) => OnEdited();
 
@@ -111,8 +104,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         // Any edit clears a stale validation / status line (#3).
         StatusMessage = string.Empty;
 
-        var dirty = !string.Equals(LocalDns, _baseLocalDns, StringComparison.Ordinal)
-            || !string.Equals(Exclusions, _baseExclusions, StringComparison.Ordinal)
+        var dirty = !string.Equals(Exclusions, _baseExclusions, StringComparison.Ordinal)
             || AllUdp != _baseAllUdp
             || UseIpv6 != _baseUseIpv6;
         if (dirty != IsDirty)
@@ -128,7 +120,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public void CaptureBaseline()
     {
-        _baseLocalDns = LocalDns ?? string.Empty;
         _baseExclusions = Exclusions ?? string.Empty;
         _baseAllUdp = AllUdp;
         _baseUseIpv6 = UseIpv6;
@@ -145,7 +136,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         _loading = true;
         try
         {
-            LocalDns = _baseLocalDns;
             Exclusions = _baseExclusions;
             AllUdp = _baseAllUdp;
             UseIpv6 = _baseUseIpv6;
@@ -181,7 +171,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             {
                 using var doc = JsonDocument.Parse(ack.Message);
                 var root = doc.RootElement;
-                LocalDns = root.TryGetProperty("localDns", out var dns) ? dns.GetString() ?? string.Empty : string.Empty;
                 Exclusions = root.TryGetProperty("exclusions", out var ex) ? ex.GetString() ?? string.Empty : string.Empty;
                 AllUdp = root.TryGetProperty("allUdp", out var udp) && udp.ValueKind == JsonValueKind.True;
                 UseIpv6 = root.TryGetProperty("useIpv6", out var v6) && v6.ValueKind == JsonValueKind.True;
@@ -200,7 +189,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     }
 
     /// <summary>
-    /// Persists DNS + exclusions + all-UDP for this list as one block (#143 header Save); applies on reconnect.
+    /// Persists exclusions + all-UDP + IPv6 for this list as one block (#143 header Save); applies on reconnect.
     /// Returns whether the agent accepted it.
     /// </summary>
     public async Task<bool> CommitAsync()
@@ -211,7 +200,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetRoutingSettings,
             [
                 ListId.ToString(),
-                (LocalDns ?? string.Empty).Trim(),
                 (Exclusions ?? string.Empty).Trim(),
                 AllUdp ? "on" : "off",
                 "split",

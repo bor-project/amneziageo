@@ -97,6 +97,15 @@
                     IsChecked="{Binding LaunchOnClose}"
                     Margin="0,0,0,12"
                     Visibility="{Binding ShowLaunchOnInstall, Converter={StaticResource B2V}}" />
+          <!-- #183: optional desktop / Start-menu shortcuts (install/update/repair, not removal). -->
+          <CheckBox Content="{l:Tr InstallerUi_DesktopShortcut}"
+                    IsChecked="{Binding DesktopShortcut}"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ShowShortcutOptions, Converter={StaticResource B2V}}" />
+          <CheckBox Content="{l:Tr InstallerUi_StartMenuShortcut}"
+                    IsChecked="{Binding StartMenuShortcut}"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ShowShortcutOptions, Converter={StaticResource B2V}}" />
           <!-- #105/#114: wipe the runtime configuration (ProgramData\AmneziaGeo). The label is contextual -
                «Сбросить настройки» on install/update/repair, «Удалить конфигурацию и кэш» on removal. Off by
                default so a plain (re)install keeps the user's profiles and settings. -->

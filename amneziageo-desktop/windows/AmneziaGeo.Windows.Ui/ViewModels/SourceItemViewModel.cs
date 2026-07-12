@@ -116,6 +116,14 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     [ObservableProperty]
     private string _editUrl = string.Empty;
 
+    /// <summary>
+    /// Re-raises the localized computed labels after a language change.
+    /// </summary>
+    public void RefreshLocalizedLabels()
+    {
+        OnPropertyChanged(nameof(Detail));
+    }
+
     [RelayCommand]
     private Task Update()
     {

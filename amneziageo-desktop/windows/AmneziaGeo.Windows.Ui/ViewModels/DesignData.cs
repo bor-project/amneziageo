@@ -58,7 +58,7 @@ internal static class DesignData
 
         // --- General: version/about (theme + language seed from prefs in the VM). ---
         vm.General.AppVersion = "AmneziaGeo 1.0.1.240";
-        vm.General.AmneziaVersion = "AmneziaWG 1.5.0 · wstunnel 10.1.6";
+        vm.General.EngineVersion = "AmneziaWG 1.5.0 · wstunnel 10.1.6";
 
         // --- Config catalogue ---
         var borConfig = new ConfigItemViewModel

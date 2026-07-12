@@ -30,4 +30,12 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     /// A short human label like "openai · 1 правило · 12 доменов".
     /// </summary>
     public string Detail => Loc.Instance.Get("RoutingSummary_Detail", RuleCount, RouteCount, DomainCount);
+
+    /// <summary>
+    /// Re-raises the localized computed label after a language change.
+    /// </summary>
+    public void RefreshLocalizedLabels()
+    {
+        OnPropertyChanged(nameof(Detail));
+    }
 }

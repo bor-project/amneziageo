@@ -68,6 +68,16 @@ internal sealed partial class SourcesViewModel : ViewModelBase
         _connection = connection;
         _showNotice = showNotice;
         _refreshRoutingSuggestions = refreshRoutingSuggestions;
+        Loc.Instance.CultureChanged += OnCultureChanged;
+    }
+
+    private void OnCultureChanged()
+    {
+        OnPropertyChanged(nameof(GeoUpdateBannerText));
+        foreach (var source in Sources)
+        {
+            source.RefreshLocalizedLabels();
+        }
     }
 
     public string GeoUpdateBannerText => Loc.Instance.Get("Main_GeoUpdateBanner", GeoUpdateCount);

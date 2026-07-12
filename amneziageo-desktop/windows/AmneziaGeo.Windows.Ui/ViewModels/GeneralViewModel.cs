@@ -26,6 +26,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string? _downloadedSetupPath;
     private string? _downloadedVersion;
 
+    // Set while OnCultureChanged re-localizes the combos; suppresses their change handlers.
+    private bool _syncingCombos;
+
     /// <summary>
     /// UI language options.
     /// </summary>
@@ -45,8 +48,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [ObservableProperty]
     private string _appVersion = "AmneziaGeo -";
 
+    // Raw engine version from the snapshot; empty renders the localized placeholder live on a language change.
     [ObservableProperty]
-    private string _amneziaVersion = Loc.Instance.Get("MainVm_NotAvailable");
+    [NotifyPropertyChangedFor(nameof(AmneziaVersion))]
+    private string _engineVersion = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUpdateUrl))]
@@ -105,6 +110,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         Loc.Instance.CultureChanged += OnCultureChanged;
     }
 
+    /// <summary>
+    /// Engine version label, or the localized placeholder when the agent reports none.
+    /// </summary>
+    public string AmneziaVersion => string.IsNullOrEmpty(EngineVersion) ? Loc.Instance.Get("MainVm_NotAvailable") : EngineVersion;
+
     public string UpdateVersionBadgeText => Loc.Instance.Get("Main_UpdateAvailableVersion", UpdateVersion);
 
     public string UpdateBannerText => Loc.Instance.Get("Main_UpdateBanner", UpdateVersion);
@@ -130,7 +140,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public void Apply(StatusSnapshot snapshot)
     {
         AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
-        AmneziaVersion = string.IsNullOrEmpty(snapshot.EngineVersion) ? Loc.Instance.Get("MainVm_NotAvailable") : snapshot.EngineVersion;
+        EngineVersion = snapshot.EngineVersion;
 
         UpdateUrl = snapshot.UpdateUrl;
 
@@ -269,6 +279,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     partial void OnSelectedLanguageIndexChanged(int value)
     {
+        if (_syncingCombos)
+        {
+            return;
+        }
+
         var token = TokenForLanguageIndex(value);
         _prefs.Language = token;
         _prefs.Save();
@@ -277,7 +292,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     partial void OnSelectedThemeIndexChanged(int value)
     {
-        if (value < 0)
+        if (_syncingCombos || value < 0)
         {
             return;
         }
@@ -292,18 +307,33 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     private void OnCultureChanged()
     {
-        // Refresh the localized "System" entry in the language combo.
-        if (Languages.Count > 0)
-        {
-            Languages[0] = Loc.Instance.Get("Lang_System");
-        }
+        // Replacing the selected item string resets the index-bound ComboBox to -1; capture and restore it.
+        var language = SelectedLanguageIndex;
+        var theme = SelectedThemeIndex;
 
-        // Re-localize the theme options.
-        if (Themes.Count >= 3)
+        _syncingCombos = true;
+        try
         {
-            Themes[0] = Loc.Instance.Get("Theme_System");
-            Themes[1] = Loc.Instance.Get("Theme_Light");
-            Themes[2] = Loc.Instance.Get("Theme_Dark");
+            // Refresh the localized "System" entry in the language combo.
+            if (Languages.Count > 0)
+            {
+                Languages[0] = Loc.Instance.Get("Lang_System");
+            }
+
+            // Re-localize the theme options.
+            if (Themes.Count >= 3)
+            {
+                Themes[0] = Loc.Instance.Get("Theme_System");
+                Themes[1] = Loc.Instance.Get("Theme_Light");
+                Themes[2] = Loc.Instance.Get("Theme_Dark");
+            }
+
+            SelectedLanguageIndex = language;
+            SelectedThemeIndex = theme;
+        }
+        finally
+        {
+            _syncingCombos = false;
         }
 
         // Re-raise all computed labels on a language change.

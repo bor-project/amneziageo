@@ -165,8 +165,9 @@ jobs:
           done
           count=$(ls release/*.exe 2>/dev/null | wc -l)
           [ "$count" -ge 1 ] || { echo "no installers built; nothing to publish"; exit 1; }
-          # Auto-update entry point = x64 framework-dependent (matches the currently deployed clients); the
-          # app fetches releases/latest/download/AmneziaGeoSetup.exe, resolved relative to update.json.
+          # Auto-update entry point = x64 framework-dependent. update.json.setup names that installer
+          # directly (resolved relative to the manifest URL -> releases/latest/download/<name>), so no
+          # duplicate generic AmneziaGeoSetup.exe asset is published.
           SETUP=$(ls release/AmneziaGeo-*-win-x64-fdd.exe 2>/dev/null | head -1 || true)
           if [ -n "$SETUP" ]; then
             VER=$(basename "$SETUP" | sed -n 's/^AmneziaGeo-\(.*\)-win-x64-fdd\.exe$/\1/p')
@@ -176,8 +177,8 @@ jobs:
             echo "WARNING: x64-fdd absent; auto-update entry = $(basename "$SETUP")"
           fi
           [ -n "$VER" ] || { echo "cannot parse version from $(basename "$SETUP")"; exit 1; }
-          cp "$SETUP" release/AmneziaGeoSetup.exe
-          printf '{\n  "version": "%s",\n  "description": "AmneziaGeo %s",\n  "setup": "AmneziaGeoSetup.exe"\n}\n' "$VER" "$VER" > release/update.json
+          SETUP_NAME=$(basename "$SETUP")
+          printf '{\n  "version": "%s",\n  "description": "AmneziaGeo %s",\n  "setup": "%s"\n}\n' "$VER" "$VER" "$SETUP_NAME" > release/update.json
           echo "VER=$VER" >> "$GITHUB_ENV"
           echo "--- release/ ---"; ls -la release
           echo "--- update.json ---"; cat release/update.json

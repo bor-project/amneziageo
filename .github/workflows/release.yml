@@ -44,7 +44,8 @@ jobs:
           $f = 'build.cmd'
           $t = Get-Content $f -Raw
           if ($t -notmatch 'build_plat arm64') {
-            $pattern = '(?m)^([ \t]*)call :build_plat x86 i686 386 \|\| goto :error[ \t]*$'
+            # No end-anchor: build.cmd ships CRLF, and `$` sits after the \r, so `[ \t]*$` never matches.
+            $pattern = '(?m)^([ \t]*)call :build_plat x86 i686 386 \|\| goto :error'
             $t = [regex]::Replace($t, $pattern, {
               param($m)
               $i = $m.Groups[1].Value

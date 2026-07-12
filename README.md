@@ -202,6 +202,14 @@ AmneziaGeo collects no analytics or telemetry and sends no personal data to its 
 
 Everything else is routed strictly according to your own rules. No usage data leaves your machine.
 
+## Support
+
+AmneziaGeo is free and open source. If it is useful to you, you can support development with a donation.
+
+- USDT on the TRON network (TRC20): `TNHcrYqUv2pUfW7BEzYJyXfVk9wEJrs4FR`
+
+Send only USDT over the TRON (TRC20) network to this address. Sending a different asset, or using a different network, will lose the funds.
+
 ## License
 
 AmneziaGeo is licensed under the GNU General Public License v3.0 or later. See [LICENSE](LICENSE).

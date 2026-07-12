@@ -16,3 +16,6 @@ desktop.ini
 
 # Local agent instruction folders — not committed
 .claude/
+
+# Local handoff notes — not committed
+HANDOFF.md

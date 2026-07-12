@@ -130,8 +130,10 @@ jobs:
           echo "--- update.json ---"; cat update.json
 
       - name: Create or update the GitHub Release
+        # This job does not checkout the repo, so gh has no git context: GH_REPO tells it the target repo.
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail

@@ -70,6 +70,11 @@ internal sealed class DnsProxy
     private readonly IPAddress? _tunnelUpstreamSecondary;
     private readonly IPAddress _localUpstream;
     private readonly IPAddress? _lanUpstream;
+    // All LAN resolvers; a multi-provider box races them and takes the first answer with records so a
+    // censoring provider's NXDOMAIN is passed over.
+    private readonly IReadOnlyList<IPAddress> _lanPool;
+    // Non-geo names resolve on the LAN (raceable) in split mode; offshore through the tunnel in full mode.
+    private readonly bool _localIsLan;
     private readonly IReadOnlyList<string> _localDomains;
     private readonly DomainTracker? _tracker;
     private readonly ILogger<DnsProxy> _logger;
@@ -78,7 +83,7 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null)
     {
         _domains = domains;
         _matcher = new DomainMatcher(domains);
@@ -86,6 +91,8 @@ internal sealed class DnsProxy
         _tunnelUpstreamSecondary = tunnelSecondary;
         _localUpstream = localUpstream;
         _lanUpstream = lanUpstream;
+        _lanPool = lanPool;
+        _localIsLan = localIsLan;
         _localDomains = [.. localDomains.Select(d => d.Trim().Trim('.').ToLowerInvariant()).Where(d => d.Length > 0)];
         _tracker = tracker;
         _logger = logger;
@@ -105,8 +112,8 @@ internal sealed class DnsProxy
             BoundV6 = IPAddress.IPv6Loopback;
         }
 
-        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} tunnelUp2={TunnelUp2} localUp={LocalUp} lanUp={LanUp} localDomains={LocalDomains} v4={V4} v6={V6} stripV6={StripV6}",
-            _domains.Count, _tunnelUpstream, _tunnelUpstreamSecondary is null ? "(none)" : _tunnelUpstreamSecondary, _localUpstream, _lanUpstream is null ? "(none)" : _lanUpstream, _localDomains.Count, BoundV4, BoundV6, _stripV6);
+        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} tunnelUp2={TunnelUp2} localUp={LocalUp} lanUp={LanUp} lanPool={LanPool} localDomains={LocalDomains} v4={V4} v6={V6} stripV6={StripV6}",
+            _domains.Count, _tunnelUpstream, _tunnelUpstreamSecondary is null ? "(none)" : _tunnelUpstreamSecondary, _localUpstream, _lanUpstream is null ? "(none)" : _lanUpstream, string.Join(",", _lanPool), _localDomains.Count, BoundV4, BoundV6, _stripV6);
     }
 
     /// <summary>
@@ -430,8 +437,12 @@ internal sealed class DnsProxy
             {
                 var upstream = isLocal ? _lanUpstream! : (matched ? _tunnelUpstream : _localUpstream);
                 var secondary = matched ? _tunnelUpstreamSecondary : null;
+                // LAN-bound names (local, or non-geo in split) race the whole provider pool.
+                var lanRace = _lanPool.Count > 1 && (isLocal || (!matched && _localIsLan));
                 var started = System.Diagnostics.Stopwatch.GetTimestamp();
-                var result = await ForwardCoalescedAsync(name, type, query, upstream, secondary);
+                var result = lanRace
+                    ? await ForwardCoalescedRacedAsync(name, type, query)
+                    : await ForwardCoalescedAsync(name, type, query, upstream, secondary);
                 if (result.Error is not null)
                 {
                     // Upstream unreachable: warn so a 'site won't open' report shows DNS failed.
@@ -779,7 +790,7 @@ internal sealed class DnsProxy
         return type.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + name.TrimEnd('.').ToLowerInvariant();
     }
 
-    private static async Task<byte[]> ForwardAsync(byte[] query, IPAddress upstream, IPAddress? secondary = null)
+    private static async Task<byte[]> ForwardAsync(byte[] query, IPAddress upstream, IPAddress? secondary = null, CancellationToken ct = default)
     {
         var upstreams = secondary is null || secondary.Equals(upstream)
             ? new[] { upstream }
@@ -791,6 +802,7 @@ internal sealed class DnsProxy
         var firstAttempt = true;
         while (true)
         {
+            ct.ThrowIfCancellationRequested();
             var remaining = (int)(deadlineMs - Environment.TickCount64);
             if (remaining <= 0)
             {
@@ -815,9 +827,14 @@ internal sealed class DnsProxy
                     client.Send(query, query.Length);
                 }
 
-                using var attemptCts = new CancellationTokenSource(attemptMs);
+                using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                attemptCts.CancelAfter(attemptMs);
                 var result = await client.ReceiveAsync(attemptCts.Token).ConfigureAwait(false);
                 return result.Buffer;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex) when (
                 ex is OperationCanceledException
@@ -843,20 +860,70 @@ internal sealed class DnsProxy
                 var pause = attemptMs - (int)(Environment.TickCount64 - attemptStart);
                 if (pause > 0)
                 {
-                    await Task.Delay(pause).ConfigureAwait(false);
+                    await Task.Delay(pause, ct).ConfigureAwait(false);
                 }
             }
         }
     }
 
+    // Races the query across every LAN resolver and returns the first answer that carries address records, so
+    // a censoring provider's NXDOMAIN is passed over when another provider has the name. Falls back to the
+    // first record-less response (a genuine NXDOMAIN/NODATA still returns), or the last error if none answer.
+    private static async Task<byte[]> ForwardRacedAsync(byte[] query, IReadOnlyList<IPAddress> pool)
+    {
+        if (pool.Count <= 1)
+        {
+            return await ForwardAsync(query, pool[0]).ConfigureAwait(false);
+        }
+
+        using var cts = new CancellationTokenSource();
+        var pending = pool.Select(ip => ForwardAsync(query, ip, secondary: null, ct: cts.Token)).ToList();
+        byte[]? fallback = null;
+        Exception? lastError = null;
+        while (pending.Count > 0)
+        {
+            var done = await Task.WhenAny(pending).ConfigureAwait(false);
+            pending.Remove(done);
+            if (done.Status == TaskStatus.RanToCompletion)
+            {
+                var resp = done.Result;
+                if (DnsMessage.Addresses(resp).Count > 0)
+                {
+                    cts.Cancel();
+                    return resp;
+                }
+
+                fallback ??= resp;
+            }
+            else if (done.Exception is not null)
+            {
+                lastError = done.Exception.InnerException ?? done.Exception;
+            }
+        }
+
+        cts.Cancel();
+        return fallback ?? throw lastError ?? new SocketException((int)SocketError.TimedOut);
+    }
+
     // Runs the upstream query once per in-flight (name,type); only the leader writes the routing-log line.
-    private async Task<CoalescedResult> ForwardCoalescedAsync(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null)
+    private Task<CoalescedResult> ForwardCoalescedAsync(string? name, int type, byte[] query, IPAddress upstream, IPAddress? secondary = null)
+    {
+        return CoalesceAsync(name, type, () => ForwardAsync(query, upstream, secondary));
+    }
+
+    // Coalesced LAN-pool race: one racing forward per in-flight (name,type).
+    private Task<CoalescedResult> ForwardCoalescedRacedAsync(string? name, int type, byte[] query)
+    {
+        return CoalesceAsync(name, type, () => ForwardRacedAsync(query, _lanPool));
+    }
+
+    private async Task<CoalescedResult> CoalesceAsync(string? name, int type, Func<Task<byte[]>> forward)
     {
         if (name is null)
         {
             try
             {
-                return new CoalescedResult(await ForwardAsync(query, upstream, secondary).ConfigureAwait(false), Leader: true, Error: null);
+                return new CoalescedResult(await forward().ConfigureAwait(false), Leader: true, Error: null);
             }
             catch (Exception ex)
             {
@@ -867,7 +934,7 @@ internal sealed class DnsProxy
         var key = CacheKey(name, type);
         // GetOrAdd(key, value): the caller whose instance is stored is the leader. The Lazy holds the shared
         // forward Task so concurrent identical misses await one upstream query.
-        var mine = new Lazy<Task<byte[]>>(() => ForwardAsync(query, upstream, secondary), LazyThreadSafetyMode.ExecutionAndPublication);
+        var mine = new Lazy<Task<byte[]>>(forward, LazyThreadSafetyMode.ExecutionAndPublication);
         var lazy = _inflight.GetOrAdd(key, mine);
         var leader = ReferenceEquals(lazy, mine);
         try

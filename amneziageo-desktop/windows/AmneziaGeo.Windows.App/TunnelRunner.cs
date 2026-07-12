@@ -313,8 +313,9 @@ internal sealed class TunnelRunner(
 
         var proxy = StartProxy(trackDomains ? domains : [], stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
 
-        // A geosite refresh rebuilds the proxy's matcher without a reconnect.
-        if (trackDomains && proxy is not null && tracker is not null)
+        // Rebuild the proxy matcher live on a geosite refresh or list rule edit, even for a list that had no
+        // domains at connect.
+        if (geoSplit && proxy is not null && tracker is not null)
         {
             tracker.SetGeoDomainSink((d, ct) => proxy.UpdateDomains(d, ct));
         }

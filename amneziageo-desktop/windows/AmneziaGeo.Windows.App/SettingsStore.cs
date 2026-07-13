@@ -13,19 +13,20 @@ internal sealed class SettingsStore(IStateStore store)
     public async Task<AppSettings> LoadAsync(CancellationToken ct = default)
     {
         var defaults = new AppSettings();
+        var values = await store.GetSettingsAsync(ct);
         return new AppSettings
         {
-            RefreshSeconds = await ReadIntAsync("refresh-seconds", defaults.RefreshSeconds, ct),
-            ConnectTimeoutSeconds = await ReadIntAsync("connect-timeout-seconds", defaults.ConnectTimeoutSeconds, ct),
-            DeadThresholdSeconds = await ReadIntAsync("dead-threshold-seconds", defaults.DeadThresholdSeconds, ct),
+            RefreshSeconds = ReadInt(values, "refresh-seconds", defaults.RefreshSeconds),
+            ConnectTimeoutSeconds = ReadInt(values, "connect-timeout-seconds", defaults.ConnectTimeoutSeconds),
+            DeadThresholdSeconds = ReadInt(values, "dead-threshold-seconds", defaults.DeadThresholdSeconds),
             // Update URL is baked into the build; a stale persisted row must not shadow it.
             UpdateUrl = defaults.UpdateUrl,
-            GeoAutoCheck = await ReadBoolAsync("geo-auto-check", defaults.GeoAutoCheck, ct),
-            GeoCheckIntervalHours = await ReadIntAsync("geo-check-interval-hours", defaults.GeoCheckIntervalHours, ct),
-            GeoCacheValidityHours = await ReadIntAsync("geo-cache-validity-hours", defaults.GeoCacheValidityHours, ct),
-            TunnelAllUdp = await ReadBoolAsync("tunnel-all-udp", defaults.TunnelAllUdp, ct),
-            LogLevel = await ReadLogLevelAsync(defaults.LogLevel, ct),
-            RouteLog = await ReadBoolAsync(RouteLog.SettingKey, defaults.RouteLog, ct),
+            GeoAutoCheck = ReadBool(values, "geo-auto-check", defaults.GeoAutoCheck),
+            GeoCheckIntervalHours = ReadInt(values, "geo-check-interval-hours", defaults.GeoCheckIntervalHours),
+            GeoCacheValidityHours = ReadInt(values, "geo-cache-validity-hours", defaults.GeoCacheValidityHours),
+            TunnelAllUdp = ReadBool(values, "tunnel-all-udp", defaults.TunnelAllUdp),
+            LogLevel = ReadLogLevel(values, defaults.LogLevel),
+            RouteLog = ReadBool(values, RouteLog.SettingKey, defaults.RouteLog),
         };
     }
 
@@ -97,23 +98,14 @@ internal sealed class SettingsStore(IStateStore store)
     // Validated string settings; log-level is constrained to verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey];
 
-    private async Task<int> ReadIntAsync(string key, int fallback, CancellationToken ct)
-    {
-        var value = await store.GetSettingAsync(key, ct);
-        return value is not null && int.TryParse(value, out var parsed) ? parsed : fallback;
-    }
+    private static int ReadInt(IReadOnlyDictionary<string, string> values, string key, int fallback)
+        => values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : fallback;
 
-    private async Task<bool> ReadBoolAsync(string key, bool fallback, CancellationToken ct)
-    {
-        var value = await store.GetSettingAsync(key, ct);
-        return value is not null && TryParseBool(value, out var parsed) ? parsed : fallback;
-    }
+    private static bool ReadBool(IReadOnlyDictionary<string, string> values, string key, bool fallback)
+        => values.TryGetValue(key, out var value) && TryParseBool(value, out var parsed) ? parsed : fallback;
 
-    private async Task<string> ReadLogLevelAsync(string fallback, CancellationToken ct)
-    {
-        var value = await store.GetSettingAsync(LogLevelWatcher.SettingKey, ct);
-        return LogLevelController.IsValid(value) ? value! : fallback;
-    }
+    private static string ReadLogLevel(IReadOnlyDictionary<string, string> values, string fallback)
+        => values.TryGetValue(LogLevelWatcher.SettingKey, out var value) && LogLevelController.IsValid(value) ? value : fallback;
 
     private static bool TryParseBool(string value, out bool result)
     {

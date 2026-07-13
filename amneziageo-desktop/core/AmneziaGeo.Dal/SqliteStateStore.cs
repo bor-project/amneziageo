@@ -1257,6 +1257,35 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<string, string>> GetSettingsAsync(CancellationToken ct = default)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "SELECT key, value FROM settings;";
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        map[reader.GetString(0)] = reader.GetString(1);
+                    }
+                }
+            }
+        }
+
+        return map;
+    }
+
+    /// <inheritdoc/>
     public async Task SetSettingAsync(string key, string value, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -1800,6 +1829,32 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 }
 
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<long?> GetActiveRoutingListGenerationAsync(string tunnel, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT rl.generation
+                    FROM tunnel_geo tg
+                    JOIN routing_lists rl ON rl.id = tg.proj_routing_list_id
+                    WHERE tg.name = $name AND tg.projected = 1;
+                    """;
+                command.Parameters.AddWithValue("$name", tunnel);
+
+                var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                return result is null or DBNull ? null : Convert.ToInt64(result, CultureInfo.InvariantCulture);
             }
         }
     }

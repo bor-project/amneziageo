@@ -57,6 +57,8 @@ public sealed class InstallerViewModel : ObservableObject
     private bool _launchOnClose = true;
     private bool _desktopShortcut = true;
     private bool _startMenuShortcut = true;
+    private bool _autoConnect;
+    private bool _canAutoConnect;
     private string _geoResult = string.Empty;
     private InstallerAction? _pendingAction;
 
@@ -74,6 +76,7 @@ public sealed class InstallerViewModel : ObservableObject
         _launchOnClose = opts.LaunchAfter;
         _desktopShortcut = opts.DesktopShortcut;
         _startMenuShortcut = opts.StartMenuShortcut;
+        _autoConnect = opts.AutoConnect;
 
         InstallCommand = new RelayCommand(() => PendingAction = InstallerAction.Install);
         UpdateCommand = new RelayCommand(() => PendingAction = InstallerAction.Update);
@@ -229,7 +232,13 @@ public sealed class InstallerViewModel : ObservableObject
     public bool DeleteConfig
     {
         get => _deleteConfig;
-        set => Set(ref _deleteConfig, value);
+        set
+        {
+            if (Set(ref _deleteConfig, value))
+            {
+                Raise(nameof(ShowAutoConnectOption));
+            }
+        }
     }
 
     /// <summary>
@@ -291,6 +300,42 @@ public sealed class InstallerViewModel : ObservableObject
     /// Show the shortcut checkboxes on the options step, for install/update/repair only - not removal (#183).
     /// </summary>
     public bool ShowShortcutOptions => ShowOptionsStep && IsApplyAction;
+
+    /// <summary>
+    /// Whether to dial the existing connection right after the post-install launch, bypassing the launcher (#188).
+    /// </summary>
+    public bool AutoConnect
+    {
+        get => _autoConnect;
+        set => Set(ref _autoConnect, value);
+    }
+
+    /// <summary>
+    /// Show the nested auto-connect checkbox: only when the agent reports an existing connectable profile, on
+    /// install/update, and not while a settings reset (which wipes that profile) is chosen (#188).
+    /// </summary>
+    public bool ShowAutoConnectOption =>
+        ShowOptionsStep && _canAutoConnect && !DeleteConfig
+        && _pendingAction is InstallerAction.Install or InstallerAction.Update;
+
+    /// <summary>
+    /// The validated auto-connect decision applied at close: honoured only with a launch-after, an existing
+    /// connectable profile detected this run, and the box left on. Guards a saved true when no profile is
+    /// present or a reset wipes it (#188).
+    /// </summary>
+    public bool EffectiveAutoConnect => _canAutoConnect && !DeleteConfig && LaunchOnClose && AutoConnect;
+
+    /// <summary>
+    /// Records whether the detected install has a connectable profile, gating the auto-connect option (#188).
+    /// </summary>
+    public void SetCanAutoConnect(bool value)
+    {
+        if (_canAutoConnect != value)
+        {
+            _canAutoConnect = value;
+            Raise(nameof(ShowAutoConnectOption));
+        }
+    }
 
     /// <summary>
     /// True while the list download runs with no percentage.
@@ -442,6 +487,7 @@ public sealed class InstallerViewModel : ObservableObject
             StartMenuShortcut = StartMenuShortcut,
             LaunchAfter = LaunchOnClose,
             DownloadLists = DownloadLists,
+            AutoConnect = AutoConnect,
         }.Save();
     }
 
@@ -460,5 +506,6 @@ public sealed class InstallerViewModel : ObservableObject
         Raise(nameof(ShowDeleteConfigOption));
         Raise(nameof(ShowLaunchOnInstall));
         Raise(nameof(ShowShortcutOptions));
+        Raise(nameof(ShowAutoConnectOption));
     }
 }

@@ -2142,23 +2142,39 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateUrlNotSet"));
         }
 
-        var info = await updateChecker.CheckAsync(settings.UpdateUrl, Version(), ct);
-        updateState.Latest = info;
+        var result = await TryCheckUpdateAsync(settings.UpdateUrl, ct);
+        if (result.Faulted)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_UpdateServerUnavailable"));
+        }
+
+        updateState.Latest = result.Info;
         await BroadcastIfChangedAsync(ct);
 
-        if (info is null)
+        if (result.Info is null)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateCheckFailed"));
         }
 
-        if (!info.Available)
+        if (!result.Info.Available)
         {
             return new IpcAck(true, IpcMessage.Key("Agent_UpToDate"));
         }
 
-        return new IpcAck(true, info.IsDowngrade
-            ? IpcMessage.Key("Agent_DowngradeAvailable", info.Version)
-            : IpcMessage.Key("Agent_UpdateAvailable", info.Version));
+        return new IpcAck(true, IpcMessage.Key("Agent_UpdateAvailable", result.Info.Version));
+
+        async Task<(UpdateInfo? Info, bool Faulted)> TryCheckUpdateAsync(string url, CancellationToken token)
+        {
+            try
+            {
+                return (await updateChecker.CheckAsync(url, Version(), token), false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "update check failed");
+                return (null, true);
+            }
+        }
     }
 
     private async Task<IpcAck> DownloadGeoAsync(CancellationToken ct)

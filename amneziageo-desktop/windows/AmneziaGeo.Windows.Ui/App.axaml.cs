@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
@@ -49,30 +50,59 @@ public sealed partial class App : Application
             // Apply UI language before the first frame.
             Loc.Instance.ApplyStartupCulture(prefs.Language);
 
-            // Closing the window fully exits the GUI process; the resident tray holds the tunnel and reopens it.
-            desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
-
             var connection = new AgentConnection();
             _connection = connection;
             var viewModel = new MainWindowViewModel(connection, prefs);
             _viewModel = viewModel;
-            var window = new MainWindow
-            {
-                DataContext = viewModel,
-                Icon = BuildIcon(_accent),
-                Width = prefs.Width,
-                Height = prefs.Height,
-            };
-            _window = window;
-            desktop.MainWindow = window;
-
-            window.Closing += OnMainWindowClosing;
             desktop.ShutdownRequested += (_, _) => connection.Dispose();
+
+            // Cold launch from the tray (#187): a lightweight themed launcher instead of the full window. Its
+            // buttons connect and quit, open the full app in place, or dismiss to the resident tray.
+            if (desktop.Args is { } args && Array.IndexOf(args, "--launcher") >= 0)
+            {
+                desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
+                var launcher = new LauncherWindow
+                {
+                    DataContext = viewModel,
+                    Icon = BuildIcon(_accent),
+                };
+                launcher.OpenAppRequested += () => ShowMainWindow(desktop, viewModel);
+                launcher.Show();
+            }
+            else
+            {
+                ShowMainWindow(desktop, viewModel);
+            }
 
             viewModel.Start();
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // Builds and shows the full main window, taking over as the shutdown anchor. Used for a normal launch and
+    // when the launcher's "open app" promotes the process to the full GUI.
+    private void ShowMainWindow(IClassicDesktopStyleApplicationLifetime desktop, MainWindowViewModel viewModel)
+    {
+        if (_window is not null)
+        {
+            _window.Activate();
+            return;
+        }
+
+        var window = new MainWindow
+        {
+            DataContext = viewModel,
+            Icon = BuildIcon(_accent),
+            Width = _prefs!.Width,
+            Height = _prefs.Height,
+        };
+        _window = window;
+        window.Closing += OnMainWindowClosing;
+        desktop.MainWindow = window;
+        // Closing the window fully exits the GUI process; the resident tray holds the tunnel and reopens it.
+        desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+        window.Show();
     }
 
     // Persist window size and stop the create-form camera as the GUI exits.

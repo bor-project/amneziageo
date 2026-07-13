@@ -418,7 +418,7 @@
         </Grid>
       </Border>
 
-      <Border IsVisible="{Binding General.UpdateBannerVisible}"
+      <Border IsVisible="{Binding AppUpdateBannerVisible}"
               Background="{DynamicResource AgAccentBrush}"
               CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
         <Grid ColumnDefinitions="Auto,*,Auto,Auto">

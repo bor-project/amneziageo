@@ -29,16 +29,13 @@
           <StackPanel Spacing="12">
             <TextBlock Text="{l:Tr Main_AppearanceTitle}" FontWeight="SemiBold" FontSize="15" />
 
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
-              <ComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="12">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
+              <ComboBox Grid.Row="0" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                         ItemsSource="{Binding Themes}"
                         SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}" />
-            </Grid>
-
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
-              <ComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
+              <ComboBox Grid.Row="1" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                         ItemsSource="{Binding Languages}"
                         SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}" />
             </Grid>

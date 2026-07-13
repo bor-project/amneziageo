@@ -47,8 +47,11 @@
           </Grid>
         </Border>
 
-        <!-- Centered column: power button + status/hint + profile combo. -->
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18">
+        <!-- Centered column: power button + status/hint + profile combo. A loader replaces it until the first
+             agent snapshot, so the indeterminate power button never flashes on open. -->
+        <Panel>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18"
+                    IsVisible="{Binding Home.IsReady}">
           <Button Classes="powerbig" HorizontalAlignment="Center"
                   Command="{Binding Home.ToggleConnectionCommand}"
                   IsEnabled="{Binding Home.CanToggleConnection}"
@@ -119,6 +122,15 @@
                        Text="{l:Tr Main_HomeSelectConfigHint}" />
           </StackPanel>
         </StackPanel>
+
+          <!-- Loader until the first agent snapshot, in place of the indeterminate power button. -->
+          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
+                      IsVisible="{Binding !Home.IsReady}">
+            <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13"
+                       HorizontalAlignment="Center" />
+          </StackPanel>
+        </Panel>
 
       </DockPanel>
     </Border>

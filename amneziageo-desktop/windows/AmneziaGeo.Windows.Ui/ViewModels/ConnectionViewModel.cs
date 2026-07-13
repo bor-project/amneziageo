@@ -74,6 +74,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [ObservableProperty]
     private ProfileChoice? _activeProfileChoice = ProfileChoice.None;
 
+    // False until the first snapshot lands, so the card shows a loader instead of the indeterminate button.
+    [ObservableProperty]
+    private bool _isReady;
+
     [ObservableProperty]
     private bool _noticeVisible;
 
@@ -216,6 +220,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
     {
+        // First snapshot: the card leaves the loading state for the real connection UI.
+        IsReady = true;
         BoundTarget = snapshot.BoundTarget;
         BoundStatus = snapshot.BoundStatus;
         if (!_toggleInFlight)

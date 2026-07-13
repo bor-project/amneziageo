@@ -10,6 +10,7 @@
     <Project Path="amneziageo-desktop/windows/AmneziaGeo.Windows.App/AmneziaGeo.Windows.App.csproj" />
     <Project Path="amneziageo-desktop/windows/AmneziaGeo.Windows.Engine/AmneziaGeo.Windows.Engine.csproj" />
     <Project Path="amneziageo-desktop/windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj" />
+    <Project Path="amneziageo-desktop/windows/AmneziaGeo.Windows.Tray/AmneziaGeo.Windows.Tray.csproj" />
     <Project Path="amneziageo-desktop/windows/tools/AmneziaGeo.Windows.Launcher/AmneziaGeo.Windows.Launcher.csproj" />
   </Folder>
 </Solution>

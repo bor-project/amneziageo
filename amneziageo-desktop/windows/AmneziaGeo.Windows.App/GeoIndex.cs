@@ -10,6 +10,10 @@ internal sealed class GeoIndex
 {
     private readonly List<byte[]> _geoip;
     private readonly List<byte[]> _geosite;
+    // Per-key parse memo: each Cidrs/Domains lookup re-scans the whole protobuf, and RematerializeAll queries the
+    // same country/category across many lists on one shared index, so caching the result avoids the repeat scans.
+    private readonly Dictionary<string, IReadOnlyList<string>> _cidrCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IReadOnlyList<GeoDomain>> _domainCache = new(StringComparer.OrdinalIgnoreCase);
 
     private GeoIndex(List<byte[]> geoip, List<byte[]> geosite)
     {
@@ -51,6 +55,11 @@ internal sealed class GeoIndex
     /// </summary>
     public IReadOnlyList<string> Cidrs(string country)
     {
+        if (_cidrCache.TryGetValue(country, out var cached))
+        {
+            return cached;
+        }
+
         IReadOnlyList<string> result = [];
         foreach (var bytes in _geoip)
         {
@@ -61,6 +70,7 @@ internal sealed class GeoIndex
             }
         }
 
+        _cidrCache[country] = result;
         return result;
     }
 
@@ -69,6 +79,11 @@ internal sealed class GeoIndex
     /// </summary>
     public IReadOnlyList<GeoDomain> Domains(string category)
     {
+        if (_domainCache.TryGetValue(category, out var cached))
+        {
+            return cached;
+        }
+
         IReadOnlyList<GeoDomain> result = [];
         foreach (var bytes in _geosite)
         {
@@ -79,6 +94,7 @@ internal sealed class GeoIndex
             }
         }
 
+        _domainCache[category] = result;
         return result;
     }
 

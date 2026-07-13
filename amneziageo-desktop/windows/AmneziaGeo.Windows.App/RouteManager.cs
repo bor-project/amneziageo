@@ -31,6 +31,49 @@ internal sealed partial class RouteManager
         ("fc00::", 7),
     ];
 
+    // Tunnel routes this instance installed, so a delete calls DeleteIpForwardEntry2 on the remembered row (O(1))
+    // instead of reading and scanning the whole OS forwarding table. The scan stays the fallback for a route we
+    // did not install this session (a previous run's) or one the OS has since altered. Guarded by _addedLock.
+    private readonly Dictionary<RouteKey, MIB_IPFORWARD_ROW2> _added = [];
+    private readonly object _addedLock = new();
+
+    private readonly record struct RouteKey(ushort Family, uint A0, uint A1, uint A2, uint A3, byte Prefix, uint IfIndex);
+
+    private static RouteKey KeyOf(IPAddress ip, byte prefix, uint ifIndex)
+    {
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var b = ip.GetAddressBytes();
+            return new RouteKey(AfInet6, BitConverter.ToUInt32(b, 0), BitConverter.ToUInt32(b, 4), BitConverter.ToUInt32(b, 8), BitConverter.ToUInt32(b, 12), prefix, ifIndex);
+        }
+
+        return new RouteKey(AfInet, ToRouteAddress(ip), 0, 0, 0, prefix, ifIndex);
+    }
+
+    private void Remember(IPAddress ip, byte prefix, uint ifIndex, in MIB_IPFORWARD_ROW2 row)
+    {
+        lock (_addedLock)
+        {
+            _added[KeyOf(ip, prefix, ifIndex)] = row;
+        }
+    }
+
+    // Deletes the remembered route for this exact (dest, prefix, interface). Returns false when we did not install
+    // it (caller falls back to the table scan) or when the remembered row no longer matches the OS entry.
+    private bool TryDeleteRemembered(IPAddress ip, byte prefix, uint ifIndex)
+    {
+        MIB_IPFORWARD_ROW2 row;
+        lock (_addedLock)
+        {
+            if (!_added.Remove(KeyOf(ip, prefix, ifIndex), out row))
+            {
+                return false;
+            }
+        }
+
+        return DeleteIpForwardEntry2(ref row) == NoError;
+    }
+
     /// <summary>
     /// Adds a host route for the endpoint via the physical gateway.
     /// </summary>
@@ -335,6 +378,11 @@ internal sealed partial class RouteManager
             : NewRow(ip, 32, tunnelInterfaceIndex, nextHop: null);
         var result = CreateIpForwardEntry2(ref row);
         var ok = result is NoError or ErrorObjectAlreadyExists;
+        if (ok)
+        {
+            Remember(ip, (byte)prefix, tunnelInterfaceIndex, row);
+        }
+
         RouteLog.Write("tunnel +host", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok);
         return ok;
     }
@@ -357,6 +405,11 @@ internal sealed partial class RouteManager
             var rowV6 = NewRowV6(ip, prefixV6, tunnelInterfaceIndex, nextHop: null);
             var resultV6 = CreateIpForwardEntry2(ref rowV6);
             var okV6 = resultV6 is NoError or ErrorObjectAlreadyExists;
+            if (okV6)
+            {
+                Remember(ip, prefixV6, tunnelInterfaceIndex, rowV6);
+            }
+
             RouteLog.Write("tunnel +cidr", $"{ip}/{prefixV6}", $"if{tunnelInterfaceIndex}", okV6);
             return okV6;
         }
@@ -370,6 +423,11 @@ internal sealed partial class RouteManager
         var row = NewRow(ip, prefix, tunnelInterfaceIndex, nextHop: null);
         var result = CreateIpForwardEntry2(ref row);
         var ok = result is NoError or ErrorObjectAlreadyExists;
+        if (ok)
+        {
+            Remember(ip, prefix, tunnelInterfaceIndex, row);
+        }
+
         RouteLog.Write("tunnel +cidr", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok);
         return ok;
     }
@@ -381,12 +439,20 @@ internal sealed partial class RouteManager
     {
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
-            DeleteManagedV6Routes(ip, 128);
+            if (!TryDeleteRemembered(ip, 128, tunnelInterfaceIndex))
+            {
+                DeleteManagedV6Routes(ip, 128);
+            }
+
             RouteLog.Write("tunnel -host", $"{ip}/128", $"if{tunnelInterfaceIndex}", ok: true);
             return;
         }
 
-        DeleteManagedRoutes(ip, tunnelInterfaceIndex);
+        if (!TryDeleteRemembered(ip, 32, tunnelInterfaceIndex))
+        {
+            DeleteManagedRoutes(ip, tunnelInterfaceIndex);
+        }
+
         RouteLog.Write("tunnel -host", $"{ip}/32", $"if{tunnelInterfaceIndex}", ok: true);
     }
 
@@ -402,14 +468,18 @@ internal sealed partial class RouteManager
 
         RouteLog.Write("tunnel -hosts", $"{ips.Count} route(s)", $"if{tunnelInterfaceIndex}", ok: true);
 
+        // Fast-path each remembered route; only routes we did not install this session fall through to the scan.
         var v4 = new HashSet<uint>();
         foreach (var ip in ips)
         {
             if (ip.AddressFamily == AddressFamily.InterNetworkV6)
             {
-                DeleteManagedV6Routes(ip, 128);
+                if (!TryDeleteRemembered(ip, 128, tunnelInterfaceIndex))
+                {
+                    DeleteManagedV6Routes(ip, 128);
+                }
             }
-            else
+            else if (!TryDeleteRemembered(ip, 32, tunnelInterfaceIndex))
             {
                 v4.Add(ToRouteAddress(ip));
             }
@@ -452,7 +522,11 @@ internal sealed partial class RouteManager
         if (ip.AddressFamily == AddressFamily.InterNetworkV6)
         {
             var prefixV6 = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var pv6) ? pv6 : (byte)128;
-            DeleteManagedV6Routes(ip, prefixV6);
+            if (!TryDeleteRemembered(ip, prefixV6, tunnelInterfaceIndex))
+            {
+                DeleteManagedV6Routes(ip, prefixV6);
+            }
+
             RouteLog.Write("tunnel -cidr", $"{ip}/{prefixV6}", $"if{tunnelInterfaceIndex}", ok: true);
             return;
         }
@@ -463,7 +537,11 @@ internal sealed partial class RouteManager
         }
 
         var prefix = slash >= 0 && byte.TryParse(cidr[(slash + 1)..], out var p) ? p : (byte)32;
-        DeleteManagedRoutes(ip, tunnelInterfaceIndex, prefix);
+        if (!TryDeleteRemembered(ip, prefix, tunnelInterfaceIndex))
+        {
+            DeleteManagedRoutes(ip, tunnelInterfaceIndex, prefix);
+        }
+
         RouteLog.Write("tunnel -cidr", $"{ip}/{prefix}", $"if{tunnelInterfaceIndex}", ok: true);
     }
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -161,8 +162,45 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         engine.Apply(WindowHandle);
     }
 
+    // Retire the resident tray before the MSI runs: signal it to quit (its icon is removed and Tray.exe freed),
+    // then force any straggler so a major upgrade can replace the file and start a fresh instance.
+    private static void StopTray()
+    {
+        try
+        {
+            if (EventWaitHandle.TryOpenExisting(@"Local\AmneziaGeo.Tray.Quit", out var quit))
+            {
+                using (quit)
+                {
+                    quit.Set();
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        for (var i = 0; i < 30 && Process.GetProcessesByName("AmneziaGeo.Windows.Tray").Length > 0; i++)
+        {
+            Thread.Sleep(100);
+        }
+
+        foreach (var p in Process.GetProcessesByName("AmneziaGeo.Windows.Tray"))
+        {
+            try
+            {
+                p.Kill();
+                p.WaitForExit(3000);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private static bool StopRunningApp()
     {
+        StopTray();
         try
         {
             var procs = Process.GetProcessesByName("AmneziaGeo.Windows.Ui");
@@ -406,7 +444,8 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             var baseDir = Environment.GetEnvironmentVariable("ProgramW6432")
                 ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             var dir = Path.Combine(baseDir, "AmneziaGeo");
-            var exe = Path.Combine(dir, "AmneziaGeo.Windows.Ui.exe");
+            // Launch the tray anchor (it opens the GUI), not the GUI directly, so the tunnel-holding tray runs.
+            var exe = Path.Combine(dir, "AmneziaGeo.Windows.Tray.exe");
             if (File.Exists(exe))
             {
                 Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = dir });

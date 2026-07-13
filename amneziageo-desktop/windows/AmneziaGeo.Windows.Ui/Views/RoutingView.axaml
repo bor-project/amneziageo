@@ -173,9 +173,13 @@
                       VerticalAlignment="Center"
                       Command="{Binding SortRulesCommand}"
                       ToolTip.Tip="{l:Tr Main_SortRulesTooltip}" />
-              <Button Grid.Column="3" Classes="icon" Content="{l:Tr Main_ClearButton}" FontSize="11"
-                      Command="{Binding ClearRulesCommand}"
-                      ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}" />
+              <Button Grid.Column="3" Command="{Binding ClearRulesCommand}"
+                      Background="Transparent" BorderThickness="0" Padding="0"
+                      Cursor="Hand" VerticalAlignment="Center" HorizontalAlignment="Right"
+                      ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}">
+                <TextBlock Text="{l:Tr Main_ClearButton}" FontSize="11.5"
+                           Foreground="{DynamicResource AgAccentBrush}" />
+              </Button>
             </Grid>
             <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                     Background="{DynamicResource AgPanelBrush}" CornerRadius="10">

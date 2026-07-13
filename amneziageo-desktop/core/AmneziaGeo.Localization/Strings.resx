@@ -484,6 +484,30 @@
   <data name="Main_ListTrafficLabel" xml:space="preserve">
     <value>Traffic of this list</value>
   </data>
+  <data name="Main_RoleProxy" xml:space="preserve">
+    <value>Proxy</value>
+  </data>
+  <data name="Main_RoleDirect" xml:space="preserve">
+    <value>Direct</value>
+  </data>
+  <data name="Main_RoleBlock" xml:space="preserve">
+    <value>Block</value>
+  </data>
+  <data name="Main_RoleProxyHint" xml:space="preserve">
+    <value>Works when the global proxy is off: only these entries go through the tunnel.</value>
+  </data>
+  <data name="Main_RoleDirectHint" xml:space="preserve">
+    <value>Works when the global proxy is on: these entries bypass the tunnel.</value>
+  </data>
+  <data name="Main_RoleBlockHint" xml:space="preserve">
+    <value>Blocks requests to the selected routes. Always in effect.</value>
+  </data>
+  <data name="Main_GlobalProxyTitle" xml:space="preserve">
+    <value>Global proxy</value>
+  </data>
+  <data name="Main_GlobalProxyHint" xml:space="preserve">
+    <value>Route everything through the tunnel except the Direct list.</value>
+  </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Load file…</value>
   </data>

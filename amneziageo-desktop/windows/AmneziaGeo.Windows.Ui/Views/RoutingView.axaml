@@ -55,7 +55,16 @@
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" Background="Transparent">
         <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-          <TextBlock Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15" />
+          <!-- Title left; global-proxy flag right (binds up to the list's traffic settings). -->
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                        ToolTip.Tip="{l:Tr Main_GlobalProxyHint}">
+              <TextBlock Text="{l:Tr Main_GlobalProxyTitle}" FontSize="12.5" Classes="muted" VerticalAlignment="Center" />
+              <ToggleSwitch VerticalAlignment="Center" MinWidth="0"
+                            IsChecked="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).RoutingSettings.UseGlobalProxy, Mode=TwoWay}" />
+            </StackPanel>
+          </Grid>
 
           <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
             <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
@@ -126,6 +135,37 @@
           <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+          <!-- Role segment [Прокси | Директ | Блок]: which bucket the add rows target and the list below shows. -->
+          <StackPanel Spacing="6">
+            <Border Background="{DynamicResource AgInsetBrush}"
+                    BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                    CornerRadius="9" Padding="3">
+              <UniformGrid Columns="3">
+                <Button Classes="seg" Classes.active="{Binding IsProxyRole}" Content="{l:Tr Main_RoleProxy}"
+                        Command="{Binding SelectRoleCommand}" CommandParameter="proxy"
+                        HorizontalAlignment="Stretch" Padding="12,6" />
+                <Button Classes="seg" Classes.active="{Binding IsDirectRole}" Content="{l:Tr Main_RoleDirect}"
+                        Command="{Binding SelectRoleCommand}" CommandParameter="direct"
+                        HorizontalAlignment="Stretch" Padding="12,6" />
+                <Button Classes="seg" Classes.active="{Binding IsBlockRole}" Content="{l:Tr Main_RoleBlock}"
+                        Command="{Binding SelectRoleCommand}" CommandParameter="block"
+                        HorizontalAlignment="Stretch" Padding="12,6" />
+              </UniformGrid>
+            </Border>
+            <!-- Role hint left; a blue link (Direct only) fills the Direct bucket with the machine's local subnets. -->
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Text="{Binding RoleHint}" Classes="muted" FontSize="11.5"
+                         TextWrapping="Wrap" VerticalAlignment="Top" />
+              <Button Grid.Column="1" IsVisible="{Binding IsDirectRole}" Margin="12,0,0,0"
+                      Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}"
+                      Background="Transparent" BorderThickness="0" Padding="0"
+                      Cursor="Hand" VerticalAlignment="Top" HorizontalAlignment="Right">
+                <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AgAccentBrush}" />
+              </Button>
+            </Grid>
+          </StackPanel>
+
           <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
             <Grid ColumnDefinitions="Auto,Auto,*,Auto">
               <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
@@ -167,20 +207,6 @@
               IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
         <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
           <TextBlock Text="{l:Tr Main_ListTrafficLabel}" FontWeight="SemiBold" FontSize="15" />
-
-          <StackPanel Spacing="6">
-            <TextBlock Classes="label" Text="{l:Tr Main_ExclusionsLabel}" />
-            <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                       Text="{l:Tr Main_ExclusionsHint}" />
-            <Button Classes="softbtn" HorizontalAlignment="Left" Content="{l:Tr Main_AddLocalSubnetsButton}"
-                    Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}" />
-            <TextBox Classes="field" AcceptsReturn="True" TextWrapping="NoWrap" Height="110"
-                     VerticalContentAlignment="Top"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
-                     Text="{Binding Exclusions, Mode=TwoWay}"
-                     Watermark="corp.local&#x0a;nas&#x0a;10.50.0.0/16&#x0a;192.168.10.5" />
-          </StackPanel>
 
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">

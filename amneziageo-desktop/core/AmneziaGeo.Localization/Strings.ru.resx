@@ -484,6 +484,30 @@
   <data name="Main_ListTrafficLabel" xml:space="preserve">
     <value>Трафик этого списка</value>
   </data>
+  <data name="Main_RoleProxy" xml:space="preserve">
+    <value>Прокси</value>
+  </data>
+  <data name="Main_RoleDirect" xml:space="preserve">
+    <value>Директ</value>
+  </data>
+  <data name="Main_RoleBlock" xml:space="preserve">
+    <value>Блок</value>
+  </data>
+  <data name="Main_RoleProxyHint" xml:space="preserve">
+    <value>Работает, когда глобальный прокси выключен: через туннель идут только эти записи.</value>
+  </data>
+  <data name="Main_RoleDirectHint" xml:space="preserve">
+    <value>Работает, когда глобальный прокси включён: эти записи идут мимо туннеля.</value>
+  </data>
+  <data name="Main_RoleBlockHint" xml:space="preserve">
+    <value>Блокирует запросы к выбранным маршрутам. Действует всегда.</value>
+  </data>
+  <data name="Main_GlobalProxyTitle" xml:space="preserve">
+    <value>Глобальный прокси</value>
+  </data>
+  <data name="Main_GlobalProxyHint" xml:space="preserve">
+    <value>Заворачивать в туннель всё, кроме списка «Директ».</value>
+  </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Загрузить файл…</value>
   </data>

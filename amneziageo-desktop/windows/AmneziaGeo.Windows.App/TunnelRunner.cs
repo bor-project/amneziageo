@@ -119,20 +119,33 @@ internal sealed class TunnelRunner(
 
         var geo = await store.GetActiveTunnelGeoAsync(name);
 
-        var geoSplit = geo?.GeoSplit ?? false;
         var geoRoutes = new List<string>(geo?.Routes ?? []);
         var domains = geo?.Domains ?? [];
         var apps = geo?.Apps ?? [];
 
-        logger.LogDebug("connect {Name}: geo loaded - split={Split} routes={Routes} domains={Domains} apps={Apps} [{Elapsed} ms]",
-            name, geoSplit, geoRoutes.Count, domains.Count, apps.Count, connectSw.ElapsedMilliseconds);
-
-        // Routing list owns DNS/exclusions/AllUdp/IPv6 when assigned; else per-config defaults. Loaded early
-        // because the IPv6 opt-in below gates the v6-strip that runs before the routing block proper.
+        // Routing list owns DNS/exclusions/AllUdp/IPv6/global-proxy when assigned; else per-config defaults.
+        // Loaded early because the IPv6 opt-in below gates the v6-strip, and the global-proxy flag decides split.
         var activeRoutingListId = await store.GetActiveRoutingListIdAsync(name);
         var routingSettings = activeRoutingListId is long activeListId
             ? await store.GetRoutingSettingsAsync(activeListId)
             : null;
+        // The assigned list's Direct/Block buckets (its Proxy bucket already rode the projection into geo).
+        var activeList = activeRoutingListId is long bucketListId
+            ? await store.GetRoutingListAsync(bucketListId)
+            : null;
+
+        // Global proxy on = full tunnel minus the Direct bucket; off = split (tunnel only the Proxy bucket). A
+        // routing list's flag wins over the config's own split; without a list the config's split stands.
+        var geoSplit = activeList is not null
+            ? !(routingSettings?.UseGlobalProxy ?? false)
+            : (geo?.GeoSplit ?? false);
+
+        logger.LogDebug("connect {Name}: geo loaded - split={Split} routes={Routes} domains={Domains} apps={Apps} [{Elapsed} ms]",
+            name, geoSplit, geoRoutes.Count, domains.Count, apps.Count, connectSw.ElapsedMilliseconds);
+
+        // Block bucket applies always: WFP drops the CIDRs, the DNS proxy refuses the domains (NXDOMAIN).
+        var blockRoutes = activeList?.BlockRoutes ?? [];
+        var blockDomains = activeList?.BlockDomains ?? [];
 
         // Route IPv6 only when the active routing list opts in (#149); otherwise the tunnel stays v4-only:
         // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
@@ -241,6 +254,17 @@ internal sealed class TunnelRunner(
 
         var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(storedExclusions ?? string.Empty);
         var exclusionDomains = new List<string>(parsedExclusionDomains);
+        // Direct bucket (full mode only): its domains stay on the local resolver, off the tunnel.
+        if (!geoSplit && activeList is not null)
+        {
+            foreach (var direct in activeList.DirectDomains)
+            {
+                if (!exclusionDomains.Contains(direct.Value))
+                {
+                    exclusionDomains.Add(direct.Value);
+                }
+            }
+        }
         // Keep LAN DNS suffixes off-tunnel (split-horizon DNS).
         foreach (var suffix in dns.CaptureLocalDnsSuffixes())
         {
@@ -287,6 +311,30 @@ internal sealed class TunnelRunner(
         var exclusionCidrs = !hasStoredExclusions
             ? new List<string>(routes.DefaultExclusionEntries())
             : new List<string>(parsedCidrs);
+        // Global proxy (full via list) must never blackhole the LAN: always bypass RFC1918 + connected subnets,
+        // even though the list's settings row makes exclusions authoritative.
+        if (!geoSplit && activeList is not null)
+        {
+            foreach (var lan in routes.DefaultExclusionEntries())
+            {
+                if (!exclusionCidrs.Contains(lan))
+                {
+                    exclusionCidrs.Add(lan);
+                }
+            }
+        }
+
+        // Direct bucket (full mode only): its CIDRs route out the physical gateway, bypassing the tunnel.
+        if (!geoSplit && activeList is not null)
+        {
+            foreach (var cidr in activeList.DirectRoutes)
+            {
+                if (!exclusionCidrs.Contains(cidr))
+                {
+                    exclusionCidrs.Add(cidr);
+                }
+            }
+        }
 
         IReadOnlyList<string> redirectServers = [];
 
@@ -309,7 +357,7 @@ internal sealed class TunnelRunner(
             }
         }
 
-        var proxy = StartProxy(trackDomains ? domains : [], stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
 
         // Rebuild the proxy matcher live on a geosite refresh or list rule edit, even for a list that had no
         // domains at connect. A rebuild that adds domains flushes the OS resolver cache so a name resolved
@@ -381,7 +429,7 @@ internal sealed class TunnelRunner(
         var killSwitch = !geoSplit;
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, blockRoutes, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -472,7 +520,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
@@ -483,7 +531,7 @@ internal sealed class TunnelRunner(
             .Where(ip => ip is not null)
             .Select(ip => ip!)
             .ToList();
-        var proxy = new DnsProxy(domains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary);
         if (proxy.BoundV4 is null)
         {
             return null;
@@ -744,7 +792,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, CancellationToken ct)
     {
         try
         {
@@ -754,7 +802,7 @@ internal sealed class TunnelRunner(
                 ct.ThrowIfCancellationRequested();
                 if (routes.FindInterfaceIndex(name) is { } index)
                 {
-                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs);
+                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs);
                     if (ct.IsCancellationRequested)
                     {
                         firewall.Disable();

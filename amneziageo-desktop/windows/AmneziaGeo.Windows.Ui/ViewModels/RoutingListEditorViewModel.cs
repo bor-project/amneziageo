@@ -35,10 +35,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// </summary>
     public bool AutoSave { get; set; }
 
-    // Baseline captured on load / commit; the list is dirty when Name or Rules differ from it (a new draft
-    // stays dirty until its first save).
+    // Baseline captured on load / commit; the list is dirty when Name or any role bucket differs from it (a
+    // new draft stays dirty until its first save).
     private string _baseName = string.Empty;
-    private List<string> _baseRules = [];
+    private List<string> _baseProxy = [];
+    private List<string> _baseDirect = [];
+    private List<string> _baseBlock = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNameMissing))]
@@ -90,18 +92,23 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _connection = connection;
         _onSaved = onSaved;
         _id = id;
-        Rules.CollectionChanged += (_, _) =>
-        {
-            if (_reordering)
-            {
-                return;
-            }
-
-            ApplySuggestionFilter();
-            MarkDirty();
-            FireAutoSave();
-        };
+        ProxyRules.CollectionChanged += OnRulesChanged;
+        DirectRules.CollectionChanged += OnRulesChanged;
+        BlockRules.CollectionChanged += OnRulesChanged;
         Name = name;
+    }
+
+    // Any role bucket changed: refresh suggestions/transfer, mark dirty, autosave (suppressed mid-sort).
+    private void OnRulesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (_reordering)
+        {
+            return;
+        }
+
+        ApplySuggestionFilter();
+        MarkDirty();
+        FireAutoSave();
     }
 
     /// <summary>
@@ -121,9 +128,84 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsNameMissing => string.IsNullOrWhiteSpace(Name);
 
     /// <summary>
-    /// The rules of this list as rule tokens (geosite:openai etc).
+    /// The Proxy bucket: tunneled while the global proxy is off.
     /// </summary>
-    public ObservableCollection<string> Rules { get; } = [];
+    public ObservableCollection<string> ProxyRules { get; } = [];
+
+    /// <summary>
+    /// The Direct bucket: bypasses the tunnel while the global proxy is on.
+    /// </summary>
+    public ObservableCollection<string> DirectRules { get; } = [];
+
+    /// <summary>
+    /// The Block bucket: always blocked.
+    /// </summary>
+    public ObservableCollection<string> BlockRules { get; } = [];
+
+    // The bucket currently shown/edited by the role segment.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Rules))]
+    [NotifyPropertyChangedFor(nameof(IsProxyRole))]
+    [NotifyPropertyChangedFor(nameof(IsDirectRole))]
+    [NotifyPropertyChangedFor(nameof(IsBlockRole))]
+    [NotifyPropertyChangedFor(nameof(RoleHint))]
+    private string _selectedRole = "proxy";
+
+    /// <summary>
+    /// The active bucket's rule tokens (geosite:openai etc), selected by <see cref="SelectedRole"/>.
+    /// </summary>
+    public ObservableCollection<string> Rules => SelectedRole switch
+    {
+        "direct" => DirectRules,
+        "block" => BlockRules,
+        _ => ProxyRules,
+    };
+
+    public bool IsProxyRole => SelectedRole == "proxy";
+
+    public bool IsDirectRole => SelectedRole == "direct";
+
+    public bool IsBlockRole => SelectedRole == "block";
+
+    /// <summary>
+    /// Localized help line for the active role.
+    /// </summary>
+    public string RoleHint => SelectedRole switch
+    {
+        "direct" => Loc.Instance.Get("Main_RoleDirectHint"),
+        "block" => Loc.Instance.Get("Main_RoleBlockHint"),
+        _ => Loc.Instance.Get("Main_RoleProxyHint"),
+    };
+
+    // After the active bucket swaps, refresh the suggestion filter for the newly shown bucket.
+    partial void OnSelectedRoleChanged(string value) => ApplySuggestionFilter();
+
+    // Total entries across all three buckets.
+    private int TotalRules => ProxyRules.Count + DirectRules.Count + BlockRules.Count;
+
+    // The bucket for a role token.
+    private ObservableCollection<string> BucketFor(string role) => role switch
+    {
+        "direct" => DirectRules,
+        "block" => BlockRules,
+        _ => ProxyRules,
+    };
+
+    // Splits a "role|token" into (role, token); a bare token is proxy.
+    private static (string Role, string Token) SplitRoleToken(string text)
+    {
+        var bar = text.IndexOf('|');
+        if (bar > 0)
+        {
+            var role = text[..bar].ToLowerInvariant();
+            if (role is "proxy" or "direct" or "block")
+            {
+                return (role, text[(bar + 1)..]);
+            }
+        }
+
+        return ("proxy", text);
+    }
 
     /// <summary>
     /// Geo category suggestions for the rule input, fetched from the agent.
@@ -155,6 +237,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(AppWatermark));
+        OnPropertyChanged(nameof(RoleHint));
 
         // App suggestions bake a localized kind prefix at load; rebuild them for the new language.
         if (AppSuggestions.Count > 0)
@@ -187,7 +270,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                 {
                     foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
-                        Rules.Add(token);
+                        var (role, plain) = SplitRoleToken(token);
+                        BucketFor(role).Add(plain);
                     }
                 }
             }
@@ -251,7 +335,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         }
 
         // Do not persist a rule-less list; the pre-#143 auto-save refused it too (review regression guard).
-        if (Rules.Count == 0)
+        if (TotalRules == 0)
         {
             ValidationMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
             return false;
@@ -261,7 +345,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         try
         {
             var args = new List<string> { _id.ToString(CultureInfo.InvariantCulture), trimmed };
-            args.AddRange(Rules);
+            args.AddRange(ProxyRules.Select(r => $"proxy|{r}"));
+            args.AddRange(DirectRules.Select(r => $"direct|{r}"));
+            args.AddRange(BlockRules.Select(r => $"block|{r}"));
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSaveRoutingList, args));
             if (ack.Ok && long.TryParse(ack.Message, NumberStyles.Integer, CultureInfo.InvariantCulture, out var resultId))
             {
@@ -321,7 +407,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
         var dirty = IsNew
             || !string.Equals(Name, _baseName, StringComparison.Ordinal)
-            || !Rules.SequenceEqual(_baseRules, StringComparer.Ordinal);
+            || !ProxyRules.SequenceEqual(_baseProxy, StringComparer.Ordinal)
+            || !DirectRules.SequenceEqual(_baseDirect, StringComparer.Ordinal)
+            || !BlockRules.SequenceEqual(_baseBlock, StringComparer.Ordinal);
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -340,7 +428,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return false;
         }
 
-        if (Rules.Count == 0)
+        if (TotalRules == 0)
         {
             ValidationMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
             return false;
@@ -353,7 +441,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public void CaptureBaseline()
     {
         _baseName = Name;
-        _baseRules = Rules.ToList();
+        _baseProxy = ProxyRules.ToList();
+        _baseDirect = DirectRules.ToList();
+        _baseBlock = BlockRules.ToList();
         MarkDirty();
     }
 
@@ -364,12 +454,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         try
         {
             Name = _baseName;
-            Rules.Clear();
-            foreach (var rule in _baseRules)
-            {
-                Rules.Add(rule);
-            }
-
+            RestoreBucket(ProxyRules, _baseProxy);
+            RestoreBucket(DirectRules, _baseDirect);
+            RestoreBucket(BlockRules, _baseBlock);
             RuleInput = string.Empty;
             StatusMessage = string.Empty;
             ValidationMessage = string.Empty;
@@ -381,6 +468,15 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
         ApplySuggestionFilter();
         MarkDirty();
+    }
+
+    private static void RestoreBucket(ObservableCollection<string> bucket, IReadOnlyList<string> baseline)
+    {
+        bucket.Clear();
+        foreach (var rule in baseline)
+        {
+            bucket.Add(rule);
+        }
     }
 
     /// <summary>
@@ -424,7 +520,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return;
         }
 
-        if (Name.Trim().Length == 0 || Rules.Count == 0)
+        if (Name.Trim().Length == 0 || TotalRules == 0)
         {
             return;
         }
@@ -456,6 +552,54 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         finally
         {
             _committing = false;
+        }
+    }
+
+    // Switches the active role bucket shown/edited by the segment.
+    [RelayCommand]
+    private void SelectRole(string role)
+    {
+        SelectedRole = role;
+    }
+
+    /// <summary>
+    /// Fetches the machine's local subnets from the agent and adds them to the Direct bucket.
+    /// </summary>
+    [RelayCommand]
+    private async Task AddLocalSubnetsAsync()
+    {
+        IsBusy = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListLocalSubnets, []));
+            if (!ack.Ok)
+            {
+                StatusMessage = ack.Message;
+                return;
+            }
+
+            var subnets = ack.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            SelectedRole = "direct";
+            var added = 0;
+            foreach (var subnet in subnets)
+            {
+                var rule = Normalize(subnet);
+                if (rule.Length > 0 && !DirectRules.Contains(rule))
+                {
+                    DirectRules.Add(rule);
+                    added++;
+                }
+            }
+
+            StatusMessage = added > 0
+                ? Loc.Instance.Get("RoutingSettings_LocalSubnetsAdded", added)
+                : subnets.Length == 0
+                    ? Loc.Instance.Get("RoutingSettings_NoActiveLocalSubnets")
+                    : Loc.Instance.Get("RoutingSettings_AllLocalSubnetsPresent");
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 
@@ -682,9 +826,19 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public string SuggestedFileName => string.IsNullOrWhiteSpace(Name) ? "routing.txt" : $"{Name.Trim()}-routing.txt";
 
     /// <summary>
-    /// Serialises this list to a portable blob for copy / save / QR.
+    /// Serialises this list to a portable blob for copy / save / QR (role-tagged, so the buckets round-trip).
     /// </summary>
-    public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, Rules);
+    public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, AllRoleTokens());
+
+    // All buckets as role-tagged tokens ("proxy|geosite:x", "block|domain:y").
+    private IReadOnlyList<string> AllRoleTokens()
+    {
+        var all = new List<string>(TotalRules);
+        all.AddRange(ProxyRules.Select(r => $"proxy|{r}"));
+        all.AddRange(DirectRules.Select(r => $"direct|{r}"));
+        all.AddRange(BlockRules.Select(r => $"block|{r}"));
+        return all;
+    }
 
     // Transfer card mode: QR image vs raw payload text; both share the copy / paste / load / save actions.
     [ObservableProperty]
@@ -773,10 +927,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             Name = name;
         }
 
-        Rules.Clear();
+        ProxyRules.Clear();
+        DirectRules.Clear();
+        BlockRules.Clear();
         foreach (var rule in importedRules)
         {
-            Rules.Add(rule);
+            var (role, plain) = SplitRoleToken(rule);
+            BucketFor(role).Add(plain);
         }
 
         StatusMessage = Name.Trim().Length == 0

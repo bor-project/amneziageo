@@ -66,6 +66,10 @@ internal sealed class DnsProxy
     // Volatile: read on the hot query path, replaced on the poll thread; the matcher is immutable.
     private volatile IReadOnlyList<GeoDomain> _domains;
     private volatile DomainMatcher _matcher;
+    // Block bucket: names refused with NXDOMAIN before any tunnel/bypass decision. Applied at connect
+    // (a live block-domain change needs a reconnect); never tunneled or resolved.
+    private readonly DomainMatcher _blockMatcher;
+    private readonly bool _hasBlockDomains;
     private readonly IPAddress _tunnelUpstream;
     private readonly IPAddress? _tunnelUpstreamSecondary;
     private readonly IPAddress _localUpstream;
@@ -83,10 +87,12 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null)
     {
         _domains = domains;
         _matcher = new DomainMatcher(domains);
+        _blockMatcher = new DomainMatcher(blockDomains);
+        _hasBlockDomains = blockDomains.Count > 0;
         _tunnelUpstream = tunnelUpstream;
         _tunnelUpstreamSecondary = tunnelSecondary;
         _localUpstream = localUpstream;
@@ -376,6 +382,25 @@ internal sealed class DnsProxy
         {
             var name = DnsMessage.QuestionName(query);
             var type = DnsMessage.QuestionType(query);
+
+            // Block bucket wins over everything: a matched name is refused (NXDOMAIN) before any tunnel/bypass
+            // decision, so it never resolves and its connection is dropped.
+            if (_hasBlockDomains && name is not null && _blockMatcher.IsTunneled(name))
+            {
+                var blocked = DnsMessage.BuildNxDomain(query);
+                lock (server)
+                {
+                    server.Send(blocked, blocked.Length, client);
+                }
+
+                _logger.LogDebug("dns blocked {Name} type={Type} -> NXDOMAIN", name, type);
+                if (RouteLog.Enabled)
+                {
+                    RouteLog.Note($"block {name} type={type} -> NXDOMAIN");
+                }
+
+                return;
+            }
 
             // Local/LAN names resolve via the LAN resolver and stay off the tunnel.
             var isLocal = name is not null && _lanUpstream is not null && IsLocalName(name);

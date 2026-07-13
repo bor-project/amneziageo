@@ -27,6 +27,11 @@ public sealed class InstallerOptions
     public bool LaunchAfter { get; set; } = true;
 
     /// <summary>
+    /// Dial the existing connection right after the post-install launch.
+    /// </summary>
+    public bool AutoConnect { get; set; }
+
+    /// <summary>
     /// Download the geo databases after install/update/repair.
     /// </summary>
     public bool DownloadLists { get; set; } = true;

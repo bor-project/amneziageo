@@ -135,6 +135,26 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 OnUserAction(MapCommandAction(_command.Action, state));
             }
         });
+
+        // A previously-installed machine may have a connectable profile: ask the running agent so the options
+        // step can offer the nested auto-connect checkbox (#188).
+        if (_interactive && state == InstallState.Installed)
+        {
+            ProbeAutoConnect();
+        }
+    }
+
+    private void ProbeAutoConnect()
+    {
+        _ = Task.Run(async () =>
+        {
+            var connectable = await AgentPipeClient.HasConnectableProfileAsync(
+                TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3), CancellationToken.None);
+            if (connectable)
+            {
+                _ = _dispatcher.BeginInvoke(() => _vm.SetCanAutoConnect(true));
+            }
+        });
     }
 
     // ---- Plan ----
@@ -403,7 +423,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     {
         if (ok && ShouldLaunchAfter())
         {
-            LaunchApp();
+            LaunchApp(ShouldAutoConnect());
             Application.Current?.Shutdown();
             return;
         }
@@ -437,7 +457,26 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             || (_action == InstallerAction.Update && _command.Display == Display.Passive);
     }
 
-    private static void LaunchApp()
+    /// <summary>
+    /// Whether the post-install launch should immediately dial the existing connection (#188). Interactive runs
+    /// follow the nested checkbox; a non-interactive run reads the AUTOCONNECT variable. Install/update only.
+    /// </summary>
+    private bool ShouldAutoConnect()
+    {
+        if (_action is not (InstallerAction.Install or InstallerAction.Update))
+        {
+            return false;
+        }
+
+        if (_interactive)
+        {
+            return _vm.EffectiveAutoConnect;
+        }
+
+        return string.Equals(engine.GetVariableString("AUTOCONNECT"), "1", StringComparison.Ordinal);
+    }
+
+    private static void LaunchApp(bool autoConnect)
     {
         try
         {
@@ -448,7 +487,14 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             var exe = Path.Combine(dir, "AmneziaGeo.Windows.Tray.exe");
             if (File.Exists(exe))
             {
-                Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = dir });
+                var psi = new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = dir };
+                if (autoConnect)
+                {
+                    // The tray dials the active profile straight away, skipping the launcher window (#188).
+                    psi.ArgumentList.Add("--connect");
+                }
+
+                Process.Start(psi);
             }
         }
         catch

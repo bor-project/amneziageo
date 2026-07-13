@@ -1182,6 +1182,9 @@
   <data name="Agent_UpdateAvailable" xml:space="preserve">
     <value>Доступно обновление до версии {0}.</value>
   </data>
+  <data name="Agent_UpdateServerUnavailable" xml:space="preserve">
+    <value>Сервер обновлений недоступен.</value>
+  </data>
   <data name="Agent_UpdateCheckFailed" xml:space="preserve">
     <value>Не удалось получить сведения об обновлении.</value>
   </data>
@@ -1237,6 +1240,9 @@
   </data>
   <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
     <value>Запустить AmneziaGeo после установки</value>
+  </data>
+  <data name="InstallerUi_AutoConnect" xml:space="preserve">
+    <value>Выполнить подключение</value>
   </data>
   <data name="InstallerUi_DesktopShortcut" xml:space="preserve">
     <value>Ярлык на рабочем столе</value>
@@ -1336,5 +1342,20 @@
   </data>
   <data name="Main_RequiredEmptyWarning" xml:space="preserve">
     <value>Обязательное поле — изменения не сохранятся, пока оно пустое.</value>
+  </data>
+  <data name="Launcher_Title" xml:space="preserve">
+    <value>Быстрый запуск</value>
+  </data>
+  <data name="Launcher_ActiveProfile" xml:space="preserve">
+    <value>Активный профиль</value>
+  </data>
+  <data name="Launcher_OpenApp" xml:space="preserve">
+    <value>Открыть приложение</value>
+  </data>
+  <data name="Launcher_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Launcher_TrayHint" xml:space="preserve">
+    <value>После закрытия приложение останется в трее.</value>
   </data>
 </root>

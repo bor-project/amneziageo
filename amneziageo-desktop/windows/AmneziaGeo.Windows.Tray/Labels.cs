@@ -29,6 +29,26 @@ internal static class Labels
     public static string Exit { get; private set; } = "Exit";
 
     /// <summary>
+    /// «Подключение выполняется» / "Connection in progress": balloon body when the tunnel starts coming up.
+    /// </summary>
+    public static string ConnectingInfo { get; private set; } = "Connection in progress";
+
+    /// <summary>
+    /// «Подключение активно» / "Connection is active": balloon body on a fresh connect.
+    /// </summary>
+    public static string ConnectedInfo { get; private set; } = "Connection is active";
+
+    /// <summary>
+    /// Tooltip status «Подключено» / "Connected".
+    /// </summary>
+    public static string StatusConnected { get; private set; } = "Connected";
+
+    /// <summary>
+    /// Tooltip status «Отключено» / "Disconnected".
+    /// </summary>
+    public static string StatusDisconnected { get; private set; } = "Disconnected";
+
+    /// <summary>
     /// Resolves the labels for the current language.
     /// </summary>
     public static void Load()
@@ -39,6 +59,10 @@ internal static class Labels
             Connect = "Подключить";
             Disconnect = "Отключить";
             Exit = "Выход";
+            ConnectingInfo = "Подключение выполняется";
+            ConnectedInfo = "Подключение активно";
+            StatusConnected = "Подключено";
+            StatusDisconnected = "Отключено";
         }
     }
 

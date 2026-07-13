@@ -14,6 +14,9 @@ internal static class Native
     public const uint WM_LBUTTONUP = 0x0202;
     public const uint WM_RBUTTONUP = 0x0205;
 
+    // Balloon click: NIN_BALLOONUSERCLICK (WM_USER + 5), delivered as the tray callback's lParam.
+    public const uint NIN_BALLOONUSERCLICK = 0x0400 + 5;
+
     // App-private messages: tray callback, agent-state change, "open UI" activation from a second launch.
     public const uint WM_TRAY = 0x0400 + 1;   // WM_USER + 1
     public const uint WM_STATE = 0x0400 + 2;
@@ -33,6 +36,10 @@ internal static class Native
     public const uint NIF_MESSAGE = 0x01;
     public const uint NIF_ICON = 0x02;
     public const uint NIF_TIP = 0x04;
+    public const uint NIF_INFO = 0x10;
+
+    // Balloon icon: the standard information glyph.
+    public const uint NIIF_INFO = 0x01;
 
     public const uint WM_TIMER = 0x0113;
 
@@ -180,6 +187,12 @@ internal static class Native
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    public static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]

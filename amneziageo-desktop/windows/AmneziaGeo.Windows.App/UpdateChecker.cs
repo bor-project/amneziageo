@@ -7,7 +7,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// The result of an application update check.
 /// </summary>
-internal sealed record UpdateInfo(bool Available, string Version, string SetupUrl, string Description, bool IsDowngrade);
+internal sealed record UpdateInfo(bool Available, string Version, string SetupUrl, string Description);
 
 /// <summary>
 /// Checks an HTTP update metadata file for a different version.
@@ -33,20 +33,19 @@ internal sealed class UpdateChecker(HttpClient http)
         var setup = string.IsNullOrWhiteSpace(meta.Setup) ? "AmneziaGeoSetup.exe" : meta.Setup;
         var setupUrl = new Uri(new Uri(metadataUrl), setup).ToString();
 
-        var (available, downgrade) = Compare(meta.Version, currentVersion);
-        return new UpdateInfo(available, meta.Version, setupUrl, meta.Description ?? string.Empty, downgrade);
+        return new UpdateInfo(IsNewer(meta.Version, currentVersion), meta.Version, setupUrl, meta.Description ?? string.Empty);
     }
 
-    private static (bool Available, bool Downgrade) Compare(string remote, string current)
+    // Only a strictly newer remote counts as an update: Burn refuses a bundle downgrade (0x80070666), so
+    // offering one would only fail silently.
+    private static bool IsNewer(string remote, string current)
     {
         if (System.Version.TryParse(remote, out var r) && System.Version.TryParse(current, out var c))
         {
-            var cmp = r.CompareTo(c);
-            return (cmp != 0, cmp < 0);
+            return r.CompareTo(c) > 0;
         }
 
-        // Treat any string difference as an update.
-        return (!string.Equals(remote.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase), false);
+        return !string.Equals(remote.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record UpdateMetadata(

@@ -6,8 +6,12 @@ namespace AmneziaGeo.Windows.Tray;
 
 /// <summary>
 /// The tray anchor entry point: a hidden owner window drives a Shell notify icon, a background link keeps the
-/// agent tunnel alive and feeds the icon its colour, and the context menu opens the GUI, connects, disconnects,
-/// or exits. A cold launch shows the menu as a popup so an experienced user can connect without the heavy GUI.
+/// agent tunnel alive and feeds the icon its colour and tooltip, balloons announce the connect start and
+/// completion while the GUI is not in front, and the
+/// context menu opens the GUI, connects, disconnects,
+/// or exits. A cold launch with an active profile opens the lightweight launcher window so the user connects
+/// without the full GUI; the right-click menu is never auto-shown (#187). Launched with --connect (post-install
+/// auto-connect), it dials the active profile straight away and stays resident, no window (#188).
 /// </summary>
 internal static unsafe class Program
 {
@@ -25,10 +29,15 @@ internal static unsafe class Program
     private static uint _taskbarCreatedMsg;
     private static nint _classNamePtr;
     private static bool _popupPending;
+    private static bool _autoConnect;
+    private static bool _stateInitialized;
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        // Post-install auto-connect (#188): dial the active profile on cold launch instead of showing the launcher.
+        _autoConnect = Array.IndexOf(args, "--connect") >= 0;
+
         Native.SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
 
         // A second launch (shortcut clicked again) hands the running tray the "open GUI" nudge and exits.
@@ -68,8 +77,8 @@ internal static unsafe class Program
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
-        // Cold launch: bring up only the tray, then pop the menu once the first snapshot lands (or after a short
-        // fallback), so the user connects/opens without paying for the heavy GUI.
+        // Cold launch: bring up only the tray, then resolve once the first snapshot lands (or after a short
+        // fallback) - open the launcher with an active profile, or the full GUI without one.
         _popupPending = true;
         Native.SetTimer(_hwnd, PopupTimerId, PopupTimeoutMs, 0);
 
@@ -102,6 +111,10 @@ internal static unsafe class Program
                 else if (ev == Native.WM_RBUTTONUP)
                 {
                     ShowMenuAtCursor();
+                }
+                else if (ev == Native.NIN_BALLOONUSERCLICK)
+                {
+                    LaunchUi();
                 }
 
                 return 0;
@@ -201,37 +214,70 @@ internal static unsafe class Program
             return;
         }
 
+        // Balloon on real transitions only, never on the first snapshot (a tray restart over a live tunnel must
+        // not fire a spurious notice). Connect start is the 0->transitioning edge; a 2->transitioning edge is a
+        // disconnect, so it stays silent.
+        var justConnecting = _stateInitialized && state == 1 && _current == 0;
+        var justConnected = _stateInitialized && state == 2 && _current != 2;
         _current = state;
+        _stateInitialized = true;
         AddOrModifyIcon(Native.NIM_MODIFY);
+
+        // The GUI animates the connection itself, so only surface a balloon when the GUI is not the active window
+        // (auto-connect with no window, tray menu, or after the launcher has closed).
+        if ((justConnecting || justConnected) && !IsUiForeground())
+        {
+            ShowBalloon("AmneziaGeo", justConnected ? Labels.ConnectedInfo : Labels.ConnectingInfo);
+        }
     }
 
-    // Cold launch, once: with an active profile pop the menu so the user can connect without the GUI; with
-    // nothing selected (fresh install / reset / all removed) the menu only adds a step, so open the GUI instead.
+    // Whether the foreground window belongs to the GUI process; when it does, its own animation covers the state
+    // change and a balloon would be noise.
+    private static bool IsUiForeground()
+    {
+        var fg = Native.GetForegroundWindow();
+        if (fg == 0)
+        {
+            return false;
+        }
+
+        Native.GetWindowThreadProcessId(fg, out var pid);
+        if (pid == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            return string.Equals(process.ProcessName, "AmneziaGeo.Windows.Ui", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Cold launch, once: with an active profile open the lightweight launcher so the user connects without the
+    // full GUI; with nothing selected (fresh install / reset / all removed) the launcher only adds a step, so
+    // open the full GUI instead.
     private static void ResolveColdLaunch()
     {
         _popupPending = false;
         Native.KillTimer(_hwnd, PopupTimerId);
 
-        if (AgentLink.HasActiveProfile)
+        if (_autoConnect && AgentLink.HasActiveProfile)
         {
-            ShowMenuPopup();
+            // Post-install auto-connect: dial straight away and stay resident, no window (#188).
+            AgentLink.SendConnect();
+        }
+        else if (AgentLink.HasActiveProfile)
+        {
+            LaunchUi("--launcher");
         }
         else
         {
             LaunchUi();
-        }
-    }
-
-    private static void ShowMenuPopup()
-    {
-        var work = default(Native.RECT);
-        if (Native.SystemParametersInfoW(Native.SPI_GETWORKAREA, 0, ref work, 0))
-        {
-            ShowMenuAt(work.right, work.bottom, Native.TPM_RIGHTALIGN | Native.TPM_BOTTOMALIGN);
-        }
-        else
-        {
-            ShowMenuAtCursor();
         }
     }
 
@@ -286,7 +332,7 @@ internal static unsafe class Program
             uCallbackMessage = Native.WM_TRAY,
             hIcon = _icons.Length == 3 ? _icons[_current] : 0,
         };
-        SetTip(&nid, "AmneziaGeo");
+        SetTip(&nid, TipForState());
         Native.Shell_NotifyIconW(dwMessage, ref nid);
     }
 
@@ -312,16 +358,72 @@ internal static unsafe class Program
         nid->szTip[count] = '\0';
     }
 
-    private static void LaunchUi()
+    // Pops a system balloon (a toast on Win10/11) on the existing icon.
+    private static void ShowBalloon(string title, string text)
+    {
+        if (_icons.Length != 3)
+        {
+            return;
+        }
+
+        var nid = new Native.NOTIFYICONDATAW
+        {
+            cbSize = (uint)sizeof(Native.NOTIFYICONDATAW),
+            hWnd = _hwnd,
+            uID = 1,
+            uFlags = Native.NIF_INFO,
+            dwInfoFlags = Native.NIIF_INFO,
+        };
+        SetInfo(&nid, title, text);
+        Native.Shell_NotifyIconW(Native.NIM_MODIFY, ref nid);
+    }
+
+    private static void SetInfo(Native.NOTIFYICONDATAW* nid, string title, string text)
+    {
+        var titleCount = Math.Min(title.Length, 63);
+        for (var i = 0; i < titleCount; i++)
+        {
+            nid->szInfoTitle[i] = title[i];
+        }
+
+        nid->szInfoTitle[titleCount] = '\0';
+
+        var infoCount = Math.Min(text.Length, 255);
+        for (var i = 0; i < infoCount; i++)
+        {
+            nid->szInfo[i] = text[i];
+        }
+
+        nid->szInfo[infoCount] = '\0';
+    }
+
+    // Tooltip tracks the tunnel state; the transitional state stays the bare brand.
+    private static string TipForState()
+    {
+        return _current switch
+        {
+            2 => $"AmneziaGeo - {Labels.StatusConnected}",
+            0 => $"AmneziaGeo - {Labels.StatusDisconnected}",
+            _ => "AmneziaGeo",
+        };
+    }
+
+    private static void LaunchUi(string? arg = null)
     {
         try
         {
             var exe = Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.Windows.Ui.exe");
-            Process.Start(new ProcessStartInfo(exe)
+            var psi = new ProcessStartInfo(exe)
             {
                 UseShellExecute = false,
                 WorkingDirectory = AppContext.BaseDirectory,
-            });
+            };
+            if (!string.IsNullOrEmpty(arg))
+            {
+                psi.ArgumentList.Add(arg);
+            }
+
+            Process.Start(psi);
         }
         catch
         {

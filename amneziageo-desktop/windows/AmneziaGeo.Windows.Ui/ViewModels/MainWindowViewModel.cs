@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Avalonia.Threading;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.Ui.Services;
@@ -27,6 +28,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHome))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
+    [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
     private string _nav = "home";
 
     [ObservableProperty]
@@ -36,6 +38,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
     [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
+    [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
     private string _settingsSection = "profile";
 
     /// <summary>
@@ -54,6 +57,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Sources = new SourcesViewModel(connection, Home.ShowNotice, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
         // Seed backing field from prefs without echoing OnChanged.
         _settingsSection = prefs.SettingsSection;
+        General.PropertyChanged += OnGeneralPropertyChanged;
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
         _connection.SnapshotReceived += OnSnapshot;
@@ -122,6 +126,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsSettingsLogs => SettingsSection == "logs";
 
     public bool IsSettingsSources => SettingsSection == "sources";
+
+    /// <summary>
+    /// Whether the floating app-update banner shows. Hidden on the General page, which already carries the update section (#186).
+    /// </summary>
+    public bool AppUpdateBannerVisible => General.UpdateBannerVisible && !(IsSettings && IsSettingsGeneral);
 
     /// <summary>
     /// Starts the agent connection.
@@ -203,6 +212,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (value is "profile" or "config" or "routing" && Profile.OpenProfile is null && Home.ActiveProfile is not null)
         {
             Profile.OpenProfile = Home.ActiveProfile;
+        }
+    }
+
+    private void OnGeneralPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GeneralViewModel.UpdateBannerVisible))
+        {
+            OnPropertyChanged(nameof(AppUpdateBannerVisible));
         }
     }
 

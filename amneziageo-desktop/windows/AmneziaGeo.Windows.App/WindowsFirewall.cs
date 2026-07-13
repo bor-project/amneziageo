@@ -19,6 +19,8 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const byte WeightTun = 10;
     private const byte WeightApp = 14;
     private const byte WeightHyperV = 14;
+    // Block-list filters outrank every permit so a blocked destination is dropped regardless of LAN/tunnel/DHCP.
+    private const byte WeightBlockList = 15;
 
     // Infrastructure ranges (not user-controllable); LAN bypass comes from extraCidrs.
     private static readonly string[] LanInfraCidrsV4 =
@@ -54,9 +56,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     }
 
     /// <summary>
-    /// Arms the kill-switch; permits before block. Returns false on failure.
+    /// Arms the kill-switch; permits before block. Block-list CIDRs are dropped in both split and full.
+    /// Returns false on failure.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<string>? blockCidrs = null)
     {
         lock (_gate)
         {
@@ -104,8 +107,14 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     BlockAll(engine);
                 }
 
+                // Block-list drops apply in both modes; highest weight so they win over any permit.
+                if (blockCidrs is { Count: > 0 })
+                {
+                    BlockList(engine, blockCidrs);
+                }
+
                 _engine = engine;
-                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack})", tunnelInterfaceIndex, killSwitch, dualStack);
+                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack}, blocked={Blocked})", tunnelInterfaceIndex, killSwitch, dualStack, blockCidrs?.Count ?? 0);
                 return true;
             }
             catch (Exception ex)
@@ -277,6 +286,48 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             {
                 logger.LogWarning(ex, "kill-switch: skipping LAN CIDR {Cidr}", cidr);
             }
+        }
+    }
+
+    private void BlockList(IntPtr engine, IReadOnlyList<string> cidrs)
+    {
+        foreach (var cidr in cidrs)
+        {
+            try
+            {
+                BlockV4Cidr(engine, cidr);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "firewall: skipping block CIDR {Cidr}", cidr);
+            }
+        }
+    }
+
+    private void BlockV4Cidr(IntPtr engine, string cidr)
+    {
+        if (!TryParseV4Cidr(cidr, out var addr, out var mask))
+        {
+            logger.LogWarning("firewall: skipping invalid block CIDR {Cidr}", cidr);
+            return;
+        }
+
+        var maskPtr = Marshal.AllocHGlobal(2 * sizeof(uint)); // FWP_V4_ADDR_AND_MASK { UINT32 addr; UINT32 mask; }
+        try
+        {
+            Marshal.WriteInt32(maskPtr, 0, (int)addr);
+            Marshal.WriteInt32(maskPtr, sizeof(uint), (int)mask);
+            var cond = new[]
+            {
+                Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
+            };
+
+            Add(engine, LayerAleAuthConnectV4, WeightBlockList, ActionBlock, 0, cond, $"Block {cidr} (out)");
+            Add(engine, LayerAleAuthRecvAcceptV4, WeightBlockList, ActionBlock, 0, cond, $"Block {cidr} (in)");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(maskPtr);
         }
     }
 

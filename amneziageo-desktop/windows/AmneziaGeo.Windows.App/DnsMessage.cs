@@ -94,6 +94,31 @@ internal static class DnsMessage
         return response;
     }
 
+    // NXDOMAIN echo of the question: the definitive "no such name" a blocked domain gets, so the client
+    // never receives an address and the connection is refused outright.
+    public static byte[] BuildNxDomain(byte[] query)
+    {
+        var end = 12;
+        SkipName(query, ref end);
+        end += 4;
+        if (end < 12 || end > query.Length)
+        {
+            return query;
+        }
+
+        var response = new byte[end];
+        Array.Copy(query, response, end);
+        response[2] = (byte)(query[2] | 0x80); // QR = 1 (response), preserve opcode / RD
+        response[3] = 0x83;                     // RA = 1, RCODE = 3 (NXDOMAIN)
+        response[6] = 0;
+        response[7] = 0; // ANCOUNT = 0
+        response[8] = 0;
+        response[9] = 0; // NSCOUNT = 0
+        response[10] = 0;
+        response[11] = 0; // ARCOUNT = 0 (drop any EDNS OPT)
+        return response;
+    }
+
     // SERVFAIL echo of the question: lets a client fail fast and retry instead of waiting out
     // its resolver timeout when the upstream query could not be answered.
     public static byte[] BuildServFail(byte[] query)

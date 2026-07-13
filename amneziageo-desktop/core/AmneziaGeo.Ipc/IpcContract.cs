@@ -84,7 +84,8 @@ public static class IpcContract
     public const string OpListProcesses = "list-processes";
 
     /// <summary>
-    /// Command to add or update a routing list. Args: id (0 to insert), name, then rule tokens.
+    /// Command to add or update a routing list. Args: id (0 to insert), name, then role-tagged rule tokens
+    /// ("proxy|geosite:x", "direct|geoip:ru", "block|domain:y"; a bare token defaults to proxy).
     /// The ack message holds the resulting id.
     /// </summary>
     public const string OpSaveRoutingList = "save-routing-list";
@@ -95,8 +96,8 @@ public static class IpcContract
     public const string OpRemoveRoutingList = "remove-routing-list";
 
     /// <summary>
-    /// Command to fetch a routing list's full rules. Args: id. The ack message holds
-    /// newline-separated rule tokens (geosite:openai etc).
+    /// Command to fetch a routing list's full rules. Args: id. The ack message holds newline-separated
+    /// role-tagged rule tokens ("proxy|geosite:openai", "block|domain:x" etc).
     /// </summary>
     public const string OpGetRoutingList = "get-routing-list";
 
@@ -107,16 +108,16 @@ public static class IpcContract
     public const string OpAssignRouting = "assign-routing";
 
     /// <summary>
-    /// Command to set a routing list's traffic settings. Args: routing list id, then optional local DNS
-    /// (comma/space-separated; empty = auto-detect), exclusions (one entry per line / comma-separated),
-    /// all-UDP ("on"/"off"), mode ("split"/"full"), use-IPv6 ("on"/"off"). An all-default tuple clears the
-    /// row. Applies on the next connect.
+    /// Command to set a routing list's traffic settings. Args: routing list id, exclusions (one entry per
+    /// line / comma-separated), all-UDP ("on"/"off"), mode ("split"/"full", derived from global-proxy),
+    /// use-IPv6 ("on"/"off"), use-global-proxy ("on"/"off"). An all-default tuple clears the row. Applies on
+    /// the next connect.
     /// </summary>
     public const string OpSetRoutingSettings = "set-routing-settings";
 
     /// <summary>
     /// Command to fetch a routing list's traffic settings. Args: routing list id. The ack message holds a
-    /// JSON object { localDns, exclusions, allUdp, mode, useIpv6 } (defaults when no row is stored).
+    /// JSON object { exclusions, allUdp, mode, useIpv6, useGlobalProxy } (defaults when no row is stored).
     /// </summary>
     public const string OpGetRoutingSettings = "get-routing-settings";
 

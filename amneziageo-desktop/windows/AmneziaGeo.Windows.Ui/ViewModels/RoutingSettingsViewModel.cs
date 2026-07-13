@@ -1,34 +1,32 @@
 using System.Text.Json;
 using AmneziaGeo.Ipc;
-using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// The per-routing-list traffic editor shown in the Routing settings section: the bypass-exclusions list
-/// and whether all UDP is forced through the tunnel. Loaded through the agent and saved as a block; the
-/// list's rule set lives separately in RoutingListEditorViewModel. Applies on the next connect.
+/// The per-routing-list traffic editor shown in the Routing settings section: the global-proxy flag, all-UDP,
+/// and IPv6. Loaded through the agent and saved as a block; the list's rule set (with its Direct bypass bucket)
+/// lives separately in RoutingListEditorViewModel. Applies on the next connect.
 /// </summary>
 internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditScope
 {
     private readonly AgentConnection _connection;
 
     // Baseline captured on load / commit; the fields are dirty when they differ from it (#143).
-    private string _baseExclusions = string.Empty;
     private bool _baseAllUdp;
     private bool _baseUseIpv6;
-
-    [ObservableProperty]
-    private string _exclusions = string.Empty;
+    private bool _baseUseGlobalProxy;
 
     [ObservableProperty]
     private bool _allUdp;
 
     [ObservableProperty]
     private bool _useIpv6;
+
+    [ObservableProperty]
+    private bool _useGlobalProxy;
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -39,12 +37,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     // True while LoadAsync seeds the fields.
     private bool _loading;
 
-    // Autosave: toggles persist at once, text fields on blur; a reconnect need surfaces via the standard banner.
+    // Autosave: toggles persist at once; a reconnect need surfaces via the standard banner.
     private bool _committing;
     private bool _commitPending;
 
     /// <summary>
-    /// When set, edits persist through the agent as they happen (toggles at once, text on blur).
+    /// When set, edits persist through the agent as they happen.
     /// </summary>
     public bool AutoSave { get; set; }
 
@@ -69,14 +67,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     public void Retarget(long id) => ListId = id;
 
     /// <summary>
-    /// True when exclusions / all-UDP / IPv6 differ from the last loaded or committed values (#143).
+    /// True when global-proxy / all-UDP / IPv6 differ from the last loaded or committed values (#143).
     /// </summary>
     public bool IsDirty { get; private set; }
 
     /// <inheritdoc />
     public event EventHandler? DirtyChanged;
-
-    partial void OnExclusionsChanged(string value) => OnEdited();
 
     partial void OnAllUdpChanged(bool value)
     {
@@ -90,8 +86,12 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
-    // A field changed: recompute dirtiness against the baseline. No auto-save - the header Save/Cancel commits
-    // or reverts the whole item at once (#143), which is what keeps a mid-type edit from persisting per keystroke.
+    partial void OnUseGlobalProxyChanged(bool value)
+    {
+        OnEdited();
+        FireAutoSave();
+    }
+
     private void OnEdited() => RecomputeDirty();
 
     private void RecomputeDirty()
@@ -104,9 +104,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         // Any edit clears a stale validation / status line (#3).
         StatusMessage = string.Empty;
 
-        var dirty = !string.Equals(Exclusions, _baseExclusions, StringComparison.Ordinal)
-            || AllUdp != _baseAllUdp
-            || UseIpv6 != _baseUseIpv6;
+        var dirty = AllUdp != _baseAllUdp
+            || UseIpv6 != _baseUseIpv6
+            || UseGlobalProxy != _baseUseGlobalProxy;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -120,9 +120,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// <inheritdoc />
     public void CaptureBaseline()
     {
-        _baseExclusions = Exclusions ?? string.Empty;
         _baseAllUdp = AllUdp;
         _baseUseIpv6 = UseIpv6;
+        _baseUseGlobalProxy = UseGlobalProxy;
         if (IsDirty)
         {
             IsDirty = false;
@@ -136,9 +136,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         _loading = true;
         try
         {
-            Exclusions = _baseExclusions;
             AllUdp = _baseAllUdp;
             UseIpv6 = _baseUseIpv6;
+            UseGlobalProxy = _baseUseGlobalProxy;
             StatusMessage = string.Empty;
         }
         finally
@@ -171,9 +171,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             {
                 using var doc = JsonDocument.Parse(ack.Message);
                 var root = doc.RootElement;
-                Exclusions = root.TryGetProperty("exclusions", out var ex) ? ex.GetString() ?? string.Empty : string.Empty;
                 AllUdp = root.TryGetProperty("allUdp", out var udp) && udp.ValueKind == JsonValueKind.True;
                 UseIpv6 = root.TryGetProperty("useIpv6", out var v6) && v6.ValueKind == JsonValueKind.True;
+                UseGlobalProxy = root.TryGetProperty("useGlobalProxy", out var gp) && gp.ValueKind == JsonValueKind.True;
             }
             catch (JsonException)
             {
@@ -189,8 +189,9 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     }
 
     /// <summary>
-    /// Persists exclusions + all-UDP + IPv6 for this list as one block (#143 header Save); applies on reconnect.
-    /// Returns whether the agent accepted it.
+    /// Persists global-proxy + all-UDP + IPv6 for this list as one block (#143 header Save); applies on reconnect.
+    /// Returns whether the agent accepted it. Exclusions are no longer edited here (bypass moved to the Direct
+    /// bucket), so an empty exclusions arg is always sent.
     /// </summary>
     public async Task<bool> CommitAsync()
     {
@@ -200,10 +201,11 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetRoutingSettings,
             [
                 ListId.ToString(),
-                (Exclusions ?? string.Empty).Trim(),
+                string.Empty,
                 AllUdp ? "on" : "off",
-                "split",
+                UseGlobalProxy ? "full" : "split",
                 UseIpv6 ? "on" : "off",
+                UseGlobalProxy ? "on" : "off",
             ]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
@@ -262,53 +264,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         finally
         {
             _committing = false;
-        }
-    }
-
-    /// <summary>
-    /// Fetches the machine's local subnets from the agent and merges them into the exclusions list.
-    /// </summary>
-    [RelayCommand]
-    private async Task AddLocalSubnetsAsync()
-    {
-        IsBusy = true;
-        try
-        {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListLocalSubnets, []));
-            if (!ack.Ok)
-            {
-                StatusMessage = ack.Message;
-                return;
-            }
-
-            var subnets = ack.Message
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-            var lines = (Exclusions ?? string.Empty)
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Split('\n')
-                .Select(line => line.Trim())
-                .Where(line => line.Length > 0)
-                .ToList();
-            var seen = new HashSet<string>(lines, StringComparer.OrdinalIgnoreCase);
-
-            var added = subnets.Where(subnet => seen.Add(subnet)).ToList();
-            if (added.Count > 0)
-            {
-                lines.AddRange(added);
-                Exclusions = string.Join(Environment.NewLine, lines);
-                await AutoSaveAsync();
-            }
-
-            StatusMessage = added.Count > 0
-                ? Loc.Instance.Get("RoutingSettings_LocalSubnetsAdded", added.Count)
-                : subnets.Length == 0
-                    ? Loc.Instance.Get("RoutingSettings_NoActiveLocalSubnets")
-                    : Loc.Instance.Get("RoutingSettings_AllLocalSubnetsPresent");
-        }
-        finally
-        {
-            IsBusy = false;
         }
     }
 }

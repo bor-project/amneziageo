@@ -1203,7 +1203,26 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, string.Join('\n', lines));
     }
 
-    private static bool IsAppRule(string rule) => rule.StartsWith("app:", StringComparison.OrdinalIgnoreCase);
+    private static bool IsAppRule(string rule)
+    {
+        var bar = rule.IndexOf('|');
+        var token = bar > 0 ? rule[(bar + 1)..] : rule;
+        return token.StartsWith("app:", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Rules that only take effect on a fresh tunnel: any app rule, plus the whole Direct/Block buckets
+    // (proxy geo is reconciled live by the domain tracker; these are not).
+    private static bool RequiresReconnect(string rule)
+    {
+        if (IsAppRule(rule))
+        {
+            return true;
+        }
+
+        var bar = rule.IndexOf('|');
+        var role = bar > 0 ? rule[..bar].ToLowerInvariant() : "proxy";
+        return role is "direct" or "block";
+    }
 
     private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -1223,19 +1242,19 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, "name is required");
         }
 
-        // App rules apply on a fresh tunnel; domains and geoip ranges the running tunnel picks up live.
-        var previousApps = id > 0 && await store.GetRoutingListAsync(id, ct) is { } previous
-            ? previous.Rules.Select(GeoConfigurator.Format).Where(IsAppRule).ToHashSet(StringComparer.Ordinal)
+        // Proxy geo (domains/geoip) applies live; app rules and the Direct/Block buckets need a fresh tunnel.
+        var previousReconnect = id > 0 && await store.GetRoutingListAsync(id, ct) is { } previous
+            ? previous.Rules.Select(GeoConfigurator.FormatWithRole).Where(RequiresReconnect).ToHashSet(StringComparer.Ordinal)
             : new HashSet<string>(StringComparer.Ordinal);
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
-        // Flag a reconnect only when the running profile routes through this list and its app rules changed.
+        // Flag a reconnect only when the running profile routes through this list and a connect-time rule changed.
         if (control.Running && BoundTarget is not null)
         {
             var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
-            var newApps = args.Skip(2).Where(IsAppRule).ToHashSet(StringComparer.Ordinal);
-            if (useRouting && listId == resultId && !newApps.SetEquals(previousApps))
+            var newReconnect = args.Skip(2).Where(RequiresReconnect).ToHashSet(StringComparer.Ordinal);
+            if (useRouting && listId == resultId && !newReconnect.SetEquals(previousReconnect))
             {
                 control.SetRestartRequired();
             }
@@ -1270,7 +1289,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown routing list: {id}");
         }
 
-        var tokens = list.Rules.Select(GeoConfigurator.Format);
+        var tokens = list.Rules.Select(GeoConfigurator.FormatWithRole);
         return new IpcAck(true, string.Join('\n', tokens));
     }
 
@@ -1286,26 +1305,26 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown routing list: {id}");
         }
 
-        // Args after id: exclusions, all-UDP, mode, use-IPv6. All optional; all-default clears the row.
+        // Args after id: exclusions, all-UDP, mode, use-IPv6, use-global-proxy. All optional; all-default clears the row.
         var exclusions = args.Count > 1 ? args[1].Trim() : string.Empty;
         var udpArg = args.Count > 2 ? args[2].Trim().ToLowerInvariant() : "off";
         var allUdp = udpArg is "on" or "1" or "true" or "yes";
-        var mode = args.Count > 3 ? args[3].Trim().ToLowerInvariant() : "split";
-        if (mode != "full")
-        {
-            mode = "split";
-        }
+        var globalArg = args.Count > 5 ? args[5].Trim().ToLowerInvariant() : "off";
+        var useGlobalProxy = globalArg is "on" or "1" or "true" or "yes";
 
         var v6Arg = args.Count > 4 ? args[4].Trim().ToLowerInvariant() : "off";
         var useIpv6 = v6Arg is "on" or "1" or "true" or "yes";
 
-        if (exclusions.Length == 0 && !allUdp && mode == "split" && !useIpv6)
+        // Mode mirrors the global-proxy flag: full routes everything minus Direct, split tunnels only Proxy.
+        var mode = useGlobalProxy ? "full" : "split";
+
+        if (exclusions.Length == 0 && !allUdp && !useIpv6 && !useGlobalProxy)
         {
             await store.RemoveRoutingSettingsAsync(id, ct);
         }
         else
         {
-            await store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useIpv6), ct);
+            await store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useIpv6, useGlobalProxy), ct);
         }
 
         // Settings apply on a fresh tunnel; flag a reconnect when the running profile routes through this list.
@@ -1318,7 +1337,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        logger.LogInformation("set-routing-settings {Id}: excl={Len} chars, allUdp={Udp}, mode={Mode}, useIpv6={V6}", id, exclusions.Length, allUdp, mode, useIpv6);
+        logger.LogInformation("set-routing-settings {Id}: excl={Len} chars, allUdp={Udp}, mode={Mode}, useIpv6={V6}, globalProxy={Global}", id, exclusions.Length, allUdp, mode, useIpv6, useGlobalProxy);
         return new IpcAck(true, IpcMessage.Key("Agent_RoutingSettingsSaved"));
     }
 
@@ -1341,6 +1360,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             allUdp = settings?.AllUdp ?? false,
             mode = settings?.Mode ?? "split",
             useIpv6 = settings?.UseIpv6 ?? false,
+            useGlobalProxy = settings?.UseGlobalProxy ?? false,
         });
         return new IpcAck(true, json);
     }

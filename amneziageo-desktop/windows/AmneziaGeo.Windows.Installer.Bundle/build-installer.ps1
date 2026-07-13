@@ -52,6 +52,7 @@ $win       = Split-Path $bundleDir -Parent                       # ...\amneziage
 
 $appProj    = Join-Path $win 'AmneziaGeo.Windows.App\AmneziaGeo.Windows.App.csproj'
 $uiProj     = Join-Path $win 'AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.csproj'
+$trayProj   = Join-Path $win 'AmneziaGeo.Windows.Tray\AmneziaGeo.Windows.Tray.csproj'
 $baProj     = Join-Path $win 'AmneziaGeo.Windows.Installer\AmneziaGeo.Windows.Installer.csproj'
 $msiProj    = Join-Path $win 'AmneziaGeo.Windows.Installer.Package\AmneziaGeo.Windows.Installer.Package.wixproj'
 $bundleProj = Join-Path $bundleDir 'AmneziaGeo.Windows.Installer.Bundle.wixproj'
@@ -229,7 +230,7 @@ function Build-Variant {
         Write-Host "== clean projects (rebuild) =="
         # SDK projects: clean, then drop obj so each per-arch variant restores fresh. Switching arch between
         # variants otherwise leaves a stale project.assets.json -> spurious NETSDK1047/1032 on the next clean.
-        foreach ($p in @($appProj, $uiProj, $baProj)) {
+        foreach ($p in @($appProj, $uiProj, $trayProj, $baProj)) {
             dotnet clean $p -c $Configuration -v q -nologo 2>$null
             $objDir = Join-Path (Split-Path $p -Parent) 'obj'
             if (Test-Path $objDir) { Remove-Item -Recurse -Force $objDir -ErrorAction SilentlyContinue }
@@ -250,6 +251,12 @@ function Build-Variant {
     Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $rid, $kind) =="
     dotnet publish $uiProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $iconProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "UI publish failed ($LASTEXITCODE)" }
+
+    # The resident tray anchor, NativeAOT (self-contained native regardless of the App/Ui payload kind), into the
+    # same stage: the shortcuts target it and it launches the GUI. AOT keeps its idle footprint a few MB.
+    Write-Host "== publish tray (AmneziaGeo.Windows.Tray, $rid, NativeAOT) =="
+    dotnet publish $trayProj -c $Configuration -r $rid -p:Version=$version $iconProps -o $stage
+    if ($LASTEXITCODE -ne 0) { throw "Tray publish failed ($LASTEXITCODE)" }
 
     # Sign our libraries/exes in the stage BEFORE the MSI packs them, so the installed files are signed.
     Invoke-SignLibraries $stage

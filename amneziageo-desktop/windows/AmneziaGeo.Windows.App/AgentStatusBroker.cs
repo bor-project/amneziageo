@@ -2288,9 +2288,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var routingLists = new List<RoutingListEntry>();
-        foreach (var list in await store.ListRoutingListsAsync(ct))
+        foreach (var (id, name, ruleCount, routeCount, domainCount) in await store.ListRoutingListSummariesAsync(ct))
         {
-            routingLists.Add(new RoutingListEntry(list.Id, list.Name, list.Rules.Count, list.Routes.Count, list.Domains.Count));
+            routingLists.Add(new RoutingListEntry(id, name, ruleCount, routeCount, domainCount));
         }
 
         var settings = await settingsStore.LoadAsync(ct);

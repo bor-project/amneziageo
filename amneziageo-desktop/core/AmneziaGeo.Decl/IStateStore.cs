@@ -209,6 +209,12 @@ public interface IStateStore
     Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Returns id, name, and rule/route/domain counts for every routing list, without deserializing the rule
+    /// rows or the materialized JSON. Backs the status snapshot, which needs only the counts.
+    /// </summary>
+    Task<IReadOnlyList<(long Id, string Name, int RuleCount, int RouteCount, int DomainCount)>> ListRoutingListSummariesAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Removes a routing list by id. Profile assignments are cleared.
     /// </summary>
     Task RemoveRoutingListAsync(long id, CancellationToken ct = default);

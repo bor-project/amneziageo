@@ -14,6 +14,9 @@
     <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
     <IconFile Condition="'$(IconFile)' == ''">Assets\AmneziaGeo.ico</IconFile>
     <ApplicationIcon Condition="'$(HasIcon)' == 'true'">$(IconFile)</ApplicationIcon>
+    <!-- Precompile app assemblies so a launch (now frequent: the GUI fully exits on close) JITs less.
+         NOT InvariantGlobalization: the UI resolves named cultures (ru/en) for live language switching. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
   <ItemGroup>

@@ -103,6 +103,12 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- System.Management relies on built-in COM interop, disabled by default on net10. -->
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <!-- Service runtime tuning. R2R precompiles the app assemblies so the agent AND every per-tunnel copy skip
+         JIT-ing them (less startup CPU + JIT working set). InvariantGlobalization drops ICU from both processes:
+         the App is culture-clean (no AmneziaGeo.Localization reference; all parse/format uses InvariantCulture).
+         Do NOT set InvariantGlobalization on the UI/Installer - they resolve named cultures (ru/en). -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
 </Project>

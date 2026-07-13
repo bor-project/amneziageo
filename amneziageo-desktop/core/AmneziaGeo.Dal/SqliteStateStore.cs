@@ -27,6 +27,16 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         {
             await connection.OpenAsync(ct).ConfigureAwait(false);
 
+            // WAL is persisted in the DB header (set once): the 1-5s domain poll reader and on-demand hydration
+            // no longer block on the writer's lock, and BackupToAsync's wal_checkpoint(TRUNCATE) becomes
+            // meaningful. Safe multi-process on the local ProgramData disk shared by the agent and each tunnel.
+            var walCommand = connection.CreateCommand();
+            await using (walCommand.ConfigureAwait(false))
+            {
+                walCommand.CommandText = "PRAGMA journal_mode=WAL;";
+                await walCommand.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
             var schemaVersion = await ReadUserVersionAsync(connection, ct).ConfigureAwait(false);
             if (schemaVersion != SchemaVersion)
             {

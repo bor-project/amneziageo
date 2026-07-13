@@ -125,6 +125,10 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
                     Directory.Move(configsDir, $"{configsDir}.pre-restore-{stamp}");
                 }
 
+                // Drop the replaced DB's WAL sidecars: a leftover -wal would replay onto the restored file.
+                File.Delete($"{dbPath}-wal");
+                File.Delete($"{dbPath}-shm");
+
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
                 zip.GetEntry("state.db")?.ExtractToFile(dbPath, overwrite: true);
 

@@ -22,7 +22,7 @@
   wintun.dll, wstunnel.exe) currently ship x64-only - an arm64 build is wired end-to-end but is not
   runtime-correct until arm64 natives are added. x64 is the supported target today.
 
-  The bundle Version is 1.0.1.<git-commit-count> so every build is strictly newer to Burn; combined
+  The bundle Version is 1.0.2.<git-commit-count> so every build is strictly newer to Burn; combined
   with the MSI MajorUpgrade/@AllowDowngrades this makes reinstall-same-code, update and downgrade all
   work.
 
@@ -324,7 +324,7 @@ function Build-Variant {
 
 Assert-SigningCert
 
-# ---- version: -Version override (deploy.ps1 drives it), else 1.0.1.<commit count> ----
+# ---- version: -Version override (deploy.ps1 drives it), else 1.0.2.<commit count> ----
 if ($Version) {
     if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "Invalid -Version '$Version' (expected N.N.N.N)." }
     $version = $Version
@@ -333,7 +333,7 @@ if ($Version) {
 else {
     $build = (& git -C $win rev-list --count HEAD).Trim()
     if (-not $build) { $build = '0' }
-    $version = "1.0.1.$build"
+    $version = "1.0.2.$build"
     Write-Host "== bundle version $version =="
 }
 

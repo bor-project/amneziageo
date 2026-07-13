@@ -22,9 +22,13 @@ internal static class AppHost
 
         var builder = Host.CreateApplicationBuilder();
 
-        // In-memory log ring for the UI activity journal; fed by the Serilog sink below.
-        var logBuffer = new LogRingBuffer();
-        builder.Services.AddSingleton(logBuffer);
+        // In-memory log ring for the UI activity journal, fed by the Serilog sink below. Only the agent serves it
+        // (AgentStatusBroker / DiagnosticsCollector); a transient per-tunnel process has no reader, so skip it there.
+        var logBuffer = agentTarget is not null ? new LogRingBuffer() : null;
+        if (logBuffer is not null)
+        {
+            builder.Services.AddSingleton(logBuffer);
+        }
 
         // Live verbosity switch: shared by both processes, kept in sync with the "log-level" setting.
         var logLevel = new LogLevelController();
@@ -40,14 +44,19 @@ internal static class AppHost
         builder.Services.AddSingleton(logFileSink);
 
         builder.Logging.ClearProviders();
-        builder.Services.AddSerilog(config => config
-            .MinimumLevel.ControlledBy(logLevel.Switch)
-            .Enrich.FromLogContext()
-            // Source column: the logger's class name, derived from SourceContext.
-            .Enrich.With(new LogSourceEnricher())
-            .WriteTo.Console()
-            .WriteTo.Sink(logFileSink)
-            .WriteTo.Sink(new RingBufferSink(logBuffer)));
+        builder.Services.AddSerilog(config =>
+        {
+            config.MinimumLevel.ControlledBy(logLevel.Switch)
+                .Enrich.FromLogContext()
+                // Source column: the logger's class name, derived from SourceContext.
+                .Enrich.With(new LogSourceEnricher())
+                .WriteTo.Console()
+                .WriteTo.Sink(logFileSink);
+            if (logBuffer is not null)
+            {
+                config.WriteTo.Sink(new RingBufferSink(logBuffer));
+            }
+        });
 
         RegisterServices(builder.Services);
 

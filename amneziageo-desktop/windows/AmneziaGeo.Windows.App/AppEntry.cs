@@ -36,7 +36,9 @@ public static class AppEntry
         };
         using (var host = AppHost.Build(agentTarget))
         {
-            await EnsureStoreAsync(host.Services);
+            // Skip the one-time legacy-config migration on the tunnel connect hot path (--service): the agent /
+            // installer already ran it, and a tunnel only reads its config from the DB.
+            await EnsureStoreAsync(host.Services, runMigration: args is not ["--service", _]);
             if (agentTarget is not null)
             {
                 // Take over the status pipe before binding: a prior owner's DACL otherwise spins creation on ACCESS_DENIED.
@@ -53,13 +55,16 @@ public static class AppEntry
         }
     }
 
-    private static async Task EnsureStoreAsync(IServiceProvider services)
+    private static async Task EnsureStoreAsync(IServiceProvider services, bool runMigration)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(TunnelPaths.StateDbFile())!);
         var store = services.GetRequiredService<IStateStore>();
         await store.InitializeAsync();
 
-        // One-time: pull legacy on-disk wg-quick files into the database.
-        await services.GetRequiredService<ConfigRepository>().MigrateLegacyConfigsAsync();
+        if (runMigration)
+        {
+            // One-time: pull legacy on-disk wg-quick files into the database.
+            await services.GetRequiredService<ConfigRepository>().MigrateLegacyConfigsAsync();
+        }
     }
 }

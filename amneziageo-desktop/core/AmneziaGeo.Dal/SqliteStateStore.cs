@@ -1772,6 +1772,47 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<(long Id, string Name, int RuleCount, int RouteCount, int DomainCount)>> ListRoutingListSummariesAsync(CancellationToken ct = default)
+    {
+        var result = new List<(long, string, int, int, int)>();
+
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText =
+                    """
+                    SELECT rl.id, rl.name,
+                           (SELECT COUNT(*) FROM routing_list_rules r WHERE r.list_id = rl.id),
+                           json_array_length(NULLIF(rl.routes_json, '')),
+                           json_array_length(NULLIF(rl.domains_json, ''))
+                    FROM routing_lists rl ORDER BY rl.name;
+                    """;
+
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        result.Add((
+                            reader.GetInt64(0),
+                            reader.GetString(1),
+                            reader.GetInt32(2),
+                            reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
+                            reader.IsDBNull(4) ? 0 : reader.GetInt32(4)));
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
     public async Task RemoveRoutingListAsync(long id, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);

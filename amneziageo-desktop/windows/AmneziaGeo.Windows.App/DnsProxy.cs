@@ -63,6 +63,10 @@ internal sealed class DnsProxy
     // Bounds concurrent background revalidations so a burst of first-served domains cannot park many pool
     // threads (each Forward blocks up to UpstreamTimeoutMs) and starve the Handle path.
     private readonly SemaphoreSlim _revalidateSlots = new(4, 4);
+    // Hard caps so a long session cannot grow these per-domain sets unboundedly; overflow clears wholesale (a
+    // miss just re-forwards or re-runs the matcher). Otherwise cleared only on matcher rebuild / reconnect.
+    private const int MaxCacheEntries = 8192;
+    private const int MaxBypassEntries = 8192;
     // Volatile: read on the hot query path, replaced on the poll thread; the matcher is immutable.
     private volatile IReadOnlyList<GeoDomain> _domains;
     private volatile DomainMatcher _matcher;
@@ -196,6 +200,11 @@ internal sealed class DnsProxy
     private void MarkBypassed(string name)
     {
         var key = name.TrimEnd('.').ToLowerInvariant();
+        if (_bypass.Count >= MaxBypassEntries)
+        {
+            _bypass.Clear();
+        }
+
         _bypass[key] = Environment.TickCount64 + (BypassTtlSeconds * 1000L);
     }
 
@@ -820,6 +829,11 @@ internal sealed class DnsProxy
         }
 
         var seconds = Math.Clamp(ttl, MinCacheSeconds, MaxCacheSeconds);
+        if (_cache.Count >= MaxCacheEntries)
+        {
+            _cache.Clear();
+        }
+
         _cache[CacheKey(name, type)] = new CacheEntry((byte[])response.Clone(), DateTime.UtcNow.AddSeconds(seconds));
     }
 

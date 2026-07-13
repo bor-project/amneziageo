@@ -219,6 +219,12 @@ public interface IStateStore
     Task<ActiveRoutingListMaterialization?> GetActiveRoutingListMaterializationAsync(string tunnel, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns just the generation of the routing list projected onto a tunnel (no route/domain deserialization),
+    /// so the change poll can skip the full materialization read when nothing changed. Null when none is projected.
+    /// </summary>
+    Task<long?> GetActiveRoutingListGenerationAsync(string tunnel, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns ids of routing lists assigned to at least one profile.
     /// </summary>
     Task<IReadOnlyList<long>> ListAssignedRoutingListIdsAsync(CancellationToken ct = default);
@@ -267,6 +273,11 @@ public interface IStateStore
     /// Returns a stored application setting value, or null if absent.
     /// </summary>
     Task<string?> GetSettingAsync(string key, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns all application settings as a key/value map, so a caller reading several settings does one query.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> GetSettingsAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Inserts or updates an application setting value.

@@ -459,20 +459,25 @@ internal sealed class DomainTracker(
 
                 try
                 {
-                    var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName);
-                    if (current is not null && current.Generation != _knownGeneration)
+                    // Cheap generation probe first; pull (and deserialize) the full materialization only on change.
+                    var generation = await store.GetActiveRoutingListGenerationAsync(tunnelName);
+                    if (generation is not null && generation != _knownGeneration)
                     {
-                        ReconcileStaticRoutes(current.Routes);
-                        // Tag persisted rows with the new list id BEFORE the matcher rebuild: a domain newly
-                        // matched under the new list must persist with the correct list_id, not the previous one.
-                        lock (_lock)
+                        var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName);
+                        if (current is not null)
                         {
-                            _activeListId = current.ListId;
+                            ReconcileStaticRoutes(current.Routes);
+                            // Tag persisted rows with the new list id BEFORE the matcher rebuild: a domain newly
+                            // matched under the new list must persist with the correct list_id, not the previous one.
+                            lock (_lock)
+                            {
+                                _activeListId = current.ListId;
+                            }
+                            // Rebuild the matcher and prune domains that left the lists. Newly listed domains are
+                            // NOT pre-resolved - they resolve on demand when first queried.
+                            _onGeoDomainsChanged?.Invoke(current.Domains, ct);
+                            _knownGeneration = current.Generation;
                         }
-                        // Rebuild the matcher and prune domains that left the lists. Newly listed domains are
-                        // NOT pre-resolved - they resolve on demand when first queried.
-                        _onGeoDomainsChanged?.Invoke(current.Domains, ct);
-                        _knownGeneration = current.Generation;
                     }
                 }
                 catch (Exception ex)

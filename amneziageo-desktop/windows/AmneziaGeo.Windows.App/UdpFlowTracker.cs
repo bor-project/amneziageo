@@ -32,6 +32,11 @@ internal sealed class UdpFlowTracker : IDisposable
     private TraceEventSession? _session;
     // Seen destinations (raw daddr); ETW handler is single-threaded, no lock needed.
     private readonly HashSet<uint> _seen = [];
+    // Per-pid match decision with a short TTL. MatchesPid does a full process-tree snapshot, and a busy app
+    // sends thousands of UDP datagrams/sec (QUIC/video) - caching the decision for ~1s (AppRouteWatcher's own
+    // per-tick staleness bound) removes the data plane's worst CPU sink. Single-threaded handler, no lock.
+    private const long PidCacheTtlMs = 1000;
+    private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
 
     /// <summary>
     /// ctor
@@ -107,7 +112,7 @@ internal sealed class UdpFlowTracker : IDisposable
                     return;
                 }
             }
-            else if (_watcher is null || !_watcher.MatchesPid(pid))
+            else if (!MatchesPidCached(pid))
             {
                 return;
             }
@@ -151,6 +156,25 @@ internal sealed class UdpFlowTracker : IDisposable
         {
             _logger.LogDebug(ex, "UdpFlowTracker: parse error");
         }
+    }
+
+    // Cached per-pid app match; recomputes at most every PidCacheTtlMs so repeated datagrams skip the snapshot.
+    private bool MatchesPidCached(uint pid)
+    {
+        var now = Environment.TickCount64;
+        if (_pidMatch.TryGetValue(pid, out var entry) && entry.Expiry > now)
+        {
+            return entry.Match;
+        }
+
+        var match = _watcher is not null && _watcher.MatchesPid(pid);
+        if (_pidMatch.Count >= 4096)
+        {
+            _pidMatch.Clear();
+        }
+
+        _pidMatch[pid] = (now + PidCacheTtlMs, match);
+        return match;
     }
 
     // Marks destination handled; clears on overflow to bound the set.

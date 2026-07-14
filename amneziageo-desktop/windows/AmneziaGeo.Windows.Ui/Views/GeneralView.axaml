@@ -80,7 +80,9 @@
                     <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
                                FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />
                     <Button Classes="accent" Content="{l:Tr Main_DownloadButton}" Command="{Binding DownloadUpdateCommand}"
-                            IsVisible="{Binding !UpdateDownloaded}" IsEnabled="{Binding !UpdateDownloading}" />
+                            IsVisible="{Binding ShowDownloadButton}" />
+                    <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelDownloadCommand}"
+                            IsVisible="{Binding UpdateDownloading}" />
                     <Button Classes="accent" Content="{l:Tr Main_InstallButton}" Command="{Binding ApplyUpdateCommand}"
                             IsVisible="{Binding UpdateDownloaded}" />
                   </StackPanel>

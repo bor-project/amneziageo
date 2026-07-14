@@ -16,7 +16,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private readonly AgentConnection _connection;
 
     // Verbosity token shown when the agent reports nothing usable.
-    private const string DefaultLogLevel = "error";
+    private const string DefaultLogLevel = "warning";
 
     // Tail window requested per read (bytes); the agent clamps it.
     private const int LogTailBytes = 262144;
@@ -63,7 +63,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// <summary>
     /// Log verbosity options. The tokens are the same in every language.
     /// </summary>
-    public ObservableCollection<string> LogLevels { get; } = [DefaultLogLevel, "info", "debug", "trace"];
+    public ObservableCollection<string> LogLevels { get; } = ["error", "warning", "info", "debug", "trace"];
 
     [ObservableProperty]
     private string _logLevel = DefaultLogLevel;
@@ -201,12 +201,14 @@ internal sealed partial class LogsViewModel : ViewModelBase
             "trace" => 0,
             "debug" => 1,
             "info" => 2,
+            "warning" => 3,
             _ => 4,
         };
     }
 
-    // Severity parsed from a line's bracketed Serilog level token; -1 when the line carries none (route log,
-    // wrapped continuations) so it is never hidden by the level filter.
+    // Severity parsed from a line's bracketed level token; -1 when a line carries none (wrapped exception
+    // continuations) so it is never hidden by the level filter. Route-log lines carry their own [INF]/[ERR]
+    // token, so the picker filters them by the selected level and above, same as the agent log.
     private static int LineSeverity(string line)
     {
         if (line.Contains("[ERR]", StringComparison.Ordinal) || line.Contains("[FTL]", StringComparison.Ordinal))
@@ -512,7 +514,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     {
         return token switch
         {
-            "trace" or "debug" or "info" => token,
+            "trace" or "debug" or "info" or "warning" or "error" => token,
             _ => DefaultLogLevel,
         };
     }

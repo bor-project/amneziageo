@@ -516,6 +516,17 @@ internal sealed class DnsProxy
                 // Followers share the leader's buffer; answer each client with its own transaction id.
                 response = ApplyTransactionId(shared, query);
 
+                // Feed the app-promotion hint cache from every real resolution (matched or not), so an app CDN
+                // domain in no geo rule still populates the reverse map; a promoted name routes its IPs here.
+                if (name is not null && _tracker is not null)
+                {
+                    var learned = DnsMessage.Addresses(shared).Select(a => a.ToString()).ToList();
+                    if (learned.Count > 0)
+                    {
+                        _tracker.NoteResolution(name, learned);
+                    }
+                }
+
                 // Routing-log line for a real resolution, written only by the coalescing leader.
                 if (RouteLog.Enabled && name is not null && result.Leader)
                 {

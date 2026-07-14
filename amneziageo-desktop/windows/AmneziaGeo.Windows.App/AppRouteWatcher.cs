@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -19,6 +20,7 @@ internal sealed class AppRouteWatcher
     // LISTEN state has no remote peer.
     private const uint MibTcpStateListen = 2;
     private const int AfInet = 2;
+    private const int AfInet6 = 23;
     private const int TcpTableOwnerPidAll = 5;
 
     private readonly DomainTracker _tracker;
@@ -144,7 +146,7 @@ internal sealed class AppRouteWatcher
         var decision = new Dictionary<uint, bool>();
         var matchedIps = new List<string>();
 
-        foreach (var (remote, pid) in EnumerateTcpConnections())
+        foreach (var (remote, pid) in EnumerateTcpConnections().Concat(EnumerateTcp6Connections()))
         {
             if (!decision.TryGetValue(pid, out var matched))
             {
@@ -156,6 +158,9 @@ internal sealed class AppRouteWatcher
             {
                 var key = remote.ToString();
                 matchedIps.Add(key);
+
+                // Teach the tracker which domain this app used; routes the domain's known siblings now.
+                _tracker.NoteAppRemote(key);
 
                 // Log each new matched remote once.
                 if (_loggedRemotes.Count >= 65536)
@@ -357,6 +362,56 @@ internal sealed class AppRouteWatcher
         }
     }
 
+    private static IEnumerable<(IPAddress Remote, uint Pid)> EnumerateTcp6Connections()
+    {
+        var size = 0;
+        GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet6, TcpTableOwnerPidAll, 0);
+        if (size <= 0)
+        {
+            yield break;
+        }
+
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (GetExtendedTcpTable(buffer, ref size, false, AfInet6, TcpTableOwnerPidAll, 0) != 0)
+            {
+                yield break;
+            }
+
+            var count = Marshal.ReadInt32(buffer);
+            var rowPtr = buffer + 4;
+            var rowSize = Marshal.SizeOf<MibTcp6RowOwnerPid>();
+            for (var i = 0; i < count; i++)
+            {
+                var row = Marshal.PtrToStructure<MibTcp6RowOwnerPid>(rowPtr);
+                rowPtr += rowSize;
+
+                if (row.dwState == MibTcpStateListen)
+                {
+                    continue; // no remote peer to route
+                }
+
+                var remote = new IPAddress(row.ucRemoteAddr);
+                if (remote.Equals(IPAddress.IPv6Any))
+                {
+                    continue; // no remote peer
+                }
+
+                if (!IsTunnelableRemote(remote))
+                {
+                    continue; // loopback/ULA/link-local/multicast
+                }
+
+                yield return (remote, row.dwOwningPid);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
     // Keep only public routable remotes; v6 arms for a future pass.
     internal static bool IsTunnelableRemote(IPAddress addr)
     {
@@ -485,6 +540,21 @@ internal sealed class AppRouteWatcher
         public uint dwLocalPort;
         public uint dwRemoteAddr;
         public uint dwRemotePort;
+        public uint dwOwningPid;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MibTcp6RowOwnerPid
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public byte[] ucLocalAddr;
+        public uint dwLocalScopeId;
+        public uint dwLocalPort;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+        public byte[] ucRemoteAddr;
+        public uint dwRemoteScopeId;
+        public uint dwRemotePort;
+        public uint dwState;
         public uint dwOwningPid;
     }
 

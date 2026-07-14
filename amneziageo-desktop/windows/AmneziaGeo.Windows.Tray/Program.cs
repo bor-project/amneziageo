@@ -6,8 +6,8 @@ namespace AmneziaGeo.Windows.Tray;
 
 /// <summary>
 /// The tray anchor entry point: a hidden owner window drives a Shell notify icon, a background link keeps the
-/// agent tunnel alive and feeds the icon its colour and tooltip, balloons announce the connect start and
-/// completion while the GUI is not in front, and the
+/// agent tunnel alive and feeds the icon its colour and tooltip, balloons announce the connect start,
+/// completion, and failure while the GUI is not in front, and the
 /// context menu opens the GUI, connects, disconnects,
 /// or exits. A cold launch with an active profile opens the lightweight launcher window so the user connects
 /// without the full GUI; the right-click menu is never auto-shown (#187). Launched with --connect (post-install
@@ -215,19 +215,31 @@ internal static unsafe class Program
         }
 
         // Balloon on real transitions only, never on the first snapshot (a tray restart over a live tunnel must
-        // not fire a spurious notice). Connect start is the 0->transitioning edge; a 2->transitioning edge is a
-        // disconnect, so it stays silent.
+        // not fire a spurious notice). Connect start is the 0->connecting edge; a connecting->disconnected edge is
+        // a failed attempt; a connected->disconnected edge is a normal disconnect, so it stays silent.
         var justConnecting = _stateInitialized && state == 1 && _current == 0;
         var justConnected = _stateInitialized && state == 2 && _current != 2;
+        var justFailed = _stateInitialized && state == 0 && _current == 1;
         _current = state;
         _stateInitialized = true;
         AddOrModifyIcon(Native.NIM_MODIFY);
 
         // The GUI animates the connection itself, so only surface a balloon when the GUI is not the active window
         // (auto-connect with no window, tray menu, or after the launcher has closed).
-        if ((justConnecting || justConnected) && !IsUiForeground())
+        if (!IsUiForeground())
         {
-            ShowBalloon("AmneziaGeo", justConnected ? Labels.ConnectedInfo : Labels.ConnectingInfo);
+            if (justConnected)
+            {
+                ShowBalloon("AmneziaGeo", Labels.ConnectedInfo);
+            }
+            else if (justConnecting)
+            {
+                ShowBalloon("AmneziaGeo", Labels.ConnectingInfo);
+            }
+            else if (justFailed)
+            {
+                ShowBalloon("AmneziaGeo", Labels.ConnectFailedInfo, Native.NIIF_WARNING);
+            }
         }
     }
 
@@ -359,7 +371,7 @@ internal static unsafe class Program
     }
 
     // Pops a system balloon (a toast on Win10/11) on the existing icon.
-    private static void ShowBalloon(string title, string text)
+    private static void ShowBalloon(string title, string text, uint infoFlags = Native.NIIF_INFO)
     {
         if (_icons.Length != 3)
         {
@@ -372,7 +384,7 @@ internal static unsafe class Program
             hWnd = _hwnd,
             uID = 1,
             uFlags = Native.NIF_INFO,
-            dwInfoFlags = Native.NIIF_INFO,
+            dwInfoFlags = infoFlags,
         };
         SetInfo(&nid, title, text);
         Native.Shell_NotifyIconW(Native.NIM_MODIFY, ref nid);

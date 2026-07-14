@@ -41,6 +41,9 @@ internal static class Native
     // Balloon icon: the standard information glyph.
     public const uint NIIF_INFO = 0x01;
 
+    // Balloon icon: the standard warning glyph.
+    public const uint NIIF_WARNING = 0x02;
+
     public const uint WM_TIMER = 0x0113;
 
     // Menu flags.

@@ -39,6 +39,11 @@ internal static class Labels
     public static string ConnectedInfo { get; private set; } = "Connection is active";
 
     /// <summary>
+    /// «Не удалось подключиться» / "Connection failed": warning balloon body when a connect attempt drops back.
+    /// </summary>
+    public static string ConnectFailedInfo { get; private set; } = "Connection failed";
+
+    /// <summary>
     /// Tooltip status «Подключено» / "Connected".
     /// </summary>
     public static string StatusConnected { get; private set; } = "Connected";
@@ -61,6 +66,7 @@ internal static class Labels
             Exit = "Выход";
             ConnectingInfo = "Подключение выполняется";
             ConnectedInfo = "Подключение активно";
+            ConnectFailedInfo = "Не удалось подключиться";
             StatusConnected = "Подключено";
             StatusDisconnected = "Отключено";
         }

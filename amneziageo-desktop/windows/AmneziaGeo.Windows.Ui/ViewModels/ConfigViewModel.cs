@@ -148,6 +148,17 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _ => string.Empty,
     };
 
+    // Landing on the Config section with nothing open: open the first config so it never opens empty. The active
+    // profile's config is already reflected via OnOpenProfileChanged; this fills the gap when the profile has
+    // none. A create-form draft in progress is left alone.
+    public void SelectFirstIfNone()
+    {
+        if (OpenConfig is null && !IsCreatingSectionConfig && Configs.Count > 0)
+        {
+            OpenConfig = Configs[0].Name;
+        }
+    }
+
     /// <summary>
     /// Reconciles the config catalogue from the snapshot.
     /// </summary>

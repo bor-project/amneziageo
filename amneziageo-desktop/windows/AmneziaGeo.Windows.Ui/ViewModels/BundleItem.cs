@@ -50,7 +50,7 @@ internal sealed partial class BundleItem : ViewModelBase
 
 /// <summary>
 /// A checkable rule token under a routing list. Unchecking drops just this rule from the exported
-/// list; the rest still travels. Tokens match what the agent exports (both use GeoConfigurator.Format).
+/// list; the rest still travels. Tokens match what the agent exports (both use GeoConfigurator.FormatWithRole).
 /// </summary>
 internal sealed partial class BundleRuleItem : ViewModelBase
 {

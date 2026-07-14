@@ -63,14 +63,15 @@ internal sealed class GeoConfigurator(IStateStore store)
         }
     }
 
-    // Materializes a list's rules into the three role buckets. Apps stay Proxy-only (per-app tunneling).
+    // Materializes a list's rules into the role buckets. Apps stay Proxy-only (per-app tunneling).
     private static RoutingList MaterializeRoutingList(long id, string name, IReadOnlyList<GeoRule> rules, GeoIndex index)
     {
         var proxy = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Proxy).ToList(), index);
         var direct = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Direct).ToList(), index);
         var block = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Block).ToList(), index);
+        var exclude = GeoMaterializer.Materialize(rules.Where(r => r.Role == RouteRole.Exclude).ToList(), index);
         return new RoutingList(id, name, rules, proxy.Routes, proxy.Domains, proxy.Apps,
-            direct.Routes, direct.Domains, block.Routes, block.Domains);
+            direct.Routes, direct.Domains, block.Routes, block.Domains, exclude.Routes, exclude.Domains);
     }
 
     /// <summary>
@@ -152,6 +153,7 @@ internal sealed class GeoConfigurator(IStateStore store)
     {
         RouteRole.Direct => "direct",
         RouteRole.Block => "block",
+        RouteRole.Exclude => "exclude",
         _ => "proxy",
     };
 
@@ -166,6 +168,7 @@ internal sealed class GeoConfigurator(IStateStore store)
                 "proxy" => RouteRole.Proxy,
                 "direct" => RouteRole.Direct,
                 "block" => RouteRole.Block,
+                "exclude" => RouteRole.Exclude,
                 _ => (RouteRole?)null,
             };
             if (role is not null)

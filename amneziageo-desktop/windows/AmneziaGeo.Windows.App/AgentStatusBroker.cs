@@ -657,7 +657,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                     continue;
                 }
 
-                var rules = list.Rules.Select(GeoConfigurator.Format).ToList();
+                // Role-tagged: a routing list's rules carry a bucket (proxy/direct/block/exclude). Formatting them
+                // bare would re-import every rule as Proxy and drop the bucket. Also matches the tokens the export
+                // tree shows (get-routing-list), so the keep-filter below compares like for like.
+                var rules = list.Rules.Select(GeoConfigurator.FormatWithRole).ToList();
 
                 // Drop rules the user unchecked in the export tree (machine-specific app rules, etc).
                 // No entry for this list = keep everything.
@@ -841,8 +844,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                     continue;
                 }
 
+                // Role-tagged, so a merge keeps the existing rules in their own buckets. A pre-role bundle carries
+                // bare tokens; those import as Proxy, as they did before roles existed.
                 List<string> rules = policy == "merge"
-                    ? existingList.Rules.Select(GeoConfigurator.Format).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
+                    ? existingList.Rules.Select(GeoConfigurator.FormatWithRole).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
                     : block.Rules.ToList();
                 await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, rules, ct);
                 if (block.Settings is { } sE)
@@ -1223,7 +1228,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return token.StartsWith("app:", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Rules that only take effect on a fresh tunnel: any app rule, plus the whole Direct/Block buckets
+    // Rules that only take effect on a fresh tunnel: any app rule, plus the whole Direct/Block/Exclude buckets
     // (proxy geo is reconciled live by the domain tracker; these are not).
     private static bool RequiresReconnect(string rule)
     {
@@ -1234,7 +1239,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         var bar = rule.IndexOf('|');
         var role = bar > 0 ? rule[..bar].ToLowerInvariant() : "proxy";
-        return role is "direct" or "block";
+        return role is "direct" or "block" or "exclude";
     }
 
     private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)

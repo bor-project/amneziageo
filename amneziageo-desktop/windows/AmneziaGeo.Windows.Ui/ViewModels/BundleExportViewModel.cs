@@ -121,8 +121,9 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
 
     /// <summary>
     /// Fetches each routing list's rule tokens so the export tree can offer per-rule exclusion.
-    /// Tokens match exactly what the agent exports (both go through GeoConfigurator.Format), so the
-    /// selection can filter by token string. Call once after construction, before showing the dialog.
+    /// Tokens match exactly what the agent exports (both go through GeoConfigurator.FormatWithRole, so they
+    /// carry the bucket prefix), so the selection can filter by token string. Call once after construction,
+    /// before showing the dialog.
     /// </summary>
     public async Task LoadRoutingRulesAsync()
     {

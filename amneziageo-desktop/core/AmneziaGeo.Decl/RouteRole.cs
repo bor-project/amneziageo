@@ -1,7 +1,7 @@
 namespace AmneziaGeo.Decl;
 
 /// <summary>
-/// Which of a routing list's three buckets a rule belongs to.
+/// Which of a routing list's buckets a rule belongs to.
 /// </summary>
 public enum RouteRole
 {
@@ -19,4 +19,9 @@ public enum RouteRole
     /// Blocked outright, always, regardless of the global proxy.
     /// </summary>
     Block,
+
+    /// <summary>
+    /// Kept off the tunnel always, in either mode (manual exclusions).
+    /// </summary>
+    Exclude,
 }

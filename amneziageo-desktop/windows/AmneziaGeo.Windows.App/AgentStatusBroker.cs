@@ -276,6 +276,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpListLogs => ListLogs(),
                 IpcContract.OpReadLog => ReadLog(command.Args),
                 IpcContract.OpClearLog => ClearLog(),
+                IpcContract.OpLogClient => LogClient(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
         }
@@ -284,6 +285,18 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             logger.LogWarning(ex, "command {Op} failed", command.Op);
             return new IpcAck(false, ex.Message);
         }
+    }
+
+    // Records a UI-side diagnostic line in the agent log; the UI process keeps no log of its own.
+    private IpcAck LogClient(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "log-client requires a message");
+        }
+
+        logger.LogWarning("ui: {Detail}", args[0]);
+        return new IpcAck(true, "logged");
     }
 
     private async Task<IpcAck> AddConfigAsync(IReadOnlyList<string> args, CancellationToken ct)

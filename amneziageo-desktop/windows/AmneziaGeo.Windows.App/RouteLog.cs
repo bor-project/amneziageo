@@ -40,8 +40,8 @@ internal static class RouteLog
             return;
         }
 
-        var status = ok ? "OK  " : "FAIL";
-        Append($"{status} {action,-14} {target} via {via}{(string.IsNullOrEmpty(note) ? string.Empty : "  " + note)}");
+        var level = ok ? "[INF]" : "[ERR]";
+        Append($"{level} {action,-14} {target} via {via}{(string.IsNullOrEmpty(note) ? string.Empty : "  " + note)}");
     }
 
     /// <summary>
@@ -54,7 +54,7 @@ internal static class RouteLog
             return;
         }
 
-        Append(message);
+        Append($"[INF] {message}");
     }
 
     private static void Append(string body)

@@ -940,6 +940,9 @@
   <data name="MainVm_UpdateError" xml:space="preserve">
     <value>Error: {0}</value>
   </data>
+  <data name="MainVm_UpdateDownloadFailed" xml:space="preserve">
+    <value>Failed to download the update. Please try again later.</value>
+  </data>
   <data name="MainVm_UpdateLaunching" xml:space="preserve">
     <value>Launching installer…</value>
   </data>

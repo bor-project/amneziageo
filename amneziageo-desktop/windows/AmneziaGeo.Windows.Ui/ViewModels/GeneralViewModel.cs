@@ -25,6 +25,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string? _bannerUpdateVersion;
     private string? _downloadedSetupPath;
     private string? _downloadedVersion;
+    private CancellationTokenSource? _downloadCts;
 
     // Set while OnCultureChanged re-localizes the combos; suppresses their change handlers.
     private bool _syncingCombos;
@@ -72,9 +73,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string _updateStatus = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
     private bool _updateDownloading;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
     private bool _updateDownloaded;
 
     [ObservableProperty]
@@ -124,6 +127,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// update section and its check control are hidden - there is nothing to check against.
     /// </summary>
     public bool HasUpdateUrl => !string.IsNullOrWhiteSpace(UpdateUrl);
+
+    /// <summary>
+    /// Show the download button only when idle: not while a download runs (then it is Cancel) and not once the
+    /// setup is downloaded (then it is Install).
+    /// </summary>
+    public bool ShowDownloadButton => !UpdateDownloading && !UpdateDownloaded;
 
     /// <summary>
     /// Whether the normal general page is shown (not a bundle export/import sub-view).
@@ -192,23 +201,55 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             return;
         }
 
+        using var cts = new CancellationTokenSource();
+        _downloadCts = cts;
         UpdateDownloading = true;
         UpdateDownloadPercent = 0;
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloading");
         try
         {
-            _downloadedSetupPath = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p));
+            _downloadedSetupPath = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p), cts.Token);
             _downloadedVersion = UpdateVersion;
             UpdateDownloaded = true;
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateReadyToInstall");
         }
+        catch (OperationCanceledException)
+        {
+            UpdateStatus = string.Empty;
+            UpdateDownloadPercent = 0;
+        }
         catch (Exception ex)
         {
-            UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
+            // Show a friendly line; the raw error goes to the agent log for diagnostics.
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloadFailed");
+            await LogToAgentAsync($"update download failed: {ex}");
         }
         finally
         {
             UpdateDownloading = false;
+            _downloadCts = null;
+        }
+    }
+
+    /// <summary>
+    /// Aborts the in-progress setup download.
+    /// </summary>
+    [RelayCommand]
+    private void CancelDownload()
+    {
+        _downloadCts?.Cancel();
+    }
+
+    // Forwards a diagnostic line to the agent log; the UI process keeps no log of its own.
+    private async Task LogToAgentAsync(string message)
+    {
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, [message]));
+        }
+        catch
+        {
+            // Best-effort: the failure is already surfaced to the user.
         }
     }
 
@@ -377,35 +418,58 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     // Streams the installer to a temp file, reporting integer download percent (mirrors the agent's
     // GeoFileUpdater loop but writes straight to disk - the setup is ~100 MB).
-    private static async Task<string> DownloadSetupAsync(string url, IProgress<int> progress)
+    private static async Task<string> DownloadSetupAsync(string url, IProgress<int> progress, CancellationToken ct)
     {
         var path = Path.Combine(Path.GetTempPath(), "AmneziaGeoSetup.exe");
-        using var http = new HttpClient();
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
-        var total = response.Content.Headers.ContentLength;
-        await using var source = await response.Content.ReadAsStreamAsync();
-        await using var file = File.Create(path);
-        var buffer = new byte[81920];
-        long read = 0;
-        var lastPercent = -1;
-        int n;
-        while ((n = await source.ReadAsync(buffer)) > 0)
+        try
         {
-            await file.WriteAsync(buffer.AsMemory(0, n));
-            read += n;
-            if (total is > 0)
+            using var http = new HttpClient();
+            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
+            var total = response.Content.Headers.ContentLength;
+            await using var source = await response.Content.ReadAsStreamAsync(ct);
+            await using var file = File.Create(path);
+            var buffer = new byte[81920];
+            long read = 0;
+            var lastPercent = -1;
+            int n;
+            while ((n = await source.ReadAsync(buffer, ct)) > 0)
             {
-                var percent = (int)(read * 100 / total.Value);
-                if (percent != lastPercent)
+                await file.WriteAsync(buffer.AsMemory(0, n), ct);
+                read += n;
+                if (total is > 0)
                 {
-                    lastPercent = percent;
-                    progress.Report(percent);
+                    var percent = (int)(read * 100 / total.Value);
+                    if (percent != lastPercent)
+                    {
+                        lastPercent = percent;
+                        progress.Report(percent);
+                    }
                 }
             }
-        }
 
-        return path;
+            return path;
+        }
+        catch
+        {
+            TryDeletePartial(path);
+            throw;
+        }
+    }
+
+    // Drops the half-written setup after a cancelled or failed download.
+    private static void TryDeletePartial(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+        }
     }
 }
 

@@ -280,6 +280,12 @@ public static class IpcContract
     public const string OpClearLog = "clear-log";
 
     /// <summary>
+    /// Command for the UI to record a diagnostic line in the agent log (the UI process keeps no log of its
+    /// own). Args: [0] message. Logged at warning level.
+    /// </summary>
+    public const string OpLogClient = "log-client";
+
+    /// <summary>
     /// Sent once by the UI to mark its pipe connection as a presence-holding session. No args. The agent
     /// ties the tunnel's lifetime to UI presence and disconnects after a short grace when the last UI
     /// session drops. Transient command clients never send this.

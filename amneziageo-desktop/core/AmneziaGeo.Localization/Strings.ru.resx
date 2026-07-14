@@ -940,6 +940,9 @@
   <data name="MainVm_UpdateError" xml:space="preserve">
     <value>Ошибка: {0}</value>
   </data>
+  <data name="MainVm_UpdateDownloadFailed" xml:space="preserve">
+    <value>Не удалось скачать обновление. Повторите позже.</value>
+  </data>
   <data name="MainVm_UpdateLaunching" xml:space="preserve">
     <value>Запуск установщика…</value>
   </data>

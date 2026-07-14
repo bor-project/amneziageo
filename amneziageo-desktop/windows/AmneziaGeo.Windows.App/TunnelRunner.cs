@@ -353,7 +353,7 @@ internal sealed class TunnelRunner(
             if (peer is not null)
             {
                 // Started after the geo-domain sink is attached to avoid a rebuild race.
-                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, appSettings.RefreshSeconds, stripV6);
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, domains, appSettings.RefreshSeconds, stripV6);
             }
         }
 

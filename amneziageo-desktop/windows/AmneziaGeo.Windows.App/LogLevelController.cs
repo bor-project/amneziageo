@@ -11,15 +11,15 @@ internal sealed class LogLevelController
     /// <summary>
     /// The default verbosity token.
     /// </summary>
-    public const string DefaultToken = "error";
+    public const string DefaultToken = "warning";
 
     /// <summary>
     /// The switch Serilog is configured to obey (AppHost binds MinimumLevel.ControlledBy to it).
     /// </summary>
-    public LoggingLevelSwitch Switch { get; } = new(LogEventLevel.Error);
+    public LoggingLevelSwitch Switch { get; } = new(LogEventLevel.Warning);
 
     /// <summary>
-    /// The current level as a persisted token ("error" / "info" / "debug" / "trace").
+    /// The current level as a persisted token ("error" / "warning" / "info" / "debug" / "trace").
     /// </summary>
     public string Current => Format(Switch.MinimumLevel);
 
@@ -41,6 +41,7 @@ internal sealed class LogLevelController
             "trace" => LogEventLevel.Verbose,
             "debug" => LogEventLevel.Debug,
             "info" => LogEventLevel.Information,
+            "warning" => LogEventLevel.Warning,
             _ => LogEventLevel.Error,
         };
     }
@@ -55,7 +56,8 @@ internal sealed class LogLevelController
             LogEventLevel.Verbose => "trace",
             LogEventLevel.Debug => "debug",
             LogEventLevel.Information => "info",
-            _ => DefaultToken,
+            LogEventLevel.Warning => "warning",
+            _ => "error",
         };
     }
 
@@ -64,6 +66,6 @@ internal sealed class LogLevelController
     /// </summary>
     public static bool IsValid(string? token)
     {
-        return token is "error" or "info" or "debug" or "trace";
+        return token is "error" or "warning" or "info" or "debug" or "trace";
     }
 }

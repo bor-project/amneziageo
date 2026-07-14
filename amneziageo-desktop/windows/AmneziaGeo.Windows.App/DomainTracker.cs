@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -23,6 +24,7 @@ internal sealed class DomainTracker(
     string peerPublicKey,
     IReadOnlyList<string> staticRoutes,
     IReadOnlyList<string> listRoutes,
+    IReadOnlyList<GeoDomain> geoDomains,
     int refreshSeconds,
     bool stripV6)
 {
@@ -30,6 +32,18 @@ internal sealed class DomainTracker(
     private readonly Dictionary<string, HashSet<string>> _current = [];
     // App-discovered remote IPs, unioned into allowed-ips so the watcher and DNS path share one authority.
     private readonly HashSet<string> _appIps = [];
+
+    // App-promotion hint cache (non-authoritative): learned name->IPs and its reverse index, plus the set of
+    // app-promoted domains. Feeds route-before-answer for a matched app's sibling CDN IPs; stale entries are
+    // harmless (at worst one dead /32), so these are NOT mirrored on Add/Replace/Remove eviction.
+    private readonly Dictionary<string, HashSet<string>> _nameToIps = [];
+    private readonly Dictionary<string, HashSet<string>> _ipToNames = [];
+    private readonly HashSet<string> _promotedApps = new(StringComparer.Ordinal);
+    private const int MaxLearnedIps = 8192;
+
+    // App INTERSECT geo gate: an app-touched destination is tunneled only when a domain it resolved to matches
+    // the active list's geosite rules. Rebuilt on materialization generation change, mirroring the DnsProxy matcher.
+    private volatile DomainMatcher? _geoMatcher = geoDomains.Count > 0 ? new DomainMatcher(geoDomains) : null;
 
     // All static geoip CIDRs advertised in allowed-ips: list ranges + connect infrastructure (tunnel-DNS /32s).
     private readonly HashSet<string> _staticRoutes = new(staticRoutes, StringComparer.Ordinal);
@@ -476,6 +490,8 @@ internal sealed class DomainTracker(
                             // Rebuild the matcher and prune domains that left the lists. Newly listed domains are
                             // NOT pre-resolved - they resolve on demand when first queried.
                             _onGeoDomainsChanged?.Invoke(current.Domains, ct);
+                            // Rebuild the app-gate matcher so app INTERSECT geo tracks live list edits, like the proxy matcher.
+                            _geoMatcher = current.Domains.Count > 0 ? new DomainMatcher(current.Domains) : null;
                             _knownGeneration = current.Generation;
                         }
                     }
@@ -505,52 +521,142 @@ internal sealed class DomainTracker(
     {
         lock (_lock)
         {
-            var index = EnsureIndex();
-            if (index is null)
+            return RouteAppIpsLocked(ips);
+        }
+    }
+
+    // Admits an app destination to the tunnel. With a geosite configured, only destinations whose resolved domain
+    // matches it pass (app INTERSECT geo); with none, every app destination passes (route-all fallback). Reverse
+    // index is built by NoteResolution; no geo-universe pre-materialization. Assumes _lock held.
+    private bool AppDestAllowed(string ip) =>
+        _geoMatcher is not { } m
+        || (_ipToNames.TryGetValue(ip, out var names) && names.Any(m.IsTunneled));
+
+    // Installs /32(/128) routes + allowed-ips for app IPs; assumes _lock held. Shared by the watcher path and
+    // the app-domain promotion path.
+    private bool RouteAppIpsLocked(IReadOnlyList<string> ips)
+    {
+        var index = EnsureIndex();
+        if (index is null)
+        {
+            return false; // adapter not up; caller retries
+        }
+
+        var addedCidrs = new List<string>();
+        var allHandled = true;
+        foreach (var ip in ips)
+        {
+            // v4-only tunnel: never route IPv6.
+            if (stripV6 && ip.Contains(':'))
             {
-                return false; // adapter not up; caller retries
+                continue;
             }
 
-            var addedCidrs = new List<string>();
-            var allHandled = true;
+            // Gate: route an app destination only when it matches a configured geo rule.
+            if (!AppDestAllowed(ip))
+            {
+                continue;
+            }
+
+            if (_appIps.Contains(ip))
+            {
+                continue;
+            }
+
+            // Bound the set so a chatty app cannot grow it without limit.
+            if (_appIps.Count >= 8192)
+            {
+                allHandled = false; // not recorded; caller retries
+                break;
+            }
+
+            // Advertise the IP only once its /32 route is installed, so routes and allowed-ips stay in sync.
+            var parsed = IPAddress.Parse(ip);
+            var ok = routes.AddTunnelRoute(parsed, index.Value);
+            logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
+            if (ok)
+            {
+                _appIps.Add(ip);
+                addedCidrs.Add(Cidr(parsed));
+            }
+            else
+            {
+                allHandled = false; // route add failed; caller retries
+            }
+        }
+
+        // Advertise new IPs incrementally; the set only grows within a session.
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        return allHandled;
+    }
+
+    /// <summary>
+    /// Records a real DNS resolution into the app-promotion hint cache (name->IPs + reverse index). When the
+    /// name is already app-promoted, its IPs are routed immediately so a promoted app domain's fresh sibling
+    /// CDN IPs are born tunnel-side (route-before-answer).
+    /// </summary>
+    public void NoteResolution(string name, IReadOnlyList<string> ips)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        lock (_lock)
+        {
+            // Bound the hint cache; wholesale clear mirrors the DNS cache eviction pattern.
+            if (_ipToNames.Count >= MaxLearnedIps)
+            {
+                _ipToNames.Clear();
+                _nameToIps.Clear();
+            }
+
+            var fwd = _nameToIps.TryGetValue(key, out var f) ? f : (_nameToIps[key] = new(StringComparer.Ordinal));
             foreach (var ip in ips)
             {
-                // v4-only tunnel: never route IPv6.
-                if (stripV6 && ip.Contains(':'))
+                fwd.Add(ip);
+                var rev = _ipToNames.TryGetValue(ip, out var r) ? r : (_ipToNames[ip] = new(StringComparer.Ordinal));
+                rev.Add(key);
+            }
+
+            if (_promotedApps.Contains(key))
+            {
+                RouteAppIpsLocked(ips);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A matched app touched a remote IP: promotes the domain(s) that IP resolved to (only geo-matching ones when a
+    /// geosite is configured) so their future resolutions route before the answer. Without a geosite the whole known
+    /// sibling set is pre-routed (route-all); with one, the gated sink routes just the touched IP.
+    /// </summary>
+    public void NoteAppRemote(string ip)
+    {
+        lock (_lock)
+        {
+            if (!_ipToNames.TryGetValue(ip, out var names))
+            {
+                return;
+            }
+
+            var matcher = _geoMatcher;
+            foreach (var name in names)
+            {
+                if (matcher is not null && !matcher.IsTunneled(name))
                 {
                     continue;
                 }
 
-                if (_appIps.Contains(ip))
+                if (!_promotedApps.Add(name))
                 {
                     continue;
                 }
 
-                // Bound the set so a chatty app cannot grow it without limit.
-                if (_appIps.Count >= 8192)
+                logger.LogInformation("app promoted domain {Name} via {Ip}", name, ip);
+                if (matcher is null && _nameToIps.TryGetValue(name, out var sib))
                 {
-                    allHandled = false; // not recorded; caller retries
-                    break;
-                }
-
-                // Advertise the IP only once its /32 route is installed, so routes and allowed-ips stay in sync.
-                var parsed = IPAddress.Parse(ip);
-                var ok = routes.AddTunnelRoute(parsed, index.Value);
-                logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
-                if (ok)
-                {
-                    _appIps.Add(ip);
-                    addedCidrs.Add(Cidr(parsed));
-                }
-                else
-                {
-                    allHandled = false; // route add failed; caller retries
+                    RouteAppIpsLocked(sib.ToList());
                 }
             }
 
-            // Advertise new IPs incrementally; the set only grows within a session.
-            uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
-            return allHandled;
+            RouteAppIpsLocked(new[] { ip });
         }
     }
 

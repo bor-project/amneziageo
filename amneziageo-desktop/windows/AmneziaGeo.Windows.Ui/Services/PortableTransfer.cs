@@ -37,6 +37,7 @@ internal static class PortableTransfer
     {
         name = string.Empty;
         var list = new List<string>();
+        var seen = new HashSet<string>();
         rules = list;
         if (string.IsNullOrWhiteSpace(text) || !text.Contains("#ageo-routing", System.StringComparison.OrdinalIgnoreCase))
         {
@@ -63,7 +64,7 @@ internal static class PortableTransfer
                 continue;
             }
 
-            if (!list.Contains(line))
+            if (seen.Add(line))
             {
                 list.Add(line);
             }

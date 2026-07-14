@@ -100,15 +100,15 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         Name = name;
     }
 
-    // Any role bucket changed: refresh suggestions/transfer, mark dirty, autosave (suppressed mid-sort).
+    // Any role bucket changed: refresh suggestions/transfer, mark dirty, autosave (suppressed mid-sort or while seeding).
     private void OnRulesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        if (_reordering)
+        if (_reordering || _seeding)
         {
             return;
         }
 
-        ApplySuggestionFilter();
+        _ = ApplySuggestionFilterAsync();
         MarkDirty();
         FireAutoSave();
     }
@@ -190,7 +190,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     };
 
     // After the active bucket swaps, refresh the suggestion filter for the newly shown bucket.
-    partial void OnSelectedRoleChanged(string value) => ApplySuggestionFilter();
+    partial void OnSelectedRoleChanged(string value) => _ = ApplySuggestionFilterAsync();
 
     // Total entries across all buckets.
     private int TotalRules => ProxyRules.Count + DirectRules.Count + BlockRules.Count + ExcludeRules.Count;
@@ -287,6 +287,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                         BucketFor(role).Add(plain);
                     }
                 }
+
+                await ApplySuggestionFilterAsync();
             }
 
             // Seeding done: snapshot the loaded state as the clean baseline; edits from here mark the item dirty.
@@ -317,21 +319,35 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         var tokens = response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         _allGeoTokens.Clear();
         _allGeoTokens.AddRange(tokens);
-        ApplySuggestionFilter();
+        await ApplySuggestionFilterAsync();
     }
+
+    // Discards a stale filter result.
+    private int _suggestionFilterToken;
 
     /// <summary>
     /// Rebuilds GeoSuggestions from cached tokens, dropping rules already in the list.
     /// </summary>
-    private void ApplySuggestionFilter()
+    private async Task ApplySuggestionFilterAsync()
     {
+        var token = ++_suggestionFilterToken;
         var selected = new HashSet<string>(Rules, StringComparer.Ordinal);
-        GeoSuggestions.Clear();
-        foreach (var token in _allGeoTokens
-                     .Where(token => !selected.Contains(token))
-                     .OrderBy(token => token, StringComparer.OrdinalIgnoreCase))
+        var pool = _allGeoTokens.ToArray();
+
+        var filtered = await Task.Run(() => pool
+            .Where(t => !selected.Contains(t))
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToList());
+
+        if (token != _suggestionFilterToken)
         {
-            GeoSuggestions.Add(token);
+            return;
+        }
+
+        GeoSuggestions.Clear();
+        foreach (var item in filtered)
+        {
+            GeoSuggestions.Add(item);
         }
     }
 
@@ -483,7 +499,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             _seeding = false;
         }
 
-        ApplySuggestionFilter();
+        _ = ApplySuggestionFilterAsync();
         MarkDirty();
     }
 
@@ -889,7 +905,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private void ShowTransferQr()
     {
         IsTransferQr = true;
-        BuildQr();
+        _ = BuildQrAsync();
     }
 
     [RelayCommand]
@@ -904,23 +920,33 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         OnPropertyChanged(nameof(TransferText));
         if (IsTransferQr)
         {
-            BuildQr();
+            _ = BuildQrAsync();
         }
     }
 
-    // Builds the QR for the current payload and records the attempt, so a null result reads as too-large
-    // only after a real generation.
-    private void BuildQr()
+    // Discards a stale QR build.
+    private int _qrBuildToken;
+
+    // Builds the QR for the current payload and records the attempt.
+    private async Task BuildQrAsync()
     {
-        RoutingQrImage = TryBuildQr();
+        var token = ++_qrBuildToken;
+        var payload = BuildTransferPayload();
+        var image = await Task.Run(() => TryBuildQr(payload));
+        if (token != _qrBuildToken)
+        {
+            return;
+        }
+
+        RoutingQrImage = image;
         QrAttempted = true;
     }
 
-    private Bitmap? TryBuildQr()
+    private static Bitmap? TryBuildQr(string payload)
     {
         try
         {
-            return QrCodec.Generate(BuildTransferPayload());
+            return QrCodec.Generate(payload);
         }
         catch
         {
@@ -940,20 +966,33 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(name))
+        // Seeds the whole replacement (name + every bucket).
+        _seeding = true;
+        try
         {
-            Name = name;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                Name = name;
+            }
+
+            ProxyRules.Clear();
+            DirectRules.Clear();
+            BlockRules.Clear();
+            ExcludeRules.Clear();
+            foreach (var rule in importedRules)
+            {
+                var (role, plain) = SplitRoleToken(rule);
+                BucketFor(role).Add(plain);
+            }
+        }
+        finally
+        {
+            _seeding = false;
         }
 
-        ProxyRules.Clear();
-        DirectRules.Clear();
-        BlockRules.Clear();
-        ExcludeRules.Clear();
-        foreach (var rule in importedRules)
-        {
-            var (role, plain) = SplitRoleToken(rule);
-            BucketFor(role).Add(plain);
-        }
+        _ = ApplySuggestionFilterAsync();
+        MarkDirty();
+        FireAutoSave();
 
         StatusMessage = Name.Trim().Length == 0
             ? Loc.Instance.Get("RoutingEditor_ImportedRulesNeedName", importedRules.Count)

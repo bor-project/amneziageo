@@ -47,7 +47,7 @@ AmneziaGeo solves this with live DNS interception. A local DNS proxy observes th
 
 ### Operations
 - Two-process architecture: a long-lived privileged agent service and a transient per-tunnel service, with the UI running unprivileged over IPC.
-- Signed MSI installer (WiX Burn bundle) with optional desktop and Start-menu shortcuts, persisted install options, and in-app auto-update.
+- MSI installer (WiX Burn bundle) with optional desktop and Start-menu shortcuts, persisted install options, and in-app auto-update.
 
 ## How it works
 
@@ -70,14 +70,24 @@ Full tunnel is tunneled by default, with specific exclusions routed back out. Sp
 
 ## Getting started (Windows)
 
-Requirements: Windows 10 or 11 (x64). The installer sets up a per-machine service and needs administrator rights.
+Requirements: Windows 10 or 11 (x64 or arm64). The installer sets up a per-machine service and needs administrator rights.
 
-1. Download the latest signed installer from [Releases](../../releases) (`AmneziaGeo-<version>-win-x64-*.exe`).
+1. Download an installer from [Releases](../../releases). Each release ships four, one per architecture and payload:
+
+   | Asset | Pick it when |
+   |---|---|
+   | `AmneziaGeo-<version>-win-x64-scd.exe` | Ordinary case on an Intel or AMD machine. Self-contained: carries its own .NET runtime, so nothing else is needed. |
+   | `AmneziaGeo-<version>-win-x64-fdd.exe` | Same machine, smaller download, but only if the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) is already installed. Framework-dependent: it neither bundles nor installs the runtime. |
+   | `AmneziaGeo-<version>-win-arm64-scd.exe` | Windows on ARM (Snapdragon and similar), self-contained. |
+   | `AmneziaGeo-<version>-win-arm64-fdd.exe` | Windows on ARM, framework-dependent. |
+
 2. Run it. It installs the AmneziaGeo agent service and the app.
 3. Launch AmneziaGeo and import a config: a `.conf` file, a QR code, or a shared bundle.
 4. Pick a routing list (or full tunnel) and connect.
 
 The app keeps itself up to date through the built-in updater.
+
+Release binaries are currently unsigned; see [Code signing](#code-signing).
 
 ## Beyond geo: apps, UDP, and the fallback proxy
 
@@ -172,7 +182,7 @@ Requirements: the .NET 10 SDK, Windows, and the WiX toolset for the installer.
 # UI and agent
 dotnet build amneziageo-desktop/windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj -c Release
 
-# Full signed installer (MSI plus Burn bundle), output to dist\AmneziaGeo-<version>-win-<arch>-<tag>.exe
+# Full installer (MSI plus Burn bundle), output to dist\AmneziaGeo-<version>-win-<arch>-<tag>.exe
 amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
 ```
 

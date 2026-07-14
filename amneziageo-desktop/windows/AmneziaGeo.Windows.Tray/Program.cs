@@ -32,6 +32,9 @@ internal static unsafe class Program
     private static bool _autoConnect;
     private static bool _stateInitialized;
 
+    // State the current transition started from; -1 until one is seen.
+    private static int _transitionFrom = -1;
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -215,11 +218,20 @@ internal static unsafe class Program
         }
 
         // Balloon on real transitions only, never on the first snapshot (a tray restart over a live tunnel must
-        // not fire a spurious notice). Connect start is the 0->connecting edge; a connecting->disconnected edge is
-        // a failed attempt; a connected->disconnected edge is a normal disconnect, so it stays silent.
+        // not fire a spurious notice). Connect start is the 0->connecting edge. The agent reports "disconnecting"
+        // as the same transitioning state as "connecting", so a 1->0 edge alone does not mean a failure: it is a
+        // failed dial only when the transition opened at disconnected. A teardown opens at connected (tray menu or
+        // the GUI's button, either way the user asked for it) and ends at disconnected, so it stays silent.
         var justConnecting = _stateInitialized && state == 1 && _current == 0;
         var justConnected = _stateInitialized && state == 2 && _current != 2;
-        var justFailed = _stateInitialized && state == 0 && _current == 1;
+        var justFailed = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 0;
+
+        // Records which edge opened the transition; skipped on the first snapshot, whose origin is unknown.
+        if (_stateInitialized && state == 1 && _current != 1)
+        {
+            _transitionFrom = _current;
+        }
+
         _current = state;
         _stateInitialized = true;
         AddOrModifyIcon(Native.NIM_MODIFY);

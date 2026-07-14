@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration, slug: burn-engine.
+
+     Input: a single burnengine.exe, detached from the bundle on the runner with `wix burn detach`.
+
+     SignPath has no composite element for a Burn bundle (<pe-file> is not composite), so it cannot open
+     the bundle and reach the engine itself. The detach / sign / reattach dance therefore stays on our
+     side, exactly as build-installer.ps1 does it locally. Signing the bundle .exe in place instead would
+     shift the file and staleify the attached-container offset recorded in its .wixburn section, and Burn
+     would fail at runtime with "failed to resolve source for WixAttachedContainer" (0x80070002). -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="burnengine.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

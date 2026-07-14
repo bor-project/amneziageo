@@ -199,12 +199,13 @@ internal static unsafe class Program
                 AgentLink.SendDisconnect();
                 break;
             case Native.ID_EXIT:
-                // Exit tears the tunnel down (if up) and unloads the tray.
+                // Exit tears the tunnel down (if up), closes any open GUI window, and unloads the tray.
                 if (_current != 0)
                 {
                     AgentLink.SendDisconnect();
                 }
 
+                CloseUi();
                 Native.DestroyWindow(hWnd);
                 break;
         }
@@ -430,6 +431,27 @@ internal static unsafe class Program
             0 => $"AmneziaGeo - {Labels.StatusDisconnected}",
             _ => "AmneziaGeo",
         };
+    }
+
+    // Mirrors the installer's own GUI shutdown (StopRunningApp): WM_CLOSE first, a forced kill only if it hangs -
+    // otherwise a window left open by --launcher or the full GUI outlives the tray it was supposed to exit with.
+    private static void CloseUi()
+    {
+        foreach (var p in Process.GetProcessesByName("AmneziaGeo.Windows.Ui"))
+        {
+            try
+            {
+                p.CloseMainWindow();
+                if (!p.WaitForExit(5000))
+                {
+                    p.Kill();
+                    p.WaitForExit(5000);
+                }
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static void LaunchUi(string? arg = null)

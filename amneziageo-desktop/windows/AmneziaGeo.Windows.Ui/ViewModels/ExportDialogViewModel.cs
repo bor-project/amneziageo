@@ -148,14 +148,34 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
 
         var payload = IsQrLink ? VpnLinkCodec.Encode(_baseConfText, ConfigName) : _baseConfText;
         LinkText = IsQrLink ? payload : string.Empty;
+        _ = RefreshQrAsync(payload);
+    }
+
+    // Discards a stale QR build.
+    private int _qrRefreshToken;
+
+    private async Task RefreshQrAsync(string payload)
+    {
+        var token = ++_qrRefreshToken;
+        var image = await Task.Run(() => TryEncodeQr(payload));
+        if (token != _qrRefreshToken)
+        {
+            return;
+        }
+
+        QrImage = image;
+    }
+
+    private static Bitmap? TryEncodeQr(string payload)
+    {
         try
         {
-            QrImage = QrCodec.Generate(payload);
+            return QrCodec.Generate(payload);
         }
         catch (Exception)
         {
             // Too large to encode as a QR.
-            QrImage = null;
+            return null;
         }
     }
 

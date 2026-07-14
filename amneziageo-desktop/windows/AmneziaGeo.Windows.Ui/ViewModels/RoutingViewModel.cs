@@ -101,6 +101,17 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         _ = RoutingSettings?.AutoSaveAsync();
     }
 
+    // Landing on the Routing section with nothing open: select the first list so it never opens empty. The
+    // active profile's own list is already reflected by OpenForProfile; this only fills the gap when the profile
+    // assigns none (or there is no active profile). A new-list draft in progress is left alone.
+    public void SelectFirstIfNone()
+    {
+        if (EditRoutingList is null && RoutingEditor is not { IsNew: true } && RoutingLists.Count > 0)
+        {
+            EditRoutingList = RoutingLists[0];
+        }
+    }
+
     // Reflect a profile's assigned routing list into this section: a real list opens there (its rule /
     // per-routing settings editors build via OnEditRoutingListChanged), while no list clears the section.
     public void OpenForProfile(ProfileItemViewModel? profile)

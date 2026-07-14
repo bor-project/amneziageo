@@ -166,6 +166,25 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         Nav = "settings";
+
+        // Re-entering settings lands on the persisted section without a section-change event, so seed its
+        // selection here too.
+        SelectSectionDefault(SettingsSection);
+    }
+
+    // Fill an empty Routing / Config section with the first available item so it never opens on a blank editor.
+    // The active profile's own config / routing list is already reflected by the profile cascade; this is the
+    // fallback when that leaves nothing (no active profile, or it assigns none).
+    private void SelectSectionDefault(string section)
+    {
+        if (section == "routing")
+        {
+            Routing.SelectFirstIfNone();
+        }
+        else if (section == "config")
+        {
+            Config.SelectFirstIfNone();
+        }
     }
 
     [RelayCommand]
@@ -213,6 +232,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             Profile.OpenProfile = Home.ActiveProfile;
         }
+
+        // Still empty after the profile cascade: fall back to the first available list / config.
+        SelectSectionDefault(value);
     }
 
     private void OnGeneralPropertyChanged(object? sender, PropertyChangedEventArgs e)

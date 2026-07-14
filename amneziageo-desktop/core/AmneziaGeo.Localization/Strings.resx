@@ -209,13 +209,13 @@
     <value>Log viewer</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Routes ALL outgoing UDP datagrams into the tunnel while selective routing is active. Needed for real-time media (voice calls, online games) whose server addresses arrive via signaling rather than DNS. The local network and the tunnel channel itself are excluded.</value>
+    <value>Sends all UDP traffic through the tunnel. Turn this on if calls or games do not work: they find their servers without DNS, so the usual rules never catch them. Your local network is not affected.</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>All UDP through the tunnel</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
-    <value>Route IPv6 for this list as well. Off keeps the tunnel IPv4-only (AAAA answers fall back to IPv4). Turn on only if the server config declares an IPv6 address. Applies on the next connect.</value>
+    <value>Sends IPv6 through the tunnel as well. Turn this on only if your server has an IPv6 address, otherwise leave it off. Applies on the next connect.</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>Use IPv6</value>
@@ -481,8 +481,8 @@
   <data name="Main_ListNameWatermark" xml:space="preserve">
     <value>e.g. my-list</value>
   </data>
-  <data name="Main_ListTrafficLabel" xml:space="preserve">
-    <value>Traffic of this list</value>
+  <data name="Main_RoutingOptionsLabel" xml:space="preserve">
+    <value>Routing options</value>
   </data>
   <data name="Main_RoleProxy" xml:space="preserve">
     <value>Proxy</value>
@@ -501,6 +501,12 @@
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Blocks requests to the selected routes. Always in effect.</value>
+  </data>
+  <data name="Main_RoleExclude" xml:space="preserve">
+    <value>Exclusions</value>
+  </data>
+  <data name="Main_RoleExcludeHint" xml:space="preserve">
+    <value>Always off the tunnel, in either mode: these entries go direct.</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Global proxy</value>

@@ -209,13 +209,13 @@
     <value>Просмотр журнала</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Заворачивает в туннель ВСЕ исходящие UDP-датаграммы, пока активна выборочная маршрутизация. Нужно для real-time медиа (голосовые звонки, онлайн-игры), чьи адреса серверов приходят сигналингом, а не через DNS. Локальная сеть и сам канал туннеля исключаются.</value>
+    <value>Отправляет в туннель весь UDP-трафик. Включите, если не работают звонки или игры: они находят свои серверы в обход DNS, поэтому обычные правила их не ловят. Локальная сеть не затрагивается.</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
-    <value>Маршрутизировать для этого списка ещё и IPv6. Выключено - туннель остаётся IPv4-only (AAAA откатывается на IPv4). Включайте, только если конфиг сервера объявляет IPv6-адрес. Применяется при следующем подключении.</value>
+    <value>Пускает в туннель ещё и IPv6. Включайте, только если у вашего сервера есть IPv6-адрес, иначе оставьте выключенным. Применится при следующем подключении.</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
     <value>Использовать IPv6</value>
@@ -481,8 +481,8 @@
   <data name="Main_ListNameWatermark" xml:space="preserve">
     <value>напр. мой-список</value>
   </data>
-  <data name="Main_ListTrafficLabel" xml:space="preserve">
-    <value>Трафик этого списка</value>
+  <data name="Main_RoutingOptionsLabel" xml:space="preserve">
+    <value>Параметры маршрутизации</value>
   </data>
   <data name="Main_RoleProxy" xml:space="preserve">
     <value>Прокси</value>
@@ -501,6 +501,12 @@
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Блокирует запросы к выбранным маршрутам. Действует всегда.</value>
+  </data>
+  <data name="Main_RoleExclude" xml:space="preserve">
+    <value>Исключения</value>
+  </data>
+  <data name="Main_RoleExcludeHint" xml:space="preserve">
+    <value>Всегда мимо туннеля, в любом режиме: эти записи идут напрямую.</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Глобальный прокси</value>

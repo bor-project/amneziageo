@@ -156,6 +156,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         direct_domains_json TEXT NOT NULL DEFAULT '[]',
                         block_routes_json   TEXT NOT NULL DEFAULT '[]',
                         block_domains_json  TEXT NOT NULL DEFAULT '[]',
+                        exclude_routes_json  TEXT NOT NULL DEFAULT '[]',
+                        exclude_domains_json TEXT NOT NULL DEFAULT '[]',
                         updated_at          TEXT NOT NULL
                     );
 
@@ -226,6 +228,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN direct_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN block_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN block_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+
+            // Materialized Exclude bucket (always off-tunnel, either mode).
+            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN exclude_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
+            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN exclude_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
 
             await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
         }
@@ -1581,6 +1587,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var directDomainsJson = JsonSerializer.Serialize(list.DirectDomains);
         var blockRoutesJson = JsonSerializer.Serialize(list.BlockRoutes);
         var blockDomainsJson = JsonSerializer.Serialize(list.BlockDomains);
+        var excludeRoutesJson = JsonSerializer.Serialize(list.ExcludeRoutes);
+        var excludeDomainsJson = JsonSerializer.Serialize(list.ExcludeDomains);
 
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1599,8 +1607,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         insert.Transaction = transaction;
                         insert.CommandText =
                             """
-                            INSERT INTO routing_lists (name, routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, generation, updated_at)
-                            VALUES ($name, $routes, $domains, $directRoutes, $directDomains, $blockRoutes, $blockDomains, 1, $updated)
+                            INSERT INTO routing_lists (name, routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, exclude_routes_json, exclude_domains_json, generation, updated_at)
+                            VALUES ($name, $routes, $domains, $directRoutes, $directDomains, $blockRoutes, $blockDomains, $excludeRoutes, $excludeDomains, 1, $updated)
                             RETURNING id;
                             """;
                         insert.Parameters.AddWithValue("$name", list.Name);
@@ -1610,6 +1618,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         insert.Parameters.AddWithValue("$directDomains", directDomainsJson);
                         insert.Parameters.AddWithValue("$blockRoutes", blockRoutesJson);
                         insert.Parameters.AddWithValue("$blockDomains", blockDomainsJson);
+                        insert.Parameters.AddWithValue("$excludeRoutes", excludeRoutesJson);
+                        insert.Parameters.AddWithValue("$excludeDomains", excludeDomainsJson);
                         insert.Parameters.AddWithValue("$updated", timestamp);
                         var scalar = await insert.ExecuteScalarAsync(ct).ConfigureAwait(false);
                         id = Convert.ToInt64(scalar, CultureInfo.InvariantCulture);
@@ -1623,7 +1633,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     await using (current.ConfigureAwait(false))
                     {
                         current.Transaction = transaction;
-                        current.CommandText = "SELECT routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, generation FROM routing_lists WHERE id = $id;";
+                        current.CommandText = "SELECT routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, exclude_routes_json, exclude_domains_json, generation FROM routing_lists WHERE id = $id;";
                         current.Parameters.AddWithValue("$id", id);
                         var reader = await current.ExecuteReaderAsync(ct).ConfigureAwait(false);
                         await using (reader.ConfigureAwait(false))
@@ -1635,8 +1645,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                                     && reader.GetString(2) == directRoutesJson
                                     && reader.GetString(3) == directDomainsJson
                                     && reader.GetString(4) == blockRoutesJson
-                                    && reader.GetString(5) == blockDomainsJson;
-                                var oldGeneration = reader.GetInt64(6);
+                                    && reader.GetString(5) == blockDomainsJson
+                                    && reader.GetString(6) == excludeRoutesJson
+                                    && reader.GetString(7) == excludeDomainsJson;
+                                var oldGeneration = reader.GetInt64(8);
                                 generation = unchanged ? oldGeneration : oldGeneration + 1;
                             }
                         }
@@ -1652,6 +1664,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                             SET name = $name, routes_json = $routes, domains_json = $domains,
                                 direct_routes_json = $directRoutes, direct_domains_json = $directDomains,
                                 block_routes_json = $blockRoutes, block_domains_json = $blockDomains,
+                                exclude_routes_json = $excludeRoutes, exclude_domains_json = $excludeDomains,
                                 generation = $generation, updated_at = $updated
                             WHERE id = $id;
                             """;
@@ -1663,6 +1676,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         update.Parameters.AddWithValue("$directDomains", directDomainsJson);
                         update.Parameters.AddWithValue("$blockRoutes", blockRoutesJson);
                         update.Parameters.AddWithValue("$blockDomains", blockDomainsJson);
+                        update.Parameters.AddWithValue("$excludeRoutes", excludeRoutesJson);
+                        update.Parameters.AddWithValue("$excludeDomains", excludeDomainsJson);
                         update.Parameters.AddWithValue("$generation", generation);
                         update.Parameters.AddWithValue("$updated", timestamp);
                         await update.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -1731,7 +1746,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default)
     {
-        var lists = new List<(long Id, string Name, string Routes, string Domains, string DirectRoutes, string DirectDomains, string BlockRoutes, string BlockDomains)>();
+        var lists = new List<(long Id, string Name, string Routes, string Domains, string DirectRoutes, string DirectDomains, string BlockRoutes, string BlockDomains, string ExcludeRoutes, string ExcludeDomains)>();
 
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1744,7 +1759,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.CommandText =
                     """
                     SELECT id, name, routes_json, domains_json,
-                           direct_routes_json, direct_domains_json, block_routes_json, block_domains_json
+                           direct_routes_json, direct_domains_json, block_routes_json, block_domains_json,
+                           exclude_routes_json, exclude_domains_json
                     FROM routing_lists ORDER BY name;
                     """;
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1754,7 +1770,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     {
                         lists.Add((reader.GetInt64(0), reader.GetString(1),
                             reader.GetString(2), reader.GetString(3),
-                            reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7)));
+                            reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetString(7),
+                            reader.GetString(8), reader.GetString(9)));
                     }
                 }
             }
@@ -1764,7 +1781,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 var rules = await ReadRoutingListRulesAsync(connection, row.Id, ct).ConfigureAwait(false);
                 result.Add(BuildRoutingList(row.Id, row.Name, rules,
-                    row.Routes, row.Domains, row.DirectRoutes, row.DirectDomains, row.BlockRoutes, row.BlockDomains));
+                    row.Routes, row.Domains, row.DirectRoutes, row.DirectDomains, row.BlockRoutes, row.BlockDomains,
+                    row.ExcludeRoutes, row.ExcludeDomains));
             }
 
             return result;
@@ -2118,6 +2136,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         string directDomainsJson;
         string blockRoutesJson;
         string blockDomainsJson;
+        string excludeRoutesJson;
+        string excludeDomainsJson;
 
         var command = connection.CreateCommand();
         await using (command.ConfigureAwait(false))
@@ -2125,7 +2145,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             command.CommandText =
                 $"""
                 SELECT id, name, routes_json, domains_json,
-                       direct_routes_json, direct_domains_json, block_routes_json, block_domains_json
+                       direct_routes_json, direct_domains_json, block_routes_json, block_domains_json,
+                       exclude_routes_json, exclude_domains_json
                 FROM routing_lists WHERE {whereClause};
                 """;
             command.Parameters.AddWithValue(keyParam, keyValue);
@@ -2145,18 +2166,21 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 directDomainsJson = reader.GetString(5);
                 blockRoutesJson = reader.GetString(6);
                 blockDomainsJson = reader.GetString(7);
+                excludeRoutesJson = reader.GetString(8);
+                excludeDomainsJson = reader.GetString(9);
             }
         }
 
         var rules = await ReadRoutingListRulesAsync(connection, id, ct).ConfigureAwait(false);
         return BuildRoutingList(id, name, rules,
-            routesJson, domainsJson, directRoutesJson, directDomainsJson, blockRoutesJson, blockDomainsJson);
+            routesJson, domainsJson, directRoutesJson, directDomainsJson, blockRoutesJson, blockDomainsJson,
+            excludeRoutesJson, excludeDomainsJson);
     }
 
-    // Deserializes the six materialized-bucket columns into a RoutingList; apps come from the Proxy-bucket rules.
+    // Deserializes the materialized-bucket columns into a RoutingList; apps come from the Proxy-bucket rules.
     private static RoutingList BuildRoutingList(long id, string name, IReadOnlyList<GeoRule> rules,
         string routesJson, string domainsJson, string directRoutesJson, string directDomainsJson,
-        string blockRoutesJson, string blockDomainsJson)
+        string blockRoutesJson, string blockDomainsJson, string excludeRoutesJson, string excludeDomainsJson)
     {
         var routes = JsonSerializer.Deserialize<List<string>>(routesJson) ?? [];
         var domains = JsonSerializer.Deserialize<List<GeoDomain>>(domainsJson) ?? [];
@@ -2164,8 +2188,10 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var directDomains = JsonSerializer.Deserialize<List<GeoDomain>>(directDomainsJson) ?? [];
         var blockRoutes = JsonSerializer.Deserialize<List<string>>(blockRoutesJson) ?? [];
         var blockDomains = JsonSerializer.Deserialize<List<GeoDomain>>(blockDomainsJson) ?? [];
+        var excludeRoutes = JsonSerializer.Deserialize<List<string>>(excludeRoutesJson) ?? [];
+        var excludeDomains = JsonSerializer.Deserialize<List<GeoDomain>>(excludeDomainsJson) ?? [];
         return new RoutingList(id, name, rules, routes, domains, ExtractApps(rules),
-            directRoutes, directDomains, blockRoutes, blockDomains);
+            directRoutes, directDomains, blockRoutes, blockDomains, excludeRoutes, excludeDomains);
     }
 
     // Collect Proxy-bucket App-kind rule values as matcher tokens (per-app tunneling is a proxy concept).

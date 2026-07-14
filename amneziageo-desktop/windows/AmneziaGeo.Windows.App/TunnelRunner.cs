@@ -237,19 +237,16 @@ internal sealed class TunnelRunner(
         // LAN resolver always captured; local names resolve here, not offshore.
         var lanResolvers = dns.CaptureUpstream();
         var upstream = preferredDns.Count > 0 ? preferredDns : lanResolvers;
-        // Bypass list: routing list's exclusions or per-config; full-tunnel LAN floor only without a list.
+        // Bypass list: routing list's exclusions or per-config. The LAN floor is added unconditionally below.
         string? storedExclusions;
-        bool hasStoredExclusions;
         if (routingSettings is not null)
         {
             storedExclusions = routingSettings.Exclusions;
-            hasStoredExclusions = true;
         }
         else
         {
             var configExclusions = await store.GetConfigExclusionsAsync(name);
             storedExclusions = configExclusions?.Exclusions;
-            hasStoredExclusions = configExclusions is not null;
         }
 
         var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(storedExclusions ?? string.Empty);
@@ -262,6 +259,17 @@ internal sealed class TunnelRunner(
                 if (!exclusionDomains.Contains(direct.Value))
                 {
                     exclusionDomains.Add(direct.Value);
+                }
+            }
+        }
+        // Exclude bucket (both modes): its domains stay on the local resolver, off the tunnel always.
+        if (activeList is not null)
+        {
+            foreach (var exclude in activeList.ExcludeDomains)
+            {
+                if (!exclusionDomains.Contains(exclude.Value))
+                {
+                    exclusionDomains.Add(exclude.Value);
                 }
             }
         }
@@ -307,20 +315,15 @@ internal sealed class TunnelRunner(
                 logger.LogWarning("endpoint {Host} unresolved pre-tunnel; engine resolves it via LAN", endpointParts.Host);
             }
         }
-        // Default bypass = RFC1918 + connected subnets; a stored list is authoritative.
-        var exclusionCidrs = !hasStoredExclusions
-            ? new List<string>(routes.DefaultExclusionEntries())
-            : new List<string>(parsedCidrs);
-        // Global proxy (full via list) must never blackhole the LAN: always bypass RFC1918 + connected subnets,
-        // even though the list's settings row makes exclusions authoritative.
-        if (!geoSplit && activeList is not null)
+        // Bypass floor = RFC1918 + connected subnets, always: a full tunnel with the kill-switch must never
+        // blackhole the local LAN, and a split tunnel honours the same manual list. Stored exclusions add to
+        // the floor, they never replace it.
+        var exclusionCidrs = new List<string>(routes.DefaultExclusionEntries());
+        foreach (var cidr in parsedCidrs)
         {
-            foreach (var lan in routes.DefaultExclusionEntries())
+            if (!exclusionCidrs.Contains(cidr))
             {
-                if (!exclusionCidrs.Contains(lan))
-                {
-                    exclusionCidrs.Add(lan);
-                }
+                exclusionCidrs.Add(cidr);
             }
         }
 
@@ -328,6 +331,18 @@ internal sealed class TunnelRunner(
         if (!geoSplit && activeList is not null)
         {
             foreach (var cidr in activeList.DirectRoutes)
+            {
+                if (!exclusionCidrs.Contains(cidr))
+                {
+                    exclusionCidrs.Add(cidr);
+                }
+            }
+        }
+
+        // Exclude bucket (both modes): its CIDRs route out the physical gateway always, on top of the LAN floor.
+        if (activeList is not null)
+        {
+            foreach (var cidr in activeList.ExcludeRoutes)
             {
                 if (!exclusionCidrs.Contains(cidr))
                 {
@@ -420,8 +435,9 @@ internal sealed class TunnelRunner(
         var endpoint = useWebSocket ? wsServerIp : TunnelEndpoint.Resolve(config);
         var excluded = endpoint is not null && routes.AddEndpointExclusion(name, endpoint);
 
-        // Keep the LAN direct in full tunnel via RFC1918 exclusions.
-        var lanExcluded = !geoSplit && routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs);
+        // Keep the LAN and any manual exclusions direct in both modes (RFC1918 floor + stored list). In split
+        // mode the tunnelled geo routes are more specific, so longest-prefix-match keeps them on the tunnel.
+        var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs);
         logger.LogDebug("connect {Name}: routes - endpoint {Endpoint} excluded={Excluded}, lan-exclusions={Lan} [{Elapsed} ms]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 

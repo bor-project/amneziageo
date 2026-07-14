@@ -61,7 +61,7 @@ internal static class DesignData
         vm.General.EngineVersion = "AmneziaWG 1.5.0 · wstunnel 10.1.6";
 
         // --- Config catalogue ---
-        var borConfig = new ConfigItemViewModel
+        var wsConfig = new ConfigItemViewModel
         {
             Name = "de-frankfurt",
             Endpoint = "vpn.example.com:9080",
@@ -72,7 +72,7 @@ internal static class DesignData
             Dns = "1.1.1.1, 2606:4700:4700::1111",
             Status = ConnectionStatus.Connected,
         };
-        vm.Config.Configs.Add(borConfig);
+        vm.Config.Configs.Add(wsConfig);
         vm.Config.Configs.Add(new ConfigItemViewModel
         {
             Name = "nl-amsterdam",
@@ -140,7 +140,7 @@ internal static class DesignData
         vm.Logs.HasLogs = true;
 
         // --- Open the work profile: renders the Profile editor + the Config manage/transport editors. This
-        // sets OpenConfig = "de-frankfurt", which builds a live ConfigTransport (from borConfig) and a stray
+        // sets OpenConfig = "de-frankfurt", which builds a live ConfigTransport (from wsConfig) and a stray
         // ExportDialog whose LoadAsync cannot reach the mock agent; the ready replacement below supersedes it.
         vm.Profile.OpenProfile = workProfile;
         vm.Config.ConfigExport = ReadyExport(connection, "de-frankfurt", SampleConf);
@@ -234,7 +234,7 @@ internal static class DesignData
         PersistentKeepalive = 25
         """;
 
-    // A slice of a real agent journal (newest first, matching the viewer's rendering order): a slow initial
+    // Representative agent journal (newest first, matching the viewer's rendering order): a slow initial
     // handshake that succeeds on retry, split-routing applied, reachability heals, then teardown.
     private const string SampleLog =
         """

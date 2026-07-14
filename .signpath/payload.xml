@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration, slug: payload.
+
+     Input: a zip of the runner's to-sign/ directory, submitted BEFORE the bundle is linked:
+         msi/AmneziaGeo-1.0.1-win-<arch>.msi   the chained package (see the version note below)
+         ba/**                                 the published bootstrapper application
+
+     Purpose: sign the binaries we own where they actually live, inside the MSI cabinet and among the
+     Burn payloads. The outer bundle alone (see installer.xml) leaves the installed exe, the agent
+     service and every AmneziaGeo dll unsigned on disk, which antivirus heuristics treat unkindly.
+
+     <msi-file> is composite: SignPath unpacks cab1.cab, signs the matched PE files inside it, repacks
+     the cabinet and the MSI tables, then signs the MSI. The signed MSI and BA are copied back onto the
+     runner and the bundle is linked from them, so the hashes Burn seals at link time are the final ones.
+
+     WHAT WE SIGN: AmneziaGeo* only. Everything else is passed through byte for byte. This whitelist is
+     not merely conservative, it is required: both App and Ui publish with PublishReadyToRun, and
+     crossgen2 rewrites every managed assembly it touches, including the NuGet ones, which strips their
+     vendor Authenticode signature. Roughly 85 third-party assemblies inside the cabinet are therefore
+     already unsigned, and a blanket "sign every PE" rule would quietly stamp all of them with our
+     certificate. Genuinely vendor-signed files that must stay untouched: wintun.dll (WireGuard LLC),
+     libSkiaSharp.dll, libHarfBuzzSharp.dll, Dia2Lib.dll, TraceReloggerLib.dll, amd64\*.dll (Microsoft),
+     and, in the self-contained variants, the whole .NET runtime.
+
+     VERSION NOTE: the 1.0.1 in the MSI file name is hardcoded in the wixproj OutputName and does not
+     track the release version, which only the bundle carries. Match it literally, never by version. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+
+    <msi-file path="msi/AmneziaGeo-1.0.1-win-*.msi">
+      <!-- App.exe, Ui.exe and Tray.exe (the last is NativeAOT, so it has no companion dll). -->
+      <pe-file path="**/AmneziaGeo*.exe" max-matches="unbounded">
+        <authenticode-sign />
+      </pe-file>
+      <!-- App, Ui, Engine, Decl, Dal, Geo, Ipc, Localization, plus ru\AmneziaGeo.Localization.resources.dll. -->
+      <pe-file path="**/AmneziaGeo*.dll" max-matches="unbounded">
+        <authenticode-sign />
+      </pe-file>
+      <authenticode-sign />
+    </msi-file>
+
+    <directory path="ba">
+      <pe-file path="AmneziaGeo*.exe" max-matches="unbounded">
+        <authenticode-sign />
+      </pe-file>
+      <pe-file path="AmneziaGeo*.dll" max-matches="unbounded">
+        <authenticode-sign />
+      </pe-file>
+      <!-- '*' does not cross '/', so the satellite assembly needs its own element. -->
+      <directory path="ru">
+        <pe-file path="AmneziaGeo.Localization.resources.dll">
+          <authenticode-sign />
+        </pe-file>
+      </directory>
+    </directory>
+
+  </zip-file>
+</artifact-configuration>

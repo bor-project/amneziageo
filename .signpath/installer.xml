@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration, slug: installer (the slug release.yml already passes).
+
+     Input: the Burn bundle, after its engine has been signed and reattached on the runner.
+     One configuration serves all four matrix variants, so the bundle is matched by glob, never by name.
+
+     min-matches / max-matches default to 1: exactly one bundle per signing request. A typo in the
+     pattern therefore fails the request instead of silently signing nothing. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="AmneziaGeo-*-win-*-*.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

@@ -222,7 +222,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         }
     }
 
-    // Убирает файл конфигурации с диска, иначе миграция вернёт удалённый конфиг после перезапуска.
+    // Removes the config file from disk; migration would otherwise resurrect a deleted config on the next start.
     private static void RemoveLegacyConfigFile(string name)
     {
         var path = Path.Combine(TunnelPaths.ConfigurationsDirectory(), name + ".conf");

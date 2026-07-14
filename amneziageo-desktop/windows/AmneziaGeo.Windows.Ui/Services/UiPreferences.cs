@@ -11,12 +11,12 @@ namespace AmneziaGeo.Windows.Ui.Services;
 internal sealed class UiPreferences
 {
     /// <summary>
-    /// Тема: пусто = системная, "light" или "dark".
+    /// Theme: empty = follow the system, otherwise "light" or "dark".
     /// </summary>
     public string Theme { get; set; } = string.Empty;
 
     /// <summary>
-    /// Legacy: булев флаг тёмной темы; читается только для миграции в Theme.
+    /// Legacy dark-theme flag; read only to migrate it into Theme.
     /// </summary>
     [JsonPropertyName("IsDark")]
     public bool? IsDark { get; set; }

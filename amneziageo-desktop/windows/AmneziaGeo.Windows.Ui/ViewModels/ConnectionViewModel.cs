@@ -150,7 +150,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
-    // Цвет по трём состояниям: отключено - серый, переход (подключение/отключение) - оранжевый, подключено - синий.
+    // Colour per state: disconnected grey, transitioning (connect / disconnect) orange, connected blue.
     public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
 
     public IBrush ConnectCircleBorderBrush => ConnState switch

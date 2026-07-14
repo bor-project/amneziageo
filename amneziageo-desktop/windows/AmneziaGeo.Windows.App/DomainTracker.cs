@@ -525,12 +525,15 @@ internal sealed class DomainTracker(
         }
     }
 
-    // Admits an app destination to the tunnel. With a geosite configured, only destinations whose resolved domain
-    // matches it pass (app INTERSECT geo); with none, every app destination passes (route-all fallback). Reverse
-    // index is built by NoteResolution; no geo-universe pre-materialization. Assumes _lock held.
+    // Admits an app destination to the tunnel. With a geosite configured, a destination we know a domain for passes
+    // only when that domain matches it (app INTERSECT geo); with none, every app destination passes (route-all
+    // fallback). A destination the DNS proxy never resolved is an IP literal (Telegram MTProto, Discord voice) and
+    // passes: gating it on a name that will never exist keeps such an app off the tunnel forever. Reverse index is
+    // built by NoteResolution; no geo-universe pre-materialization. Assumes _lock held.
     private bool AppDestAllowed(string ip) =>
         _geoMatcher is not { } m
-        || (_ipToNames.TryGetValue(ip, out var names) && names.Any(m.IsTunneled));
+        || !_ipToNames.TryGetValue(ip, out var names)
+        || names.Any(m.IsTunneled);
 
     // Installs /32(/128) routes + allowed-ips for app IPs; assumes _lock held. Shared by the watcher path and
     // the app-domain promotion path.

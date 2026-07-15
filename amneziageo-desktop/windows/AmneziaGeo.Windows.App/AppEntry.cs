@@ -57,6 +57,12 @@ public static class AppEntry
 
     private static async Task EnsureStoreAsync(IServiceProvider services, bool runMigration)
     {
+        if (runMigration)
+        {
+            // Before the DB is opened: pull a legacy ProgramData store into the per-user root on first run.
+            DataMigration.SeedFromProgramData(services.GetRequiredService<ILoggerFactory>().CreateLogger("DataMigration"));
+        }
+
         Directory.CreateDirectory(Path.GetDirectoryName(TunnelPaths.StateDbFile())!);
         var store = services.GetRequiredService<IStateStore>();
         await store.InitializeAsync();

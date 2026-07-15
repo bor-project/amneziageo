@@ -44,6 +44,11 @@ internal static class Labels
     public static string ConnectFailedInfo { get; private set; } = "Connection failed";
 
     /// <summary>
+    /// «Соединение разорвано» / "Connection lost": warning balloon body when a live tunnel drops (#192).
+    /// </summary>
+    public static string DisconnectedInfo { get; private set; } = "Connection lost";
+
+    /// <summary>
     /// Tooltip status «Подключено» / "Connected".
     /// </summary>
     public static string StatusConnected { get; private set; } = "Connected";
@@ -67,6 +72,7 @@ internal static class Labels
             ConnectingInfo = "Подключение выполняется";
             ConnectedInfo = "Подключение активно";
             ConnectFailedInfo = "Не удалось подключиться";
+            DisconnectedInfo = "Соединение разорвано";
             StatusConnected = "Подключено";
             StatusDisconnected = "Отключено";
         }

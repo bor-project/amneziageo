@@ -22,7 +22,7 @@ internal static class AgentLink
 
     private static readonly UTF8Encoding _utf8 = new(false);
     private static volatile StreamWriter? _writer;
-    private static Action<int>? _onState;
+    private static Action<int, bool>? _onState;
 
     /// <summary>
     /// Whether the agent has an active profile selected/bound, so a connect can be issued from the tray.
@@ -31,9 +31,9 @@ internal static class AgentLink
 
     /// <summary>
     /// Starts the connection loop; <paramref name="onState"/> receives 0 (disconnected) / 1 (transitioning) /
-    /// 2 (connected) on every change, off a background thread.
+    /// 2 (connected) plus whether the agent latched a connect failure, on every change, off a background thread.
     /// </summary>
-    public static void Start(Action<int> onState)
+    public static void Start(Action<int, bool> onState)
     {
         _onState = onState;
         var thread = new Thread(Loop) { IsBackground = true, Name = "agent-link" };
@@ -84,9 +84,9 @@ internal static class AgentLink
                 string? line;
                 while ((line = reader.ReadLine()) is not null)
                 {
-                    if (line.Length > 0 && TryReadState(line, out var state))
+                    if (line.Length > 0 && TryReadState(line, out var state, out var connectFailed))
                     {
-                        _onState?.Invoke(state);
+                        _onState?.Invoke(state, connectFailed);
                     }
                 }
             }
@@ -97,15 +97,17 @@ internal static class AgentLink
 
             _writer = null;
             HasActiveProfile = false;
-            _onState?.Invoke(0);
+            _onState?.Invoke(0, false);
             Thread.Sleep(2000);
         }
     }
 
-    // Maps a snapshot line to the three-way tray state, matching ConnectionViewModel.ConnState.
-    private static bool TryReadState(string json, out int state)
+    // Maps a snapshot line to the three-way tray state, matching ConnectionViewModel.ConnState, plus the agent's
+    // latched connect-failure flag (set by FailConnect, cleared on any user connect/disconnect).
+    private static bool TryReadState(string json, out int state, out bool connectFailed)
     {
         state = 0;
+        connectFailed = false;
         var status = default(string);
         var active = true;
         var haveStatus = false;
@@ -128,6 +130,10 @@ internal static class AgentLink
             else if (prop == "active" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
             {
                 active = reader.TokenType == JsonTokenType.True;
+            }
+            else if (prop == "connectFailed" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                connectFailed = reader.TokenType == JsonTokenType.True;
             }
             else if (prop == "selectedTarget" && reader.TokenType == JsonTokenType.String)
             {

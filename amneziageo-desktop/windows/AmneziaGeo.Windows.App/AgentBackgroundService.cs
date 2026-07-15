@@ -13,6 +13,7 @@ internal sealed class AgentBackgroundService(
     ConfigRepository configRepo,
     ProfileRunner runner,
     AgentControl control,
+    SettingsStore settingsStore,
     NetworkReconciler reconciler,
     ILogger<AgentBackgroundService> logger) : BackgroundService
 {
@@ -40,6 +41,15 @@ internal sealed class AgentBackgroundService(
             if (string.IsNullOrWhiteSpace(stored))
             {
                 await store.SetSettingAsync(AgentControl.SelectedTargetKey, group.Name, stoppingToken);
+            }
+
+            // Survive-reboot: dial the selected profile on start; the supervisor's retry engine waits out a
+            // missing network (backoff + a NetworkWatcher wake) until the host answers or rejects the config.
+            var settings = await settingsStore.LoadAsync(stoppingToken);
+            if (settings.SurviveReboot)
+            {
+                logger.LogInformation("survive-reboot on: auto-connecting profile {Profile}", group.Name);
+                control.SetRunning(true);
             }
         }
         else

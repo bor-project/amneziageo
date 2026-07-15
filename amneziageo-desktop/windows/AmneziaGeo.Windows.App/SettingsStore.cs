@@ -27,6 +27,9 @@ internal sealed class SettingsStore(IStateStore store)
             TunnelAllUdp = ReadBool(values, "tunnel-all-udp", defaults.TunnelAllUdp),
             LogLevel = ReadLogLevel(values, defaults.LogLevel),
             RouteLog = ReadBool(values, RouteLog.SettingKey, defaults.RouteLog),
+            SurviveReboot = ReadBool(values, "survive-reboot", defaults.SurviveReboot),
+            PeriodicReconnect = ReadBool(values, "periodic-reconnect-enabled", defaults.PeriodicReconnect),
+            PeriodicReconnectIntervalSeconds = ReadInt(values, "periodic-reconnect-interval-seconds", defaults.PeriodicReconnectIntervalSeconds),
         };
     }
 
@@ -91,9 +94,9 @@ internal sealed class SettingsStore(IStateStore store)
     }
 
     private static readonly string[] IntKeys =
-        ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours"];
+        ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds"];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled"];
 
     // Validated string settings; log-level is constrained to verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey];

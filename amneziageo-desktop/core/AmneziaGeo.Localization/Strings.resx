@@ -61,6 +61,27 @@
   <data name="General_Section" xml:space="preserve">
     <value>General</value>
   </data>
+  <data name="General_ConnectionSection" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="General_SurviveReboot" xml:space="preserve">
+    <value>Reconnect after reboot</value>
+  </data>
+  <data name="General_SurviveRebootHint" xml:space="preserve">
+    <value>Auto-connect the selected profile when the computer starts.</value>
+  </data>
+  <data name="General_PeriodicReconnect" xml:space="preserve">
+    <value>Periodic auto-reconnect</value>
+  </data>
+  <data name="General_PeriodicReconnectHint" xml:space="preserve">
+    <value>Keep retrying at a fixed interval while a connection stays inactive.</value>
+  </data>
+  <data name="General_ReconnectInterval" xml:space="preserve">
+    <value>Retry interval</value>
+  </data>
+  <data name="General_Seconds" xml:space="preserve">
+    <value>sec</value>
+  </data>
   <data name="Main_AppearanceTitle" xml:space="preserve">
     <value>Appearance</value>
   </data>
@@ -885,6 +906,12 @@
   </data>
   <data name="MainVm_ConnectHintConnecting" xml:space="preserve">
     <value>Establishing connection…</value>
+  </data>
+  <data name="MainVm_ConnectHintRetrying" xml:space="preserve">
+    <value>Click to cancel</value>
+  </data>
+  <data name="MainVm_ConnectAttempt" xml:space="preserve">
+    <value>Attempt {0}</value>
   </data>
   <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
     <value>The profile has no configuration — set one in settings</value>

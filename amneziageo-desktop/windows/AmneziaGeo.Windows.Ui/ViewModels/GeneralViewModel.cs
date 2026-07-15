@@ -30,6 +30,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // Set while OnCultureChanged re-localizes the combos; suppresses their change handlers.
     private bool _syncingCombos;
 
+    // Set while Apply seeds the connection settings from the snapshot; suppresses their autosave push.
+    private bool _suppressSettingPush;
+
     /// <summary>
     /// UI language options.
     /// </summary>
@@ -100,6 +103,35 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private BundleImportViewModel? _bundleImport;
 
     /// <summary>
+    /// Auto-connect the selected profile on service start (survive a reboot).
+    /// </summary>
+    [ObservableProperty]
+    private bool _surviveReboot;
+
+    /// <summary>
+    /// Retry a desired connection at a fixed interval while it stays inactive.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PeriodicReconnectIntervalEnabled))]
+    private bool _periodicReconnect;
+
+    /// <summary>
+    /// Interval between periodic auto-reconnect attempts, in seconds.
+    /// </summary>
+    [ObservableProperty]
+    private int _reconnectIntervalSeconds = 30;
+
+    /// <summary>
+    /// Auto-reconnect interval presets, in seconds.
+    /// </summary>
+    public ObservableCollection<int> ReconnectIntervals { get; } = [10, 15, 30, 60, 120, 300];
+
+    /// <summary>
+    /// The interval input is editable only while periodic reconnect is on.
+    /// </summary>
+    public bool PeriodicReconnectIntervalEnabled => PeriodicReconnect;
+
+    /// <summary>
     /// ctor
     /// </summary>
     public GeneralViewModel(MainWindowViewModel host, AgentConnection connection, UiPreferences prefs)
@@ -150,6 +182,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     {
         AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
         EngineVersion = snapshot.EngineVersion;
+
+        // Seed the connection settings without echoing an autosave push back to the agent.
+        _suppressSettingPush = true;
+        SurviveReboot = snapshot.SurviveReboot;
+        PeriodicReconnect = snapshot.PeriodicReconnect;
+        EnsureReconnectInterval(snapshot.PeriodicReconnectIntervalSeconds);
+        ReconnectIntervalSeconds = snapshot.PeriodicReconnectIntervalSeconds;
+        _suppressSettingPush = false;
 
         UpdateUrl = snapshot.UpdateUrl;
 
@@ -344,6 +384,53 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             Application.Current.RequestedThemeVariant = ThemeVariantForIndex(value);
         }
+    }
+
+    partial void OnSurviveRebootChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("survive-reboot", value ? "on" : "off");
+        }
+    }
+
+    partial void OnPeriodicReconnectChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("periodic-reconnect-enabled", value ? "on" : "off");
+        }
+    }
+
+    partial void OnReconnectIntervalSecondsChanged(int value)
+    {
+        if (!_suppressSettingPush && value > 0)
+        {
+            _ = SetSettingAsync("periodic-reconnect-interval-seconds", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    // Keeps the interval combo able to display an out-of-band value (e.g. set via CLI): a non-preset is
+    // inserted in order so the ComboBox SelectedItem never goes null and writes 0 back into the property.
+    private void EnsureReconnectInterval(int seconds)
+    {
+        if (seconds <= 0 || ReconnectIntervals.Contains(seconds))
+        {
+            return;
+        }
+
+        var index = 0;
+        while (index < ReconnectIntervals.Count && ReconnectIntervals[index] < seconds)
+        {
+            index++;
+        }
+
+        ReconnectIntervals.Insert(index, seconds);
+    }
+
+    private async Task SetSettingAsync(string key, string value)
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, [key, value]));
     }
 
     private void OnCultureChanged()

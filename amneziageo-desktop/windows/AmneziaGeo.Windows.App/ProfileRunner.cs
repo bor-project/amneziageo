@@ -164,18 +164,8 @@ internal sealed class ProfileRunner(
         Stop(config);
 
         await SetStateAsync("connecting");
-        var outcome = await TryConnectAsync(config, ct);
-        if (!outcome.Ok)
+        if (!await ConnectWithRetryAsync(config, group.Name, ct))
         {
-            // Give up and raise the failed notice; supervisor idles after.
-            if (!ct.IsCancellationRequested)
-            {
-                logger.LogWarning("connect failed: {Config} ({Profile}) - {Reason} {Detail}", config, group.Name, outcome.Reason, outcome.Detail);
-                Stop(config);
-                await SetStateAsync("disconnected");
-                control.FailConnect(outcome.Reason, outcome.Detail);
-            }
-
             return;
         }
 
@@ -208,17 +198,8 @@ internal sealed class ProfileRunner(
                     _lastRxBytes = -1;
                     await SetStateAsync("connecting");
                     Stop(config);
-                    var redial = await TryConnectAsync(config, ct);
-                    if (!redial.Ok)
+                    if (!await ConnectWithRetryAsync(config, group.Name, ct))
                     {
-                        if (!ct.IsCancellationRequested)
-                        {
-                            logger.LogWarning("re-dial failed: {Config} unreachable - {Reason}", config, redial.Reason);
-                            Stop(config);
-                            await SetStateAsync("disconnected");
-                            control.FailConnect(redial.Reason, redial.Detail);
-                        }
-
                         return;
                     }
 
@@ -242,6 +223,72 @@ internal sealed class ProfileRunner(
             Stop(config);
             await SetStateAsync("disconnected");
         }
+    }
+
+    // Dials with retry. Transient/network failures keep the connection desired and retry - a capped backoff by
+    // default, the configured interval when periodic reconnect is on - while local/config failures latch and
+    // stop. Returns true on handshake, false on a fatal failure or a change signal (disconnect/reconfigure).
+    // The attempt counter lives on the control so it survives a signal-driven supervisor re-entry.
+    private async Task<bool> ConnectWithRetryAsync(string config, string profile, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var outcome = await TryConnectAsync(config, ct);
+            if (outcome.Ok)
+            {
+                control.ClearRetry();
+                return true;
+            }
+
+            if (ct.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            if (!IsTransient(outcome.Reason))
+            {
+                logger.LogWarning("connect failed: {Config} ({Profile}) - {Reason} {Detail}", config, profile, outcome.Reason, outcome.Detail);
+                Stop(config);
+                await SetStateAsync("disconnected");
+                control.FailConnect(outcome.Reason, outcome.Detail);
+                return false;
+            }
+
+            var attempt = control.NextRetry();
+            var delay = RetryDelay(attempt);
+            logger.LogWarning("connect unreachable: {Config} ({Profile}) - {Reason}; retry #{Attempt} in {Delay}s",
+                config, profile, outcome.Reason, attempt, (int)delay.TotalSeconds);
+            await SetStateAsync("connecting");
+            // Only a backoff wait is interruptible by a network wake; an in-flight attempt is never aborted.
+            control.SetAwaitingRetry(true);
+            await DelayAsync(delay, ct);
+            control.SetAwaitingRetry(false);
+        }
+
+        return false;
+    }
+
+    // A transient failure is a network/server condition worth retrying; the rest are local/config faults that
+    // need user action. WireGuard-over-UDP cannot tell "server unreachable" from "keys rejected" (both silence
+    // the handshake), so NoHandshake counts as transient.
+    private static bool IsTransient(ConnectFailureReason reason) => reason switch
+    {
+        ConnectFailureReason.NoHandshake or ConnectFailureReason.UnderlayUnreachable
+            or ConnectFailureReason.Timeout or ConnectFailureReason.Unknown => true,
+        _ => false,
+    };
+
+    // Wait before the next attempt: the configured periodic interval when auto-reconnect is on, else a capped
+    // exponential backoff (5, 10, 20, 40, 60s).
+    private TimeSpan RetryDelay(int attempt)
+    {
+        if (_settings.PeriodicReconnect && _settings.PeriodicReconnectIntervalSeconds > 0)
+        {
+            return TimeSpan.FromSeconds(_settings.PeriodicReconnectIntervalSeconds);
+        }
+
+        var steps = Math.Min(Math.Max(attempt - 1, 0), 4);
+        return TimeSpan.FromSeconds(Math.Min(60, 5 * (1 << steps)));
     }
 
     private async Task ProjectRoutingAsync(string profile, string config, CancellationToken ct)

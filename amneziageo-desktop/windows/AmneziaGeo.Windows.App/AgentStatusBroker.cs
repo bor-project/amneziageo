@@ -157,6 +157,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 }
             }
 
+            // Survive-reboot keeps the tunnel up independent of the UI (#196); never tear it down on UI exit.
+            var settings = await settingsStore.LoadAsync(CancellationToken.None);
+            if (settings.SurviveReboot)
+            {
+                return;
+            }
+
             if (control.Running)
             {
                 logger.LogInformation("no UI connected; disconnecting tunnel");
@@ -2360,7 +2367,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.LogLevel,
             settings.RouteLog,
             control.ConnectFailed ? control.ConnectFailReason.ToString() : string.Empty,
-            control.ConnectFailed ? (control.ConnectFailDetail ?? string.Empty) : string.Empty);
+            control.ConnectFailed ? (control.ConnectFailDetail ?? string.Empty) : string.Empty,
+            control.RetryAttempt,
+            settings.SurviveReboot,
+            settings.PeriodicReconnect,
+            settings.PeriodicReconnectIntervalSeconds);
     }
 
     private static string ProfileDisplayStatus(string profileStatus)

@@ -38,4 +38,12 @@ public sealed record StatusSnapshot(
     // Structured connect-failure reason (ConnectFailureReason name); empty unless the last connect failed.
     string ConnectFailReason = "",
     // Short cause label for the failed connect (e.g. sc error name); never secrets.
-    string ConnectFailDetail = "");
+    string ConnectFailDetail = "",
+    // Transient-failure retry count for the current dial; 0 when not retrying.
+    int RetryAttempt = 0,
+    // Auto-connect the selected profile on service start (survive a reboot).
+    bool SurviveReboot = false,
+    // Retry a desired connection at a fixed interval instead of the default backoff.
+    bool PeriodicReconnect = false,
+    // Interval between periodic auto-reconnect attempts, in seconds.
+    int PeriodicReconnectIntervalSeconds = 30);

@@ -92,6 +92,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     private bool _reconnecting;
 
+    // Transient-failure retry count reported by the agent; 0 when not retrying.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRetry))]
+    [NotifyPropertyChangedFor(nameof(RetryText))]
+    [NotifyPropertyChangedFor(nameof(ConnectHint))]
+    private int _retryAttempt;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -147,12 +154,18 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     public string ConnectHint => ConnState switch
     {
-        1 => Loc.Instance.Get("MainVm_ConnectHintConnecting"),
+        1 => Loc.Instance.Get(ShowRetry ? "MainVm_ConnectHintRetrying" : "MainVm_ConnectHintConnecting"),
         2 => Loc.Instance.Get("MainVm_ConnectHintClickToDisconnect"),
         _ when ActiveProfile is null => Loc.Instance.Get("MainVm_ConnectHintSelectProfile"),
         _ when ActiveProfile is { IsComplete: false } => Loc.Instance.Get("MainVm_ConnectHintNoConfig"),
         _ => Loc.Instance.Get("MainVm_ConnectHintClickToConnect"),
     };
+
+    // A stalled connect is retrying (more than one attempt made).
+    public bool ShowRetry => RetryAttempt >= 1;
+
+    // "Attempt N" label; N counts the attempt now in flight (retries past the first).
+    public string RetryText => ShowRetry ? Loc.Instance.Get("MainVm_ConnectAttempt", RetryAttempt + 1) : string.Empty;
 
     public bool ShowSelectConfigHint => ConnState == 0 && _host.HasProfiles && ActiveProfile is not { IsComplete: true };
 
@@ -233,6 +246,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         IsReady = true;
         BoundTarget = snapshot.BoundTarget;
         BoundStatus = snapshot.BoundStatus;
+        RetryAttempt = snapshot.RetryAttempt;
         if (!_toggleInFlight)
         {
             IsTunnelActive = snapshot.Active;

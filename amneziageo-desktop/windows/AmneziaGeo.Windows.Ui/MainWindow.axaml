@@ -99,6 +99,10 @@
                        HorizontalAlignment="Center" Foreground="{Binding Home.ConnectStatusBrush}" />
             <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
                        HorizontalAlignment="Center" Foreground="{Binding Home.ConnectHintBrush}" />
+            <!-- Retry counter while a stalled connect keeps trying (#197). -->
+            <TextBlock Text="{Binding Home.RetryText}" FontSize="12" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" Foreground="{Binding Home.ConnectStatusBrush}"
+                       IsVisible="{Binding Home.ShowRetry}" />
           </StackPanel>
 
           <!-- Profile picker: «- не выбрано -» then saved profiles. -->

@@ -10,6 +10,7 @@ internal static class Native
     // Window messages.
     public const uint WM_NULL = 0x0000;
     public const uint WM_DESTROY = 0x0002;
+    public const uint WM_CLOSE = 0x0010;
     public const uint WM_COMMAND = 0x0111;
     public const uint WM_LBUTTONUP = 0x0202;
     public const uint WM_RBUTTONUP = 0x0205;
@@ -196,6 +197,14 @@ internal static class Native
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(nint lpEnumFunc, nint lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsWindowVisible(nint hWnd);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]

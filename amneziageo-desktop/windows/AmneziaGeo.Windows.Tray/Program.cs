@@ -35,6 +35,9 @@ internal static unsafe class Program
     // State the current transition started from; -1 until one is seen.
     private static int _transitionFrom = -1;
 
+    // GUI process ids targeted by the current Exit close-sweep.
+    private static HashSet<uint> _uiPids = new();
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -76,7 +79,7 @@ internal static unsafe class Program
         ];
         AddOrModifyIcon(Native.NIM_ADD);
 
-        AgentLink.Start(state => Native.PostMessageW(_hwnd, Native.WM_STATE, (nuint)state, 0));
+        AgentLink.Start((state, connectFailed) => Native.PostMessageW(_hwnd, Native.WM_STATE, (nuint)state, connectFailed ? 1 : 0));
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
@@ -131,7 +134,7 @@ internal static unsafe class Program
 
             if (msg == Native.WM_STATE)
             {
-                SetState((int)wParam);
+                SetState((int)wParam, lParam != 0);
                 if (_popupPending)
                 {
                     ResolveColdLaunch();
@@ -211,7 +214,7 @@ internal static unsafe class Program
         }
     }
 
-    private static void SetState(int state)
+    private static void SetState(int state, bool connectFailed)
     {
         if (state < 0 || state > 2 || _icons.Length != 3)
         {
@@ -221,11 +224,13 @@ internal static unsafe class Program
         // Balloon on real transitions only, never on the first snapshot (a tray restart over a live tunnel must
         // not fire a spurious notice). Connect start is the 0->connecting edge. The agent reports "disconnecting"
         // as the same transitioning state as "connecting", so a 1->0 edge alone does not mean a failure: it is a
-        // failed dial only when the transition opened at disconnected. A teardown opens at connected (tray menu or
-        // the GUI's button, either way the user asked for it) and ends at disconnected, so it stays silent.
+        // failed dial when the transition opened at disconnected, a dropped tunnel when it opened at connected -
+        // but both only when the agent latched a connect failure (connectFailed). A user disconnect (tray menu or
+        // the GUI's button) clears that flag, so a deliberate teardown stays silent (#192).
         var justConnecting = _stateInitialized && state == 1 && _current == 0;
         var justConnected = _stateInitialized && state == 2 && _current != 2;
-        var justFailed = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 0;
+        var justFailed = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 0 && connectFailed;
+        var justDropped = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 2 && connectFailed;
 
         // Records which edge opened the transition; skipped on the first snapshot, whose origin is unknown.
         if (_stateInitialized && state == 1 && _current != 1)
@@ -252,6 +257,10 @@ internal static unsafe class Program
             else if (justFailed)
             {
                 ShowBalloon("AmneziaGeo", Labels.ConnectFailedInfo, Native.NIIF_WARNING);
+            }
+            else if (justDropped)
+            {
+                ShowBalloon("AmneziaGeo", Labels.DisconnectedInfo, Native.NIIF_WARNING);
             }
         }
     }
@@ -433,15 +442,35 @@ internal static unsafe class Program
         };
     }
 
-    // Mirrors the installer's own GUI shutdown (StopRunningApp): WM_CLOSE first, a forced kill only if it hangs -
-    // otherwise a window left open by --launcher or the full GUI outlives the tray it was supposed to exit with.
+    // Mirrors the installer's own GUI shutdown (StopRunningApp): WM_CLOSE every open GUI window - both the
+    // launcher and the full window (#189) - then a forced kill only if a process hangs, so no window left by
+    // --launcher or the full GUI outlives the tray it was supposed to exit with.
     private static void CloseUi()
     {
-        foreach (var p in Process.GetProcessesByName("AmneziaGeo.Windows.Ui"))
+        var processes = Process.GetProcessesByName("AmneziaGeo.Windows.Ui");
+        if (processes.Length == 0)
+        {
+            return;
+        }
+
+        _uiPids = new HashSet<uint>();
+        foreach (var p in processes)
         {
             try
             {
-                p.CloseMainWindow();
+                _uiPids.Add((uint)p.Id);
+            }
+            catch
+            {
+            }
+        }
+
+        Native.EnumWindows((nint)(delegate* unmanaged[Stdcall]<nint, nint, int>)&EnumCloseUiWindow, 0);
+
+        foreach (var p in processes)
+        {
+            try
+            {
                 if (!p.WaitForExit(5000))
                 {
                     p.Kill();
@@ -451,7 +480,24 @@ internal static unsafe class Program
             catch
             {
             }
+            finally
+            {
+                p.Dispose();
+            }
         }
+    }
+
+    // Closes every visible top-level window owned by a targeted GUI process.
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
+    private static int EnumCloseUiWindow(nint hWnd, nint lParam)
+    {
+        Native.GetWindowThreadProcessId(hWnd, out var pid);
+        if (_uiPids.Contains(pid) && Native.IsWindowVisible(hWnd))
+        {
+            Native.PostMessageW(hWnd, Native.WM_CLOSE, 0, 0);
+        }
+
+        return 1;
     }
 
     private static void LaunchUi(string? arg = null)

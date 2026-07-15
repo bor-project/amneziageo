@@ -157,6 +157,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
         RebuildLogText();
     }
 
+    // Ceiling on lines handed to the unvirtualized text control.
+    private const int MaxShownLines = 400;
+
     // Rebuilds the journal text from the raw lines applying the level filter and the search query, newest
     // first so the latest activity stays visible at the top without scrolling.
     private void RebuildLogText()
@@ -190,6 +193,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
 
         shown.Reverse();
+        if (shown.Count > MaxShownLines)
+        {
+            shown.RemoveRange(MaxShownLines, shown.Count - MaxShownLines);
+        }
+
         LogText = string.Join('\n', shown);
     }
 

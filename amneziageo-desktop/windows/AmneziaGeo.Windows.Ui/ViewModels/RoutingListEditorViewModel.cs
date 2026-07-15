@@ -223,12 +223,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// <summary>
     /// Geo category suggestions for the rule input, fetched from the agent.
     /// </summary>
-    public ObservableCollection<string> GeoSuggestions { get; } = [];
+    [ObservableProperty]
+    private IReadOnlyList<string> _geoSuggestions = [];
 
     /// <summary>
     /// App/service matches for the per-app add-row autocomplete (running mode), fetched from the agent.
     /// </summary>
-    public ObservableCollection<AppCandidate> AppSuggestions { get; } = [];
+    [ObservableProperty]
+    private IReadOnlyList<AppCandidate> _appSuggestions = [];
 
     /// <summary>
     /// True when the add-row is in a list-pick mode (running or installed).
@@ -344,11 +346,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return;
         }
 
-        GeoSuggestions.Clear();
-        foreach (var item in filtered)
-        {
-            GeoSuggestions.Add(item);
-        }
+        GeoSuggestions = filtered;
     }
 
     /// <summary>
@@ -733,23 +731,19 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private async Task LoadInstalledSuggestionsAsync()
     {
         // Run registry enumeration off the UI thread.
-        var candidates = await Task.Run(InstalledApps.List);
-        AppSuggestions.Clear();
-        foreach (var candidate in candidates)
-        {
-            AppSuggestions.Add(candidate);
-        }
+        AppSuggestions = await Task.Run(InstalledApps.List);
     }
 
     private async Task LoadRunningAsync()
     {
         var response = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListProcesses, []));
-        AppSuggestions.Clear();
         if (!response.Ok)
         {
+            AppSuggestions = [];
             return;
         }
 
+        var candidates = new List<AppCandidate>();
         foreach (var line in response.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             var fields = line.Split('\t');
@@ -776,8 +770,10 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                 display = Loc.Instance.Get("RoutingEditor_AppKindApplication", label);
             }
 
-            AppSuggestions.Add(new AppCandidate(display, token));
+            candidates.Add(new AppCandidate(display, token));
         }
+
+        AppSuggestions = candidates;
     }
 
     /// <summary>

@@ -23,8 +23,14 @@ internal sealed class QrCameraScanner(Action<Bitmap> onPreview, Action<string> o
     /// </summary>
     public async Task StartAsync()
     {
-        var descriptor = new CaptureDevices().EnumerateDescriptors()
-            .FirstOrDefault(d => d.Characteristics.Length > 0);
+        // Enumerate devices off the UI thread; the driver bind is slow on first call.
+        var descriptor = await Task.Run(() => new CaptureDevices().EnumerateDescriptors()
+            .FirstOrDefault(d => d.Characteristics.Length > 0));
+        if (_disposed)
+        {
+            return;
+        }
+
         if (descriptor is null)
         {
             throw new InvalidOperationException(Loc.Instance.Get("QrScanner_CameraNotFound"));

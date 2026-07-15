@@ -44,13 +44,24 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
             return Status.Available;
         }
 
+        // A clean 304 / matching validator is a reliable "current". A changed validator is NOT proof of new
+        // bytes - redirect/CDN ETags rotate on identical content - so a published checksum arbitrates first.
         var byHeaders = await CheckHeadersAsync(source.Url, meta, ct);
-        if (byHeaders != Status.Unknown)
+        if (byHeaders == Status.UpToDate)
         {
-            return byHeaders;
+            return Status.UpToDate;
         }
 
-        return await CheckChecksumAsync(source.Url, meta, ct);
+        // Content-based check for sources that ship a .sha256sum next to the data file (the geosite/geoip
+        // releases). It suppresses the rotating-ETag false positive without re-downloading the whole file.
+        var byChecksum = await CheckChecksumAsync(source.Url, meta, ct);
+        if (byChecksum != Status.Unknown)
+        {
+            return byChecksum;
+        }
+
+        // No checksum to arbitrate (a raw host): fall back to the header verdict.
+        return byHeaders;
     }
 
     private async Task<Status> CheckHeadersAsync(string url, GeoFileMetadata meta, CancellationToken ct)

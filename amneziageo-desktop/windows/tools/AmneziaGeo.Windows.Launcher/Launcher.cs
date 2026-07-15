@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AmneziaGeo.Windows.App;
 using Avalonia;
 using Microsoft.Extensions.Logging;
@@ -7,7 +8,7 @@ using UiProgram = AmneziaGeo.Windows.Ui.Program;
 namespace AmneziaGeo.Windows.Launcher;
 
 /// <summary>
-/// Hosts the backend agent and the desktop UI in-process for debugging, replacing the scripts.
+/// Hosts the backend agent in-process and launches the tray for the standard desktop flow.
 /// </summary>
 internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOptions> options)
 {
@@ -17,15 +18,6 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
     public int Run(string[] args)
     {
         var launch = LaunchOptions.Resolve(options.Value, args);
-
-        if (ShouldSeed())
-        {
-            RegisterConfigs(launch.ConfigPaths);
-            ApplyRoutingLists(options.Value.RoutingLists);
-            ApplyProfiles(options.Value.Profiles);
-            ApplyWebSockets(options.Value.WebSockets);
-            MarkSeeded();
-        }
 
         if (!launch.RunService && !launch.RunUi)
         {
@@ -39,24 +31,22 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
 
             if (launch.RunService)
             {
-                var target = launch.Target ?? "main";
-
                 if (launch.ConfigPath is not null)
                 {
-                    logger.LogInformation("registering config '{Target}' from {Path}", target, launch.ConfigPath);
-                    AppEntry.RunAsync(["config-add", target, launch.ConfigPath]).GetAwaiter().GetResult();
+                    var name = launch.Target ?? Path.GetFileNameWithoutExtension(launch.ConfigPath);
+                    logger.LogInformation("registering config '{Name}' from {Path}", name, launch.ConfigPath);
+                    AppEntry.RunAsync(["config-add", name, launch.ConfigPath]).GetAwaiter().GetResult();
                 }
 
-                logger.LogInformation("starting backend (agent, in-process) for '{Target}'", target);
-                agentTask = Task.Run(() => AppEntry.RunAsync(["--agent", target], cts.Token));
+                string[] agentArgs = launch.Target is { } target ? ["--agent", target] : ["--agent"];
+                logger.LogInformation("starting backend (agent, in-process)");
+                agentTask = Task.Run(() => AppEntry.RunAsync(agentArgs, cts.Token));
             }
 
             if (launch.RunUi)
             {
                 ScheduledTaskInstaller.EnsureLogonTask(logger);
-
-                logger.LogInformation("starting UI");
-                UiProgram.BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+                RunDesktop(args);
                 cts.Cancel();
             }
 
@@ -75,159 +65,24 @@ internal sealed class Launcher(ILogger<Launcher> logger, IOptions<LauncherOption
         return 0;
     }
 
-    private void ApplyRoutingLists(IReadOnlyList<RoutingListSpec> lists)
+    // Launches the resident tray for the standard cold-launch flow; opens the GUI in-process when the tray exe
+    // was not staged next to the launcher.
+    private void RunDesktop(string[] args)
     {
-        foreach (var list in lists)
+        var tray = Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.Windows.Tray.exe");
+        if (File.Exists(tray))
         {
-            if (string.IsNullOrWhiteSpace(list.Name))
+            logger.LogInformation("starting tray");
+            using var process = Process.Start(new ProcessStartInfo(tray)
             {
-                continue;
-            }
-
-            logger.LogInformation("ensuring routing list '{Name}' ({Count} rule(s))", list.Name, list.Rules.Length);
-            try
-            {
-                var args = new List<string> { "routing-list-add", list.Name };
-                args.AddRange(list.Rules);
-                AppEntry.RunAsync([.. args]).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "failed to apply routing list '{Name}'", list.Name);
-            }
-        }
-    }
-
-    private void ApplyProfiles(IReadOnlyList<ProfileSpec> profiles)
-    {
-        foreach (var profile in profiles)
-        {
-            if (string.IsNullOrWhiteSpace(profile.Name) || string.IsNullOrWhiteSpace(profile.Config))
-            {
-                continue;
-            }
-
-            logger.LogInformation("ensuring profile '{Name}' (config '{Config}')", profile.Name, profile.Config);
-            try
-            {
-                AppEntry.RunAsync(["profile-add", profile.Name, profile.Config]).GetAwaiter().GetResult();
-
-                var listName = string.IsNullOrWhiteSpace(profile.RoutingList) ? "none" : profile.RoutingList;
-                AppEntry.RunAsync(["assign-routing", profile.Name, listName, profile.UseRouting ? "on" : "off"]).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "failed to apply profile '{Name}'", profile.Name);
-            }
-        }
-    }
-
-    private bool ShouldSeed()
-    {
-        if (!options.Value.SeedOnce)
-        {
-            return true;
-        }
-
-        if (File.Exists(SeedMarkerPath()))
-        {
-            logger.LogInformation("seed-once: marker present, skipping startup seed");
-            return false;
-        }
-
-        return true;
-    }
-
-    private void MarkSeeded()
-    {
-        if (!options.Value.SeedOnce)
-        {
+                UseShellExecute = false,
+                WorkingDirectory = AppContext.BaseDirectory,
+            });
+            process?.WaitForExit();
             return;
         }
 
-        try
-        {
-            var marker = SeedMarkerPath();
-            Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
-            File.WriteAllText(marker, "seeded");
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "failed to write seed-once marker");
-        }
-    }
-
-    private static string SeedMarkerPath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        "AmneziaGeo",
-        "launcher-seeded.marker");
-
-    private void ApplyWebSockets(IReadOnlyList<WebSocketSpec> webSockets)
-    {
-        foreach (var ws in webSockets)
-        {
-            if (string.IsNullOrWhiteSpace(ws.Config))
-            {
-                continue;
-            }
-
-            logger.LogInformation("seeding WebSocket transport for '{Config}' (enabled={Enabled}, port={Port})", ws.Config, ws.Enabled, ws.Port);
-            try
-            {
-                AppEntry.RunAsync(
-                [
-                    "set-websocket",
-                    ws.Config,
-                    ws.Enabled ? "on" : "off",
-                    ws.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    ws.Host ?? string.Empty,
-                ]).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "failed to seed WebSocket transport for '{Config}'", ws.Config);
-            }
-        }
-    }
-
-    private void RegisterConfigs(IReadOnlyList<string> paths)
-    {
-        foreach (var raw in paths)
-        {
-            var expanded = Environment.ExpandEnvironmentVariables(raw);
-            if (!Path.IsPathRooted(expanded))
-            {
-                expanded = Path.GetFullPath(expanded, AppContext.BaseDirectory);
-            }
-
-            string[] files;
-            if (Directory.Exists(expanded))
-            {
-                files = Directory.GetFiles(expanded, "*.conf");
-            }
-            else if (File.Exists(expanded))
-            {
-                files = [expanded];
-            }
-            else
-            {
-                logger.LogWarning("config path not found, skipping: {Path}", expanded);
-                continue;
-            }
-
-            foreach (var file in files)
-            {
-                var name = Path.GetFileNameWithoutExtension(file);
-                logger.LogInformation("registering config '{Name}' from {Path}", name, file);
-                try
-                {
-                    AppEntry.RunAsync(["config-add", name, file]).GetAwaiter().GetResult();
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "failed to register config '{Name}'", name);
-                }
-            }
-        }
+        logger.LogWarning("tray exe not staged next to the launcher; opening the GUI in-process");
+        UiProgram.BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 }

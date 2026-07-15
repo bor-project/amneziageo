@@ -24,7 +24,7 @@ internal sealed partial class LogsView : UserControl
     private void OnOpenLogsFolder(object? sender, RoutedEventArgs e)
     {
         var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "AmneziaGeo", "logs");
         var selected = (DataContext as LogsViewModel)?.SelectedLogFile?.Name;
         var file = selected is not null ? Path.Combine(dir, selected) : null;

@@ -26,11 +26,6 @@ internal sealed class LaunchOptions
     public string? ConfigPath { get; private set; }
 
     /// <summary>
-    /// Paths to default Amnezia configs (files or directories) to register on startup.
-    /// </summary>
-    public IReadOnlyList<string> ConfigPaths { get; private set; } = [];
-
-    /// <summary>
     /// Resolves the effective options from configuration defaults and command-line overrides.
     /// </summary>
     public static LaunchOptions Resolve(LauncherOptions defaults, string[] args)
@@ -40,7 +35,6 @@ internal sealed class LaunchOptions
             RunService = defaults.RunService,
             RunUi = defaults.RunUi,
             Target = string.IsNullOrWhiteSpace(defaults.Target) ? null : defaults.Target,
-            ConfigPaths = defaults.ConfigPaths,
         };
 
         for (var i = 0; i < args.Length; i++)

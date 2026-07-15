@@ -55,6 +55,25 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- Build target (win-<arch>-<fdd|scd>) baked from the installer build (build-installer.ps1 passes
+       -p:BuildTarget). AppSettings reads it back so the update check downloads the matching per-build
+       installer. Absent (plain build) => the update check falls back to the manifest setup field. -->
+  <ItemGroup Condition="'$(BuildTarget)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.BuildTarget</_Parameter1>
+      <_Parameter2>$(BuildTarget)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Prerelease channel toggle baked from installer.config.json (build-installer.ps1 passes
+       -p:AllowPrerelease). "1" => the update check also offers prereleases. Absent/"0" => stable only. -->
+  <ItemGroup Condition="'$(AllowPrerelease)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.AllowPrerelease</_Parameter1>
+      <_Parameter2>$(AllowPrerelease)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <!-- Bake the AmneziaWG engine version into this assembly so the agent can report it over IPC:
        tunnel.dll carries no version resource, so this build-time value (read back via AssemblyMetadata
        "AmneziaGeo.EngineVersion" in AppSettings) is the authoritative engine version. The value is the

@@ -20,10 +20,35 @@ internal sealed record AppSettings
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "AmneziaGeo.EngineVersion")?.Value?.Trim() ?? string.Empty;
 
+    // Build target (win-<arch>-<fdd|scd>) baked at build time; the update check builds the per-build
+    // installer name from it.
+    private static readonly string BakedBuildTarget =
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "AmneziaGeo.BuildTarget")?.Value?.Trim() ?? string.Empty;
+
+    // Prerelease channel toggle baked from installer.config.json (allowPrerelease); "1" also offers prereleases.
+    private static readonly bool BakedAllowPrerelease =
+        string.Equals(
+            Assembly.GetExecutingAssembly()
+                .GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(a => a.Key == "AmneziaGeo.AllowPrerelease")?.Value?.Trim(),
+            "1", StringComparison.Ordinal);
+
     /// <summary>
     /// Engine version baked at build time.
     /// </summary>
     public static string EngineVersion => BakedEngineVersion;
+
+    /// <summary>
+    /// Build target (win-<arch>-<fdd|scd>) baked at build time.
+    /// </summary>
+    public static string BuildTarget => BakedBuildTarget;
+
+    /// <summary>
+    /// Whether the update check offers prereleases.
+    /// </summary>
+    public static bool AllowPrerelease => BakedAllowPrerelease;
 
     /// <summary>
     /// How often tunneled domains are re-resolved, in seconds.

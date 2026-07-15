@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Continue'
 $exe = Join-Path $PSScriptRoot '..\AmneziaGeo.Windows.App\bin\Debug\net10.0\AmneziaGeo.Windows.App.exe'
-$log = Join-Path $env:ProgramData 'AmneziaGeo\logs\agent.log'
+$log = Join-Path $env:LOCALAPPDATA 'AmneziaGeo\logs\agent.log'
 function ageo { & $exe @args }
 
 if ($Stop) {

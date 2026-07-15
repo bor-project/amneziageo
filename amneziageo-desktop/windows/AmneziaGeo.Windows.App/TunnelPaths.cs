@@ -170,8 +170,6 @@ internal static class TunnelPaths
 
     private static string RootDirectory()
     {
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "AmneziaGeo");
+        return AppDataRoot.Base();
     }
 }

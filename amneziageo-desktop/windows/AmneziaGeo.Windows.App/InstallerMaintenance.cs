@@ -60,14 +60,12 @@ internal static class InstallerMaintenance
     }
 
     /// <summary>
-    /// Removes the runtime data tree (%ProgramData%\AmneziaGeo), retrying briefly so the wipe survives the
+    /// Removes the per-user runtime data tree, retrying briefly so the wipe survives the
     /// narrow window where the just-stopped agent has not yet released state.db or the current log file.
     /// </summary>
     public static void WipeRuntimeData()
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "AmneziaGeo");
+        var dir = AppDataRoot.Base();
         for (var attempt = 0; attempt < 10 && Directory.Exists(dir); attempt++)
         {
             try

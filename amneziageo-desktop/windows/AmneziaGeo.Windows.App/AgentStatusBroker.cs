@@ -2192,7 +2192,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         {
             try
             {
-                return (await updateChecker.CheckAsync(url, Version(), token), false);
+                return (await updateChecker.CheckAsync(url, Version(), AppSettings.BuildTarget, AppSettings.AllowPrerelease, token), false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -15,6 +15,7 @@
     -Arch x64,arm64           build only these arches
     -SelfContained true,false build only these payload kinds
     -All                      the full 2x2 matrix (x64/arm64 x fdd/scd)
+    -AllowPrerelease          bake allowPrerelease=1 (beta channel) regardless of the config value
     -ListOnly                 print the resolved matrix and exit (build nothing)
   With no flags and no config, the default is a single x64 framework-dependent build (the prior behaviour).
 
@@ -40,6 +41,7 @@ param(
     [string]$Version,
     [string[]]$Arch,
     [string[]]$SelfContained,
+    [switch]$AllowPrerelease,
     [switch]$All,
     [switch]$Rebuild,
     [switch]$ListOnly
@@ -78,6 +80,12 @@ $rebuild = [bool]$Rebuild -or $cfgRebuild
 if ($Configuration -notin @('Debug', 'Release')) { throw "Invalid Configuration '$Configuration' (expected Debug or Release)." }
 
 $updateUrl = if ($cfg -and $cfg.updateUrl) { [string]$cfg.updateUrl } else { '' }
+
+# Hidden channel toggle (not shown in the UI): installer.config.json -> allowPrerelease (0/1 or true/false),
+# overridable by -AllowPrerelease (CI forces it on for prerelease tags so a beta build stays on the beta
+# channel). Baked into the app; "1" lets the update check offer prereleases. Default 0.
+$allowPre = if ($AllowPrerelease) { '1' } elseif ($cfg -and $null -ne $cfg.allowPrerelease -and [bool]$cfg.allowPrerelease) { '1' } else { '0' }
+$prereleaseProps = @("-p:AllowPrerelease=$allowPre")
 
 $iconAbs = ''
 if ($cfg -and $cfg.iconPath) {
@@ -120,7 +128,7 @@ foreach ($v in $variants) {
     Write-Host ("   - win-{0} {1}" -f $v.Arch, $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
 }
 $hasLocal = Test-Path (Join-Path $bundleDir 'installer.config.local.json')
-Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); allowPrerelease=$allowPre; signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
 if ($ListOnly) { return }
 
 # ---- Authenticode signing (installer.config.json -> signingCert). Off unless signingCert is set. ----
@@ -245,7 +253,7 @@ function Build-Variant {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
     Write-Host "== publish backend (AmneziaGeo.Windows.App, $rid, $kind) =="
-    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version $updateProps $engineProps -o $stage
+    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version "-p:BuildTarget=win-$Arch-$tag" $updateProps $prereleaseProps $engineProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
 
     Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $rid, $kind) =="

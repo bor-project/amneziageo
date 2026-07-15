@@ -304,6 +304,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             _ = settings.LoadAsync();
         }
 
+        _host.Profile.AdoptRoutingList(id);
+
         var created = RoutingLists.FirstOrDefault(r => r.Id == id);
         if (created is not null)
         {

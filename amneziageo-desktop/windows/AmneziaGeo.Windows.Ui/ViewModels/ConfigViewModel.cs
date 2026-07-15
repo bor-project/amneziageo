@@ -657,6 +657,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             // Open the just-imported config once its row lands in the next snapshot, so the transport editor
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
+            _host.Profile.AdoptConfig(name);
             return true;
         }
         finally

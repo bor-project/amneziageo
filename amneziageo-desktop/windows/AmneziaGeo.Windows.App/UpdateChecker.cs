@@ -33,16 +33,16 @@ internal sealed class UpdateChecker(HttpClient http)
         var setup = string.IsNullOrWhiteSpace(meta.Setup) ? "AmneziaGeoSetup.exe" : meta.Setup;
         var setupUrl = new Uri(new Uri(metadataUrl), setup).ToString();
 
-        return new UpdateInfo(IsNewer(meta.Version, currentVersion), meta.Version, setupUrl, meta.Description ?? string.Empty);
+        return new UpdateInfo(IsUpdate(meta.Version, currentVersion), meta.Version, setupUrl, meta.Description ?? string.Empty);
     }
 
-    // Only a strictly newer remote counts as an update: Burn refuses a bundle downgrade (0x80070666), so
-    // offering one would only fail silently.
-    private static bool IsNewer(string remote, string current)
+    // A remote version differing in either direction is an update; downgrade is supported (the bundle
+    // removes a newer related install and the MSI's AllowDowngrades reinstalls the target).
+    private static bool IsUpdate(string remote, string current)
     {
         if (System.Version.TryParse(remote, out var r) && System.Version.TryParse(current, out var c))
         {
-            return r.CompareTo(c) > 0;
+            return r.CompareTo(c) != 0;
         }
 
         return !string.Equals(remote.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase);

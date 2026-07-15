@@ -1,5 +1,8 @@
 # AmneziaGeo
 
+> [!WARNING]
+> **This project is under active development (pre-release).** Expect breaking changes, incomplete features, and rough edges. It is not yet recommended for production use.
+
 > A lightweight AmneziaWG VPN client with geo-aware split tunneling: route only the destinations you choose (by domain, domain category, country, CIDR, or application) through a DPI-resistant tunnel and send everything else direct.
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%28more%20planned%29-0078D6)

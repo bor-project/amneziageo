@@ -61,6 +61,27 @@
   <data name="General_Section" xml:space="preserve">
     <value>Общие</value>
   </data>
+  <data name="General_ConnectionSection" xml:space="preserve">
+    <value>Подключение</value>
+  </data>
+  <data name="General_SurviveReboot" xml:space="preserve">
+    <value>Восстанавливать после перезагрузки</value>
+  </data>
+  <data name="General_SurviveRebootHint" xml:space="preserve">
+    <value>Автоподключение выбранного профиля при запуске компьютера.</value>
+  </data>
+  <data name="General_PeriodicReconnect" xml:space="preserve">
+    <value>Периодическое авто-переподключение</value>
+  </data>
+  <data name="General_PeriodicReconnectHint" xml:space="preserve">
+    <value>Повторять попытки с заданным интервалом, пока подключение неактивно.</value>
+  </data>
+  <data name="General_ReconnectInterval" xml:space="preserve">
+    <value>Интервал повтора</value>
+  </data>
+  <data name="General_Seconds" xml:space="preserve">
+    <value>с</value>
+  </data>
   <data name="Main_AppearanceTitle" xml:space="preserve">
     <value>Оформление</value>
   </data>
@@ -885,6 +906,12 @@
   </data>
   <data name="MainVm_ConnectHintConnecting" xml:space="preserve">
     <value>Устанавливается соединение…</value>
+  </data>
+  <data name="MainVm_ConnectHintRetrying" xml:space="preserve">
+    <value>Нажмите, чтобы отменить</value>
+  </data>
+  <data name="MainVm_ConnectAttempt" xml:space="preserve">
+    <value>Попытка {0}</value>
   </data>
   <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
     <value>У профиля нет конфигурации — задайте её в настройках</value>

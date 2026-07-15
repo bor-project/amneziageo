@@ -74,4 +74,19 @@ internal sealed record AppSettings
     /// Whether the dedicated routing log is recording.
     /// </summary>
     public bool RouteLog { get; init; }
+
+    /// <summary>
+    /// Auto-connect the selected profile on service start (survive a reboot).
+    /// </summary>
+    public bool SurviveReboot { get; init; }
+
+    /// <summary>
+    /// Retry a desired connection at a fixed interval instead of the default backoff.
+    /// </summary>
+    public bool PeriodicReconnect { get; init; }
+
+    /// <summary>
+    /// Interval between periodic auto-reconnect attempts, in seconds.
+    /// </summary>
+    public int PeriodicReconnectIntervalSeconds { get; init; } = 30;
 }

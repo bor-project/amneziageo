@@ -65,6 +65,7 @@ internal static class AppHost
             builder.Services.AddWindowsService(options => options.ServiceName = TunnelPaths.AgentServiceName());
             builder.Services.AddSingleton(new AgentTarget(agentTarget));
             builder.Services.AddHostedService<AgentBackgroundService>();
+            builder.Services.AddHostedService<NetworkWatcher>();
             builder.Services.AddHostedService<StatusPipeServer>();
             builder.Services.AddHostedService<UpdateCheckService>();
             builder.Services.AddHostedService<GeoUpdateCheckService>();

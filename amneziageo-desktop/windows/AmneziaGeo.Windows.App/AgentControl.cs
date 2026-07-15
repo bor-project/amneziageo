@@ -20,6 +20,8 @@ internal sealed class AgentControl
     private volatile bool _connectFailed;
     private volatile ConnectFailureReason _connectFailReason;
     private volatile string? _connectFailDetail;
+    private volatile int _retryAttempt;
+    private volatile bool _awaitingRetry;
     private CancellationTokenSource _change = new();
 
     /// <summary>
@@ -58,6 +60,11 @@ internal sealed class AgentControl
     public string? ConnectFailDetail => _connectFailDetail;
 
     /// <summary>
+    /// Transient-failure retry count for the current dial; 0 when not retrying.
+    /// </summary>
+    public int RetryAttempt => _retryAttempt;
+
+    /// <summary>
     /// Fires when the desired state or persisted configuration changes.
     /// </summary>
     public CancellationToken ChangeToken
@@ -80,6 +87,7 @@ internal sealed class AgentControl
         _connectFailed = false;
         _connectFailReason = ConnectFailureReason.Unknown;
         _connectFailDetail = null;
+        _retryAttempt = 0;
         if (value)
         {
             _runningTarget = _target;
@@ -142,6 +150,7 @@ internal sealed class AgentControl
         _running = false;
         _runningTarget = null;
         _restartRequired = false;
+        _retryAttempt = 0;
         Signal();
     }
 
@@ -151,6 +160,46 @@ internal sealed class AgentControl
     public void SetRestartRequired()
     {
         _restartRequired = true;
+    }
+
+    /// <summary>
+    /// Advances the transient-failure retry count and returns the new value.
+    /// </summary>
+    public int NextRetry()
+    {
+        lock (_gate)
+        {
+            return ++_retryAttempt;
+        }
+    }
+
+    /// <summary>
+    /// Clears the retry count after a successful connect.
+    /// </summary>
+    public void ClearRetry()
+    {
+        _retryAttempt = 0;
+        _awaitingRetry = false;
+    }
+
+    /// <summary>
+    /// Marks whether the runner is waiting out a retry backoff (vs mid-attempt).
+    /// </summary>
+    public void SetAwaitingRetry(bool value)
+    {
+        _awaitingRetry = value;
+    }
+
+    /// <summary>
+    /// Signals a re-dial only while waiting out a backoff, so a network change shortens the wait without
+    /// aborting an in-flight connect attempt or tearing down a live tunnel.
+    /// </summary>
+    public void WakeIfRetrying()
+    {
+        if (_running && _awaitingRetry)
+        {
+            Signal();
+        }
     }
 
     private void Signal()

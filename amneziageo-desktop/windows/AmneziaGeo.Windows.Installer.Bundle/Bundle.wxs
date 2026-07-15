@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   AmneziaGeo Burn bundle. Wraps the self-contained per-machine MSI and hosts the custom managed
-  WPF bootstrapper application (AmneziaGeo.Windows.Installer). The bundle Version carries a 4th
-  build field (1.0.1.<build>) so every build is strictly newer to Burn - that, together with the
-  MSI's MajorUpgrade AllowDowngrades, is what lets "same version, different code" reinstall as an
-  update and lets downgrades through. The BA additionally clears any related bundle on install.
+  WPF bootstrapper application (AmneziaGeo.Windows.Installer). The bundle Version comes from the
+  release tag - that, together with the MSI's MajorUpgrade AllowDowngrades, is what lets "same
+  version, different code" reinstall as an update, an upgrade, or a downgrade. The BA additionally
+  clears any related bundle on install, so a lower version removes the newer install first.
 
   The bundle UpgradeCode is its OWN GUID, distinct from the MSI UpgradeCode.
 

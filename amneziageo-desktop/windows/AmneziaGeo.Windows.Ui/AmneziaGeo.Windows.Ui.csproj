@@ -6,7 +6,7 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.2.<build>. -->
-    <Version>1.0.2</Version>
+    <Version>0.0.1</Version>
     <!-- Embed the Win32 icon into AmneziaGeo.Windows.Ui.exe so Explorer, the Start-menu/Desktop shortcuts
          and the taskbar/pinned button show it (the runtime BuildIcon only sets the live window/tray icon).
          The icon is supplied by the installer build from installer.config.json: -p:HasIcon=false omits it

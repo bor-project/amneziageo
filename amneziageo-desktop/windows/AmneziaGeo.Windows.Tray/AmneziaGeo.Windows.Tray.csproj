@@ -18,7 +18,7 @@
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <AssemblyName>AmneziaGeo.Windows.Tray</AssemblyName>
     <!-- Baseline version; the installer build overrides it with -p:Version=1.0.2.<build>. -->
-    <Version>1.0.2</Version>
+    <Version>0.0.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Same icon-embed contract as ui.csproj: the shortcut (and any taskbar pin derived from it) inherits the
          exe's embedded icon at the stable install path. HasIcon=false omits it, IconFile overrides the source. -->

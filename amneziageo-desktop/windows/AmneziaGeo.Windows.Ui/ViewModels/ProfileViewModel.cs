@@ -19,6 +19,9 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     private readonly AgentConnection _connection;
 
     private string? _pendingOpenProfile;
+    private ProfileItemViewModel? _adoptTarget;
+    private string? _pendingAdoptConfig;
+    private long? _pendingAdoptRoutingList;
     private bool _suppressOpenChoice;
 
     [ObservableProperty]
@@ -146,8 +149,72 @@ internal sealed partial class ProfileViewModel : ViewModelBase
             }
         }
 
+        AdoptPending();
+
         _host.Home.SyncActiveProfileChoice();
         SyncOpenProfileChoice();
+    }
+
+    /// <summary>
+    /// Selects a just-added config in the open profile once its row lands in the next snapshot.
+    /// </summary>
+    internal void AdoptConfig(string name)
+    {
+        if (OpenProfile is { } profile)
+        {
+            _adoptTarget = profile;
+            _pendingAdoptConfig = name;
+        }
+    }
+
+    /// <summary>
+    /// Selects a just-created routing list in the open profile once its row lands in the next snapshot.
+    /// </summary>
+    internal void AdoptRoutingList(long id)
+    {
+        if (OpenProfile is { } profile)
+        {
+            _adoptTarget = profile;
+            _pendingAdoptRoutingList = id;
+        }
+    }
+
+    // Picks a pending config / routing list in the profile it was armed for, which autosaves it like a manual
+    // pick. Applies at most once - a differing open profile drops it, an unresolved option is not retried.
+    private void AdoptPending()
+    {
+        if (_pendingAdoptConfig is null && _pendingAdoptRoutingList is null)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(OpenProfile, _adoptTarget) || _adoptTarget is not { } profile)
+        {
+            _adoptTarget = null;
+            _pendingAdoptConfig = null;
+            _pendingAdoptRoutingList = null;
+            return;
+        }
+
+        if (_pendingAdoptConfig is { } configName)
+        {
+            _pendingAdoptConfig = null;
+            if (profile.ConfigOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, configName, StringComparison.Ordinal)) is { } config)
+            {
+                profile.SelectedConfig = config;
+            }
+        }
+
+        if (_pendingAdoptRoutingList is { } listId)
+        {
+            _pendingAdoptRoutingList = null;
+            if (profile.RoutingListOptions.FirstOrDefault(o => o.IsReal && o.Id == listId) is { } list)
+            {
+                profile.SelectedRoutingList = list;
+            }
+        }
+
+        _adoptTarget = null;
     }
 
     /// <summary>
@@ -157,6 +224,9 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     {
         Profiles.Clear();
         OpenProfile = null;
+        _adoptTarget = null;
+        _pendingAdoptConfig = null;
+        _pendingAdoptRoutingList = null;
         ReconcileProfileOptions();
     }
 

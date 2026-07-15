@@ -407,12 +407,15 @@
       <Border IsVisible="{Binding Home.NoticeVisible}"
               Background="{DynamicResource AgAccentBrush}"
               CornerRadius="8" Padding="12,7" BoxShadow="0 6 18 0 #2A000000">
-        <Grid ColumnDefinitions="Auto,*,Auto">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
           <Ellipse Grid.Column="0" Width="8" Height="8" Fill="White" VerticalAlignment="Top" Margin="0,5,9,0" />
           <TextBlock Grid.Column="1" Text="{Binding Home.NoticeText}" Foreground="White"
                      FontSize="12" FontWeight="SemiBold"
                      TextWrapping="Wrap" VerticalAlignment="Center" />
-          <Button Grid.Column="2" Classes="radiopick" Command="{Binding Home.DismissNoticeCommand}"
+          <Button Grid.Column="2" Classes="radiopick" Command="{Binding Home.ReconnectCommand}"
+                  Content="{l:Tr Main_ReconnectButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                  Margin="10,0,0,0" VerticalAlignment="Center" IsVisible="{Binding Home.ReconnectAvailable}" />
+          <Button Grid.Column="3" Classes="radiopick" Command="{Binding Home.DismissNoticeCommand}"
                   Content="✕" Foreground="White" FontSize="12" Margin="9,0,0,0"
                   VerticalAlignment="Top" ToolTip.Tip="{l:Tr Main_CloseTooltip}" />
         </Grid>

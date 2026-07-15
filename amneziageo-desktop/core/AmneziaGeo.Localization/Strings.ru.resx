@@ -739,6 +739,9 @@
   <data name="Main_UpdateNowButton" xml:space="preserve">
     <value>Обновить сейчас</value>
   </data>
+  <data name="Main_ReconnectButton" xml:space="preserve">
+    <value>Переподключиться</value>
+  </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>Обновление</value>
   </data>

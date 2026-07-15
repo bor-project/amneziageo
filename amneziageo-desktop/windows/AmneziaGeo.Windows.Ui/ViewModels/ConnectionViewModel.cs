@@ -84,6 +84,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [ObservableProperty]
     private string? _noticeText;
 
+    [ObservableProperty]
+    private bool _reconnectAvailable;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    private bool _reconnecting;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -113,7 +121,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
         : Loc.Instance.Get("MainVm_NoAgentConnection");
 
-    public bool CanToggleConnection => IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
+    public bool CanToggleConnection => !Reconnecting && IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
 
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
@@ -212,6 +220,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _lastNotice = null;
         NoticeVisible = false;
         NoticeText = null;
+        ReconnectAvailable = false;
     }
 
     /// <summary>
@@ -265,6 +274,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         // tunnel is up (reconnect to apply - no auto-switch), settings changed on a live tunnel, or a
         // connect failure. Shown once per distinct notice, not re-armed while the same one holds.
         string? notice = null;
+        var reconnect = false;
         if (snapshot.ConnectFailed)
         {
             notice = ConnectFailureNotice(snapshot);
@@ -275,9 +285,12 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
         else if (snapshot.RestartRequired)
         {
+            // Settings changed on the live tunnel: bound == selected, so reconnecting the active profile applies them.
             notice = Loc.Instance.Get("MainVm_NoticeSettingsChanged");
+            reconnect = true;
         }
 
+        ReconnectAvailable = reconnect;
         ShowNotice(notice);
     }
 
@@ -495,9 +508,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Shows a transient notice banner that auto-hides after 5 seconds. Re-arms only when the notice
-    /// text changes, so a persistent condition is not re-shown on every snapshot (and a dismissed
-    /// banner stays dismissed until a different notice arrives).
+    /// Shows a notice banner. The reconnect banner holds until acted on; other notices auto-hide after 5
+    /// seconds. Re-arms only when the notice text changes, so a persistent condition is not re-shown on
+    /// every snapshot (and a dismissed banner stays dismissed until a different notice arrives).
     /// </summary>
     public void ShowNotice(string? notice)
     {
@@ -509,14 +522,17 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _lastNotice = notice;
         NoticeText = notice;
         _noticeTimer.Stop();
-        if (notice is not null)
-        {
-            NoticeVisible = true;
-            _noticeTimer.Start();
-        }
-        else
+        if (notice is null)
         {
             NoticeVisible = false;
+            return;
+        }
+
+        NoticeVisible = true;
+        // The reconnect banner stays up until acted on or the condition clears; other notices auto-hide.
+        if (!ReconnectAvailable)
+        {
+            _noticeTimer.Start();
         }
     }
 
@@ -525,5 +541,47 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     {
         _noticeTimer.Stop();
         NoticeVisible = false;
+    }
+
+    /// <summary>
+    /// Reconnects the tunnel from the notice banner: disconnect, wait for teardown, then connect the active profile.
+    /// </summary>
+    [RelayCommand]
+    private async Task Reconnect()
+    {
+        // Gate the power toggle for the duration so a mid-wait connect/disconnect can't wedge the teardown wait.
+        // The banner is left to clear on its own: RestartRequired drops after the real disconnect, so the notice
+        // goes null on the next snapshot; a failed disconnect leaves it standing instead of vanishing silently.
+        Reconnecting = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
+            if (!ack.Ok)
+            {
+                return;
+            }
+
+            await WaitForDisconnectAsync();
+
+            if (ActiveProfile is not null)
+            {
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [ActiveProfile.Name]));
+            }
+
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
+        }
+        finally
+        {
+            Reconnecting = false;
+        }
+    }
+
+    // Waits for the snapshot-driven state to reach disconnected, bounded to 15s so a stuck teardown still dials.
+    private async Task WaitForDisconnectAsync()
+    {
+        for (var i = 0; i < 75 && ConnState != 0; i++)
+        {
+            await Task.Delay(200);
+        }
     }
 }

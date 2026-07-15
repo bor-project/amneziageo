@@ -84,11 +84,10 @@ jobs:
             # Strip the leading v and any prerelease suffix (v1.2.3.4-beta.1 -> 1.2.3.4): the installer needs a
             # numeric N.N.N.N version; the -beta marker lives on the tag/release, not in the binaries.
             $ver = "$env:GITHUB_REF_NAME" -replace '^v','' -replace '-.*$',''
-            $buildArgs = @('ci', '-Version', $ver, '-Arch', '${{ matrix.arch }}', '-SelfContained', '${{ matrix.sc }}')
             # A prerelease tag (v1.2.3.4-beta.1) bakes allowPrerelease=1 so the beta build stays on the beta
             # channel instead of offering a downgrade to the stable latest.
-            if ("$env:GITHUB_REF_NAME" -match '-') { $buildArgs += '-AllowPrerelease' }
-            & $script @buildArgs
+            $pre = [bool]("$env:GITHUB_REF_NAME" -match '-')
+            & $script ci -Version $ver -Arch ${{ matrix.arch }} -SelfContained ${{ matrix.sc }} -AllowPrerelease:$pre
           } else {
             & $script ci -Arch ${{ matrix.arch }} -SelfContained ${{ matrix.sc }}
           }

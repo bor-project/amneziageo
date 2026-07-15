@@ -48,8 +48,15 @@
                  Text="{l:Tr Main_NoRoutingListsHint}" />
     </StackPanel>
 
+    <!-- Section loader until an opened list's rules + traffic settings finish, so the editor reveals fully
+         populated with no reflow (#193); matches the main window's first-load loader. -->
+    <StackPanel IsVisible="{Binding EditorLoading}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
+      <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+      <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+    </StackPanel>
+
     <!-- Editor for the selected / new list. -->
-    <StackPanel IsVisible="{Binding HasRoutingEditor}" Spacing="14">
+    <StackPanel IsVisible="{Binding EditorReady}" Spacing="14">
 
       <!-- Rules card: name + per-app tunneling + geo/domain/cidr entries + import/export. -->
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"

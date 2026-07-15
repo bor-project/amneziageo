@@ -21,10 +21,17 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRoutingEditor))]
+    [NotifyPropertyChangedFor(nameof(EditorReady))]
+    [NotifyPropertyChangedFor(nameof(EditorLoading))]
     private RoutingListEditorViewModel? _routingEditor;
 
     [ObservableProperty]
     private RoutingSettingsViewModel? _routingSettings;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EditorReady))]
+    [NotifyPropertyChangedFor(nameof(EditorLoading))]
+    private bool _sectionLoading;
 
     [ObservableProperty]
     private RoutingListSummaryViewModel? _editRoutingList;
@@ -72,6 +79,16 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// Whether the rule editor is shown (a list is selected or a new draft is open).
     /// </summary>
     public bool HasRoutingEditor => RoutingEditor is not null;
+
+    /// <summary>
+    /// Whether the loaded editor content is shown: an editor exists and its data has finished loading (#193).
+    /// </summary>
+    public bool EditorReady => RoutingEditor is not null && !SectionLoading;
+
+    /// <summary>
+    /// Whether the section loader is shown in place of the editor while an opened list loads (#193).
+    /// </summary>
+    public bool EditorLoading => RoutingEditor is not null && SectionLoading;
 
     /// <summary>
     /// Reconciles the routing-list catalogue from the snapshot.
@@ -278,11 +295,30 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
         var editor = new RoutingListEditorViewModel(_connection, id, name, OnSectionRoutingEditorSaved) { AutoSave = true };
         RoutingEditor = editor;
-        _ = editor.LoadAsync();
 
         var settings = new RoutingSettingsViewModel(_connection, id) { AutoSave = true };
         RoutingSettings = settings;
-        _ = settings.LoadAsync();
+
+        _ = LoadSectionAsync(editor, settings);
+    }
+
+    // Holds the section loader until the opened list's rules and traffic settings both finish, then reveals the
+    // editor fully populated so nothing reflows (#193). A superseding open leaves the stale load's clear to the
+    // newer one (the editor instance no longer matches).
+    private async Task LoadSectionAsync(RoutingListEditorViewModel editor, RoutingSettingsViewModel settings)
+    {
+        SectionLoading = true;
+        try
+        {
+            await Task.WhenAll(editor.LoadAsync(), settings.LoadAsync());
+        }
+        finally
+        {
+            if (ReferenceEquals(RoutingEditor, editor))
+            {
+                SectionLoading = false;
+            }
+        }
     }
 
     // When the Routing section's new (id=0) list is first saved it gets a real id: retarget its per-routing
@@ -397,6 +433,9 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [RelayCommand]
     private void CreateRoutingList()
     {
+        // A new draft has no server data to load: show its empty form at once, never the section loader (#193).
+        SectionLoading = false;
+
         // Clear the selected list first: setting RoutingEditor below fires OnRoutingEditorChanged ->
         // SyncCatalogueRouting, which mirrors EditRoutingList into the combo, so it must already be null for
         // the combo to read «— не выбрано —» while the new draft is being created.

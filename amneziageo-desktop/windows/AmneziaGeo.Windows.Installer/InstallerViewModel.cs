@@ -394,6 +394,17 @@ public sealed class InstallerViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Opens the update options step directly, skipping the maintenance action buttons.
+    /// </summary>
+    public void StageUpdate()
+    {
+        if (State == InstallState.Installed)
+        {
+            PendingAction = InstallerAction.Update;
+        }
+    }
+
+    /// <summary>
     /// Switch to the live-progress view.
     /// </summary>
     public void BeginApply(InstallerAction action)

@@ -134,6 +134,10 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             {
                 OnUserAction(MapCommandAction(_command.Action, state));
             }
+            else if (IsUpdateFlow())
+            {
+                _vm.StageUpdate();
+            }
         });
 
         // A previously-installed machine may have a connectable profile: ask the running agent so the options
@@ -142,6 +146,11 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         {
             ProbeAutoConnect();
         }
+    }
+
+    private bool IsUpdateFlow()
+    {
+        return string.Equals(engine.GetVariableString("UPDATEFLOW"), "1", StringComparison.Ordinal);
     }
 
     private void ProbeAutoConnect()

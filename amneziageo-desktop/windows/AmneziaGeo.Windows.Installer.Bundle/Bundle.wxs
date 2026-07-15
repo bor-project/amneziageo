@@ -27,9 +27,12 @@
           Compressed="yes">
 
     <Variable Name="DELETECONFIG" Value="" />
-    <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
-         app once the update is applied. Default 0; overridable from the command line. -->
+    <!-- #155: the in-app updater passes LAUNCHAFTER=1 so the BA restarts the app after a non-interactive
+         update. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" />
+    <!-- The in-app updater passes UPDATEFLOW=1 so the BA opens the update options step directly instead of
+         the maintenance action buttons. Default 0; overridable from the command line. -->
+    <Variable Name="UPDATEFLOW" Value="0" />
     <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
          per-user saved options; a command-line value wins. -->
     <Variable Name="DESKTOPSHORTCUT" Value="" />
@@ -61,9 +64,12 @@
           Compressed="yes">
 
     <Variable Name="DELETECONFIG" Value="" />
-    <!-- #155: the in-app updater passes LAUNCHAFTER=1 on the /passive command line so the BA restarts the
-         app once the update is applied. Default 0; overridable from the command line. -->
+    <!-- #155: the in-app updater passes LAUNCHAFTER=1 so the BA restarts the app after a non-interactive
+         update. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" />
+    <!-- The in-app updater passes UPDATEFLOW=1 so the BA opens the update options step directly instead of
+         the maintenance action buttons. Default 0; overridable from the command line. -->
+    <Variable Name="UPDATEFLOW" Value="0" />
     <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
          per-user saved options; a command-line value wins. -->
     <Variable Name="DESKTOPSHORTCUT" Value="" />

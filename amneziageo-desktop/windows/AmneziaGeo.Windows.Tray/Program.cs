@@ -7,11 +7,12 @@ namespace AmneziaGeo.Windows.Tray;
 /// <summary>
 /// The tray anchor entry point: a hidden owner window drives a Shell notify icon, a background link keeps the
 /// agent tunnel alive and feeds the icon its colour and tooltip, balloons announce the connect start,
-/// completion, and failure while the GUI is not in front, and the
-/// context menu opens the GUI, connects, disconnects,
-/// or exits. A cold launch with an active profile opens the lightweight launcher window so the user connects
-/// without the full GUI; the right-click menu is never auto-shown (#187). Launched with --connect (post-install
-/// auto-connect), it dials the active profile straight away and stays resident, no window (#188).
+/// completion, and failure while the GUI is not in front. A left click (or the menu's Open) surfaces the
+/// lightweight launcher for a quick connect; the menu's Settings opens the full configuration console;
+/// the menu also connects, disconnects, or exits. A cold launch with an active profile opens the launcher so
+/// the user connects without the full GUI; the right-click menu is never auto-shown (#187). Launched with
+/// --connect (post-install auto-connect), it dials the active profile straight away and stays resident, no
+/// window (#188).
 /// </summary>
 internal static unsafe class Program
 {
@@ -112,7 +113,7 @@ internal static unsafe class Program
                 var ev = (uint)(lParam & 0xFFFF);
                 if (ev == Native.WM_LBUTTONUP)
                 {
-                    LaunchUi();
+                    LaunchUi("--launcher");
                 }
                 else if (ev == Native.WM_RBUTTONUP)
                 {
@@ -120,7 +121,7 @@ internal static unsafe class Program
                 }
                 else if (ev == Native.NIN_BALLOONUSERCLICK)
                 {
-                    LaunchUi();
+                    LaunchUi("--launcher");
                 }
 
                 return 0;
@@ -155,7 +156,7 @@ internal static unsafe class Program
 
             if (msg == Native.WM_OPENUI)
             {
-                LaunchUi();
+                LaunchUi("--launcher");
                 return 0;
             }
 
@@ -192,6 +193,9 @@ internal static unsafe class Program
         switch (id)
         {
             case Native.ID_OPEN:
+                LaunchUi("--launcher");
+                break;
+            case Native.ID_SETTINGS:
                 LaunchUi();
                 break;
             case Native.ID_CONNECT:
@@ -332,12 +336,13 @@ internal static unsafe class Program
         Native.DestroyMenu(menu);
     }
 
-    // Builds the menu for the current state: Open always; Connect (grey without an active profile) when down,
-    // Disconnect when up; Exit always.
+    // Builds the menu for the current state: Open (launcher) and Settings (console) always; Connect (grey without
+    // an active profile) when down, Disconnect when up; Exit always.
     private static nint BuildMenu()
     {
         var menu = Native.CreatePopupMenu();
         Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_OPEN, Labels.Open);
+        Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_SETTINGS, Labels.Settings);
         Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
 
         if (_current == 0)

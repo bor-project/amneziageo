@@ -29,6 +29,7 @@ internal static class Native
     public const int ID_CONNECT = 2;
     public const int ID_DISCONNECT = 3;
     public const int ID_EXIT = 4;
+    public const int ID_SETTINGS = 5;
 
     // Shell_NotifyIcon.
     public const uint NIM_ADD = 0;

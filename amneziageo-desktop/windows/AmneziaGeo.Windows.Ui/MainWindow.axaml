@@ -21,177 +21,52 @@
     <StreamGeometry x:Key="AgRefreshGeometry">M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z</StreamGeometry>
     <!-- Power glyph. -->
     <StreamGeometry x:Key="AgPowerGeometry">M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z</StreamGeometry>
-    <!-- Gear glyph. -->
-    <StreamGeometry x:Key="AgGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
-    <!-- Back glyph. -->
-    <StreamGeometry x:Key="AgBackGeometry">M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z</StreamGeometry>
   </Window.Resources>
 
   <Grid>
 
-    <!-- HOME screen. -->
-    <Border Classes="card" Margin="12" Padding="0" IsVisible="{Binding IsHome}">
-      <DockPanel LastChildFill="True">
+    <!-- Configuration console: a permanent header (title + non-interactive status chip) over the section rail
+         and content pane. Quick connect lives in the launcher and tray; the console never toggles the tunnel. -->
 
-        <!-- Top row: gear pinned left, title centered. -->
-        <Border DockPanel.Dock="Top" Height="48" Padding="12,0">
-          <Grid>
-            <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
-                       VerticalAlignment="Center" HorizontalAlignment="Center"
-                       Foreground="{DynamicResource AgMutedBrush}" />
-            <Button Classes="icon" Padding="6,4" VerticalAlignment="Center" HorizontalAlignment="Left"
-                    Command="{Binding NavSettingsCommand}" ToolTip.Tip="{l:Tr Main_SettingsTooltip}">
-              <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"
-                        Foreground="{DynamicResource AgMutedBrush}" />
-            </Button>
-          </Grid>
-        </Border>
-
-        <!-- Centered column: power button + status/hint + profile combo. A loader replaces it until the first
-             agent snapshot, so the indeterminate power button never flashes on open. -->
-        <Panel>
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18"
-                    IsVisible="{Binding Home.IsReady}">
-          <Button Classes="powerbig" HorizontalAlignment="Center"
-                  Command="{Binding Home.ToggleConnectionCommand}"
-                  IsEnabled="{Binding Home.CanToggleConnection}"
-                  ToolTip.Tip="{Binding Home.ConnectHint}">
-            <Grid Width="236" Height="236">
-              <Ellipse Width="236" Height="236" Stroke="{DynamicResource AgBorderBrush}"
-                       StrokeThickness="1" Opacity="0.7" />
-              <Ellipse Width="196" Height="196" Stroke="{DynamicResource AgBorderBrush}"
-                       StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Ellipse Width="158" Height="158" Stroke="{DynamicResource AgBorder2Brush}"
-                       StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <!-- Accent ring-wave overlays during connect / disconnect. -->
-              <Ellipse Classes="ring r1" Classes.waveout="{Binding Home.IsConnectingOut}"
-                       Classes.wavein="{Binding Home.IsConnectingIn}"
-                       Width="158" Height="158" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Ellipse Classes="ring r2" Classes.waveout="{Binding Home.IsConnectingOut}"
-                       Classes.wavein="{Binding Home.IsConnectingIn}"
-                       Width="196" Height="196" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Ellipse Classes="ring r3" Classes.waveout="{Binding Home.IsConnectingOut}"
-                       Classes.wavein="{Binding Home.IsConnectingIn}"
-                       Width="236" Height="236" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Border Width="132" Height="132" CornerRadius="66"
-                      Background="{Binding Home.ConnectCircleBrush}"
-                      BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="2"
-                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                      BoxShadow="0 8 24 0 #1F000000">
-                <Panel>
-                  <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="54" Height="54"
-                            Foreground="{Binding Home.ConnectCircleForeground}"
-                            IsVisible="{Binding !Home.IsConnecting}"
-                            HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  <Ellipse Classes.pulse="{Binding Home.IsConnecting}" Width="44" Height="44"
-                           IsVisible="{Binding Home.IsConnecting}" Fill="{Binding Home.ConnectCircleForeground}"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Panel>
-              </Border>
-            </Grid>
-          </Button>
-
-          <StackPanel HorizontalAlignment="Center" Spacing="4" Margin="0,4,0,0">
-            <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="17" FontWeight="SemiBold"
-                       HorizontalAlignment="Center" Foreground="{Binding Home.ConnectStatusBrush}" />
-            <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
-                       HorizontalAlignment="Center" Foreground="{Binding Home.ConnectHintBrush}" />
-            <!-- Retry counter while a stalled connect keeps trying (#197). -->
-            <TextBlock Text="{Binding Home.RetryText}" FontSize="12" FontWeight="SemiBold"
-                       HorizontalAlignment="Center" Foreground="{Binding Home.ConnectStatusBrush}"
-                       IsVisible="{Binding Home.ShowRetry}" />
-          </StackPanel>
-
-          <!-- Profile picker: «- не выбрано -» then saved profiles. -->
-          <StackPanel HorizontalAlignment="Center" Spacing="6" Width="300" Margin="0,6,0,0">
-            <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                      ItemsSource="{Binding Profile.ProfileOptions}"
-                      SelectedItem="{Binding Home.ActiveProfileChoice, Mode=TwoWay}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ProfileChoice">
-                  <TextBlock Text="{Binding Name}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-            <!-- No profiles: hint to add one in settings. -->
-            <TextBlock IsVisible="{Binding !HasProfiles}" Classes="muted" FontSize="12"
-                       HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
-                       Text="{l:Tr Main_NoProfilesHint}" />
-            <!-- Profiles exist but none usable: hint to pick one. -->
-            <TextBlock IsVisible="{Binding Home.ShowSelectConfigHint}" Classes="muted" FontSize="12"
-                       HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
-                       Text="{l:Tr Main_HomeSelectConfigHint}" />
-          </StackPanel>
-        </StackPanel>
-
-          <!-- Loader until the first agent snapshot, in place of the indeterminate power button. -->
-          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
-                      IsVisible="{Binding !Home.IsReady}">
-            <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
-            <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13"
-                       HorizontalAlignment="Center" />
-          </StackPanel>
-        </Panel>
-
-      </DockPanel>
-    </Border>
-
-    <!-- SETTINGS screen. -->
-
-      <!-- Settings top header: back to home (left), title centered, connect control (right). -->
+      <!-- Console header: title centered, non-interactive status chip (right). The tunnel is toggled from the
+           launcher and tray, so the chip only reflects state; it also carries the auto-reconnect counter (#197). -->
       <Border Classes="card" CornerRadius="0" Height="48" Margin="12,12,12,0" Padding="12,0"
-              VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
+              VerticalAlignment="Top">
         <Grid>
           <!-- Title centered. -->
           <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
                      HorizontalAlignment="Center" VerticalAlignment="Center"
                      Foreground="{DynamicResource AgMutedBrush}" />
 
-          <!-- Back to Home. Every screen autosaves, so navigation is never locked; deletion is confirmed inline. -->
-          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left" VerticalAlignment="Center">
-            <Button Classes="backbtn" VerticalAlignment="Center"
-                    Command="{Binding NavHomeCommand}"
-                    ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
-              <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
-                        Foreground="{DynamicResource AgMutedBrush}" />
-            </Button>
+          <!-- Status chip (right): animated ring + inner circle carry the state colour (gray off, orange while
+               switching, blue connected); short status text; retry counter while a stalled connect keeps trying. -->
+          <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center"
+                      ToolTip.Tip="{Binding Home.ConnectHint}">
+            <Panel Width="28" Height="28">
+              <Ellipse Classes="connspin" Classes.spinning="{Binding Home.IsConnecting}"
+                       Width="26" Height="26" Stroke="{Binding Home.ConnectCircleForeground}"
+                       StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Border Width="22" Height="22" CornerRadius="11"
+                      Background="{Binding Home.ConnectCircleBrush}"
+                      BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="1"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+                <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
+                          Foreground="{Binding Home.ConnectCircleForeground}"
+                          IsVisible="{Binding !Home.IsConnecting}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </Panel>
+            <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="12" FontWeight="SemiBold"
+                       Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding Home.RetryText}" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center"
+                       IsVisible="{Binding Home.ShowRetry}" />
           </StackPanel>
-
-          <!-- Animated connect / disconnect control (right): soft pill, inner circle + text carry the state
-               colour (gray off, orange while switching, blue connected). -->
-          <Button Classes="powerctl" HorizontalAlignment="Right" VerticalAlignment="Center"
-                  Width="130" HorizontalContentAlignment="Left"
-                  Command="{Binding Home.ToggleConnectionCommand}"
-                  IsEnabled="{Binding Home.CanToggleConnection}"
-                  ToolTip.Tip="{Binding Home.ConnectHint}">
-            <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
-              <Panel Width="28" Height="28">
-                <Ellipse Classes="connspin" Classes.spinning="{Binding Home.IsConnecting}"
-                         Width="26" Height="26" Stroke="{Binding Home.ConnectCircleForeground}"
-                         StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
-                         HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <Border Width="22" Height="22" CornerRadius="11"
-                        Background="{Binding Home.ConnectCircleBrush}"
-                        BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="1"
-                        HorizontalAlignment="Center" VerticalAlignment="Center">
-                  <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
-                            Foreground="{Binding Home.ConnectCircleForeground}"
-                            IsVisible="{Binding !Home.IsConnecting}"
-                            HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-              </Panel>
-              <!-- Short status only. -->
-              <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="12" FontWeight="SemiBold"
-                         Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
         </Grid>
       </Border>
 
-    <Grid IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
+    <Grid Margin="12,0,12,12" RowDefinitions="48,*">
       <Grid.ColumnDefinitions>
         <!-- Section rail column, drag-resizable via the GridSplitter.
              MaxWidth capped so that even at the rail's widest the content pane keeps its MinWidth at the

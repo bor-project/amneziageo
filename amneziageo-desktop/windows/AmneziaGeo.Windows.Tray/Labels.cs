@@ -9,9 +9,14 @@ namespace AmneziaGeo.Windows.Tray;
 internal static class Labels
 {
     /// <summary>
-    /// «Открыть» / "Open": surfaces the GUI.
+    /// «Открыть» / "Open": surfaces the quick-launch window.
     /// </summary>
     public static string Open { get; private set; } = "Open";
+
+    /// <summary>
+    /// «Настройки» / "Settings": opens the full configuration console.
+    /// </summary>
+    public static string Settings { get; private set; } = "Settings";
 
     /// <summary>
     /// «Подключить» / "Connect": brings the tunnel up (enabled only with an active profile).
@@ -66,6 +71,7 @@ internal static class Labels
         if (IsRussian(ReadSavedLanguage()))
         {
             Open = "Открыть";
+            Settings = "Настройки";
             Connect = "Подключить";
             Disconnect = "Отключить";
             Exit = "Выход";

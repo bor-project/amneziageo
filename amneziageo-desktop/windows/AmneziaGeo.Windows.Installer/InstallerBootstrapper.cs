@@ -432,7 +432,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     {
         if (ok && ShouldLaunchAfter())
         {
-            LaunchApp(ShouldAutoConnect());
+            LaunchApp(ShouldAutoConnect(), ShouldShowConsole());
             Application.Current?.Shutdown();
             return;
         }
@@ -485,7 +485,21 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         return string.Equals(engine.GetVariableString("AUTOCONNECT"), "1", StringComparison.Ordinal);
     }
 
-    private static void LaunchApp(bool autoConnect)
+    /// <summary>
+    /// Whether the post-install launch should reopen the settings console: the in-app updater passes
+    /// SHOWCONSOLE=1 because the update was started from there. Install/update only.
+    /// </summary>
+    private bool ShouldShowConsole()
+    {
+        if (_action is not (InstallerAction.Install or InstallerAction.Update))
+        {
+            return false;
+        }
+
+        return string.Equals(engine.GetVariableString("SHOWCONSOLE"), "1", StringComparison.Ordinal);
+    }
+
+    private static void LaunchApp(bool autoConnect, bool showConsole)
     {
         try
         {
@@ -501,6 +515,12 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 {
                     // The tray dials the active profile straight away, skipping the launcher window (#188).
                     psi.ArgumentList.Add("--connect");
+                }
+
+                if (showConsole)
+                {
+                    // Reopen the settings console the in-app update was started from, instead of the launcher.
+                    psi.ArgumentList.Add("--settings");
                 }
 
                 Process.Start(psi);

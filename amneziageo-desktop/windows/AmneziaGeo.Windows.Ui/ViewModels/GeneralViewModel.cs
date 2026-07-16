@@ -332,8 +332,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             // confirms the update before anything is applied, instead of a silent auto-apply. UPDATEFLOW=1
             // tells the BA this is the in-app update flow, so it lands straight on the update options.
             // UseShellExecute lets the bundle elevate (UAC) once. LAUNCHAFTER=1 restarts the app once the
-            // update is applied (#155), honoured if the run ever falls back to non-interactive.
-            Process.Start(new ProcessStartInfo(_downloadedSetupPath) { UseShellExecute = true, Arguments = "UPDATEFLOW=1 LAUNCHAFTER=1" });
+            // update is applied (#155), honoured if the run ever falls back to non-interactive. SHOWCONSOLE=1
+            // reopens the settings console after the restart, since the update was started from there.
+            Process.Start(new ProcessStartInfo(_downloadedSetupPath) { UseShellExecute = true, Arguments = "UPDATEFLOW=1 LAUNCHAFTER=1 SHOWCONSOLE=1" });
 
             // Quit so the installer can replace the app's in-use files.
             if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)

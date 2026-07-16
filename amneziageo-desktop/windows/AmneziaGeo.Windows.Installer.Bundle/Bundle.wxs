@@ -33,6 +33,9 @@
     <!-- The in-app updater passes UPDATEFLOW=1 so the BA opens the update options step directly instead of
          the maintenance action buttons. Default 0; overridable from the command line. -->
     <Variable Name="UPDATEFLOW" Value="0" />
+    <!-- The in-app updater passes SHOWCONSOLE=1 so the post-update launch reopens the settings console the
+         update was started from, instead of the launcher. Default 0. -->
+    <Variable Name="SHOWCONSOLE" Value="0" />
     <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
          per-user saved options; a command-line value wins. -->
     <Variable Name="DESKTOPSHORTCUT" Value="" />
@@ -70,6 +73,9 @@
     <!-- The in-app updater passes UPDATEFLOW=1 so the BA opens the update options step directly instead of
          the maintenance action buttons. Default 0; overridable from the command line. -->
     <Variable Name="UPDATEFLOW" Value="0" />
+    <!-- The in-app updater passes SHOWCONSOLE=1 so the post-update launch reopens the settings console the
+         update was started from, instead of the launcher. Default 0. -->
+    <Variable Name="SHOWCONSOLE" Value="0" />
     <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
          per-user saved options; a command-line value wins. -->
     <Variable Name="DESKTOPSHORTCUT" Value="" />

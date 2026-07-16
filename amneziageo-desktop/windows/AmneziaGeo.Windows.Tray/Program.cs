@@ -23,6 +23,9 @@ internal static unsafe class Program
     private const uint PopupTimerId = 1;
     private const uint PopupTimeoutMs = 1200;
 
+    // Uptime ceiling for treating a tray start as a post-reboot logon autostart.
+    private const long BootConnectWindowMs = 300_000;
+
     private static nint _hwnd;
     private static nint[] _icons = [];
     private static int _current;
@@ -30,7 +33,12 @@ internal static unsafe class Program
     private static nint _classNamePtr;
     private static bool _popupPending;
     private static bool _autoConnect;
+    private static bool _showConsole;
     private static bool _stateInitialized;
+
+    // Set when the tray starts shortly after OS boot: lets the first snapshot announce a tunnel that
+    // survive-reboot brought up before the user session began.
+    private static bool _startedDuringBoot;
 
     // State the current transition started from; -1 until one is seen.
     private static int _transitionFrom = -1;
@@ -43,6 +51,14 @@ internal static unsafe class Program
     {
         // Post-install auto-connect (#188): dial the active profile on cold launch instead of showing the launcher.
         _autoConnect = Array.IndexOf(args, "--connect") >= 0;
+
+        // After an in-app update the installer passes --settings so the cold launch reopens the settings console
+        // the update was started from, instead of the launcher.
+        _showConsole = Array.IndexOf(args, "--settings") >= 0;
+
+        // A tray that comes up within minutes of boot is a post-reboot logon autostart: an already-up tunnel is
+        // still news, so its first snapshot earns a connected balloon.
+        _startedDuringBoot = Environment.TickCount64 < BootConnectWindowMs;
 
         Native.SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
 
@@ -232,6 +248,11 @@ internal static unsafe class Program
         var justFailed = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 0 && connectFailed;
         var justDropped = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 2 && connectFailed;
 
+        // A survive-reboot tunnel that came up before this post-boot tray started: the first snapshot is already
+        // connected, and that is still the news. A later tray start (upgrade, re-logon on a long-lived session)
+        // has a high uptime, so its first connected snapshot stays silent.
+        var bootConnected = !_stateInitialized && state == 2 && _startedDuringBoot;
+
         // Records which edge opened the transition; skipped on the first snapshot, whose origin is unknown.
         if (_stateInitialized && state == 1 && _current != 1)
         {
@@ -246,7 +267,7 @@ internal static unsafe class Program
         // (auto-connect with no window, tray menu, or after the launcher has closed).
         if (!IsUiForeground())
         {
-            if (justConnected)
+            if (justConnected || bootConnected)
             {
                 ShowBalloon("AmneziaGeo", Labels.ConnectedInfo);
             }
@@ -299,11 +320,20 @@ internal static unsafe class Program
         _popupPending = false;
         Native.KillTimer(_hwnd, PopupTimerId);
 
-        if (_autoConnect && AgentLink.HasActiveProfile)
+        var autoDial = _autoConnect && AgentLink.HasActiveProfile;
+        if (autoDial)
         {
             AgentLink.SendConnect();
         }
-        else
+
+        // An update applied from the settings console reopens the console (launched without --launcher) so the
+        // user lands back where they started; a plain cold launch opens the launcher; a post-install auto-connect
+        // otherwise stays windowless (#188).
+        if (_showConsole)
+        {
+            LaunchUi();
+        }
+        else if (!autoDial)
         {
             LaunchUi("--launcher");
         }

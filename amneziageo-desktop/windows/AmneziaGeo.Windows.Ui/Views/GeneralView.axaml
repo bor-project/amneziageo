@@ -3,7 +3,6 @@
              xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
              xmlns:views="clr-namespace:AmneziaGeo.Windows.Ui.Views"
              xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
-             xmlns:svc="clr-namespace:AmneziaGeo.Windows.Ui.Services"
              x:Class="AmneziaGeo.Windows.Ui.Views.GeneralView"
              x:CompileBindings="True"
              x:DataType="vm:GeneralViewModel">
@@ -18,12 +17,12 @@
     <StackPanel IsVisible="{Binding IsGeneralMain}" Spacing="14">
       <TextBlock Classes="section" Text="{l:Tr General_Section}" />
 
-      <!-- Top row: appearance + about reflow from two columns to one when the pane gets narrow. -->
-      <UniformGrid x:Name="TopCards"
-                   Columns="{Binding #TopCards.Bounds.Width, Converter={x:Static svc:WidthBreakpointConverter.Instance}, ConverterParameter=680}">
+      <!-- Appearance + About: two columns when wide, stacked when narrow; each keeps its natural height (a
+           UniformGrid would stretch the short Appearance card to the taller About card). Reflowed in ReflowTopCards. -->
+      <Grid x:Name="TopCards" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
 
         <!-- Appearance card: theme + language (live switch). -->
-        <Border Margin="{Binding #TopCards.Columns, Converter={x:Static svc:GutterMarginConverter.Instance}, ConverterParameter=first}"
+        <Border x:Name="AppearanceCard" Grid.Row="0" Grid.Column="0" VerticalAlignment="Top"
                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                 CornerRadius="12" Padding="16" Background="Transparent">
           <StackPanel Spacing="12">
@@ -43,7 +42,7 @@
         </Border>
 
         <!-- About card: versions + app self-update. -->
-        <Border Margin="{Binding #TopCards.Columns, Converter={x:Static svc:GutterMarginConverter.Instance}, ConverterParameter=second}"
+        <Border x:Name="AboutCard" VerticalAlignment="Top"
                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                 CornerRadius="12" Padding="16" Background="Transparent">
           <StackPanel Spacing="12">
@@ -99,7 +98,7 @@
             </StackPanel>
           </StackPanel>
         </Border>
-      </UniformGrid>
+      </Grid>
 
       <!-- Connection resilience card: survive reboot + periodic auto-reconnect (#196, #199). -->
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"

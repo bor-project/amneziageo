@@ -1397,6 +1397,9 @@
   <data name="Launcher_ActiveProfile" xml:space="preserve">
     <value>Активный профиль</value>
   </data>
+  <data name="Launcher_Loading" xml:space="preserve">
+    <value>Загрузка профилей…</value>
+  </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
     <value>Настройки</value>
   </data>

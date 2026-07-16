@@ -28,8 +28,8 @@
     <!-- Configuration console: a permanent header (title + non-interactive status chip) over the section rail
          and content pane. Quick connect lives in the launcher and tray; the console never toggles the tunnel. -->
 
-      <!-- Console header: title centered, non-interactive status chip (right). The tunnel is toggled from the
-           launcher and tray, so the chip only reflects state; it also carries the auto-reconnect counter (#197). -->
+      <!-- Console header: title centered, interactive connect control (right). The powerctl pill toggles the
+           tunnel here as well as from the launcher and tray; it carries the auto-reconnect counter (#197). -->
       <Border Classes="card" CornerRadius="0" Height="48" Margin="12,12,12,0" Padding="12,0"
               VerticalAlignment="Top">
         <Grid>
@@ -38,30 +38,37 @@
                      HorizontalAlignment="Center" VerticalAlignment="Center"
                      Foreground="{DynamicResource AgMutedBrush}" />
 
-          <!-- Status chip (right): animated ring + inner circle carry the state colour (gray off, orange while
-               switching, blue connected); short status text; retry counter while a stalled connect keeps trying. -->
-          <StackPanel Orientation="Horizontal" Spacing="11" HorizontalAlignment="Right" VerticalAlignment="Center"
-                      ToolTip.Tip="{Binding Home.ConnectHint}">
-            <Panel Width="28" Height="28">
-              <Ellipse Classes="connspin" Classes.spinning="{Binding Home.IsConnecting}"
-                       Width="26" Height="26" Stroke="{Binding Home.ConnectCircleForeground}"
-                       StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Border Width="22" Height="22" CornerRadius="11"
-                      Background="{Binding Home.ConnectCircleBrush}"
-                      BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="1"
-                      HorizontalAlignment="Center" VerticalAlignment="Center">
-                <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
-                          Foreground="{Binding Home.ConnectCircleForeground}"
-                          IsVisible="{Binding !Home.IsConnecting}"
-                          HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-            </Panel>
-            <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="12" FontWeight="SemiBold"
-                       Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center" />
+          <!-- Connect control (right): retry counter (#197) then the animated connect / disconnect pill; the
+               inner circle + text carry the state colour (gray off, orange while switching, blue connected). -->
+          <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" VerticalAlignment="Center">
             <TextBlock Text="{Binding Home.RetryText}" FontSize="11" FontWeight="SemiBold"
                        Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center"
                        IsVisible="{Binding Home.ShowRetry}" />
+            <Button Classes="powerctl" VerticalAlignment="Center"
+                    Width="130" HorizontalContentAlignment="Left"
+                    Command="{Binding Home.ToggleConnectionCommand}"
+                    IsEnabled="{Binding Home.CanToggleConnection}"
+                    ToolTip.Tip="{Binding Home.ConnectHint}">
+              <StackPanel Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
+                <Panel Width="28" Height="28">
+                  <Ellipse Classes="connspin" Classes.spinning="{Binding Home.IsConnecting}"
+                           Width="26" Height="26" Stroke="{Binding Home.ConnectCircleForeground}"
+                           StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Border Width="22" Height="22" CornerRadius="11"
+                          Background="{Binding Home.ConnectCircleBrush}"
+                          BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="1"
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
+                              Foreground="{Binding Home.ConnectCircleForeground}"
+                              IsVisible="{Binding !Home.IsConnecting}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                </Panel>
+                <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="12" FontWeight="SemiBold"
+                           Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
           </StackPanel>
         </Grid>
       </Border>

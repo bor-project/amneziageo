@@ -764,9 +764,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             }
             else
             {
-                // Default an app to its containing folder.
+                // Default an app to its containing folder, hoisted above a versioned subfolder so the rule
+                // survives the app's auto-update into a new version folder (#204).
                 var dir = System.IO.Path.GetDirectoryName(value);
-                token = !string.IsNullOrEmpty(dir) ? $"app:dir={dir}" : $"app:path={value}";
+                token = !string.IsNullOrEmpty(dir)
+                    ? $"app:dir={AppPathToken.StripVersionedLeaf(dir)}"
+                    : $"app:path={value}";
                 display = Loc.Instance.Get("RoutingEditor_AppKindApplication", label);
             }
 
@@ -834,6 +837,16 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         if (System.IO.Path.GetFileName(norm) == "svchost.exe")
         {
             reason = Loc.Instance.Get("RoutingEditor_SvchostTooBroad");
+            return false;
+        }
+
+        // The shared WebView2 host runs the networking for every WebView2 app; a rule on it (or its runtime
+        // folder) tunnels them all. A specific WebView2 app is matched via its own process tree, so add that
+        // application instead (#205).
+        if (System.IO.Path.GetFileName(norm) == "msedgewebview2.exe"
+            || norm.Contains("\\edgewebview\\", StringComparison.Ordinal))
+        {
+            reason = Loc.Instance.Get("RoutingEditor_WebViewHostTooBroad");
             return false;
         }
 

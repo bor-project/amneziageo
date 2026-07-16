@@ -74,7 +74,9 @@ internal sealed class AppRouteWatcher
                     _paths.Add(AmneziaGeo.Ipc.AppPathToken.Tokenize(value));
                     break;
                 case "dir":
-                    _dirs.Add(AmneziaGeo.Ipc.AppPathToken.Tokenize(value.TrimEnd('\\', '/')));
+                    // Hoist a versioned leaf so a rule saved against an old app-<ver> folder still matches after
+                    // the app auto-updates into a new one (#204).
+                    _dirs.Add(AmneziaGeo.Ipc.AppPathToken.StripVersionedLeaf(AmneziaGeo.Ipc.AppPathToken.Tokenize(value.TrimEnd('\\', '/'))));
                     break;
                 case "name":
                     _names.Add(value);

@@ -1051,6 +1051,9 @@
   <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
     <value>svchost.exe is a shared service host and would tunnel a lot of unrelated traffic. Select a service from the list.</value>
   </data>
+  <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
+    <value>This is the shared WebView2 host and would tunnel every app that uses WebView2. Add the specific application instead — its in-app web traffic is routed with it.</value>
+  </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>All local subnets are already in the list.</value>
   </data>

@@ -150,6 +150,15 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
+    <!-- Round on/off connection control: soft inset pill; the inner circle + text carry the state colour. -->
+    <Style Selector="Button.powerctl">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="5,3,11,3" />
+    </Style>
+
     <!-- Header back button. -->
     <Style Selector="Button.backbtn">
       <Setter Property="Background" Value="Transparent" />

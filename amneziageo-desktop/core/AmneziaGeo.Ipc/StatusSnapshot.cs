@@ -46,4 +46,6 @@ public sealed record StatusSnapshot(
     // Retry a desired connection at a fixed interval instead of the default backoff.
     bool PeriodicReconnect = false,
     // Interval between periodic auto-reconnect attempts, in seconds.
-    int PeriodicReconnectIntervalSeconds = 30);
+    int PeriodicReconnectIntervalSeconds = 30,
+    // Show tray notifications for connection state changes.
+    bool ShowNotifications = true);

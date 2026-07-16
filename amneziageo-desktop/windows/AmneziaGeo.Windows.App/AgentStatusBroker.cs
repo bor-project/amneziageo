@@ -2371,7 +2371,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             control.RetryAttempt,
             settings.SurviveReboot,
             settings.PeriodicReconnect,
-            settings.PeriodicReconnectIntervalSeconds);
+            settings.PeriodicReconnectIntervalSeconds,
+            settings.ShowNotifications);
     }
 
     private static string ProfileDisplayStatus(string profileStatus)

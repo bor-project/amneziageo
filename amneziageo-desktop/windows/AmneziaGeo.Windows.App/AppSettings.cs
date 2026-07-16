@@ -114,4 +114,9 @@ internal sealed record AppSettings
     /// Interval between periodic auto-reconnect attempts, in seconds.
     /// </summary>
     public int PeriodicReconnectIntervalSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// Show tray notifications for connection state changes.
+    /// </summary>
+    public bool ShowNotifications { get; init; } = true;
 }

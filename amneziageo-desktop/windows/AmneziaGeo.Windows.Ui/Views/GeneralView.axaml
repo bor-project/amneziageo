@@ -101,6 +101,14 @@
 
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="{l:Tr General_ShowNotifications}" FontSize="13.5" />
+              <TextBlock Text="{l:Tr General_ShowNotificationsHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding ShowNotifications, Mode=TwoWay}" />
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="{l:Tr General_SurviveReboot}" FontSize="13.5" />
               <TextBlock Text="{l:Tr General_SurviveRebootHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
             </StackPanel>

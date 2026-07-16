@@ -122,6 +122,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private int _reconnectIntervalSeconds = 30;
 
     /// <summary>
+    /// Show tray notifications for connection state changes.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showNotifications = true;
+
+    /// <summary>
     /// Auto-reconnect interval presets, in seconds.
     /// </summary>
     public ObservableCollection<int> ReconnectIntervals { get; } = [10, 15, 30, 60, 120, 300];
@@ -185,6 +191,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         // Seed the connection settings without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
+        ShowNotifications = snapshot.ShowNotifications;
         SurviveReboot = snapshot.SurviveReboot;
         PeriodicReconnect = snapshot.PeriodicReconnect;
         EnsureReconnectInterval(snapshot.PeriodicReconnectIntervalSeconds);
@@ -384,6 +391,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         if (Application.Current is not null)
         {
             Application.Current.RequestedThemeVariant = ThemeVariantForIndex(value);
+        }
+    }
+
+    partial void OnShowNotificationsChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("show-notifications", value ? "on" : "off");
         }
     }
 

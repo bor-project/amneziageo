@@ -64,6 +64,12 @@
   <data name="General_ConnectionSection" xml:space="preserve">
     <value>Подключение</value>
   </data>
+  <data name="General_ShowNotifications" xml:space="preserve">
+    <value>Показывать оповещения</value>
+  </data>
+  <data name="General_ShowNotificationsHint" xml:space="preserve">
+    <value>Показывать оповещения в трее при смене состояния подключения.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Восстанавливать после перезагрузки</value>
   </data>

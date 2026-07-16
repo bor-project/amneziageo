@@ -184,7 +184,25 @@ jobs:
           fi
           [ -n "$VER" ] || { echo "cannot parse version from $(basename "$SETUP")"; exit 1; }
           SETUP_NAME=$(basename "$SETUP")
-          printf '{\n  "version": "%s",\n  "description": "AmneziaGeo %s",\n  "setup": "%s"\n}\n' "$VER" "$VER" "$SETUP_NAME" > release/update.json
+          # Self-describing manifest: version + channel (stable vs prerelease from the tag) + an installers
+          # array (one per published asset: platform/arch/variant) so the check is scoped to the installed
+          # distribution. `setup` stays a legacy fallback; new clients build their own per-build name.
+          CHANNEL=stable
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then CHANNEL=prerelease; fi
+          installers_json=$(
+            for f in release/AmneziaGeo-*.exe; do
+              b=$(basename "$f")
+              rest=${b#AmneziaGeo-${VER}-}; rest=${rest%.exe}   # win-<arch>-<variant>
+              arch=$(echo "$rest" | sed -n 's/^win-\([^-]*\)-.*/\1/p')
+              variant=$(echo "$rest" | sed -n 's/^win-[^-]*-\(.*\)/\1/p')
+              jq -n --arg name "$b" --arg platform windows --arg arch "$arch" --arg variant "$variant" \
+                 '{name:$name, platform:$platform, arch:$arch, variant:$variant}'
+            done | jq -s '.'
+          )
+          jq -n --arg version "$VER" --arg description "AmneziaGeo $VER" --arg channel "$CHANNEL" \
+             --arg setup "$SETUP_NAME" --argjson installers "$installers_json" \
+             '{version:$version, description:$description, channel:$channel, setup:$setup, installers:$installers}' \
+             > release/update.json
           echo "VER=$VER" >> "$GITHUB_ENV"
           echo "--- release/ ---"; ls -la release
           echo "--- update.json ---"; cat release/update.json

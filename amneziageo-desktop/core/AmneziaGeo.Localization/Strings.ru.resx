@@ -70,6 +70,12 @@
   <data name="General_ShowNotificationsHint" xml:space="preserve">
     <value>Показывать оповещения в трее при смене состояния подключения.</value>
   </data>
+  <data name="General_AllowPrerelease" xml:space="preserve">
+    <value>Проверять предварительные версии</value>
+  </data>
+  <data name="General_AllowPrereleaseHint" xml:space="preserve">
+    <value>Предлагать бета-сборки при проверке обновлений, не только стабильные релизы.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Восстанавливать после перезагрузки</value>
   </data>

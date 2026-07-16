@@ -313,6 +313,9 @@
   <data name="Main_ChooseProfileToSetup" xml:space="preserve">
     <value>CHOOSE A PROFILE TO SET UP</value>
   </data>
+  <data name="Main_SetActiveProfile" xml:space="preserve">
+    <value>Set active</value>
+  </data>
   <data name="Main_ClearButton" xml:space="preserve">
     <value>Clear</value>
   </data>
@@ -1407,7 +1410,10 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Loading profiles…</value>
   </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
-    <value>Settings</value>
+    <value>More</value>
+  </data>
+  <data name="Launcher_Less" xml:space="preserve">
+    <value>Less</value>
   </data>
   <data name="Launcher_Cancel" xml:space="preserve">
     <value>Close</value>

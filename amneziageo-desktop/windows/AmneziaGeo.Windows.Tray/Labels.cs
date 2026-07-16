@@ -12,11 +12,6 @@ internal static class Labels
     public static string Open { get; private set; } = "Open launcher";
 
     /// <summary>
-    /// «Настройки» / "Settings": opens the full configuration console.
-    /// </summary>
-    public static string Settings { get; private set; } = "Settings";
-
-    /// <summary>
     /// «Подключить» / "Connect": brings the tunnel up (enabled only with an active profile).
     /// </summary>
     public static string Connect { get; private set; } = "Connect";
@@ -27,9 +22,15 @@ internal static class Labels
     public static string Disconnect { get; private set; } = "Disconnect";
 
     /// <summary>
-    /// «Выход» / "Exit": disconnects if needed and unloads the tray.
+    /// «Выход» / "Exit": unloads the tray while the tunnel is down.
     /// </summary>
     public static string Exit { get; private set; } = "Exit";
+
+    /// <summary>
+    /// «Выход (отключит VPN)» / "Exit (disconnects VPN)": Exit label while a tunnel is up, so quitting never
+    /// silently drops protection.
+    /// </summary>
+    public static string ExitConnected { get; private set; } = "Exit (disconnects VPN)";
 
     /// <summary>
     /// «Подключение выполняется» / "Connection in progress": balloon body when the tunnel starts coming up.
@@ -62,6 +63,16 @@ internal static class Labels
     public static string StatusDisconnected { get; private set; } = "Disconnected";
 
     /// <summary>
+    /// Tooltip status «Подключение…» / "Connecting…".
+    /// </summary>
+    public static string StatusConnecting { get; private set; } = "Connecting…";
+
+    /// <summary>
+    /// Tooltip status «Отключение…» / "Disconnecting…".
+    /// </summary>
+    public static string StatusDisconnecting { get; private set; } = "Disconnecting…";
+
+    /// <summary>
     /// Resolves the labels for the current language.
     /// </summary>
     public static void Load()
@@ -69,16 +80,18 @@ internal static class Labels
         if (IsRussian(ReadSavedLanguage()))
         {
             Open = "Открыть лаунчер";
-            Settings = "Настройки";
             Connect = "Подключить";
             Disconnect = "Отключить";
             Exit = "Выход";
+            ExitConnected = "Выход (отключит VPN)";
             ConnectingInfo = "Подключение выполняется";
             ConnectedInfo = "Подключение активно";
             ConnectFailedInfo = "Не удалось подключиться";
             DisconnectedInfo = "Соединение разорвано";
             StatusConnected = "Подключено";
             StatusDisconnected = "Отключено";
+            StatusConnecting = "Подключение…";
+            StatusDisconnecting = "Отключение…";
         }
     }
 

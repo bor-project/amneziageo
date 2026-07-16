@@ -88,6 +88,27 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         CreateProfileCommand.NotifyCanExecuteChanged();
     }
 
+    // Re-gate the "Set active" button after the connection card's active profile changes.
+    public void NotifyActiveProfileChanged()
+    {
+        SetActiveProfileCommand.NotifyCanExecuteChanged();
+    }
+
+    // The combo-selected profile can be set active unless it already is.
+    private bool CanSetActiveProfile =>
+        OpenProfile is { } profile
+        && !string.Equals(profile.Name, _host.Home.ActiveProfile?.Name, StringComparison.Ordinal);
+
+    // Makes the combo-selected profile the active one (agent target + launcher selection), without connecting.
+    [RelayCommand(CanExecute = nameof(CanSetActiveProfile))]
+    private void SetActiveProfile()
+    {
+        if (OpenProfile is not null)
+        {
+            _host.Home.ActiveProfile = OpenProfile;
+        }
+    }
+
     /// <summary>
     /// Reconciles the profile catalogue from the snapshot, then re-opens a just-created profile.
     /// </summary>
@@ -281,6 +302,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
 
         // Mirror the open profile into the Profile-section combo so it shows «— не выбрано —» / the name.
         SyncOpenProfileChoice();
+        SetActiveProfileCommand.NotifyCanExecuteChanged();
     }
 
     private void OnOpenProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

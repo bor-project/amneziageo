@@ -44,6 +44,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
     [NotifyPropertyChangedFor(nameof(ConnectPillContent))]
+    [NotifyPropertyChangedFor(nameof(LauncherActionText))]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     private bool _isTunnelActive;
@@ -64,6 +65,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
+    [NotifyPropertyChangedFor(nameof(LauncherActionText))]
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
@@ -86,6 +88,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _reconnectAvailable;
+
+    // The last dial gave up; keeps a failed trace on the status surfaces until the next connect.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AgentStatusText))]
+    private bool _connectFailed;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
@@ -124,7 +131,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             2 => StatusLabels.Text(BoundStatus),
             1 => StatusLabels.Text(IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
-            _ => StatusLabels.Text(ConnectionStatus.Disconnected),
+            _ => StatusLabels.Text(ConnectFailed ? ConnectionStatus.Failed : ConnectionStatus.Disconnected),
         }
         : Loc.Instance.Get("MainVm_NoAgentConnection");
 
@@ -170,6 +177,15 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     public bool ShowSelectConfigHint => ConnState == 0 && _host.HasProfiles && ActiveProfile is not { IsComplete: true };
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
+
+    // The launcher action button label, with transitional states: the connecting / disconnecting status while
+    // the tunnel comes up or down, the plain action label otherwise.
+    public string LauncherActionText => ConnState switch
+    {
+        1 => StatusLabels.Text(IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
+        2 => Loc.Instance.Get("MainVm_Disconnect"),
+        _ => Loc.Instance.Get("MainVm_Connect"),
+    };
 
     // Colour per state: disconnected grey, transitioning (connect / disconnect) orange, connected blue.
     public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
@@ -234,6 +250,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         NoticeVisible = false;
         NoticeText = null;
         ReconnectAvailable = false;
+        ConnectFailed = false;
     }
 
     /// <summary>
@@ -304,8 +321,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             reconnect = true;
         }
 
+        ConnectFailed = snapshot.ConnectFailed;
         ReconnectAvailable = reconnect;
-        ShowNotice(notice);
+        // A failed dial keeps its banner up until the next connect, like the reconnect banner, so a boot
+        // auto-connect failure with no window is not lost once the tray balloon fades.
+        ShowNotice(notice, snapshot.ConnectFailed);
     }
 
     // Re-raise the host-derived hint after the shell recomputes HasProfiles on a snapshot.
@@ -329,6 +349,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
         SyncActiveProfileChoice();
         NotifyCanToggleConnection();
+        _host.Profile.NotifyActiveProfileChanged();
 
         if (_suppressActivePush || newValue is null)
         {
@@ -526,7 +547,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// seconds. Re-arms only when the notice text changes, so a persistent condition is not re-shown on
     /// every snapshot (and a dismissed banner stays dismissed until a different notice arrives).
     /// </summary>
-    public void ShowNotice(string? notice)
+    public void ShowNotice(string? notice, bool persistent = false)
     {
         if (string.Equals(notice, _lastNotice, StringComparison.Ordinal))
         {
@@ -543,8 +564,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
 
         NoticeVisible = true;
-        // The reconnect banner stays up until acted on or the condition clears; other notices auto-hide.
-        if (!ReconnectAvailable)
+        // The reconnect / failure banner stays up until acted on or the condition clears; other notices auto-hide.
+        if (!ReconnectAvailable && !persistent)
         {
             _noticeTimer.Start();
         }

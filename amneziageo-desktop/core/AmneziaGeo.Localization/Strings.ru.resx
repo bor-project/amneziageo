@@ -313,6 +313,9 @@
   <data name="Main_ChooseProfileToSetup" xml:space="preserve">
     <value>ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ НАСТРОЙКИ</value>
   </data>
+  <data name="Main_SetActiveProfile" xml:space="preserve">
+    <value>Установить</value>
+  </data>
   <data name="Main_ClearButton" xml:space="preserve">
     <value>Очистить</value>
   </data>
@@ -1407,7 +1410,10 @@
     <value>Загрузка профилей…</value>
   </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
-    <value>Настройки</value>
+    <value>Больше</value>
+  </data>
+  <data name="Launcher_Less" xml:space="preserve">
+    <value>Меньше</value>
   </data>
   <data name="Launcher_Cancel" xml:space="preserve">
     <value>Закрыть</value>

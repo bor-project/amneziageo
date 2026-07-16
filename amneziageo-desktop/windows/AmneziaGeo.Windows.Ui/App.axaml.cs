@@ -22,9 +22,14 @@ public sealed partial class App : Application
     private static readonly Color _accent = Color.FromRgb(0x2a, 0x6f, 0xdb);
 
     private MainWindow? _window;
+    private LauncherWindow? _launcher;
     private MainWindowViewModel? _viewModel;
     private AgentConnection? _connection;
     private UiPreferences? _prefs;
+    private IClassicDesktopStyleApplicationLifetime? _desktop;
+
+    // Top-left of the outgoing surface, carried to the incoming one so a More / Less swap opens in place.
+    private PixelPoint? _swapAnchor;
 
     /// <inheritdoc/>
     public override void Initialize()
@@ -37,6 +42,8 @@ public sealed partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            _desktop = desktop;
+
             // Restore UI preferences before any window shows.
             var prefs = UiPreferences.Load();
             _prefs = prefs;
@@ -56,22 +63,19 @@ public sealed partial class App : Application
             _viewModel = viewModel;
             desktop.ShutdownRequested += (_, _) => connection.Dispose();
 
-            // Cold launch from the tray (#187): a lightweight themed launcher instead of the full window. Its
-            // buttons connect and quit, open the full app in place, or dismiss to the resident tray.
+            // Both surfaces close to the resident tray: the process exits when its last window closes. The
+            // More / Less toggle swaps windows opening the next before closing the current, so the window count
+            // never reaches zero mid-toggle and the lifetime never shuts the process down.
+            desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
+
+            // Cold launch from the tray (#187) opens the compact launcher; a direct run opens the full console.
             if (desktop.Args is { } args && Array.IndexOf(args, "--launcher") >= 0)
             {
-                desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
-                var launcher = new LauncherWindow
-                {
-                    DataContext = viewModel,
-                    Icon = BuildIcon(_accent),
-                };
-                launcher.OpenAppRequested += () => ShowMainWindow(desktop, viewModel);
-                launcher.Show();
+                ShowLauncher();
             }
             else
             {
-                ShowMainWindow(desktop, viewModel);
+                ShowMainWindow();
             }
 
             viewModel.Start();
@@ -80,9 +84,39 @@ public sealed partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    // Builds and shows the full main window, taking over as the shutdown anchor. Used for a normal launch and
-    // when the launcher's "open app" promotes the process to the full GUI.
-    private void ShowMainWindow(IClassicDesktopStyleApplicationLifetime desktop, MainWindowViewModel viewModel)
+    // The compact launcher (the "Less" surface): quick connect, More to expand to the console, or close to the tray.
+    private void ShowLauncher()
+    {
+        if (_launcher is not null)
+        {
+            _launcher.Activate();
+            return;
+        }
+
+        var launcher = new LauncherWindow
+        {
+            DataContext = _viewModel,
+            Icon = BuildIcon(_accent),
+        };
+        _launcher = launcher;
+        launcher.OpenAppRequested += ExpandToConsole;
+        launcher.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_launcher, launcher))
+            {
+                _launcher = null;
+            }
+        };
+        // Collapsing from the console lands the launcher where the console sat; a cold launch keeps CenterScreen.
+        ApplyStartupPosition(launcher, _swapAnchor);
+        _swapAnchor = null;
+        _desktop!.MainWindow = launcher;
+        launcher.Show();
+    }
+
+    // The full console (the "More" surface): all settings sections; Less collapses back to the launcher. Used for
+    // a direct launch and when the launcher's More promotes the process to the console.
+    private void ShowMainWindow()
     {
         if (_window is not null)
         {
@@ -92,31 +126,110 @@ public sealed partial class App : Application
 
         var window = new MainWindow
         {
-            DataContext = viewModel,
+            DataContext = _viewModel,
             Icon = BuildIcon(_accent),
             Width = _prefs!.Width,
             Height = _prefs.Height,
         };
         _window = window;
+        window.CollapseRequested += CollapseToLauncher;
         window.Closing += OnMainWindowClosing;
-        desktop.MainWindow = window;
-        // Closing the window fully exits the GUI process; the resident tray holds the tunnel and reopens it.
-        desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_window, window))
+            {
+                _window = null;
+            }
+        };
+        // Reopen where it was left: maximized, or at the carried swap anchor / remembered position; else centered.
+        if (_prefs.Maximized)
+        {
+            window.WindowState = WindowState.Maximized;
+        }
+        else
+        {
+            ApplyStartupPosition(window, _swapAnchor ?? RememberedConsolePos());
+        }
+
+        _swapAnchor = null;
+        _desktop!.MainWindow = window;
         window.Show();
     }
 
-    // Persist window size and stop the create-form camera as the GUI exits.
+    // Launcher "More": open the console at the launcher's spot, then drop the launcher.
+    private void ExpandToConsole()
+    {
+        _swapAnchor = _launcher?.Position;
+        ShowMainWindow();
+        _launcher?.Close();
+    }
+
+    // Console "Less": reopen the launcher at the console's spot, then drop the console (its Closing persists geometry).
+    private void CollapseToLauncher()
+    {
+        _swapAnchor = _window?.Position;
+        ShowLauncher();
+        _window?.Close();
+    }
+
+    // Persist window geometry and stop the create-form camera as the console closes (both on Less and on a real
+    // close to the tray).
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
     {
         _viewModel?.Config.StopScan();
 
-        if (_window is not null && _prefs is not null)
+        if (sender is MainWindow window && _prefs is not null)
         {
-            // ClientSize tracks the user's actual resize.
-            _prefs.Width = _window.ClientSize.Width;
-            _prefs.Height = _window.ClientSize.Height;
+            _prefs.Maximized = window.WindowState == WindowState.Maximized;
+            // Persist geometry from the normal state only, so a maximized close keeps the last restored bounds.
+            if (window.WindowState == WindowState.Normal)
+            {
+                _prefs.Width = window.ClientSize.Width;
+                _prefs.Height = window.ClientSize.Height;
+                _prefs.PosX = window.Position.X;
+                _prefs.PosY = window.Position.Y;
+            }
+
             _prefs.Save();
         }
+    }
+
+    // The remembered console position, or null when unset (first run) so the default centering applies.
+    private PixelPoint? RememberedConsolePos()
+        => _prefs is null || double.IsNaN(_prefs.PosX) || double.IsNaN(_prefs.PosY)
+            ? null
+            : new PixelPoint((int)_prefs.PosX, (int)_prefs.PosY);
+
+    // Opens the window at a fixed position (clamped on-screen once measured); leaves CenterScreen when none given.
+    private static void ApplyStartupPosition(Window window, PixelPoint? desired)
+    {
+        if (desired is not { } position)
+        {
+            return;
+        }
+
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Position = position;
+        window.Opened += (_, _) => ClampToScreen(window);
+    }
+
+    // Pulls a window fully back into its screen's work area, so a stale saved position can't strand it off-screen.
+    private static void ClampToScreen(Window window)
+    {
+        var screens = window.Screens;
+        var screen = screens?.ScreenFromWindow(window) ?? screens?.Primary;
+        if (screen is null)
+        {
+            return;
+        }
+
+        var area = screen.WorkingArea;
+        var frame = window.FrameSize ?? window.Bounds.Size;
+        var width = (int)Math.Ceiling(frame.Width * screen.Scaling);
+        var height = (int)Math.Ceiling(frame.Height * screen.Scaling);
+        var x = Math.Max(area.X, Math.Min(window.Position.X, area.X + Math.Max(0, area.Width - width)));
+        var y = Math.Max(area.Y, Math.Min(window.Position.Y, area.Y + Math.Max(0, area.Height - height)));
+        window.Position = new PixelPoint(x, y);
     }
 
     // Power glyph shared with the big connection button.

@@ -30,15 +30,21 @@
     <!-- Profile catalogue combo: «- не выбрано -» then saved profiles. -->
     <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
       <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
-      <ComboBox Classes="field" HorizontalAlignment="Stretch"
-                ItemsSource="{Binding ProfileOptions}"
-                SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
-        <ComboBox.ItemTemplate>
-          <DataTemplate x:DataType="vm:ProfileChoice">
-            <TextBlock Text="{Binding Name}" />
-          </DataTemplate>
-        </ComboBox.ItemTemplate>
-      </ComboBox>
+      <!-- Combo picks the profile to set up; the button sets it as the active one (disabled when it already is). -->
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <ComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding ProfileOptions}"
+                  SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProfileChoice">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button Grid.Column="1" Classes="accent" MinWidth="110" VerticalAlignment="Stretch"
+                Content="{l:Tr Main_SetActiveProfile}"
+                Command="{Binding SetActiveProfileCommand}" />
+      </Grid>
       <TextBlock IsVisible="{Binding ShowNoProfilesYetHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                  Text="{l:Tr Main_NoProfilesYetHint}" />
     </StackPanel>

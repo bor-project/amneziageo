@@ -33,11 +33,9 @@
   </Window.Styles>
 
   <StackPanel Margin="24,18,24,20" Spacing="0">
-    <TextBlock Text="{l:Tr Launcher_Title}" FontSize="21" FontWeight="Bold" />
-
     <!-- Profiles arrive with the first agent snapshot; show a loader until then so the empty combo + disabled
          connect never read as "no profile". Height is reserved so the window does not jump on ready. -->
-    <Panel Margin="0,18,0,0" MinHeight="130">
+    <Panel MinHeight="130">
       <StackPanel Spacing="0" IsVisible="{Binding Home.IsReady}">
         <Grid Margin="0,0,0,7" ColumnDefinitions="*,Auto">
           <TextBlock Grid.Column="0" Classes="muted" FontSize="13" VerticalAlignment="Center"
@@ -59,11 +57,25 @@
         <Button Classes="accent" Margin="0,18,0,0" Height="48" HorizontalAlignment="Stretch"
                 Click="OnConnect" IsEnabled="{Binding Home.CanToggleConnection}">
           <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <PathIcon Data="{StaticResource LauncherPowerGeometry}" Width="17" Height="17" />
-            <TextBlock Text="{Binding Home.ConnectPillContent}" FontSize="14" FontWeight="SemiBold"
+            <Panel Width="18" Height="18" VerticalAlignment="Center">
+              <PathIcon Data="{StaticResource LauncherPowerGeometry}" Width="17" Height="17"
+                        IsVisible="{Binding !Home.IsConnecting}"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <!-- Spinner arc while the tunnel is coming up or down. -->
+              <Ellipse Classes="connspin" Classes.spinning="{Binding Home.IsConnecting}"
+                       Width="17" Height="17" Stroke="White" StrokeThickness="2"
+                       StrokeDashArray="12,29" StrokeLineCap="Round"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
+            <TextBlock Text="{Binding Home.LauncherActionText}" FontSize="14" FontWeight="SemiBold"
                        VerticalAlignment="Center" />
           </StackPanel>
         </Button>
+
+        <!-- Retry progress during a reconnect storm, mirroring the console (#197). -->
+        <TextBlock Text="{Binding Home.RetryText}" IsVisible="{Binding Home.ShowRetry}"
+                   Classes="muted" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,0"
+                   HorizontalAlignment="Center" />
       </StackPanel>
 
       <StackPanel IsVisible="{Binding !Home.IsReady}" Spacing="12"

@@ -106,7 +106,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             }
         }
 
-        WriteState(TunnelPaths.DnsStateFile(name), saved);
+        WriteState(TunnelPaths.DnsStateFile(name), saved, proxyServers);
         logger.LogDebug("dns redirect applied via WMI -> {Servers}", string.Join(",", proxyServers));
     }
 
@@ -147,31 +147,108 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     private static extern uint DnsFlushResolverCache();
 
     /// <summary>
-    /// Restores the DNS servers this instance redirected.
+    /// Restores the DNS servers this instance redirected. Keeps the state for a retry if a reset did not take.
     /// </summary>
     public void Restore()
     {
-        RestoreState(ReadState(TunnelPaths.DnsStateFile(_name)));
-        TryDelete(TunnelPaths.DnsStateFile(_name));
+        var file = TunnelPaths.DnsStateFile(_name);
+        try
+        {
+            var state = ReadState(file);
+            RestoreState(state.Originals);
+            if (!FullyRestored(state))
+            {
+                return;
+            }
+
+            TryDelete(file);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "dns restore failed; keeping state for retry");
+        }
     }
 
     /// <summary>
-    /// Restores any DNS redirect persisted by a previous run (any tunnel), even from another process.
+    /// Restores any DNS redirect persisted by a previous run (any tunnel), even from another process. A file
+    /// whose adapters are still on our redirect is kept so a later call retries once the adapter is ready
+    /// - this is the recovery for a redirect that outlived its proxy (dirty shutdown or reboot with no tunnel).
+    /// <paramref name="abortIf"/> stands the cleanup down the moment a tunnel bring-up is requested, so a boot
+    /// pass cannot revert a connect's live redirect out from under it.
     /// </summary>
-    public void RestoreSaved()
+    public void RestoreSaved(Func<bool>? abortIf = null)
     {
-        var any = false;
+        var restored = false;
         foreach (var file in TunnelPaths.DnsStateFiles())
         {
-            RestoreState(ReadState(file));
-            TryDelete(file);
-            any = true;
+            if (abortIf?.Invoke() == true)
+            {
+                return;
+            }
+
+            try
+            {
+                var state = ReadState(file);
+                RestoreState(state.Originals);
+                if (!FullyRestored(state))
+                {
+                    logger.LogWarning("dns restore incomplete; keeping {File} for retry", Path.GetFileName(file));
+                    continue;
+                }
+
+                TryDelete(file);
+                restored = true;
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "dns restore from {File} failed", file);
+            }
         }
 
-        if (any)
+        if (restored)
         {
             logger.LogDebug("dns redirect restored from persisted state");
         }
+    }
+
+    // Delete only when every recorded adapter is present AND no longer on our redirect. A not-ready adapter
+    // (not yet enumerable at boot, or renumbered) or one still on our redirect keeps the file for a later retry.
+    private static bool FullyRestored(DnsState state)
+    {
+        return state.Originals.Keys.All(index => Probe(index, state.RedirectTargets) == AdapterDns.Clean);
+    }
+
+    // Per-adapter DNS after a restore attempt.
+    private enum AdapterDns
+    {
+        NotReady, // adapter row absent / not enumerable yet - cannot confirm the restore took
+        Ours,     // still on a server we set - the redirect has not been reverted
+        Clean,    // present and no longer on our redirect
+    }
+
+    private static AdapterDns Probe(uint index, string[] targets)
+    {
+        using var searcher = new ManagementObjectSearcher(
+            $"SELECT DNSServerSearchOrder FROM Win32_NetworkAdapterConfiguration WHERE InterfaceIndex = {index}");
+        foreach (ManagementObject adapter in searcher.Get())
+        {
+            using (adapter)
+            {
+                var dns = adapter["DNSServerSearchOrder"] as string[] ?? [];
+                return IsStillOurs(dns, targets) ? AdapterDns.Ours : AdapterDns.Clean;
+            }
+        }
+
+        return AdapterDns.NotReady;
+    }
+
+    // The adapter still lists a server we set. Legacy state with no recorded target falls back to any loopback,
+    // so a third-party loopback resolver a user re-asserts is not mistaken for our un-reverted redirect.
+    private static bool IsStillOurs(string[] dns, string[] targets)
+    {
+        return targets.Length > 0
+            ? dns.Any(s => targets.Contains(s, StringComparer.OrdinalIgnoreCase))
+            : dns.Any(IsLoopback);
     }
 
     private void RestoreState(Dictionary<uint, string[]> state)
@@ -244,11 +321,11 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         return IPAddress.TryParse(server, out var ip) && IPAddress.IsLoopback(ip);
     }
 
-    private static void WriteState(string path, Dictionary<uint, string[]> state)
+    private static void WriteState(string path, Dictionary<uint, string[]> originals, IReadOnlyList<string> redirectTargets)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var lines = new List<string>();
-        foreach (var (index, servers) in state)
+        var lines = new List<string> { $"{RedirectKey}={string.Join(",", redirectTargets)}" };
+        foreach (var (index, servers) in originals)
         {
             lines.Add($"{index}={string.Join(",", servers)}");
         }
@@ -256,27 +333,44 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         File.WriteAllLines(path, lines);
     }
 
-    private static Dictionary<uint, string[]> ReadState(string path)
+    private static DnsState ReadState(string path)
     {
-        var state = new Dictionary<uint, string[]>();
+        var originals = new Dictionary<uint, string[]>();
+        var targets = Array.Empty<string>();
         if (!File.Exists(path))
         {
-            return state;
+            return new DnsState(originals, targets);
         }
 
         foreach (var line in File.ReadAllLines(path))
         {
             var separator = line.IndexOf('=');
-            if (separator < 0 || !uint.TryParse(line[..separator], out var index))
+            if (separator < 0)
             {
                 continue;
             }
 
-            state[index] = line[(separator + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var key = line[..separator];
+            var value = line[(separator + 1)..];
+            if (key == RedirectKey)
+            {
+                targets = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            }
+            else if (uint.TryParse(key, out var index))
+            {
+                originals[index] = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            }
         }
 
-        return state;
+        return new DnsState(originals, targets);
     }
+
+    // Header line recording the servers Apply redirected to, so a restore keeps the file only for our own
+    // un-reverted redirect. Absent in pre-existing (legacy) state files.
+    private const string RedirectKey = "@redirect";
+
+    // Persisted redirect: per-adapter prior servers plus the loopback targets Apply set.
+    private sealed record DnsState(Dictionary<uint, string[]> Originals, string[] RedirectTargets);
 
     private static void TryDelete(string path)
     {

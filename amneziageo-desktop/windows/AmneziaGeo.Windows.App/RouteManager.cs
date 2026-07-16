@@ -110,12 +110,18 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
-    /// Removes endpoint-exclusion routes left by a previous run.
+    /// Removes endpoint-exclusion routes left by a previous run. <paramref name="abortIf"/> stands the cleanup
+    /// down once a tunnel bring-up is requested, so a boot pass cannot remove a connect's live exclusion.
     /// </summary>
-    public void RestoreSavedExclusions()
+    public void RestoreSavedExclusions(Func<bool>? abortIf = null)
     {
         foreach (var file in TunnelPaths.RouteStateFiles())
         {
+            if (abortIf?.Invoke() == true)
+            {
+                return;
+            }
+
             foreach (var endpoint in ReadStateFile(file))
             {
                 if (IPAddress.TryParse(endpoint, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
@@ -331,12 +337,18 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
-    /// Removes LAN-bypass exclusion routes left by a previous run.
+    /// Removes LAN-bypass exclusion routes left by a previous run. <paramref name="abortIf"/> stands the cleanup
+    /// down once a tunnel bring-up is requested, so a boot pass cannot remove a connect's live exclusions.
     /// </summary>
-    public void RestoreSavedLanExclusions()
+    public void RestoreSavedLanExclusions(Func<bool>? abortIf = null)
     {
         foreach (var file in TunnelPaths.LanStateFiles())
         {
+            if (abortIf?.Invoke() == true)
+            {
+                return;
+            }
+
             foreach (var cidr in ReadStateFile(file))
             {
                 DeleteCidrRoute(cidr);

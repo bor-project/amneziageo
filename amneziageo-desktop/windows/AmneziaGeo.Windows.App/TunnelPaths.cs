@@ -50,7 +50,7 @@ internal static class TunnelPaths
     /// </summary>
     public static string ConfigurationsDirectory()
     {
-        return Path.Combine(RootDirectory(), "Configurations");
+        return Path.Combine(RootDirectory(), "config");
     }
 
     /// <summary>

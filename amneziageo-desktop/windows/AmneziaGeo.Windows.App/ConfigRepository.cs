@@ -246,6 +246,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     public async Task MigrateLegacyConfigsAsync(CancellationToken ct = default)
     {
         var directory = TunnelPaths.ConfigurationsDirectory();
+        RenameLegacyDirectory(directory);
         if (!Directory.Exists(directory))
         {
             return;
@@ -271,6 +272,30 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
             {
                 // Skip an unreadable legacy file; the rest still migrate.
             }
+        }
+    }
+
+    // Renames the pre-rename "Configurations" folder to the current "config" folder when the new one is absent.
+    private static void RenameLegacyDirectory(string current)
+    {
+        var parent = Path.GetDirectoryName(current);
+        if (parent is null)
+        {
+            return;
+        }
+
+        var legacy = Path.Combine(parent, "Configurations");
+        if (Directory.Exists(current) || !Directory.Exists(legacy))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Move(legacy, current);
+        }
+        catch (IOException)
+        {
         }
     }
 

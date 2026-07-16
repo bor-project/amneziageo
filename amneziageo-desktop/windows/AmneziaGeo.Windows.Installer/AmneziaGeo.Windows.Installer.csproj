@@ -33,6 +33,8 @@
     <!-- Shared localization (#106): the same resx-backed IStringLocalizer the app uses, so the installer UI
          is bilingual too (system UI language at startup, English fallback). -->
     <ProjectReference Include="..\..\core\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
+    <!-- Installer choices persist in the shared state.db (own local_prefs table, no schema-version logic). -->
+    <ProjectReference Include="..\..\core\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
   </ItemGroup>
 
 </Project>

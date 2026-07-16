@@ -44,6 +44,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\core\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
     <ProjectReference Include="..\..\core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
     <ProjectReference Include="..\..\core\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
   </ItemGroup>

@@ -1410,10 +1410,10 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Loading profiles…</value>
   </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
-    <value>More</value>
+    <value>Open settings</value>
   </data>
   <data name="Launcher_Less" xml:space="preserve">
-    <value>Less</value>
+    <value>Hide settings</value>
   </data>
   <data name="Launcher_Cancel" xml:space="preserve">
     <value>Close</value>

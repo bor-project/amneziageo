@@ -20,6 +20,11 @@
   </Window.Resources>
 
   <Window.Styles>
+    <!-- Transitional connect/disconnect: amber fill, matching the console's mid-change indicator. -->
+    <Style Selector="Button.accent.transitioning">
+      <Setter Property="Background" Value="#E0902F" />
+    </Style>
+
     <!-- Outlined accent action: panel fill, accent border + text. -->
     <Style Selector="Button.outline">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
@@ -54,7 +59,8 @@
           </ComboBox.ItemTemplate>
         </ComboBox>
 
-        <Button Classes="accent" Margin="0,18,0,0" Height="48" HorizontalAlignment="Stretch"
+        <Button Classes="accent" Classes.transitioning="{Binding Home.IsConnecting}"
+                Margin="0,18,0,0" Height="48" HorizontalAlignment="Stretch"
                 Click="OnConnect" IsEnabled="{Binding Home.CanToggleConnection}">
           <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
             <Panel Width="18" Height="18" VerticalAlignment="Center">

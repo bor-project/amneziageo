@@ -1410,10 +1410,10 @@
     <value>Загрузка профилей…</value>
   </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
-    <value>Больше</value>
+    <value>Открыть настройки</value>
   </data>
   <data name="Launcher_Less" xml:space="preserve">
-    <value>Меньше</value>
+    <value>Скрыть настройки</value>
   </data>
   <data name="Launcher_Cancel" xml:space="preserve">
     <value>Закрыть</value>

@@ -1398,7 +1398,7 @@
     <value>Активный профиль</value>
   </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
-    <value>Открыть приложение</value>
+    <value>Настройки</value>
   </data>
   <data name="Launcher_Cancel" xml:space="preserve">
     <value>Отмена</value>

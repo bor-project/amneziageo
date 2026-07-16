@@ -11,9 +11,8 @@ namespace AmneziaGeo.Windows.Ui.ViewModels;
 /// no config, "нет связи с агентом") that shows when nothing has been loaded from the agent yet.
 /// <para>
 /// Every settings section is seeded, so switching <see cref="MainWindowViewModel.SettingsSection"/> below
-/// (profile / config / routing / sources / logs / general) — or <see cref="MainWindowViewModel.Nav"/> to
-/// "home" — previews a different, still-populated screen. The work profile is opened, so the Profile and
-/// Config detail editors render with content too.
+/// (profile / config / routing / sources / logs / general) previews a different, still-populated screen. The
+/// work profile is opened, so the Profile and Config detail editors render with content too.
 /// </para>
 /// <para>
 /// Not constructed at runtime: Avalonia strips <c>Design.*</c> assignments outside design mode, so the
@@ -27,8 +26,8 @@ internal static class DesignData
 {
     /// <summary>
     /// A fully-populated <see cref="MainWindowViewModel"/> parked on the Profile settings page with the work
-    /// profile opened. Point <c>Design.DataContext</c> at this; change <c>SettingsSection</c> / <c>Nav</c> in
-    /// the factory to preview a different screen (all sections carry sample data).
+    /// profile opened. Point <c>Design.DataContext</c> at this; change <c>SettingsSection</c> in the factory
+    /// to preview a different screen (all sections carry sample data).
     /// </summary>
     public static MainWindowViewModel MainWindow { get; } = CreateMainWindow();
 
@@ -45,7 +44,6 @@ internal static class DesignData
         var connection = new AgentConnection();
         var vm = new MainWindowViewModel(connection, new UiPreferences())
         {
-            Nav = "settings",
             SettingsSection = "profile",
         };
 

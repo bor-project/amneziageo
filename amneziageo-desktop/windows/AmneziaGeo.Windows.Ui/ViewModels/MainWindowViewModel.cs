@@ -8,9 +8,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// Top-level composer: hosts the per-screen view-models (home / profile / config / routing / sources / logs /
-/// general), owns navigation + the settings-section rail, coordinates the atomic per-item edit model (#143),
-/// and fans the agent snapshot out to each screen.
+/// Top-level composer: hosts the per-screen view-models (connection / profile / config / routing / sources /
+/// logs / general), owns the settings-section rail, and fans the agent snapshot out to each screen.
 /// </summary>
 internal sealed partial class MainWindowViewModel : ViewModelBase
 {
@@ -24,12 +23,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
     private bool _hasProfiles;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsHome))]
-    [NotifyPropertyChangedFor(nameof(IsSettings))]
-    [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
-    private string _nav = "home";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsProfile))]
@@ -103,16 +96,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public SourcesViewModel Sources { get; }
 
-    /// <summary>
-    /// Whether the Home (profiles) view is shown.
-    /// </summary>
-    public bool IsHome => Nav == "home";
-
-    /// <summary>
-    /// Whether the Settings view is shown (opened via the gear button).
-    /// </summary>
-    public bool IsSettings => Nav == "settings";
-
     public bool ShowNoProfilesYetHint => HasConfigs && !HasProfiles;
 
     public bool IsSettingsProfile => SettingsSection == "profile";
@@ -130,7 +113,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Whether the floating app-update banner shows. Hidden on the General page, which already carries the update section (#186).
     /// </summary>
-    public bool AppUpdateBannerVisible => General.UpdateBannerVisible && !(IsSettings && IsSettingsGeneral);
+    public bool AppUpdateBannerVisible => General.UpdateBannerVisible && !IsSettingsGeneral;
 
     /// <summary>
     /// Starts the agent connection.
@@ -148,27 +131,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return Config.ConfigNames;
     }
 
-    [RelayCommand]
-    private void NavHome()
+    /// <summary>
+    /// Seeds the console's opening section: opens the active profile so the profile-scoped sections show its
+    /// config / routing, then fills an empty Routing / Config section with its first item. Run when the console
+    /// window opens, since the persisted section is seeded without a section-change event.
+    /// </summary>
+    public void SelectStartupSection()
     {
-        Nav = "home";
-        Profile.OpenProfile = null;
-        Config.AbandonCreate();
-    }
-
-    [RelayCommand]
-    private void NavSettings()
-    {
-        // Open the active profile when entering settings.
         if (Home.ActiveProfile is not null)
         {
             Profile.OpenProfile = Home.ActiveProfile;
         }
 
-        Nav = "settings";
-
-        // Re-entering settings lands on the persisted section without a section-change event, so seed its
-        // selection here too.
         SelectSectionDefault(SettingsSection);
     }
 

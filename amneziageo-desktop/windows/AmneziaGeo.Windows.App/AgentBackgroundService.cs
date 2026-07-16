@@ -27,7 +27,12 @@ internal sealed class AgentBackgroundService(
             logger.LogInformation("reaped {Count} orphaned tunnel service(s): {Names}", reaped.Count, string.Join(", ", reaped));
         }
 
-        reconciler.Reconcile();
+        // Stand the boot cleanup down the moment a connect is requested: its own reconcile then owns adapter state.
+        reconciler.Reconcile(() => control.Running);
+
+        // A boot-time DNS restore can fail to take while WMI or the adapter is still initializing; re-run it a
+        // few times over the first minute so a leaked loopback redirect cannot strand the box until a manual connect.
+        _ = RetryBootReconcileAsync(stoppingToken);
 
         // Persisted selection wins over the launch arg; a dangling selection is dropped.
         var stored = await store.GetSettingAsync(AgentControl.SelectedTargetKey, stoppingToken);
@@ -64,6 +69,30 @@ internal sealed class AgentBackgroundService(
 
         await runner.RunAsync(group ?? new Profile(string.Empty, string.Empty), stoppingToken);
         logger.LogInformation("agent stopped");
+    }
+
+    // Retries the boot reconcile while no tunnel is desired: RestoreSaved is a no-op once the leftover DNS state
+    // is cleared, and the loop stops once a connection is requested (that path reconciles on its own).
+    private async Task RetryBootReconcileAsync(CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(6), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (control.Running)
+            {
+                return;
+            }
+
+            reconciler.Reconcile(() => control.Running);
+        }
     }
 
     private async Task<Profile?> ResolveProfileAsync(string target, CancellationToken ct)

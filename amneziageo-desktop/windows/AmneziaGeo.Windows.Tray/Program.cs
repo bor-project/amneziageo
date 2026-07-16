@@ -395,6 +395,11 @@ internal static unsafe class Program
     // Pops a system balloon (a toast on Win10/11) on the existing icon.
     private static void ShowBalloon(string title, string text, uint infoFlags = Native.NIIF_INFO)
     {
+        if (!AgentLink.ShowNotifications)
+        {
+            return;
+        }
+
         if (_icons.Length != 3)
         {
             return;

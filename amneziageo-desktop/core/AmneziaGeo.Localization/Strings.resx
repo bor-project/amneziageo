@@ -64,6 +64,12 @@
   <data name="General_ConnectionSection" xml:space="preserve">
     <value>Connection</value>
   </data>
+  <data name="General_ShowNotifications" xml:space="preserve">
+    <value>Show notifications</value>
+  </data>
+  <data name="General_ShowNotificationsHint" xml:space="preserve">
+    <value>Show tray notifications when the connection state changes.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>
   </data>

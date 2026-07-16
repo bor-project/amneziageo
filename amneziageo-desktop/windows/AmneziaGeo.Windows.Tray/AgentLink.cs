@@ -30,6 +30,11 @@ internal static class AgentLink
     public static volatile bool HasActiveProfile;
 
     /// <summary>
+    /// Whether tray notifications are enabled. Defaults to true so an older agent still notifies.
+    /// </summary>
+    public static volatile bool ShowNotifications = true;
+
+    /// <summary>
     /// Starts the connection loop; <paramref name="onState"/> receives 0 (disconnected) / 1 (transitioning) /
     /// 2 (connected) plus whether the agent latched a connect failure, on every change, off a background thread.
     /// </summary>
@@ -113,6 +118,7 @@ internal static class AgentLink
         var haveStatus = false;
         var selected = default(string);
         var bound = default(string);
+        var notify = true;
 
         var reader = new Utf8JsonReader(_utf8.GetBytes(json));
         var prop = default(string);
@@ -143,6 +149,10 @@ internal static class AgentLink
             {
                 bound = reader.GetString();
             }
+            else if (prop == "showNotifications" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                notify = reader.TokenType == JsonTokenType.True;
+            }
         }
 
         if (!haveStatus)
@@ -150,6 +160,7 @@ internal static class AgentLink
             return false;
         }
 
+        ShowNotifications = notify;
         HasActiveProfile = !string.IsNullOrEmpty(selected) || !string.IsNullOrEmpty(bound);
         state = status switch
         {

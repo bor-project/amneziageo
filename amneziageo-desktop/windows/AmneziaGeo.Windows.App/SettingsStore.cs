@@ -30,6 +30,7 @@ internal sealed class SettingsStore(IStateStore store)
             SurviveReboot = ReadBool(values, "survive-reboot", defaults.SurviveReboot),
             PeriodicReconnect = ReadBool(values, "periodic-reconnect-enabled", defaults.PeriodicReconnect),
             PeriodicReconnectIntervalSeconds = ReadInt(values, "periodic-reconnect-interval-seconds", defaults.PeriodicReconnectIntervalSeconds),
+            ShowNotifications = ReadBool(values, "show-notifications", defaults.ShowNotifications),
         };
     }
 
@@ -96,7 +97,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] IntKeys =
         ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds"];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled"];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications"];
 
     // Validated string settings; log-level is constrained to verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey];

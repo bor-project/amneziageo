@@ -280,7 +280,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var select = connection.CreateCommand();
         await using (select.ConfigureAwait(false))
         {
-            select.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';";
+            // local_prefs is owned by the UI/installer (LocalKeyValueStore), not this versioned schema; keep it
+            // across a schema reset so UI/installer preferences survive.
+            select.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'local_prefs';";
             var reader = await select.ExecuteReaderAsync(ct).ConfigureAwait(false);
             await using (reader.ConfigureAwait(false))
             {

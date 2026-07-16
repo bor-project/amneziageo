@@ -31,6 +31,21 @@ internal sealed class UiPreferences
     public double Height { get; set; } = 610;
 
     /// <summary>
+    /// Console left, in desktop pixels; NaN follows the default (center).
+    /// </summary>
+    public double PosX { get; set; } = double.NaN;
+
+    /// <summary>
+    /// Console top, in desktop pixels; NaN follows the default (center).
+    /// </summary>
+    public double PosY { get; set; } = double.NaN;
+
+    /// <summary>
+    /// Whether the console was maximized.
+    /// </summary>
+    public bool Maximized { get; set; }
+
+    /// <summary>
     /// The selected settings section.
     /// </summary>
     public string SettingsSection { get; set; } = "profile";
@@ -118,6 +133,9 @@ internal sealed class UiPreferences
             ["theme"] = Theme,
             ["width"] = Width.ToString(CultureInfo.InvariantCulture),
             ["height"] = Height.ToString(CultureInfo.InvariantCulture),
+            ["pos-x"] = PosX.ToString(CultureInfo.InvariantCulture),
+            ["pos-y"] = PosY.ToString(CultureInfo.InvariantCulture),
+            ["maximized"] = Maximized ? "1" : "0",
             ["settings-section"] = SettingsSection,
             ["language"] = Language,
             ["last-profile"] = LastProfile,
@@ -140,6 +158,21 @@ internal sealed class UiPreferences
         if (values.TryGetValue("height", out var height) && double.TryParse(height, NumberStyles.Float, CultureInfo.InvariantCulture, out var h) && h > 0)
         {
             prefs.Height = h;
+        }
+
+        if (values.TryGetValue("pos-x", out var posX) && double.TryParse(posX, NumberStyles.Float, CultureInfo.InvariantCulture, out var px))
+        {
+            prefs.PosX = px;
+        }
+
+        if (values.TryGetValue("pos-y", out var posY) && double.TryParse(posY, NumberStyles.Float, CultureInfo.InvariantCulture, out var py))
+        {
+            prefs.PosY = py;
+        }
+
+        if (values.TryGetValue("maximized", out var maximized))
+        {
+            prefs.Maximized = maximized == "1";
         }
 
         if (values.TryGetValue("settings-section", out var section) && !string.IsNullOrEmpty(section))

@@ -16,15 +16,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private readonly Lock _gate = new();
     private string? _lastJson;
 
-    // UI sessions; tunnel outlives them only by the grace window. Guarded by _gate.
-    private readonly HashSet<PipeConnection> _uiSessions = [];
-
-    // Pending UI-gone teardown; cancelled on reattach. Guarded by _gate.
-    private CancellationTokenSource? _teardownGrace;
-
-    // Grace window; must exceed the UI client reconnect delay.
-    private static readonly TimeSpan _uiTeardownGrace = TimeSpan.FromSeconds(5);
-
     // Per-source progress: 0-100 while downloading, -1 while re-materializing. Presence means "updating".
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _updating = new(StringComparer.Ordinal);
 
@@ -90,86 +81,14 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
         finally
         {
-            bool wasUi;
             lock (_gate)
             {
                 _clients.Remove(connection);
-                wasUi = _uiSessions.Remove(connection);
             }
 
             connection.Dispose();
             logger.LogInformation("status client disconnected");
-
-            // Only a UI session drop can end the tunnel; scheduled outside the lock.
-            if (wasUi)
-            {
-                OnUiSessionEnded();
-            }
         }
-    }
-
-    private void MarkUiSession(PipeConnection connection)
-    {
-        lock (_gate)
-        {
-            _uiSessions.Add(connection);
-            _teardownGrace?.Cancel();
-            _teardownGrace?.Dispose();
-            _teardownGrace = null;
-        }
-
-        logger.LogInformation("UI session attached");
-    }
-
-    private void OnUiSessionEnded()
-    {
-        CancellationToken graceToken;
-        lock (_gate)
-        {
-            if (_uiSessions.Count > 0 || !control.Running)
-            {
-                // Another UI is still attached, or there is no tunnel to bring down.
-                return;
-            }
-
-            _teardownGrace?.Cancel();
-            _teardownGrace?.Dispose();
-            _teardownGrace = new CancellationTokenSource();
-            graceToken = _teardownGrace.Token;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(_uiTeardownGrace, graceToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return; // UI re-attached
-            }
-
-            lock (_gate)
-            {
-                if (_uiSessions.Count > 0)
-                {
-                    return;
-                }
-            }
-
-            // Survive-reboot keeps the tunnel up independent of the UI (#196); never tear it down on UI exit.
-            var settings = await settingsStore.LoadAsync(CancellationToken.None);
-            if (settings.SurviveReboot)
-            {
-                return;
-            }
-
-            if (control.Running)
-            {
-                logger.LogInformation("no UI connected; disconnecting tunnel");
-                control.SetRunning(false);
-            }
-        });
     }
 
     /// <summary>
@@ -218,10 +137,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return;
         }
 
-        // Attach needs the connection identity, so it stays here.
         if (envelope.Command.Op == IpcContract.OpAttachUi)
         {
-            MarkUiSession(connection);
+            // UI presence is informational only: a live tunnel outlives the loss of every window (a tray crash,
+            // Task Manager end-task, or an upgrade gap) and comes down only on an explicit user disconnect / exit
+            // or an agent-service stop. A VPN must not fail open when its front-end dies.
+            logger.LogInformation("UI session attached");
             var attachAck = JsonSerializer.Serialize(new IpcEnvelope(IpcContract.AckType, Ack: new IpcAck(true, "attached")), IpcJson.Options);
             await connection.SendAsync(attachAck, ct);
             return;

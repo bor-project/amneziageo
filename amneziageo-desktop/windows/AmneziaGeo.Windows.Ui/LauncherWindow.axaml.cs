@@ -48,10 +48,10 @@ public sealed partial class LauncherWindow : Window
         }
     }
 
+    // "More": hand off to the shell, which opens the console and drops this window.
     private void OnOpenApp(object? sender, RoutedEventArgs e)
     {
         OpenAppRequested?.Invoke();
-        Close();
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e)

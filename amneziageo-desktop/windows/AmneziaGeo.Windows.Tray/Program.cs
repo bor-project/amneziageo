@@ -8,11 +8,10 @@ namespace AmneziaGeo.Windows.Tray;
 /// The tray anchor entry point: a hidden owner window drives a Shell notify icon, a background link keeps the
 /// agent tunnel alive and feeds the icon its colour and tooltip, balloons announce the connect start,
 /// completion, and failure while the GUI is not in front. A left click (or the menu's Open) surfaces the
-/// lightweight launcher for a quick connect; the menu's Settings opens the full configuration console;
-/// the menu also connects, disconnects, or exits. A cold launch with an active profile opens the launcher so
-/// the user connects without the full GUI; the right-click menu is never auto-shown (#187). Launched with
-/// --connect (post-install auto-connect), it dials the active profile straight away and stays resident, no
-/// window (#188).
+/// lightweight launcher, whose More button expands it to the full configuration console; the menu also
+/// connects, disconnects, or exits. A cold launch opens the launcher; the right-click menu is never
+/// auto-shown (#187). Launched with --connect (post-install auto-connect), it dials the active profile
+/// straight away and stays resident, no window (#188).
 /// </summary>
 internal static unsafe class Program
 {
@@ -195,9 +194,6 @@ internal static unsafe class Program
             case Native.ID_OPEN:
                 LaunchUi("--launcher");
                 break;
-            case Native.ID_SETTINGS:
-                LaunchUi();
-                break;
             case Native.ID_CONNECT:
                 AgentLink.SendConnect();
                 break;
@@ -296,9 +292,8 @@ internal static unsafe class Program
         }
     }
 
-    // Cold launch, once: with an active profile open the lightweight launcher so the user connects without the
-    // full GUI; with nothing selected (fresh install / reset / all removed) the launcher only adds a step, so
-    // open the full GUI instead.
+    // Cold launch, once: open the lightweight launcher (More expands it to the full console). Post-install
+    // auto-connect with an active profile dials straight away and stays resident, no window (#188).
     private static void ResolveColdLaunch()
     {
         _popupPending = false;
@@ -306,16 +301,11 @@ internal static unsafe class Program
 
         if (_autoConnect && AgentLink.HasActiveProfile)
         {
-            // Post-install auto-connect: dial straight away and stay resident, no window (#188).
             AgentLink.SendConnect();
-        }
-        else if (AgentLink.HasActiveProfile)
-        {
-            LaunchUi("--launcher");
         }
         else
         {
-            LaunchUi();
+            LaunchUi("--launcher");
         }
     }
 
@@ -336,13 +326,12 @@ internal static unsafe class Program
         Native.DestroyMenu(menu);
     }
 
-    // Builds the menu for the current state: Open (launcher) and Settings (console) always; Connect (grey without
-    // an active profile) when down, Disconnect when up; Exit always.
+    // Builds the menu for the current state: Open (launcher) always; Connect (grey without an active profile)
+    // when down, Disconnect when up; Exit always.
     private static nint BuildMenu()
     {
         var menu = Native.CreatePopupMenu();
         Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_OPEN, Labels.Open);
-        Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_SETTINGS, Labels.Settings);
         Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
 
         if (_current == 0)
@@ -356,7 +345,8 @@ internal static unsafe class Program
         }
 
         Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
-        Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_EXIT, Labels.Exit);
+        // Signpost that quitting drops a live tunnel, so protection is never lost without notice.
+        Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_EXIT, _current != 0 ? Labels.ExitConnected : Labels.Exit);
         return menu;
     }
 
@@ -441,14 +431,14 @@ internal static unsafe class Program
         nid->szInfo[infoCount] = '\0';
     }
 
-    // Tooltip tracks the tunnel state; the transitional state stays the bare brand.
+    // Tooltip tracks the tunnel state; the transitional state names the direction from the edge that opened it.
     private static string TipForState()
     {
         return _current switch
         {
             2 => $"AmneziaGeo - {Labels.StatusConnected}",
             0 => $"AmneziaGeo - {Labels.StatusDisconnected}",
-            _ => "AmneziaGeo",
+            _ => $"AmneziaGeo - {(_transitionFrom == 2 ? Labels.StatusDisconnecting : Labels.StatusConnecting)}",
         };
     }
 

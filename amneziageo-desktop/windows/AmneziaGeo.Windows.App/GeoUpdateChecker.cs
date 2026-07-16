@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -44,9 +45,11 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
             return Status.Available;
         }
 
-        // A clean 304 / matching validator is a reliable "current". A changed validator is NOT proof of new
-        // bytes - redirect/CDN ETags rotate on identical content - so a published checksum arbitrates first.
-        var byHeaders = await CheckHeadersAsync(source.Url, meta, ct);
+        // A clean 304 / matching validator / matching byte length is a reliable "current". A changed validator
+        // is NOT proof of new bytes - redirect/CDN ETags rotate on identical content - so a published checksum
+        // arbitrates before falling back to the header verdict.
+        var localSize = TryLocalSize(source.Name);
+        var byHeaders = await CheckHeadersAsync(source.Url, meta, localSize, ct);
         if (byHeaders == Status.UpToDate)
         {
             return Status.UpToDate;
@@ -64,11 +67,14 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
         return byHeaders;
     }
 
-    private async Task<Status> CheckHeadersAsync(string url, GeoFileMetadata meta, CancellationToken ct)
+    private async Task<Status> CheckHeadersAsync(string url, GeoFileMetadata meta, long localSize, CancellationToken ct)
     {
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            // Ask for the file verbatim so a reported Content-Length is the raw size, comparable to the stored file.
+            request.Headers.AcceptEncoding.Clear();
+            request.Headers.AcceptEncoding.ParseAdd("identity");
             if (!string.IsNullOrEmpty(meta.ETag) && EntityTagHeaderValue.TryParse(meta.ETag, out var tag))
             {
                 request.Headers.IfNoneMatch.Add(tag);
@@ -91,10 +97,20 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
                 return Status.Unknown;
             }
 
+            // Same byte length as the stored file past a changed validator means unchanged content: geo .dat
+            // files change size whenever their category set changes, so an identical length is treated as
+            // current. This is what kills the permanent false "update available" on hosts with churning ETags
+            // that ship no checksum sidecar. A differing / unknown length falls through to the validators.
+            var remoteLen = response.Content.Headers.ContentLength;
+            if (localSize > 0 && remoteLen is > 0 && remoteLen.Value == localSize)
+            {
+                return Status.UpToDate;
+            }
+
             var etag = response.Headers.ETag?.ToString() ?? string.Empty;
             if (!string.IsNullOrEmpty(meta.ETag) && !string.IsNullOrEmpty(etag))
             {
-                return string.Equals(meta.ETag, etag, StringComparison.Ordinal) ? Status.UpToDate : Status.Available;
+                return string.Equals(NormalizeETag(meta.ETag), NormalizeETag(etag), StringComparison.Ordinal) ? Status.UpToDate : Status.Available;
             }
 
             var lastModified = response.Content.Headers.LastModified?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty;
@@ -144,5 +160,27 @@ internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
         {
             return Status.Unknown;
         }
+    }
+
+    // The stored data file's byte length, or 0 when it is missing / unreadable.
+    private static long TryLocalSize(string name)
+    {
+        try
+        {
+            var info = new FileInfo(TunnelPaths.GeoDataFile(name));
+            return info.Exists ? info.Length : 0;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+    }
+
+    // Drops the weak-validator prefix so a strong/weak flip (a gzip negotiation difference) on identical
+    // content does not read as a change.
+    private static string NormalizeETag(string etag)
+    {
+        var trimmed = etag.Trim();
+        return trimmed.StartsWith("W/", StringComparison.Ordinal) ? trimmed[2..] : trimmed;
     }
 }

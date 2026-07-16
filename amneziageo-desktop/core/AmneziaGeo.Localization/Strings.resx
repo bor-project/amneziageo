@@ -1410,7 +1410,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Settings</value>
   </data>
   <data name="Launcher_Cancel" xml:space="preserve">
-    <value>Cancel</value>
+    <value>Close</value>
   </data>
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>The app stays in the tray after closing.</value>

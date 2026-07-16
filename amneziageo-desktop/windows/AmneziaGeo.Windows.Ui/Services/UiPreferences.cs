@@ -55,6 +55,11 @@ internal sealed class UiPreferences
         "AmneziaGeo",
         "ui-prefs.json");
 
+    private static string LanguageMarkerPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AmneziaGeo",
+        "tray-lang");
+
     /// <summary>
     /// Loads the saved preferences, or defaults when absent.
     /// </summary>
@@ -86,8 +91,22 @@ internal sealed class UiPreferences
         {
             Directory.CreateDirectory(Path.GetDirectoryName(DbPath)!);
             new LocalKeyValueStore(DbPath).Save(Scope, ToValues());
+            WriteLanguageMarker();
         }
         catch
+        {
+        }
+    }
+
+    // Mirrors the UI language token to a tiny marker the native tray reads, keeping the tray free of the SQLite
+    // state store where the app now keeps its preferences.
+    private void WriteLanguageMarker()
+    {
+        try
+        {
+            File.WriteAllText(LanguageMarkerPath, Language ?? string.Empty);
+        }
+        catch (IOException)
         {
         }
     }
@@ -167,6 +186,7 @@ internal sealed class UiPreferences
             prefs.LastProfile = legacy.LastProfile ?? string.Empty;
 
             store.Save(Scope, prefs.ToValues());
+            prefs.WriteLanguageMarker();
             TryDelete(path);
             return true;
         }

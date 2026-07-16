@@ -1,17 +1,15 @@
-using System.Text.Json;
-
 namespace AmneziaGeo.Windows.Tray;
 
 /// <summary>
-/// The two context-menu labels, resolved once from the saved UI language (ui-prefs.json), falling back to the
-/// OS UI language. A tiny table instead of the localization stack, so the native image carries no cultures.
+/// The context-menu labels, resolved once from the saved UI language (the tray-lang marker), falling back to
+/// the OS UI language. A tiny table instead of the localization stack, so the native image carries no cultures.
 /// </summary>
 internal static class Labels
 {
     /// <summary>
-    /// «Открыть» / "Open": surfaces the quick-launch window.
+    /// «Открыть лаунчер» / "Open launcher": surfaces the quick-launch window.
     /// </summary>
-    public static string Open { get; private set; } = "Open";
+    public static string Open { get; private set; } = "Open launcher";
 
     /// <summary>
     /// «Настройки» / "Settings": opens the full configuration console.
@@ -70,7 +68,7 @@ internal static class Labels
     {
         if (IsRussian(ReadSavedLanguage()))
         {
-            Open = "Открыть";
+            Open = "Открыть лаунчер";
             Settings = "Настройки";
             Connect = "Подключить";
             Disconnect = "Отключить";
@@ -84,7 +82,8 @@ internal static class Labels
         }
     }
 
-    // ui-prefs.json "Language": "ru"/"en" token, empty follows the system language.
+    // The tray-lang marker holds the "ru"/"en" token (empty follows the system language), written by the app on
+    // save; the tray reads it directly so it stays free of the SQLite state store the app now keeps prefs in.
     private static string ReadSavedLanguage()
     {
         try
@@ -92,9 +91,8 @@ internal static class Labels
             var path = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "AmneziaGeo",
-                "ui-prefs.json");
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            return doc.RootElement.TryGetProperty("Language", out var lang) ? lang.GetString() ?? string.Empty : string.Empty;
+                "tray-lang");
+            return File.ReadAllText(path).Trim();
         }
         catch
         {

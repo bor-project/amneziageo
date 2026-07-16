@@ -7,7 +7,8 @@ using AmneziaGeo.Windows.Ui.ViewModels;
 namespace AmneziaGeo.Windows.Ui;
 
 /// <summary>
-/// Cold-launch launcher: connect the active profile, open the full app, or dismiss to the resident tray (#187).
+/// Cold-launch launcher: connect/disconnect the active profile in place, open the full app, or dismiss to the
+/// resident tray (#187).
 /// </summary>
 public sealed partial class LauncherWindow : Window
 {
@@ -28,21 +29,23 @@ public sealed partial class LauncherWindow : Window
 
     private void OnConnect(object? sender, RoutedEventArgs e)
     {
-        _ = ConnectAndCloseAsync();
+        _ = ToggleConnectionAsync();
     }
 
-    private async Task ConnectAndCloseAsync()
+    // Connect/disconnect the active profile without closing: the window stays up so the user watches the
+    // connection progress, then dismisses it via Close when ready.
+    private async Task ToggleConnectionAsync()
     {
-        if (Vm is not null)
+        if (Vm is null)
         {
-            var command = Vm.Home.ToggleConnectionCommand;
-            if (command.CanExecute(null))
-            {
-                await command.ExecuteAsync(null);
-            }
+            return;
         }
 
-        Close();
+        var command = Vm.Home.ToggleConnectionCommand;
+        if (command.CanExecute(null))
+        {
+            await command.ExecuteAsync(null);
+        }
     }
 
     private void OnOpenApp(object? sender, RoutedEventArgs e)

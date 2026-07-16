@@ -1051,6 +1051,9 @@
   <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
     <value>svchost.exe — общий хост служб, затуннелит много чужого. Выберите службу из списка.</value>
   </data>
+  <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
+    <value>Это общий хост WebView2 — правило на нём затуннелит все приложения на WebView2. Добавьте конкретное приложение, его веб-трафик пойдёт вместе с ним.</value>
+  </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>Все локальные сети уже в списке.</value>
   </data>

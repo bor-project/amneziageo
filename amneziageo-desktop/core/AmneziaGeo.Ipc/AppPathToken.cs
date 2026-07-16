@@ -62,6 +62,66 @@ public static class AppPathToken
     }
 
     /// <summary>
+    /// Returns the parent of a versioned leaf folder (Squirrel app-x.y.z and similar), so an app:dir= rule
+    /// survives the app auto-updating into a new version folder. A non-versioned leaf passes through unchanged.
+    /// </summary>
+    public static string StripVersionedLeaf(string dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            return dir;
+        }
+
+        var trimmed = dir.TrimEnd('\\', '/');
+        var slash = trimmed.LastIndexOfAny(['\\', '/']);
+        if (slash <= 0)
+        {
+            return trimmed;
+        }
+
+        var leaf = trimmed[(slash + 1)..];
+        return LooksVersioned(leaf) ? trimmed[..slash] : trimmed;
+    }
+
+    // A folder name that carries a version: Squirrel's app-<ver>, a v-prefixed semver, or a bare dotted number.
+    private static bool LooksVersioned(string segment)
+    {
+        if (segment.StartsWith("app-", StringComparison.OrdinalIgnoreCase)
+            && segment.Length > 4
+            && char.IsDigit(segment[4]))
+        {
+            return true;
+        }
+
+        var i = 0;
+        if (segment.Length > 0 && (segment[0] == 'v' || segment[0] == 'V'))
+        {
+            i = 1;
+        }
+
+        if (i >= segment.Length || !char.IsDigit(segment[i]))
+        {
+            return false;
+        }
+
+        var hasDot = false;
+        for (; i < segment.Length; i++)
+        {
+            var c = segment[i];
+            if (c == '.')
+            {
+                hasDot = true;
+            }
+            else if (!char.IsDigit(c))
+            {
+                break;
+            }
+        }
+
+        return hasDot;
+    }
+
+    /// <summary>
     /// Tokenizes the value of an app:dir= / app:path= rule token; other kinds pass through unchanged.
     /// </summary>
     public static string TokenizeRule(string token)

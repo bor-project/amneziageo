@@ -1410,7 +1410,7 @@
     <value>Настройки</value>
   </data>
   <data name="Launcher_Cancel" xml:space="preserve">
-    <value>Отмена</value>
+    <value>Закрыть</value>
   </data>
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>После закрытия приложение останется в трее.</value>

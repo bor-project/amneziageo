@@ -62,7 +62,7 @@ internal sealed class UpdateCheckService(
         }
 
         state.Latest = await checker.CheckAsync(
-            settings.UpdateUrl, CurrentVersion, AppSettings.BuildTarget, AppSettings.AllowPrerelease, ct);
+            settings.UpdateUrl, CurrentVersion, AppSettings.BuildTarget, settings.AllowPrerelease, ct);
         await broker.BroadcastIfChangedAsync(ct);
     }
 

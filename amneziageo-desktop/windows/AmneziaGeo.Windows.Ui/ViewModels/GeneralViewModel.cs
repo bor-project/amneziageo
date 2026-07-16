@@ -77,10 +77,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
+    [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
     private bool _updateDownloading;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
+    [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
     private bool _updateDownloaded;
 
     [ObservableProperty]
@@ -128,6 +130,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private bool _showNotifications = true;
 
     /// <summary>
+    /// Offer prerelease (beta) versions in the update check.
+    /// </summary>
+    [ObservableProperty]
+    private bool _allowPrerelease;
+
+    /// <summary>
     /// Auto-reconnect interval presets, in seconds.
     /// </summary>
     public ObservableCollection<int> ReconnectIntervals { get; } = [10, 15, 30, 60, 120, 300];
@@ -173,6 +181,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool ShowDownloadButton => !UpdateDownloading && !UpdateDownloaded;
 
     /// <summary>
+    /// Hide the check-update button while a setup is downloading or already downloaded (#6).
+    /// </summary>
+    public bool ShowCheckUpdateButton => !UpdateDownloading && !UpdateDownloaded;
+
+    /// <summary>
     /// Whether the normal general page is shown (not a bundle export/import sub-view).
     /// </summary>
     public bool IsGeneralMain => BundleMode == BundleMode.None;
@@ -192,6 +205,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         // Seed the connection settings without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
         ShowNotifications = snapshot.ShowNotifications;
+        AllowPrerelease = snapshot.AllowPrerelease;
         SurviveReboot = snapshot.SurviveReboot;
         PeriodicReconnect = snapshot.PeriodicReconnect;
         EnsureReconnectInterval(snapshot.PeriodicReconnectIntervalSeconds);
@@ -399,6 +413,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("show-notifications", value ? "on" : "off");
+        }
+    }
+
+    partial void OnAllowPrereleaseChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync("allow-prerelease", value ? "on" : "off");
         }
     }
 

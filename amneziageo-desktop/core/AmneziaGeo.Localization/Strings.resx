@@ -70,6 +70,12 @@
   <data name="General_ShowNotificationsHint" xml:space="preserve">
     <value>Show tray notifications when the connection state changes.</value>
   </data>
+  <data name="General_AllowPrerelease" xml:space="preserve">
+    <value>Check for prerelease versions</value>
+  </data>
+  <data name="General_AllowPrereleaseHint" xml:space="preserve">
+    <value>Offer beta builds in the update check, not only stable releases.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>
   </data>

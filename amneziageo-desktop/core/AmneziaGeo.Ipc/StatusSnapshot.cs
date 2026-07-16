@@ -48,4 +48,6 @@ public sealed record StatusSnapshot(
     // Interval between periodic auto-reconnect attempts, in seconds.
     int PeriodicReconnectIntervalSeconds = 30,
     // Show tray notifications for connection state changes.
-    bool ShowNotifications = true);
+    bool ShowNotifications = true,
+    // Whether the update check offers prereleases (user-toggleable, defaults to the baked channel).
+    bool AllowPrerelease = false);

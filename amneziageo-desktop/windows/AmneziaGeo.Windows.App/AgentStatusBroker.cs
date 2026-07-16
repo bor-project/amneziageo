@@ -2192,7 +2192,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         {
             try
             {
-                return (await updateChecker.CheckAsync(url, Version(), AppSettings.BuildTarget, AppSettings.AllowPrerelease, token), false);
+                return (await updateChecker.CheckAsync(url, Version(), AppSettings.BuildTarget, settings.AllowPrerelease, token), false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -2372,7 +2372,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.SurviveReboot,
             settings.PeriodicReconnect,
             settings.PeriodicReconnectIntervalSeconds,
-            settings.ShowNotifications);
+            settings.ShowNotifications,
+            settings.AllowPrerelease);
     }
 
     private static string ProfileDisplayStatus(string profileStatus)

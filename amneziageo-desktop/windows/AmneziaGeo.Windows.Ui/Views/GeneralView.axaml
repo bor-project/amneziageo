@@ -65,6 +65,13 @@
             <StackPanel Spacing="9" IsVisible="{Binding HasUpdateUrl}">
               <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Margin="0,2,0,0" />
               <TextBlock Text="{l:Tr Main_UpdateSection}" FontWeight="SemiBold" FontSize="13.5" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Text="{l:Tr General_AllowPrerelease}" FontSize="13" TextWrapping="Wrap" />
+                  <TextBlock Text="{l:Tr General_AllowPrereleaseHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+                <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllowPrerelease, Mode=TwoWay}" />
+              </Grid>
               <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold"
                          IsVisible="{Binding UpdateAvailable}" />
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
@@ -75,7 +82,8 @@
                              IsVisible="{Binding UpdateAvailable}" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                  <Button Classes="softbtn" Content="{l:Tr Main_CheckUpdatesButton}" Command="{Binding CheckUpdateCommand}" />
+                  <Button Classes="softbtn" Content="{l:Tr Main_CheckUpdatesButton}" Command="{Binding CheckUpdateCommand}"
+                          IsVisible="{Binding ShowCheckUpdateButton}" />
                   <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding UpdateAvailable}">
                     <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
                                FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />

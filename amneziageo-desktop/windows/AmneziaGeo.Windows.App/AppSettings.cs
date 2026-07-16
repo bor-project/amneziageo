@@ -27,7 +27,8 @@ internal sealed record AppSettings
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "AmneziaGeo.BuildTarget")?.Value?.Trim() ?? string.Empty;
 
-    // Prerelease channel toggle baked from installer.config.json (allowPrerelease); "1" also offers prereleases.
+    // Prerelease channel default baked from installer.config.json (allowPrerelease); "1" seeds the runtime
+    // toggle on. Once the user flips it in settings, the persisted value wins over this default.
     private static readonly bool BakedAllowPrerelease =
         string.Equals(
             Assembly.GetExecutingAssembly()
@@ -46,9 +47,9 @@ internal sealed record AppSettings
     public static string BuildTarget => BakedBuildTarget;
 
     /// <summary>
-    /// Whether the update check offers prereleases.
+    /// Whether the update check offers prereleases; defaults to the baked channel, then user-toggleable.
     /// </summary>
-    public static bool AllowPrerelease => BakedAllowPrerelease;
+    public bool AllowPrerelease { get; init; } = BakedAllowPrerelease;
 
     /// <summary>
     /// How often tunneled domains are re-resolved, in seconds.

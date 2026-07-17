@@ -28,6 +28,7 @@ internal static class AgentLink
     private static Action<bool, string>? _onUpdate;
     private static Action? _onDownloaded;
     private static Action? _onDownloadFailed;
+    private static Action? _onCheckFinished;
 
     // Persists across pipe reconnects so a still-latched download failure does not re-fire the balloon each time
     // the tray reconnects to the agent (#8).
@@ -70,6 +71,16 @@ internal static class AgentLink
     public static volatile bool DownloadFailed;
 
     /// <summary>
+    /// Whether a manual update check is running, so the menu shows a checking state and blocks a second check (#15).
+    /// </summary>
+    public static volatile bool CheckInProgress;
+
+    /// <summary>
+    /// Whether the last manual update check failed, so the up-to-date notice is suppressed (#15).
+    /// </summary>
+    public static volatile bool CheckFailed;
+
+    /// <summary>
     /// The available update version, empty when none.
     /// </summary>
     public static volatile string UpdateVersion = string.Empty;
@@ -87,14 +98,16 @@ internal static class AgentLink
     /// suppressed, since the tunnel state is then unknown); <paramref name="onUpdate"/>
     /// receives the update-available flag and version whenever they change; <paramref name="onDownloaded"/> fires
     /// when a download completes (the ready-to-install edge); <paramref name="onDownloadFailed"/> fires on the
-    /// download-failure edge. All fire off a background thread.
+    /// download-failure edge; <paramref name="onCheckFinished"/> fires when a manual update check finishes (the
+    /// checking-flag falling edge). All fire off a background thread.
     /// </summary>
-    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed)
+    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed, Action onCheckFinished)
     {
         _onState = onState;
         _onUpdate = onUpdate;
         _onDownloaded = onDownloaded;
         _onDownloadFailed = onDownloadFailed;
+        _onCheckFinished = onCheckFinished;
         var thread = new Thread(Loop) { IsBackground = true, Name = "agent-link" };
         thread.Start();
     }
@@ -171,6 +184,7 @@ internal static class AgentLink
                 var prevUpdateAvail = false;
                 var prevUpdateVer = string.Empty;
                 var prevDownloaded = false;
+                var prevChecking = false;
                 string? line;
                 while ((line = reader.ReadLine()) is not null)
                 {
@@ -202,6 +216,16 @@ internal static class AgentLink
                         }
 
                         _prevDownloadFailed = DownloadFailed;
+
+                        // Manual-check finished edge (#15): the checking flag falling within this live session
+                        // announces the up-to-date result. A fresh connection starts prevChecking false, so a
+                        // check that completed during a link outage cannot spuriously fire it.
+                        if (prevChecking && !CheckInProgress)
+                        {
+                            _onCheckFinished?.Invoke();
+                        }
+
+                        prevChecking = CheckInProgress;
                     }
                 }
             }
@@ -213,6 +237,7 @@ internal static class AgentLink
             _writer = null;
             HasActiveProfile = false;
             DownloadInProgress = false;
+            CheckInProgress = false;
             _onState?.Invoke(0, false, false, false, true);
             Thread.Sleep(2000);
         }
@@ -236,6 +261,8 @@ internal static class AgentLink
         var updateDownloaded = false;
         var updateDownloading = false;
         var updateFailed = false;
+        var updateChecking = false;
+        var updateCheckFailed = false;
         var updateVer = default(string);
         var updateUrl = default(string);
 
@@ -292,6 +319,14 @@ internal static class AgentLink
             {
                 updateFailed = reader.TokenType == JsonTokenType.True;
             }
+            else if (prop == "updateChecking" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                updateChecking = reader.TokenType == JsonTokenType.True;
+            }
+            else if (prop == "updateCheckFailed" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                updateCheckFailed = reader.TokenType == JsonTokenType.True;
+            }
             else if (prop == "updateVersion" && reader.TokenType == JsonTokenType.String)
             {
                 updateVer = reader.GetString();
@@ -316,6 +351,8 @@ internal static class AgentLink
         UpdateDownloaded = updateDownloaded;
         DownloadInProgress = updateDownloading;
         DownloadFailed = updateFailed;
+        CheckInProgress = updateChecking;
+        CheckFailed = updateCheckFailed;
         UpdateVersion = updateVer ?? string.Empty;
         HasUpdateUrl = !string.IsNullOrWhiteSpace(updateUrl);
         HasActiveProfile = !string.IsNullOrEmpty(selected) || !string.IsNullOrEmpty(bound);

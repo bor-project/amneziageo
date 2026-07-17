@@ -37,6 +37,16 @@ internal sealed class UpdateState
     /// Whether a running download has been asked to cancel; relayed to the UI that owns the byte-pump.
     /// </summary>
     public bool CancelRequested { get; set; }
+
+    /// <summary>
+    /// Whether a manual update check is running; rides the snapshot so the tray shows a checking state.
+    /// </summary>
+    public bool Checking { get; set; }
+
+    /// <summary>
+    /// Whether the last manual update check failed; rides the snapshot so the tray suppresses the up-to-date notice.
+    /// </summary>
+    public bool CheckFailed { get; set; }
 }
 
 /// <summary>

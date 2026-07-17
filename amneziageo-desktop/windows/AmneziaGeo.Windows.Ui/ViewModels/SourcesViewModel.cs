@@ -162,12 +162,13 @@ internal sealed partial class SourcesViewModel : ViewModelBase
 
     // Raises the geo-list update banner once per "wave": when the set of sources with a pending update
     // changes to a non-empty set the banner shows; a dismissed banner stays dismissed until that set
-    // changes again; when nothing is outdated the banner hides. Driven off the per-source flags the
-    // snapshot already carries, so no extra round-trip is needed.
+    // changes again; when nothing is outdated the banner hides. Sources already downloading are excluded -
+    // their update is in flight, so announcing it as merely "available" would be wrong. Driven off the
+    // per-source flags the snapshot already carries, so no extra round-trip is needed.
     private void ApplyGeoUpdateBanner()
     {
         var outdated = Sources
-            .Where(s => s.UpdateAvailable)
+            .Where(s => s.UpdateAvailable && !s.Updating)
             .Select(s => s.Name)
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();

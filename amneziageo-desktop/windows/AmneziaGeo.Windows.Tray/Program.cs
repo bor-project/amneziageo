@@ -34,6 +34,9 @@ internal static unsafe class Program
     private static bool _popupPending;
     private static bool _autoConnect;
     private static bool _showConsole;
+
+    // Logon autostart: resident tray icon only, no launcher window.
+    private static bool _autostart;
     private static bool _stateInitialized;
 
     // Set when the tray starts shortly after OS boot: lets the first snapshot announce a tunnel that
@@ -55,6 +58,9 @@ internal static unsafe class Program
         // After an in-app update the installer passes --settings so the cold launch reopens the settings console
         // the update was started from, instead of the launcher.
         _showConsole = Array.IndexOf(args, "--settings") >= 0;
+
+        // Logon autostart (survive-reboot): bring up the resident tray icon only, no launcher window.
+        _autostart = Array.IndexOf(args, "--autostart") >= 0;
 
         // A tray that comes up within minutes of boot is a post-reboot logon autostart: an already-up tunnel is
         // still news, so its first snapshot earns a connected balloon.
@@ -328,12 +334,12 @@ internal static unsafe class Program
 
         // An update applied from the settings console reopens the console (launched without --launcher) so the
         // user lands back where they started; a plain cold launch opens the launcher; a post-install auto-connect
-        // otherwise stays windowless (#188).
+        // (#188) or a logon autostart (--autostart) otherwise stays windowless, resident icon only.
         if (_showConsole)
         {
             LaunchUi();
         }
-        else if (!autoDial)
+        else if (!autoDial && !_autostart)
         {
             LaunchUi("--launcher");
         }

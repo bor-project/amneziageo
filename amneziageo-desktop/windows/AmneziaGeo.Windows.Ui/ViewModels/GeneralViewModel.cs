@@ -9,6 +9,7 @@ using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
@@ -427,9 +428,33 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     partial void OnSurviveRebootChanged(bool value)
     {
+        SyncBootAutostart(value);
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync("survive-reboot", value ? "on" : "off");
+        }
+    }
+
+    // Mirrors the resident tray's logon autostart to survive-reboot: with it on the tray comes up at logon so
+    // the boot-connected tunnel keeps its icon and controls.
+    private void SyncBootAutostart(bool enabled)
+    {
+        try
+        {
+            using var run = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
+            if (enabled)
+            {
+                var tray = Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.Windows.Tray.exe");
+                run.SetValue("AmneziaGeo", $"\"{tray}\" --autostart");
+            }
+            else
+            {
+                run.DeleteValue("AmneziaGeo", false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = LogToAgentAsync($"boot-autostart sync failed: {ex}");
         }
     }
 

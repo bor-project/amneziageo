@@ -20,11 +20,6 @@
   </Window.Resources>
 
   <Window.Styles>
-    <!-- Transitional connect/disconnect: amber fill, matching the console's mid-change indicator. -->
-    <Style Selector="Button.accent.transitioning">
-      <Setter Property="Background" Value="#E0902F" />
-    </Style>
-
     <!-- Outlined accent action: panel fill, accent border + text. -->
     <Style Selector="Button.outline">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />

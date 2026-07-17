@@ -121,6 +121,8 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     private void OnDetectComplete(object? sender, DetectCompleteEventArgs e)
     {
+        // Populate for a fresh install too, where no related bundle event ran.
+        _myVersion ??= engine.GetVariableVersion("WixBundleVersion");
         var state = _newerRelated
             ? InstallState.NewerInstalled
             : (_msiPresent || _olderRelated) ? InstallState.Installed : InstallState.NotInstalled;
@@ -128,7 +130,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
         _dispatcher.BeginInvoke(() =>
         {
-            _vm.SetDetected(state, _installedVersion);
+            _vm.SetDetected(state, _installedVersion, _myVersion);
 
             if (!_interactive)
             {
@@ -457,6 +459,12 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return false;
         }
 
+        // An in-app update always relaunches so the user is not left without a window after it applies.
+        if (IsUpdateFlow())
+        {
+            return true;
+        }
+
         if (_interactive)
         {
             return _vm.LaunchOnClose;
@@ -496,7 +504,10 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return false;
         }
 
-        return string.Equals(engine.GetVariableString("SHOWCONSOLE"), "1", StringComparison.Ordinal);
+        // An in-app update was started from the settings console; reopen it. UPDATEFLOW is the reliable signal
+        // even when an older sending build omits SHOWCONSOLE, so it wins over the windowless auto-connect launch.
+        return IsUpdateFlow()
+            || string.Equals(engine.GetVariableString("SHOWCONSOLE"), "1", StringComparison.Ordinal);
     }
 
     private static void LaunchApp(bool autoConnect, bool showConsole)

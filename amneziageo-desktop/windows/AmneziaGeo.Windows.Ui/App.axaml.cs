@@ -31,6 +31,9 @@ public sealed partial class App : Application
     // Top-left of the outgoing surface, carried to the incoming one so a More / Less swap opens in place.
     private PixelPoint? _swapAnchor;
 
+    // Guards the self-update against a second trigger launching a concurrent installer.
+    private bool _updating;
+
     /// <inheritdoc/>
     public override void Initialize()
     {
@@ -68,20 +71,156 @@ public sealed partial class App : Application
             // never reaches zero mid-toggle and the lifetime never shuts the process down.
             desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
 
-            // Cold launch from the tray (#187) opens the compact launcher; a direct run opens the full console.
-            if (desktop.Args is { } args && Array.IndexOf(args, "--launcher") >= 0)
+            // A later launch surfaces this instance (tray click) or asks it to update (tray menu / balloon).
+            // Armed only now: the waits post to Dispatcher.UIThread, which must not be touched before Avalonia
+            // has bound its platform dispatcher.
+            SingleInstance.ActivationHandler = OnActivation;
+            SingleInstance.UpdateHandler = OnUpdateRequested;
+            SingleInstance.StartListening();
+
+            var args = desktop.Args ?? [];
+            if (Array.IndexOf(args, "--update") >= 0)
             {
-                ShowLauncher();
+                // Background update (tray balloon / menu): download and apply with no window; opening the
+                // launcher reveals the shared progress. Nothing reopens afterwards (origin recorded as none).
+                desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                viewModel.Start();
+                StartHeadlessUpdate();
             }
             else
             {
-                ShowMainWindow();
-            }
+                // A post-update relaunch returns to the surface the update was started from; otherwise the tray
+                // (#187) opens the launcher and a direct run opens the full console.
+                var wantLauncher = ConsumeResumeOrigin() switch
+                {
+                    "launcher" => true,
+                    "settings" => false,
+                    _ => Array.IndexOf(args, "--launcher") >= 0,
+                };
+                viewModel.CurrentSurface = wantLauncher ? "launcher" : "settings";
+                if (wantLauncher)
+                {
+                    ShowLauncher();
+                }
+                else
+                {
+                    ShowMainWindow();
+                }
 
-            viewModel.Start();
+                viewModel.Start();
+            }
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // Reads and clears the post-update origin marker the update flow drops before relaunching, so the app
+    // returns to where the update was started from ("launcher" / "settings"); "none" / absent means no restore.
+    private static string? ConsumeResumeOrigin()
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AmneziaGeo",
+                "update-origin");
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var origin = File.ReadAllText(path).Trim();
+            File.Delete(path);
+            return origin;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Fresh background-update worker: no window, and nothing reopens afterwards.
+    private void StartHeadlessUpdate()
+    {
+        _viewModel!.CurrentSurface = "none";
+        RunUpdate();
+    }
+
+    // A running instance was asked (tray menu / balloon) to update: start the flow in place. The open window
+    // shows its progress and the surface it sits on stays the return point.
+    private void OnUpdateRequested()
+    {
+        RunUpdate();
+    }
+
+    // The last window closed while an update is still running: the user dismissed the UI, so nothing reopens
+    // after it applies. Only reachable under the update pin - a close otherwise ends the process.
+    private void DemoteSurfaceIfDismissed()
+    {
+        if (_updating && _launcher is null && _window is null && _viewModel is not null)
+        {
+            _viewModel.CurrentSurface = "none";
+        }
+    }
+
+    // Runs the update once: the process is pinned alive for the whole download, so closing the window the user
+    // opened to watch it cannot silently abort the update. A successful apply exits the process from
+    // ApplyUpdate, so this returns only when the update did not apply - then exit the invisible worker, or hand
+    // an open window back to the normal close-to-tray lifetime.
+    private async void RunUpdate()
+    {
+        if (_updating || _desktop is null || _viewModel is null)
+        {
+            return;
+        }
+
+        _updating = true;
+        _desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        try
+        {
+            await _viewModel.General.RunAutoUpdateAsync();
+        }
+        finally
+        {
+            _updating = false;
+            _desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
+
+            // Reached only when the update did not apply - a successful one exits the process from ApplyUpdate.
+            // An update the user explicitly asked for must not end in silence, so a windowless worker surfaces
+            // the launcher, whose update section carries the failure status.
+            if (_launcher is null && _window is null)
+            {
+                ShowLauncher();
+            }
+        }
+    }
+
+    // A later launch (tray click) nudges this instance: surface the shown window, or reveal the launcher when a
+    // background update is running windowless - opening it makes the launcher the surface to return to.
+    private void OnActivation()
+    {
+        Window? window = _window;
+        window ??= _launcher;
+        if (window is not null)
+        {
+            if (window.WindowState == WindowState.Minimized)
+            {
+                window.WindowState = WindowState.Normal;
+            }
+
+            window.Show();
+            window.Activate();
+            window.Topmost = true;
+            window.Topmost = false;
+            return;
+        }
+
+        if (_viewModel is not null)
+        {
+            _viewModel.CurrentSurface = "launcher";
+        }
+
+        ShowLauncher();
     }
 
     // The compact launcher (the "Less" surface): quick connect, More to expand to the console, or close to the tray.
@@ -106,6 +245,8 @@ public sealed partial class App : Application
             {
                 _launcher = null;
             }
+
+            DemoteSurfaceIfDismissed();
         };
         // Collapsing from the console lands the launcher where the console sat; a cold launch keeps CenterScreen.
         ApplyStartupPosition(launcher, _swapAnchor);
@@ -140,6 +281,8 @@ public sealed partial class App : Application
             {
                 _window = null;
             }
+
+            DemoteSurfaceIfDismissed();
         };
         // Reopen where it was left: maximized, or at the carried swap anchor / remembered position; else centered.
         if (_prefs.Maximized)
@@ -159,6 +302,11 @@ public sealed partial class App : Application
     // Launcher "More": open the console at the launcher's spot, then drop the launcher.
     private void ExpandToConsole()
     {
+        if (_viewModel is not null)
+        {
+            _viewModel.CurrentSurface = "settings";
+        }
+
         _swapAnchor = _launcher?.Position;
         ShowMainWindow();
         _launcher?.Close();
@@ -167,6 +315,11 @@ public sealed partial class App : Application
     // Console "Less": reopen the launcher at the console's spot, then drop the console (its Closing persists geometry).
     private void CollapseToLauncher()
     {
+        if (_viewModel is not null)
+        {
+            _viewModel.CurrentSurface = "launcher";
+        }
+
         _swapAnchor = _window?.Position;
         ShowLauncher();
         _window?.Close();

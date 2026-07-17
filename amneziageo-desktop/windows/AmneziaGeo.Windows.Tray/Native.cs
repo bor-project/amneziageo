@@ -18,17 +18,21 @@ internal static class Native
     // Balloon click: NIN_BALLOONUSERCLICK (WM_USER + 5), delivered as the tray callback's lParam.
     public const uint NIN_BALLOONUSERCLICK = 0x0400 + 5;
 
-    // App-private messages: tray callback, agent-state change, "open UI" activation from a second launch.
+    // App-private messages: tray callback, agent-state change, "open UI" activation from a second launch,
+    // and an app-update availability change from the agent link.
     public const uint WM_TRAY = 0x0400 + 1;   // WM_USER + 1
     public const uint WM_STATE = 0x0400 + 2;
     public const uint WM_OPENUI = 0x0400 + 3;
     public const uint WM_QUITTRAY = 0x0400 + 4;
+    public const uint WM_UPDATE = 0x0400 + 6;
 
     // Menu command ids.
     public const int ID_OPEN = 1;
     public const int ID_CONNECT = 2;
     public const int ID_DISCONNECT = 3;
     public const int ID_EXIT = 4;
+    public const int ID_CHECKUPDATE = 5;
+    public const int ID_UPDATE = 6;
 
     // Shell_NotifyIcon.
     public const uint NIM_ADD = 0;

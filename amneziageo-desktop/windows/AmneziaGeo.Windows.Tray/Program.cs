@@ -35,6 +35,17 @@ internal static unsafe class Program
     private static bool _autoConnect;
     private static bool _showConsole;
 
+    // App-update notifications: the last version announced, and whether the most recent balloon was the update
+    // one (so a click starts the update instead of opening the launcher).
+    private static string _lastNotifiedUpdateVersion = string.Empty;
+    private static bool _lastBalloonWasUpdate;
+
+    // Post-update install balloon deferred until the first snapshot reports the notifications flag.
+    private static bool _pendingInstalledBalloon;
+
+    // The post-update origin marker (settings / launcher / none), read at startup; null on a plain launch.
+    private static string? _updateOrigin;
+
     // Logon autostart: resident tray icon only, no launcher window.
     private static bool _autostart;
     private static bool _stateInitialized;
@@ -76,6 +87,10 @@ internal static unsafe class Program
 
         Labels.Load();
 
+        // Read the post-update origin before the icon can be clicked: a click launches the GUI, which consumes
+        // the marker, and the cold-launch resolve below would then miss the install announcement.
+        _updateOrigin = ReadUpdateOrigin();
+
         _classNamePtr = Marshal.StringToHGlobalUni(ClassName);
         var hInstance = Native.GetModuleHandleW(null);
         var wc = new Native.WNDCLASSEXW
@@ -101,7 +116,9 @@ internal static unsafe class Program
         ];
         AddOrModifyIcon(Native.NIM_ADD);
 
-        AgentLink.Start((state, connectFailed) => Native.PostMessageW(_hwnd, Native.WM_STATE, (nuint)state, connectFailed ? 1 : 0));
+        AgentLink.Start(
+            (state, connectFailed) => Native.PostMessageW(_hwnd, Native.WM_STATE, (nuint)state, connectFailed ? 1 : 0),
+            (available, _) => Native.PostMessageW(_hwnd, Native.WM_UPDATE, (nuint)(available ? 1 : 0), 0));
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
@@ -142,7 +159,14 @@ internal static unsafe class Program
                 }
                 else if (ev == Native.NIN_BALLOONUSERCLICK)
                 {
-                    LaunchUi("--launcher");
+                    if (_lastBalloonWasUpdate)
+                    {
+                        LaunchUpdate();
+                    }
+                    else
+                    {
+                        LaunchUi("--launcher");
+                    }
                 }
 
                 return 0;
@@ -162,6 +186,12 @@ internal static unsafe class Program
                     ResolveColdLaunch();
                 }
 
+                return 0;
+            }
+
+            if (msg == Native.WM_UPDATE)
+            {
+                OnUpdateSignal(wParam != 0);
                 return 0;
             }
 
@@ -223,6 +253,12 @@ internal static unsafe class Program
                 // Disconnect leaves the tray resident.
                 AgentLink.SendDisconnect();
                 break;
+            case Native.ID_CHECKUPDATE:
+                AgentLink.SendCheckUpdate();
+                break;
+            case Native.ID_UPDATE:
+                LaunchUpdate();
+                break;
             case Native.ID_EXIT:
                 // Exit tears the tunnel down (if up), closes any open GUI window, and unloads the tray.
                 if (_current != 0)
@@ -269,24 +305,37 @@ internal static unsafe class Program
         _stateInitialized = true;
         AddOrModifyIcon(Native.NIM_MODIFY);
 
+        // The post-update install balloon waited to learn the notifications flag; a synthetic disconnected state
+        // carries no snapshot, so keep holding until a real one lands.
+        if (_pendingInstalledBalloon && AgentLink.SnapshotSeen)
+        {
+            _pendingInstalledBalloon = false;
+            ShowBalloon("AmneziaGeo", Labels.UpdateInstalledInfo);
+        }
+
         // The GUI animates the connection itself, so only surface a balloon when the GUI is not the active window
         // (auto-connect with no window, tray menu, or after the launcher has closed).
         if (!IsUiForeground())
         {
+            // A connection balloon supersedes the update one, so a later balloon click opens the launcher.
             if (justConnected || bootConnected)
             {
+                _lastBalloonWasUpdate = false;
                 ShowBalloon("AmneziaGeo", Labels.ConnectedInfo);
             }
             else if (justConnecting)
             {
+                _lastBalloonWasUpdate = false;
                 ShowBalloon("AmneziaGeo", Labels.ConnectingInfo);
             }
             else if (justFailed)
             {
+                _lastBalloonWasUpdate = false;
                 ShowBalloon("AmneziaGeo", Labels.ConnectFailedInfo, Native.NIIF_WARNING);
             }
             else if (justDropped)
             {
+                _lastBalloonWasUpdate = false;
                 ShowBalloon("AmneziaGeo", Labels.DisconnectedInfo, Native.NIIF_WARNING);
             }
         }
@@ -332,6 +381,39 @@ internal static unsafe class Program
             AgentLink.SendConnect();
         }
 
+        // A relaunch right after a self-update carries an origin marker: announce the install and return to the
+        // surface the update was started from (settings / launcher); "none" stays windowless. The UI clears the
+        // marker on its own read; the windowless case has no reader, so clear it here.
+        var origin = _updateOrigin;
+        if (origin is not null)
+        {
+            // Hold the balloon until a snapshot has told us whether notifications are on: resolving off the
+            // fallback timer (agent still starting) would otherwise announce on the default-true flag.
+            if (AgentLink.SnapshotSeen)
+            {
+                ShowBalloon("AmneziaGeo", Labels.UpdateInstalledInfo);
+            }
+            else
+            {
+                _pendingInstalledBalloon = true;
+            }
+
+            if (origin == "settings")
+            {
+                LaunchUi();
+            }
+            else if (origin == "launcher")
+            {
+                LaunchUi("--launcher");
+            }
+            else
+            {
+                DeleteUpdateOrigin();
+            }
+
+            return;
+        }
+
         // An update applied from the settings console reopens the console (launched without --launcher) so the
         // user lands back where they started; a plain cold launch opens the launcher; a post-install auto-connect
         // (#188) or a logon autostart (--autostart) otherwise stays windowless, resident icon only.
@@ -342,6 +424,70 @@ internal static unsafe class Program
         else if (!autoDial && !_autostart)
         {
             LaunchUi("--launcher");
+        }
+    }
+
+    // An update-availability change from the agent link: balloon once per newly-available version (when
+    // notifications are on and the GUI is not in front), remembering it so a balloon click starts the update.
+    // Dedup is by version alone and never reset, so a check that transiently fails (availability flapping off
+    // and back on) cannot re-announce the same version.
+    private static void OnUpdateSignal(bool available)
+    {
+        if (!available)
+        {
+            return;
+        }
+
+        var version = AgentLink.UpdateVersion;
+        if (string.Equals(version, _lastNotifiedUpdateVersion, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (AgentLink.ShowNotifications && !IsUiForeground())
+        {
+            _lastNotifiedUpdateVersion = version;
+            _lastBalloonWasUpdate = true;
+            ShowBalloon("AmneziaGeo", string.Format(Labels.UpdateFoundInfo, version));
+        }
+    }
+
+    // Starts the background update flow in the GUI process (download + apply, windowless).
+    private static void LaunchUpdate()
+    {
+        LaunchUi("--update");
+    }
+
+    // Reads the post-update origin marker (settings / launcher / none) without clearing it, so the UI can also
+    // consume it when a stale resident tray surfaces the launcher instead.
+    private static string? ReadUpdateOrigin()
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AmneziaGeo",
+                "update-origin");
+            return File.Exists(path) ? File.ReadAllText(path).Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void DeleteUpdateOrigin()
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AmneziaGeo",
+                "update-origin");
+            File.Delete(path);
+        }
+        catch
+        {
         }
     }
 
@@ -378,6 +524,18 @@ internal static unsafe class Program
         else
         {
             Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_DISCONNECT, Labels.Disconnect);
+        }
+
+        // Update items only on builds with an update channel configured, matching the console and launcher,
+        // which hide their whole update section without one.
+        if (AgentLink.HasUpdateUrl)
+        {
+            Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
+            Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CHECKUPDATE, Labels.CheckUpdate);
+            if (AgentLink.UpdateAvailable)
+            {
+                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_UPDATE, string.Format(Labels.UpdateTo, AgentLink.UpdateVersion));
+            }
         }
 
         Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);

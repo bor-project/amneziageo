@@ -16,6 +16,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private readonly AgentConnection _connection;
     private readonly UiPreferences _prefs;
 
+    /// <summary>
+    /// The surface the user is currently on ("launcher" / "settings" / "none"), recorded so a self-update
+    /// returns to it afterwards; "none" is a windowless background update (tray balloon / menu).
+    /// </summary>
+    public string CurrentSurface { get; set; } = "settings";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
     private bool _hasConfigs;

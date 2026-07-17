@@ -335,7 +335,13 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             // UseShellExecute lets the bundle elevate (UAC) once. LAUNCHAFTER=1 restarts the app once the
             // update is applied (#155), honoured if the run ever falls back to non-interactive. SHOWCONSOLE=1
             // reopens the settings console after the restart, since the update was started from there.
-            Process.Start(new ProcessStartInfo(_downloadedSetupPath) { UseShellExecute = true, Arguments = "UPDATEFLOW=1 LAUNCHAFTER=1 SHOWCONSOLE=1" });
+            // UPDATEORIGIN carries the surface to return to; the BA records it only once the update applied, so
+            // a cancelled or declined install leaves no stale resume behind.
+            Process.Start(new ProcessStartInfo(_downloadedSetupPath)
+            {
+                UseShellExecute = true,
+                Arguments = $"UPDATEFLOW=1 LAUNCHAFTER=1 SHOWCONSOLE=1 UPDATEORIGIN={_host.CurrentSurface}",
+            });
 
             // Quit so the installer can replace the app's in-use files.
             if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
@@ -346,6 +352,33 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         catch (Exception ex)
         {
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Background auto-update entry point (tray balloon / menu): waits for the update info to arrive, downloads
+    /// the setup, then applies it. No-op when no update is on offer.
+    /// </summary>
+    public async Task RunAutoUpdateAsync()
+    {
+        for (var i = 0; i < 100 && (!UpdateAvailable || string.IsNullOrEmpty(_updateSetupUrl)); i++)
+        {
+            await Task.Delay(200);
+        }
+
+        if (!UpdateAvailable || string.IsNullOrEmpty(_updateSetupUrl))
+        {
+            return;
+        }
+
+        if (!UpdateDownloaded)
+        {
+            await DownloadUpdate();
+        }
+
+        if (UpdateDownloaded)
+        {
+            ApplyUpdate();
         }
     }
 

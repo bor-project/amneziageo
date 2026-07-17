@@ -434,6 +434,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     {
         if (ok && ShouldLaunchAfter())
         {
+            WriteResumeOrigin();
             LaunchApp(ShouldAutoConnect(), ShouldShowConsole());
             Application.Current?.Shutdown();
             return;
@@ -536,6 +537,36 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
                 Process.Start(psi);
             }
+        }
+        catch
+        {
+        }
+    }
+
+    // Records the surface the in-app update was started from, so the relaunched tray / UI returns there and
+    // announces the install. Written only for an applied in-app update, so a cancelled, declined, or failed run
+    // leaves nothing behind and no later launch is mistaken for a post-update one. An older sending build omits
+    // UPDATEORIGIN; it could only update from the console, so that falls back to "settings".
+    private void WriteResumeOrigin()
+    {
+        if (!IsUpdateFlow())
+        {
+            return;
+        }
+
+        var origin = engine.GetVariableString("UPDATEORIGIN");
+        if (origin is not ("launcher" or "settings" or "none"))
+        {
+            origin = "settings";
+        }
+
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AmneziaGeo");
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "update-origin"), origin);
         }
         catch
         {

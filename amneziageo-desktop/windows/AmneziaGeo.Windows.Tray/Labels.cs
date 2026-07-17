@@ -53,6 +53,26 @@ internal static class Labels
     public static string DisconnectedInfo { get; private set; } = "Connection lost";
 
     /// <summary>
+    /// «Проверить обновление» / "Check for updates": menu item that asks the agent to check now.
+    /// </summary>
+    public static string CheckUpdate { get; private set; } = "Check for updates";
+
+    /// <summary>
+    /// «Обновить до {0}» / "Update to {0}": menu item shown when an update is available.
+    /// </summary>
+    public static string UpdateTo { get; private set; } = "Update to {0}";
+
+    /// <summary>
+    /// «Доступно обновление {0}» / "Update {0} available": balloon body when an update is found.
+    /// </summary>
+    public static string UpdateFoundInfo { get; private set; } = "Update {0} available";
+
+    /// <summary>
+    /// «Обновление установлено» / "Update installed": balloon body after an update is applied.
+    /// </summary>
+    public static string UpdateInstalledInfo { get; private set; } = "Update installed";
+
+    /// <summary>
     /// Tooltip status «Подключено» / "Connected".
     /// </summary>
     public static string StatusConnected { get; private set; } = "Connected";
@@ -88,6 +108,10 @@ internal static class Labels
             ConnectedInfo = "Подключение активно";
             ConnectFailedInfo = "Не удалось подключиться";
             DisconnectedInfo = "Соединение разорвано";
+            CheckUpdate = "Проверить обновление";
+            UpdateTo = "Обновить до {0}";
+            UpdateFoundInfo = "Доступно обновление {0}";
+            UpdateInstalledInfo = "Обновление установлено";
             StatusConnected = "Подключено";
             StatusDisconnected = "Отключено";
             StatusConnecting = "Подключение…";

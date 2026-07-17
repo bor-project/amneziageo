@@ -15,8 +15,12 @@ internal static class Native
     public const uint WM_LBUTTONUP = 0x0202;
     public const uint WM_RBUTTONUP = 0x0205;
 
-    // Balloon click: NIN_BALLOONUSERCLICK (WM_USER + 5), delivered as the tray callback's lParam.
+    // Balloon events, delivered as the tray callback's lParam - a different space from the window messages
+    // below, so NIN_BALLOONTIMEOUT sharing a value with WM_QUITTRAY is harmless.
     public const uint NIN_BALLOONUSERCLICK = 0x0400 + 5;
+
+    // Sent when the balloon leaves the screen, by timeout or by the user closing it.
+    public const uint NIN_BALLOONTIMEOUT = 0x0400 + 4;
 
     // App-private messages: tray callback, agent-state change, "open UI" activation from a second launch,
     // and an app-update availability change from the agent link.

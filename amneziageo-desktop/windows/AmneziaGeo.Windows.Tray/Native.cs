@@ -36,6 +36,10 @@ internal static class Native
     // An update download failed (the agent link reports it), so the tray can warn (#8).
     public const uint WM_UPDATEFAILED = 0x0400 + 8;
 
+    // A manual update check finished (the agent link reports it), so the tray can announce the up-to-date
+    // result (#15). wParam: 0 up to date, 1 update available, 2 check failed.
+    public const uint WM_CHECKDONE = 0x0400 + 9;
+
     // Menu command ids.
     public const int ID_OPEN = 1;
     public const int ID_CONNECT = 2;

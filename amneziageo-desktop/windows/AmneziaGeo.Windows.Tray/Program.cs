@@ -136,7 +136,8 @@ internal static unsafe class Program
             (state, connectFailed, disconnecting, disconnectFailed, linkDown) => Native.PostMessageW(_hwnd, Native.WM_STATE, (nuint)state, (connectFailed ? 1 : 0) | (disconnecting ? 2 : 0) | (disconnectFailed ? 4 : 0) | (linkDown ? 8 : 0)),
             (available, _) => Native.PostMessageW(_hwnd, Native.WM_UPDATE, (nuint)(available ? 1 : 0), 0),
             () => Native.PostMessageW(_hwnd, Native.WM_UPDATEDOWNLOADED, 0, 0),
-            () => Native.PostMessageW(_hwnd, Native.WM_UPDATEFAILED, 0, 0));
+            () => Native.PostMessageW(_hwnd, Native.WM_UPDATEFAILED, 0, 0),
+            () => Native.PostMessageW(_hwnd, Native.WM_CHECKDONE, (nuint)(AgentLink.CheckFailed ? 2 : AgentLink.UpdateAvailable ? 1 : 0), 0));
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
@@ -237,6 +238,12 @@ internal static unsafe class Program
             if (msg == Native.WM_UPDATEFAILED)
             {
                 OnDownloadFailedSignal();
+                return 0;
+            }
+
+            if (msg == Native.WM_CHECKDONE)
+            {
+                OnCheckDoneSignal((int)wParam);
                 return 0;
             }
 
@@ -613,6 +620,23 @@ internal static unsafe class Program
         }
     }
 
+    // A manual update check finished (the agent link reports it). Announce the up-to-date result when the check
+    // found no update (outcome 0); an available update rides the WM_UPDATE "found" balloon, and a failed check
+    // just restores the check action in the menu, per the issue (#15).
+    private static void OnCheckDoneSignal(int outcome)
+    {
+        if (outcome != 0)
+        {
+            return;
+        }
+
+        if (NotificationGate.CanNotify() && !IsUiForeground())
+        {
+            _lastBalloonAction = BalloonAction.None;
+            ShowBalloon("AmneziaGeo", Labels.UpToDateInfo);
+        }
+    }
+
     // Starts a background download in the GUI process (windowless); the tray announces "ready to install" when
     // it completes.
     private static void LaunchDownload()
@@ -677,7 +701,8 @@ internal static unsafe class Program
     }
 
     // Builds the menu for the current state: Open (launcher) always; Connect (grey without an active profile)
-    // when down, Disconnect when up; Exit always.
+    // when down, Disconnect when up, an inactive "Connecting…/Disconnecting…" while a transition runs
+    // (#18/#19); Exit always.
     private static nint BuildMenu()
     {
         var menu = Native.CreatePopupMenu();
@@ -689,24 +714,48 @@ internal static unsafe class Program
             var connectFlags = AgentLink.HasActiveProfile ? Native.MF_STRING : Native.MF_STRING | Native.MF_GRAYED;
             Native.AppendMenuW(menu, connectFlags, (nuint)Native.ID_CONNECT, Labels.Connect);
         }
+        else if (_current == 2)
+        {
+            Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_DISCONNECT, Labels.Disconnect);
+        }
+        else if (_transitionIsDisconnect)
+        {
+            // Disconnecting: an inactive item names the direction; a second disconnect is not offered (#19).
+            Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, 0, Labels.StatusDisconnecting);
+        }
         else
         {
+            // Connecting: an inactive "Connecting…" blocks a second connect (#18), while an active Disconnect
+            // stays available to abort the dial - important during a long auto-reconnect retry, which also
+            // reports the transitioning state.
+            Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, 0, Labels.StatusConnecting);
             Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_DISCONNECT, Labels.Disconnect);
         }
 
         // Update items only on builds with an update channel configured, matching the console and launcher,
-        // which hide their whole update section without one.
+        // which hide their whole update section without one. A single item reflects the update state: an
+        // inactive "Checking…" while a check runs (#15), Install once a setup is downloaded, Download when an
+        // update is available - replacing the check action (#16) and inactive while a download runs so a second
+        // cannot start - else Check.
         if (AgentLink.HasUpdateUrl)
         {
             Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
-            Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CHECKUPDATE, Labels.CheckUpdate);
-            if (AgentLink.UpdateDownloaded)
+            if (AgentLink.CheckInProgress)
+            {
+                Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, (nuint)Native.ID_CHECKUPDATE, Labels.CheckingUpdate);
+            }
+            else if (AgentLink.UpdateDownloaded)
             {
                 Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_INSTALL, Labels.InstallUpdate);
             }
             else if (AgentLink.UpdateAvailable)
             {
-                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_UPDATE, Labels.DownloadUpdate);
+                var downloadFlags = AgentLink.DownloadInProgress ? Native.MF_STRING | Native.MF_GRAYED : Native.MF_STRING;
+                Native.AppendMenuW(menu, downloadFlags, (nuint)Native.ID_UPDATE, Labels.DownloadUpdate);
+            }
+            else
+            {
+                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CHECKUPDATE, Labels.CheckUpdate);
             }
         }
 

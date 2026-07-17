@@ -68,4 +68,8 @@ public sealed record StatusSnapshot(
     // Whether the last setup download failed; its rising edge fires a tray warning balloon, cleared on the next start.
     bool UpdateDownloadFailed = false,
     // Whether a running setup download has been asked to cancel; the UI that owns the byte-pump aborts it.
-    bool UpdateCancelRequested = false);
+    bool UpdateCancelRequested = false,
+    // Whether a manual update check (tray/console "Check for updates") is currently running.
+    bool UpdateChecking = false,
+    // Whether the last manual update check failed to complete (server unreachable or unreadable metadata).
+    bool UpdateCheckFailed = false);

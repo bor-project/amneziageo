@@ -2093,14 +2093,44 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateUrlNotSet"));
         }
 
-        var result = await TryCheckUpdateAsync(settings.UpdateUrl, ct);
+        // A manual check drives a checking state on the snapshot, so the tray shows "Checking…" and, once done,
+        // announces the up-to-date result (#15). Background checks (UpdateCheckService) never set it, so the
+        // notice fires only for a user-initiated check.
+        lock (_updateStateGate)
+        {
+            updateState.Checking = true;
+            updateState.CheckFailed = false;
+        }
+
+        await BroadcastIfChangedAsync(ct);
+
+        // The checking flag is always cleared, even if the check is cancelled (agent shutdown), so the tray
+        // never latches a "Checking…" menu item.
+        var result = (Info: (UpdateInfo?)null, Faulted: true);
+        try
+        {
+            result = await TryCheckUpdateAsync(settings.UpdateUrl, ct);
+        }
+        finally
+        {
+            var faulted = result.Faulted || result.Info is null;
+            lock (_updateStateGate)
+            {
+                updateState.Checking = false;
+                updateState.CheckFailed = faulted;
+                if (!faulted)
+                {
+                    updateState.Latest = result.Info;
+                }
+            }
+        }
+
+        await BroadcastIfChangedAsync(ct);
+
         if (result.Faulted)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_UpdateServerUnavailable"));
         }
-
-        updateState.Latest = result.Info;
-        await BroadcastIfChangedAsync(ct);
 
         if (result.Info is null)
         {
@@ -2377,7 +2407,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             control.DisconnectFailed,
             control.DisconnectFailed ? (control.DisconnectFailDetail ?? string.Empty) : string.Empty,
             updateState.DownloadFailed,
-            updateState.CancelRequested);
+            updateState.CancelRequested,
+            updateState.Checking,
+            updateState.CheckFailed);
     }
 
     private static string ProfileDisplayStatus(string profileStatus)

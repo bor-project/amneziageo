@@ -75,6 +75,17 @@ internal static class Labels
     public static string CheckUpdate { get; private set; } = "Check for updates";
 
     /// <summary>
+    /// «Проверка обновления…» / "Checking for updates…": inactive menu item while a check runs (#15).
+    /// </summary>
+    public static string CheckingUpdate { get; private set; } = "Checking for updates…";
+
+    /// <summary>
+    /// «У вас последняя версия» / "You have the latest version": balloon body when a manual check finds no
+    /// update (#15).
+    /// </summary>
+    public static string UpToDateInfo { get; private set; } = "You have the latest version";
+
+    /// <summary>
     /// «Скачать обновление» / "Download update": menu item shown when an update is available to download.
     /// </summary>
     public static string DownloadUpdate { get; private set; } = "Download update";
@@ -151,6 +162,8 @@ internal static class Labels
             DisconnectedInfo = "Отключено";
             DisconnectFailedInfo = "Не удалось завершить отключение";
             CheckUpdate = "Проверить обновление";
+            CheckingUpdate = "Проверка обновления…";
+            UpToDateInfo = "У вас последняя версия";
             DownloadUpdate = "Скачать обновление";
             InstallUpdate = "Установить обновление";
             UpdateFoundInfo = "Доступна новая версия {0}. Нажмите, чтобы скачать.";

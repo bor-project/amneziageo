@@ -374,10 +374,10 @@ public sealed class InstallerViewModel : ObservableObject
     /// <summary>
     /// Apply detection result to the view state.
     /// </summary>
-    public void SetDetected(InstallState state, string? installedVersion)
+    public void SetDetected(InstallState state, string? installedVersion, string? newVersion)
     {
         State = state;
-        VersionText = string.IsNullOrEmpty(installedVersion) ? string.Empty : Loc.Instance.Get("InstallerVm_InstalledVersion", installedVersion);
+        VersionText = BuildVersionText(state, installedVersion, newVersion);
         SubText = state switch
         {
             InstallState.NotInstalled => Loc.Instance.Get("InstallerVm_ReadyToInstall"),
@@ -392,6 +392,25 @@ public sealed class InstallerViewModel : ObservableObject
             PendingAction = sole;
         }
     }
+
+    // Version line: install shows the incoming version, an upgrade shows from -> to, otherwise the installed one.
+    private static string BuildVersionText(InstallState state, string? installed, string? next)
+    {
+        if (state == InstallState.NotInstalled)
+        {
+            return string.IsNullOrEmpty(next) ? string.Empty : Loc.Instance.Get("InstallerVm_InstallVersion", next);
+        }
+
+        if (state == InstallState.Installed && IsUpgrade(installed, next))
+        {
+            return Loc.Instance.Get("InstallerVm_UpdateVersion", installed!, next!);
+        }
+
+        return string.IsNullOrEmpty(installed) ? string.Empty : Loc.Instance.Get("InstallerVm_InstalledVersion", installed);
+    }
+
+    private static bool IsUpgrade(string? installed, string? next) =>
+        System.Version.TryParse(installed, out var from) && System.Version.TryParse(next, out var to) && to > from;
 
     /// <summary>
     /// Opens the update options step directly, skipping the maintenance action buttons.

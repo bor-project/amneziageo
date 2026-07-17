@@ -241,6 +241,21 @@
       <Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" />
       <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
     </Style>
+
+    <!-- Connect transition: amber fill in every state while the tunnel comes up or down. -->
+    <Style Selector="Button.accent.transitioning /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#E0902F" />
+    </Style>
+    <Style Selector="Button.accent.transitioning:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#E0902F" />
+    </Style>
+    <Style Selector="Button.accent.transitioning:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#E0902F" />
+    </Style>
+    <Style Selector="Button.accent.transitioning:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#E0902F" />
+    </Style>
+
     <Style Selector="Button">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>

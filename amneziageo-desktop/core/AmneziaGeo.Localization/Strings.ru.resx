@@ -1337,6 +1337,12 @@
   <data name="InstallerVm_InstalledVersion" xml:space="preserve">
     <value>Установлено: {0}</value>
   </data>
+  <data name="InstallerVm_InstallVersion" xml:space="preserve">
+    <value>Установка: {0}</value>
+  </data>
+  <data name="InstallerVm_UpdateVersion" xml:space="preserve">
+    <value>Обновление: {0} → {1}</value>
+  </data>
   <data name="InstallerVm_Installing" xml:space="preserve">
     <value>Установка…</value>
   </data>

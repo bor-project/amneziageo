@@ -35,10 +35,19 @@ internal static unsafe class Program
     private static bool _autoConnect;
     private static bool _showConsole;
 
-    // App-update notifications: the last version announced, and whether the most recent balloon was the update
-    // one (so a click starts the update instead of opening the launcher).
+    // App-update notifications: the last found / downloaded versions announced (so a transient re-report does
+    // not re-notify), and which action a click on the most recent balloon takes.
     private static string _lastNotifiedUpdateVersion = string.Empty;
-    private static bool _lastBalloonWasUpdate;
+    private static string _lastDownloadedNotifiedVersion = string.Empty;
+    private static BalloonAction _lastBalloonAction;
+
+    // What a click on the most recent balloon does.
+    private enum BalloonAction
+    {
+        None,
+        Download,
+        Install,
+    }
 
     // Post-update install balloon deferred until the first snapshot reports the notifications flag.
     private static bool _pendingInstalledBalloon;
@@ -56,6 +65,13 @@ internal static unsafe class Program
 
     // State the current transition started from; -1 until one is seen.
     private static int _transitionFrom = -1;
+
+    // Whether the current transition is a user disconnect (the agent's "disconnecting"), so its completion is a
+    // clean disconnect (#13) rather than a dropped or failed tunnel.
+    private static bool _transitionIsDisconnect;
+
+    // Whether a disconnect failure is currently latched, so its rising edge fires the balloon just once (#14).
+    private static bool _disconnectFailedActive;
 
     // GUI process ids targeted by the current Exit close-sweep.
     private static HashSet<uint> _uiPids = new();
@@ -117,8 +133,10 @@ internal static unsafe class Program
         AddOrModifyIcon(Native.NIM_ADD);
 
         AgentLink.Start(
-            (state, connectFailed) => Native.PostMessageW(_hwnd, Native.WM_STATE, (nuint)state, connectFailed ? 1 : 0),
-            (available, _) => Native.PostMessageW(_hwnd, Native.WM_UPDATE, (nuint)(available ? 1 : 0), 0));
+            (state, connectFailed, disconnecting, disconnectFailed, linkDown) => Native.PostMessageW(_hwnd, Native.WM_STATE, (nuint)state, (connectFailed ? 1 : 0) | (disconnecting ? 2 : 0) | (disconnectFailed ? 4 : 0) | (linkDown ? 8 : 0)),
+            (available, _) => Native.PostMessageW(_hwnd, Native.WM_UPDATE, (nuint)(available ? 1 : 0), 0),
+            () => Native.PostMessageW(_hwnd, Native.WM_UPDATEDOWNLOADED, 0, 0),
+            () => Native.PostMessageW(_hwnd, Native.WM_UPDATEFAILED, 0, 0));
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
@@ -159,16 +177,20 @@ internal static unsafe class Program
                 }
                 else if (ev == Native.NIN_BALLOONUSERCLICK)
                 {
-                    // The click consumes the balloon, and no timeout follows one, so clear the flag here too.
-                    var wasUpdate = _lastBalloonWasUpdate;
-                    _lastBalloonWasUpdate = false;
-                    if (wasUpdate)
+                    // The click consumes the balloon, and no timeout follows one, so clear the action here too.
+                    var action = _lastBalloonAction;
+                    _lastBalloonAction = BalloonAction.None;
+                    switch (action)
                     {
-                        LaunchUpdate();
-                    }
-                    else
-                    {
-                        LaunchUi("--launcher");
+                        case BalloonAction.Download:
+                            LaunchDownload();
+                            break;
+                        case BalloonAction.Install:
+                            LaunchInstall();
+                            break;
+                        default:
+                            LaunchUi("--launcher");
+                            break;
                     }
                 }
                 else if (ev == Native.NIN_BALLOONTIMEOUT)
@@ -176,8 +198,8 @@ internal static unsafe class Program
                     // The balloon left the screen, so this flag no longer tells which one a click refers to: on
                     // Win10 the toast is parked in the Action Center and can be clicked hours later (Win11 drops
                     // it). Forget it, and such a click opens the launcher - whose update section is one click from
-                    // the same place - rather than silently starting an installer the user never asked for.
-                    _lastBalloonWasUpdate = false;
+                    // the same place - rather than silently downloading or installing without the user asking.
+                    _lastBalloonAction = BalloonAction.None;
                 }
 
                 return 0;
@@ -191,7 +213,7 @@ internal static unsafe class Program
 
             if (msg == Native.WM_STATE)
             {
-                SetState((int)wParam, lParam != 0);
+                SetState((int)wParam, (lParam & 1) != 0, (lParam & 2) != 0, (lParam & 4) != 0, (lParam & 8) != 0);
                 if (_popupPending)
                 {
                     ResolveColdLaunch();
@@ -203,6 +225,18 @@ internal static unsafe class Program
             if (msg == Native.WM_UPDATE)
             {
                 OnUpdateSignal(wParam != 0);
+                return 0;
+            }
+
+            if (msg == Native.WM_UPDATEDOWNLOADED)
+            {
+                OnDownloadedSignal();
+                return 0;
+            }
+
+            if (msg == Native.WM_UPDATEFAILED)
+            {
+                OnDownloadFailedSignal();
                 return 0;
             }
 
@@ -268,9 +302,25 @@ internal static unsafe class Program
                 AgentLink.SendCheckUpdate();
                 break;
             case Native.ID_UPDATE:
-                LaunchUpdate();
+                LaunchDownload();
+                break;
+            case Native.ID_INSTALL:
+                LaunchInstall();
                 break;
             case Native.ID_EXIT:
+                // A download in flight is cancelled cleanly (its partial deleted) only on a confirmed exit;
+                // declining keeps the tray resident so the download keeps running (#21).
+                if (AgentLink.DownloadInProgress)
+                {
+                    if (!ConfirmExitDuringDownload())
+                    {
+                        break;
+                    }
+
+                    AgentLink.SendCancelDownload();
+                    WaitForDownloadToStop();
+                }
+
                 // Exit tears the tunnel down (if up), closes any open GUI window, and unloads the tray.
                 if (_current != 0)
                 {
@@ -283,7 +333,24 @@ internal static unsafe class Program
         }
     }
 
-    private static void SetState(int state, bool connectFailed)
+    // A modal Yes/No before an exit that would cancel a running download; returns whether the user confirmed.
+    private static bool ConfirmExitDuringDownload()
+    {
+        Native.SetForegroundWindow(_hwnd);
+        return Native.MessageBoxW(_hwnd, Labels.ExitDownloadPrompt, "AmneziaGeo", Native.MB_YESNO | Native.MB_ICONWARNING | Native.MB_TOPMOST) == Native.IDYES;
+    }
+
+    // Gives the UI byte-pump a moment to observe the cancel, delete its partial, and report the download stopped
+    // before the exit force-closes it; a leftover partial is dropped on the next UI start regardless.
+    private static void WaitForDownloadToStop()
+    {
+        for (var i = 0; i < 30 && AgentLink.DownloadInProgress; i++)
+        {
+            Thread.Sleep(100);
+        }
+    }
+
+    private static void SetState(int state, bool connectFailed, bool disconnecting, bool disconnectFailed, bool linkDown)
     {
         if (state < 0 || state > 2 || _icons.Length != 3)
         {
@@ -291,29 +358,57 @@ internal static unsafe class Program
         }
 
         // Balloon on real transitions only, never on the first snapshot (a tray restart over a live tunnel must
-        // not fire a spurious notice). Connect start is the 0->connecting edge. The agent reports "disconnecting"
-        // as the same transitioning state as "connecting", so a 1->0 edge alone does not mean a failure: it is a
-        // failed dial when the transition opened at disconnected, a dropped tunnel when it opened at connected -
-        // but both only when the agent latched a connect failure (connectFailed). A user disconnect (tray menu or
-        // the GUI's button) clears that flag, so a deliberate teardown stays silent (#192).
+        // not fire a spurious notice). Connect start is the 0->transitioning edge; disconnect start is the
+        // connected->transitioning edge, but only when the agent reports "disconnecting" - a liveness re-dial
+        // uses the same transitioning state under "connecting", so the flag tells a user teardown from a
+        // reconnect. A 1->0 edge is a failed dial when it opened at disconnected, and when it opened at connected
+        // it is a clean user disconnect (#13, "disconnecting" seen) or a dropped tunnel (#192, connect failure
+        // latched).
         var justConnecting = _stateInitialized && state == 1 && _current == 0;
         var justConnected = _stateInitialized && state == 2 && _current != 2;
+        var justDisconnecting = _stateInitialized && state == 1 && _current == 2 && disconnecting;
         var justFailed = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 0 && connectFailed;
         var justDropped = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 2 && connectFailed;
+        var justDisconnected = _stateInitialized && state == 0 && _current == 1 && _transitionFrom == 2 && _transitionIsDisconnect;
+
+        // A stalled teardown latches the disconnect-failed flag while the state holds (connected), so this rides
+        // the flag's rising edge rather than a state transition (#14).
+        var justDisconnectFailed = _stateInitialized && disconnectFailed && !_disconnectFailedActive;
 
         // A survive-reboot tunnel that came up before this post-boot tray started: the first snapshot is already
         // connected, and that is still the news. A later tray start (upgrade, re-logon on a long-lived session)
         // has a high uptime, so its first connected snapshot stays silent.
         var bootConnected = !_stateInitialized && state == 2 && _startedDuringBoot;
 
-        // Records which edge opened the transition; skipped on the first snapshot, whose origin is unknown.
+        // Records which edge opened the transition and whether it is a user disconnect; skipped on the first
+        // snapshot, whose origin is unknown. A "disconnecting" arriving after a re-dial already opened the
+        // transition still marks it a disconnect.
         if (_stateInitialized && state == 1 && _current != 1)
         {
             _transitionFrom = _current;
+            _transitionIsDisconnect = disconnecting;
+        }
+        else if (state == 1 && disconnecting)
+        {
+            _transitionIsDisconnect = true;
+        }
+
+        // A lost agent link is synthetic, not an observed transition, so forget the open transition and never
+        // announce a completion that was not seen.
+        if (linkDown)
+        {
+            _transitionFrom = -1;
+            _transitionIsDisconnect = false;
         }
 
         _current = state;
         _stateInitialized = true;
+        // Re-arm the disconnect-failed edge once the failure clears; a shown balloon marks it below.
+        if (!disconnectFailed)
+        {
+            _disconnectFailedActive = false;
+        }
+
         AddOrModifyIcon(Native.NIM_MODIFY);
 
         // The post-update install balloon waited to learn the notifications flag; a synthetic disconnected state
@@ -324,30 +419,50 @@ internal static unsafe class Program
             ShowBalloon("AmneziaGeo", Labels.UpdateInstalledInfo);
         }
 
-        // The GUI animates the connection itself, so only surface a balloon when the GUI is not the active window
-        // (auto-connect with no window, tray menu, or after the launcher has closed).
-        if (!IsUiForeground())
+        // A visible launcher or settings window already reflects the change, so surface a connection balloon only
+        // when no GUI window is on screen (auto-connect with no window, tray menu, after the launcher has closed,
+        // or while it sits minimized). Per the shared notification rules (#5), visibility, not foreground.
+        if (!linkDown && !NotificationGate.IsUiVisible())
         {
-            // A connection balloon supersedes the update one, so a later balloon click opens the launcher.
-            if (justConnected || bootConnected)
+            // A stalled teardown warns first: its flag can coincide with a re-latch right after an agent-link
+            // drop (state 1 from _current 0), so it must win over the connect edges (#14). Marked shown here so
+            // it fires once per latch, even when it was suppressed while the GUI was visible.
+            if (justDisconnectFailed)
             {
-                _lastBalloonWasUpdate = false;
+                _disconnectFailedActive = true;
+                _lastBalloonAction = BalloonAction.None;
+                ShowBalloon("AmneziaGeo", Labels.DisconnectFailedInfo, Native.NIIF_WARNING);
+            }
+            // A connection balloon supersedes the update one, so a later balloon click opens the launcher.
+            else if (justConnected || bootConnected)
+            {
+                _lastBalloonAction = BalloonAction.None;
                 ShowBalloon("AmneziaGeo", Labels.ConnectedInfo);
             }
             else if (justConnecting)
             {
-                _lastBalloonWasUpdate = false;
+                _lastBalloonAction = BalloonAction.None;
                 ShowBalloon("AmneziaGeo", Labels.ConnectingInfo);
+            }
+            else if (justDisconnecting)
+            {
+                _lastBalloonAction = BalloonAction.None;
+                ShowBalloon("AmneziaGeo", Labels.DisconnectingInfo);
+            }
+            else if (justDisconnected)
+            {
+                _lastBalloonAction = BalloonAction.None;
+                ShowBalloon("AmneziaGeo", Labels.DisconnectedInfo);
             }
             else if (justFailed)
             {
-                _lastBalloonWasUpdate = false;
+                _lastBalloonAction = BalloonAction.None;
                 ShowBalloon("AmneziaGeo", Labels.ConnectFailedInfo, Native.NIIF_WARNING);
             }
             else if (justDropped)
             {
-                _lastBalloonWasUpdate = false;
-                ShowBalloon("AmneziaGeo", Labels.DisconnectedInfo, Native.NIIF_WARNING);
+                _lastBalloonAction = BalloonAction.None;
+                ShowBalloon("AmneziaGeo", Labels.ConnectionLostInfo, Native.NIIF_WARNING);
             }
         }
     }
@@ -455,18 +570,60 @@ internal static unsafe class Program
             return;
         }
 
-        if (AgentLink.ShowNotifications && !IsUiForeground())
+        if (NotificationGate.CanNotify() && !IsUiForeground())
         {
             _lastNotifiedUpdateVersion = version;
-            _lastBalloonWasUpdate = true;
+            _lastBalloonAction = BalloonAction.Download;
             ShowBalloon("AmneziaGeo", string.Format(Labels.UpdateFoundInfo, version));
         }
     }
 
-    // Starts the background update flow in the GUI process (download + apply, windowless).
-    private static void LaunchUpdate()
+    // A download-completed edge from the agent link: balloon once per newly-downloaded version (when
+    // notifications are on and the GUI is not in front), so a click starts the install. Dedup is by version so
+    // a reconnect over a still-ready download cannot re-announce it.
+    private static void OnDownloadedSignal()
+    {
+        if (!AgentLink.UpdateDownloaded)
+        {
+            return;
+        }
+
+        var version = AgentLink.UpdateVersion;
+        if (string.Equals(version, _lastDownloadedNotifiedVersion, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (NotificationGate.CanNotify() && !IsUiForeground())
+        {
+            _lastDownloadedNotifiedVersion = version;
+            _lastBalloonAction = BalloonAction.Install;
+            ShowBalloon("AmneziaGeo", string.Format(Labels.UpdateDownloadedInfo, version));
+        }
+    }
+
+    // A download-failure edge from the agent link: warn once per failure (when notifications are on and the GUI
+    // is not in front, which already shows the error inline). The link re-arms the edge on the next attempt.
+    private static void OnDownloadFailedSignal()
+    {
+        if (NotificationGate.CanNotify() && !IsUiForeground())
+        {
+            _lastBalloonAction = BalloonAction.None;
+            ShowBalloon("AmneziaGeo", Labels.UpdateDownloadFailedInfo, Native.NIIF_WARNING);
+        }
+    }
+
+    // Starts a background download in the GUI process (windowless); the tray announces "ready to install" when
+    // it completes.
+    private static void LaunchDownload()
     {
         LaunchUi("--update");
+    }
+
+    // Installs the already-downloaded setup in the GUI process (verify + launch, windowless).
+    private static void LaunchInstall()
+    {
+        LaunchUi("--apply");
     }
 
     // Reads the post-update origin marker (settings / launcher / none) without clearing it, so the UI can also
@@ -543,9 +700,13 @@ internal static unsafe class Program
         {
             Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
             Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CHECKUPDATE, Labels.CheckUpdate);
-            if (AgentLink.UpdateAvailable)
+            if (AgentLink.UpdateDownloaded)
             {
-                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_UPDATE, string.Format(Labels.UpdateTo, AgentLink.UpdateVersion));
+                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_INSTALL, Labels.InstallUpdate);
+            }
+            else if (AgentLink.UpdateAvailable)
+            {
+                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_UPDATE, Labels.DownloadUpdate);
             }
         }
 
@@ -592,10 +753,11 @@ internal static unsafe class Program
         nid->szTip[count] = '\0';
     }
 
-    // Pops a system balloon (a toast on Win10/11) on the existing icon.
+    // Pops a system balloon (a toast on Win10/11) on the existing icon. Gated centrally by the notifications
+    // setting and the OS permission; a show failure is swallowed so it never disturbs the underlying operation.
     private static void ShowBalloon(string title, string text, uint infoFlags = Native.NIIF_INFO)
     {
-        if (!AgentLink.ShowNotifications)
+        if (!NotificationGate.CanNotify())
         {
             return;
         }
@@ -605,16 +767,22 @@ internal static unsafe class Program
             return;
         }
 
-        var nid = new Native.NOTIFYICONDATAW
+        try
         {
-            cbSize = (uint)sizeof(Native.NOTIFYICONDATAW),
-            hWnd = _hwnd,
-            uID = 1,
-            uFlags = Native.NIF_INFO,
-            dwInfoFlags = infoFlags,
-        };
-        SetInfo(&nid, title, text);
-        Native.Shell_NotifyIconW(Native.NIM_MODIFY, ref nid);
+            var nid = new Native.NOTIFYICONDATAW
+            {
+                cbSize = (uint)sizeof(Native.NOTIFYICONDATAW),
+                hWnd = _hwnd,
+                uID = 1,
+                uFlags = Native.NIF_INFO,
+                dwInfoFlags = infoFlags,
+            };
+            SetInfo(&nid, title, text);
+            Native.Shell_NotifyIconW(Native.NIM_MODIFY, ref nid);
+        }
+        catch
+        {
+        }
     }
 
     private static void SetInfo(Native.NOTIFYICONDATAW* nid, string title, string text)
@@ -643,7 +811,7 @@ internal static unsafe class Program
         {
             2 => $"AmneziaGeo - {Labels.StatusConnected}",
             0 => $"AmneziaGeo - {Labels.StatusDisconnected}",
-            _ => $"AmneziaGeo - {(_transitionFrom == 2 ? Labels.StatusDisconnecting : Labels.StatusConnecting)}",
+            _ => $"AmneziaGeo - {(_transitionIsDisconnect ? Labels.StatusDisconnecting : Labels.StatusConnecting)}",
         };
     }
 

@@ -50,4 +50,22 @@ public sealed record StatusSnapshot(
     // Show tray notifications for connection state changes.
     bool ShowNotifications = true,
     // Whether the update check offers prereleases (user-toggleable, defaults to the baked channel).
-    bool AllowPrerelease = false);
+    bool AllowPrerelease = false,
+    // Published SHA-256 of the setup for the current build target; empty on a legacy manifest.
+    string UpdateSetupSha256 = "",
+    // Whether a setup download is in progress.
+    bool UpdateDownloading = false,
+    // Whether the setup for the available version is downloaded and ready to install.
+    bool UpdateDownloaded = false,
+    // Setup download progress in percent (0..100).
+    int UpdateDownloadPercent = 0,
+    // Full path of the downloaded setup, set when UpdateDownloaded is true.
+    string UpdateSetupPath = "",
+    // Whether the last disconnect failed to complete (the service refused to stop); the connected state is kept.
+    bool DisconnectFailed = false,
+    // Short cause label for the failed disconnect (service state); never secrets.
+    string DisconnectFailDetail = "",
+    // Whether the last setup download failed; its rising edge fires a tray warning balloon, cleared on the next start.
+    bool UpdateDownloadFailed = false,
+    // Whether a running setup download has been asked to cancel; the UI that owns the byte-pump aborts it.
+    bool UpdateCancelRequested = false);

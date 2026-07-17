@@ -23,10 +23,15 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private readonly UiPreferences _prefs;
 
     private string _updateSetupUrl = string.Empty;
+    private string _expectedSha256 = string.Empty;
     private string? _bannerUpdateVersion;
     private string? _downloadedSetupPath;
     private string? _downloadedVersion;
     private CancellationTokenSource? _downloadCts;
+
+    // Set by the host to run the byte-pump under the process-alive pin, so closing a window mid-download neither
+    // quits the app nor aborts the download (#21). Falls back to a direct download when unset.
+    private Action? _pinnedDownloadRunner;
 
     // Set while OnCultureChanged re-localizes the combos; suppresses their change handlers.
     private bool _syncingCombos;
@@ -176,6 +181,23 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool HasUpdateUrl => !string.IsNullOrWhiteSpace(UpdateUrl);
 
     /// <summary>
+    /// Set once the installer has been launched and the app is shutting down to be replaced, so the host does
+    /// not resurrect a window during teardown.
+    /// </summary>
+    public bool InstallerLaunched { get; private set; }
+
+    /// <summary>
+    /// Sets the host runner that performs a download under the process-alive pin (#21).
+    /// </summary>
+    public void SetPinnedDownloadRunner(Action runner) => _pinnedDownloadRunner = runner;
+
+    /// <summary>
+    /// Whether the last download was cancelled by a host relay (an exit), so a windowless worker exits rather
+    /// than surfacing the launcher (#21).
+    /// </summary>
+    public bool WasDownloadCancelledByHost { get; private set; }
+
+    /// <summary>
     /// Show the download button only when idle: not while a download runs (then it is Cancel) and not once the
     /// setup is downloaded (then it is Install).
     /// </summary>
@@ -219,6 +241,35 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         UpdateVersion = snapshot.UpdateVersion;
         UpdateDescription = snapshot.UpdateDescription;
         _updateSetupUrl = snapshot.UpdateSetupUrl;
+        _expectedSha256 = snapshot.UpdateSetupSha256;
+
+        // A cancel was requested (e.g. the tray is exiting during a download): abort the in-flight byte-pump so
+        // it deletes its partial and returns to the available state (#21). Null-guarded, so a stale request after
+        // the download already ended is a no-op. The flag lets a windowless worker exit instead of surfacing the
+        // launcher when the cancel came from an exit.
+        if (snapshot.UpdateCancelRequested && _downloadCts is not null)
+        {
+            WasDownloadCancelledByHost = true;
+            _downloadCts.Cancel();
+        }
+
+        // The agent reports a download running but this single-instance process is not the one doing it: a prior
+        // owner died without reporting (e.g. a force-killed exit), so clear the stale phase to recover the tray's
+        // exit-confirm and state (#21).
+        if (snapshot.UpdateDownloading && _downloadCts is null)
+        {
+            _ = ReportDownloadAsync("idle", 0, string.Empty, string.Empty);
+        }
+
+        // Adopt a setup another process downloaded (the windowless --update worker) so this process can install
+        // it; the process that ran the download already holds these locally, and one that is downloading now
+        // keeps its own in-flight state.
+        if (snapshot.UpdateDownloaded && _downloadedSetupPath is null && _downloadCts is null)
+        {
+            _downloadedSetupPath = snapshot.UpdateSetupPath;
+            _downloadedVersion = snapshot.UpdateVersion;
+            UpdateDownloaded = true;
+        }
 
         // A newly offered version invalidates the setup downloaded for the previous one.
         if (UpdateDownloaded && !string.Equals(snapshot.UpdateVersion, _downloadedVersion, StringComparison.Ordinal))
@@ -253,43 +304,80 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Downloads the setup and stops. Installing is a separate, explicit step (#154).
+    /// Downloads the setup and stops. Installing is a separate, explicit step (#154). Routed through the host so
+    /// the byte-pump runs under the process-alive pin: closing a window then cannot abort it (#21).
     /// </summary>
     [RelayCommand]
-    private async Task DownloadUpdate()
+    private void DownloadUpdate()
+    {
+        if (_pinnedDownloadRunner is not null)
+        {
+            _pinnedDownloadRunner();
+        }
+        else
+        {
+            _ = DownloadCoreAsync();
+        }
+    }
+
+    // The setup byte-pump: streams the installer, reporting each phase to the agent. A cancel deletes the partial
+    // and returns to the available state; a failure latches the tray warning ("failed") and deletes the partial.
+    private async Task DownloadCoreAsync()
     {
         if (string.IsNullOrEmpty(_updateSetupUrl) || UpdateDownloading || UpdateDownloaded)
         {
             return;
         }
 
+        WasDownloadCancelledByHost = false;
         using var cts = new CancellationTokenSource();
         _downloadCts = cts;
         UpdateDownloading = true;
         UpdateDownloadPercent = 0;
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloading");
+        var version = UpdateVersion;
+        await ReportDownloadAsync("downloading", 0, string.Empty, version);
         try
         {
             _downloadedSetupPath = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = p), cts.Token);
-            _downloadedVersion = UpdateVersion;
+            _downloadedVersion = version;
             UpdateDownloaded = true;
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateReadyToInstall");
+            await ReportDownloadAsync("downloaded", 100, _downloadedSetupPath, version);
         }
         catch (OperationCanceledException)
         {
             UpdateStatus = string.Empty;
             UpdateDownloadPercent = 0;
+            await ReportDownloadAsync("idle", 0, string.Empty, string.Empty);
         }
         catch (Exception ex)
         {
-            // Show a friendly line; the raw error goes to the agent log for diagnostics.
+            // Show a friendly line; the raw error goes to the agent log for diagnostics. The "failed" phase drives
+            // the tray warning balloon (#8).
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloadFailed");
             await LogToAgentAsync($"update download failed: {ex}");
+            await ReportDownloadAsync("failed", 0, string.Empty, string.Empty);
         }
         finally
         {
             UpdateDownloading = false;
             _downloadCts = null;
+        }
+    }
+
+    // Reports the setup download phase to the agent so the tray and every window share one state.
+    private async Task ReportDownloadAsync(string phase, int percent, string path, string version)
+    {
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(
+                IpcContract.OpReportUpdateDownload,
+                [phase, percent.ToString(System.Globalization.CultureInfo.InvariantCulture), path, version]));
+        }
+        catch
+        {
+            // Best-effort: the agent's copy of the download state only drives the tray.
         }
     }
 
@@ -316,13 +404,27 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Launches the already-downloaded setup and quits the app.
+    /// Verifies the already-downloaded setup against the published hash, then launches it and quits the app.
     /// </summary>
     [RelayCommand]
-    private void ApplyUpdate()
+    private async Task ApplyUpdate()
     {
         if (!UpdateDownloaded || string.IsNullOrEmpty(_downloadedSetupPath))
         {
+            return;
+        }
+
+        // Verify integrity before running the installer; a mismatch drops the file and returns to the download
+        // step. A manifest without a hash (legacy) verifies as trusted so the flow still works.
+        UpdateStatus = Loc.Instance.Get("MainVm_UpdateVerifying");
+        if (!await VerifySetupAsync(_downloadedSetupPath, _expectedSha256))
+        {
+            TryDeletePartial(_downloadedSetupPath);
+            _downloadedSetupPath = null;
+            _downloadedVersion = null;
+            UpdateDownloaded = false;
+            await ReportDownloadAsync("idle", 0, string.Empty, string.Empty);
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateVerifyFailed");
             return;
         }
 
@@ -343,6 +445,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
                 Arguments = $"UPDATEFLOW=1 LAUNCHAFTER=1 SHOWCONSOLE=1 UPDATEORIGIN={_host.CurrentSurface}",
             });
 
+            InstallerLaunched = true;
+
             // Quit so the installer can replace the app's in-use files.
             if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -356,11 +460,16 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Background auto-update entry point (tray balloon / menu): waits for the update info to arrive, downloads
-    /// the setup, then applies it. No-op when no update is on offer.
+    /// Background download entry point (tray balloon / menu "Download update"): waits for the update info to
+    /// arrive, downloads the setup, and stops. Installing is a separate user step (#7). No-op when no update is
+    /// on offer or it is already downloaded.
     /// </summary>
-    public async Task RunAutoUpdateAsync()
+    public async Task RunBackgroundDownloadAsync()
     {
+        // Reset before the availability wait so a no-op run (nothing to download) never reads a stale flag from a
+        // prior host cancel (#21).
+        WasDownloadCancelledByHost = false;
+
         for (var i = 0; i < 100 && (!UpdateAvailable || string.IsNullOrEmpty(_updateSetupUrl)); i++)
         {
             await Task.Delay(200);
@@ -373,12 +482,45 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         if (!UpdateDownloaded)
         {
-            await DownloadUpdate();
+            await DownloadCoreAsync();
+        }
+    }
+
+    /// <summary>
+    /// Background install entry point (tray balloon / menu "Install update"): waits for the downloaded setup to
+    /// be seeded from the snapshot, then verifies and launches it. No-op when nothing is downloaded.
+    /// </summary>
+    public async Task RunApplyDownloadedAsync()
+    {
+        for (var i = 0; i < 100 && !UpdateDownloaded; i++)
+        {
+            await Task.Delay(200);
         }
 
         if (UpdateDownloaded)
         {
-            ApplyUpdate();
+            await ApplyUpdate();
+        }
+    }
+
+    // Hashes the downloaded setup and compares it to the manifest hash. An empty expected hash (legacy manifest)
+    // passes so the flow keeps working; any read/hash failure fails closed.
+    private static async Task<bool> VerifySetupAsync(string path, string expectedSha256)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            return true;
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            var hash = await System.Security.Cryptography.SHA256.HashDataAsync(stream);
+            return string.Equals(Convert.ToHexStringLower(hash), expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -600,48 +742,65 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _ => ThemeVariant.Default,
     };
 
-    // Streams the installer to a temp file, reporting integer download percent (mirrors the agent's
-    // GeoFileUpdater loop but writes straight to disk - the setup is ~100 MB).
+    // Full path of the completed setup; the download streams to the ".part" sibling and is promoted here only on
+    // a clean finish, so an interrupted run leaves only the partial and this name is never a half-written file.
+    private static string SetupPath => Path.Combine(Path.GetTempPath(), "AmneziaGeoSetup.exe");
+
+    private static string PartialPath => SetupPath + ".part";
+
+    /// <summary>
+    /// Deletes a leftover partial download from an interrupted run (killed mid-download), so it is never taken
+    /// for a ready update and the temp file does not linger (#21).
+    /// </summary>
+    public static void CleanupOrphanedPartial() => TryDeletePartial(PartialPath);
+
+    // Streams the installer to a ".part" temp file, reporting integer download percent (mirrors the agent's
+    // GeoFileUpdater loop but writes straight to disk - the setup is ~100 MB), then promotes it to the final name.
     private static async Task<string> DownloadSetupAsync(string url, IProgress<int> progress, CancellationToken ct)
     {
-        var path = Path.Combine(Path.GetTempPath(), "AmneziaGeoSetup.exe");
+        var path = SetupPath;
+        var partial = PartialPath;
         try
         {
             using var http = new HttpClient();
-            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             var total = response.Content.Headers.ContentLength;
-            await using var source = await response.Content.ReadAsStreamAsync(ct);
-            await using var file = File.Create(path);
-            var buffer = new byte[81920];
-            long read = 0;
-            var lastPercent = -1;
-            int n;
-            while ((n = await source.ReadAsync(buffer, ct)) > 0)
+            await using (var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+            await using (var file = File.Create(partial))
             {
-                await file.WriteAsync(buffer.AsMemory(0, n), ct);
-                read += n;
-                if (total is > 0)
+                var buffer = new byte[81920];
+                long read = 0;
+                var lastPercent = -1;
+                int n;
+                while ((n = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
                 {
-                    var percent = (int)(read * 100 / total.Value);
-                    if (percent != lastPercent)
+                    await file.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
+                    read += n;
+                    if (total is > 0)
                     {
-                        lastPercent = percent;
-                        progress.Report(percent);
+                        var percent = (int)(read * 100 / total.Value);
+                        if (percent != lastPercent)
+                        {
+                            lastPercent = percent;
+                            progress.Report(percent);
+                        }
                     }
                 }
             }
 
+            // The stream finished cleanly: promote the partial onto the final setup name.
+            File.Move(partial, path, overwrite: true);
             return path;
         }
         catch
         {
-            TryDeletePartial(path);
+            TryDeletePartial(partial);
             throw;
         }
     }
 
-    // Drops the half-written setup after a cancelled or failed download.
+    // Drops a half-written or corrupt setup after a cancelled, failed, or unverified download.
     private static void TryDeletePartial(string path)
     {
         try

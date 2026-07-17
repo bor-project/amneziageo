@@ -20,11 +20,18 @@ internal static class AgentLink
     private const string ConnectCommand = "{\"type\":\"command\",\"command\":{\"op\":\"set-connection\",\"args\":[\"connect\"]}}";
     private const string DisconnectCommand = "{\"type\":\"command\",\"command\":{\"op\":\"set-connection\",\"args\":[\"disconnect\"]}}";
     private const string CheckUpdateCommand = "{\"type\":\"command\",\"command\":{\"op\":\"check-update\",\"args\":[]}}";
+    private const string CancelDownloadCommand = "{\"type\":\"command\",\"command\":{\"op\":\"cancel-download\",\"args\":[]}}";
 
     private static readonly UTF8Encoding _utf8 = new(false);
     private static volatile StreamWriter? _writer;
-    private static Action<int, bool>? _onState;
+    private static Action<int, bool, bool, bool, bool>? _onState;
     private static Action<bool, string>? _onUpdate;
+    private static Action? _onDownloaded;
+    private static Action? _onDownloadFailed;
+
+    // Persists across pipe reconnects so a still-latched download failure does not re-fire the balloon each time
+    // the tray reconnects to the agent (#8).
+    private static bool _prevDownloadFailed;
 
     /// <summary>
     /// Whether the agent has an active profile selected/bound, so a connect can be issued from the tray.
@@ -48,6 +55,21 @@ internal static class AgentLink
     public static volatile bool UpdateAvailable;
 
     /// <summary>
+    /// Whether the setup for the available version is downloaded and ready to install.
+    /// </summary>
+    public static volatile bool UpdateDownloaded;
+
+    /// <summary>
+    /// Whether a setup download is currently running, so the tray can confirm before an exit cancels it (#21).
+    /// </summary>
+    public static volatile bool DownloadInProgress;
+
+    /// <summary>
+    /// Whether the last setup download failed; its rising edge fires the tray warning balloon (#8).
+    /// </summary>
+    public static volatile bool DownloadFailed;
+
+    /// <summary>
     /// The available update version, empty when none.
     /// </summary>
     public static volatile string UpdateVersion = string.Empty;
@@ -59,13 +81,20 @@ internal static class AgentLink
 
     /// <summary>
     /// Starts the connection loop; <paramref name="onState"/> receives 0 (disconnected) / 1 (transitioning) /
-    /// 2 (connected) plus whether the agent latched a connect failure; <paramref name="onUpdate"/> receives the
-    /// update-available flag and version whenever they change. Both fire off a background thread.
+    /// 2 (connected), whether the agent latched a connect failure, whether the transition is a user
+    /// disconnect (the agent reports "disconnecting" only for that, not for a re-dial), whether the last
+    /// disconnect failed to complete, and whether this is a synthetic link-lost push (so lifecycle balloons are
+    /// suppressed, since the tunnel state is then unknown); <paramref name="onUpdate"/>
+    /// receives the update-available flag and version whenever they change; <paramref name="onDownloaded"/> fires
+    /// when a download completes (the ready-to-install edge); <paramref name="onDownloadFailed"/> fires on the
+    /// download-failure edge. All fire off a background thread.
     /// </summary>
-    public static void Start(Action<int, bool> onState, Action<bool, string> onUpdate)
+    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed)
     {
         _onState = onState;
         _onUpdate = onUpdate;
+        _onDownloaded = onDownloaded;
+        _onDownloadFailed = onDownloadFailed;
         var thread = new Thread(Loop) { IsBackground = true, Name = "agent-link" };
         thread.Start();
     }
@@ -112,6 +141,20 @@ internal static class AgentLink
         }
     }
 
+    /// <summary>
+    /// Asks the agent to cancel a running setup download (best-effort; relayed to the UI that owns the byte-pump).
+    /// </summary>
+    public static void SendCancelDownload()
+    {
+        try
+        {
+            _writer?.WriteLine(CancelDownloadCommand);
+        }
+        catch
+        {
+        }
+    }
+
     private static void Loop()
     {
         while (true)
@@ -127,18 +170,38 @@ internal static class AgentLink
 
                 var prevUpdateAvail = false;
                 var prevUpdateVer = string.Empty;
+                var prevDownloaded = false;
                 string? line;
                 while ((line = reader.ReadLine()) is not null)
                 {
-                    if (line.Length > 0 && TryReadState(line, out var state, out var connectFailed))
+                    if (line.Length > 0 && TryReadState(line, out var state, out var connectFailed, out var disconnecting, out var disconnectFailed))
                     {
-                        _onState?.Invoke(state, connectFailed);
+                        _onState?.Invoke(state, connectFailed, disconnecting, disconnectFailed, false);
                         if (UpdateAvailable != prevUpdateAvail || !string.Equals(UpdateVersion, prevUpdateVer, StringComparison.Ordinal))
                         {
                             prevUpdateAvail = UpdateAvailable;
                             prevUpdateVer = UpdateVersion;
                             _onUpdate?.Invoke(UpdateAvailable, UpdateVersion);
                         }
+
+                        // Ready-to-install edge; the handler dedups by version so a reconnect over a still-ready
+                        // download does not re-announce it.
+                        if (UpdateDownloaded && !prevDownloaded)
+                        {
+                            _onDownloaded?.Invoke();
+                        }
+
+                        prevDownloaded = UpdateDownloaded;
+
+                        // Download-failure edge (#8); the agent clears the flag when a download starts, so a later
+                        // failure fires again. The prev flag is static so a reconnect over a still-latched failure
+                        // does not re-warn.
+                        if (DownloadFailed && !_prevDownloadFailed)
+                        {
+                            _onDownloadFailed?.Invoke();
+                        }
+
+                        _prevDownloadFailed = DownloadFailed;
                     }
                 }
             }
@@ -149,17 +212,20 @@ internal static class AgentLink
 
             _writer = null;
             HasActiveProfile = false;
-            _onState?.Invoke(0, false);
+            DownloadInProgress = false;
+            _onState?.Invoke(0, false, false, false, true);
             Thread.Sleep(2000);
         }
     }
 
     // Maps a snapshot line to the three-way tray state, matching ConnectionViewModel.ConnState, plus the agent's
     // latched connect-failure flag (set by FailConnect, cleared on any user connect/disconnect).
-    private static bool TryReadState(string json, out int state, out bool connectFailed)
+    private static bool TryReadState(string json, out int state, out bool connectFailed, out bool disconnecting, out bool disconnectFailed)
     {
         state = 0;
         connectFailed = false;
+        disconnecting = false;
+        disconnectFailed = false;
         var status = default(string);
         var active = true;
         var haveStatus = false;
@@ -167,6 +233,9 @@ internal static class AgentLink
         var bound = default(string);
         var notify = true;
         var updateAvail = false;
+        var updateDownloaded = false;
+        var updateDownloading = false;
+        var updateFailed = false;
         var updateVer = default(string);
         var updateUrl = default(string);
 
@@ -191,6 +260,10 @@ internal static class AgentLink
             {
                 connectFailed = reader.TokenType == JsonTokenType.True;
             }
+            else if (prop == "disconnectFailed" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                disconnectFailed = reader.TokenType == JsonTokenType.True;
+            }
             else if (prop == "selectedTarget" && reader.TokenType == JsonTokenType.String)
             {
                 selected = reader.GetString();
@@ -206,6 +279,18 @@ internal static class AgentLink
             else if (prop == "updateAvailable" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
             {
                 updateAvail = reader.TokenType == JsonTokenType.True;
+            }
+            else if (prop == "updateDownloaded" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                updateDownloaded = reader.TokenType == JsonTokenType.True;
+            }
+            else if (prop == "updateDownloading" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                updateDownloading = reader.TokenType == JsonTokenType.True;
+            }
+            else if (prop == "updateDownloadFailed" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                updateFailed = reader.TokenType == JsonTokenType.True;
             }
             else if (prop == "updateVersion" && reader.TokenType == JsonTokenType.String)
             {
@@ -223,8 +308,14 @@ internal static class AgentLink
         }
 
         SnapshotSeen = true;
+        // The agent reports "disconnecting" only for a user-initiated teardown, never for a liveness re-dial,
+        // so it distinguishes a disconnect start from a reconnect that also shows as the transitioning state.
+        disconnecting = string.Equals(status, "disconnecting", StringComparison.Ordinal);
         ShowNotifications = notify;
         UpdateAvailable = updateAvail;
+        UpdateDownloaded = updateDownloaded;
+        DownloadInProgress = updateDownloading;
+        DownloadFailed = updateFailed;
         UpdateVersion = updateVer ?? string.Empty;
         HasUpdateUrl = !string.IsNullOrWhiteSpace(updateUrl);
         HasActiveProfile = !string.IsNullOrEmpty(selected) || !string.IsNullOrEmpty(bound);

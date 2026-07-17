@@ -52,8 +52,7 @@ internal sealed class ProfileRunner(
 
                 if (!control.Running)
                 {
-                    Stop(group.Config);
-                    await SetStateAsync("disconnected");
+                    await TeardownForDisconnectAsync(group.Config);
                     await IdleAsync(linked.Token);
                     continue;
                 }
@@ -214,14 +213,18 @@ internal sealed class ProfileRunner(
         }
         finally
         {
-            // "disconnecting" only on a real user disconnect, not a re-run.
+            // A user disconnect announces "disconnecting", then tears down and reports the outcome (clean, or a
+            // stuck teardown kept as connected); a re-run (reconfigure/re-dial) just drops to disconnected.
             if (!control.Running)
             {
                 await SetStateAsync("disconnecting");
+                await TeardownForDisconnectAsync(config);
             }
-
-            Stop(config);
-            await SetStateAsync("disconnected");
+            else
+            {
+                Stop(config);
+                await SetStateAsync("disconnected");
+            }
         }
     }
 
@@ -337,6 +340,26 @@ internal sealed class ProfileRunner(
         {
             logger.LogWarning(ex, "state write failed");
         }
+    }
+
+    // Tears the tunnel down for a user disconnect and reports the outcome: a clean "disconnected", or - when the
+    // service refuses to stop - a latched disconnect failure that keeps the connected state so the user can retry.
+    private async Task TeardownForDisconnectAsync(string config)
+    {
+        Stop(config);
+        // Only RUNNING is a genuine refusal to stop; STOP_PENDING (mapped to "PENDING") is a slow-but-successful
+        // stop still in progress, which the next teardown pass and the periodic snapshot resolve to disconnected.
+        var state = string.IsNullOrEmpty(config) ? "ABSENT" : serviceManager.QueryState(config);
+        if (state == "RUNNING")
+        {
+            logger.LogWarning("disconnect incomplete: tunnel service {Config} still {State} after stop; keeping connected", config, state);
+            control.FailDisconnect(state);
+            await SetStateAsync("connected");
+            return;
+        }
+
+        control.ClearDisconnectFail();
+        await SetStateAsync("disconnected");
     }
 
     // Outcome of a single connect attempt with its classified reason.

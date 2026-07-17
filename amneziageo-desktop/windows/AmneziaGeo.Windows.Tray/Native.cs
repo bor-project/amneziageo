@@ -30,6 +30,12 @@ internal static class Native
     public const uint WM_QUITTRAY = 0x0400 + 4;
     public const uint WM_UPDATE = 0x0400 + 6;
 
+    // An update download completed (the agent link reports it), so the tray can announce "ready to install".
+    public const uint WM_UPDATEDOWNLOADED = 0x0400 + 7;
+
+    // An update download failed (the agent link reports it), so the tray can warn (#8).
+    public const uint WM_UPDATEFAILED = 0x0400 + 8;
+
     // Menu command ids.
     public const int ID_OPEN = 1;
     public const int ID_CONNECT = 2;
@@ -37,6 +43,7 @@ internal static class Native
     public const int ID_EXIT = 4;
     public const int ID_CHECKUPDATE = 5;
     public const int ID_UPDATE = 6;
+    public const int ID_INSTALL = 7;
 
     // Shell_NotifyIcon.
     public const uint NIM_ADD = 0;
@@ -65,6 +72,12 @@ internal static class Native
 
     // SystemParametersInfo: the desktop work area (screen minus taskbar), for the auto-popup anchor.
     public const uint SPI_GETWORKAREA = 0x0030;
+
+    // MessageBox: a Yes/No confirmation with a warning glyph, kept above the foreground for the exit prompt.
+    public const uint MB_YESNO = 0x00000004;
+    public const uint MB_ICONWARNING = 0x00000030;
+    public const uint MB_TOPMOST = 0x00040000;
+    public const int IDYES = 6;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct WNDCLASSEXW
@@ -196,6 +209,9 @@ internal static class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(nint hWnd);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int MessageBoxW(nint hWnd, string lpText, string lpCaption, uint uType);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetCursorPos(out POINT lpPoint);
@@ -213,6 +229,10 @@ internal static class Native
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindowVisible(nint hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsIconic(nint hWnd);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -248,4 +268,7 @@ internal static class Native
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    public static extern int RegGetValueW(nint hkey, string lpSubKey, string lpValue, uint dwFlags, nint pdwType, ref uint pvData, ref uint pcbData);
 }

@@ -159,7 +159,10 @@ internal static unsafe class Program
                 }
                 else if (ev == Native.NIN_BALLOONUSERCLICK)
                 {
-                    if (_lastBalloonWasUpdate)
+                    // The click consumes the balloon, and no timeout follows one, so clear the flag here too.
+                    var wasUpdate = _lastBalloonWasUpdate;
+                    _lastBalloonWasUpdate = false;
+                    if (wasUpdate)
                     {
                         LaunchUpdate();
                     }
@@ -167,6 +170,14 @@ internal static unsafe class Program
                     {
                         LaunchUi("--launcher");
                     }
+                }
+                else if (ev == Native.NIN_BALLOONTIMEOUT)
+                {
+                    // The balloon left the screen, so this flag no longer tells which one a click refers to: on
+                    // Win10 the toast is parked in the Action Center and can be clicked hours later (Win11 drops
+                    // it). Forget it, and such a click opens the launcher - whose update section is one click from
+                    // the same place - rather than silently starting an installer the user never asked for.
+                    _lastBalloonWasUpdate = false;
                 }
 
                 return 0;

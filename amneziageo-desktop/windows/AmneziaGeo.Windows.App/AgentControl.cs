@@ -20,6 +20,8 @@ internal sealed class AgentControl
     private volatile bool _connectFailed;
     private volatile ConnectFailureReason _connectFailReason;
     private volatile string? _connectFailDetail;
+    private volatile bool _disconnectFailed;
+    private volatile string? _disconnectFailDetail;
     private volatile int _retryAttempt;
     private volatile bool _awaitingRetry;
     private CancellationTokenSource _change = new();
@@ -60,6 +62,16 @@ internal sealed class AgentControl
     public string? ConnectFailDetail => _connectFailDetail;
 
     /// <summary>
+    /// One-shot flag: the last disconnect left the tunnel service running.
+    /// </summary>
+    public bool DisconnectFailed => _disconnectFailed;
+
+    /// <summary>
+    /// Short cause label for the last failed disconnect (service state).
+    /// </summary>
+    public string? DisconnectFailDetail => _disconnectFailDetail;
+
+    /// <summary>
     /// Transient-failure retry count for the current dial; 0 when not retrying.
     /// </summary>
     public int RetryAttempt => _retryAttempt;
@@ -87,6 +99,8 @@ internal sealed class AgentControl
         _connectFailed = false;
         _connectFailReason = ConnectFailureReason.Unknown;
         _connectFailDetail = null;
+        _disconnectFailed = false;
+        _disconnectFailDetail = null;
         _retryAttempt = 0;
         if (value)
         {
@@ -152,6 +166,32 @@ internal sealed class AgentControl
         _restartRequired = false;
         _retryAttempt = 0;
         Signal();
+    }
+
+    /// <summary>
+    /// Latches a failed disconnect: the teardown left the tunnel service running, so the connected state is
+    /// kept and the user can retry.
+    /// </summary>
+    public void FailDisconnect(string? detail)
+    {
+        // A concurrent connect (SetRunning(true)) supersedes the disconnect, so don't latch a failure the user
+        // no longer wants - it would otherwise stick through the whole healthy session.
+        if (_running)
+        {
+            return;
+        }
+
+        _disconnectFailDetail = detail;
+        _disconnectFailed = true;
+    }
+
+    /// <summary>
+    /// Clears a latched disconnect failure after a clean teardown.
+    /// </summary>
+    public void ClearDisconnectFail()
+    {
+        _disconnectFailed = false;
+        _disconnectFailDetail = null;
     }
 
     /// <summary>

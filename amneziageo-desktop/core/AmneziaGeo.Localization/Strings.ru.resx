@@ -778,6 +778,9 @@
   <data name="Main_ReconnectButton" xml:space="preserve">
     <value>Переподключиться</value>
   </data>
+  <data name="Main_RetryDisconnectButton" xml:space="preserve">
+    <value>Повторить отключение</value>
+  </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>Обновление</value>
   </data>
@@ -952,6 +955,9 @@
   <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
     <value>Не удалось подключиться - сервер не ответил.</value>
   </data>
+  <data name="MainVm_NoticeDisconnectFailed" xml:space="preserve">
+    <value>Не удалось завершить отключение - служба туннеля не остановилась.</value>
+  </data>
   <data name="MainVm_NoticeConnectFailed_ConfigMissing" xml:space="preserve">
     <value>Не удалось подключиться: конфигурация не найдена.</value>
   </data>
@@ -999,6 +1005,12 @@
   </data>
   <data name="MainVm_UpdateReadyToInstall" xml:space="preserve">
     <value>Обновление скачано - можно устанавливать.</value>
+  </data>
+  <data name="MainVm_UpdateVerifying" xml:space="preserve">
+    <value>Проверка установщика…</value>
+  </data>
+  <data name="MainVm_UpdateVerifyFailed" xml:space="preserve">
+    <value>Скачанный установщик не прошёл проверку. Скачайте его заново.</value>
   </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
     <value>— не выбрано —</value>

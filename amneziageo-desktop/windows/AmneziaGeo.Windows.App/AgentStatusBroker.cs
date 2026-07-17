@@ -25,6 +25,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     // Per-source last failure message; surfaced on SourceEntry.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastError = new(StringComparer.Ordinal);
 
+    // Serializes the update download-phase / cancel transitions, which arrive from concurrent pipe handlers.
+    private readonly object _updateStateGate = new();
+
     // At most one geo-refresh session at a time; concurrent triggers queue (sources unioned, force OR-ed).
     private readonly object _geoSessionGate = new();
     private bool _geoRunning;
@@ -199,6 +202,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpExportBundle => await ExportBundleAsync(command.Args, ct),
                 IpcContract.OpImportBundle => await ImportBundleAsync(command.Args, ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
+                IpcContract.OpReportUpdateDownload => await ReportUpdateDownloadAsync(command.Args, ct),
+                IpcContract.OpCancelUpdateDownload => await CancelUpdateDownloadAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 IpcContract.OpCollectDiagnostics => await CollectDiagnosticsAsync(ct),
                 IpcContract.OpListLogs => ListLogs(),
@@ -2123,6 +2128,70 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
+    // Records the setup download phase reported by the UI process that owns the byte-pump; it rides the next
+    // snapshot so the tray and every window share one update state. A phase transition is broadcast at once so
+    // the tray's failure balloon and the exit flow see it without waiting for the periodic push; percent-only
+    // ticks ride the periodic snapshot. The "failed" phase latches the download-failed flag for the tray warning.
+    private async Task<IpcAck> ReportUpdateDownloadAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        var phase = args.Count > 0 ? args[0] : "idle";
+        var newPhase = phase switch
+        {
+            "downloading" => UpdateDownloadPhase.Downloading,
+            "downloaded" => UpdateDownloadPhase.Downloaded,
+            _ => UpdateDownloadPhase.Idle,
+        };
+        var newFailed = phase == "failed";
+        var percent = args.Count > 1 && int.TryParse(args[1], out var parsed) ? parsed : 0;
+        var setupPath = args.Count > 2 ? args[2] : string.Empty;
+        var version = args.Count > 3 ? args[3] : string.Empty;
+
+        bool phaseChanged;
+        bool hadCancel;
+        lock (_updateStateGate)
+        {
+            hadCancel = updateState.CancelRequested;
+            phaseChanged = updateState.DownloadPhase != newPhase || updateState.DownloadFailed != newFailed;
+            updateState.DownloadPhase = newPhase;
+            updateState.DownloadFailed = newFailed;
+            updateState.DownloadPercent = percent;
+            updateState.DownloadedSetupPath = setupPath;
+            updateState.DownloadedVersion = version;
+            // A report only fires at a download's start or end, never per-percent, so clearing here drops a stale
+            // cancel on a fresh start and consumes a pending one on stop, never racing a cancel set mid-download.
+            updateState.CancelRequested = false;
+        }
+
+        if (phaseChanged || hadCancel)
+        {
+            await BroadcastIfChangedAsync(ct);
+        }
+
+        return new IpcAck(true, "ok");
+    }
+
+    // Flags a cancel on a running download so it rides the next snapshot; the UI that owns the byte-pump aborts
+    // it. Ignored when no download is in flight, so a stale request cannot cancel a later download.
+    private async Task<IpcAck> CancelUpdateDownloadAsync(CancellationToken ct)
+    {
+        var flagged = false;
+        lock (_updateStateGate)
+        {
+            if (updateState.DownloadPhase == UpdateDownloadPhase.Downloading)
+            {
+                updateState.CancelRequested = true;
+                flagged = true;
+            }
+        }
+
+        if (flagged)
+        {
+            await BroadcastIfChangedAsync(ct);
+        }
+
+        return new IpcAck(true, "ok");
+    }
+
     private async Task<IpcAck> DownloadGeoAsync(CancellationToken ct)
     {
         await GeoDefaults.SeedIfEmptyAsync(store, logger, ct);
@@ -2273,6 +2342,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         var update = updateState.Latest;
+        // A download only counts as ready when its version still matches the offered one, so a newer check
+        // drops a setup downloaded for the previous version.
+        var downloadedForCurrent = updateState.DownloadPhase == UpdateDownloadPhase.Downloaded
+            && update is not null
+            && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
         return new StatusSnapshot(Version(), BoundTarget, configs, profiles, routingLists, control.Running, boundStatus, control.RestartRequired, control.Target, sources, logBuffer.Snapshot(),
             settings.UpdateUrl,
             update?.Available ?? false,
@@ -2294,7 +2368,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.PeriodicReconnect,
             settings.PeriodicReconnectIntervalSeconds,
             settings.ShowNotifications,
-            settings.AllowPrerelease);
+            settings.AllowPrerelease,
+            update?.Sha256 ?? string.Empty,
+            updateState.DownloadPhase == UpdateDownloadPhase.Downloading,
+            downloadedForCurrent,
+            updateState.DownloadPercent,
+            downloadedForCurrent ? updateState.DownloadedSetupPath : string.Empty,
+            control.DisconnectFailed,
+            control.DisconnectFailed ? (control.DisconnectFailDetail ?? string.Empty) : string.Empty,
+            updateState.DownloadFailed,
+            updateState.CancelRequested);
     }
 
     private static string ProfileDisplayStatus(string profileStatus)

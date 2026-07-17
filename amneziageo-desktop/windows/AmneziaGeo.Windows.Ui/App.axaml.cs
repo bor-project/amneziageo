@@ -60,10 +60,17 @@ public sealed partial class App : Application
             // Apply UI language before the first frame.
             Loc.Instance.ApplyStartupCulture(prefs.Language);
 
+            // Single-instance guarantees this is the only UI process, so a leftover partial download is orphaned
+            // from an interrupted run and safe to drop before anything can start a new one (#21).
+            GeneralViewModel.CleanupOrphanedPartial();
+
             var connection = new AgentConnection();
             _connection = connection;
             var viewModel = new MainWindowViewModel(connection, prefs);
             _viewModel = viewModel;
+            // Run a download from any surface under the process-alive pin, so closing a window mid-download neither
+            // quits the app nor aborts the download (#21).
+            viewModel.General.SetPinnedDownloadRunner(RunDownload);
             desktop.ShutdownRequested += (_, _) => connection.Dispose();
 
             // Both surfaces close to the resident tray: the process exits when its last window closes. The
@@ -75,17 +82,26 @@ public sealed partial class App : Application
             // Armed only now: the waits post to Dispatcher.UIThread, which must not be touched before Avalonia
             // has bound its platform dispatcher.
             SingleInstance.ActivationHandler = OnActivation;
-            SingleInstance.UpdateHandler = OnUpdateRequested;
+            SingleInstance.UpdateHandler = OnDownloadRequested;
+            SingleInstance.ApplyHandler = OnApplyRequested;
             SingleInstance.StartListening();
 
             var args = desktop.Args ?? [];
             if (Array.IndexOf(args, "--update") >= 0)
             {
-                // Background update (tray balloon / menu): download and apply with no window; opening the
-                // launcher reveals the shared progress. Nothing reopens afterwards (origin recorded as none).
+                // Background download (tray balloon / menu "Download update"): fetch the setup with no window,
+                // then exit - the tray announces "ready to install". Opening the launcher reveals the progress.
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 viewModel.Start();
-                StartHeadlessUpdate();
+                StartHeadlessDownload();
+            }
+            else if (Array.IndexOf(args, "--apply") >= 0)
+            {
+                // Background install (tray balloon / menu "Install update"): verify and launch the setup the
+                // agent reports as downloaded, with no window.
+                desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                viewModel.Start();
+                StartHeadlessApply();
             }
             else
             {
@@ -139,22 +155,35 @@ public sealed partial class App : Application
         }
     }
 
-    // Fresh background-update worker: no window, and nothing reopens afterwards.
-    private void StartHeadlessUpdate()
+    // Fresh background-download worker: no window; exits when the download finishes (the tray announces it).
+    private void StartHeadlessDownload()
     {
         _viewModel!.CurrentSurface = "none";
-        RunUpdate();
+        RunDownload();
     }
 
-    // A running instance was asked (tray menu / balloon) to update: start the flow in place. The open window
-    // shows its progress and the surface it sits on stays the return point.
-    private void OnUpdateRequested()
+    // Fresh background-install worker: no window; exits after launching the installer.
+    private void StartHeadlessApply()
     {
-        RunUpdate();
+        _viewModel!.CurrentSurface = "none";
+        RunApply();
     }
 
-    // The last window closed while an update is still running: the user dismissed the UI, so nothing reopens
-    // after it applies. Only reachable under the update pin - a close otherwise ends the process.
+    // A running instance was asked (tray menu / balloon) to download the update: start it in place. The open
+    // window shows its progress and the surface it sits on stays the return point.
+    private void OnDownloadRequested()
+    {
+        RunDownload();
+    }
+
+    // A running instance was asked (tray menu / balloon) to install the downloaded update: start it in place.
+    private void OnApplyRequested()
+    {
+        RunApply();
+    }
+
+    // The last window closed while an update operation is still running: the user dismissed the UI, so nothing
+    // reopens after it finishes. Only reachable under the update pin - a close otherwise ends the process.
     private void DemoteSurfaceIfDismissed()
     {
         if (_updating && _launcher is null && _window is null && _viewModel is not null)
@@ -163,11 +192,11 @@ public sealed partial class App : Application
         }
     }
 
-    // Runs the update once: the process is pinned alive for the whole download, so closing the window the user
-    // opened to watch it cannot silently abort the update. A successful apply exits the process from
-    // ApplyUpdate, so this returns only when the update did not apply - then exit the invisible worker, or hand
-    // an open window back to the normal close-to-tray lifetime.
-    private async void RunUpdate()
+    // Runs the background download once: pinned alive for the whole fetch, so closing a window opened to watch
+    // it cannot abort it. A windowless success exits the worker (the tray announces "ready to install"); a
+    // failure or an open window hands back to the normal close-to-tray lifetime, surfacing the launcher with
+    // the status so a user-requested download never ends in silence.
+    private async void RunDownload()
     {
         if (_updating || _desktop is null || _viewModel is null)
         {
@@ -178,19 +207,55 @@ public sealed partial class App : Application
         _desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         try
         {
-            await _viewModel.General.RunAutoUpdateAsync();
+            await _viewModel.General.RunBackgroundDownloadAsync();
         }
         finally
         {
             _updating = false;
-            _desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
-
-            // Reached only when the update did not apply - a successful one exits the process from ApplyUpdate.
-            // An update the user explicitly asked for must not end in silence, so a windowless worker surfaces
-            // the launcher, whose update section carries the failure status.
-            if (_launcher is null && _window is null)
+            // A windowless worker exits on a completed download (the tray announces "ready to install") or when
+            // the download was cancelled by an exit relay - surfacing the launcher there would only fight the
+            // exit. Otherwise (a failure, or a cancel with a window open) hand back to the close-to-tray lifetime.
+            if (_launcher is null && _window is null && (_viewModel.General.UpdateDownloaded || _viewModel.General.WasDownloadCancelledByHost))
             {
-                ShowLauncher();
+                _desktop.Shutdown();
+            }
+            else
+            {
+                _desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
+                if (_launcher is null && _window is null)
+                {
+                    ShowLauncher();
+                }
+            }
+        }
+    }
+
+    // Runs the background install once: pinned so a window close cannot abort it. ApplyUpdate exits the process
+    // on a successful launch (InstallerLaunched); this is reached otherwise (no file / failed verification), so
+    // it hands an open window back to the normal lifetime or surfaces the launcher with the status.
+    private async void RunApply()
+    {
+        if (_updating || _desktop is null || _viewModel is null)
+        {
+            return;
+        }
+
+        _updating = true;
+        _desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        try
+        {
+            await _viewModel.General.RunApplyDownloadedAsync();
+        }
+        finally
+        {
+            _updating = false;
+            if (!_viewModel.General.InstallerLaunched)
+            {
+                _desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
+                if (_launcher is null && _window is null)
+                {
+                    ShowLauncher();
+                }
             }
         }
     }

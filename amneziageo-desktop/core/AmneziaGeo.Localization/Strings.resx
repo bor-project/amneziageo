@@ -778,6 +778,9 @@
   <data name="Main_ReconnectButton" xml:space="preserve">
     <value>Reconnect</value>
   </data>
+  <data name="Main_RetryDisconnectButton" xml:space="preserve">
+    <value>Retry disconnect</value>
+  </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>Update</value>
   </data>
@@ -952,6 +955,9 @@
   <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
     <value>Could not connect - the server did not respond.</value>
   </data>
+  <data name="MainVm_NoticeDisconnectFailed" xml:space="preserve">
+    <value>Could not finish the disconnect - the tunnel service did not stop.</value>
+  </data>
   <data name="MainVm_NoticeConnectFailed_ConfigMissing" xml:space="preserve">
     <value>Could not connect: configuration not found.</value>
   </data>
@@ -999,6 +1005,12 @@
   </data>
   <data name="MainVm_UpdateReadyToInstall" xml:space="preserve">
     <value>Update downloaded - ready to install.</value>
+  </data>
+  <data name="MainVm_UpdateVerifying" xml:space="preserve">
+    <value>Verifying installer…</value>
+  </data>
+  <data name="MainVm_UpdateVerifyFailed" xml:space="preserve">
+    <value>The downloaded installer failed verification. Please download it again.</value>
   </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
     <value>— none —</value>

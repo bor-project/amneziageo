@@ -7,7 +7,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// The result of an application update check.
 /// </summary>
-internal sealed record UpdateInfo(bool Available, string Version, string SetupUrl, string Description);
+internal sealed record UpdateInfo(bool Available, string Version, string SetupUrl, string Description, string Sha256);
 
 /// <summary>
 /// Checks an HTTP update metadata file for a different version.
@@ -76,7 +76,11 @@ internal sealed class UpdateChecker(HttpClient http)
 
         var setup = ResolveSetupName(meta, buildTarget);
         var setupUrl = new Uri(baseUrl, setup).ToString();
-        return new UpdateInfo(IsUpdate(meta.Version, currentVersion), meta.Version, setupUrl, meta.Description ?? string.Empty);
+        // The setup's published SHA-256, matched by installer name; empty on a legacy manifest without hashes.
+        var sha256 = meta.Installers?
+            .FirstOrDefault(i => string.Equals(i.Name, setup, StringComparison.OrdinalIgnoreCase))?
+            .Sha256 ?? string.Empty;
+        return new UpdateInfo(IsUpdate(meta.Version, currentVersion), meta.Version, setupUrl, meta.Description ?? string.Empty, sha256);
     }
 
     // The per-build installer name (AmneziaGeo-<version>-<target>.exe) so each arch/payload gets its own file;
@@ -127,7 +131,12 @@ internal sealed class UpdateChecker(HttpClient http)
     private sealed record UpdateMetadata(
         [property: JsonPropertyName("version")] string? Version,
         [property: JsonPropertyName("description")] string? Description,
-        [property: JsonPropertyName("setup")] string? Setup);
+        [property: JsonPropertyName("setup")] string? Setup,
+        [property: JsonPropertyName("installers")] List<UpdateInstaller>? Installers);
+
+    private sealed record UpdateInstaller(
+        [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("sha256")] string? Sha256);
 
     private sealed record GhRelease(
         [property: JsonPropertyName("tag_name")] string? TagName,

@@ -16,10 +16,11 @@ public static partial class Program
     {
         SetAppUserModelId();
 
-        // Single-instance: a second launch surfaces the existing window (or, with --update, asks it to update)
-        // and exits.
+        // Single-instance: a second launch surfaces the existing window, or asks it to download (--update) or
+        // install (--apply) the update, then exits.
         var requestUpdate = Array.IndexOf(args, "--update") >= 0;
-        if (!SingleInstance.TryAcquire(requestUpdate))
+        var requestApply = Array.IndexOf(args, "--apply") >= 0;
+        if (!SingleInstance.TryAcquire(requestUpdate, requestApply))
         {
             return;
         }

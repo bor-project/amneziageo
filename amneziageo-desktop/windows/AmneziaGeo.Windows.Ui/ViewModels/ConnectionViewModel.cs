@@ -94,6 +94,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     private bool _connectFailed;
 
+    // The last disconnect stalled with the tunnel still up; keeps the retry banner up until the next command.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoticeActionText))]
+    [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
+    [NotifyPropertyChangedFor(nameof(CanDismissNotice))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    private bool _disconnectFailed;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
@@ -135,7 +143,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
         : Loc.Instance.Get("MainVm_NoAgentConnection");
 
-    public bool CanToggleConnection => !Reconnecting && IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
+    // Disabled in the stalled-disconnect half-state (tunnel still up but Active=false): the header power toggle
+    // would otherwise send connect and reverse the disconnect - the retry is offered on the banner instead (#14).
+    public bool CanToggleConnection => !Reconnecting && !DisconnectFailed && IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
 
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
@@ -186,6 +196,15 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         2 => Loc.Instance.Get("MainVm_Disconnect"),
         _ => Loc.Instance.Get("MainVm_Connect"),
     };
+
+    // The notice banner's action label: retry a stalled disconnect (#14), else reconnect / retry a failed connect.
+    public string NoticeActionText => DisconnectFailed
+        ? Loc.Instance.Get("Main_RetryDisconnectButton")
+        : Loc.Instance.Get("Main_ReconnectButton");
+
+    // The stalled-disconnect banner has no dismiss affordance: its toggle is disabled, so dismissing would strand
+    // the user with no in-window retry. It clears on its own once the disconnect completes (#14).
+    public bool CanDismissNotice => !DisconnectFailed;
 
     // Colour per state: disconnected grey, transitioning (connect / disconnect) orange, connected blue.
     public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
@@ -251,6 +270,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         NoticeText = null;
         ReconnectAvailable = false;
         ConnectFailed = false;
+        DisconnectFailed = false;
     }
 
     /// <summary>
@@ -309,6 +329,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         if (snapshot.ConnectFailed)
         {
             notice = ConnectFailureNotice(snapshot);
+            // Offer a retry from the banner: the failed dial left the tunnel down, so reconnect just re-dials (#11).
+            reconnect = true;
+        }
+        else if (snapshot.DisconnectFailed)
+        {
+            // The teardown stalled with the tunnel still up: keep a banner with a retry-disconnect action (#14).
+            notice = Loc.Instance.Get("MainVm_NoticeDisconnectFailed");
+            reconnect = true;
         }
         else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
         {
@@ -322,10 +350,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
 
         ConnectFailed = snapshot.ConnectFailed;
+        DisconnectFailed = snapshot.DisconnectFailed;
         ReconnectAvailable = reconnect;
-        // A failed dial keeps its banner up until the next connect, like the reconnect banner, so a boot
-        // auto-connect failure with no window is not lost once the tray balloon fades.
-        ShowNotice(notice, snapshot.ConnectFailed);
+        // A failed dial (or a stalled disconnect) keeps its banner up until the next command, like the reconnect
+        // banner, so a boot auto-connect failure with no window is not lost once the tray balloon fades.
+        ShowNotice(notice, snapshot.ConnectFailed || snapshot.DisconnectFailed);
     }
 
     // Re-raise the host-derived hint after the shell recomputes HasProfiles on a snapshot.
@@ -590,13 +619,24 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         Reconnecting = true;
         try
         {
-            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
-            if (!ack.Ok)
+            // A stalled disconnect (#14) is retried as a plain disconnect: the tunnel is still up, not to be re-dialed.
+            if (DisconnectFailed)
             {
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
                 return;
             }
 
-            await WaitForDisconnectAsync();
+            // A live tunnel is torn down first; a failed connect (#11) is already down, so skip straight to the dial.
+            if (ConnState != 0)
+            {
+                var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
+                if (!ack.Ok)
+                {
+                    return;
+                }
+
+                await WaitForDisconnectAsync();
+            }
 
             if (ActiveProfile is not null)
             {

@@ -33,24 +33,41 @@ internal static class Labels
     public static string ExitConnected { get; private set; } = "Exit (disconnects VPN)";
 
     /// <summary>
-    /// «Подключение выполняется» / "Connection in progress": balloon body when the tunnel starts coming up.
+    /// «Подключение…» / "Connecting…": balloon body when the tunnel starts coming up (#9).
     /// </summary>
-    public static string ConnectingInfo { get; private set; } = "Connection in progress";
+    public static string ConnectingInfo { get; private set; } = "Connecting…";
 
     /// <summary>
-    /// «Подключение активно» / "Connection is active": balloon body on a fresh connect.
+    /// «Подключение установлено» / "Connection established": balloon body on a fresh connect (#10).
     /// </summary>
-    public static string ConnectedInfo { get; private set; } = "Connection is active";
+    public static string ConnectedInfo { get; private set; } = "Connection established";
 
     /// <summary>
-    /// «Не удалось подключиться» / "Connection failed": warning balloon body when a connect attempt drops back.
+    /// «Не удалось установить подключение» / "Could not establish the connection": warning balloon body when a
+    /// connect attempt drops back (#11).
     /// </summary>
-    public static string ConnectFailedInfo { get; private set; } = "Connection failed";
+    public static string ConnectFailedInfo { get; private set; } = "Could not establish the connection";
 
     /// <summary>
     /// «Соединение разорвано» / "Connection lost": warning balloon body when a live tunnel drops (#192).
     /// </summary>
-    public static string DisconnectedInfo { get; private set; } = "Connection lost";
+    public static string ConnectionLostInfo { get; private set; } = "Connection lost";
+
+    /// <summary>
+    /// «Отключение…» / "Disconnecting…": balloon body when the tunnel starts coming down (#12).
+    /// </summary>
+    public static string DisconnectingInfo { get; private set; } = "Disconnecting…";
+
+    /// <summary>
+    /// «Отключено» / "Disconnected": balloon body on a clean, user-initiated disconnect (#13).
+    /// </summary>
+    public static string DisconnectedInfo { get; private set; } = "Disconnected";
+
+    /// <summary>
+    /// «Не удалось завершить отключение» / "Could not finish the disconnect": warning balloon body when a
+    /// teardown stalls with the tunnel still up (#14).
+    /// </summary>
+    public static string DisconnectFailedInfo { get; private set; } = "Could not finish the disconnect";
 
     /// <summary>
     /// «Проверить обновление» / "Check for updates": menu item that asks the agent to check now.
@@ -58,19 +75,41 @@ internal static class Labels
     public static string CheckUpdate { get; private set; } = "Check for updates";
 
     /// <summary>
-    /// «Обновить до {0}» / "Update to {0}": menu item shown when an update is available.
+    /// «Скачать обновление» / "Download update": menu item shown when an update is available to download.
     /// </summary>
-    public static string UpdateTo { get; private set; } = "Update to {0}";
+    public static string DownloadUpdate { get; private set; } = "Download update";
 
     /// <summary>
-    /// «Доступно обновление {0}» / "Update {0} available": balloon body when an update is found.
+    /// «Установить обновление» / "Install update": menu item shown once the setup is downloaded.
     /// </summary>
-    public static string UpdateFoundInfo { get; private set; } = "Update {0} available";
+    public static string InstallUpdate { get; private set; } = "Install update";
+
+    /// <summary>
+    /// Balloon body when an update is found; a click starts the download.
+    /// </summary>
+    public static string UpdateFoundInfo { get; private set; } = "New version {0} available. Click to download.";
+
+    /// <summary>
+    /// Balloon body once the setup is downloaded; a click starts the install.
+    /// </summary>
+    public static string UpdateDownloadedInfo { get; private set; } = "Update {0} downloaded. Click to install.";
 
     /// <summary>
     /// «Обновление установлено» / "Update installed": balloon body after an update is applied.
     /// </summary>
     public static string UpdateInstalledInfo { get; private set; } = "Update installed";
+
+    /// <summary>
+    /// «Не удалось скачать обновление» / "Could not download the update": warning balloon body when a download
+    /// fails (#8).
+    /// </summary>
+    public static string UpdateDownloadFailedInfo { get; private set; } = "Could not download the update";
+
+    /// <summary>
+    /// «Идёт загрузка обновления. Выйти и отменить её?» / "An update is downloading. Exit and cancel it?": exit
+    /// confirmation while a download runs (#21).
+    /// </summary>
+    public static string ExitDownloadPrompt { get; private set; } = "An update is downloading. Exit and cancel it?";
 
     /// <summary>
     /// Tooltip status «Подключено» / "Connected".
@@ -104,14 +143,21 @@ internal static class Labels
             Disconnect = "Отключить";
             Exit = "Выход";
             ExitConnected = "Выход (отключит VPN)";
-            ConnectingInfo = "Подключение выполняется";
-            ConnectedInfo = "Подключение активно";
-            ConnectFailedInfo = "Не удалось подключиться";
-            DisconnectedInfo = "Соединение разорвано";
+            ConnectingInfo = "Подключение…";
+            ConnectedInfo = "Подключение установлено";
+            ConnectFailedInfo = "Не удалось установить подключение";
+            ConnectionLostInfo = "Соединение разорвано";
+            DisconnectingInfo = "Отключение…";
+            DisconnectedInfo = "Отключено";
+            DisconnectFailedInfo = "Не удалось завершить отключение";
             CheckUpdate = "Проверить обновление";
-            UpdateTo = "Обновить до {0}";
-            UpdateFoundInfo = "Доступно обновление {0}";
+            DownloadUpdate = "Скачать обновление";
+            InstallUpdate = "Установить обновление";
+            UpdateFoundInfo = "Доступна новая версия {0}. Нажмите, чтобы скачать.";
+            UpdateDownloadedInfo = "Обновление {0} скачано. Нажмите, чтобы установить.";
             UpdateInstalledInfo = "Обновление установлено";
+            UpdateDownloadFailedInfo = "Не удалось скачать обновление";
+            ExitDownloadPrompt = "Идёт загрузка обновления. Выйти и отменить её?";
             StatusConnected = "Подключено";
             StatusDisconnected = "Отключено";
             StatusConnecting = "Подключение…";

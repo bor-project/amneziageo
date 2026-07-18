@@ -230,9 +230,7 @@ public sealed partial class App : Application
             }
 
             _window.Show();
-            _window.Activate();
-            _window.Topmost = true;
-            _window.Topmost = false;
+            ForegroundWindow.Raise(_window);
             return;
         }
 
@@ -259,7 +257,8 @@ public sealed partial class App : Application
     {
         if (_window is not null)
         {
-            _window.Activate();
+            _window.Show();
+            ForegroundWindow.Raise(_window);
             return;
         }
 
@@ -293,6 +292,7 @@ public sealed partial class App : Application
 
         _desktop!.MainWindow = window;
         window.Show();
+        ForegroundWindow.Raise(window);
     }
 
     // Persist window geometry and stop the create-form camera as the window closes.

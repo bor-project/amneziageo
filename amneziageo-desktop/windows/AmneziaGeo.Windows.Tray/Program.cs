@@ -931,6 +931,14 @@ internal static unsafe class Program
             {
                 psi.ArgumentList.Add(arg);
             }
+            else
+            {
+                // Hand the foreground right to the launched UI so its window opens above the current app; a
+                // background process cannot claim the foreground on its own. Windowless (--update/--apply) launches
+                // show no window, so they keep the user's focus.
+                Native.SetForegroundWindow(_hwnd);
+                Native.AllowSetForegroundWindow(Native.ASFW_ANY);
+            }
 
             Process.Start(psi);
         }

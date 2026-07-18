@@ -355,8 +355,14 @@
   <data name="Main_QrConfTab" xml:space="preserve">
     <value>QR: .conf file</value>
   </data>
+  <data name="Main_QrConfTabShort" xml:space="preserve">
+    <value>QR file</value>
+  </data>
   <data name="Main_QrLinkTab" xml:space="preserve">
     <value>QR: vpn:// link</value>
+  </data>
+  <data name="Main_QrLinkTabShort" xml:space="preserve">
+    <value>QR link</value>
   </data>
   <data name="Main_ConfigTextTab" xml:space="preserve">
     <value>Config</value>

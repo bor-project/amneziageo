@@ -38,6 +38,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // Once the file-backed viewer has loaded, the 300-line snapshot ring stops feeding the view.
     private bool _logViewerEngaged;
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     // Guards against overlapping OpListLogs refreshes (heartbeats retry until the first one succeeds).
     private bool _logListBusy;
 

@@ -43,6 +43,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // Set while Apply seeds the connection settings from the snapshot; suppresses their autosave push.
     private bool _suppressSettingPush;
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     /// <summary>
     /// UI language options.
     /// </summary>

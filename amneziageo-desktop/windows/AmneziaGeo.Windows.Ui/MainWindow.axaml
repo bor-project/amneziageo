@@ -11,7 +11,7 @@
         Design.Width="987" Design.Height="1300"
         Title="AmneziaGeo"
         Width="987" Height="610"
-        MinWidth="800" MinHeight="560"
+        MinWidth="400" MinHeight="520"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource AgBgBrush}"
         FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
@@ -144,23 +144,48 @@
          and content pane. -->
       <Border Classes="card" CornerRadius="0" Height="48" Margin="12,12,12,0" Padding="12,0"
               VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
-        <Grid>
-          <!-- Title centered. -->
-          <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
-                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                     Foreground="{DynamicResource AgMutedBrush}" />
-
-          <!-- Back to Home. Every screen autosaves, so navigation is never locked; deletion is confirmed inline. -->
-          <Button Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
-                  Command="{Binding NavHomeCommand}"
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <!-- Back: compact section detail steps back to the rail, otherwise home. Every screen autosaves, so
+               navigation is never locked; deletion is confirmed inline. -->
+          <Button Grid.Column="0" Classes="backbtn" VerticalAlignment="Center"
+                  Command="{Binding NavBackCommand}"
                   ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
             <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
                       Foreground="{DynamicResource AgMutedBrush}" />
           </Button>
 
+          <!-- Title centered between the back arrow and the connect control: the app name, or the current section
+               name when a compact section detail is open. -->
+          <Panel Grid.Column="1" Margin="8,0">
+            <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AgMutedBrush}"
+                       IsVisible="{Binding !IsSectionDetail}" />
+            <Panel IsVisible="{Binding IsSectionDetail}">
+              <TextBlock Text="{l:Tr Main_ProfileSection}" IsVisible="{Binding IsSettingsProfile}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr Main_ConfigSection}" IsVisible="{Binding IsSettingsConfig}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr Main_RoutingSection}" IsVisible="{Binding IsSettingsRouting}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr Main_SourcesSection}" IsVisible="{Binding IsSettingsSources}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr Main_AgentLogSection}" IsVisible="{Binding IsSettingsLogs}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{l:Tr General_Section}" IsVisible="{Binding IsSettingsGeneral}"
+                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
+            </Panel>
+          </Panel>
+
           <!-- Connect control (right): retry counter (#197) then the animated connect / disconnect pill; the
                inner circle + text carry the state colour (gray off, orange while switching, blue connected). -->
-          <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
             <TextBlock Text="{Binding Home.RetryText}" FontSize="11" FontWeight="SemiBold"
                        Foreground="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center"
                        IsVisible="{Binding Home.ShowRetry}" />
@@ -193,7 +218,7 @@
         </Grid>
       </Border>
 
-    <Grid IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
+    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
       <Grid.ColumnDefinitions>
         <!-- Section rail column, drag-resizable via the GridSplitter.
              MaxWidth capped so that even at the rail's widest the content pane keeps its MinWidth at the
@@ -208,7 +233,8 @@
       </Grid.ColumnDefinitions>
 
       <!-- Section rail. -->
-      <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
+      <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0"
+              IsVisible="{Binding ShowRail}">
         <ScrollViewer>
           <StackPanel Margin="12,12">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
@@ -328,14 +354,15 @@
           </ScrollViewer>
       </Border>
 
-      <!-- Draggable divider between rail and content. -->
-      <GridSplitter Grid.Column="1" Grid.Row="1" Width="5"
+      <!-- Draggable divider between rail and content (wide mode only). -->
+      <GridSplitter Grid.Column="1" Grid.Row="1" Width="5" IsVisible="{Binding ShowSplitter}"
                     ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                     Background="Transparent" Margin="0,12,0,0" />
 
       <!-- Content pane. -->
-      <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0">
+      <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0"
+              IsVisible="{Binding ShowContent}">
         <DockPanel LastChildFill="True">
           <!-- Static footer for the new-config create flow: Save / Cancel + unsaved indicator. -->
           <Border DockPanel.Dock="Bottom" IsVisible="{Binding Config.IsCreatingSectionConfig}"

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
+             xmlns:svc="clr-namespace:AmneziaGeo.Windows.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
              x:Class="AmneziaGeo.Windows.Ui.Views.LogsView"
              x:CompileBindings="True"
@@ -22,9 +23,11 @@
       <StackPanel Spacing="14">
         <TextBlock Text="{l:Tr Main_LogCaptureTitle}" FontWeight="SemiBold" FontSize="15" />
 
-        <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="18">
+        <!-- Compact stacks the two blocks and drops the vertical divider. -->
+        <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="18" RowDefinitions="Auto,Auto" RowSpacing="14">
           <!-- Level. -->
-          <StackPanel Grid.Column="0" Spacing="8" VerticalAlignment="Center">
+          <StackPanel Grid.Column="0" Spacing="8" VerticalAlignment="Center"
+                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}">
             <StackPanel Spacing="2">
               <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontSize="13.5" />
               <TextBlock Text="{l:Tr Main_LogVerbosityHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
@@ -33,10 +36,14 @@
                       ItemsSource="{Binding LogLevels}" SelectedItem="{Binding LogLevel, Mode=TwoWay}" />
           </StackPanel>
 
-          <Border Grid.Column="1" Width="1" Background="{DynamicResource AgBorderBrush}" Margin="0,2" />
+          <Border Grid.Column="1" Width="1" Background="{DynamicResource AgBorderBrush}" Margin="0,2"
+                  IsVisible="{Binding !IsCompact}" />
 
           <!-- Connection log toggle. -->
-          <Grid Grid.Column="2" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center"
+                Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col2}"
+                Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}">
             <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,12,0">
               <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
               <TextBlock Text="{l:Tr Main_RouteLogHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
@@ -51,22 +58,28 @@
     <Border Grid.Row="2" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
             CornerRadius="12" Padding="16" Background="Transparent">
       <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10">
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0" Text="{l:Tr Main_LogViewerTitle}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-            <Button Classes="methodpick" Padding="14,6" Command="{Binding ClearLogCommand}"
-                    Content="{l:Tr Main_ClearLogButton}" />
-            <Button Classes="methodpick" Padding="14,6" Click="OnOpenLogsFolder">
-              <StackPanel Orientation="Horizontal" Spacing="6">
+        <!-- Compact drops the buttons to their own row, split evenly. -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+          <TextBlock Grid.Column="0" Text="{l:Tr Main_LogViewerTitle}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center"
+                     Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8"
+                Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
+            <Button Grid.Column="0" Classes="methodpick" Padding="14,6" HorizontalAlignment="Stretch"
+                    Command="{Binding ClearLogCommand}" Content="{l:Tr Main_ClearLogButton}" />
+            <Button Grid.Column="1" Classes="methodpick" Padding="14,6" HorizontalAlignment="Stretch" Click="OnOpenLogsFolder">
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
                 <PathIcon Data="{StaticResource AgFolderGeometry}" Width="14" Height="14" />
                 <TextBlock Text="{l:Tr Main_OpenLogsFolderButton}" />
               </StackPanel>
             </Button>
-          </StackPanel>
+          </Grid>
         </Grid>
 
-        <!-- One row: file picker + search share the middle space equally, then older/newer nav and follow. -->
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,*,Auto,Auto,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+        <!-- Wide: file picker + search share the middle space equally, then older/newer nav and follow. -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,*,Auto,Auto,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center"
+              IsVisible="{Binding !IsCompact}">
           <TextBlock Grid.Column="0" Text="{l:Tr Main_LogFileLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
           <ComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch"
                     ItemsSource="{Binding LogFiles}" SelectedItem="{Binding SelectedLogFile, Mode=TwoWay}">
@@ -91,6 +104,39 @@
           <TextBlock Grid.Column="5" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" Margin="6,0,0,0" />
           <ToggleSwitch Grid.Column="6" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
         </Grid>
+
+        <!-- Compact: file + search stack, then navigation and follow drop to their own row. -->
+        <StackPanel Grid.Row="1" IsVisible="{Binding IsCompact}" Spacing="8">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalAlignment="Center">
+            <TextBlock Grid.Column="0" Text="{l:Tr Main_LogFileLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" Classes="field" HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding LogFiles}" SelectedItem="{Binding SelectedLogFile, Mode=TwoWay}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:LogFileChoice">
+                  <TextBlock Text="{Binding Display}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </Grid>
+          <TextBox Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
+                   Watermark="{l:Tr Main_LogSearchWatermark}" />
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+            <TextBlock Grid.Column="0" Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5"
+                       VerticalAlignment="Center" IsVisible="{Binding SearchSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+              <Button Classes="icon" Command="{Binding PageOlderCommand}" ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
+                <PathIcon Data="{DynamicResource AgChevronLeftGeometry}" Width="14" Height="14" />
+              </Button>
+              <Button Classes="icon" Command="{Binding PageNewerCommand}" ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
+                <PathIcon Data="{DynamicResource AgChevronRightGeometry}" Width="14" Height="14" />
+              </Button>
+            </StackPanel>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <TextBlock Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
+              <ToggleSwitch IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Grid>
+        </StackPanel>
 
         <Border Grid.Row="2" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                 Background="{DynamicResource AgInsetBrush}" CornerRadius="10">

@@ -19,6 +19,10 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private long? _pendingEditRoutingListId;
     private bool _suppressCatalogueRouting;
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRoutingEditor))]
     [NotifyPropertyChangedFor(nameof(EditorReady))]

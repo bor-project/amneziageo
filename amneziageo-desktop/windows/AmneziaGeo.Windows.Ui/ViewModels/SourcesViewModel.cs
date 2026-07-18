@@ -20,6 +20,10 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     private string? _geoBannerSignature;
     private bool _suppressSettingPush;
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     [ObservableProperty]
     private bool _geoAutoCheck = true;
 

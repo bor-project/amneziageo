@@ -16,6 +16,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private readonly AgentConnection _connection;
     private readonly UiPreferences _prefs;
 
+    // Below this window width the settings screen drops the side-by-side rail + content for a single-column
+    // master-detail drilldown. Above it the columns keep their MinWidth without overflow.
+    private const double CompactBreakpoint = 760;
+
     /// <summary>
     /// Whether the app is showing a window ("settings") or running a windowless background update ("none"),
     /// carried into the installer as UPDATEORIGIN.
@@ -29,8 +33,31 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHome))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
+    [NotifyPropertyChangedFor(nameof(ShowRail))]
+    [NotifyPropertyChangedFor(nameof(ShowContent))]
+    [NotifyPropertyChangedFor(nameof(ShowSplitter))]
     [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
     private string _nav = "home";
+
+    /// <summary>
+    /// Current window width, fed from the view; drives the compact / wide layout switch.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCompact))]
+    [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
+    [NotifyPropertyChangedFor(nameof(ShowRail))]
+    [NotifyPropertyChangedFor(nameof(ShowContent))]
+    [NotifyPropertyChangedFor(nameof(ShowSplitter))]
+    private double _windowWidth = 987;
+
+    /// <summary>
+    /// In compact mode, whether a section detail is open (true) or the section rail is shown (false).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRail))]
+    [NotifyPropertyChangedFor(nameof(ShowContent))]
+    [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
+    private bool _settingsDetailOpen;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
@@ -124,6 +151,33 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool IsSettings => Nav == "settings";
 
+    /// <summary>
+    /// Whether the window is narrow enough for the compact single-column drilldown.
+    /// </summary>
+    public bool IsCompact => WindowWidth < CompactBreakpoint;
+
+    /// <summary>
+    /// Whether a section detail is open in compact mode; the header then shows the section name.
+    /// </summary>
+    public bool IsSectionDetail => IsCompact && SettingsDetailOpen;
+
+    /// <summary>
+    /// Whether the settings section rail is shown: always in wide mode, and in compact mode only when no section
+    /// detail is open.
+    /// </summary>
+    public bool ShowRail => IsSettings && (!IsCompact || !SettingsDetailOpen);
+
+    /// <summary>
+    /// Whether the settings content pane is shown: always in wide mode, and in compact mode only when a section
+    /// detail is open.
+    /// </summary>
+    public bool ShowContent => IsSettings && (!IsCompact || SettingsDetailOpen);
+
+    /// <summary>
+    /// Whether the rail / content splitter is shown (wide mode only).
+    /// </summary>
+    public bool ShowSplitter => IsSettings && !IsCompact;
+
     public bool IsSettingsProfile => SettingsSection == "profile";
 
     public bool IsSettingsConfig => SettingsSection == "config";
@@ -166,6 +220,19 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Config.AbandonCreate();
     }
 
+    // Back arrow: in a compact section detail step back to the rail, otherwise return home.
+    [RelayCommand]
+    private void NavBack()
+    {
+        if (IsCompact && SettingsDetailOpen)
+        {
+            SettingsDetailOpen = false;
+            return;
+        }
+
+        NavHome();
+    }
+
     /// <summary>
     /// Opens the settings General section, where the app-update status line lives, so a windowless update that
     /// ended in a failure surfaces its reason instead of a bare home screen (#22).
@@ -173,6 +240,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public void ShowUpdateStatus()
     {
         SettingsSection = "general";
+        SettingsDetailOpen = true;
         Nav = "settings";
     }
 
@@ -185,6 +253,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Profile.OpenProfile = Home.ActiveProfile;
         }
 
+        // Compact mode opens on the section rail; the wide layout shows the rail and content together.
+        SettingsDetailOpen = false;
         Nav = "settings";
 
         // Re-entering settings lands on the persisted section without a section-change event, so seed its
@@ -211,6 +281,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void SelectSettings(string section)
     {
         SettingsSection = section;
+        // Compact mode drills into the section detail; wide mode ignores this and swaps content in place.
+        SettingsDetailOpen = true;
     }
 
     // A name is taken if any config OR profile already uses it: the agent enforces one shared namespace
@@ -263,6 +335,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             OnPropertyChanged(nameof(AppUpdateBannerVisible));
         }
+    }
+
+    // Push the compact-layout flag to every section screen so their rows restack for the narrow window.
+    partial void OnWindowWidthChanged(double value)
+    {
+        var compact = value < CompactBreakpoint;
+        Config.IsCompact = compact;
+        Routing.IsCompact = compact;
+        Sources.IsCompact = compact;
+        Logs.IsCompact = compact;
+        General.IsCompact = compact;
+        Profile.IsCompact = compact;
     }
 
     private void OnConnected()

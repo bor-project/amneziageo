@@ -159,6 +159,18 @@
       <Setter Property="Padding" Value="5,3,11,3" />
     </Style>
 
+    <!-- Inline text link: transparent, accent text, no chrome; shared by "Add local networks" and "Hide settings". -->
+    <Style Selector="Button.linkbtn">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
     <!-- Header back button. -->
     <Style Selector="Button.backbtn">
       <Setter Property="Background" Value="Transparent" />

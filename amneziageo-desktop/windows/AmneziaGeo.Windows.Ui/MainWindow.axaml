@@ -35,8 +35,8 @@
               VerticalAlignment="Top">
         <Grid>
           <!-- Collapse to the compact launcher (left): the "Less" half of the More / Less toggle. -->
-          <Button Classes="backbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
-                  Click="OnCollapse" Content="{l:Tr Launcher_Less}" FontSize="12" FontWeight="SemiBold" />
+          <Button Classes="linkbtn" HorizontalAlignment="Left" VerticalAlignment="Center"
+                  Click="OnCollapse" Content="{l:Tr Launcher_Less}" />
 
           <!-- Title centered. -->
           <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold"

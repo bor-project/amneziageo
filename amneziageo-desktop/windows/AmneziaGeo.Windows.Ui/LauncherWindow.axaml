@@ -7,7 +7,7 @@
         x:DataType="vm:MainWindowViewModel"
         Title="AmneziaGeo"
         Width="440" SizeToContent="Height" CanResize="False"
-        WindowStartupLocation="CenterScreen" Topmost="True"
+        WindowStartupLocation="CenterScreen"
         Background="{DynamicResource AgPanelBrush}"
         FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
         Foreground="{DynamicResource AgFgBrush}">
@@ -32,7 +32,11 @@
     </Style>
   </Window.Styles>
 
-  <StackPanel Margin="24,18,24,20" Spacing="0">
+  <Panel Margin="24,18,24,20">
+
+  <!-- Normal launcher: quick connect, open settings, update check/offer, tray hint. Hidden while a download
+       takes over the window (#4). -->
+  <StackPanel Spacing="0" IsVisible="{Binding !General.IsUpdateBusy}">
     <!-- Profiles arrive with the first agent snapshot; show a loader until then so the empty combo + disabled
          connect never read as "no profile". Height is reserved so the window does not jump on ready. -->
     <Panel MinHeight="130">
@@ -109,12 +113,8 @@
                   IsVisible="{Binding General.ShowCheckUpdateButton}" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
                       IsVisible="{Binding General.UpdateAvailable}">
-            <TextBlock Text="{Binding General.UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
-                       FontSize="12" VerticalAlignment="Center" IsVisible="{Binding General.UpdateDownloading}" />
             <Button Classes="accent" Content="{l:Tr Main_DownloadButton}" Command="{Binding General.DownloadUpdateCommand}"
                     IsVisible="{Binding General.ShowDownloadButton}" />
-            <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding General.CancelDownloadCommand}"
-                    IsVisible="{Binding General.UpdateDownloading}" />
             <Button Classes="accent" Content="{l:Tr Main_InstallButton}" Command="{Binding General.ApplyUpdateCommand}"
                     IsVisible="{Binding General.UpdateDownloaded}" />
           </StackPanel>
@@ -129,4 +129,32 @@
       <TextBlock Text="{l:Tr Launcher_Cancel}" FontSize="13" FontWeight="SemiBold" />
     </Button>
   </StackPanel>
+
+  <!-- Download takeover (#4): compact progress + cancel while downloading; retry/close after a failure. The
+       window's SizeToContent shrinks it to this block so no empty space is left. -->
+  <StackPanel Spacing="16" IsVisible="{Binding General.IsUpdateBusy}">
+    <StackPanel Spacing="12" IsVisible="{Binding General.UpdateDownloading}">
+      <TextBlock Text="{Binding General.UpdateStatus}" FontSize="14" FontWeight="SemiBold"
+                 HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" />
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+        <ProgressBar Grid.Column="0" Minimum="0" Maximum="100"
+                     Value="{Binding General.UpdateDownloadPercent}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding General.UpdateDownloadPercent, StringFormat='{}{0}%'}"
+                   Classes="muted" FontSize="12" VerticalAlignment="Center" />
+        <Button Grid.Column="2" Classes="softbtn" Content="{l:Tr Main_CancelButton}"
+                Command="{Binding General.CancelDownloadCommand}" VerticalAlignment="Center" />
+      </Grid>
+    </StackPanel>
+
+    <StackPanel Spacing="14" IsVisible="{Binding General.DownloadFailed}">
+      <TextBlock Text="{Binding General.UpdateStatus}" FontSize="13.5" TextWrapping="Wrap"
+                 HorizontalAlignment="Center" TextAlignment="Center" />
+      <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+        <Button Classes="accent" Content="{l:Tr Update_Retry}" Command="{Binding General.DownloadUpdateCommand}" />
+        <Button Classes="softbtn" Content="{l:Tr Update_Close}" Command="{Binding General.DismissDownloadErrorCommand}" />
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+
+  </Panel>
 </Window>

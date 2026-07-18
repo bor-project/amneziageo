@@ -51,6 +51,11 @@ internal sealed class AgentConnection : IDisposable
             : ack;
     }
 
+    /// <summary>
+    /// Sends a command and returns the raw reply, keeping its localization key so the caller can branch on it.
+    /// </summary>
+    public Task<IpcAck> SendCommandRawAsync(IpcCommand command) => _client.SendCommandAsync(command, _cts.Token);
+
     /// <inheritdoc/>
     public void Dispose()
     {

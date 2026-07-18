@@ -536,19 +536,13 @@
     <value>Block</value>
   </data>
   <data name="Main_RoleProxyHint" xml:space="preserve">
-    <value>Works when the global proxy is off: only these entries go through the tunnel.</value>
+    <value>Route these through the tunnel.</value>
   </data>
   <data name="Main_RoleDirectHint" xml:space="preserve">
-    <value>Works when the global proxy is on: these entries bypass the tunnel.</value>
+    <value>Keep these off the tunnel — overrides the proxy list.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
-    <value>Blocks requests to the selected routes. Always in effect.</value>
-  </data>
-  <data name="Main_RoleExclude" xml:space="preserve">
-    <value>Exclusions</value>
-  </data>
-  <data name="Main_RoleExcludeHint" xml:space="preserve">
-    <value>Always off the tunnel, in either mode: these entries go direct.</value>
+    <value>Block these entirely.</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Global proxy</value>

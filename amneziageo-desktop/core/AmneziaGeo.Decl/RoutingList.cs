@@ -3,7 +3,7 @@ namespace AmneziaGeo.Decl;
 /// <summary>
 /// A named shared routing list with its materialized active set, partitioned by role. Profiles reference it by
 /// id. Routes/Domains/Apps hold the proxy bucket (tunneled in split); Direct* the bypass bucket (off-tunnel in
-/// full); Block* the always-blocked bucket; Exclude* the always-off-tunnel bucket (bypass in either mode).
+/// either mode, overriding a proxy match); Block* the always-blocked bucket.
 /// </summary>
 public sealed record RoutingList(
     long Id,
@@ -15,6 +15,4 @@ public sealed record RoutingList(
     IReadOnlyList<string> DirectRoutes,
     IReadOnlyList<GeoDomain> DirectDomains,
     IReadOnlyList<string> BlockRoutes,
-    IReadOnlyList<GeoDomain> BlockDomains,
-    IReadOnlyList<string> ExcludeRoutes,
-    IReadOnlyList<GeoDomain> ExcludeDomains);
+    IReadOnlyList<GeoDomain> BlockDomains);

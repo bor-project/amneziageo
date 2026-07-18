@@ -41,7 +41,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private List<string> _baseProxy = [];
     private List<string> _baseDirect = [];
     private List<string> _baseBlock = [];
-    private List<string> _baseExclude = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsNameMissing))]
@@ -96,7 +95,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         ProxyRules.CollectionChanged += OnRulesChanged;
         DirectRules.CollectionChanged += OnRulesChanged;
         BlockRules.CollectionChanged += OnRulesChanged;
-        ExcludeRules.CollectionChanged += OnRulesChanged;
         Name = name;
     }
 
@@ -135,7 +133,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public ObservableCollection<string> ProxyRules { get; } = [];
 
     /// <summary>
-    /// The Direct bucket: bypasses the tunnel while the global proxy is on.
+    /// The Direct bucket: bypasses the tunnel in either mode, overriding a proxy match.
     /// </summary>
     public ObservableCollection<string> DirectRules { get; } = [];
 
@@ -144,18 +142,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// </summary>
     public ObservableCollection<string> BlockRules { get; } = [];
 
-    /// <summary>
-    /// The Exclude bucket: off the tunnel always, in either mode (manual exclusions).
-    /// </summary>
-    public ObservableCollection<string> ExcludeRules { get; } = [];
-
     // The bucket currently shown/edited by the role segment.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Rules))]
     [NotifyPropertyChangedFor(nameof(IsProxyRole))]
     [NotifyPropertyChangedFor(nameof(IsDirectRole))]
     [NotifyPropertyChangedFor(nameof(IsBlockRole))]
-    [NotifyPropertyChangedFor(nameof(IsExcludeRole))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
     private string _selectedRole = "proxy";
 
@@ -166,7 +158,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     {
         "direct" => DirectRules,
         "block" => BlockRules,
-        "exclude" => ExcludeRules,
         _ => ProxyRules,
     };
 
@@ -176,8 +167,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
     public bool IsBlockRole => SelectedRole == "block";
 
-    public bool IsExcludeRole => SelectedRole == "exclude";
-
     /// <summary>
     /// Localized help line for the active role.
     /// </summary>
@@ -185,7 +174,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     {
         "direct" => Loc.Instance.Get("Main_RoleDirectHint"),
         "block" => Loc.Instance.Get("Main_RoleBlockHint"),
-        "exclude" => Loc.Instance.Get("Main_RoleExcludeHint"),
         _ => Loc.Instance.Get("Main_RoleProxyHint"),
     };
 
@@ -193,14 +181,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     partial void OnSelectedRoleChanged(string value) => _ = ApplySuggestionFilterAsync();
 
     // Total entries across all buckets.
-    private int TotalRules => ProxyRules.Count + DirectRules.Count + BlockRules.Count + ExcludeRules.Count;
+    private int TotalRules => ProxyRules.Count + DirectRules.Count + BlockRules.Count;
 
     // The bucket for a role token.
     private ObservableCollection<string> BucketFor(string role) => role switch
     {
         "direct" => DirectRules,
         "block" => BlockRules,
-        "exclude" => ExcludeRules,
         _ => ProxyRules,
     };
 
@@ -211,7 +198,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         if (bar > 0)
         {
             var role = text[..bar].ToLowerInvariant();
-            if (role is "proxy" or "direct" or "block" or "exclude")
+            // Legacy "exclude" folds into Direct (Exclude bucket removed).
+            if (role == "exclude")
+            {
+                return ("direct", text[(bar + 1)..]);
+            }
+
+            if (role is "proxy" or "direct" or "block")
             {
                 return (role, text[(bar + 1)..]);
             }
@@ -375,7 +368,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             args.AddRange(ProxyRules.Select(r => $"proxy|{r}"));
             args.AddRange(DirectRules.Select(r => $"direct|{r}"));
             args.AddRange(BlockRules.Select(r => $"block|{r}"));
-            args.AddRange(ExcludeRules.Select(r => $"exclude|{r}"));
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSaveRoutingList, args));
             if (ack.Ok && long.TryParse(ack.Message, NumberStyles.Integer, CultureInfo.InvariantCulture, out var resultId))
             {
@@ -437,8 +429,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             || !string.Equals(Name, _baseName, StringComparison.Ordinal)
             || !ProxyRules.SequenceEqual(_baseProxy, StringComparer.Ordinal)
             || !DirectRules.SequenceEqual(_baseDirect, StringComparer.Ordinal)
-            || !BlockRules.SequenceEqual(_baseBlock, StringComparer.Ordinal)
-            || !ExcludeRules.SequenceEqual(_baseExclude, StringComparer.Ordinal);
+            || !BlockRules.SequenceEqual(_baseBlock, StringComparer.Ordinal);
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -473,7 +464,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _baseProxy = ProxyRules.ToList();
         _baseDirect = DirectRules.ToList();
         _baseBlock = BlockRules.ToList();
-        _baseExclude = ExcludeRules.ToList();
         MarkDirty();
     }
 
@@ -487,7 +477,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             RestoreBucket(ProxyRules, _baseProxy);
             RestoreBucket(DirectRules, _baseDirect);
             RestoreBucket(BlockRules, _baseBlock);
-            RestoreBucket(ExcludeRules, _baseExclude);
             RuleInput = string.Empty;
             StatusMessage = string.Empty;
             ValidationMessage = string.Empty;
@@ -594,7 +583,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     }
 
     /// <summary>
-    /// Fetches the machine's local subnets from the agent and adds them to the Exclude bucket.
+    /// Fetches the machine's local subnets from the agent and adds them to the Direct bucket.
     /// </summary>
     [RelayCommand]
     private async Task AddLocalSubnetsAsync()
@@ -610,14 +599,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             }
 
             var subnets = ack.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            SelectedRole = "exclude";
+            SelectedRole = "direct";
             var added = 0;
             foreach (var subnet in subnets)
             {
                 var rule = Normalize(subnet);
-                if (rule.Length > 0 && !ExcludeRules.Contains(rule))
+                if (rule.Length > 0 && !DirectRules.Contains(rule))
                 {
-                    ExcludeRules.Add(rule);
+                    DirectRules.Add(rule);
                     added++;
                 }
             }
@@ -879,7 +868,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         all.AddRange(ProxyRules.Select(r => $"proxy|{r}"));
         all.AddRange(DirectRules.Select(r => $"direct|{r}"));
         all.AddRange(BlockRules.Select(r => $"block|{r}"));
-        all.AddRange(ExcludeRules.Select(r => $"exclude|{r}"));
         return all;
     }
 
@@ -987,7 +975,6 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             ProxyRules.Clear();
             DirectRules.Clear();
             BlockRules.Clear();
-            ExcludeRules.Clear();
             foreach (var rule in importedRules)
             {
                 var (role, plain) = SplitRoleToken(rule);

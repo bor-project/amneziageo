@@ -11,7 +11,7 @@ public enum RouteRole
     Proxy,
 
     /// <summary>
-    /// Kept off the tunnel while the global proxy is on (full).
+    /// Kept off the tunnel in either mode, overriding a proxy match.
     /// </summary>
     Direct,
 
@@ -19,9 +19,4 @@ public enum RouteRole
     /// Blocked outright, always, regardless of the global proxy.
     /// </summary>
     Block,
-
-    /// <summary>
-    /// Kept off the tunnel always, in either mode (manual exclusions).
-    /// </summary>
-    Exclude,
 }

@@ -251,25 +251,14 @@ internal sealed class TunnelRunner(
 
         var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(storedExclusions ?? string.Empty);
         var exclusionDomains = new List<string>(parsedExclusionDomains);
-        // Direct bucket (full mode only): its domains stay on the local resolver, off the tunnel.
-        if (!geoSplit && activeList is not null)
+        // Direct bucket (both modes): its domains stay on the local resolver, off the tunnel, overriding a proxy match.
+        if (activeList is not null)
         {
             foreach (var direct in activeList.DirectDomains)
             {
                 if (!exclusionDomains.Contains(direct.Value))
                 {
                     exclusionDomains.Add(direct.Value);
-                }
-            }
-        }
-        // Exclude bucket (both modes): its domains stay on the local resolver, off the tunnel always.
-        if (activeList is not null)
-        {
-            foreach (var exclude in activeList.ExcludeDomains)
-            {
-                if (!exclusionDomains.Contains(exclude.Value))
-                {
-                    exclusionDomains.Add(exclude.Value);
                 }
             }
         }
@@ -327,22 +316,10 @@ internal sealed class TunnelRunner(
             }
         }
 
-        // Direct bucket (full mode only): its CIDRs route out the physical gateway, bypassing the tunnel.
-        if (!geoSplit && activeList is not null)
-        {
-            foreach (var cidr in activeList.DirectRoutes)
-            {
-                if (!exclusionCidrs.Contains(cidr))
-                {
-                    exclusionCidrs.Add(cidr);
-                }
-            }
-        }
-
-        // Exclude bucket (both modes): its CIDRs route out the physical gateway always, on top of the LAN floor.
+        // Direct bucket (both modes): its CIDRs route out the physical gateway, bypassing the tunnel, overriding a proxy route.
         if (activeList is not null)
         {
-            foreach (var cidr in activeList.ExcludeRoutes)
+            foreach (var cidr in activeList.DirectRoutes)
             {
                 if (!exclusionCidrs.Contains(cidr))
                 {

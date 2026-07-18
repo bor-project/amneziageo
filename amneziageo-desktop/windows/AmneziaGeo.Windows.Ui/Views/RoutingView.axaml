@@ -147,12 +147,12 @@
           <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-          <!-- Role segment [Прокси | Директ | Блок | Исключения]: which bucket the add rows target and the list below shows. -->
+          <!-- Role segment [Прокси | Директ | Блок]: which bucket the add rows target and the list below shows. -->
           <StackPanel Spacing="6">
             <Border Background="{DynamicResource AgInsetBrush}"
                     BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                     CornerRadius="9" Padding="3">
-              <UniformGrid Columns="4">
+              <UniformGrid Columns="3">
                 <Button Classes="seg" Classes.active="{Binding IsProxyRole}" Content="{l:Tr Main_RoleProxy}"
                         Command="{Binding SelectRoleCommand}" CommandParameter="proxy"
                         HorizontalAlignment="Stretch" Padding="12,6" />
@@ -162,16 +162,13 @@
                 <Button Classes="seg" Classes.active="{Binding IsBlockRole}" Content="{l:Tr Main_RoleBlock}"
                         Command="{Binding SelectRoleCommand}" CommandParameter="block"
                         HorizontalAlignment="Stretch" Padding="12,6" />
-                <Button Classes="seg" Classes.active="{Binding IsExcludeRole}" Content="{l:Tr Main_RoleExclude}"
-                        Command="{Binding SelectRoleCommand}" CommandParameter="exclude"
-                        HorizontalAlignment="Stretch" Padding="12,6" />
               </UniformGrid>
             </Border>
-            <!-- Role hint left; a blue link (Exclude only) fills the Exclude bucket with the machine's local subnets. -->
+            <!-- Role hint left; a blue link (Direct only) fills the Direct bucket with the machine's local subnets. -->
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Grid.Column="0" Text="{Binding RoleHint}" Classes="muted" FontSize="11.5"
                          TextWrapping="Wrap" VerticalAlignment="Top" />
-              <Button Grid.Column="1" Classes="linkbtn" IsVisible="{Binding IsExcludeRole}" Margin="12,0,0,0"
+              <Button Grid.Column="1" Classes="linkbtn" IsVisible="{Binding IsDirectRole}" Margin="12,0,0,0"
                       Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}"
                       VerticalAlignment="Top" HorizontalAlignment="Right">
                 <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap" />

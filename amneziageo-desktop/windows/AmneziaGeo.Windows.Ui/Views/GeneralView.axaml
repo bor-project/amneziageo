@@ -90,11 +90,12 @@
                           IsVisible="{Binding ShowCheckUpdateButton}" />
                   <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding UpdateAvailable}">
                     <TextBlock Text="{Binding UpdateDownloadPercent, StringFormat='{}{0}%'}" Classes="muted"
-                               FontSize="12" VerticalAlignment="Center" IsVisible="{Binding UpdateDownloading}" />
+                               FontSize="12" VerticalAlignment="Center" Width="36" TextAlignment="Right"
+                               IsVisible="{Binding DownloadActive}" />
                     <Button Classes="accent" Content="{l:Tr Main_DownloadButton}" Command="{Binding DownloadUpdateCommand}"
                             IsVisible="{Binding ShowDownloadButton}" />
                     <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelDownloadCommand}"
-                            IsVisible="{Binding UpdateDownloading}" />
+                            IsVisible="{Binding DownloadActive}" />
                     <Button Classes="accent" Content="{l:Tr Main_InstallButton}" Command="{Binding ApplyUpdateCommand}"
                             IsVisible="{Binding UpdateDownloaded}" />
                   </StackPanel>

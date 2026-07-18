@@ -218,6 +218,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Nav = "home";
         Profile.OpenProfile = null;
         Config.AbandonCreate();
+        RefreshLogsActive();
     }
 
     // Back arrow: in a compact section detail step back to the rail, otherwise return home.
@@ -227,6 +228,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (IsCompact && SettingsDetailOpen)
         {
             SettingsDetailOpen = false;
+            RefreshLogsActive();
             return;
         }
 
@@ -260,6 +262,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // Re-entering settings lands on the persisted section without a section-change event, so seed its
         // selection here too.
         SelectSectionDefault(SettingsSection);
+        RefreshLogsActive();
     }
 
     // Fill an empty Routing / Config section with the first available item so it never opens on a blank editor.
@@ -283,6 +286,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SettingsSection = section;
         // Compact mode drills into the section detail; wide mode ignores this and swaps content in place.
         SettingsDetailOpen = true;
+        // Reselecting the already-selected section fires no section-change event, so activate here too.
+        RefreshLogsActive();
+    }
+
+    // The logs viewer's heartbeat re-reads and its initial file listing run only while its content is actually
+    // shown: its section is selected in settings, and in compact mode only once drilled into the detail (the
+    // rail hides the content). Recompute after every entry that lands there, including those with no
+    // section-change event: a restored section on open, or reselecting the already-selected section.
+    private void RefreshLogsActive()
+    {
+        Logs.SetActive(Nav == "settings" && SettingsSection == "logs" && (!IsCompact || SettingsDetailOpen));
     }
 
     // A name is taken if any config OR profile already uses it: the agent enforces one shared namespace
@@ -315,7 +329,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.
-        Logs.SetActive(value == "logs");
+        RefreshLogsActive();
 
         // Landing on a profile-scoped section with nothing open selects the current (active) profile, so the
         // section shows its config / routing instead of an empty editor. Opening the profile cascades into the
@@ -347,6 +361,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Logs.IsCompact = compact;
         General.IsCompact = compact;
         Profile.IsCompact = compact;
+
+        // A width flip can reveal or hide the logs content (compact rail vs wide content), so re-evaluate.
+        RefreshLogsActive();
     }
 
     private void OnConnected()

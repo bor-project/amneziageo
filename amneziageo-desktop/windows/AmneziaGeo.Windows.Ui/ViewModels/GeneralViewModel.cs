@@ -92,14 +92,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
     [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
+    [NotifyPropertyChangedFor(nameof(DownloadActive))]
     private bool _updateDownloading;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
     [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
+    [NotifyPropertyChangedFor(nameof(DownloadActive))]
     private bool _updateDownloaded;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DownloadActive))]
     private int _updateDownloadPercent;
 
     [ObservableProperty]
@@ -215,6 +218,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// Hide the check-update button while a setup is downloading or already downloaded (#6).
     /// </summary>
     public bool ShowCheckUpdateButton => !UpdateDownloading && !UpdateDownloaded;
+
+    /// <summary>
+    /// Whether a download is actively streaming and not yet ready. Drives the percent label and the cancel
+    /// control: both drop once the setup is downloaded (Install takes over) or the percent reaches 100.
+    /// </summary>
+    public bool DownloadActive => UpdateDownloading && !UpdateDownloaded && UpdateDownloadPercent < 100;
 
     /// <summary>
     /// Whether the normal general page is shown (not a bundle export/import sub-view).
@@ -485,11 +494,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // clamp keeps a jittery report from moving the bar backwards; the final 100 rides the "downloaded" report.
     private void ReportDownloadProgress(int percent, string version)
     {
-        UpdateDownloadPercent = Math.Max(UpdateDownloadPercent, percent);
-        if (UpdateDownloadPercent < 100)
-        {
-            _ = ReportDownloadAsync("downloading", UpdateDownloadPercent, string.Empty, version);
-        }
+        // Hold the shown percent at 99 until the state flips to downloaded: the banner then swaps straight from
+        // progress to Install with no dangling "100%" + Cancel and no blank tail while the partial is promoted.
+        UpdateDownloadPercent = Math.Min(99, Math.Max(UpdateDownloadPercent, percent));
+        _ = ReportDownloadAsync("downloading", UpdateDownloadPercent, string.Empty, version);
     }
 
     // Reports the setup download phase to the agent so the tray and every window share one state.

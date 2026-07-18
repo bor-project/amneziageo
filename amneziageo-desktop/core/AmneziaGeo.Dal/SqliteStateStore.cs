@@ -1589,8 +1589,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var directDomainsJson = JsonSerializer.Serialize(list.DirectDomains);
         var blockRoutesJson = JsonSerializer.Serialize(list.BlockRoutes);
         var blockDomainsJson = JsonSerializer.Serialize(list.BlockDomains);
-        var excludeRoutesJson = JsonSerializer.Serialize(list.ExcludeRoutes);
-        var excludeDomainsJson = JsonSerializer.Serialize(list.ExcludeDomains);
+        // Exclude bucket removed; clear its legacy columns while keeping the schema.
+        var excludeRoutesJson = "[]";
+        var excludeDomainsJson = "[]";
 
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -2190,10 +2191,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         var directDomains = JsonSerializer.Deserialize<List<GeoDomain>>(directDomainsJson) ?? [];
         var blockRoutes = JsonSerializer.Deserialize<List<string>>(blockRoutesJson) ?? [];
         var blockDomains = JsonSerializer.Deserialize<List<GeoDomain>>(blockDomainsJson) ?? [];
-        var excludeRoutes = JsonSerializer.Deserialize<List<string>>(excludeRoutesJson) ?? [];
-        var excludeDomains = JsonSerializer.Deserialize<List<GeoDomain>>(excludeDomainsJson) ?? [];
+        // Fold the removed Exclude bucket's legacy data into Direct (identical bypass semantics).
+        directRoutes.AddRange(JsonSerializer.Deserialize<List<string>>(excludeRoutesJson) ?? []);
+        directDomains.AddRange(JsonSerializer.Deserialize<List<GeoDomain>>(excludeDomainsJson) ?? []);
         return new RoutingList(id, name, rules, routes, domains, ExtractApps(rules),
-            directRoutes, directDomains, blockRoutes, blockDomains, excludeRoutes, excludeDomains);
+            directRoutes, directDomains, blockRoutes, blockDomains);
     }
 
     // Collect Proxy-bucket App-kind rule values as matcher tokens (per-app tunneling is a proxy concept).
@@ -2232,7 +2234,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
                     var kind = Enum.Parse<GeoRuleKind>(reader.GetString(0));
-                    var role = Enum.TryParse<RouteRole>(reader.GetString(2), out var parsed) ? parsed : RouteRole.Proxy;
+                    var roleText = reader.GetString(2);
+                    // Legacy Exclude rows fold into Direct (Exclude bucket removed).
+                    var role = roleText.Equals("Exclude", StringComparison.OrdinalIgnoreCase)
+                        ? RouteRole.Direct
+                        : Enum.TryParse<RouteRole>(roleText, out var parsed) ? parsed : RouteRole.Proxy;
                     rules.Add(new GeoRule(kind, reader.GetString(1), role));
                 }
             }

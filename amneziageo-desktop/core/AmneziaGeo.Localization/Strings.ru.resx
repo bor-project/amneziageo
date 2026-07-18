@@ -536,19 +536,13 @@
     <value>Блок</value>
   </data>
   <data name="Main_RoleProxyHint" xml:space="preserve">
-    <value>Работает, когда глобальный прокси выключен: через туннель идут только эти записи.</value>
+    <value>Направлять через туннель.</value>
   </data>
   <data name="Main_RoleDirectHint" xml:space="preserve">
-    <value>Работает, когда глобальный прокси включён: эти записи идут мимо туннеля.</value>
+    <value>Мимо туннеля — перекрывает список прокси.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
-    <value>Блокирует запросы к выбранным маршрутам. Действует всегда.</value>
-  </data>
-  <data name="Main_RoleExclude" xml:space="preserve">
-    <value>Исключения</value>
-  </data>
-  <data name="Main_RoleExcludeHint" xml:space="preserve">
-    <value>Всегда мимо туннеля, в любом режиме: эти записи идут напрямую.</value>
+    <value>Полностью блокировать.</value>
   </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Глобальный прокси</value>

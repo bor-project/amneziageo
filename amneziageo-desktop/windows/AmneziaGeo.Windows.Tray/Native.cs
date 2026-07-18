@@ -48,6 +48,7 @@ internal static class Native
     public const int ID_CHECKUPDATE = 5;
     public const int ID_UPDATE = 6;
     public const int ID_INSTALL = 7;
+    public const int ID_CANCELDOWNLOAD = 8;
 
     // Shell_NotifyIcon.
     public const uint NIM_ADD = 0;

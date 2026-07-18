@@ -17,10 +17,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private readonly UiPreferences _prefs;
 
     /// <summary>
-    /// The surface the user is currently on ("launcher" / "settings" / "none"), recorded so a self-update
-    /// returns to it afterwards; "none" is a windowless background update (tray balloon / menu).
+    /// Whether the app is showing a window ("settings") or running a windowless background update ("none"),
+    /// carried into the installer as UPDATEORIGIN.
     /// </summary>
     public string CurrentSurface { get; set; } = "settings";
+
+    /// <summary>
+    /// In-window view: "home" (connect screen) or "settings" (section console). The gear opens settings, the
+    /// back arrow returns home.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsHome))]
+    [NotifyPropertyChangedFor(nameof(IsSettings))]
+    [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
+    private string _nav = "home";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
@@ -104,6 +114,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     public bool ShowNoProfilesYetHint => HasConfigs && !HasProfiles;
 
+    /// <summary>
+    /// Whether the home (connect) view is shown.
+    /// </summary>
+    public bool IsHome => Nav == "home";
+
+    /// <summary>
+    /// Whether the settings view is shown (opened via the gear button).
+    /// </summary>
+    public bool IsSettings => Nav == "settings";
+
     public bool IsSettingsProfile => SettingsSection == "profile";
 
     public bool IsSettingsConfig => SettingsSection == "config";
@@ -117,9 +137,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsSettingsSources => SettingsSection == "sources";
 
     /// <summary>
-    /// Whether the floating app-update banner shows. Hidden on the General page, which already carries the update section (#186).
+    /// Whether the floating app-update banner shows. Hidden only on the settings General page, which already
+    /// carries the update section (#186); shown on home and every other settings section.
     /// </summary>
-    public bool AppUpdateBannerVisible => General.UpdateBannerVisible && !IsSettingsGeneral;
+    public bool AppUpdateBannerVisible => General.UpdateBannerVisible && !(IsSettings && IsSettingsGeneral);
 
     /// <summary>
     /// Starts the agent connection.
@@ -137,18 +158,37 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return Config.ConfigNames;
     }
 
-    /// <summary>
-    /// Seeds the console's opening section: opens the active profile so the profile-scoped sections show its
-    /// config / routing, then fills an empty Routing / Config section with its first item. Run when the console
-    /// window opens, since the persisted section is seeded without a section-change event.
-    /// </summary>
-    public void SelectStartupSection()
+    [RelayCommand]
+    private void NavHome()
     {
+        Nav = "home";
+        Profile.OpenProfile = null;
+        Config.AbandonCreate();
+    }
+
+    /// <summary>
+    /// Opens the settings General section, where the app-update status line lives, so a windowless update that
+    /// ended in a failure surfaces its reason instead of a bare home screen (#22).
+    /// </summary>
+    public void ShowUpdateStatus()
+    {
+        SettingsSection = "general";
+        Nav = "settings";
+    }
+
+    [RelayCommand]
+    private void NavSettings()
+    {
+        // Open the active profile when entering settings so the profile-scoped sections show its config / routing.
         if (Home.ActiveProfile is not null)
         {
             Profile.OpenProfile = Home.ActiveProfile;
         }
 
+        Nav = "settings";
+
+        // Re-entering settings lands on the persisted section without a section-change event, so seed its
+        // selection here too.
         SelectSectionDefault(SettingsSection);
     }
 

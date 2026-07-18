@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using Avalonia;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
@@ -29,6 +30,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string? _downloadedVersion;
     private CancellationTokenSource? _downloadCts;
     private CancellationTokenSource? _upToDateCts;
+    private DispatcherTimer? _autoUpdateTimer;
+    private bool _autoCheckArmed;
 
     // Set by the host to run the byte-pump under the process-alive pin, so closing a window mid-download neither
     // quits the app nor aborts the download (#21). Falls back to a direct download when unset.
@@ -85,7 +88,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDownloadButton))]
     [NotifyPropertyChangedFor(nameof(ShowCheckUpdateButton))]
-    [NotifyPropertyChangedFor(nameof(IsUpdateBusy))]
     private bool _updateDownloading;
 
     [ObservableProperty]
@@ -95,11 +97,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     [ObservableProperty]
     private int _updateDownloadPercent;
-
-    // Set when a download fails; the launcher keeps the compact view for a retry/close choice (#4).
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsUpdateBusy))]
-    private bool _downloadFailed;
 
     [ObservableProperty]
     private bool _updateBannerVisible;
@@ -200,7 +197,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     /// <summary>
     /// Whether the last download was cancelled by a host relay (an exit), so a windowless worker exits rather
-    /// than surfacing the launcher (#21).
+    /// than surfacing the window (#21).
     /// </summary>
     public bool WasDownloadCancelledByHost { get; private set; }
 
@@ -214,12 +211,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// Hide the check-update button while a setup is downloading or already downloaded (#6).
     /// </summary>
     public bool ShowCheckUpdateButton => !UpdateDownloading && !UpdateDownloaded;
-
-    /// <summary>
-    /// Whether a download is the launcher's active operation: it takes over the window with a compact progress
-    /// view while running, and stays for the retry/close choice after a failure (#4).
-    /// </summary>
-    public bool IsUpdateBusy => UpdateDownloading || DownloadFailed;
 
     /// <summary>
     /// Whether the normal general page is shown (not a bundle export/import sub-view).
@@ -249,6 +240,13 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _suppressSettingPush = false;
 
         UpdateUrl = snapshot.UpdateUrl;
+
+        // Fire the open check once the agent has reported an update URL, then leave the hourly timer to it (#22).
+        if (_autoCheckArmed && HasUpdateUrl)
+        {
+            _autoCheckArmed = false;
+            _ = SilentCheckUpdateAsync();
+        }
 
         UpdateAvailable = snapshot.UpdateAvailable;
         UpdateVersion = snapshot.UpdateVersion;
@@ -307,13 +305,50 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Starts automatic update checks: one when the window opens (fired once the agent reports an update URL)
+    /// and one every hour after. Results surface through the snapshot as the floating update banner; the manual
+    /// check stays in settings (#22).
+    /// </summary>
+    public void BeginAutoUpdateChecks()
+    {
+        if (_autoUpdateTimer is not null)
+        {
+            return;
+        }
+
+        _autoCheckArmed = true;
+        _autoUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(1) };
+        _autoUpdateTimer.Tick += (_, _) => _ = SilentCheckUpdateAsync();
+        _autoUpdateTimer.Start();
+    }
+
+    // Asks the agent to check now without touching the status line: the resulting snapshot raises the update
+    // banner when an update is offered. Backs the automatic open + hourly checks (#22); the manual settings
+    // check keeps its own checking / up-to-date feedback.
+    private async Task SilentCheckUpdateAsync()
+    {
+        if (!HasUpdateUrl)
+        {
+            return;
+        }
+
+        try
+        {
+            await _connection.SendCommandRawAsync(new IpcCommand(IpcContract.OpCheckUpdate, ["silent"]));
+        }
+        catch
+        {
+        }
+    }
+
     [RelayCommand]
     private async Task CheckUpdate()
     {
         CancelUpToDateAutoHide();
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateChecking");
         // The URL is baked into the build (installer config), not user-entered; just ask for a check. The raw reply
-        // keeps its localization key so the launcher can tell up-to-date from available from an error (#3).
+        // keeps its localization key so the check can tell up-to-date from available from an error (#3).
         try
         {
             var ack = await _connection.SendCommandRawAsync(new IpcCommand(IpcContract.OpCheckUpdate, []));
@@ -405,7 +440,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
 
         WasDownloadCancelledByHost = false;
-        DownloadFailed = false;
         CancelUpToDateAutoHide();
         using var cts = new CancellationTokenSource();
         _downloadCts = cts;
@@ -416,8 +450,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         await ReportDownloadAsync("downloading", 0, string.Empty, version);
         try
         {
-            // Clamp to the high-water mark so a jittery report never moves the bar backwards (#4).
-            _downloadedSetupPath = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => UpdateDownloadPercent = Math.Max(UpdateDownloadPercent, p)), cts.Token);
+            _downloadedSetupPath = await DownloadSetupAsync(_updateSetupUrl, new Progress<int>(p => ReportDownloadProgress(p, version)), cts.Token);
             _downloadedVersion = version;
             UpdateDownloaded = true;
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateReadyToInstall");
@@ -432,9 +465,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         catch (Exception ex)
         {
             // Show a friendly line; the raw error goes to the agent log for diagnostics. The "failed" phase drives
-            // the tray warning balloon (#8). DownloadFailed keeps the launcher's compact view for retry/close (#4).
+            // the tray warning balloon (#8).
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateDownloadFailed");
-            DownloadFailed = true;
             await LogToAgentAsync($"update download failed: {ex}");
             await ReportDownloadAsync("failed", 0, string.Empty, string.Empty);
         }
@@ -442,6 +474,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             UpdateDownloading = false;
             _downloadCts = null;
+        }
+    }
+
+    // Advances the shared download percent and relays it to the agent so the tray menu tracks it too (#17). The
+    // clamp keeps a jittery report from moving the bar backwards; the final 100 rides the "downloaded" report.
+    private void ReportDownloadProgress(int percent, string version)
+    {
+        UpdateDownloadPercent = Math.Max(UpdateDownloadPercent, percent);
+        if (UpdateDownloadPercent < 100)
+        {
+            _ = ReportDownloadAsync("downloading", UpdateDownloadPercent, string.Empty, version);
         }
     }
 
@@ -467,17 +510,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private void CancelDownload()
     {
         _downloadCts?.Cancel();
-    }
-
-    /// <summary>
-    /// Clears a failed-download notice and returns the launcher to its normal view (#4).
-    /// </summary>
-    [RelayCommand]
-    private void DismissDownloadError()
-    {
-        DownloadFailed = false;
-        UpdateStatus = string.Empty;
-        UpdateDownloadPercent = 0;
     }
 
     // Forwards a diagnostic line to the agent log; the UI process keeps no log of its own.

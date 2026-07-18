@@ -8,10 +8,9 @@ namespace AmneziaGeo.Windows.Tray;
 /// The tray anchor entry point: a hidden owner window drives a Shell notify icon, a background link keeps the
 /// agent tunnel alive and feeds the icon its colour and tooltip, balloons announce the connect start,
 /// completion, and failure while the GUI is not in front. A left click (or the menu's Open) surfaces the
-/// lightweight launcher, whose More button expands it to the full configuration console; the menu also
-/// connects, disconnects, or exits. A cold launch opens the launcher; the right-click menu is never
-/// auto-shown (#187). Launched with --connect (post-install auto-connect), it dials the active profile
-/// straight away and stays resident, no window (#188).
+/// main window on its home connect screen; the menu also connects, disconnects, or exits. A cold launch
+/// opens the window; the right-click menu is never auto-shown (#187). Launched with --connect (post-install
+/// auto-connect), it dials the active profile straight away and stays resident, no window (#188).
 /// </summary>
 internal static unsafe class Program
 {
@@ -52,7 +51,7 @@ internal static unsafe class Program
     // Post-update install balloon deferred until the first snapshot reports the notifications flag.
     private static bool _pendingInstalledBalloon;
 
-    // The post-update origin marker (settings / launcher / none), read at startup; null on a plain launch.
+    // The post-update origin marker (settings / none), read at startup; null on a plain launch.
     private static string? _updateOrigin;
 
     // Logon autostart: resident tray icon only, no launcher window.
@@ -79,14 +78,14 @@ internal static unsafe class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // Post-install auto-connect (#188): dial the active profile on cold launch instead of showing the launcher.
+        // Post-install auto-connect (#188): dial the active profile on cold launch instead of showing the window.
         _autoConnect = Array.IndexOf(args, "--connect") >= 0;
 
-        // After an in-app update the installer passes --settings so the cold launch reopens the settings console
-        // the update was started from, instead of the launcher.
+        // After an in-app update the installer passes --settings so the cold launch reopens the window the
+        // update was started from.
         _showConsole = Array.IndexOf(args, "--settings") >= 0;
 
-        // Logon autostart (survive-reboot): bring up the resident tray icon only, no launcher window.
+        // Logon autostart (survive-reboot): bring up the resident tray icon only, no window.
         _autostart = Array.IndexOf(args, "--autostart") >= 0;
 
         // A tray that comes up within minutes of boot is a post-reboot logon autostart: an already-up tunnel is
@@ -142,7 +141,7 @@ internal static unsafe class Program
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
         // Cold launch: bring up only the tray, then resolve once the first snapshot lands (or after a short
-        // fallback) - open the launcher with an active profile, or the full GUI without one.
+        // fallback) - open the main window unless this is an auto-connect or logon autostart.
         _popupPending = true;
         Native.SetTimer(_hwnd, PopupTimerId, PopupTimeoutMs, 0);
 
@@ -170,7 +169,7 @@ internal static unsafe class Program
                 var ev = (uint)(lParam & 0xFFFF);
                 if (ev == Native.WM_LBUTTONUP)
                 {
-                    LaunchUi("--launcher");
+                    LaunchUi();
                 }
                 else if (ev == Native.WM_RBUTTONUP)
                 {
@@ -190,7 +189,7 @@ internal static unsafe class Program
                             LaunchInstall();
                             break;
                         default:
-                            LaunchUi("--launcher");
+                            LaunchUi();
                             break;
                     }
                 }
@@ -198,8 +197,8 @@ internal static unsafe class Program
                 {
                     // The balloon left the screen, so this flag no longer tells which one a click refers to: on
                     // Win10 the toast is parked in the Action Center and can be clicked hours later (Win11 drops
-                    // it). Forget it, and such a click opens the launcher - whose update section is one click from
-                    // the same place - rather than silently downloading or installing without the user asking.
+                    // it). Forget it, so such a click opens the window rather than silently downloading or
+                    // installing without the user asking.
                     _lastBalloonAction = BalloonAction.None;
                 }
 
@@ -259,7 +258,7 @@ internal static unsafe class Program
 
             if (msg == Native.WM_OPENUI)
             {
-                LaunchUi("--launcher");
+                LaunchUi();
                 return 0;
             }
 
@@ -296,7 +295,7 @@ internal static unsafe class Program
         switch (id)
         {
             case Native.ID_OPEN:
-                LaunchUi("--launcher");
+                LaunchUi();
                 break;
             case Native.ID_CONNECT:
                 AgentLink.SendConnect();
@@ -313,6 +312,9 @@ internal static unsafe class Program
                 break;
             case Native.ID_INSTALL:
                 LaunchInstall();
+                break;
+            case Native.ID_CANCELDOWNLOAD:
+                AgentLink.SendCancelDownload();
                 break;
             case Native.ID_EXIT:
                 // A download in flight is cancelled cleanly (its partial deleted) only on a confirmed exit;
@@ -426,9 +428,9 @@ internal static unsafe class Program
             ShowBalloon("AmneziaGeo", Labels.UpdateInstalledInfo);
         }
 
-        // A visible launcher or settings window already reflects the change, so surface a connection balloon only
-        // when no GUI window is on screen (auto-connect with no window, tray menu, after the launcher has closed,
-        // or while it sits minimized). Per the shared notification rules (#5), visibility, not foreground.
+        // A visible window already reflects the change, so surface a connection balloon only when no GUI window
+        // is on screen (auto-connect with no window, tray menu, after the window has closed, or while it sits
+        // minimized). Per the shared notification rules (#5), visibility, not foreground.
         if (!linkDown && !NotificationGate.IsUiVisible())
         {
             // A stalled teardown warns first: its flag can coincide with a re-latch right after an agent-link
@@ -440,7 +442,7 @@ internal static unsafe class Program
                 _lastBalloonAction = BalloonAction.None;
                 ShowBalloon("AmneziaGeo", Labels.DisconnectFailedInfo, Native.NIIF_WARNING);
             }
-            // A connection balloon supersedes the update one, so a later balloon click opens the launcher.
+            // A connection balloon supersedes the update one, so a later balloon click opens the window.
             else if (justConnected || bootConnected)
             {
                 _lastBalloonAction = BalloonAction.None;
@@ -501,8 +503,8 @@ internal static unsafe class Program
         }
     }
 
-    // Cold launch, once: open the lightweight launcher (More expands it to the full console). Post-install
-    // auto-connect with an active profile dials straight away and stays resident, no window (#188).
+    // Cold launch, once: open the main window on its home connect screen. Post-install auto-connect with an
+    // active profile dials straight away and stays resident, no window (#188).
     private static void ResolveColdLaunch()
     {
         _popupPending = false;
@@ -514,9 +516,9 @@ internal static unsafe class Program
             AgentLink.SendConnect();
         }
 
-        // A relaunch right after a self-update carries an origin marker: announce the install and return to the
-        // surface the update was started from (settings / launcher); "none" stays windowless. The UI clears the
-        // marker on its own read; the windowless case has no reader, so clear it here.
+        // A relaunch right after a self-update carries an origin marker: announce the install and reopen the
+        // window ("settings"); "none" stays windowless. The UI clears the marker on its own read; the windowless
+        // case has no reader, so clear it here.
         var origin = _updateOrigin;
         if (origin is not null)
         {
@@ -531,32 +533,23 @@ internal static unsafe class Program
                 _pendingInstalledBalloon = true;
             }
 
-            if (origin == "settings")
+            if (origin == "none")
             {
-                LaunchUi();
-            }
-            else if (origin == "launcher")
-            {
-                LaunchUi("--launcher");
+                DeleteUpdateOrigin();
             }
             else
             {
-                DeleteUpdateOrigin();
+                LaunchUi();
             }
 
             return;
         }
 
-        // An update applied from the settings console reopens the console (launched without --launcher) so the
-        // user lands back where they started; a plain cold launch opens the launcher; a post-install auto-connect
-        // (#188) or a logon autostart (--autostart) otherwise stays windowless, resident icon only.
-        if (_showConsole)
+        // A cold launch opens the main window; a post-install auto-connect (#188) or a logon autostart
+        // (--autostart) otherwise stays windowless, resident icon only.
+        if (_showConsole || (!autoDial && !_autostart))
         {
             LaunchUi();
-        }
-        else if (!autoDial && !_autostart)
-        {
-            LaunchUi("--launcher");
         }
     }
 
@@ -650,8 +643,8 @@ internal static unsafe class Program
         LaunchUi("--apply");
     }
 
-    // Reads the post-update origin marker (settings / launcher / none) without clearing it, so the UI can also
-    // consume it when a stale resident tray surfaces the launcher instead.
+    // Reads the post-update origin marker (settings / none) without clearing it, so the UI can also consume it
+    // when a stale resident tray surfaces the window instead.
     private static string? ReadUpdateOrigin()
     {
         try
@@ -700,7 +693,7 @@ internal static unsafe class Program
         Native.DestroyMenu(menu);
     }
 
-    // Builds the menu for the current state: Open (launcher) always; Connect (grey without an active profile)
+    // Builds the menu for the current state: Open (window) always; Connect (grey without an active profile)
     // when down, Disconnect when up, an inactive "Connecting…/Disconnecting…" while a transition runs
     // (#18/#19); Exit always.
     private static nint BuildMenu()
@@ -732,11 +725,10 @@ internal static unsafe class Program
             Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_DISCONNECT, Labels.Disconnect);
         }
 
-        // Update items only on builds with an update channel configured, matching the console and launcher,
-        // which hide their whole update section without one. A single item reflects the update state: an
-        // inactive "Checking…" while a check runs (#15), Install once a setup is downloaded, Download when an
-        // update is available - replacing the check action (#16) and inactive while a download runs so a second
-        // cannot start - else Check.
+        // Update items only on builds with an update channel configured, matching the settings window which
+        // hides its whole update section without one. The items reflect the update state: an inactive "Checking…"
+        // while a check runs (#15); a progress line plus Cancel while a download runs (#17); Install once a setup
+        // is downloaded; Download when an update is available (#16); else Check.
         if (AgentLink.HasUpdateUrl)
         {
             Native.AppendMenuW(menu, Native.MF_SEPARATOR, 0, null);
@@ -744,14 +736,18 @@ internal static unsafe class Program
             {
                 Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, (nuint)Native.ID_CHECKUPDATE, Labels.CheckingUpdate);
             }
+            else if (AgentLink.DownloadInProgress)
+            {
+                Native.AppendMenuW(menu, Native.MF_STRING | Native.MF_GRAYED, 0, string.Format(Labels.DownloadingUpdate, AgentLink.DownloadPercent));
+                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_CANCELDOWNLOAD, Labels.CancelDownload);
+            }
             else if (AgentLink.UpdateDownloaded)
             {
                 Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_INSTALL, Labels.InstallUpdate);
             }
             else if (AgentLink.UpdateAvailable)
             {
-                var downloadFlags = AgentLink.DownloadInProgress ? Native.MF_STRING | Native.MF_GRAYED : Native.MF_STRING;
-                Native.AppendMenuW(menu, downloadFlags, (nuint)Native.ID_UPDATE, Labels.DownloadUpdate);
+                Native.AppendMenuW(menu, Native.MF_STRING, (nuint)Native.ID_UPDATE, Labels.DownloadUpdate);
             }
             else
             {
@@ -864,9 +860,8 @@ internal static unsafe class Program
         };
     }
 
-    // Mirrors the installer's own GUI shutdown (StopRunningApp): WM_CLOSE every open GUI window - both the
-    // launcher and the full window (#189) - then a forced kill only if a process hangs, so no window left by
-    // --launcher or the full GUI outlives the tray it was supposed to exit with.
+    // Mirrors the installer's own GUI shutdown (StopRunningApp): WM_CLOSE every open GUI window (#189), then a
+    // forced kill only if a process hangs, so no GUI window outlives the tray it was supposed to exit with.
     private static void CloseUi()
     {
         var processes = Process.GetProcessesByName("AmneziaGeo.Windows.Ui");

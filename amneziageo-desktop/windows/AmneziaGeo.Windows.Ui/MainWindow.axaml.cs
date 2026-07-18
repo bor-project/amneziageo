@@ -1,12 +1,9 @@
-using System;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
-using AmneziaGeo.Windows.Ui.ViewModels;
 
 namespace AmneziaGeo.Windows.Ui;
 
 /// <summary>
-/// The configuration console window.
+/// The single application window: the home connect screen and the settings console, switched in place.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -16,22 +13,5 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-    }
-
-    /// <summary>
-    /// Raised when the user collapses the console back to the compact launcher ("Less").
-    /// </summary>
-    public event Action? CollapseRequested;
-
-    /// <inheritdoc/>
-    protected override void OnOpened(EventArgs e)
-    {
-        base.OnOpened(e);
-        (DataContext as MainWindowViewModel)?.SelectStartupSection();
-    }
-
-    private void OnCollapse(object? sender, RoutedEventArgs e)
-    {
-        CollapseRequested?.Invoke();
     }
 }

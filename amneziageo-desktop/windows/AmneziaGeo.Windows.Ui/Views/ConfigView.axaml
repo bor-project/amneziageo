@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
              xmlns:views="clr-namespace:AmneziaGeo.Windows.Ui.Views"
+             xmlns:svc="clr-namespace:AmneziaGeo.Windows.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
              x:Class="AmneziaGeo.Windows.Ui.Views.ConfigView"
              x:CompileBindings="True"
@@ -169,10 +170,25 @@
                   CornerRadius="9" Padding="3" MaxWidth="720" HorizontalAlignment="Center"
                   IsEnabled="{Binding !IsDirty}">
             <UniformGrid Columns="3">
+              <!-- Compact shortens the two QR tab labels so all three fit the narrow segment. -->
               <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
-                      Content="{l:Tr Main_QrConfTab}" HorizontalAlignment="Stretch" Padding="20,6" />
+                      HorizontalAlignment="Stretch" Padding="20,6">
+                <Panel>
+                  <TextBlock Text="{l:Tr Main_QrConfTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                  <TextBlock Text="{l:Tr Main_QrConfTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                </Panel>
+              </Button>
               <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
-                      Content="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Stretch" Padding="20,6" />
+                      HorizontalAlignment="Stretch" Padding="20,6">
+                <Panel>
+                  <TextBlock Text="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                  <TextBlock Text="{l:Tr Main_QrLinkTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                </Panel>
+              </Button>
               <Button Classes="seg" Classes.active="{Binding IsText}" Command="{Binding ShowTextCommand}"
                       Content="{l:Tr Main_ConfigTextTab}" HorizontalAlignment="Stretch" Padding="20,6" />
             </UniformGrid>
@@ -241,13 +257,18 @@
               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16">
         <StackPanel Spacing="10">
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0">
+          <!-- Compact stacks the trigger under the description; wide keeps them side by side. -->
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
+                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
               <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="13.5" />
               <TextBlock Text="{Binding DeleteConfigPrompt}" FontSize="12" TextWrapping="Wrap" />
               <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteConfigHint}" />
             </StackPanel>
-            <Grid Grid.Column="1" Width="180" VerticalAlignment="Center"
+            <Grid VerticalAlignment="Center"
+                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
                   ColumnDefinitions="*,*" ColumnSpacing="8">
               <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
                       Content="{l:Tr Main_DeleteConfigButton}"

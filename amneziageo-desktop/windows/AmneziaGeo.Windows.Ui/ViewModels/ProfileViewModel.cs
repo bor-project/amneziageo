@@ -24,6 +24,10 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     private long? _pendingAdoptRoutingList;
     private bool _suppressOpenChoice;
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
     private ProfileItemViewModel? _openProfile;

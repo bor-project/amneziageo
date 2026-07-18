@@ -29,6 +29,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     // Rename baseline: the open config's persisted name; a differing ConfigRename autosaves on blur.
     private string _baseConfigRename = string.Empty;
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     [ObservableProperty]
     private ConfigChoice? _selectedCatalogueConfig = ConfigChoice.None;
 

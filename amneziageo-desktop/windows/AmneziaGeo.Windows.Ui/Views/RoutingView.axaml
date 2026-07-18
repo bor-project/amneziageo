@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:AmneziaGeo.Windows.Ui.ViewModels"
+             xmlns:svc="clr-namespace:AmneziaGeo.Windows.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Windows.Ui.Localization"
              x:Class="AmneziaGeo.Windows.Ui.Views.RoutingView"
              x:CompileBindings="True"
@@ -87,10 +88,10 @@
                        Text="{l:Tr Main_RequiredEmptyWarning}" />
           </StackPanel>
 
-          <!-- Per-app tunneling. -->
+          <!-- Per-app tunneling. Compact drops the app input to its own full-width row under the two buttons. -->
           <StackPanel Spacing="6">
             <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
-            <Grid ColumnDefinitions="Auto,*,Auto">
+            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
               <Button Grid.Column="0" Classes="softbtn" Width="130" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
                 <Button.Flyout>
                   <MenuFlyout>
@@ -101,7 +102,11 @@
                   </MenuFlyout>
                 </Button.Flyout>
               </Button>
-              <AutoCompleteBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
+              <AutoCompleteBox Classes="field"
+                               Grid.Row="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                               Grid.Column="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                               Grid.ColumnSpan="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
+                               Margin="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=inputMargin}"
                                Watermark="{Binding AppWatermark}"
                                Text="{Binding AppInput, Mode=TwoWay}"
                                SelectedItem="{Binding AppSelected, Mode=TwoWay}"
@@ -334,13 +339,18 @@
               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" IsVisible="{Binding !RoutingEditor.IsNew}">
         <StackPanel Spacing="10">
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0">
+          <!-- Compact stacks the trigger under the description; wide keeps them side by side. -->
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
+                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
               <TextBlock Text="{l:Tr Main_DeleteListTitle}" FontWeight="SemiBold" FontSize="13.5" />
               <TextBlock Text="{l:Tr Main_DeleteListPrompt}" FontSize="12" TextWrapping="Wrap" />
               <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteListHint}" />
             </StackPanel>
-            <Grid Grid.Column="1" Width="180" VerticalAlignment="Center"
+            <Grid VerticalAlignment="Center"
+                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
                   ColumnDefinitions="*,*" ColumnSpacing="8">
               <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
                       Content="{l:Tr Main_DeleteListButton}"

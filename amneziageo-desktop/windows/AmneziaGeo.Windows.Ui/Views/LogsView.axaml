@@ -148,21 +148,26 @@
           </Grid>
         </StackPanel>
 
-        <Border Grid.Row="2" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
-          <Panel>
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-              <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
-                                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                   FontSize="11.5" LineHeight="18"
-                                   Foreground="{DynamicResource AgMutedBrush}"
-                                   TextWrapping="Wrap" Margin="16,13" />
-            </ScrollViewer>
-            <TextBlock IsVisible="{Binding !HasLogs}" Classes="muted" FontSize="12"
-                       Text="{l:Tr Main_LogEmptyHint}"
-                       Margin="16,13" VerticalAlignment="Top" />
-          </Panel>
-        </Border>
+        <DockPanel Grid.Row="2" LastChildFill="True">
+          <!-- Legend: what each column of a log line means, so the format reads without guessing. -->
+          <TextBlock DockPanel.Dock="Top" Classes="muted" FontSize="11" Margin="2,0,2,8"
+                     TextWrapping="Wrap" Text="{l:Tr Main_LogLegend}" />
+          <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                  Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
+            <Panel>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <SelectableTextBlock Text="{Binding LogText}" IsVisible="{Binding HasLogs}"
+                                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                     FontSize="11.5" LineHeight="18"
+                                     Foreground="{DynamicResource AgMutedBrush}"
+                                     TextWrapping="Wrap" Margin="16,13" />
+              </ScrollViewer>
+              <TextBlock IsVisible="{Binding !HasLogs}" Classes="muted" FontSize="12"
+                         Text="{l:Tr Main_LogEmptyHint}"
+                         Margin="16,13" VerticalAlignment="Top" />
+            </Panel>
+          </Border>
+        </DockPanel>
       </Grid>
     </Border>
   </Grid>

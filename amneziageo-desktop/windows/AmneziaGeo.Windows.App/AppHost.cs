@@ -40,7 +40,7 @@ internal static class AppHost
         // on cannot drift with Serilog's default template.
         var logFileSink = new ResettableFileSink(
             Path.Combine(TunnelPaths.LogDirectory(), "ageo.log"),
-            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Source:l} {Message:lj}{NewLine}{Exception}");
+            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Source:l} {Message:lj}{NewLine}{Exception}");
         builder.Services.AddSingleton(logFileSink);
 
         builder.Logging.ClearProviders();

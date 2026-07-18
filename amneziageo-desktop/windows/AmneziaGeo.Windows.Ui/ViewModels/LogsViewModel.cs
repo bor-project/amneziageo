@@ -16,7 +16,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private readonly AgentConnection _connection;
 
     // Verbosity token shown when the agent reports nothing usable.
-    private const string DefaultLogLevel = "warning";
+    private const string DefaultLogLevel = "info";
 
     // Tail window requested per read (bytes); the agent clamps it.
     private const int LogTailBytes = 262144;
@@ -273,17 +273,23 @@ internal sealed partial class LogsViewModel : ViewModelBase
             return;
         }
 
-        if (IsActive && LogFollow && LogFiles.Count > 0
-            && ReferenceEquals(SelectedLogFile, LogFiles[0]) && _logReadGate.CurrentCount > 0)
+        if (IsActive && LogFollow)
         {
-            _ = LoadWindowAsync(null);
+            // Re-list on the heartbeat so a routing log created after the viewer engaged shows up in the
+            // picker; the set-guard inside makes an unchanged listing a no-op that never disturbs the view.
+            _ = RefreshLogFilesAsync();
+
+            if (LogFiles.Count > 0 && ReferenceEquals(SelectedLogFile, LogFiles[0]) && _logReadGate.CurrentCount > 0)
+            {
+                _ = LoadWindowAsync(null);
+            }
         }
     }
 
     // Loads (or refreshes) the list of on-disk log files and re-reads the tail of the selected one. Engages
     // the file-backed viewer only once the listing succeeds, so a transient IPC failure never strands the
     // viewer with the snapshot ring disabled; heartbeats retry it while the log section stays open.
-    private async Task RefreshLogFilesAsync()
+    private async Task RefreshLogFilesAsync(bool forceReload = false)
     {
         if (_logListBusy)
         {
@@ -318,8 +324,8 @@ internal sealed partial class LogsViewModel : ViewModelBase
                 return;
             }
 
-            // Show only the canonical logs by name; the size-roll generations (routes.log.1..5) are hidden
-            // so the picker offers one entry per log, not a pile of rotated files.
+            // Show only the canonical logs by name; the size-roll generations (routes.log.1, ageo.log.1..)
+            // are hidden so the picker offers one entry per log, not a pile of rotated files.
             metas = metas?.Where(m => !m.Name.Contains(".log.", StringComparison.Ordinal)).ToList();
             if (metas is null || metas.Count == 0)
             {
@@ -328,6 +334,16 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
             // The file-backed source is now available: flip the latch so the ring stops feeding the view.
             _logViewerEngaged = true;
+
+            // A heartbeat re-list that finds the same files must not disturb the selection or the paged
+            // window; only rebuild when the set actually changed - a routing log appeared after the viewer
+            // engaged, or a clear removed one. Compared as a set so a mtime reorder alone is not a change.
+            var current = LogFiles.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
+            var incoming = metas.Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
+            if (!forceReload && current.SetEquals(incoming))
+            {
+                return;
+            }
 
             var previous = SelectedLogFile?.Name;
             LogFiles.Clear();
@@ -344,7 +360,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
             // A value-equal reselect (byte-identical newest file) short-circuits the [ObservableProperty]
             // setter, so OnSelectedLogFileChanged never fires; reload the tail explicitly so a section re-open
-            // reliably refreshes it.
+            // or a clear reliably refreshes it.
             if (ReferenceEquals(SelectedLogFile, before))
             {
                 await LoadWindowAsync(null);
@@ -437,8 +453,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
             return;
         }
 
-        // Re-list and re-read so the freshly emptied file replaces the shown tail.
-        await RefreshLogFilesAsync();
+        // Re-list so a deleted routing log drops out of the picker, then force the emptied tail to show. The
+        // reload goes through LoadWindowAsync (its own gate) so the list-busy guard can never swallow it when
+        // a heartbeat refresh is mid-flight during the clear.
+        await RefreshLogFilesAsync(forceReload: true);
+        await LoadWindowAsync(null);
     }
 
     [RelayCommand(CanExecute = nameof(CanPageOlder))]

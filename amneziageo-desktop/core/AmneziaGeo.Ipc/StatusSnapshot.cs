@@ -31,8 +31,8 @@ public sealed record StatusSnapshot(
     string EngineVersion = "",
     // When set, all UDP is routed through the tunnel while in split mode.
     bool TunnelAllUdp = false,
-    // Current log verbosity token: "error" (default), "info", "debug", or "trace".
-    string LogLevel = "error",
+    // Current log verbosity token: "error", "warning", "info" (default), "debug", or "trace".
+    string LogLevel = "info",
     // Whether the dedicated routing log (routes.log) is currently recording.
     bool RouteLog = false,
     // Structured connect-failure reason (ConnectFailureReason name); empty unless the last connect failed.

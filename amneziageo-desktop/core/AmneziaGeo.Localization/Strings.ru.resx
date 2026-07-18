@@ -241,6 +241,9 @@
   <data name="Main_LogViewerTitle" xml:space="preserve">
     <value>Просмотр журнала</value>
   </data>
+  <data name="Main_LogLegend" xml:space="preserve">
+    <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: TRC · DBG · INF · WRN · ERR · FTL.</value>
+  </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
     <value>Отправляет в туннель весь UDP-трафик. Включите, если не работают звонки или игры: они находят свои серверы в обход DNS, поэтому обычные правила их не ловят. Локальная сеть не затрагивается.</value>
   </data>

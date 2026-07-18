@@ -241,6 +241,9 @@
   <data name="Main_LogViewerTitle" xml:space="preserve">
     <value>Log viewer</value>
   </data>
+  <data name="Main_LogLegend" xml:space="preserve">
+    <value>Line format: time · [level] · component · message.  Levels low to high: TRC · DBG · INF · WRN · ERR · FTL.</value>
+  </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
     <value>Sends all UDP traffic through the tunnel. Turn this on if calls or games do not work: they find their servers without DNS, so the usual rules never catch them. Your local network is not affected.</value>
   </data>

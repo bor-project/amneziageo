@@ -1925,11 +1925,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     {
         logFileSink.Reset();
 
-        // Drop every other on-disk log (routes.log + its rolled generations, any dated agent logs); the live
-        // ageo.log was just re-created empty by the sink, so it is kept.
+        // Drop every other on-disk log (routes.log + its rolled generations, the ageo.log.1..N backups, any
+        // dated agent logs); the live ageo.log was just re-created empty by the sink, so it is kept.
         var dir = TunnelPaths.LogDirectory();
         var others = Directory.EnumerateFiles(dir, "routes.log*")
             .Concat(Directory.EnumerateFiles(dir, "ageo*.log"))
+            .Concat(Directory.EnumerateFiles(dir, "ageo.log.*"))
             .Where(p => !string.Equals(Path.GetFileName(p), "ageo.log", StringComparison.OrdinalIgnoreCase))
             .ToList();
         foreach (var path in others)

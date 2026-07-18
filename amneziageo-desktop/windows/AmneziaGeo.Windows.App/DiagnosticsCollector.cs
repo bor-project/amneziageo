@@ -72,10 +72,11 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
     }
 
     /// <summary>
-    /// Enumerates the on-disk log files with a coarse type tag: the agent log (ageo.log, plus any dated
-    /// ageo-*.log left by an older version) and the routing log with its rotation backups (routes.log,
-    /// routes.log.1..N). The single source of truth shared by the diagnostics bundle and the in-app log
-    /// viewer (OpListLogs / OpReadLog). The legacy agent.log is intentionally omitted - it is never written.
+    /// Enumerates the on-disk log files with a coarse type tag: the agent log (ageo.log, its rotation backups
+    /// ageo.log.1..N, plus any dated ageo-*.log left by an older version) and the routing log with its
+    /// rotation backups (routes.log, routes.log.1..N). The single source of truth shared by the diagnostics
+    /// bundle and the in-app log viewer (OpListLogs / OpReadLog). The legacy agent.log is intentionally
+    /// omitted - it is never written.
     /// </summary>
     internal static IEnumerable<(string Path, string Type)> EnumerateLogFiles()
     {
@@ -87,6 +88,17 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
 
         foreach (var file in Directory.EnumerateFiles(logDir, "ageo*.log"))
         {
+            yield return (file, "agent");
+        }
+
+        foreach (var file in Directory.EnumerateFiles(logDir, "ageo.log.*"))
+        {
+            // "ageo.log.*" also matches the live ageo.log (Win32 DOS_DOT quirk), already yielded above.
+            if (string.Equals(Path.GetFileName(file), "ageo.log", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             yield return (file, "agent");
         }
 

@@ -10,12 +10,6 @@ internal static class RouteLog
     /// </summary>
     public const string SettingKey = "route-log";
 
-    // Roll the file past this size, keeping RetainedBackups numbered generations (routes.log.1..N).
-    private const long MaxBytes = 8_000_000;
-
-    // Rotated generations kept alongside the live routes.log (routes.log.1 = newest backup).
-    private const int RetainedBackups = 5;
-
     private static readonly object Gate = new();
     private static volatile bool _enabled;
 
@@ -41,7 +35,7 @@ internal static class RouteLog
         }
 
         var level = ok ? "[INF]" : "[ERR]";
-        Append($"{level} {action,-14} {target} via {via}{(string.IsNullOrEmpty(note) ? string.Empty : "  " + note)}");
+        Append(level, $"{action,-14} {target} via {via}{(string.IsNullOrEmpty(note) ? string.Empty : "  " + note)}");
     }
 
     /// <summary>
@@ -54,14 +48,15 @@ internal static class RouteLog
             return;
         }
 
-        Append($"[INF] {message}");
+        Append("[INF]", message);
     }
 
-    private static void Append(string body)
+    // Shared line shape with the agent log: timestamp, level, source column ("route"), message.
+    private static void Append(string level, string body)
     {
         try
         {
-            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} [pid {Environment.ProcessId}] {body}";
+            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} {level} route {body}";
             lock (Gate)
             {
                 Directory.CreateDirectory(TunnelPaths.LogDirectory());
@@ -77,34 +72,19 @@ internal static class RouteLog
         }
     }
 
-    // Caller holds Gate. Past MaxBytes, rotates routes.log -> .1, shifting older backups up (.k -> .k+1) and
-    // dropping the oldest, giving the routing log the same bounded footprint the agent Serilog log already has.
+    // Caller holds Gate. Rotates once past the shared roll threshold, keeping the same bounded footprint as
+    // the agent log (LogRoller).
     private static void Roll()
     {
         try
         {
             var info = new FileInfo(FilePath);
-            if (!info.Exists || info.Length <= MaxBytes)
+            if (!info.Exists || info.Length <= LogRoller.MaxBytes)
             {
                 return;
             }
 
-            var oldest = $"{FilePath}.{RetainedBackups}";
-            if (File.Exists(oldest))
-            {
-                File.Delete(oldest);
-            }
-
-            for (var k = RetainedBackups - 1; k >= 1; k--)
-            {
-                var from = $"{FilePath}.{k}";
-                if (File.Exists(from))
-                {
-                    File.Move(from, $"{FilePath}.{k + 1}");
-                }
-            }
-
-            File.Move(FilePath, $"{FilePath}.1");
+            LogRoller.Roll(FilePath);
         }
         catch
         {

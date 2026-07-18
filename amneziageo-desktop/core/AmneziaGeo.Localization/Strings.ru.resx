@@ -349,6 +349,12 @@
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Более поздние записи</value>
   </data>
+  <data name="Main_LogOlderShort" xml:space="preserve">
+    <value>Ранее</value>
+  </data>
+  <data name="Main_LogNewerShort" xml:space="preserve">
+    <value>Позднее</value>
+  </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Поиск в логе</value>
   </data>
@@ -648,6 +654,9 @@
   </data>
   <data name="Main_CopyContentButton" xml:space="preserve">
     <value>Скопировать содержимое</value>
+  </data>
+  <data name="Main_CopyContentButtonShort" xml:space="preserve">
+    <value>Скопировать</value>
   </data>
   <data name="Main_DownloadQrButton" xml:space="preserve">
     <value>Скачать QR</value>

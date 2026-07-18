@@ -48,10 +48,12 @@
           </Grid>
         </Border>
 
-        <!-- Centered column: power button + status/hint + profile combo. A loader replaces it until the first
-             agent snapshot, so the indeterminate power button never flashes on open. -->
-        <Panel>
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="18"
+        <!-- Power button + status/hint + profile combo, seated on the golden section (upper) rather than dead
+             centre. A loader replaces it until the first agent snapshot, so the indeterminate power button
+             never flashes on open. -->
+        <Panel x:Name="HomeStage">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Spacing="18"
+                    Margin="{Binding #HomeStage.Bounds.Height, Converter={x:Static svc:GoldenTopConverter.Instance}, ConverterParameter=118}"
                     IsVisible="{Binding Home.IsReady}">
           <Button Classes="powerbig" HorizontalAlignment="Center"
                   Command="{Binding Home.ToggleConnectionCommand}"
@@ -128,8 +130,10 @@
           </StackPanel>
         </StackPanel>
 
-          <!-- Loader until the first agent snapshot, in place of the indeterminate power button. -->
-          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
+          <!-- Loader until the first agent snapshot, in place of the indeterminate power button. Seated on the
+               same golden line so it does not jump when the power button takes over. -->
+          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Spacing="16"
+                      Margin="{Binding #HomeStage.Bounds.Height, Converter={x:Static svc:GoldenTopConverter.Instance}, ConverterParameter=118}"
                       IsVisible="{Binding !Home.IsReady}">
             <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
             <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13"
@@ -236,11 +240,11 @@
       <Border Grid.Column="0" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0"
               IsVisible="{Binding ShowRail}">
         <ScrollViewer>
-          <StackPanel Margin="12,12">
+          <StackPanel Classes="railmenu" Classes.compact="{Binding IsCompact}" Margin="12,12">
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="profile">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
                     <Ellipse Width="16" Height="16" StrokeThickness="2"
                              Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -248,7 +252,7 @@
                              IsVisible="{Binding IsSettingsProfile}"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
-                  <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
                     <TextBlock Text="{l:Tr Main_RailProfileTitle}" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="{l:Tr Main_RailProfileSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
@@ -259,7 +263,7 @@
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsConfig}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="config">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
                     <Ellipse Width="16" Height="16" StrokeThickness="2"
                              Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -267,7 +271,7 @@
                              IsVisible="{Binding IsSettingsConfig}"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
-                  <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
                     <TextBlock Text="{l:Tr Main_RailConfigTitle}" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="{l:Tr Main_RailConfigSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
@@ -278,7 +282,7 @@
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsRouting}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="routing">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
                     <Ellipse Width="16" Height="16" StrokeThickness="2"
                              Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -286,7 +290,7 @@
                              IsVisible="{Binding IsSettingsRouting}"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
-                  <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
                     <TextBlock Text="{l:Tr Main_RailRoutingTitle}" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="{l:Tr Main_RailRoutingSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
@@ -297,7 +301,7 @@
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsSources}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="sources">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
                     <Ellipse Width="16" Height="16" StrokeThickness="2"
                              Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -305,7 +309,7 @@
                              IsVisible="{Binding IsSettingsSources}"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
-                  <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
                     <TextBlock Text="{l:Tr Main_RailSourcesTitle}" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="{l:Tr Main_RailSourcesSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
@@ -316,7 +320,7 @@
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsLogs}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="logs">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
                     <Ellipse Width="16" Height="16" StrokeThickness="2"
                              Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -324,7 +328,7 @@
                              IsVisible="{Binding IsSettingsLogs}"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
-                  <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
                     <TextBlock Text="{l:Tr Main_RailLogsTitle}" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="{l:Tr Main_RailLogsSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />
@@ -335,7 +339,7 @@
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsGeneral}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="general">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Width="18" Height="18" VerticalAlignment="Center">
+                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
                     <Ellipse Width="16" Height="16" StrokeThickness="2"
                              Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -343,7 +347,7 @@
                              IsVisible="{Binding IsSettingsGeneral}"
                              HorizontalAlignment="Center" VerticalAlignment="Center" />
                   </Grid>
-                  <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
+                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
                     <TextBlock Text="{l:Tr Main_RailGeneralTitle}" FontWeight="SemiBold" FontSize="13.5" />
                     <TextBlock Text="{l:Tr Main_RailGeneralSubtitle}" FontSize="11.5" Classes="muted"
                                TextTrimming="CharacterEllipsis" />

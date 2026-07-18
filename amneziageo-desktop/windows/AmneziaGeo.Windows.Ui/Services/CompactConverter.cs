@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Data.Converters;
 using Avalonia.Layout;
@@ -37,6 +38,10 @@ internal sealed class CompactConverter : IValueConverter
             "w170" => compact ? double.NaN : 170d,
             "w180" => compact ? double.NaN : 180d,
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
+            // Column widths for an even-split row: a fixed control becomes a star column in compact so it
+            // shares the width, and the spacer/other-content column collapses.
+            "colAutoStar" => compact ? new GridLength(1, GridUnitType.Star) : GridLength.Auto,
+            "colStarZero" => compact ? new GridLength(0) : new GridLength(1, GridUnitType.Star),
             _ => BindingOperations.DoNothing,
         };
     }

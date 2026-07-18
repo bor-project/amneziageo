@@ -349,6 +349,12 @@
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Later entries</value>
   </data>
+  <data name="Main_LogOlderShort" xml:space="preserve">
+    <value>Older</value>
+  </data>
+  <data name="Main_LogNewerShort" xml:space="preserve">
+    <value>Newer</value>
+  </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Search in log</value>
   </data>
@@ -648,6 +654,9 @@
   </data>
   <data name="Main_CopyContentButton" xml:space="preserve">
     <value>Copy contents</value>
+  </data>
+  <data name="Main_CopyContentButtonShort" xml:space="preserve">
+    <value>Copy</value>
   </data>
   <data name="Main_DownloadQrButton" xml:space="preserve">
     <value>Download QR</value>

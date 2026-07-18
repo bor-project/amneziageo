@@ -96,8 +96,8 @@
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4" Margin="16">
               <TextBlock Text="{l:Tr Main_AddConfigTitle}" FontSize="16" FontWeight="SemiBold"
                          HorizontalAlignment="Center" />
-              <TextBlock Text="{l:Tr Main_AddConfigSubtitle}" Classes="muted" FontSize="12.5"
-                         HorizontalAlignment="Center" Margin="0,0,0,12" />
+              <TextBlock Text="{l:Tr Main_AddConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                         HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12" />
               <WrapPanel HorizontalAlignment="Center">
                 <Button Classes="methodpick" Margin="4" Click="OnSectionConfigBrowse" Width="160">
                   <StackPanel Orientation="Horizontal" Spacing="6">
@@ -162,8 +162,8 @@
               CornerRadius="12" Padding="16" Background="Transparent">
         <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
           <StackPanel Spacing="2">
-            <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" />
-            <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" />
+            <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+            <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
           </StackPanel>
           <Border Background="{DynamicResource AgInsetBrush}"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
@@ -221,7 +221,7 @@
           <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" IsVisible="{Binding !IsText}">
             <PathIcon Data="{StaticResource AgLockGeometry}" Width="13" Height="13"
                       Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-            <TextBlock Text="{l:Tr Main_QrPrivateKeyWarning}" Classes="muted" FontSize="11.5"
+            <TextBlock Text="{l:Tr Main_QrPrivateKeyWarning}" Classes="muted" FontSize="12"
                        TextWrapping="Wrap" VerticalAlignment="Center" />
           </StackPanel>
           <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
@@ -231,7 +231,13 @@
                     Click="OnCopyExport" IsEnabled="{Binding IsReady}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_CopyContentButton}" />
+                <!-- Compact drops the label to just "Copy" so it fits the narrow half-width button. -->
+                <Panel>
+                  <TextBlock Text="{l:Tr Main_CopyContentButton}"
+                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                  <TextBlock Text="{l:Tr Main_CopyContentButtonShort}"
+                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                </Panel>
               </StackPanel>
             </Button>
             <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Padding="16,6"
@@ -261,9 +267,9 @@
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
             <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-              <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="13.5" />
+              <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="13.5" TextWrapping="Wrap" />
               <TextBlock Text="{Binding DeleteConfigPrompt}" FontSize="12" TextWrapping="Wrap" />
-              <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteConfigHint}" />
+              <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_DeleteConfigHint}" />
             </StackPanel>
             <Grid VerticalAlignment="Center"
                   Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"

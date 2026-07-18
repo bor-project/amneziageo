@@ -181,23 +181,28 @@
             <TextBlock Text="{l:Tr Main_ImportExportSection}" FontWeight="SemiBold" FontSize="15" />
             <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{l:Tr Main_BundleHint}" />
           </StackPanel>
-          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                      Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                      Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
-            <Button Classes="softbtn" Padding="16,7" Command="{Binding OpenBundleExportCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="8">
+          <!-- Compact splits export / import evenly across the row; wide keeps them natural-width on the right. -->
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8" VerticalAlignment="Center"
+                Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
+            <Button Grid.Column="0" Classes="softbtn" Padding="16,7" HorizontalAlignment="Stretch"
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}"
+                    Command="{Binding OpenBundleExportCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                 <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="15" Height="15" />
                 <TextBlock Text="{l:Tr Main_ExportButton}" />
               </StackPanel>
             </Button>
-            <Button Classes="softbtn" Padding="16,7" Command="{Binding OpenBundleImportCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Grid.Column="1" Classes="softbtn" Padding="16,7" HorizontalAlignment="Stretch"
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}"
+                    Command="{Binding OpenBundleImportCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                 <PathIcon Data="{StaticResource AgUploadGeometry}" Width="15" Height="15" />
                 <TextBlock Text="{l:Tr Main_ImportButton}" />
               </StackPanel>
             </Button>
-          </StackPanel>
+          </Grid>
         </Grid>
       </Border>
     </StackPanel>

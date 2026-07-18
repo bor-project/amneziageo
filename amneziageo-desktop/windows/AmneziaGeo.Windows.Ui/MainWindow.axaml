@@ -471,13 +471,14 @@
                       Margin="10,0,0,0" VerticalAlignment="Center">
             <TextBlock Text="{Binding General.UpdateDownloadPercent, StringFormat='{}{0}%'}" Foreground="White"
                        FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
-                       IsVisible="{Binding General.UpdateDownloading}" />
+                       Width="36" TextAlignment="Right"
+                       IsVisible="{Binding General.DownloadActive}" />
             <Button Classes="radiopick" Command="{Binding General.DownloadUpdateCommand}"
                     Content="{l:Tr Main_DownloadButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
                     VerticalAlignment="Center" IsVisible="{Binding General.ShowDownloadButton}" />
             <Button Classes="radiopick" Command="{Binding General.CancelDownloadCommand}"
                     Content="{l:Tr Main_CancelButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
-                    VerticalAlignment="Center" IsVisible="{Binding General.UpdateDownloading}" />
+                    VerticalAlignment="Center" IsVisible="{Binding General.DownloadActive}" />
             <Button Classes="radiopick" Command="{Binding General.ApplyUpdateCommand}"
                     Content="{l:Tr Main_InstallButton}" Foreground="White" FontSize="12" FontWeight="SemiBold"
                     VerticalAlignment="Center" IsVisible="{Binding General.UpdateDownloaded}" />

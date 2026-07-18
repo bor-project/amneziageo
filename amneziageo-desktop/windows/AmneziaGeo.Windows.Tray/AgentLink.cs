@@ -66,6 +66,11 @@ internal static class AgentLink
     public static volatile bool DownloadInProgress;
 
     /// <summary>
+    /// Current setup download progress in percent (0..100), shown in the tray menu while downloading (#17).
+    /// </summary>
+    public static volatile int DownloadPercent;
+
+    /// <summary>
     /// Whether the last setup download failed; its rising edge fires the tray warning balloon (#8).
     /// </summary>
     public static volatile bool DownloadFailed;
@@ -237,6 +242,7 @@ internal static class AgentLink
             _writer = null;
             HasActiveProfile = false;
             DownloadInProgress = false;
+            DownloadPercent = 0;
             CheckInProgress = false;
             _onState?.Invoke(0, false, false, false, true);
             Thread.Sleep(2000);
@@ -260,6 +266,7 @@ internal static class AgentLink
         var updateAvail = false;
         var updateDownloaded = false;
         var updateDownloading = false;
+        var updateDownloadPercent = 0;
         var updateFailed = false;
         var updateChecking = false;
         var updateCheckFailed = false;
@@ -315,6 +322,10 @@ internal static class AgentLink
             {
                 updateDownloading = reader.TokenType == JsonTokenType.True;
             }
+            else if (prop == "updateDownloadPercent" && reader.TokenType == JsonTokenType.Number)
+            {
+                updateDownloadPercent = reader.GetInt32();
+            }
             else if (prop == "updateDownloadFailed" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
             {
                 updateFailed = reader.TokenType == JsonTokenType.True;
@@ -350,6 +361,7 @@ internal static class AgentLink
         UpdateAvailable = updateAvail;
         UpdateDownloaded = updateDownloaded;
         DownloadInProgress = updateDownloading;
+        DownloadPercent = updateDownloadPercent;
         DownloadFailed = updateFailed;
         CheckInProgress = updateChecking;
         CheckFailed = updateCheckFailed;

@@ -7,9 +7,9 @@ namespace AmneziaGeo.Windows.Tray;
 internal static class Labels
 {
     /// <summary>
-    /// «Открыть лаунчер» / "Open launcher": surfaces the quick-launch window.
+    /// «Открыть» / "Open": surfaces the main window.
     /// </summary>
-    public static string Open { get; private set; } = "Open launcher";
+    public static string Open { get; private set; } = "Open";
 
     /// <summary>
     /// «Подключить» / "Connect": brings the tunnel up (enabled only with an active profile).
@@ -96,6 +96,16 @@ internal static class Labels
     public static string InstallUpdate { get; private set; } = "Install update";
 
     /// <summary>
+    /// «Загрузка: {0}%» / "Downloading: {0}%": inactive menu item showing download progress (#17).
+    /// </summary>
+    public static string DownloadingUpdate { get; private set; } = "Downloading: {0}%";
+
+    /// <summary>
+    /// «Отменить загрузку» / "Cancel download": menu item that aborts a running download (#17).
+    /// </summary>
+    public static string CancelDownload { get; private set; } = "Cancel download";
+
+    /// <summary>
     /// Balloon body when an update is found; a click starts the download.
     /// </summary>
     public static string UpdateFoundInfo { get; private set; } = "New version {0} available. Click to download.";
@@ -149,7 +159,7 @@ internal static class Labels
     {
         if (IsRussian(ReadSavedLanguage()))
         {
-            Open = "Открыть лаунчер";
+            Open = "Открыть";
             Connect = "Подключить";
             Disconnect = "Отключить";
             Exit = "Выход";
@@ -166,6 +176,8 @@ internal static class Labels
             UpToDateInfo = "У вас последняя версия";
             DownloadUpdate = "Скачать обновление";
             InstallUpdate = "Установить обновление";
+            DownloadingUpdate = "Загрузка: {0}%";
+            CancelDownload = "Отменить загрузку";
             UpdateFoundInfo = "Доступна новая версия {0}. Нажмите, чтобы скачать.";
             UpdateDownloadedInfo = "Обновление {0} скачано. Нажмите, чтобы установить.";
             UpdateInstalledInfo = "Обновление установлено";

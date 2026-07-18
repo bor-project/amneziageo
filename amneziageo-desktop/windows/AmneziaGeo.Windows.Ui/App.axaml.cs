@@ -22,14 +22,10 @@ public sealed partial class App : Application
     private static readonly Color _accent = Color.FromRgb(0x2a, 0x6f, 0xdb);
 
     private MainWindow? _window;
-    private LauncherWindow? _launcher;
     private MainWindowViewModel? _viewModel;
     private AgentConnection? _connection;
     private UiPreferences? _prefs;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
-
-    // Top-left of the outgoing surface, carried to the incoming one so a More / Less swap opens in place.
-    private PixelPoint? _swapAnchor;
 
     // Guards the self-update against a second trigger launching a concurrent installer.
     private bool _updating;
@@ -68,14 +64,12 @@ public sealed partial class App : Application
             _connection = connection;
             var viewModel = new MainWindowViewModel(connection, prefs);
             _viewModel = viewModel;
-            // Run a download from any surface under the process-alive pin, so closing a window mid-download neither
+            // Run a download from any surface under the process-alive pin, so closing the window mid-download neither
             // quits the app nor aborts the download (#21).
             viewModel.General.SetPinnedDownloadRunner(RunDownload);
             desktop.ShutdownRequested += (_, _) => connection.Dispose();
 
-            // Both surfaces close to the resident tray: the process exits when its last window closes. The
-            // More / Less toggle swaps windows opening the next before closing the current, so the window count
-            // never reaches zero mid-toggle and the lifetime never shuts the process down.
+            // The window closes to the resident tray: the process exits when it closes.
             desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
 
             // A later launch surfaces this instance (tray click) or asks it to update (tray menu / balloon).
@@ -90,7 +84,7 @@ public sealed partial class App : Application
             if (Array.IndexOf(args, "--update") >= 0)
             {
                 // Background download (tray balloon / menu "Download update"): fetch the setup with no window,
-                // then exit - the tray announces "ready to install". Opening the launcher reveals the progress.
+                // then exit - the tray announces "ready to install". Opening the window reveals the progress.
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 viewModel.Start();
                 StartHeadlessDownload();
@@ -105,54 +99,16 @@ public sealed partial class App : Application
             }
             else
             {
-                // A post-update relaunch returns to the surface the update was started from; otherwise the tray
-                // (#187) opens the launcher and a direct run opens the full console.
-                var wantLauncher = ConsumeResumeOrigin() switch
-                {
-                    "launcher" => true,
-                    "settings" => false,
-                    _ => Array.IndexOf(args, "--launcher") >= 0,
-                };
-                viewModel.CurrentSurface = wantLauncher ? "launcher" : "settings";
-                if (wantLauncher)
-                {
-                    ShowLauncher();
-                }
-                else
-                {
-                    ShowMainWindow();
-                }
-
+                // Direct run or a tray open: the single window opens on Home.
+                viewModel.CurrentSurface = "settings";
+                ShowMainWindow();
                 viewModel.Start();
+                // Check for updates on open and once an hour; a found update surfaces as the floating banner (#22).
+                viewModel.General.BeginAutoUpdateChecks();
             }
         }
 
         base.OnFrameworkInitializationCompleted();
-    }
-
-    // Reads and clears the post-update origin marker the update flow drops before relaunching, so the app
-    // returns to where the update was started from ("launcher" / "settings"); "none" / absent means no restore.
-    private static string? ConsumeResumeOrigin()
-    {
-        try
-        {
-            var path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "AmneziaGeo",
-                "update-origin");
-            if (!File.Exists(path))
-            {
-                return null;
-            }
-
-            var origin = File.ReadAllText(path).Trim();
-            File.Delete(path);
-            return origin;
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     // Fresh background-download worker: no window; exits when the download finishes (the tray announces it).
@@ -170,7 +126,7 @@ public sealed partial class App : Application
     }
 
     // A running instance was asked (tray menu / balloon) to download the update: start it in place. The open
-    // window shows its progress and the surface it sits on stays the return point.
+    // window shows its progress.
     private void OnDownloadRequested()
     {
         RunDownload();
@@ -182,20 +138,20 @@ public sealed partial class App : Application
         RunApply();
     }
 
-    // The last window closed while an update operation is still running: the user dismissed the UI, so nothing
+    // The window closed while an update operation is still running: the user dismissed the UI, so nothing
     // reopens after it finishes. Only reachable under the update pin - a close otherwise ends the process.
     private void DemoteSurfaceIfDismissed()
     {
-        if (_updating && _launcher is null && _window is null && _viewModel is not null)
+        if (_updating && _window is null && _viewModel is not null)
         {
             _viewModel.CurrentSurface = "none";
         }
     }
 
-    // Runs the background download once: pinned alive for the whole fetch, so closing a window opened to watch
-    // it cannot abort it. A windowless success exits the worker (the tray announces "ready to install"); a
-    // failure or an open window hands back to the normal close-to-tray lifetime, surfacing the launcher with
-    // the status so a user-requested download never ends in silence.
+    // Runs the background download once: pinned alive for the whole fetch, so closing the window cannot abort it.
+    // A windowless success exits the worker (the tray announces "ready to install"); a failure or an open window
+    // hands back to the normal close-to-tray lifetime, surfacing the window with the status so a user-requested
+    // download never ends in silence.
     private async void RunDownload()
     {
         if (_updating || _desktop is null || _viewModel is null)
@@ -213,18 +169,18 @@ public sealed partial class App : Application
         {
             _updating = false;
             // A windowless worker exits on a completed download (the tray announces "ready to install") or when
-            // the download was cancelled by an exit relay - surfacing the launcher there would only fight the
-            // exit. Otherwise (a failure, or a cancel with a window open) hand back to the close-to-tray lifetime.
-            if (_launcher is null && _window is null && (_viewModel.General.UpdateDownloaded || _viewModel.General.WasDownloadCancelledByHost))
+            // the download was cancelled by an exit relay - surfacing the window there would only fight the exit.
+            // Otherwise (a failure, or a cancel with the window open) hand back to the close-to-tray lifetime.
+            if (_window is null && (_viewModel.General.UpdateDownloaded || _viewModel.General.WasDownloadCancelledByHost))
             {
                 _desktop.Shutdown();
             }
             else
             {
                 _desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
-                if (_launcher is null && _window is null)
+                if (_window is null)
                 {
-                    ShowLauncher();
+                    ResurfaceAfterUpdate();
                 }
             }
         }
@@ -232,7 +188,7 @@ public sealed partial class App : Application
 
     // Runs the background install once: pinned so a window close cannot abort it. ApplyUpdate exits the process
     // on a successful launch (InstallerLaunched); this is reached otherwise (no file / failed verification), so
-    // it hands an open window back to the normal lifetime or surfaces the launcher with the status.
+    // it hands an open window back to the normal lifetime or surfaces the window with the status.
     private async void RunApply()
     {
         if (_updating || _desktop is null || _viewModel is null)
@@ -252,76 +208,53 @@ public sealed partial class App : Application
             if (!_viewModel.General.InstallerLaunched)
             {
                 _desktop.ShutdownMode = ShutdownMode.OnLastWindowClose;
-                if (_launcher is null && _window is null)
+                if (_window is null)
                 {
-                    ShowLauncher();
+                    ResurfaceAfterUpdate();
                 }
             }
         }
     }
 
-    // A later launch (tray click) nudges this instance: surface the shown window, or reveal the launcher when a
-    // background update is running windowless - opening it makes the launcher the surface to return to.
+    // A later launch (tray click) nudges this instance: surface the window on Home, or reveal it when a
+    // background update is running windowless. The tray replaces the old connect launcher, so a summon lands on
+    // the home connect screen.
     private void OnActivation()
     {
-        Window? window = _window;
-        window ??= _launcher;
-        if (window is not null)
+        if (_window is not null)
         {
-            if (window.WindowState == WindowState.Minimized)
+            _viewModel?.NavHomeCommand.Execute(null);
+            if (_window.WindowState == WindowState.Minimized)
             {
-                window.WindowState = WindowState.Normal;
+                _window.WindowState = WindowState.Normal;
             }
 
-            window.Show();
-            window.Activate();
-            window.Topmost = true;
-            window.Topmost = false;
+            _window.Show();
+            _window.Activate();
+            _window.Topmost = true;
+            _window.Topmost = false;
             return;
         }
 
         if (_viewModel is not null)
         {
-            _viewModel.CurrentSurface = "launcher";
+            _viewModel.CurrentSurface = "settings";
         }
 
-        ShowLauncher();
+        ShowMainWindow();
     }
 
-    // The compact launcher (the "Less" surface): quick connect, More to expand to the console, or close to the tray.
-    private void ShowLauncher()
+    // A windowless update worker ended without installing: bring up the interactive window so the outcome is not
+    // lost. Land on the settings General section (the update status line lives there) and arm the auto-checks the
+    // headless launch never started (#22).
+    private void ResurfaceAfterUpdate()
     {
-        if (_launcher is not null)
-        {
-            _launcher.Activate();
-            return;
-        }
-
-        var launcher = new LauncherWindow
-        {
-            DataContext = _viewModel,
-            Icon = BuildIcon(_accent),
-        };
-        _launcher = launcher;
-        launcher.OpenAppRequested += ExpandToConsole;
-        launcher.Closed += (_, _) =>
-        {
-            if (ReferenceEquals(_launcher, launcher))
-            {
-                _launcher = null;
-            }
-
-            DemoteSurfaceIfDismissed();
-        };
-        // Collapsing from the console lands the launcher where the console sat; a cold launch keeps CenterScreen.
-        ApplyStartupPosition(launcher, _swapAnchor);
-        _swapAnchor = null;
-        _desktop!.MainWindow = launcher;
-        launcher.Show();
+        _viewModel?.ShowUpdateStatus();
+        ShowMainWindow();
+        _viewModel?.General.BeginAutoUpdateChecks();
     }
 
-    // The full console (the "More" surface): all settings sections; Less collapses back to the launcher. Used for
-    // a direct launch and when the launcher's More promotes the process to the console.
+    // The single window: home connect screen + settings console. A direct launch and a tray open both land here.
     private void ShowMainWindow()
     {
         if (_window is not null)
@@ -338,7 +271,6 @@ public sealed partial class App : Application
             Height = _prefs.Height,
         };
         _window = window;
-        window.CollapseRequested += CollapseToLauncher;
         window.Closing += OnMainWindowClosing;
         window.Closed += (_, _) =>
         {
@@ -349,49 +281,21 @@ public sealed partial class App : Application
 
             DemoteSurfaceIfDismissed();
         };
-        // Reopen where it was left: maximized, or at the carried swap anchor / remembered position; else centered.
+        // Reopen where it was left: maximized, or at the remembered position; else centered.
         if (_prefs.Maximized)
         {
             window.WindowState = WindowState.Maximized;
         }
         else
         {
-            ApplyStartupPosition(window, _swapAnchor ?? RememberedConsolePos());
+            ApplyStartupPosition(window, RememberedConsolePos());
         }
 
-        _swapAnchor = null;
         _desktop!.MainWindow = window;
         window.Show();
     }
 
-    // Launcher "More": open the console at the launcher's spot, then drop the launcher.
-    private void ExpandToConsole()
-    {
-        if (_viewModel is not null)
-        {
-            _viewModel.CurrentSurface = "settings";
-        }
-
-        _swapAnchor = _launcher?.Position;
-        ShowMainWindow();
-        _launcher?.Close();
-    }
-
-    // Console "Less": reopen the launcher at the console's spot, then drop the console (its Closing persists geometry).
-    private void CollapseToLauncher()
-    {
-        if (_viewModel is not null)
-        {
-            _viewModel.CurrentSurface = "launcher";
-        }
-
-        _swapAnchor = _window?.Position;
-        ShowLauncher();
-        _window?.Close();
-    }
-
-    // Persist window geometry and stop the create-form camera as the console closes (both on Less and on a real
-    // close to the tray).
+    // Persist window geometry and stop the create-form camera as the window closes.
     private void OnMainWindowClosing(object? sender, WindowClosingEventArgs e)
     {
         _viewModel?.Config.StopScan();
@@ -412,7 +316,7 @@ public sealed partial class App : Application
         }
     }
 
-    // The remembered console position, or null when unset (first run) so the default centering applies.
+    // The remembered window position, or null when unset (first run) so the default centering applies.
     private PixelPoint? RememberedConsolePos()
         => _prefs is null || double.IsNaN(_prefs.PosX) || double.IsNaN(_prefs.PosY)
             ? null

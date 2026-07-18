@@ -182,6 +182,14 @@
       <Setter Property="MinWidth" Value="0" />
     </Style>
 
+    <!-- Large round connection control on the home screen. -->
+    <Style Selector="Button.powerbig">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="120" />
+    </Style>
+
     <!-- Brand logo home button. -->
     <Style Selector="Button.brand">
       <Setter Property="Background" Value="Transparent" />

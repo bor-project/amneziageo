@@ -201,7 +201,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
                 IpcContract.OpExportBundle => await ExportBundleAsync(command.Args, ct),
                 IpcContract.OpImportBundle => await ImportBundleAsync(command.Args, ct),
-                IpcContract.OpCheckUpdate => await CheckUpdateAsync(ct),
+                IpcContract.OpCheckUpdate => await CheckUpdateAsync(command.Args, ct),
                 IpcContract.OpReportUpdateDownload => await ReportUpdateDownloadAsync(command.Args, ct),
                 IpcContract.OpCancelUpdateDownload => await CancelUpdateDownloadAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
@@ -2085,8 +2085,11 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return end - i >= expected ? end : i;
     }
 
-    private async Task<IpcAck> CheckUpdateAsync(CancellationToken ct)
+    private async Task<IpcAck> CheckUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
+        // A silent check (the UI's automatic on-open / hourly check, #22) refreshes the update banner without
+        // driving the checking state, so it never triggers the tray's "Checking…" item or up-to-date notice.
+        var silent = args.Count > 0 && string.Equals(args[0], "silent", StringComparison.Ordinal);
         var settings = await settingsStore.LoadAsync(ct);
         if (string.IsNullOrWhiteSpace(settings.UpdateUrl))
         {
@@ -2094,15 +2097,18 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         // A manual check drives a checking state on the snapshot, so the tray shows "Checking…" and, once done,
-        // announces the up-to-date result (#15). Background checks (UpdateCheckService) never set it, so the
-        // notice fires only for a user-initiated check.
-        lock (_updateStateGate)
+        // announces the up-to-date result (#15). Silent (#22) and background (UpdateCheckService) checks never
+        // set it, so the notice fires only for a user-initiated check.
+        if (!silent)
         {
-            updateState.Checking = true;
-            updateState.CheckFailed = false;
-        }
+            lock (_updateStateGate)
+            {
+                updateState.Checking = true;
+                updateState.CheckFailed = false;
+            }
 
-        await BroadcastIfChangedAsync(ct);
+            await BroadcastIfChangedAsync(ct);
+        }
 
         // The checking flag is always cleared, even if the check is cancelled (agent shutdown), so the tray
         // never latches a "Checking…" menu item.
@@ -2116,8 +2122,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var faulted = result.Faulted || result.Info is null;
             lock (_updateStateGate)
             {
-                updateState.Checking = false;
-                updateState.CheckFailed = faulted;
+                if (!silent)
+                {
+                    updateState.Checking = false;
+                    updateState.CheckFailed = faulted;
+                }
+
                 if (!faulted)
                 {
                     updateState.Latest = result.Info;
@@ -2158,10 +2168,10 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    // Records the setup download phase reported by the UI process that owns the byte-pump; it rides the next
-    // snapshot so the tray and every window share one update state. A phase transition is broadcast at once so
-    // the tray's failure balloon and the exit flow see it without waiting for the periodic push; percent-only
-    // ticks ride the periodic snapshot. The "failed" phase latches the download-failed flag for the tray warning.
+    // Records the setup download phase and percent reported by the UI process that owns the byte-pump; it rides
+    // the snapshot so the tray and every window share one update state. A phase transition or a percent change is
+    // broadcast at once, since no periodic pump runs during an app self-update and the tray menu reads the shared
+    // percent (#17). The "failed" phase latches the download-failed flag for the tray warning.
     private async Task<IpcAck> ReportUpdateDownloadAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var phase = args.Count > 0 ? args[0] : "idle";
@@ -2177,22 +2187,28 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var version = args.Count > 3 ? args[3] : string.Empty;
 
         bool phaseChanged;
+        bool percentChanged;
         bool hadCancel;
         lock (_updateStateGate)
         {
             hadCancel = updateState.CancelRequested;
             phaseChanged = updateState.DownloadPhase != newPhase || updateState.DownloadFailed != newFailed;
+            percentChanged = updateState.DownloadPercent != percent;
             updateState.DownloadPhase = newPhase;
             updateState.DownloadFailed = newFailed;
             updateState.DownloadPercent = percent;
             updateState.DownloadedSetupPath = setupPath;
             updateState.DownloadedVersion = version;
-            // A report only fires at a download's start or end, never per-percent, so clearing here drops a stale
-            // cancel on a fresh start and consumes a pending one on stop, never racing a cancel set mid-download.
-            updateState.CancelRequested = false;
+            // Clear a pending cancel only on a phase transition (a fresh start drops a stale one, a stop consumes
+            // it); a per-percent tick must not clear it, so a cancel set mid-download survives until the byte-pump
+            // sees it (#17).
+            if (phaseChanged)
+            {
+                updateState.CancelRequested = false;
+            }
         }
 
-        if (phaseChanged || hadCancel)
+        if (phaseChanged || percentChanged || hadCancel)
         {
             await BroadcastIfChangedAsync(ct);
         }

@@ -44,7 +44,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
     [NotifyPropertyChangedFor(nameof(ConnectPillContent))]
-    [NotifyPropertyChangedFor(nameof(LauncherActionText))]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     private bool _isTunnelActive;
@@ -65,7 +64,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
-    [NotifyPropertyChangedFor(nameof(LauncherActionText))]
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
@@ -187,15 +185,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     public bool ShowSelectConfigHint => ConnState == 0 && _host.HasProfiles && ActiveProfile is not { IsComplete: true };
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
-
-    // The launcher action button label, with transitional states: the connecting / disconnecting status while
-    // the tunnel comes up or down, the plain action label otherwise.
-    public string LauncherActionText => ConnState switch
-    {
-        1 => StatusLabels.Text(IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
-        2 => Loc.Instance.Get("MainVm_Disconnect"),
-        _ => Loc.Instance.Get("MainVm_Connect"),
-    };
 
     // The notice banner's action label: retry a stalled disconnect (#14), else reconnect / retry a failed connect.
     public string NoticeActionText => DisconnectFailed

@@ -135,9 +135,6 @@ internal static class SingleInstance
         }
 
         window.Show();
-        window.Activate();
-        // Brief Topmost flip to pull the window above the foreground app.
-        window.Topmost = true;
-        window.Topmost = false;
+        ForegroundWindow.Raise(window);
     }
 }

@@ -214,6 +214,13 @@ internal static class Native
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(nint hWnd);
 
+    // Grants any process the right to set the foreground window, so the UI it launches can open above the current app.
+    public const uint ASFW_ANY = 0xFFFFFFFF;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool AllowSetForegroundWindow(uint dwProcessId);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int MessageBoxW(nint hWnd, string lpText, string lpCaption, uint uType);
 

@@ -160,11 +160,17 @@ public sealed class StatusPipeClient
             using (var reader = new StreamReader(pipe, encoding, false, 1024, leaveOpen: true))
             {
                 _writer = writer;
-                Connected?.Invoke();
+
+                // Announce presence through the correlated command path (fire-and-forget) so its ack is
+                // matched to its own waiter. Written out of band, its ack could be consumed by a real
+                // command's waiter and shift every following response by one (a routing load then showed
+                // the settings JSON as a rule).
                 if (AnnounceUi)
                 {
-                    await AnnounceUiAsync(writer, ct).ConfigureAwait(false);
+                    _ = AnnounceUiAsync(ct);
                 }
+
+                Connected?.Invoke();
 
                 try
                 {
@@ -193,22 +199,14 @@ public sealed class StatusPipeClient
         }
     }
 
-    private async Task AnnounceUiAsync(StreamWriter writer, CancellationToken ct)
+    private async Task AnnounceUiAsync(CancellationToken ct)
     {
-        var line = JsonSerializer.Serialize(
-            new IpcEnvelope(IpcContract.CommandType, Command: new IpcCommand(IpcContract.OpAttachUi, [])),
-            IpcJson.Options);
-        await _writeLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await writer.WriteLineAsync(line.AsMemory(), ct).ConfigureAwait(false);
+            await SendCommandAsync(new IpcCommand(IpcContract.OpAttachUi, []), ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        catch (OperationCanceledException)
         {
-        }
-        finally
-        {
-            _writeLock.Release();
         }
     }
 

@@ -13,9 +13,9 @@
     <TextBlock Text="{l:Tr Main_ProxyWebSocketLabel}" FontWeight="SemiBold" FontSize="15" />
 
     <StackPanel Spacing="6">
-      <StackPanel Orientation="Horizontal" Spacing="12">
+      <StackPanel Orientation="Horizontal" Spacing="10">
         <ToggleSwitch IsChecked="{Binding UseWebSocket}" OnContent="" OffContent="" VerticalAlignment="Center" />
-        <TextBlock Text="{l:Tr Main_UseWebSocketToggle}" VerticalAlignment="Center" />
+        <TextBlock Classes="label" Text="{l:Tr Main_UseWebSocketToggle}" VerticalAlignment="Center" />
       </StackPanel>
       <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_ProxyWebSocketHint}" />
     </StackPanel>
@@ -65,7 +65,7 @@
           <TextBlock Classes="label" Text="{l:Tr Main_TunnelMtuLabel}" />
           <TextBox Classes="field" Width="90" Text="{Binding Mtu}" />
         </StackPanel>
-        <TextBlock Grid.Column="1" Classes="muted" FontSize="11" TextWrapping="Wrap"
+        <TextBlock Grid.Column="1" Classes="muted" FontSize="12" TextWrapping="Wrap"
                    VerticalAlignment="Bottom" Margin="0,0,0,6" Text="{l:Tr Main_MtuHint}" />
       </Grid>
     </StackPanel>

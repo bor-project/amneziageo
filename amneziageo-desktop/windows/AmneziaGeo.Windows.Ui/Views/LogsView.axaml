@@ -120,21 +120,31 @@
           </Grid>
           <TextBox Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
                    Watermark="{l:Tr Main_LogSearchWatermark}" />
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+          <!-- Match summary on the left, follow toggle on the right. -->
+          <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
             <TextBlock Grid.Column="0" Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5"
                        VerticalAlignment="Center" IsVisible="{Binding SearchSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-              <Button Classes="icon" Command="{Binding PageOlderCommand}" ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
-                <PathIcon Data="{DynamicResource AgChevronLeftGeometry}" Width="14" Height="14" />
-              </Button>
-              <Button Classes="icon" Command="{Binding PageNewerCommand}" ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
-                <PathIcon Data="{DynamicResource AgChevronRightGeometry}" Width="14" Height="14" />
-              </Button>
-            </StackPanel>
-            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
               <TextBlock Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
               <ToggleSwitch IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
             </StackPanel>
+          </Grid>
+          <!-- Big older / newer nav buttons split the width evenly, easy to tap on a narrow window. -->
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <Button Grid.Column="0" Classes="softbtn" Padding="12,9" HorizontalAlignment="Stretch"
+                    Command="{Binding PageOlderCommand}" ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                <PathIcon Data="{DynamicResource AgChevronLeftGeometry}" Width="16" Height="16" />
+                <TextBlock Text="{l:Tr Main_LogOlderShort}" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="1" Classes="softbtn" Padding="12,9" HorizontalAlignment="Stretch"
+                    Command="{Binding PageNewerCommand}" ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                <TextBlock Text="{l:Tr Main_LogNewerShort}" />
+                <PathIcon Data="{DynamicResource AgChevronRightGeometry}" Width="16" Height="16" />
+              </StackPanel>
+            </Button>
           </Grid>
         </StackPanel>
 

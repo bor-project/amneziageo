@@ -54,18 +54,15 @@
     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
             CornerRadius="12" Padding="16" Background="Transparent">
       <StackPanel Spacing="10">
-        <TextBlock Text="{l:Tr Main_AddDatabaseLabel}" FontWeight="SemiBold" FontSize="15" />
-        <!-- Compact drops the URL field to its own full-width row under the kind picker and the add button. -->
-        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
+        <TextBlock Text="{l:Tr Main_AddDatabaseLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+
+        <!-- Wide: kind picker, URL, and add button inline. -->
+        <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCompact}">
           <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
                     ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
                     IsEnabled="{Binding !SourceKindLocked}"
                     ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
-          <TextBox Classes="field"
-                   Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                   Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                   Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
-                   Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=inputMargin}"
+          <TextBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
                    Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
           <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddSourceCommand}">
             <StackPanel Orientation="Horizontal" Spacing="4">
@@ -74,7 +71,25 @@
             </StackPanel>
           </Button>
         </Grid>
-        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_GeoKindsHint}" />
+
+        <!-- Compact: kind picker and add button split the row evenly; URL drops to its own full-width row. -->
+        <StackPanel Spacing="8" IsVisible="{Binding IsCompact}">
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <ComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
+                      IsEnabled="{Binding !SourceKindLocked}"
+                      ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
+            <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddSourceCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                <TextBlock Text="+" />
+                <TextBlock Text="{l:Tr Main_AddButton}" />
+              </StackPanel>
+            </Button>
+          </Grid>
+          <TextBox Classes="field" Text="{Binding NewSourceUrl, Mode=TwoWay}" Watermark="https://.../geosite.dat" />
+        </StackPanel>
+
+        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_GeoKindsHint}" />
       </StackPanel>
     </Border>
 
@@ -87,10 +102,7 @@
           <Button Grid.Column="1" Classes="methodpick" Width="130" Padding="18,6"
                   Command="{Binding UpdateSourcesCommand}" Content="{l:Tr Main_UpdateAllButton}" />
         </Grid>
-        <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                Background="{DynamicResource AgInsetBrush}" CornerRadius="10"
-                IsVisible="{Binding HasSources}">
-          <ItemsControl ItemsSource="{Binding Sources}" Margin="10,10">
+        <ItemsControl ItemsSource="{Binding Sources}" IsVisible="{Binding HasSources}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:SourceItemViewModel">
                 <Border Background="{DynamicResource AgPanelBrush}"
@@ -153,7 +165,6 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-        </Border>
         <TextBlock IsVisible="{Binding !HasSources}"
                    Text="{l:Tr Main_NoSourcesHint}"
                    Classes="muted" FontSize="12" TextWrapping="Wrap" />

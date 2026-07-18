@@ -231,6 +231,20 @@
     <Style Selector="Button.rowselect.active">
       <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
     </Style>
+    <!-- Compact settings menu: rows are navigation (a tap opens the detail and replaces the rail), so drop the
+         radio dot and the selected-row highlight. Wide keeps them - the rail sits beside the open panel. -->
+    <Style Selector="StackPanel.railmenu StackPanel.railtext">
+      <Setter Property="Margin" Value="11,0,0,0" />
+    </Style>
+    <Style Selector="StackPanel.railmenu.compact Grid.railradio">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="StackPanel.railmenu.compact StackPanel.railtext">
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="StackPanel.railmenu.compact Button.rowselect.active">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+    </Style>
 
     <Style Selector="Button.sourcerow">
       <Setter Property="Background" Value="Transparent" />

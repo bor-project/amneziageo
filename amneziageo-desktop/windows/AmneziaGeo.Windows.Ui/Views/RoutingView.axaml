@@ -166,12 +166,10 @@
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Grid.Column="0" Text="{Binding RoleHint}" Classes="muted" FontSize="11.5"
                          TextWrapping="Wrap" VerticalAlignment="Top" />
-              <Button Grid.Column="1" IsVisible="{Binding IsExcludeRole}" Margin="12,0,0,0"
+              <Button Grid.Column="1" Classes="linkbtn" IsVisible="{Binding IsExcludeRole}" Margin="12,0,0,0"
                       Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}"
-                      Background="Transparent" BorderThickness="0" Padding="0"
-                      Cursor="Hand" VerticalAlignment="Top" HorizontalAlignment="Right">
-                <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap"
-                           Foreground="{DynamicResource AgAccentBrush}" />
+                      VerticalAlignment="Top" HorizontalAlignment="Right">
+                <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap" />
               </Button>
             </Grid>
           </StackPanel>

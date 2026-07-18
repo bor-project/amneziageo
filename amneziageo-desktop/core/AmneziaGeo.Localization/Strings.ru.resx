@@ -1012,6 +1012,15 @@
   <data name="MainVm_UpdateVerifyFailed" xml:space="preserve">
     <value>Скачанный установщик не прошёл проверку. Скачайте его заново.</value>
   </data>
+  <data name="MainVm_UpToDate" xml:space="preserve">
+    <value>У вас последняя версия.</value>
+  </data>
+  <data name="Update_Retry" xml:space="preserve">
+    <value>Повторить</value>
+  </data>
+  <data name="Update_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
     <value>— не выбрано —</value>
   </data>

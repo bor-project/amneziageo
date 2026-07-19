@@ -130,10 +130,9 @@
           </StackPanel>
         </StackPanel>
 
-          <!-- Loader until the first agent snapshot, in place of the indeterminate power button. Seated on the
-               same golden line so it does not jump when the power button takes over. -->
+          <!-- Loader until the first snapshot: seated just below the golden line, toward centre; the ready-state content keeps its seat. -->
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Top" Spacing="16"
-                      Margin="{Binding #HomeStage.Bounds.Height, Converter={x:Static svc:GoldenTopConverter.Instance}, ConverterParameter=118}"
+                      Margin="{Binding #HomeStage.Bounds.Height, Converter={x:Static svc:GoldenTopConverter.Instance}, ConverterParameter=-10}"
                       IsVisible="{Binding !Home.IsReady}">
             <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
             <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13"

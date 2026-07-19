@@ -1,8 +1,7 @@
-using System;
-using System.Diagnostics;
-using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+
 using AmneziaGeo.Windows.Ui.ViewModels;
 
 namespace AmneziaGeo.Windows.Ui.Views;
@@ -20,29 +19,36 @@ internal sealed partial class LogsView : UserControl
         InitializeComponent();
     }
 
-    // Opens the shared logs directory in Explorer, selecting the file picked in the combo when it exists.
-    private void OnOpenLogsFolder(object? sender, RoutedEventArgs e)
+    // Exports the whole selected log table to a text file the user picks; the agent writes it.
+    private async void OnExportLog(object? sender, RoutedEventArgs e)
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AmneziaGeo", "logs");
-        var selected = (DataContext as LogsViewModel)?.SelectedLogFile?.Name;
-        var file = selected is not null ? Path.Combine(dir, selected) : null;
+        if (DataContext is not LogsViewModel vm)
+        {
+            return;
+        }
 
-        try
+        if (TopLevel.GetTopLevel(this) is not { } top)
         {
-            if (file is not null && File.Exists(file))
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{file}\"") { UseShellExecute = true });
-            }
-            else
-            {
-                Directory.CreateDirectory(dir);
-                Process.Start(new ProcessStartInfo(dir) { UseShellExecute = true });
-            }
+            return;
         }
-        catch (Exception)
+
+        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
+            SuggestedFileName = vm.SelectedLogType + ".log",
+            DefaultExtension = "log",
+            FileTypeChoices = [new FilePickerFileType("Log") { Patterns = ["*.log", "*.txt"] }],
+        });
+        if (file is null)
+        {
+            return;
         }
+
+        var path = file.TryGetLocalPath();
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        await vm.ExportToAsync(path);
     }
 }

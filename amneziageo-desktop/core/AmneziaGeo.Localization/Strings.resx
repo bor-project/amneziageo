@@ -233,7 +233,7 @@
     <value>Add local networks</value>
   </data>
   <data name="Main_AgentLogSection" xml:space="preserve">
-    <value>Agent log</value>
+    <value>Logs</value>
   </data>
   <data name="Main_LogCaptureTitle" xml:space="preserve">
     <value>Log settings</value>
@@ -242,7 +242,7 @@
     <value>Log viewer</value>
   </data>
   <data name="Main_LogLegend" xml:space="preserve">
-    <value>Line format: time · [level] · component · message.  Levels low to high: TRC · DBG · INF · WRN · ERR · FTL.</value>
+    <value>Line format: time · [level] · component · message.  Levels low to high: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
     <value>Sends all UDP traffic through the tunnel. Turn this on if calls or games do not work: they find their servers without DNS, so the usual rules never catch them. Your local network is not affected.</value>
@@ -343,11 +343,8 @@
   <data name="Main_LogOlderTooltip" xml:space="preserve">
     <value>Earlier entries</value>
   </data>
-  <data name="Main_OpenLogsFolderButton" xml:space="preserve">
-    <value>Open folder</value>
-  </data>
   <data name="Main_ClearLogButton" xml:space="preserve">
-    <value>Clear log</value>
+    <value>Clear</value>
   </data>
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Later entries</value>
@@ -563,10 +560,13 @@
     <value>Load file…</value>
   </data>
   <data name="Main_LogEmptyHint" xml:space="preserve">
-    <value>The log will appear once the agent starts working.</value>
+    <value>Entries will appear after the agent starts.</value>
+  </data>
+  <data name="Main_LogEmptyTitle" xml:space="preserve">
+    <value>The log is empty</value>
   </data>
   <data name="Main_LogVerbosityHint" xml:space="preserve">
-    <value>Determines the logging verbosity.</value>
+    <value>Determines the logging verbosity. none disables logging.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Level</value>
@@ -710,7 +710,7 @@
     <value>Rename</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>Records routes and address resolutions to a separate log, routes.log.</value>
+    <value>Records routes and address resolutions.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
     <value>Log connections</value>
@@ -1459,5 +1459,20 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>The app stays in the tray after closing.</value>
+  </data>
+  <data name="Main_LogTabView" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="Main_LogTabSettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Main_LogTypeLabel" xml:space="preserve">
+    <value>Log</value>
+  </data>
+  <data name="Main_ExportLogButton" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="Main_LogCaptureLevelTitle" xml:space="preserve">
+    <value>Maximum level</value>
   </data>
 </root>

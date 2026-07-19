@@ -130,10 +130,7 @@ internal static class DesignData
         vm.Sources.HasSources = true;
 
         // --- Logs ---
-        vm.Logs.LogFiles.Add(new LogFileChoice("ageo.log", "agent", 147865, "2026-07-08 20:30"));
-        vm.Logs.LogFiles.Add(new LogFileChoice("routes.log", "routes", 26317, "2026-07-08 20:16"));
-        // SelectedLogFile is left null on purpose: selecting a file kicks off an agent read. The viewer text is
-        // seeded directly instead so it shows without a round-trip.
+        // The viewer text is seeded directly (design time has no agent to read the DB from).
         vm.Logs.LogText = SampleLog;
         vm.Logs.HasLogs = true;
 

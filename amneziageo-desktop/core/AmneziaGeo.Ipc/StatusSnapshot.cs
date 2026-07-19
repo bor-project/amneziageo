@@ -15,7 +15,6 @@ public sealed record StatusSnapshot(
     bool RestartRequired = false,
     string? SelectedTarget = null,
     IReadOnlyList<SourceEntry>? Sources = null,
-    IReadOnlyList<string>? Logs = null,
     string UpdateUrl = "",
     bool UpdateAvailable = false,
     string UpdateVersion = "",

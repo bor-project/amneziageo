@@ -1,49 +1,50 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text.Json;
+
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Windows.Ui.Services;
+
+using Avalonia.Threading;
+
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Windows.Ui.ViewModels;
 
 /// <summary>
-/// Logs screen: capture verbosity, route-log toggle, and the file-backed journal viewer with search and paging.
+/// Logs screen: a view/settings segmented toggle. View reads a window of the selected log table from the DB on
+/// demand (nothing is cached across a page change); Settings tunes capture verbosity (ageo) or the routing-log
+/// switch (routes).
 /// </summary>
 internal sealed partial class LogsViewModel : ViewModelBase
 {
     private readonly AgentConnection _connection;
 
-    // Verbosity token shown when the agent reports nothing usable.
-    private const string DefaultLogLevel = "info";
+    // Verbosity shown for the agent capture level when the agent reports nothing usable.
+    private const string DefaultCaptureLevel = "info";
 
-    // Tail window requested per read (bytes); the agent clamps it.
-    private const int LogTailBytes = 262144;
+    // Rows requested per window.
+    private const int LogLimit = 400;
 
     private static readonly JsonSerializerOptions LogJson = new() { PropertyNameCaseInsensitive = true };
 
     private bool _suppressSettingPush;
-    private IReadOnlyList<string> _logLines = [];
 
-    // Serializes log reads so overlapping heartbeat/user loads never interleave on the pipe.
-    private readonly System.Threading.SemaphoreSlim _logReadGate = new(1, 1);
+    // Current window upper bound (null = live tail) and the cursor stack that walks back toward the tail.
+    private long? _cursor;
+    private readonly List<long?> _cursorStack = [];
+    private long _windowFirstId;
 
-    // Current shown window in byte space: [_windowFirst, _windowEnd) of a file of _fileSize bytes.
-    // _windowEnd == _fileSize means the window sits on the live tail.
-    private long _windowFirst;
-    private long _windowEnd;
-    private long _fileSize;
+    // Coalesces overlapping loads: the newest requested cursor wins.
+    private bool _loadBusy;
+    private bool _reloadQueued;
+    private long? _queuedCursor;
+    private bool _queuedShowLoader;
 
-    // Once the file-backed viewer has loaded, the 300-line snapshot ring stops feeding the view.
-    private bool _logViewerEngaged;
-
-    // Narrow-window layout flag, pushed by the shell.
-    [ObservableProperty]
-    private bool _isCompact;
-
-    // Guards against overlapping OpListLogs refreshes (heartbeats retry until the first one succeeds).
-    private bool _logListBusy;
+    // Polls the live tail while the section is open on the viewer with follow on (snapshots no longer carry logs).
+    private readonly DispatcherTimer _pollTimer;
 
     /// <summary>
     /// ctor
@@ -52,6 +53,8 @@ internal sealed partial class LogsViewModel : ViewModelBase
     {
         _connection = connection;
         Loc.Instance.CultureChanged += OnCultureChanged;
+        _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _pollTimer.Tick += (_, _) => OnPollTick();
     }
 
     private void OnCultureChanged()
@@ -60,56 +63,108 @@ internal sealed partial class LogsViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Whether the logs section is the one currently shown; gates the file-backed viewer's heartbeat re-reads.
+    /// Whether the logs section is the one currently shown; gates the tail poll.
     /// </summary>
     public bool IsActive { get; private set; }
 
-    /// <summary>
-    /// Log verbosity options. The tokens are the same in every language.
-    /// </summary>
-    public ObservableCollection<string> LogLevels { get; } = ["error", "warning", "info", "debug", "trace"];
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
+    // --- Segmented mode: viewer vs settings ---
 
     [ObservableProperty]
-    private string _logLevel = DefaultLogLevel;
+    private bool _isSettingsMode;
+
+    /// <summary>
+    /// Whether the viewer pane is showing (the inverse of settings mode).
+    /// </summary>
+    public bool IsViewMode => !IsSettingsMode;
+
+    partial void OnIsSettingsModeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsViewMode));
+    }
+
+    [RelayCommand]
+    private void ShowView()
+    {
+        IsSettingsMode = false;
+    }
+
+    [RelayCommand]
+    private void ShowSettings()
+    {
+        IsSettingsMode = true;
+    }
+
+    // --- Log type (shared: viewer + settings) ---
+
+    /// <summary>
+    /// The selectable log tables. The tokens are the same in every language.
+    /// </summary>
+    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes"];
+
+    [ObservableProperty]
+    private string _selectedLogType = "ageo";
+
+    /// <summary>
+    /// Whether the viewer is on the agent log (which carries a level; the routing log does not).
+    /// </summary>
+    public bool IsAgentLog => SelectedLogType == "ageo";
+
+    partial void OnSelectedLogTypeChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsAgentLog));
+        ResetAndReload();
+    }
+
+    // --- Capture level (settings, ageo): none disables capture entirely ---
+
+    /// <summary>
+    /// Agent-log capture level options; none stops logging.
+    /// </summary>
+    public ObservableCollection<string> CaptureLevels { get; } = ["none", "error", "warning", "info", "debug", "trace"];
+
+    [ObservableProperty]
+    private string _captureLevel = DefaultCaptureLevel;
+
+    partial void OnCaptureLevelChanged(string value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["log-level", value]));
+        }
+    }
+
+    // --- Routing log toggle (settings, routes) ---
 
     [ObservableProperty]
     private bool _routeLogEnabled;
 
-    [ObservableProperty]
-    private string _logText = string.Empty;
+    partial void OnRouteLogEnabledChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["route-log", value ? "on" : "off"]));
+        }
+    }
 
-    [ObservableProperty]
-    private bool _hasLogs;
-
-    /// <summary>
-    /// On-disk log files offered in the viewer's file picker (agent rolls + routing log), newest first.
-    /// </summary>
-    public ObservableCollection<LogFileChoice> LogFiles { get; } = [];
-
-    [ObservableProperty]
-    private LogFileChoice? _selectedLogFile;
+    // --- Search ---
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SearchSummary))]
     private string _searchQuery = string.Empty;
 
+    partial void OnSearchQueryChanged(string value)
+    {
+        // Search updates as you type; no loader (it would flash the body on every keystroke).
+        ResetAndReload(showLoader: false);
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SearchSummary))]
     private int _searchMatchCount;
-
-    // Whether the view snaps to the live tail on each snapshot heartbeat.
-    [ObservableProperty]
-    private bool _logFollow = true;
-
-    // Older content exists before the window (enables back paging).
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(PageOlderCommand))]
-    private bool _logCanPageOlder;
-
-    // Newer content exists after the window (enables forward paging).
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(PageNewerCommand))]
-    private bool _logCanPageNewer;
 
     /// <summary>
     /// Human-readable match count for the log search box; empty when no query is active.
@@ -118,442 +173,342 @@ internal sealed partial class LogsViewModel : ViewModelBase
         ? string.Empty
         : Loc.Instance.Get("MainVm_LogSearchMatches", SearchMatchCount);
 
+    // --- Log body ---
+
+    [ObservableProperty]
+    private string _logText = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowBody))]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty))]
+    private bool _hasLogs;
+
+    // Whether a window load is in flight; shows the loader in place of the body (not raised for the tail poll).
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowBody))]
+    [NotifyPropertyChangedFor(nameof(ShowEmpty))]
+    private bool _isLoading;
+
     /// <summary>
-    /// Applies a status snapshot: mirrors the agent's log settings (without echoing them back) and feeds the view.
+    /// Whether the log body is shown: there is content and no load is in flight.
+    /// </summary>
+    public bool ShowBody => HasLogs && !IsLoading;
+
+    /// <summary>
+    /// Whether the empty hint is shown: no content and no load in flight.
+    /// </summary>
+    public bool ShowEmpty => !HasLogs && !IsLoading;
+
+    // Whether the view snaps to the live tail on each poll.
+    [ObservableProperty]
+    private bool _logFollow = true;
+
+    partial void OnLogFollowChanged(bool value)
+    {
+        if (value)
+        {
+            ResetAndReload();
+        }
+    }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PageOlderCommand))]
+    private bool _logCanPageOlder;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PageNewerCommand))]
+    private bool _logCanPageNewer;
+
+    /// <summary>
+    /// Mirrors the agent's capture settings (without echoing them back). Does not touch the viewer body.
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
     {
         _suppressSettingPush = true;
-        LogLevel = KnownLogLevel(snapshot.LogLevel);
+        CaptureLevel = KnownCaptureLevel(snapshot.LogLevel);
         RouteLogEnabled = snapshot.RouteLog;
         _suppressSettingPush = false;
-
-        UpdateLogView(snapshot);
     }
 
     /// <summary>
-    /// Marks the section active or not; opening it loads the on-disk files at once.
+    /// Marks the section active or not; opening it loads the live tail and starts the poll, leaving it frees it.
     /// </summary>
     public void SetActive(bool active)
     {
+        if (active == IsActive)
+        {
+            return;
+        }
+
         IsActive = active;
         if (active)
         {
-            _ = RefreshLogFilesAsync();
+            ResetAndReload();
+            _pollTimer.Start();
+        }
+        else
+        {
+            _pollTimer.Stop();
+            ClearView();
         }
     }
 
     /// <summary>
-    /// Drops the file-backed viewer state so a reconnect re-lists cleanly and the snapshot ring feeds the view again.
+    /// Drops the viewer state so a reconnect starts clean.
     /// </summary>
     public void Reset()
     {
-        _logViewerEngaged = false;
-        _windowFirst = 0;
-        _windowEnd = 0;
-        _fileSize = 0;
+        IsActive = false;
+        _pollTimer.Stop();
+        ClearView();
+    }
+
+    private void ClearView()
+    {
+        _cursor = null;
+        _cursorStack.Clear();
+        _windowFirstId = 0;
+        LogText = string.Empty;
+        HasLogs = false;
+        IsLoading = false;
         LogCanPageOlder = false;
         LogCanPageNewer = false;
-        LogFiles.Clear();
-        SelectedLogFile = null;
-        _logLines = [];
-        HasLogs = false;
-        RebuildLogText();
     }
 
-    // Ceiling on lines handed to the unvirtualized text control.
-    private const int MaxShownLines = 400;
-
-    // Rebuilds the journal text from the raw lines applying the level filter and the search query, newest
-    // first so the latest activity stays visible at the top without scrolling.
-    private void RebuildLogText()
+    private void ResetAndReload(bool showLoader = true)
     {
-        var query = SearchQuery;
-        var hasQuery = !string.IsNullOrWhiteSpace(query);
-        var threshold = SelectedThreshold(LogLevel);
-
-        var shown = new List<string>();
-        foreach (var line in _logLines)
-        {
-            var severity = LineSeverity(line);
-            if (severity >= 0 && severity < threshold)
-            {
-                continue;
-            }
-
-            if (hasQuery && !line.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            shown.Add(line);
-        }
-
-        SearchMatchCount = hasQuery ? shown.Count : 0;
-        if (shown.Count == 0)
-        {
-            LogText = string.Empty;
-            return;
-        }
-
-        shown.Reverse();
-        if (shown.Count > MaxShownLines)
-        {
-            shown.RemoveRange(MaxShownLines, shown.Count - MaxShownLines);
-        }
-
-        LogText = string.Join('\n', shown);
+        _cursor = null;
+        _cursorStack.Clear();
+        // Re-arm follow (field, not property, to avoid re-entering ResetAndReload) on every jump to the tail.
+#pragma warning disable MVVMTK0034
+        _logFollow = true;
+#pragma warning restore MVVMTK0034
+        OnPropertyChanged(nameof(LogFollow));
+        Reload(null, showLoader);
     }
 
-    // Minimum severity shown for the picked verbosity level; anything below is hidden in the viewer.
-    private static int SelectedThreshold(string level)
+    private void OnPollTick()
     {
-        return level switch
+        if (IsActive && IsViewMode && LogFollow && _cursor is null && _cursorStack.Count == 0)
         {
-            "trace" => 0,
-            "debug" => 1,
-            "info" => 2,
-            "warning" => 3,
-            _ => 4,
-        };
-    }
-
-    // Severity parsed from a line's bracketed level token; -1 when a line carries none (wrapped exception
-    // continuations) so it is never hidden by the level filter. Route-log lines carry their own [INF]/[ERR]
-    // token, so the picker filters them by the selected level and above, same as the agent log.
-    private static int LineSeverity(string line)
-    {
-        if (line.Contains("[ERR]", StringComparison.Ordinal) || line.Contains("[FTL]", StringComparison.Ordinal))
-        {
-            return 4;
-        }
-
-        if (line.Contains("[WRN]", StringComparison.Ordinal))
-        {
-            return 3;
-        }
-
-        if (line.Contains("[INF]", StringComparison.Ordinal))
-        {
-            return 2;
-        }
-
-        if (line.Contains("[DBG]", StringComparison.Ordinal))
-        {
-            return 1;
-        }
-
-        if (line.Contains("[VRB]", StringComparison.Ordinal) || line.Contains("[TRC]", StringComparison.Ordinal))
-        {
-            return 0;
-        }
-
-        return -1;
-    }
-
-    // Feeds the log view. Before the file-backed viewer is engaged the 300-line snapshot ring drives it (so
-    // the section shows something instantly); once engaged, the on-disk file is the source of truth and the
-    // heartbeat re-reads the live tail while the log section is open, follow is on, and the newest file is
-    // selected.
-    private void UpdateLogView(StatusSnapshot snapshot)
-    {
-        if (!_logViewerEngaged)
-        {
-            // Not reading files yet: the 300-line ring drives the view. In the log section, also try to engage
-            // the file-backed viewer - it only takes over once OpListLogs actually succeeds, so a failed listing
-            // leaves the ring showing instead of a blank panel.
-            _logLines = snapshot.Logs ?? [];
-            HasLogs = _logLines.Count > 0;
-            RebuildLogText();
-            if (IsActive)
-            {
-                _ = RefreshLogFilesAsync();
-            }
-
-            return;
-        }
-
-        if (IsActive && LogFollow)
-        {
-            // Re-list on the heartbeat so a routing log created after the viewer engaged shows up in the
-            // picker; the set-guard inside makes an unchanged listing a no-op that never disturbs the view.
-            _ = RefreshLogFilesAsync();
-
-            if (LogFiles.Count > 0 && ReferenceEquals(SelectedLogFile, LogFiles[0]) && _logReadGate.CurrentCount > 0)
-            {
-                _ = LoadWindowAsync(null);
-            }
+            Reload(null, showLoader: false);
         }
     }
 
-    // Loads (or refreshes) the list of on-disk log files and re-reads the tail of the selected one. Engages
-    // the file-backed viewer only once the listing succeeds, so a transient IPC failure never strands the
-    // viewer with the snapshot ring disabled; heartbeats retry it while the log section stays open.
-    private async Task RefreshLogFilesAsync(bool forceReload = false)
+    [RelayCommand(CanExecute = nameof(CanPageOlder))]
+    private void PageOlder()
     {
-        if (_logListBusy)
+        if (_loadBusy)
         {
             return;
         }
 
-        _logListBusy = true;
-        try
-        {
-            IpcAck ack;
-            try
-            {
-                ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpListLogs, []));
-            }
-            catch
-            {
-                return;
-            }
-
-            if (!ack.Ok)
-            {
-                return;
-            }
-
-            List<LogFileChoice>? metas;
-            try
-            {
-                metas = JsonSerializer.Deserialize<List<LogFileChoice>>(ack.Message, LogJson);
-            }
-            catch (JsonException)
-            {
-                return;
-            }
-
-            // Show only the canonical logs by name; the size-roll generations (routes.log.1, ageo.log.1..)
-            // are hidden so the picker offers one entry per log, not a pile of rotated files.
-            metas = metas?.Where(m => !m.Name.Contains(".log.", StringComparison.Ordinal)).ToList();
-            if (metas is null || metas.Count == 0)
-            {
-                return;
-            }
-
-            // The file-backed source is now available: flip the latch so the ring stops feeding the view.
-            _logViewerEngaged = true;
-
-            // A heartbeat re-list that finds the same files must not disturb the selection or the paged
-            // window; only rebuild when the set actually changed - a routing log appeared after the viewer
-            // engaged, or a clear removed one. Compared as a set so a mtime reorder alone is not a change.
-            var current = LogFiles.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
-            var incoming = metas.Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
-            if (!forceReload && current.SetEquals(incoming))
-            {
-                return;
-            }
-
-            var previous = SelectedLogFile?.Name;
-            LogFiles.Clear();
-            foreach (var meta in metas)
-            {
-                LogFiles.Add(meta);
-            }
-
-            // Keep the same file selected across refreshes; fall back to the newest when it has rolled away.
-            var target = (previous is not null ? LogFiles.FirstOrDefault(f => f.Name == previous) : null)
-                ?? LogFiles[0];
-            var before = SelectedLogFile;
-            SelectedLogFile = target;
-
-            // A value-equal reselect (byte-identical newest file) short-circuits the [ObservableProperty]
-            // setter, so OnSelectedLogFileChanged never fires; reload the tail explicitly so a section re-open
-            // or a clear reliably refreshes it.
-            if (ReferenceEquals(SelectedLogFile, before))
-            {
-                await LoadWindowAsync(null);
-            }
-        }
-        finally
-        {
-            _logListBusy = false;
-        }
+        // Browsing history: stop the poll from snapping back to the live tail.
+        LogFollow = false;
+        _cursorStack.Add(_cursor);
+        _cursor = _windowFirstId;
+        Reload(_cursor, showLoader: true);
     }
 
-    // Reads a byte window of the selected log file over IPC and makes it the shown page: the live tail when
-    // endOffset is null, otherwise the window ending at endOffset. Serialized so heartbeat and user loads
-    // never interleave on the pipe.
-    private async Task LoadWindowAsync(long? endOffset)
+    private bool CanPageOlder => LogCanPageOlder;
+
+    [RelayCommand(CanExecute = nameof(CanPageNewer))]
+    private void PageNewer()
     {
-        var file = SelectedLogFile;
-        if (file is null)
+        if (_loadBusy)
         {
             return;
         }
 
-        await _logReadGate.WaitAsync();
-        try
+        if (_cursorStack.Count > 0)
         {
-            var args = new List<string>
+            _cursor = _cursorStack[^1];
+            _cursorStack.RemoveAt(_cursorStack.Count - 1);
+            if (_cursor is null)
             {
-                file.Name,
-                LogTailBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            };
-            if (endOffset is > 0)
-            {
-                args.Add(endOffset.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                // Back at the newest window: resume following the live tail (OnLogFollowChanged reloads it).
+                LogFollow = true;
             }
-
-            IpcAck ack;
-            try
+            else
             {
-                ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReadLog, args));
+                Reload(_cursor, showLoader: true);
             }
-            catch
-            {
-                return;
-            }
-
-            if (!ack.Ok)
-            {
-                return;
-            }
-
-            LogTailPayload? payload;
-            try
-            {
-                payload = JsonSerializer.Deserialize<LogTailPayload>(ack.Message, LogJson);
-            }
-            catch (JsonException)
-            {
-                return;
-            }
-
-            if (payload is null)
-            {
-                return;
-            }
-
-            _logLines = payload.Lines;
-            _windowFirst = payload.FirstOffset;
-            _fileSize = payload.FileSize;
-            _windowEnd = endOffset ?? payload.FileSize;
-            LogCanPageOlder = payload.Truncated;
-            LogCanPageNewer = _windowEnd < payload.FileSize;
-            HasLogs = _logLines.Count > 0;
-            RebuildLogText();
         }
-        finally
+        else
         {
-            _logReadGate.Release();
+            LogFollow = true;
         }
     }
+
+    private bool CanPageNewer => LogCanPageNewer;
 
     [RelayCommand]
     private async Task ClearLog()
     {
         try
         {
-            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpClearLog, []));
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpClearLog, [SelectedLogType]));
         }
         catch
         {
             return;
         }
 
-        // Re-list so a deleted routing log drops out of the picker, then force the emptied tail to show. The
-        // reload goes through LoadWindowAsync (its own gate) so the list-busy guard can never swallow it when
-        // a heartbeat refresh is mid-flight during the clear.
-        await RefreshLogFilesAsync(forceReload: true);
-        await LoadWindowAsync(null);
+        ResetAndReload();
     }
 
-    [RelayCommand(CanExecute = nameof(CanPageOlder))]
-    private async Task PageOlder()
+    /// <summary>
+    /// Exports the whole selected table to the file the view chose: the agent renders the text, the UI writes
+    /// it under the user account.
+    /// </summary>
+    public async Task ExportToAsync(string path)
     {
-        // Browsing history: stop the heartbeat from snapping back to the live tail and dropping the page.
-        LogFollow = false;
-        await LoadWindowAsync(_windowFirst);
-    }
-
-    [RelayCommand(CanExecute = nameof(CanPageNewer))]
-    private async Task PageNewer()
-    {
-        var newEnd = _windowEnd + LogTailBytes;
-        if (newEnd >= _fileSize)
+        IpcAck ack;
+        try
         {
-            // Reached the newest page: snap to the live tail (OnLogFollowChanged reloads it).
-            LogFollow = true;
+            ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpExportLog, [SelectedLogType]));
+        }
+        catch
+        {
             return;
         }
 
-        LogFollow = false;
-        await LoadWindowAsync(newEnd);
-    }
-
-    private bool CanPageOlder => LogCanPageOlder;
-
-    private bool CanPageNewer => LogCanPageNewer;
-
-    partial void OnSelectedLogFileChanged(LogFileChoice? value)
-    {
-        if (value is null)
+        if (!ack.Ok)
         {
-            _windowFirst = 0;
-            _windowEnd = 0;
-            _fileSize = 0;
-            LogCanPageOlder = false;
-            LogCanPageNewer = false;
-            _logLines = [];
-            HasLogs = false;
-            RebuildLogText();
             return;
         }
 
-        // A different file (or a reselect) starts from the live tail again.
-        _ = LoadWindowAsync(null);
-    }
-
-    partial void OnSearchQueryChanged(string value)
-    {
-        RebuildLogText();
-    }
-
-    partial void OnLogFollowChanged(bool value)
-    {
-        // Re-enabling follow snaps back to the live tail (dropping any paged history).
-        if (value)
+        try
         {
-            _ = LoadWindowAsync(null);
+            await File.WriteAllTextAsync(path, ack.Message);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, [$"log export write failed: {ex.Message}"]));
         }
     }
 
-    partial void OnLogLevelChanged(string value)
+    // Queues a load of the window ending at beforeId (null = tail); coalesces so the newest request wins.
+    // showLoader marks a user-driven load (shows the loader); the background tail poll passes false.
+    private void Reload(long? beforeId, bool showLoader)
     {
-        // The level is both the capture verbosity (pushed to the agent) and the viewer's filter threshold.
-        RebuildLogText();
-        if (!_suppressSettingPush)
+        _queuedCursor = beforeId;
+        _queuedShowLoader |= showLoader;
+        _reloadQueued = true;
+        _ = PumpAsync();
+    }
+
+    private async Task PumpAsync()
+    {
+        if (_loadBusy)
         {
-            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting, ["log-level", value]));
+            return;
+        }
+
+        _loadBusy = true;
+        try
+        {
+            while (_reloadQueued)
+            {
+                _reloadQueued = false;
+                var showLoader = _queuedShowLoader;
+                _queuedShowLoader = false;
+                var cursor = _queuedCursor;
+                if (showLoader)
+                {
+                    IsLoading = true;
+                }
+
+                try
+                {
+                    await LoadAsync(cursor);
+                }
+                finally
+                {
+                    if (showLoader)
+                    {
+                        IsLoading = false;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _loadBusy = false;
+            IsLoading = false;
         }
     }
 
-    partial void OnRouteLogEnabledChanged(bool value)
+    private async Task LoadAsync(long? beforeId)
     {
-        if (!_suppressSettingPush)
+        var type = SelectedLogType;
+        var args = new List<string>
         {
-            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
-                ["route-log", value ? "on" : "off"]));
+            type,
+            LogLimit.ToString(CultureInfo.InvariantCulture),
+            (beforeId ?? 0).ToString(CultureInfo.InvariantCulture),
+            type == "ageo" ? "trace" : string.Empty,
+            SearchQuery ?? string.Empty,
+        };
+
+        IpcAck ack;
+        try
+        {
+            ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReadLog, args));
         }
+        catch
+        {
+            return;
+        }
+
+        if (!ack.Ok)
+        {
+            return;
+        }
+
+        LogWindowPayload? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<LogWindowPayload>(ack.Message, LogJson);
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        if (payload is null)
+        {
+            return;
+        }
+
+        // Section left during the pipe round-trip: drop the stale window so the freed state stays freed.
+        if (!IsActive)
+        {
+            return;
+        }
+
+        _windowFirstId = payload.FirstId;
+        LogText = payload.Lines.Count > 0 ? string.Join('\n', payload.Lines) : string.Empty;
+        HasLogs = payload.Lines.Count > 0;
+        SearchMatchCount = string.IsNullOrWhiteSpace(SearchQuery) ? 0 : payload.MatchCount;
+        LogCanPageOlder = payload.HasOlder;
+        LogCanPageNewer = beforeId is not null;
     }
 
-    // Falls an unrecognised token back to the default, so the combo never goes null - which, two-way bound,
-    // would push an empty value back.
-    private static string KnownLogLevel(string token)
+    // Falls an unrecognised token back to the default so the combo never goes null.
+    private static string KnownCaptureLevel(string token)
     {
         return token switch
         {
-            "trace" or "debug" or "info" or "warning" or "error" => token,
-            _ => DefaultLogLevel,
+            "none" or "trace" or "debug" or "info" or "warning" or "error" => token,
+            _ => DefaultCaptureLevel,
         };
     }
 
-    // OpReadLog ack payload: a bounded window of a log file, oldest line first.
-    private sealed record LogTailPayload(
+    // OpReadLog ack payload: a window of rendered lines newest first, with the paging cursor and match total.
+    private sealed record LogWindowPayload(
         IReadOnlyList<string> Lines,
-        long FirstOffset,
-        long FileSize,
-        bool Truncated);
+        long FirstId,
+        bool HasOlder,
+        int MatchCount);
 }

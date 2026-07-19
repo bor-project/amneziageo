@@ -13,6 +13,9 @@ internal sealed class LogLevelController
     /// </summary>
     public const string DefaultToken = "info";
 
+    // A level above Fatal: the switch drops every event, so "none" disables capture entirely.
+    private const LogEventLevel NoneLevel = (LogEventLevel)(LogEventLevel.Fatal + 1);
+
     /// <summary>
     /// The switch Serilog is configured to obey (AppHost binds MinimumLevel.ControlledBy to it).
     /// </summary>
@@ -42,6 +45,7 @@ internal sealed class LogLevelController
             "debug" => LogEventLevel.Debug,
             "info" => LogEventLevel.Information,
             "warning" => LogEventLevel.Warning,
+            "none" => NoneLevel,
             _ => LogEventLevel.Error,
         };
     }
@@ -57,6 +61,7 @@ internal sealed class LogLevelController
             LogEventLevel.Debug => "debug",
             LogEventLevel.Information => "info",
             LogEventLevel.Warning => "warning",
+            NoneLevel => "none",
             _ => "error",
         };
     }
@@ -66,6 +71,6 @@ internal sealed class LogLevelController
     /// </summary>
     public static bool IsValid(string? token)
     {
-        return token is "error" or "warning" or "info" or "debug" or "trace";
+        return token is "none" or "error" or "warning" or "info" or "debug" or "trace";
     }
 }

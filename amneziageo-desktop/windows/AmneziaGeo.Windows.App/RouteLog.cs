@@ -1,7 +1,10 @@
+using AmneziaGeo.Dal;
+
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Toggleable routing log: route-table changes, matched DNS resolutions, outbound destinations.
+/// Toggleable routing log: route-table changes, matched DNS resolutions, outbound destinations. Levelless -
+/// each entry is the original record; a failed route action is marked in the message text, not a synthetic level.
 /// </summary>
 internal static class RouteLog
 {
@@ -10,8 +13,8 @@ internal static class RouteLog
     /// </summary>
     public const string SettingKey = "route-log";
 
-    private static readonly object Gate = new();
     private static volatile bool _enabled;
+    private static SqliteLogStore? _store;
 
     /// <summary>
     /// Whether route actions are currently being recorded.
@@ -22,10 +25,16 @@ internal static class RouteLog
         set => _enabled = value;
     }
 
-    private static string FilePath => Path.Combine(TunnelPaths.LogDirectory(), "routes.log");
+    /// <summary>
+    /// Binds the log store the static writer persists rows into.
+    /// </summary>
+    public static void UseStore(SqliteLogStore store)
+    {
+        _store = store;
+    }
 
     /// <summary>
-    /// Records a route-table add/remove with its target and next hop.
+    /// Records a route-table add/remove with its target and next hop; a failed action is prefixed FAILED.
     /// </summary>
     public static void Write(string action, string target, string via, bool ok, string? note = null)
     {
@@ -34,8 +43,8 @@ internal static class RouteLog
             return;
         }
 
-        var level = ok ? "[INF]" : "[ERR]";
-        Append(level, $"{action,-14} {target} via {via}{(string.IsNullOrEmpty(note) ? string.Empty : "  " + note)}");
+        var prefix = ok ? string.Empty : "FAILED ";
+        Append($"{prefix}{action,-14} {target} via {via}{(string.IsNullOrEmpty(note) ? string.Empty : "  " + note)}");
     }
 
     /// <summary>
@@ -48,47 +57,11 @@ internal static class RouteLog
             return;
         }
 
-        Append("[INF]", message);
+        Append(message);
     }
 
-    // Shared line shape with the agent log: timestamp, level, source column ("route"), message.
-    private static void Append(string level, string body)
+    private static void Append(string body)
     {
-        try
-        {
-            var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff} {level} route {body}";
-            lock (Gate)
-            {
-                Directory.CreateDirectory(TunnelPaths.LogDirectory());
-                Roll();
-                using var stream = new FileStream(FilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-                using var writer = new StreamWriter(stream);
-                writer.WriteLine(line);
-            }
-        }
-        catch
-        {
-            // Swallow IO failures; a log must not break routing.
-        }
-    }
-
-    // Caller holds Gate. Rotates once past the shared roll threshold, keeping the same bounded footprint as
-    // the agent log (LogRoller).
-    private static void Roll()
-    {
-        try
-        {
-            var info = new FileInfo(FilePath);
-            if (!info.Exists || info.Length <= LogRoller.MaxBytes)
-            {
-                return;
-            }
-
-            LogRoller.Roll(FilePath);
-        }
-        catch
-        {
-            // Roll failure is non-fatal.
-        }
+        _store?.AppendRoute(DateTimeOffset.Now.ToUnixTimeMilliseconds(), body);
     }
 }

@@ -32,7 +32,6 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <!-- WMI (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder) is the only reliable
          in-process way to set per-NIC DNS on this OS: SetInterfaceDnsSettings is a no-op here and
          a bare registry write isn't honored without the WMI/CIM notify. Needs built-in COM. -->

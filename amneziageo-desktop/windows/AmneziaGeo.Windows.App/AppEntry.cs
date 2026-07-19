@@ -1,3 +1,4 @@
+using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -66,6 +67,11 @@ public static class AppEntry
         Directory.CreateDirectory(Path.GetDirectoryName(TunnelPaths.StateDbFile())!);
         var store = services.GetRequiredService<IStateStore>();
         await store.InitializeAsync();
+
+        // Open the structured log store and bind the static routing-log writer to it.
+        var logStore = services.GetRequiredService<SqliteLogStore>();
+        await logStore.InitializeAsync();
+        RouteLog.UseStore(logStore);
 
         if (runMigration)
         {

@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using Microsoft.Extensions.Logging;
@@ -10,7 +11,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogRingBuffer logBuffer, LogLevelController logLevel, DiagnosticsCollector diagnostics, ResettableFileSink logFileSink, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -206,9 +207,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpCancelUpdateDownload => await CancelUpdateDownloadAsync(ct),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 IpcContract.OpCollectDiagnostics => await CollectDiagnosticsAsync(ct),
-                IpcContract.OpListLogs => ListLogs(),
-                IpcContract.OpReadLog => ReadLog(command.Args),
-                IpcContract.OpClearLog => ClearLog(),
+                IpcContract.OpReadLog => await ReadLogAsync(command.Args, ct),
+                IpcContract.OpClearLog => await ClearLogAsync(command.Args, ct),
+                IpcContract.OpExportLog => await ExportLogAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
@@ -1919,171 +1920,64 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
     }
 
-    // Lists the on-disk log files for the in-app viewer (OpListLogs), newest generation first. The agent
-    // reads these as SYSTEM so an unprivileged UI can view logs whose files it may not open directly.
-    private IpcAck ClearLog()
+    // Reads a window of one log table for the in-app viewer (OpReadLog), newest first. The agent queries the
+    // DB as SYSTEM so an unprivileged UI can view logs it cannot open directly.
+    private async Task<IpcAck> ReadLogAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        logFileSink.Reset();
-
-        // Drop every other on-disk log (routes.log + its rolled generations, the ageo.log.1..N backups, any
-        // dated agent logs); the live ageo.log was just re-created empty by the sink, so it is kept.
-        var dir = TunnelPaths.LogDirectory();
-        var others = Directory.EnumerateFiles(dir, "routes.log*")
-            .Concat(Directory.EnumerateFiles(dir, "ageo*.log"))
-            .Concat(Directory.EnumerateFiles(dir, "ageo.log.*"))
-            .Where(p => !string.Equals(Path.GetFileName(p), "ageo.log", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        foreach (var path in others)
+        if (args.Count < 1 || !IsKnownTable(args[0]))
         {
-            try
-            {
-                File.Delete(path);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Held by another process; leave it.
-            }
+            return new IpcAck(false, "read-log requires a known table (ageo|routes)");
         }
 
-        logger.LogInformation("agent log cleared");
-        return new IpcAck(true, "log cleared");
-    }
+        var table = args[0];
+        var limit = args.Count > 1 && int.TryParse(args[1], out var l) ? Math.Clamp(l, 1, 2000) : 400;
+        long? beforeId = args.Count > 2 && long.TryParse(args[2], out var b) && b > 0 ? b : null;
+        var minLevelId = table == SqliteLogStore.AgentTable && args.Count > 3 ? LogLevels.MinId(args[3]) : null;
+        var search = args.Count > 4 && args[4].Length > 0 ? args[4] : null;
 
-    private static IpcAck ListLogs()
-    {
-        var files = DiagnosticsCollector.EnumerateLogFiles()
-            .Select(f => (f.Type, Info: new FileInfo(f.Path)))
-            .Where(f => f.Info.Exists)
-            .OrderByDescending(f => f.Info.LastWriteTimeUtc)
-            .Select(f => new
-            {
-                name = f.Info.Name,
-                type = f.Type,
-                size = f.Info.Length,
-                modified = f.Info.LastWriteTime.ToString("o"),
-            })
-            .ToList();
-        return new IpcAck(true, JsonSerializer.Serialize(files));
-    }
-
-    // Reads a bounded window (the live tail by default) of one enumerated log file (OpReadLog). The name is
-    // validated against the enumerated set, so this never becomes an arbitrary-file-read oracle for a local
-    // user on the authenticated pipe.
-    private static IpcAck ReadLog(IReadOnlyList<string> args)
-    {
-        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
-        {
-            return new IpcAck(false, "read-log requires a file name");
-        }
-
-        var name = args[0];
-        var target = DiagnosticsCollector.EnumerateLogFiles()
-            .FirstOrDefault(f => string.Equals(Path.GetFileName(f.Path), name, StringComparison.OrdinalIgnoreCase));
-        if (target.Path is null)
-        {
-            return new IpcAck(false, $"unknown log file: {name}");
-        }
-
-        var tailBytes = args.Count > 1 && long.TryParse(args[1], out var tb) ? tb : 262144;
-        tailBytes = Math.Clamp(tailBytes, 4096, 1_048_576);
-        long? beforeOffset = args.Count > 2 && long.TryParse(args[2], out var bo) && bo > 0 ? bo : null;
-
-        using var stream = new FileStream(target.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var fileSize = stream.Length;
-        var end = beforeOffset is { } b && b <= fileSize ? b : fileSize;
-        var start = Math.Max(0, end - tailBytes);
-        var length = (int)(end - start);
-        var buffer = new byte[length];
-        stream.Seek(start, SeekOrigin.Begin);
-        stream.ReadExactly(buffer, 0, length);
-
-        // Work in byte space: a 0x0A never appears inside a multibyte UTF-8 sequence, so newline scanning and
-        // offset math are exact regardless of where the arbitrary window boundary fell (decoding first would
-        // turn a split leading char into a replacement char and desync firstOffset from the real byte layout).
-        var truncated = start > 0;
-        var contentStart = 0;
-        var firstOffset = start;
-        if (truncated)
-        {
-            var nl = Array.IndexOf(buffer, (byte)'\n', 0, length);
-            if (nl >= 0)
-            {
-                // The window began mid-file: its first line is a fragment. Drop up to and including the first
-                // newline and report the offset of the first whole line so a page-older read ends exactly there.
-                contentStart = nl + 1;
-                firstOffset = start + contentStart;
-            }
-            else
-            {
-                // No newline in the window: it is one over-long line. Drop the fragment (no fabricated whole
-                // line, no mid-char split) but keep the anchor at 'start' so repeated page-older still walks
-                // backward toward the line's beginning instead of re-reading the same empty window forever.
-                contentStart = length;
-                firstOffset = start;
-            }
-        }
-
-        // At the live-tail boundary, drop any half-written trailing multibyte char so it never decodes to a
-        // replacement glyph; those bytes are picked up on the next read once the character is complete.
-        var contentEnd = end == fileSize ? TrimPartialTrailingUtf8(buffer, contentStart, length) : length;
-        var text = contentEnd > contentStart
-            ? Encoding.UTF8.GetString(buffer, contentStart, contentEnd - contentStart)
-            : string.Empty;
-
-        var split = text.Split('\n');
-        // Log lines end with a newline, so the split yields a trailing empty element; drop it. A live file
-        // mid-write may end without one - then the last element is the partial newest line, which we keep.
-        var count = split.Length;
-        if (count > 0 && split[count - 1].Length == 0)
-        {
-            count--;
-        }
-
-        var lines = new List<string>(count);
-        for (var i = 0; i < count; i++)
-        {
-            lines.Add(split[i].TrimEnd('\r'));
-        }
+        var page = await logStore.QueryAsync(table, beforeId, limit, minLevelId, search, ct);
+        var lines = page.Rows.Select(LogFormat.Render).ToList();
+        var firstId = page.Rows.Count > 0 ? page.Rows[^1].Id : 0L;
+        var matchCount = search is null ? 0 : await logStore.CountAsync(table, minLevelId, search, ct);
 
         return new IpcAck(true, JsonSerializer.Serialize(new
         {
             lines,
-            firstOffset,
-            fileSize,
-            truncated,
+            firstId,
+            hasOlder = page.HasOlder,
+            matchCount,
         }));
     }
 
-    // Returns an end index (exclusive) into buffer[start..end) that excludes an incomplete trailing UTF-8
-    // sequence, so decoding the window never yields a replacement char from a half-written final character.
-    private static int TrimPartialTrailingUtf8(byte[] buffer, int start, int end)
+    // Clears one log table (OpClearLog); other logs are left untouched.
+    private async Task<IpcAck> ClearLogAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        var i = end - 1;
-        while (i >= start && (buffer[i] & 0xC0) == 0x80)
+        if (args.Count < 1 || !IsKnownTable(args[0]))
         {
-            i--; // step back over continuation bytes (10xxxxxx) to the lead byte
+            return new IpcAck(false, "clear-log requires a known table (ageo|routes)");
         }
 
-        if (i < start)
+        await logStore.ClearAsync(args[0], ct);
+        logger.LogInformation("log cleared: {Table}", args[0]);
+        return new IpcAck(true, "log cleared");
+    }
+
+    // Renders a whole log table to text for the UI to save under the user's account (OpExportLog).
+    private async Task<IpcAck> ExportLogAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || !IsKnownTable(args[0]))
         {
-            return end;
+            return new IpcAck(false, "export-log requires a known table");
         }
 
-        var lead = buffer[i];
-        var expected =
-            (lead & 0x80) == 0x00 ? 1 : // 0xxxxxxx
-            (lead & 0xE0) == 0xC0 ? 2 : // 110xxxxx
-            (lead & 0xF0) == 0xE0 ? 3 : // 1110xxxx
-            (lead & 0xF8) == 0xF0 ? 4 : // 11110xxx
-            0;                          // not a valid lead byte
+        var text = await logStore.RenderAsync(args[0], LogFormat.Render, ct);
+        logger.LogInformation("log rendered for export: {Table} ({Chars} chars)", args[0], text.Length);
+        return new IpcAck(true, text);
+    }
 
-        if (expected == 0)
-        {
-            return end;
-        }
-
-        // Keep everything when the final character is complete; otherwise drop the incomplete lead+continuations.
-        return end - i >= expected ? end : i;
+    private static bool IsKnownTable(string name)
+    {
+        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable;
     }
 
     private async Task<IpcAck> CheckUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2394,7 +2288,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var downloadedForCurrent = updateState.DownloadPhase == UpdateDownloadPhase.Downloaded
             && update is not null
             && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
-        return new StatusSnapshot(Version(), BoundTarget, configs, profiles, routingLists, control.Running, boundStatus, control.RestartRequired, control.Target, sources, logBuffer.Snapshot(),
+        return new StatusSnapshot(Version(), BoundTarget, configs, profiles, routingLists, control.Running, boundStatus, control.RestartRequired, control.Target, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,

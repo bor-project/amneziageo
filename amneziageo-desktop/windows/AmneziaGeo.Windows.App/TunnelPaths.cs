@@ -150,6 +150,22 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to the structured log database (ageo + routes tables).
+    /// </summary>
+    public static string LogDbFile()
+    {
+        return Path.Combine(LogDirectory(), "log.db");
+    }
+
+    /// <summary>
+    /// Path to the hidden logging settings file (retention cap).
+    /// </summary>
+    public static string LogSettingsFile()
+    {
+        return Path.Combine(LogDirectory(), "settings.json");
+    }
+
+    /// <summary>
     /// Directory where collected diagnostics bundles are written.
     /// </summary>
     public static string DiagnosticsDirectory()

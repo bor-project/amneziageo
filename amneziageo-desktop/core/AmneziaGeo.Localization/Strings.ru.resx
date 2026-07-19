@@ -233,7 +233,7 @@
     <value>Добавить локальные сети</value>
   </data>
   <data name="Main_AgentLogSection" xml:space="preserve">
-    <value>Журнал агента</value>
+    <value>Журналы</value>
   </data>
   <data name="Main_LogCaptureTitle" xml:space="preserve">
     <value>Настройки журнала</value>
@@ -242,7 +242,7 @@
     <value>Просмотр журнала</value>
   </data>
   <data name="Main_LogLegend" xml:space="preserve">
-    <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: TRC · DBG · INF · WRN · ERR · FTL.</value>
+    <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
     <value>Отправляет в туннель весь UDP-трафик. Включите, если не работают звонки или игры: они находят свои серверы в обход DNS, поэтому обычные правила их не ловят. Локальная сеть не затрагивается.</value>
@@ -343,11 +343,8 @@
   <data name="Main_LogOlderTooltip" xml:space="preserve">
     <value>Более ранние записи</value>
   </data>
-  <data name="Main_OpenLogsFolderButton" xml:space="preserve">
-    <value>Открыть папку</value>
-  </data>
   <data name="Main_ClearLogButton" xml:space="preserve">
-    <value>Очистить журнал</value>
+    <value>Очистить</value>
   </data>
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Более поздние записи</value>
@@ -563,10 +560,13 @@
     <value>Загрузить файл…</value>
   </data>
   <data name="Main_LogEmptyHint" xml:space="preserve">
-    <value>Журнал появится, когда агент начнёт работу.</value>
+    <value>Записи появятся после запуска агента.</value>
+  </data>
+  <data name="Main_LogEmptyTitle" xml:space="preserve">
+    <value>Журнал пока пуст</value>
   </data>
   <data name="Main_LogVerbosityHint" xml:space="preserve">
-    <value>Определяет подробность журналирования.</value>
+    <value>Определяет подробность журналирования. none — не логировать.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Уровень</value>
@@ -710,7 +710,7 @@
     <value>Переименовать</value>
   </data>
   <data name="Main_RouteLogHint" xml:space="preserve">
-    <value>Записывает маршруты и разрешения адресов в отдельный журнал routes.log.</value>
+    <value>Записывает маршруты и разрешения адресов.</value>
   </data>
   <data name="Main_RouteLogTitle" xml:space="preserve">
     <value>Логировать подключения</value>
@@ -1459,5 +1459,20 @@
   </data>
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>После закрытия приложение останется в трее.</value>
+  </data>
+  <data name="Main_LogTabView" xml:space="preserve">
+    <value>Просмотр</value>
+  </data>
+  <data name="Main_LogTabSettings" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="Main_LogTypeLabel" xml:space="preserve">
+    <value>Журнал</value>
+  </data>
+  <data name="Main_ExportLogButton" xml:space="preserve">
+    <value>Экспорт</value>
+  </data>
+  <data name="Main_LogCaptureLevelTitle" xml:space="preserve">
+    <value>Максимальный уровень</value>
   </data>
 </root>

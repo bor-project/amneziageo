@@ -273,26 +273,26 @@ public static class IpcContract
     public const string OpCollectDiagnostics = "collect-diagnostics";
 
     /// <summary>
-    /// Command to list the on-disk log files for the in-app viewer. No args. The ack message holds a JSON
-    /// array of { name, type ("agent"/"routes"/"other"), size (bytes), modified (ISO-8601) }, newest first.
-    /// The agent reads the files as SYSTEM so an unprivileged UI can view logs it cannot open directly.
-    /// </summary>
-    public const string OpListLogs = "list-logs";
-
-    /// <summary>
-    /// Command to read a bounded window of a log file for the in-app viewer. Args: [0] file name (a basename
-    /// from OpListLogs; validated against the enumerated set to bar path traversal); [1] optional tailBytes
-    /// (default 262144, clamped to 4KB..1MB); [2] optional beforeOffset (read the window ENDING at this byte
-    /// offset to page older, omitted/0 = live tail). The ack message holds a JSON object
-    /// { lines: string[], firstOffset: long, fileSize: long, truncated: bool } where truncated means a
-    /// partial leading line was dropped (more content exists before firstOffset).
+    /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes");
+    /// [1] optional limit (rows, default 400, clamped 1..2000); [2] optional beforeId cursor (read rows with
+    /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo: hide rows less
+    /// severe than it); [4] optional search substring (matches message or source). The ack message holds a
+    /// JSON object { lines: string[] (rendered, newest first), firstId: long (smallest id in the window),
+    /// hasOlder: bool, matchCount: int (total matches when searching) }.
     /// </summary>
     public const string OpReadLog = "read-log";
 
     /// <summary>
-    /// Command to clear the agent log (ageo.log): the agent closes, empties, and reopens the file. No args.
+    /// Command to clear one log table. Args: [0] table ("ageo"/"routes"). Other logs are left untouched.
     /// </summary>
     public const string OpClearLog = "clear-log";
+
+    /// <summary>
+    /// Command to render a whole log table to text for the UI to save. Args: [0] table ("ageo"/"routes").
+    /// The agent renders every row and returns the text in the ack message; the UI writes the file under the
+    /// user account. The agent never writes a caller-supplied path.
+    /// </summary>
+    public const string OpExportLog = "export-log";
 
     /// <summary>
     /// Command for the UI to record a diagnostic line in the agent log (the UI process keeps no log of its

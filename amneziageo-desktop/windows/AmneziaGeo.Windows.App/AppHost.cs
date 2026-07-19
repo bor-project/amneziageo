@@ -22,46 +22,32 @@ internal static class AppHost
 
         var builder = Host.CreateApplicationBuilder();
 
-        // In-memory log ring for the UI activity journal, fed by the Serilog sink below. Only the agent serves it
-        // (AgentStatusBroker / DiagnosticsCollector); a transient per-tunnel process has no reader, so skip it there.
-        var logBuffer = agentTarget is not null ? new LogRingBuffer() : null;
-        if (logBuffer is not null)
-        {
-            builder.Services.AddSingleton(logBuffer);
-        }
+        // Structured log store (ageo + routes tables in logs\log.db), shared by the agent and per-tunnel
+        // processes over WAL. Registered by factory so the container owns and flushes it on shutdown; AppEntry
+        // initializes it and binds the static routing-log writer to it.
+        builder.Services.AddSingleton(_ => new SqliteLogStore(TunnelPaths.LogDbFile()));
 
         // Live verbosity switch: shared by both processes, kept in sync with the "log-level" setting.
         var logLevel = new LogLevelController();
         builder.Services.AddSingleton(logLevel);
 
-        // Resettable file sink so the agent log can be cleared at runtime; shared as a singleton for the clear command.
-        // Pinned greppable line format: timestamp + 3-char level + source + message, one entry per line
-        // (exceptions append on following lines). Explicit so the on-disk format the log viewer and grep rely
-        // on cannot drift with Serilog's default template.
-        var logFileSink = new ResettableFileSink(
-            Path.Combine(TunnelPaths.LogDirectory(), "ageo.log"),
-            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Source:l} {Message:lj}{NewLine}{Exception}");
-        builder.Services.AddSingleton(logFileSink);
-
         builder.Logging.ClearProviders();
-        builder.Services.AddSerilog(config =>
+        builder.Services.AddSerilog((services, config) =>
         {
             config.MinimumLevel.ControlledBy(logLevel.Switch)
                 .Enrich.FromLogContext()
                 // Source column: the logger's class name, derived from SourceContext.
                 .Enrich.With(new LogSourceEnricher())
                 .WriteTo.Console()
-                .WriteTo.Sink(logFileSink);
-            if (logBuffer is not null)
-            {
-                config.WriteTo.Sink(new RingBufferSink(logBuffer));
-            }
+                .WriteTo.Sink(new LogDbSink(services.GetRequiredService<SqliteLogStore>()));
         });
 
         RegisterServices(builder.Services);
 
         if (agentTarget is not null)
         {
+            // Retention cap lives in logs\settings.json; only the agent prunes (per-tunnel processes just insert).
+            builder.Services.AddSingleton(LogSettings.LoadOrCreate(TunnelPaths.LogSettingsFile()));
             builder.Services.AddWindowsService(options => options.ServiceName = TunnelPaths.AgentServiceName());
             builder.Services.AddSingleton(new AgentTarget(agentTarget));
             builder.Services.AddHostedService<AgentBackgroundService>();
@@ -71,6 +57,7 @@ internal static class AppHost
             builder.Services.AddHostedService<GeoUpdateCheckService>();
             builder.Services.AddHostedService<GeoBootstrapService>();
             builder.Services.AddHostedService<LogLevelBackgroundWatcher>();
+            builder.Services.AddHostedService<LogMaintenanceService>();
         }
 
         return builder.Build();

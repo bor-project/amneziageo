@@ -368,7 +368,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     private void OnConnected()
     {
-        Dispatcher.UIThread.Post(Home.SetConnected);
+        Dispatcher.UIThread.Post(() =>
+        {
+            Home.SetConnected();
+            // Re-arm the logs viewer after a reconnect; the disconnect stopped its poll.
+            RefreshLogsActive();
+        });
     }
 
     private void OnDisconnected()

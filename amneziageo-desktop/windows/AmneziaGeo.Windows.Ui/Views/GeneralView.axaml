@@ -18,12 +18,12 @@
     <StackPanel IsVisible="{Binding IsGeneralMain}" Spacing="14">
       <TextBlock Classes="section" Text="{l:Tr General_Section}" />
 
-      <!-- Appearance + About: two columns when wide, stacked when narrow; each keeps its natural height (a
-           UniformGrid would stretch the short Appearance card to the taller About card). Reflowed in ReflowTopCards. -->
+      <!-- Appearance + About: two columns when wide, stacked when narrow; side by side they share the row
+           height so both cards render equal-height (Stretch). Reflowed in ReflowTopCards. -->
       <Grid x:Name="TopCards" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
 
         <!-- Appearance card: theme + language (live switch). -->
-        <Border x:Name="AppearanceCard" Grid.Row="0" Grid.Column="0" VerticalAlignment="Top"
+        <Border x:Name="AppearanceCard" Grid.Row="0" Grid.Column="0"
                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                 CornerRadius="12" Padding="16" Background="Transparent">
           <StackPanel Spacing="12">
@@ -43,7 +43,7 @@
         </Border>
 
         <!-- About card: versions + app self-update. -->
-        <Border x:Name="AboutCard" VerticalAlignment="Top"
+        <Border x:Name="AboutCard"
                 BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                 CornerRadius="12" Padding="16" Background="Transparent">
           <StackPanel Spacing="12">

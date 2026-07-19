@@ -48,40 +48,24 @@
       <Setter Property="FontFamily" Value="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
     </Style>
 
+    <!-- Shared text-button base: 11.5px medium label, centered. -->
+    <Style Selector="Button.seg, Button.softbtn, Button.danger">
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="Padding" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
     <!-- Sidebar nav segment. -->
     <Style Selector="Button.seg">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="6" />
       <Setter Property="CornerRadius" Value="6" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.seg.active">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <Style Selector="Button.chip">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="6" />
-      <Setter Property="CornerRadius" Value="7" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.chip.active">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
@@ -90,36 +74,30 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="6" />
       <Setter Property="CornerRadius" Value="7" />
       <Setter Property="MinWidth" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
 
-    <!-- Soft-fill accent button: inset background, no border, blue text. -->
-    <Style Selector="Button.methodpick">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+    <!-- Shared soft/accent button base: 12px semibold, centered, borderless. -->
+    <Style Selector="Button.methodpick, Button.accent">
       <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Padding" Value="6" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <!-- Soft-fill accent button: inset background, no border, blue text. -->
+    <Style Selector="Button.methodpick">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="MinWidth" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
 
     <Style Selector="Button.accent">
       <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Foreground" Value="White" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Padding" Value="6" />
       <Setter Property="CornerRadius" Value="9" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
 
     <!-- Button icons follow the button's text colour. -->
@@ -133,12 +111,8 @@
       <Setter Property="BorderBrush" Value="#E0A0A0" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Foreground" Value="#D64545" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="CornerRadius" Value="7" />
       <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Padding" Value="6" />
     </Style>
 
     <Style Selector="Button.icon">
@@ -190,27 +164,6 @@
       <Setter Property="CornerRadius" Value="120" />
     </Style>
 
-    <!-- Brand logo home button. -->
-    <Style Selector="Button.brand">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="6,4" />
-      <Setter Property="CornerRadius" Value="7" />
-      <Setter Property="MinWidth" Value="0" />
-    </Style>
-
-    <!-- Connect / stop button. -->
-    <Style Selector="Button.connectpill">
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="14,4" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="MinWidth" Value="104" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
-
     <!-- Active-profile radio. -->
     <Style Selector="Button.radiopick">
       <Setter Property="Background" Value="Transparent" />
@@ -246,48 +199,14 @@
       <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
     </Style>
 
-    <Style Selector="Button.sourcerow">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="HorizontalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-
     <!-- Pin button content-presenter colours in every state; no hover recolour app-wide. -->
     <Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
-    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button:pressed /template/ ContentPresenter#PART_ContentPresenter, Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
       <Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" />
       <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
-    </Style>
-    <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
-      <Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" />
-      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
-    </Style>
-    <Style Selector="Button:disabled /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
-      <Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" />
-      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
-    </Style>
-
-    <!-- Connect transition: amber fill in every state while the tunnel comes up or down. -->
-    <Style Selector="Button.accent.transitioning /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#E0902F" />
-    </Style>
-    <Style Selector="Button.accent.transitioning:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#E0902F" />
-    </Style>
-    <Style Selector="Button.accent.transitioning:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#E0902F" />
-    </Style>
-    <Style Selector="Button.accent.transitioning:disabled /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="#E0902F" />
     </Style>
 
     <Style Selector="Button">
@@ -319,33 +238,14 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
-    <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-    </Style>
-    <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-    </Style>
-    <Style Selector="TextBox:focus-within /template/ Border#PART_BorderElement">
+    <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement, TextBox:focus /template/ Border#PART_BorderElement, TextBox:focus-within /template/ Border#PART_BorderElement">
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
     </Style>
 
     <!-- Required-field red border in every state. -->
-    <Style Selector="TextBox.invalid /template/ Border#PART_BorderElement">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
-    </Style>
-    <Style Selector="TextBox.invalid:pointerover /template/ Border#PART_BorderElement">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
-    </Style>
-    <Style Selector="TextBox.invalid:focus /template/ Border#PART_BorderElement">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
-    </Style>
-    <Style Selector="TextBox.invalid:focus-within /template/ Border#PART_BorderElement">
+    <Style Selector="TextBox.invalid /template/ Border#PART_BorderElement, TextBox.invalid:pointerover /template/ Border#PART_BorderElement, TextBox.invalid:focus /template/ Border#PART_BorderElement, TextBox.invalid:focus-within /template/ Border#PART_BorderElement">
       <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
     </Style>
 
@@ -374,11 +274,7 @@
     <Style Selector="ComboBox.field /template/ Border#Background">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
-    <Style Selector="ComboBox.field:pointerover /template/ Border#Background">
-      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-    </Style>
-    <Style Selector="ComboBox.field:pressed /template/ Border#Background">
+    <Style Selector="ComboBox.field:pointerover /template/ Border#Background, ComboBox.field:pressed /template/ Border#Background">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
     </Style>
@@ -543,23 +439,11 @@
     <Style Selector="ComboBoxItem /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Transitions" Value="{x:Null}" />
     </Style>
-    <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter, ComboBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
     </Style>
-    <Style Selector="ComboBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AgHoverBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-    <Style Selector="ComboBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
-    </Style>
-    <Style Selector="ComboBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ComboBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter, ComboBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
     </Style>

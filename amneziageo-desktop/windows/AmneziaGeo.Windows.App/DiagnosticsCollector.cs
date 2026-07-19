@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +12,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Builds a redacted diagnostics bundle for support.
 /// </summary>
-internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore settings, LogRingBuffer logBuffer, AgentControl control, ILogger<DiagnosticsCollector> logger)
+internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore settings, SqliteLogStore logStore, AgentControl control, ILogger<DiagnosticsCollector> logger)
 {
     // Mask private/preshared key values; public keys and endpoints stay for diagnosis.
     private static readonly Regex KeyMaterial =
@@ -30,6 +31,10 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         new(@"(?i)(--http-upgrade-credentials[=\s]+)\S+", RegexOptions.Compiled);
     private static readonly Regex CredentialLabel =
         new(@"(?i)((?:credentials|password|passwd)\s*[=:]\s*)\S+", RegexOptions.Compiled);
+
+    // The structured log tables and their file names inside the diagnostics bundle.
+    private static readonly (string Table, string Entry)[] LogTables =
+        [(SqliteLogStore.AgentTable, "ageo.log"), (SqliteLogStore.RoutesTable, "routes.log")];
 
     /// <summary>
     /// Writes a diagnostics zip under the diagnostics directory and returns its full path.
@@ -52,17 +57,28 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
         {
             AddText(zip, "summary.txt", Redact(summary));
-            AddText(zip, "journal.txt", Redact(string.Join(Environment.NewLine, logBuffer.Snapshot())));
 
-            foreach (var (file, _) in EnumerateLogFiles())
+            foreach (var (table, entryName) in LogTables)
             {
+                var temp = Path.Combine(dir, entryName);
                 try
                 {
-                    AddRedactedLog(zip, file);
+                    await logStore.ExportAsync(table, temp, row => Redact(LogFormat.Render(row)), ct);
+                    zip.CreateEntryFromFile(temp, entryName, CompressionLevel.Optimal);
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(ex, "diagnostics: could not add log {File}", Path.GetFileName(file));
+                    logger.LogWarning(ex, "diagnostics: could not add log {Table}", table);
+                }
+                finally
+                {
+                    try
+                    {
+                        File.Delete(temp);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                    }
                 }
             }
         }
@@ -71,42 +87,6 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         return zipPath;
     }
 
-    /// <summary>
-    /// Enumerates the on-disk log files with a coarse type tag: the agent log (ageo.log, its rotation backups
-    /// ageo.log.1..N, plus any dated ageo-*.log left by an older version) and the routing log with its
-    /// rotation backups (routes.log, routes.log.1..N). The single source of truth shared by the diagnostics
-    /// bundle and the in-app log viewer (OpListLogs / OpReadLog). The legacy agent.log is intentionally
-    /// omitted - it is never written.
-    /// </summary>
-    internal static IEnumerable<(string Path, string Type)> EnumerateLogFiles()
-    {
-        var logDir = TunnelPaths.LogDirectory();
-        if (!Directory.Exists(logDir))
-        {
-            yield break;
-        }
-
-        foreach (var file in Directory.EnumerateFiles(logDir, "ageo*.log"))
-        {
-            yield return (file, "agent");
-        }
-
-        foreach (var file in Directory.EnumerateFiles(logDir, "ageo.log.*"))
-        {
-            // "ageo.log.*" also matches the live ageo.log (Win32 DOS_DOT quirk), already yielded above.
-            if (string.Equals(Path.GetFileName(file), "ageo.log", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            yield return (file, "agent");
-        }
-
-        foreach (var file in Directory.EnumerateFiles(logDir, "routes.log*"))
-        {
-            yield return (file, "routes");
-        }
-    }
 
     private async Task<string> BuildSummaryAsync(CancellationToken ct)
     {
@@ -204,19 +184,6 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         return sb.ToString();
     }
 
-    private void AddRedactedLog(ZipArchive zip, string file)
-    {
-        var entry = zip.CreateEntry(Path.GetFileName(file), CompressionLevel.Optimal);
-        // Share read/write: the current day's file is held open by the Serilog file sink.
-        using var input = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(input);
-        using var output = new StreamWriter(entry.Open());
-        string? line;
-        while ((line = reader.ReadLine()) is not null)
-        {
-            output.WriteLine(Redact(line));
-        }
-    }
 
     private static string Redact(string text)
     {

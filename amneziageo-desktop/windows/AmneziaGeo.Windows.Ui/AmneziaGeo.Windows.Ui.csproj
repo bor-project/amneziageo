@@ -44,9 +44,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\core\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
-    <ProjectReference Include="..\..\core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
-    <ProjectReference Include="..\..\core\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
+    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
   </ItemGroup>
 
   <!-- This is a Windows-only WinExe; declaring it so satisfies the platform-compat analyzer (CA1416) for

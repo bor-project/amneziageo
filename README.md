@@ -142,13 +142,13 @@ Discord text and voice now go through the tunnel over TCP 443, and everything el
 
 | Directory | Platform | Engine packaging | Status |
 |---|---|---|---|
-| [`amneziageo-desktop/core`](amneziageo-desktop/core/) | shared (C#) | .NET libraries: geo parsing, config, DNS proxy, UAPI, state | in use |
+| [`amneziageo-ui`](amneziageo-ui/) | shared (C#) | .NET libraries: declarations, persistence, geo parsing, IPC, localization | in use |
 | [`amneziageo-desktop/windows`](amneziageo-desktop/windows/) | Windows | C# host plus `tunnel.dll` (c-shared) via P/Invoke | beta |
 | [`amneziageo-desktop/linux`](amneziageo-desktop/linux/) | Linux | C# plus `amneziawg-go` userspace daemon (UAPI) | planned |
 | [`amneziageo-android`](amneziageo-android/) | Android | C# (.NET) `VpnService` plus gomobile `.aar` | planned |
 | [`amneziageo-apple`](amneziageo-apple/) | macOS and iOS | native Swift, shared `AmneziaGeoKit` over `libwg-go.a` | planned |
 
-Shared code is organized per language. [`amneziageo-desktop/core`](amneziageo-desktop/core/) is a .NET class library referenced by the Windows, Linux, and Android heads through `<ProjectReference>` (not a submodule), and each head keeps its own solution. `AmneziaGeoKit` (Swift) is shared across the two Apple platforms. Git submodules are reserved for the upstream engines (`amneziawg-windows`, `amneziawg-apple`).
+Shared code is organized per language. [`amneziageo-ui`](amneziageo-ui/) contains .NET class libraries referenced by the Windows, Linux, and Android heads through `<ProjectReference>` (not a submodule), and each head keeps its own solution. `AmneziaGeoKit` (Swift) is shared across the two Apple platforms. Git submodules are reserved for the upstream engines (`amneziawg-windows`, `amneziawg-apple`).
 
 A single C# codebase does not cover every platform, because platform VPN APIs differ. Apple (macOS and iOS) is one native Swift project, since NetworkExtension is native-only. C# covers Windows, Linux, and Android, along with the shared UI and orchestration. The C# and Swift sides share concepts (config and geo logic) rather than code.
 

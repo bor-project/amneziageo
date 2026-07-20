@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\core\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
-    <ProjectReference Include="..\..\core\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
-    <ProjectReference Include="..\..\core\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
-    <ProjectReference Include="..\..\core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
+    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
+    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Windows.Engine\AmneziaGeo.Windows.Engine.csproj" />
   </ItemGroup>
 
@@ -23,8 +23,7 @@
          config enables WebSocket. Shipped next to the agent exe so TunnelPaths.WsTunnelExe() finds it.
          x64-only for now; an arm64 build ships without it (WebSocket transport unavailable) until an
          arm64 wstunnel is added. -->
-    <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest"
-          Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />
+    <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -87,10 +86,7 @@
        garbage. Emitted as an AssemblyAttribute through the SDK's assembly-info generation, so it only
        forces a recompile when the value actually changes. -->
   <Target Name="BakeEngineVersion" BeforeTargets="GetAssemblyAttributes;CoreGenerateAssemblyInfo">
-    <Exec Condition="'$(AmneziaEngineVersion)' == ''"
-          Command="git -C &quot;$(MSBuildProjectDirectory)\..\amneziawg-windows&quot; describe --tags"
-          ConsoleToMSBuild="true" ContinueOnError="true"
-          StandardOutputImportance="low" StandardErrorImportance="low">
+    <Exec Condition="'$(AmneziaEngineVersion)' == ''" Command="git -C &quot;$(MSBuildProjectDirectory)\..\amneziawg-windows&quot; describe --tags" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
       <Output TaskParameter="ConsoleOutput" PropertyName="_AwgDescribe" />
       <Output TaskParameter="ExitCode" PropertyName="_AwgDescribeExit" />
     </Exec>

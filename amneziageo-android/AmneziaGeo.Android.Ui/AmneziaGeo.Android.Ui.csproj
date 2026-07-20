@@ -24,10 +24,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AmneziaGeo.Android.Engine\AmneziaGeo.Android.Engine.csproj" />
-    <ProjectReference Include="..\..\amneziageo-desktop\core\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
-    <ProjectReference Include="..\..\amneziageo-desktop\core\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
-    <ProjectReference Include="..\..\amneziageo-desktop\core\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
-    <ProjectReference Include="..\..\amneziageo-desktop\core\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
+    <ProjectReference Include="..\..\amneziageo-ui\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
+    <ProjectReference Include="..\..\amneziageo-ui\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+    <ProjectReference Include="..\..\amneziageo-ui\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\..\amneziageo-ui\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
-    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
-    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
-    <ProjectReference Include="..\..\..\amneziageo-ui\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Windows.Engine\AmneziaGeo.Windows.Engine.csproj" />
   </ItemGroup>
 

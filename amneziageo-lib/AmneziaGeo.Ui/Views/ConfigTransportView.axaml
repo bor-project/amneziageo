@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Views.ConfigTransportView"
+             x:CompileBindings="True"
+             x:DataType="vm:ConfigTransportViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgEyeGeometry">M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z</StreamGeometry>
+  </UserControl.Resources>
+  <!-- MTU + WebSocket proxy editor. Fields stay left, capped so they do not stretch across a wide card. -->
+  <StackPanel Spacing="14">
+    <TextBlock Text="{l:Tr Main_ProxyWebSocketLabel}" FontWeight="SemiBold" FontSize="15" />
+
+    <StackPanel Spacing="6">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <ToggleSwitch IsChecked="{Binding UseWebSocket}" OnContent="" OffContent="" VerticalAlignment="Center" />
+        <TextBlock Classes="label" Text="{l:Tr Main_UseWebSocketToggle}" VerticalAlignment="Center" />
+      </StackPanel>
+      <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_ProxyWebSocketHint}" />
+    </StackPanel>
+
+    <!-- Fixed-width blocks so a narrow card wraps them to the next line instead of clipping the fields. -->
+    <WrapPanel IsVisible="{Binding UseWebSocket}" MaxWidth="980" HorizontalAlignment="Left">
+      <StackPanel Width="300" Spacing="2" Margin="0,0,12,10">
+        <TextBlock Classes="label" Text="{l:Tr Main_ServerHostLabel}" />
+        <TextBox Classes="field" Text="{Binding WebSocketHost}" Watermark="{l:Tr Main_ServerHostWatermark}" />
+      </StackPanel>
+      <StackPanel Width="100" Spacing="2" Margin="0,0,12,10">
+        <TextBlock Classes="label" Text="{l:Tr Main_ServerPortLabel}" />
+        <TextBox Classes="field" Text="{Binding WebSocketPort}" />
+      </StackPanel>
+      <StackPanel Width="180" Spacing="2" Margin="0,0,12,10">
+        <TextBlock Classes="label" Text="{l:Tr Main_AuthLabel}" />
+        <ComboBox Classes="field" HorizontalAlignment="Stretch" SelectedIndex="{Binding AuthMode, Mode=TwoWay}">
+          <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
+          <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
+          <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
+        </ComboBox>
+      </StackPanel>
+      <Panel Width="300" Margin="0,0,0,10">
+        <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
+          <TextBlock Classes="label" Text="{l:Tr Main_AccessTokenLabel}" />
+          <Panel>
+            <TextBox x:Name="TokenBox" Classes="field" Text="{Binding WebSocketToken}"
+                     PasswordChar="●" Padding="10,7,36,7" Watermark="{l:Tr Main_AccessTokenWatermark}" />
+            <Button Classes="icon" Click="OnToggleTokenReveal" MinWidth="0"
+                    HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0">
+              <PathIcon Data="{StaticResource AgEyeGeometry}" Width="15" Height="15" />
+            </Button>
+          </Panel>
+        </StackPanel>
+        <StackPanel Spacing="2" IsVisible="{Binding IsBasicAuth}">
+          <TextBlock Classes="label" Text="{l:Tr Main_LoginLabel}" />
+          <TextBox Classes="field" Text="{Binding WebSocketUser}" Watermark="{l:Tr Main_LoginWatermark}" />
+          <TextBlock Classes="label" Text="{l:Tr Main_PasswordLabel}" Margin="0,4,0,0" />
+          <TextBox Classes="field" Text="{Binding WebSocketPassword}" PasswordChar="●" Watermark="{l:Tr Main_PasswordWatermark}" />
+        </StackPanel>
+      </Panel>
+    </WrapPanel>
+
+    <StackPanel Spacing="4" MaxWidth="980" HorizontalAlignment="Left">
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+        <StackPanel Grid.Column="0" Spacing="2">
+          <TextBlock Classes="label" Text="{l:Tr Main_TunnelMtuLabel}" />
+          <TextBox Classes="field" Width="90" Text="{Binding Mtu}" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                   VerticalAlignment="Bottom" Margin="0,0,0,6" Text="{l:Tr Main_MtuHint}" />
+      </Grid>
+    </StackPanel>
+
+    <TextBlock Text="{Binding StatusMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,23 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <!-- The bundled payload is a per-arch publish installed under ProgramFiles64Folder. Platform/arch
+         is supplied by build-installer.ps1 (-p:Platform=x64|arm64) and defaults to x64 for a plain
+         `dotnet build`; the output name follows the arch so per-arch MSIs do not collide. -->
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <OutputName>AmneziaGeo-1.0.1-win-$(Platform)</OutputName>
+
+    <!-- StageDir (the staged self-contained publish to harvest) is supplied by build-installer.ps1
+         via -p:StageDir=...; expose it to the WXS preprocessor as $(var.StageDir). HasIcon (also from
+         build-installer.ps1, sourced from installer.config.json) gates the ARP/shortcut icon: "false"
+         omits it entirely. -->
+    <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
+    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon)</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="EnsureStageDir" BeforeTargets="Build"
+          Condition="'$(StageDir)' == '' or !Exists('$(StageDir)')">
+    <Error Text="StageDir is not set or does not exist. Build via build-installer.ps1 (it publishes the App + UI self-contained and passes -p:StageDir)." />
+  </Target>
+
+</Project>

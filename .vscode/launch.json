@@ -6,8 +6,8 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build",
-      "program": "${workspaceFolder}/amneziageo-desktop/windows/tools/AmneziaGeo.Windows.Launcher/bin/Debug/net10.0/AmneziaGeo.dll",
-      "cwd": "${workspaceFolder}/amneziageo-desktop/windows/tools/AmneziaGeo.Windows.Launcher/bin/Debug/net10.0",
+      "program": "${workspaceFolder}/amneziageo-windows/tools/AmneziaGeo.Windows.Launcher/bin/Debug/net10.0/AmneziaGeo.dll",
+      "cwd": "${workspaceFolder}/amneziageo-windows/tools/AmneziaGeo.Windows.Launcher/bin/Debug/net10.0",
       "console": "internalConsole",
       "stopAtEntry": false,
       "env": {

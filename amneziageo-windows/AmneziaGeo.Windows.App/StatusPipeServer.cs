@@ -1,0 +1,131 @@
+using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using AmneziaGeo.Ipc;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace AmneziaGeo.Windows.App;
+
+/// <summary>
+/// Hosts the agent's status pipe: accepts UI clients and periodically pushes status snapshots.
+/// </summary>
+internal sealed class StatusPipeServer(AgentStatusBroker broker, ILogger<StatusPipeServer> logger) : BackgroundService
+{
+    private static readonly TimeSpan _pushInterval = TimeSpan.FromSeconds(2);
+
+    /// <inheritdoc/>
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var pushLoop = PushLoopAsync(stoppingToken);
+        try
+        {
+            await AcceptLoopAsync(stoppingToken);
+        }
+        finally
+        {
+            await pushLoop;
+        }
+    }
+
+    private async Task AcceptLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            NamedPipeServerStream pipe;
+            try
+            {
+                pipe = CreatePipe();
+            }
+            catch (Exception ex)
+            {
+                // Held pipe is expected and recoverable: back off without flooding the journal.
+                var taken = ex is UnauthorizedAccessException or IOException;
+                if (taken)
+                {
+                    logger.LogWarning("status pipe is held by another agent ({Reason}); retrying", ex.GetType().Name);
+                }
+                else
+                {
+                    logger.LogError(ex, "failed to create status pipe; retrying");
+                }
+
+                try
+                {
+                    await Task.Delay(taken ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(1), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                continue;
+            }
+
+            try
+            {
+                await pipe.WaitForConnectionAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                await pipe.DisposeAsync();
+                return;
+            }
+            catch (IOException ex)
+            {
+                logger.LogWarning(ex, "status pipe wait failed");
+                await pipe.DisposeAsync();
+                continue;
+            }
+
+            _ = broker.HandleClientAsync(pipe, ct);
+        }
+    }
+
+    private async Task PushLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(_pushInterval, ct);
+                await broker.BroadcastIfChangedAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "status broadcast failed");
+            }
+        }
+    }
+
+    private static NamedPipeServerStream CreatePipe()
+    {
+        var security = new PipeSecurity();
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            PipeAccessRights.ReadWrite,
+            AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+
+        return NamedPipeServerStreamAcl.Create(
+            IpcContract.PipeName,
+            PipeDirection.InOut,
+            NamedPipeServerStream.MaxAllowedServerInstances,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous,
+            inBufferSize: 4096,
+            outBufferSize: 4096,
+            security);
+    }
+}

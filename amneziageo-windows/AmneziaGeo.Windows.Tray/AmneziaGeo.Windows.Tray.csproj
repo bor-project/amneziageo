@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The resident tray anchor: a tiny Win32 process (no Avalonia) that holds the agent presence pipe so the
+    tunnel stays up while the heavy GUI is closed, reflects connection state in the notify icon, and launches
+    AmneziaGeo.Windows.Ui.exe on demand. Published NativeAOT so its idle working set is a few MB instead of the
+    ~180 MB the Avalonia GUI costs; the GUI process now fully exits on close and only this stays memory-resident.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <!-- No cultures needed: menu labels are a two-language table keyed off the saved UI language / OS UI lang. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Trim the diagnostics surface off the native image (smaller, no managed stack traces the tray never shows). -->
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <AssemblyName>AmneziaGeo.Windows.Tray</AssemblyName>
+    <!-- Baseline version; the installer build overrides it with -p:Version=1.0.2.<build>. -->
+    <Version>0.0.1</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Same icon-embed contract as ui.csproj: the shortcut (and any taskbar pin derived from it) inherits the
+         exe's embedded icon at the stable install path. HasIcon=false omits it, IconFile overrides the source. -->
+    <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
+    <IconFile Condition="'$(IconFile)' == ''">..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</IconFile>
+    <ApplicationIcon Condition="'$(HasIcon)' == 'true'">$(IconFile)</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Windows-only WinExe (Win32 interop); declaring it satisfies the platform-compat analyzer (CA1416). -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatform">
+      <_Parameter1>windows</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

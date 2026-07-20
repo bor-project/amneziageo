@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AmneziaGeo Burn bundle. Wraps the self-contained per-machine MSI and hosts the custom managed
+  WPF bootstrapper application (AmneziaGeo.Windows.Installer). The bundle Version comes from the
+  release tag - that, together with the MSI's MajorUpgrade AllowDowngrades, is what lets "same
+  version, different code" reinstall as an update, an upgrade, or a downgrade. The BA additionally
+  clears any related bundle on install, so a lower version removes the newer install first.
+
+  The bundle UpgradeCode is its OWN GUID, distinct from the MSI UpgradeCode.
+
+  The bundle's Add/Remove Programs icon is the bundle exe's embedded icon (IconSourceFile, from the
+  installer config). A preprocessor <?if?> cannot wrap a single attribute (it only works between
+  elements/content) and a <Bundle> cannot be split, so the whole element is duplicated under <?if?>:
+  the HasIcon branch carries IconSourceFile, the other omits it (no icon). Only one branch compiles.
+
+  Every <Variable> and <MsiProperty> is duplicated into both <?if?> branches along with the rest of
+  the <Bundle>.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+
+<?if $(var.HasIcon) = "true" ?>
+  <Bundle Name="AmneziaGeo"
+          Manufacturer="AmneziaGeo"
+          Version="$(var.Version)"
+          UpgradeCode="A7E1C4F2-9B3D-4E6A-8C15-2F7D9A0B6E34"
+          IconSourceFile="$(var.IconFile)"
+          Compressed="yes">
+
+    <Variable Name="DELETECONFIG" Value="" />
+    <!-- #155: the in-app updater passes LAUNCHAFTER=1 so the BA restarts the app after a non-interactive
+         update. Default 0; overridable from the command line. -->
+    <Variable Name="LAUNCHAFTER" Value="0" bal:Overridable="yes" />
+    <!-- The in-app updater passes UPDATEFLOW=1 so the BA opens the update options step directly instead of
+         the maintenance action buttons. Default 0; overridable from the command line. -->
+    <Variable Name="UPDATEFLOW" Value="0" bal:Overridable="yes" />
+    <!-- The in-app updater passes SHOWCONSOLE=1 so the post-update launch reopens the settings console the
+         update was started from, instead of the launcher. Default 0. -->
+    <Variable Name="SHOWCONSOLE" Value="0" bal:Overridable="yes" />
+    <!-- The in-app updater passes UPDATEORIGIN=launcher|settings|none: the surface the update was started from.
+         The BA records it (only once the update actually applied) so the relaunch returns there. Empty by
+         default; an older sending build omits it and the BA falls back to the console. -->
+    <Variable Name="UPDATEORIGIN" Value="" bal:Overridable="yes" />
+    <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
+         per-user saved options; a command-line value wins. -->
+    <Variable Name="DESKTOPSHORTCUT" Value="" bal:Overridable="yes" />
+    <Variable Name="STARTMENUSHORTCUT" Value="" bal:Overridable="yes" />
+
+    <!-- Custom out-of-proc BA: the .exe is named directly; every other file from its self-contained
+         publish is supplied via the generated BaPayloads PayloadGroup. -->
+    <BootstrapperApplication SourceFile="$(var.BaExe)">
+      <PayloadGroupRef Id="BaPayloads" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <!-- Id MUST match InstallerBootstrapper.MsiPackageId so the BA can read this package's state. -->
+      <MsiPackage Id="AmneziaGeoMsi"
+                  SourceFile="$(var.MsiPath)"
+                  Vital="yes"
+                  Compressed="yes">
+        <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
+        <MsiProperty Name="DESKTOPSHORTCUT" Value="[DESKTOPSHORTCUT]" />
+        <MsiProperty Name="STARTMENUSHORTCUT" Value="[STARTMENUSHORTCUT]" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+<?else?>
+  <Bundle Name="AmneziaGeo"
+          Manufacturer="AmneziaGeo"
+          Version="$(var.Version)"
+          UpgradeCode="A7E1C4F2-9B3D-4E6A-8C15-2F7D9A0B6E34"
+          Compressed="yes">
+
+    <Variable Name="DELETECONFIG" Value="" />
+    <!-- #155: the in-app updater passes LAUNCHAFTER=1 so the BA restarts the app after a non-interactive
+         update. Default 0; overridable from the command line. -->
+    <Variable Name="LAUNCHAFTER" Value="0" bal:Overridable="yes" />
+    <!-- The in-app updater passes UPDATEFLOW=1 so the BA opens the update options step directly instead of
+         the maintenance action buttons. Default 0; overridable from the command line. -->
+    <Variable Name="UPDATEFLOW" Value="0" bal:Overridable="yes" />
+    <!-- The in-app updater passes SHOWCONSOLE=1 so the post-update launch reopens the settings console the
+         update was started from, instead of the launcher. Default 0. -->
+    <Variable Name="SHOWCONSOLE" Value="0" bal:Overridable="yes" />
+    <!-- The in-app updater passes UPDATEORIGIN=launcher|settings|none: the surface the update was started from.
+         The BA records it (only once the update actually applied) so the relaunch returns there. Empty by
+         default; an older sending build omits it and the BA falls back to the console. -->
+    <Variable Name="UPDATEORIGIN" Value="" bal:Overridable="yes" />
+    <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
+         per-user saved options; a command-line value wins. -->
+    <Variable Name="DESKTOPSHORTCUT" Value="" bal:Overridable="yes" />
+    <Variable Name="STARTMENUSHORTCUT" Value="" bal:Overridable="yes" />
+
+    <BootstrapperApplication SourceFile="$(var.BaExe)">
+      <PayloadGroupRef Id="BaPayloads" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <MsiPackage Id="AmneziaGeoMsi"
+                  SourceFile="$(var.MsiPath)"
+                  Vital="yes"
+                  Compressed="yes">
+        <MsiProperty Name="DELETECONFIG" Value="[DELETECONFIG]" />
+        <MsiProperty Name="DESKTOPSHORTCUT" Value="[DESKTOPSHORTCUT]" />
+        <MsiProperty Name="STARTMENUSHORTCUT" Value="[STARTMENUSHORTCUT]" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+<?endif?>
+
+</Wix>

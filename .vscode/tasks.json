@@ -14,6 +14,80 @@
       ],
       "group": "build",
       "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "android: build debug",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/amneziageo-android/AmneziaGeo.Android.Ui/AmneziaGeo.Android.Ui.csproj",
+        "-f",
+        "net10.0-android",
+        "-p:Configuration=Debug",
+        "-p:AndroidSdkDirectory=C:\\Users\\admin\\AppData\\Local\\Android\\Sdk",
+        "-v",
+        "minimal",
+        "-nologo"
+      ],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "android: ensure emulator",
+      "command": "powershell",
+      "type": "process",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/.vscode/start-android-emulator.ps1",
+        "-AndroidSdk",
+        "C:\\Users\\admin\\AppData\\Local\\Android\\Sdk",
+        "-AvdName",
+        "Pixel_8_Pro"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "android: deploy debug",
+      "command": "dotnet",
+      "type": "process",
+      "dependsOn": "android: ensure emulator",
+      "args": [
+        "build",
+        "${workspaceFolder}/amneziageo-android/AmneziaGeo.Android.Ui/AmneziaGeo.Android.Ui.csproj",
+        "-f",
+        "net10.0-android",
+        "-t:Run",
+        "-p:Configuration=Debug",
+        "-p:AdbTarget=-e",
+        "-p:AndroidAttachDebugger=true",
+        "-p:AndroidSdbHostPort=10000",
+        "-p:AndroidSdbTargetPort=10000",
+        "-p:AndroidSdkDirectory=C:\\Users\\admin\\AppData\\Local\\Android\\Sdk",
+        "-v",
+        "minimal",
+        "-nologo"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "android: run emulator",
+      "command": "dotnet",
+      "type": "process",
+      "dependsOn": "android: ensure emulator",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/amneziageo-android/AmneziaGeo.Android.Ui/AmneziaGeo.Android.Ui.csproj",
+        "-f",
+        "net10.0-android",
+        "-p:AdbTarget=-e",
+        "-p:AndroidSdkDirectory=C:\\Users\\admin\\AppData\\Local\\Android\\Sdk"
+      ],
+      "problemMatcher": "$msCompile"
     }
   ]
 }

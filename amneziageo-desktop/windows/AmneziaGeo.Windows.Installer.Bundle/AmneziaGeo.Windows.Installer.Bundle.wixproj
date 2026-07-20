@@ -16,6 +16,10 @@
     <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath);HasIcon=$(HasIcon);IconFile=$(IconFile)</DefineConstants>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="5.0.2" />
+  </ItemGroup>
+
   <Target Name="EnsureBundleInputs" BeforeTargets="Build"
           Condition="'$(BaExe)' == '' or '$(MsiPath)' == '' or '$(BundleVersion)' == ''">
     <Error Text="BaExe / MsiPath / BundleVersion not set. Build via build-installer.ps1." />

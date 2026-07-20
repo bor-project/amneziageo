@@ -20,6 +20,9 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     private string? _geoBannerSignature;
     private bool _suppressSettingPush;
 
+    // True once the current banner-initiated geo update has been observed downloading.
+    private bool _geoSawActive;
+
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     private bool _isCompact;
@@ -48,6 +51,15 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(GeoUpdateBannerText))]
     private int _geoUpdateCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GeoDownloadActive))]
+    [NotifyPropertyChangedFor(nameof(ShowGeoUpdateButton))]
+    private bool _geoDownloading;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(GeoDownloadActive))]
+    private int _geoUpdatePercent;
 
     /// <summary>
     /// Preset interval options (hours) for the geo auto-check combo.
@@ -87,6 +99,16 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     public string GeoUpdateBannerText => Loc.Instance.Get("Main_GeoUpdateBanner", GeoUpdateCount);
 
     /// <summary>
+    /// True while a banner-initiated geo update is downloading; drives the grouped percent.
+    /// </summary>
+    public bool GeoDownloadActive => GeoDownloading && GeoUpdatePercent < 100;
+
+    /// <summary>
+    /// True while the banner shows the update-now button (hidden during download).
+    /// </summary>
+    public bool ShowGeoUpdateButton => !GeoDownloading;
+
+    /// <summary>
     /// Applies the sources + geo-settings snapshot fields and recomputes the geo-update banner.
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
@@ -98,6 +120,7 @@ internal sealed partial class SourcesViewModel : ViewModelBase
         _suppressSettingPush = false;
 
         SyncSources(snapshot.Sources ?? []);
+        ApplyGeoDownloadProgress();
         ApplyGeoUpdateBanner();
     }
 
@@ -105,6 +128,9 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     {
         Sources.Clear();
         HasSources = false;
+        GeoDownloading = false;
+        GeoUpdatePercent = 0;
+        _geoSawActive = false;
     }
 
     private void SyncSources(IReadOnlyList<SourceEntry> entries)
@@ -178,6 +204,14 @@ internal sealed partial class SourcesViewModel : ViewModelBase
             .ToList();
 
         GeoUpdateCount = outdated.Count;
+
+        // Keep the banner up while a banner-initiated geo update downloads so it can show the grouped %.
+        if (GeoDownloading)
+        {
+            GeoUpdateBannerVisible = true;
+            return;
+        }
+
         if (outdated.Count == 0)
         {
             GeoUpdateBannerVisible = false;
@@ -193,10 +227,41 @@ internal sealed partial class SourcesViewModel : ViewModelBase
         }
     }
 
+    // Rolls the per-source download percent into one grouped value while a banner-initiated geo update
+    // runs, and clears the state once every source has drained.
+    private void ApplyGeoDownloadProgress()
+    {
+        if (!GeoDownloading)
+        {
+            return;
+        }
+
+        var active = Sources.Where(s => s.Updating).ToList();
+        if (active.Count > 0)
+        {
+            _geoSawActive = true;
+            var known = active.Where(s => s.Progress >= 0).Select(s => s.Progress).ToList();
+            var computed = known.Count > 0 ? (int)known.Average() : 0;
+            GeoUpdatePercent = Math.Min(99, Math.Max(GeoUpdatePercent, computed));
+            return;
+        }
+
+        // No source is downloading. Clear once we've seen the wave run, or it has settled with nothing
+        // left outdated (guards a download that finishes between two snapshots).
+        if (_geoSawActive || Sources.All(s => !s.UpdateAvailable))
+        {
+            GeoDownloading = false;
+            GeoUpdatePercent = 0;
+            _geoSawActive = false;
+        }
+    }
+
     [RelayCommand]
     private async Task UpdateGeoNow()
     {
-        GeoUpdateBannerVisible = false;
+        GeoDownloading = true;
+        GeoUpdatePercent = 0;
+        _geoSawActive = false;
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpUpdateSources, []));
     }
 
@@ -204,6 +269,8 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     private void DismissGeoUpdateBanner()
     {
         GeoUpdateBannerVisible = false;
+        GeoDownloading = false;
+        _geoSawActive = false;
     }
 
     partial void OnGeoAutoCheckChanged(bool value)

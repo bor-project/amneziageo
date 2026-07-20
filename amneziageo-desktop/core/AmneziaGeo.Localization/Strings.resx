@@ -194,7 +194,7 @@
     <value>Paste the bundle JSON (Ctrl+V) or pick a file with the “Choose file…” button</value>
   </data>
   <data name="BundleImport_SecurityWarning" xml:space="preserve">
-    <value>⚠ The imported file may contain private configuration keys — use files from trusted sources only.</value>
+    <value>⚠ The imported file may contain private configuration keys - use files from trusted sources only.</value>
   </data>
   <data name="BundleImport_WindowTitle" xml:space="preserve">
     <value>Import</value>
@@ -545,7 +545,7 @@
     <value>Route these through the tunnel.</value>
   </data>
   <data name="Main_RoleDirectHint" xml:space="preserve">
-    <value>Keep these off the tunnel — overrides the proxy list.</value>
+    <value>Keep these off the tunnel.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Block these entirely.</value>
@@ -611,7 +611,7 @@
     <value>No databases yet. Add geosite/geoip above.</value>
   </data>
   <data name="Main_NotSelected" xml:space="preserve">
-    <value>— not selected —</value>
+    <value>- not selected -</value>
   </data>
   <data name="Main_PasswordLabel" xml:space="preserve">
     <value>PASSWORD</value>
@@ -764,7 +764,7 @@
     <value>The type is detected from the file name in the URL</value>
   </data>
   <data name="Main_SourceRowTooltip" xml:space="preserve">
-    <value>Right-click or ⋮ — update / delete the database</value>
+    <value>Right-click or ⋮ - update / delete the database</value>
   </data>
   <data name="Main_SourcesLabel" xml:space="preserve">
     <value>Sources</value>
@@ -851,7 +851,7 @@
     <value>Paste or load the bundle file contents.</value>
   </data>
   <data name="ConfigChoice_NoneLabel" xml:space="preserve">
-    <value>— not selected —</value>
+    <value>- not selected -</value>
   </data>
   <data name="ConfigEditorVm_NotAConfig" xml:space="preserve">
     <value>This does not look like a WireGuard/AmneziaWG configuration ([Interface] and [Peer] are required).</value>
@@ -944,7 +944,7 @@
     <value>Attempt {0}</value>
   </data>
   <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
-    <value>The profile has no configuration — set one in settings</value>
+    <value>The profile has no configuration - set one in settings</value>
   </data>
   <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
     <value>Select a profile</value>
@@ -1034,7 +1034,7 @@
     <value>Close</value>
   </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
-    <value>— none —</value>
+    <value>- none -</value>
   </data>
   <data name="QrCode_CopiedToClipboard" xml:space="preserve">
     <value>Copied to clipboard.</value>
@@ -1082,7 +1082,7 @@
     <value>This does not look like a routing list.</value>
   </data>
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
-    <value>Path is too broad — select a specific application folder.</value>
+    <value>Path is too broad - select a specific application folder.</value>
   </data>
   <data name="RoutingEditor_Saved" xml:space="preserve">
     <value>Saved</value>
@@ -1094,7 +1094,7 @@
     <value>svchost.exe is a shared service host and would tunnel a lot of unrelated traffic. Select a service from the list.</value>
   </data>
   <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
-    <value>This is the shared WebView2 host and would tunnel every app that uses WebView2. Add the specific application instead — its in-app web traffic is routed with it.</value>
+    <value>This is the shared WebView2 host and would tunnel every app that uses WebView2. Add the specific application instead - its in-app web traffic is routed with it.</value>
   </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>All local subnets are already in the list.</value>
@@ -1437,7 +1437,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Configuration name</value>
   </data>
   <data name="Main_RequiredEmptyWarning" xml:space="preserve">
-    <value>Required field — changes will not be saved while it is empty.</value>
+    <value>Required field - changes will not be saved while it is empty.</value>
   </data>
   <data name="Launcher_Title" xml:space="preserve">
     <value>Quick launch</value>

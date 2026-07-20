@@ -1475,4 +1475,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_LogCaptureLevelTitle" xml:space="preserve">
     <value>Maximum level</value>
   </data>
+  <data name="Android_EngineNotReady" xml:space="preserve">
+    <value>The Android VPN engine is not connected yet.</value>
+  </data>
 </root>

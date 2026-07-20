@@ -142,7 +142,7 @@ Discord text and voice now go through the tunnel over TCP 443, and everything el
 
 | Directory | Platform | Engine packaging | Status |
 |---|---|---|---|
-| [`amneziageo-ui`](amneziageo-ui/) | shared (C#) | .NET libraries: declarations, persistence, geo parsing, IPC, localization | in use |
+| [`amneziageo-ui`](amneziageo-ui/) | shared (C#) | Avalonia views/view models plus declarations, persistence, geo parsing, IPC, localization | in use |
 | [`amneziageo-desktop/windows`](amneziageo-desktop/windows/) | Windows | C# host plus `tunnel.dll` (c-shared) via P/Invoke | beta |
 | [`amneziageo-desktop/linux`](amneziageo-desktop/linux/) | Linux | C# plus `amneziawg-go` userspace daemon (UAPI) | planned |
 | [`amneziageo-android`](amneziageo-android/) | Android | C# (.NET) `VpnService` plus gomobile `.aar` | planned |

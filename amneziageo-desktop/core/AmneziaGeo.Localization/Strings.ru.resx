@@ -194,7 +194,7 @@
     <value>Вставьте JSON бандла (Ctrl+V) или выберите файл кнопкой «Выбрать файл…»</value>
   </data>
   <data name="BundleImport_SecurityWarning" xml:space="preserve">
-    <value>⚠ Импортируемый файл может содержать приватные ключи конфигураций — используйте файлы из доверенных источников.</value>
+    <value>⚠ Импортируемый файл может содержать приватные ключи конфигураций - используйте файлы из доверенных источников.</value>
   </data>
   <data name="BundleImport_WindowTitle" xml:space="preserve">
     <value>Импорт</value>
@@ -545,7 +545,7 @@
     <value>Направлять через туннель.</value>
   </data>
   <data name="Main_RoleDirectHint" xml:space="preserve">
-    <value>Мимо туннеля — перекрывает список прокси.</value>
+    <value>Мимо туннеля.</value>
   </data>
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Полностью блокировать.</value>
@@ -566,7 +566,7 @@
     <value>Журнал пока пуст</value>
   </data>
   <data name="Main_LogVerbosityHint" xml:space="preserve">
-    <value>Определяет подробность журналирования. none — не логировать.</value>
+    <value>Определяет подробность журналирования. none - не логировать.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Уровень</value>
@@ -611,7 +611,7 @@
     <value>Пока нет баз. Добавьте geosite/geoip выше.</value>
   </data>
   <data name="Main_NotSelected" xml:space="preserve">
-    <value>— не выбрано —</value>
+    <value>- не выбрано -</value>
   </data>
   <data name="Main_PasswordLabel" xml:space="preserve">
     <value>ПАРОЛЬ</value>
@@ -764,7 +764,7 @@
     <value>Тип определён по имени файла в URL</value>
   </data>
   <data name="Main_SourceRowTooltip" xml:space="preserve">
-    <value>Правый клик или ⋮ — обновить / удалить базу</value>
+    <value>Правый клик или ⋮ - обновить / удалить базу</value>
   </data>
   <data name="Main_SourcesLabel" xml:space="preserve">
     <value>Источники</value>
@@ -851,7 +851,7 @@
     <value>Вставьте или загрузите содержимое файла бандла.</value>
   </data>
   <data name="ConfigChoice_NoneLabel" xml:space="preserve">
-    <value>— не выбрано —</value>
+    <value>- не выбрано -</value>
   </data>
   <data name="ConfigEditorVm_NotAConfig" xml:space="preserve">
     <value>Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).</value>
@@ -944,7 +944,7 @@
     <value>Попытка {0}</value>
   </data>
   <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
-    <value>У профиля нет конфигурации — задайте её в настройках</value>
+    <value>У профиля нет конфигурации - задайте её в настройках</value>
   </data>
   <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
     <value>Выберите профиль</value>
@@ -1034,7 +1034,7 @@
     <value>Закрыть</value>
   </data>
   <data name="ProfileChoice_NoneLabel" xml:space="preserve">
-    <value>— не выбрано —</value>
+    <value>- не выбрано -</value>
   </data>
   <data name="QrCode_CopiedToClipboard" xml:space="preserve">
     <value>Скопировано в буфер обмена.</value>
@@ -1082,7 +1082,7 @@
     <value>Не похоже на список маршрутизации.</value>
   </data>
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
-    <value>Слишком широкий путь — выберите конкретную папку приложения.</value>
+    <value>Слишком широкий путь - выберите конкретную папку приложения.</value>
   </data>
   <data name="RoutingEditor_Saved" xml:space="preserve">
     <value>Сохранено</value>
@@ -1091,10 +1091,10 @@
     <value>Выберите приложение или службу из списка.</value>
   </data>
   <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
-    <value>svchost.exe — общий хост служб, затуннелит много чужого. Выберите службу из списка.</value>
+    <value>svchost.exe - общий хост служб, затуннелит много чужого. Выберите службу из списка.</value>
   </data>
   <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
-    <value>Это общий хост WebView2 — правило на нём затуннелит все приложения на WebView2. Добавьте конкретное приложение, его веб-трафик пойдёт вместе с ним.</value>
+    <value>Это общий хост WebView2 - правило на нём затуннелит все приложения на WebView2. Добавьте конкретное приложение, его веб-трафик пойдёт вместе с ним.</value>
   </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>Все локальные сети уже в списке.</value>
@@ -1437,7 +1437,7 @@
     <value>Название конфигурации</value>
   </data>
   <data name="Main_RequiredEmptyWarning" xml:space="preserve">
-    <value>Обязательное поле — изменения не сохранятся, пока оно пустое.</value>
+    <value>Обязательное поле - изменения не сохранятся, пока оно пустое.</value>
   </data>
   <data name="Launcher_Title" xml:space="preserve">
     <value>Быстрый запуск</value>

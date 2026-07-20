@@ -9,6 +9,10 @@ desktop.ini
 *.user
 *.suo
 
+# .NET build output
+[Bb]in/
+[Oo]bj/
+
 # SQLite runtime
 *.db
 *.db-shm

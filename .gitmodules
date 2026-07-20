@@ -1,3 +1,6 @@
 [submodule "amneziageo-windows/amneziawg-windows"]
 	path = amneziageo-desktop/windows/amneziawg-windows
 	url = https://github.com/amnezia-vpn/amneziawg-windows.git
+[submodule "amneziageo-android/amneziawg-go"]
+	path = amneziageo-android/amneziawg-go
+	url = https://github.com/amnezia-vpn/amneziawg-go.git

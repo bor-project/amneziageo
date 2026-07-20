@@ -5,6 +5,7 @@
     <Project Path="..\amneziageo-ui\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
     <Project Path="..\amneziageo-ui\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
     <Project Path="..\amneziageo-ui\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
+    <Project Path="..\amneziageo-ui\AmneziaGeo.Ui\AmneziaGeo.Ui.csproj" />
   </Folder>
   <Folder Name="/android/">
     <Project Path="AmneziaGeo.Android.Engine\AmneziaGeo.Android.Engine.csproj" />

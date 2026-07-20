@@ -46,7 +46,10 @@
         "-AndroidSdk",
         "C:\\Users\\admin\\AppData\\Local\\Android\\Sdk",
         "-AvdName",
-        "Pixel_8_Pro"
+        "Pixel_8_Pro",
+        "-TimeoutSeconds",
+        "300",
+        "-NoSnapshotLoad"
       ],
       "problemMatcher": []
     },

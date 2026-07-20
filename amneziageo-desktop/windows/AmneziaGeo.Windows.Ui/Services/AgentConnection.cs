@@ -1,12 +1,13 @@
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
 
 namespace AmneziaGeo.Windows.Ui.Services;
 
 /// <summary>
 /// Holds the agent connection and surfaces status snapshots.
 /// </summary>
-internal sealed class AgentConnection : IDisposable
+internal sealed class AgentConnection : IAgentConnection
 {
     // Real UI presence; the agent keeps the tunnel up only while a UI is attached.
     private readonly StatusPipeClient _client = new() { AnnounceUi = true };

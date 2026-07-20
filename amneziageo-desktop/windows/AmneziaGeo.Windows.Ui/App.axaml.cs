@@ -8,8 +8,9 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
+using AmneziaGeo.Ui.ViewModels;
 using AmneziaGeo.Windows.Ui.Services;
-using AmneziaGeo.Windows.Ui.ViewModels;
 
 namespace AmneziaGeo.Windows.Ui;
 

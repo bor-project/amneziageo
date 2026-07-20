@@ -5,6 +5,7 @@
     <Project Path="amneziageo-ui/AmneziaGeo.Geo/AmneziaGeo.Geo.csproj" />
     <Project Path="amneziageo-ui/AmneziaGeo.Ipc/AmneziaGeo.Ipc.csproj" />
     <Project Path="amneziageo-ui/AmneziaGeo.Localization/AmneziaGeo.Localization.csproj" />
+    <Project Path="amneziageo-ui/AmneziaGeo.Ui/AmneziaGeo.Ui.csproj" />
   </Folder>
   <Folder Name="/windows/">
     <Project Path="amneziageo-desktop/windows/AmneziaGeo.Windows.App/AmneziaGeo.Windows.App.csproj" />

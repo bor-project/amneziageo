@@ -19,6 +19,21 @@
       "type": "coreclr",
       "request": "attach",
       "processId": "${command:pickProcess}"
+    },
+    {
+      "name": "Debug Android (Avalonia)",
+      "type": "mono",
+      "request": "attach",
+      "preLaunchTask": "android: deploy debug",
+      "address": "localhost",
+      "port": 10000
+    },
+    {
+      "name": "Attach Android (Avalonia)",
+      "type": "mono",
+      "request": "attach",
+      "address": "localhost",
+      "port": 10000
     }
   ]
 }

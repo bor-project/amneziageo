@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
         xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
         xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
         xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
@@ -109,15 +110,15 @@
 
           <!-- Profile picker: «- не выбрано -» then saved profiles. -->
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6" Width="300" Margin="0,6,0,0">
-            <ComboBox Classes="field" HorizontalAlignment="Stretch"
+            <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                       ItemsSource="{Binding Profile.ProfileOptions}"
                       SelectedItem="{Binding Home.ActiveProfileChoice, Mode=TwoWay}">
-              <ComboBox.ItemTemplate>
+              <controls:AdaptiveComboBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ProfileChoice">
                   <TextBlock Text="{Binding Name}" />
                 </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+              </controls:AdaptiveComboBox.ItemTemplate>
+            </controls:AdaptiveComboBox>
             <!-- No profiles: hint to add one in settings. -->
             <TextBlock IsVisible="{Binding !HasProfiles}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"

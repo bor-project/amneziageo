@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.BundleImportView"
@@ -17,12 +18,12 @@
     <!-- Global name-conflict policy applied to every clashing config / routing list / profile. -->
     <StackPanel Spacing="4">
       <TextBlock Classes="label" Text="{l:Tr BundleImport_ConflictLabel}" />
-      <ComboBox Classes="field" HorizontalAlignment="Stretch" SelectedIndex="{Binding ConflictPolicyIndex, Mode=TwoWay}">
+      <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" SelectedIndex="{Binding ConflictPolicyIndex, Mode=TwoWay}">
         <ComboBoxItem Content="{l:Tr BundleImport_ConflictAddNew}" />
         <ComboBoxItem Content="{l:Tr BundleImport_ConflictReplace}" />
         <ComboBoxItem Content="{l:Tr BundleImport_ConflictSkip}" />
         <ComboBoxItem Content="{l:Tr BundleImport_ConflictMerge}" />
-      </ComboBox>
+      </controls:AdaptiveComboBox>
     </StackPanel>
 
     <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"

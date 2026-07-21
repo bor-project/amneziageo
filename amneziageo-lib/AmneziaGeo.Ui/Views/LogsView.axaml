@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.LogsView"
@@ -37,7 +38,7 @@
       </Border>
       <StackPanel Grid.Column="2" Width="200" VerticalAlignment="Bottom" Spacing="6">
         <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" />
-        <ComboBox Classes="field" HorizontalAlignment="Stretch"
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                   ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
       </StackPanel>
     </Grid>
@@ -59,7 +60,7 @@
       </Border>
       <StackPanel Spacing="6">
         <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" />
-        <ComboBox Classes="field" HorizontalAlignment="Stretch"
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                   ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
       </StackPanel>
     </StackPanel>
@@ -79,7 +80,7 @@
                 <TextBlock Text="{l:Tr Main_LogCaptureLevelTitle}" FontSize="13.5" />
                 <TextBlock Text="{l:Tr Main_LogVerbosityHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
               </StackPanel>
-              <ComboBox Classes="field" MinWidth="220" HorizontalAlignment="Left"
+              <controls:AdaptiveComboBox Classes="field" MinWidth="220" HorizontalAlignment="Left"
                         ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
             </StackPanel>
 

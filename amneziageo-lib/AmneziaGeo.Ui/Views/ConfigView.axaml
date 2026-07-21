@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
@@ -36,16 +37,16 @@
     <!-- Config catalogue combo: «- не выбрано -» then saved configs. -->
     <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6">
       <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
-      <ComboBox Classes="field" HorizontalAlignment="Stretch"
+      <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                 IsEnabled="{Binding !IsCreatingSectionConfig}"
                 ItemsSource="{Binding ConfigCatalogueOptions}"
                 SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
-        <ComboBox.ItemTemplate>
+        <controls:AdaptiveComboBox.ItemTemplate>
           <DataTemplate x:DataType="vm:ConfigChoice">
             <TextBlock Text="{Binding Name}" />
           </DataTemplate>
-        </ComboBox.ItemTemplate>
-      </ComboBox>
+        </controls:AdaptiveComboBox.ItemTemplate>
+      </controls:AdaptiveComboBox>
       <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                  Text="{l:Tr Main_NoConfigsHint}" />
     </StackPanel>

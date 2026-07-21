@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
@@ -30,16 +31,16 @@
                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
-            <ComboBox Classes="field" Width="92" VerticalAlignment="Center"
+            <controls:AdaptiveComboBox Classes="field" Width="92" VerticalAlignment="Center"
                       IsEnabled="{Binding GeoAutoCheck}"
                       ItemsSource="{Binding GeoCheckIntervals}"
                       SelectedItem="{Binding GeoCheckIntervalHours, Mode=TwoWay}">
-              <ComboBox.ItemTemplate>
+              <controls:AdaptiveComboBox.ItemTemplate>
                 <DataTemplate x:DataType="x:Int32">
                   <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
                 </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+              </controls:AdaptiveComboBox.ItemTemplate>
+            </controls:AdaptiveComboBox>
             <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
           </StackPanel>
         </Grid>
@@ -58,7 +59,7 @@
 
         <!-- Wide: kind picker, URL, and add button inline. -->
         <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCompact}">
-          <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
+          <controls:AdaptiveComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
                     ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
                     IsEnabled="{Binding !SourceKindLocked}"
                     ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
@@ -75,7 +76,7 @@
         <!-- Compact: kind picker and add button split the row evenly; URL drops to its own full-width row. -->
         <StackPanel Spacing="8" IsVisible="{Binding IsCompact}">
           <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-            <ComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+            <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
                       ItemsSource="{Binding SourceKinds}" SelectedItem="{Binding NewSourceKind, Mode=TwoWay}"
                       IsEnabled="{Binding !SourceKindLocked}"
                       ToolTip.Tip="{l:Tr Main_SourceKindTooltip}" />
@@ -142,7 +143,7 @@
                     <!-- Compact puts the kind picker and URL on separate rows, and splits Save / Cancel evenly. -->
                     <StackPanel IsVisible="{Binding IsEditing}" Spacing="6">
                       <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" RowSpacing="6">
-                        <ComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
+                        <controls:AdaptiveComboBox Grid.Column="0" Classes="field" Width="100" Margin="0,0,8,0"
                                   ItemsSource="{Binding Kinds}" SelectedItem="{Binding EditKind, Mode=TwoWay}" />
                         <TextBox Classes="field"
                                  Grid.Row="{Binding $parent[ItemsControl].((vm:SourcesViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"

@@ -40,10 +40,11 @@ public sealed partial class App : Avalonia.Application
             var connection = new AndroidAgentConnection();
             _connection = connection;
             var viewModel = new MainWindowViewModel(connection, prefs);
-            singleView.MainView = new SharedMainView
+            var mainView = new SharedMainView
             {
                 DataContext = viewModel,
             };
+            singleView.MainView = new MobileSelectHost(mainView);
             viewModel.Start();
         }
 

@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.ConfigTransportView"
@@ -32,11 +33,11 @@
       </StackPanel>
       <StackPanel Width="180" Spacing="2" Margin="0,0,12,10">
         <TextBlock Classes="label" Text="{l:Tr Main_AuthLabel}" />
-        <ComboBox Classes="field" HorizontalAlignment="Stretch" SelectedIndex="{Binding AuthMode, Mode=TwoWay}">
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" SelectedIndex="{Binding AuthMode, Mode=TwoWay}">
           <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
           <ComboBoxItem Content="{l:Tr Main_AuthBasic}" />
           <ComboBoxItem Content="{l:Tr Main_AuthToken}" />
-        </ComboBox>
+        </controls:AdaptiveComboBox>
       </StackPanel>
       <Panel Width="300" Margin="0,0,0,10">
         <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">

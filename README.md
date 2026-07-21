@@ -142,13 +142,13 @@ Discord text and voice now go through the tunnel over TCP 443, and everything el
 
 | Directory | Platform | Engine packaging | Status |
 |---|---|---|---|
-| [`amneziageo-ui`](amneziageo-ui/) | shared (C#) | .NET libraries: declarations, persistence, geo parsing, IPC, localization | in use |
-| [`amneziageo-desktop/windows`](amneziageo-desktop/windows/) | Windows | C# host plus `tunnel.dll` (c-shared) via P/Invoke | beta |
-| [`amneziageo-desktop/linux`](amneziageo-desktop/linux/) | Linux | C# plus `amneziawg-go` userspace daemon (UAPI) | planned |
+| [`amneziageo-lib`](amneziageo-lib/) | shared (C#) | Avalonia views/view models plus declarations, persistence, geo parsing, IPC, localization | in use |
+| [`amneziageo-windows`](amneziageo-windows/) | Windows | C# host plus `tunnel.dll` (c-shared) via P/Invoke | beta |
+| [`amneziageo-linux`](amneziageo-linux/) | Linux | C# plus `amneziawg-go` userspace daemon (UAPI) | planned |
 | [`amneziageo-android`](amneziageo-android/) | Android | C# (.NET) `VpnService` plus gomobile `.aar` | planned |
 | [`amneziageo-apple`](amneziageo-apple/) | macOS and iOS | native Swift, shared `AmneziaGeoKit` over `libwg-go.a` | planned |
 
-Shared code is organized per language. [`amneziageo-ui`](amneziageo-ui/) contains .NET class libraries referenced by the Windows, Linux, and Android heads through `<ProjectReference>` (not a submodule), and each head keeps its own solution. `AmneziaGeoKit` (Swift) is shared across the two Apple platforms. Git submodules are reserved for the upstream engines (`amneziawg-windows`, `amneziawg-apple`).
+Shared code is organized per language. [`amneziageo-lib`](amneziageo-lib/) contains .NET class libraries referenced by the Windows, Linux, and Android heads through `<ProjectReference>` (not a submodule), and each head keeps its own solution. `AmneziaGeoKit` (Swift) is shared across the two Apple platforms. Git submodules are reserved for the upstream engines (`amneziawg-windows`, `amneziawg-apple`).
 
 A single C# codebase does not cover every platform, because platform VPN APIs differ. Apple (macOS and iOS) is one native Swift project, since NetworkExtension is native-only. C# covers Windows, Linux, and Android, along with the shared UI and orchestration. The C# and Swift sides share concepts (config and geo logic) rather than code.
 
@@ -183,10 +183,10 @@ Requirements: the .NET 10 SDK, Windows, and the WiX toolset for the installer.
 
 ```powershell
 # UI and agent
-dotnet build amneziageo-desktop/windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj -c Release
+dotnet build amneziageo-windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj -c Release
 
 # Full installer (MSI plus Burn bundle), output to dist\AmneziaGeo-<version>-win-<arch>-<tag>.exe
-amneziageo-desktop/windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
+amneziageo-windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
 ```
 
 The bundle version is `1.0.1.<git-commit-count>`, so every build is strictly newer to Burn. Combined with the MSI's `MajorUpgrade AllowDowngrades`, a same-version rebuild with different code reinstalls cleanly as an update.

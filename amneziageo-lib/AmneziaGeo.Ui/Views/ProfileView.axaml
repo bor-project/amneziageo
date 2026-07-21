@@ -1,0 +1,159 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Views.ProfileView"
+             x:CompileBindings="True"
+             x:DataType="vm:ProfileViewModel">
+  <StackPanel Spacing="14">
+    <!-- Header: section title + count pill + new-profile button. -->
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ProfileSection}" VerticalAlignment="Center" />
+      <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
+              Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
+        <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
+      </Border>
+      <Button Grid.Column="3" Classes="accent" Width="130" Command="{Binding CreateProfileCommand}">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <TextBlock Text="+" />
+          <TextBlock Text="{l:Tr Main_ProfileAddButton}" />
+        </StackPanel>
+      </Button>
+    </Grid>
+
+    <!-- No configurations yet: explain what to do first. -->
+    <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12.5"
+               TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"
+               Margin="0,24,0,8" MaxWidth="360"
+               Text="{l:Tr Main_ProfileNeedsConfigHint}" />
+
+    <!-- Profile catalogue combo: «- не выбрано -» then saved profiles. -->
+    <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
+      <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
+      <!-- Combo picks the profile to set up; the button sets it as the active one (disabled when it already is). -->
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding ProfileOptions}"
+                  SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
+          <controls:AdaptiveComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ProfileChoice">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </controls:AdaptiveComboBox.ItemTemplate>
+        </controls:AdaptiveComboBox>
+        <Button Grid.Column="1" Classes="accent" MinWidth="110" VerticalAlignment="Stretch"
+                Content="{l:Tr Main_SetActiveProfile}"
+                Command="{Binding SetActiveProfileCommand}" />
+      </Grid>
+      <TextBlock IsVisible="{Binding ShowNoProfilesYetHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                 Text="{l:Tr Main_NoProfilesYetHint}" />
+    </StackPanel>
+
+    <!-- Open profile's editor. Name autosaves on blur; config / routing picks autosave at once. -->
+    <StackPanel IsVisible="{Binding IsProfileDetail}" Spacing="14" LostFocus="OnProfileFieldBlur">
+
+      <!-- Settings card: name + config picker + routing picker. Committed with the header Save (#143). -->
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent">
+        <StackPanel Spacing="14">
+          <TextBlock Text="{l:Tr Main_ProfileSettingsTitle}" FontWeight="SemiBold" FontSize="15" />
+
+          <!-- Rename. -->
+          <StackPanel Spacing="4">
+            <TextBlock Classes="label" Text="{l:Tr Main_NameLabel}" />
+            <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                       Text="{l:Tr Main_ProfileRenameHint}" />
+            <TextBox Classes="field" Classes.invalid="{Binding ProfileNameMissing}"
+                     Text="{Binding ProfileRename, Mode=TwoWay}" />
+            <TextBlock Classes="fieldwarn" IsVisible="{Binding ProfileNameMissing}"
+                       Text="{l:Tr Main_RequiredEmptyWarning}" />
+            <TextBlock Text="{Binding ProfileRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                       IsVisible="{Binding ProfileRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+
+          <!-- Config + routing pickers for the open profile. -->
+          <StackPanel DataContext="{Binding OpenProfile}" x:DataType="vm:ProfileItemViewModel" Spacing="14">
+
+            <!-- Config picker: «- не выбрано -» then saved configs. -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="{l:Tr Main_ConfigLabel}" />
+              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                        ItemsSource="{Binding ConfigOptions}"
+                        SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
+                <controls:AdaptiveComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ConfigChoice">
+                    <TextBlock Text="{Binding Name}" />
+                  </DataTemplate>
+                </controls:AdaptiveComboBox.ItemTemplate>
+              </controls:AdaptiveComboBox>
+              <TextBlock IsVisible="{Binding !HasConfig}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                         Text="{l:Tr Main_ProfileNoConfigHint}" />
+            </StackPanel>
+
+            <!-- Routing picker: None means «Полный туннель». -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
+              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                        ItemsSource="{Binding RoutingListOptions}"
+                        SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
+                <controls:AdaptiveComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RoutingListChoice">
+                    <!-- Relabel the "none" sentinel as «Полный туннель». -->
+                    <Panel>
+                      <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
+                      <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
+                    </Panel>
+                  </DataTemplate>
+                </controls:AdaptiveComboBox.ItemTemplate>
+              </controls:AdaptiveComboBox>
+            </StackPanel>
+
+            <!-- Agent rejection from the header Save (config/routing commit), so it is not silently lost (#143). -->
+            <TextBlock Text="{Binding EditStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                       IsVisible="{Binding EditStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
+           the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
+      <Border Background="Transparent"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16">
+        <StackPanel Spacing="10">
+          <!-- Compact stacks the trigger under the description; wide keeps them side by side. -->
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
+                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+              <TextBlock Text="{l:Tr Main_DeleteProfileTitle}" FontWeight="SemiBold" FontSize="13.5" />
+              <TextBlock Text="{l:Tr Main_DeleteProfilePrompt}" FontSize="12" TextWrapping="Wrap" />
+              <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteProfileHint}" />
+            </StackPanel>
+            <Grid VerticalAlignment="Center"
+                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                  ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_DeleteProfileButton}"
+                      IsVisible="{Binding !ProfileDeletePending}"
+                      Command="{Binding RequestDeleteOpenProfileCommand}" />
+              <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_ConfirmDeleteButton}"
+                      IsVisible="{Binding ProfileDeletePending}"
+                      Command="{Binding ConfirmDeleteOpenProfileCommand}" />
+              <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_CancelButton}"
+                      IsVisible="{Binding ProfileDeletePending}"
+                      Command="{Binding CancelDeleteProfileCommand}" />
+            </Grid>
+          </Grid>
+          <TextBlock Text="{Binding ProfileDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                     IsVisible="{Binding ProfileDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

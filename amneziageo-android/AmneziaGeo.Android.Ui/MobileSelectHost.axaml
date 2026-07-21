@@ -1,0 +1,81 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AmneziaGeo.Android.Ui.MobileSelectHost"
+             ClipToBounds="True">
+  <UserControl.Styles>
+    <Style Selector="Button.mobile-select-option">
+      <Setter Property="MinHeight" Value="48" />
+      <Setter Property="Padding" Value="14,10" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+    <Style Selector="Button.mobile-select-option:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="Button.mobile-select-option.selected, Button.mobile-select-option.selected:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.mobile-select-option:pressed">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+    <Style Selector="Button.mobile-select-option ContentControl.mobile-select-content">
+      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
+    </Style>
+    <Style Selector="Button.mobile-select-option Ellipse.mobile-select-ring">
+      <Setter Property="Stroke" Value="{DynamicResource AgBorder2Brush}" />
+    </Style>
+    <Style Selector="Button.mobile-select-option.selected Ellipse.mobile-select-ring">
+      <Setter Property="Stroke" Value="White" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid x:Name="RootGrid">
+    <Grid x:Name="SelectOverlay" ZIndex="1000" IsVisible="False" Opacity="0">
+      <Grid.Transitions>
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.16" />
+        </Transitions>
+      </Grid.Transitions>
+
+      <Border Background="#73000000" PointerPressed="OnBackdropPointerPressed" />
+
+      <Border x:Name="SelectSheet"
+              VerticalAlignment="Bottom"
+              HorizontalAlignment="Stretch"
+              Background="{DynamicResource AgPanelBrush}"
+              BorderBrush="{DynamicResource AgBorderBrush}"
+              BorderThickness="1,1,1,0"
+              CornerRadius="8,8,0,0"
+              Padding="12,8,12,16"
+              BoxShadow="0 -8 24 0 #26000000">
+        <Border.RenderTransform>
+          <TranslateTransform Y="32">
+            <TranslateTransform.Transitions>
+              <Transitions>
+                <DoubleTransition Property="Y" Duration="0:0:0.16" />
+              </Transitions>
+            </TranslateTransform.Transitions>
+          </TranslateTransform>
+        </Border.RenderTransform>
+
+        <Grid RowDefinitions="Auto,*">
+          <Border Width="36" Height="4" CornerRadius="2"
+                  HorizontalAlignment="Center" Margin="0,0,0,8"
+                  Background="{DynamicResource AgMuted2Brush}" />
+          <ScrollViewer x:Name="OptionsScroll" Grid.Row="1"
+                        HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="OptionsPanel" Spacing="4" />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -1,8 +1,12 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using AmneziaGeo.Android.Ui.ViewModels;
-using AmneziaGeo.Android.Ui.Views;
+using Avalonia.Styling;
+using AmneziaGeo.Android.Ui.Services;
+using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
+using AmneziaGeo.Ui.ViewModels;
+using SharedMainView = AmneziaGeo.Ui.MainView;
 
 namespace AmneziaGeo.Android.Ui;
 
@@ -11,6 +15,8 @@ namespace AmneziaGeo.Android.Ui;
 /// </summary>
 public sealed partial class App : Avalonia.Application
 {
+    private AndroidAgentConnection? _connection;
+
     /// <inheritdoc/>
     public override void Initialize()
     {
@@ -22,10 +28,24 @@ public sealed partial class App : Avalonia.Application
     {
         if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)
         {
-            singleView.MainView = new MainView
+            var prefs = UiPreferences.Load();
+            RequestedThemeVariant = prefs.Theme switch
             {
-                DataContext = new MainViewModel(),
+                "light" => ThemeVariant.Light,
+                "dark" => ThemeVariant.Dark,
+                _ => ThemeVariant.Default,
             };
+            Loc.Instance.ApplyStartupCulture(prefs.Language);
+
+            var connection = new AndroidAgentConnection();
+            _connection = connection;
+            var viewModel = new MainWindowViewModel(connection, prefs);
+            var mainView = new SharedMainView
+            {
+                DataContext = viewModel,
+            };
+            singleView.MainView = new MobileSelectHost(mainView);
+            viewModel.Start();
         }
 
         base.OnFrameworkInitializationCompleted();

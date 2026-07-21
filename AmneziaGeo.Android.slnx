@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Shared/">
+    <Project Path="amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
+    <Project Path="amneziageo-lib\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
+    <Project Path="amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+    <Project Path="amneziageo-lib\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <Project Path="amneziageo-lib\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
+    <Project Path="amneziageo-lib\AmneziaGeo.Ui\AmneziaGeo.Ui.csproj" />
+  </Folder>
+  <Folder Name="/Android/">
+    <Project Path="amneziageo-android\AmneziaGeo.Android.Engine\AmneziaGeo.Android.Engine.csproj" />
+    <Project Path="amneziageo-android\AmneziaGeo.Android.Ui\AmneziaGeo.Android.Ui.csproj" />
+  </Folder>
+</Solution>

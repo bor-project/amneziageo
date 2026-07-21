@@ -1,0 +1,218 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Views.LogsView"
+             x:CompileBindings="True"
+             x:DataType="vm:LogsViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgChevronLeftGeometry">M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z</StreamGeometry>
+    <StreamGeometry x:Key="AgChevronRightGeometry">M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z</StreamGeometry>
+    <StreamGeometry x:Key="AgTrashGeometry">M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z</StreamGeometry>
+    <StreamGeometry x:Key="AgDownloadGeometry">M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z</StreamGeometry>
+    <StreamGeometry x:Key="AgSearchGeometry">M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z</StreamGeometry>
+    <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
+  </UserControl.Resources>
+  <!-- Title, shared segment+source header, then a single content area; only the log body scrolls. -->
+  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
+
+    <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_AgentLogSection}" />
+
+    <!-- Shared header: view/settings segment + source picker, common to both panes. -->
+    <!-- Wide: segment left, source right on one row. -->
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCompact}">
+      <Border Grid.Column="0" VerticalAlignment="Bottom"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
+              CornerRadius="9" Padding="3" MaxWidth="360">
+        <UniformGrid Columns="2">
+          <Button Classes="seg" Classes.active="{Binding IsViewMode}" Command="{Binding ShowViewCommand}"
+                  HorizontalAlignment="Stretch" Padding="20,6">
+            <TextBlock Text="{l:Tr Main_LogTabView}" HorizontalAlignment="Center" />
+          </Button>
+          <Button Classes="seg" Classes.active="{Binding IsSettingsMode}" Command="{Binding ShowSettingsCommand}"
+                  HorizontalAlignment="Stretch" Padding="20,6">
+            <TextBlock Text="{l:Tr Main_LogTabSettings}" HorizontalAlignment="Center" />
+          </Button>
+        </UniformGrid>
+      </Border>
+      <StackPanel Grid.Column="2" Width="200" VerticalAlignment="Bottom" Spacing="6">
+        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" />
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
+      </StackPanel>
+    </Grid>
+
+    <!-- Narrow: segment then source stacked. -->
+    <StackPanel Grid.Row="1" Spacing="10" IsVisible="{Binding IsCompact}">
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
+              CornerRadius="9" Padding="3">
+        <UniformGrid Columns="2">
+          <Button Classes="seg" Classes.active="{Binding IsViewMode}" Command="{Binding ShowViewCommand}"
+                  HorizontalAlignment="Stretch" Padding="20,6">
+            <TextBlock Text="{l:Tr Main_LogTabView}" HorizontalAlignment="Center" />
+          </Button>
+          <Button Classes="seg" Classes.active="{Binding IsSettingsMode}" Command="{Binding ShowSettingsCommand}"
+                  HorizontalAlignment="Stretch" Padding="20,6">
+            <TextBlock Text="{l:Tr Main_LogTabSettings}" HorizontalAlignment="Center" />
+          </Button>
+        </UniformGrid>
+      </Border>
+      <StackPanel Spacing="6">
+        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" />
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Content: settings pane or viewer pane. -->
+    <Panel Grid.Row="2">
+
+      <!-- Settings pane: capture level (ageo) or on/off (routes), then log actions; stacked under the shared source. -->
+      <Border IsVisible="{Binding IsSettingsMode}" VerticalAlignment="Top"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent">
+        <StackPanel Spacing="18" HorizontalAlignment="Left" MaxWidth="420">
+          <Panel>
+            <!-- ageo: maximum capture level (incl. none). -->
+            <StackPanel HorizontalAlignment="Left" Spacing="8" IsVisible="{Binding IsAgentLog}">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{l:Tr Main_LogCaptureLevelTitle}" FontSize="13.5" />
+                <TextBlock Text="{l:Tr Main_LogVerbosityHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+              </StackPanel>
+              <controls:AdaptiveComboBox Classes="field" MinWidth="220" HorizontalAlignment="Left"
+                        ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
+            </StackPanel>
+
+            <!-- routes: on/off (no level). -->
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsAgentLog}">
+              <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,12,0">
+                <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
+                <TextBlock Text="{l:Tr Main_RouteLogHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+              </StackPanel>
+              <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
+            </Grid>
+          </Panel>
+
+          <Border Height="1" Background="{DynamicResource AgBorderBrush}" Opacity="0.6" />
+
+          <!-- Log actions: clear + export the selected source. -->
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Classes="methodpick" Padding="16,8" Command="{Binding ClearLogCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_ClearLogButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="methodpick" Padding="16,8" Click="OnExportLog">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_ExportLogButton}" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Viewer pane: full-width card. Body fills the rest under the control bar. -->
+      <Border IsVisible="{Binding IsViewMode}"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent">
+        <Grid RowDefinitions="Auto,*">
+
+          <!-- Wide control bar: search fills; arrows-only nav; follow. -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding !IsCompact}">
+            <TextBox Grid.Column="0" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
+                     Watermark="{l:Tr Main_LogSearchWatermark}">
+              <TextBox.InnerLeftContent>
+                <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
+                          Margin="10,0,4,0" Foreground="{DynamicResource AgMuted2Brush}" />
+              </TextBox.InnerLeftContent>
+              <TextBox.InnerRightContent>
+                <TextBlock Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5" Margin="0,0,10,0"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding SearchSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </TextBox.InnerRightContent>
+            </TextBox>
+            <Button Grid.Column="1" Classes="methodpick" Padding="10,7" Command="{Binding PageOlderCommand}"
+                    ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
+              <PathIcon Data="{StaticResource AgChevronLeftGeometry}" Width="14" Height="14" />
+            </Button>
+            <Button Grid.Column="2" Classes="methodpick" Padding="10,7" Command="{Binding PageNewerCommand}"
+                    ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
+              <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="14" Height="14" />
+            </Button>
+            <TextBlock Grid.Column="3" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5"
+                       VerticalAlignment="Center" Margin="8,0,0,0" />
+            <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
+          </Grid>
+
+          <!-- Narrow control bar: search then nav + follow. -->
+          <StackPanel Grid.Row="0" Spacing="10" IsVisible="{Binding IsCompact}">
+            <TextBox Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
+                     Watermark="{l:Tr Main_LogSearchWatermark}">
+              <TextBox.InnerLeftContent>
+                <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
+                          Margin="10,0,4,0" Foreground="{DynamicResource AgMuted2Brush}" />
+              </TextBox.InnerLeftContent>
+              <TextBox.InnerRightContent>
+                <TextBlock Text="{Binding SearchSummary}" Classes="muted" FontSize="11.5" Margin="0,0,10,0"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding SearchSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </TextBox.InnerRightContent>
+            </TextBox>
+
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+              <Button Grid.Column="0" Classes="methodpick" Padding="12,7" Command="{Binding PageOlderCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                  <PathIcon Data="{StaticResource AgChevronLeftGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
+                  <TextBlock Text="{l:Tr Main_LogOlderShort}" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button Grid.Column="1" Classes="methodpick" Padding="12,7" Command="{Binding PageNewerCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="5">
+                  <TextBlock Text="{l:Tr Main_LogNewerShort}" VerticalAlignment="Center" />
+                  <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <TextBlock Grid.Column="3" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+
+          <!-- Log body (shared): text / empty state / loader. Fills the pane width. -->
+          <Border Grid.Row="1" Margin="0,14,0,0" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                  Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
+            <Panel>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                            IsVisible="{Binding ShowBody}">
+                <SelectableTextBlock Text="{Binding LogText}"
+                                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                     FontSize="11.5" LineHeight="18"
+                                     Foreground="{DynamicResource AgMutedBrush}"
+                                     TextWrapping="Wrap" Margin="16,13" />
+              </ScrollViewer>
+              <!-- Empty state. -->
+              <StackPanel IsVisible="{Binding ShowEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Spacing="10" Margin="24">
+                <PathIcon Data="{StaticResource AgDocGeometry}" Width="42" Height="42"
+                          Foreground="{DynamicResource AgMuted2Brush}" HorizontalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_LogEmptyTitle}" FontSize="14" FontWeight="SemiBold"
+                           Foreground="{DynamicResource AgMutedBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_LogEmptyHint}" Classes="muted" FontSize="12"
+                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="280" />
+              </StackPanel>
+              <!-- Loader while a window loads. -->
+              <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+                <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+              </StackPanel>
+            </Panel>
+          </Border>
+
+        </Grid>
+      </Border>
+
+    </Panel>
+  </Grid>
+</UserControl>

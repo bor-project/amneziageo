@@ -1,0 +1,128 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\AmneziaGeo.Windows.Engine\AmneziaGeo.Windows.Engine.csproj" />
+  </ItemGroup>
+
+  <!-- Native deps keyed off the target arch: tunnel.dll (built by amneziawg-windows\build.cmd into
+       x64\ / arm64\) and wintun.dll (from the wintun zip: amd64\ / arm64\). -->
+  <PropertyGroup>
+    <TunnelArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</TunnelArch>
+    <TunnelArch Condition="'$(TunnelArch)' == ''">x64</TunnelArch>
+    <WintunArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</WintunArch>
+    <WintunArch Condition="'$(WintunArch)' == ''">amd64</WintunArch>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\amneziawg-windows\$(TunnelArch)\tunnel.dll" Link="tunnel.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\amneziawg-windows\.deps\wintun\bin\$(WintunArch)\wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />
+    <!-- wstunnel client (erebe/wstunnel v10): the UDP-over-TCP transport launched per tunnel when a
+         config enables WebSocket. Shipped next to the agent exe so TunnelPaths.WsTunnelExe() finds it.
+         x64-only for now; an arm64 build ships without it (WebSocket transport unavailable) until an
+         arm64 wstunnel is added. -->
+    <None Include="tools\wstunnel.exe" Link="wstunnel.exe" CopyToOutputDirectory="PreserveNewest" Condition="'$(RuntimeIdentifier)' != 'win-arm64'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <!-- WMI (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder) is the only reliable
+         in-process way to set per-NIC DNS on this OS: SetInterfaceDnsSettings is a no-op here and
+         a bare registry write isn't honored without the WMI/CIM notify. Needs built-in COM. -->
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.13" />
+    <PackageReference Include="System.Management" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatform">
+      <_Parameter1>windows</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Update URL baked at build time from installer.config.json (build-installer.ps1 passes -p:UpdateUrl).
+       Read back by AppSettings as the default UpdateUrl. Absent => no metadata => updates stay disabled. -->
+  <ItemGroup Condition="'$(UpdateUrl)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.UpdateUrl</_Parameter1>
+      <_Parameter2>$(UpdateUrl)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Build target (win-<arch>-<fdd|scd>) baked from the installer build (build-installer.ps1 passes
+       -p:BuildTarget). AppSettings reads it back so the update check downloads the matching per-build
+       installer. Absent (plain build) => the update check falls back to the manifest setup field. -->
+  <ItemGroup Condition="'$(BuildTarget)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.BuildTarget</_Parameter1>
+      <_Parameter2>$(BuildTarget)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Prerelease channel toggle baked from installer.config.json (build-installer.ps1 passes
+       -p:AllowPrerelease). "1" => the update check also offers prereleases. Absent/"0" => stable only. -->
+  <ItemGroup Condition="'$(AllowPrerelease)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.AllowPrerelease</_Parameter1>
+      <_Parameter2>$(AllowPrerelease)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Bake the AmneziaWG engine version into this assembly so the agent can report it over IPC:
+       tunnel.dll carries no version resource, so this build-time value (read back via AssemblyMetadata
+       "AmneziaGeo.EngineVersion" in AppSettings) is the authoritative engine version. The value is the
+       git-describe tag of the bundled amneziawg-windows submodule (e.g. v0.1.9), i.e. the engine this
+       build is built against; keep x64\tunnel.dll in sync with that submodule checkout.
+
+       build-installer.ps1 passes -p:AmneziaEngineVersion=... to bake it deterministically without
+       depending on git/submodule state at publish time. We accept git's output ONLY on a clean exit
+       and a single whitespace-free token: git describe's stderr (e.g. "fatal: not a git repository")
+       is also captured by ConsoleToMSBuild, and the "always" fallback would surface a bare commit SHA
+       on a tag-less checkout; both must fall through to empty so the UI shows "н/д" rather than
+       garbage. Emitted as an AssemblyAttribute through the SDK's assembly-info generation, so it only
+       forces a recompile when the value actually changes. -->
+  <Target Name="BakeEngineVersion" BeforeTargets="GetAssemblyAttributes;CoreGenerateAssemblyInfo">
+    <Exec Condition="'$(AmneziaEngineVersion)' == ''" Command="git -C &quot;$(MSBuildProjectDirectory)\..\amneziawg-windows&quot; describe --tags" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_AwgDescribe" />
+      <Output TaskParameter="ExitCode" PropertyName="_AwgDescribeExit" />
+    </Exec>
+    <PropertyGroup>
+      <!-- Explicit override wins; otherwise take git's output only when it exited 0 and is a single
+           token (git's multi-word error text is rejected even if it leaks into ConsoleOutput). -->
+      <_AmneziaEngineVersion>$(AmneziaEngineVersion)</_AmneziaEngineVersion>
+      <_AmneziaEngineVersion Condition="'$(_AmneziaEngineVersion)' == '' and '$(_AwgDescribeExit)' == '0' and '$(_AwgDescribe.Trim())' != '' and !$(_AwgDescribe.Trim().Contains(' '))">$(_AwgDescribe.Trim())</_AmneziaEngineVersion>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(_AmneziaEngineVersion)' != ''">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+        <_Parameter1>AmneziaGeo.EngineVersion</_Parameter1>
+        <_Parameter2>$(_AmneziaEngineVersion)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Baseline app version; the installer build overrides it with -p:Version=1.0.2.<build> so the
+         running app reports the same version the self-update check compares against. -->
+    <Version>0.0.1</Version>
+    <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
+    <PlatformTarget Condition="'$(PlatformTarget)' == ''">x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- System.Management relies on built-in COM interop, disabled by default on net10. -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <!-- Service runtime tuning. R2R precompiles the app assemblies so the agent AND every per-tunnel copy skip
+         JIT-ing them (less startup CPU + JIT working set). InvariantGlobalization drops ICU from both processes:
+         the App is culture-clean (no AmneziaGeo.Localization reference; all parse/format uses InvariantCulture).
+         Do NOT set InvariantGlobalization on the UI/Installer - they resolve named cultures (ru/en). -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

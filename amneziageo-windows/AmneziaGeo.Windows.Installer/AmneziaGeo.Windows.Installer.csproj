@@ -1,0 +1,40 @@
+<!-- AmneziaGeo installer UI: a WiX v5 out-of-process managed (WPF) Bootstrapper Application.
+     Plain Microsoft.NET.Sdk (NOT the WiX SDK) producing a WinExe; the only package is the v5
+     BA API. Targets net10.0-windows like the rest of the product, so a self-contained build needs
+     no runtime on the target, and a framework-dependent build needs only the .NET 10 Desktop
+     Runtime (the build picks self-contained vs framework-dependent from installer.config.json). -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
+    <PlatformTarget Condition="'$(PlatformTarget)' == ''">x64</PlatformTarget>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AmneziaGeo.Windows.Installer</AssemblyName>
+    <RootNamespace>AmneziaGeo.Windows.Installer</RootNamespace>
+    <!-- WPF falls back to the executable icon for the window/taskbar when Window.Icon is unset. -->
+    <ApplicationIcon>..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</ApplicationIcon>
+    <!-- We create the WPF Application by hand in the BA thread, so suppress the auto-generated
+         WPF entry point and use our own Program.Main. -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The single SDK package for managed BAs in WiX v5 (replaces v4's WixToolset.Mba.Core +
+         WixToolset.BalUtil); carries mbanative.dll as a runtime asset. -->
+    <PackageReference Include="WixToolset.BootstrapperApplicationApi" Version="5.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared localization (#106): the same resx-backed IStringLocalizer the app uses, so the installer UI
+         is bilingual too (system UI language at startup, English fallback). -->
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />
+    <!-- Installer choices persist in the shared state.db (own local_prefs table, no schema-version logic). -->
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+  </ItemGroup>
+
+</Project>

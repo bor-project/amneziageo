@@ -1,0 +1,1481 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="General_Section" xml:space="preserve">
+    <value>Общие</value>
+  </data>
+  <data name="General_ConnectionSection" xml:space="preserve">
+    <value>Подключение</value>
+  </data>
+  <data name="General_ShowNotifications" xml:space="preserve">
+    <value>Показывать оповещения</value>
+  </data>
+  <data name="General_ShowNotificationsHint" xml:space="preserve">
+    <value>Показывать оповещения в трее при смене состояния подключения.</value>
+  </data>
+  <data name="General_AllowPrerelease" xml:space="preserve">
+    <value>Проверять предварительные версии</value>
+  </data>
+  <data name="General_AllowPrereleaseHint" xml:space="preserve">
+    <value>Предлагать бета-сборки при проверке обновлений, не только стабильные релизы.</value>
+  </data>
+  <data name="General_SurviveReboot" xml:space="preserve">
+    <value>Восстанавливать после перезагрузки</value>
+  </data>
+  <data name="General_SurviveRebootHint" xml:space="preserve">
+    <value>Автоподключение выбранного профиля при запуске компьютера.</value>
+  </data>
+  <data name="General_PeriodicReconnect" xml:space="preserve">
+    <value>Периодическое авто-переподключение</value>
+  </data>
+  <data name="General_PeriodicReconnectHint" xml:space="preserve">
+    <value>Повторять попытки с заданным интервалом, пока подключение неактивно.</value>
+  </data>
+  <data name="General_ReconnectInterval" xml:space="preserve">
+    <value>Интервал повтора</value>
+  </data>
+  <data name="General_Seconds" xml:space="preserve">
+    <value>с</value>
+  </data>
+  <data name="Main_AppearanceTitle" xml:space="preserve">
+    <value>Оформление</value>
+  </data>
+  <data name="General_Theme" xml:space="preserve">
+    <value>Тема оформления</value>
+  </data>
+  <data name="General_Language" xml:space="preserve">
+    <value>Язык интерфейса</value>
+  </data>
+  <data name="Lang_System" xml:space="preserve">
+    <value>Системный</value>
+  </data>
+  <data name="Theme_Dark" xml:space="preserve">
+    <value>Тёмная</value>
+  </data>
+  <data name="Theme_Light" xml:space="preserve">
+    <value>Светлая</value>
+  </data>
+  <data name="Theme_System" xml:space="preserve">
+    <value>Системная</value>
+  </data>
+  <data name="About_Section" xml:space="preserve">
+    <value>О приложении</value>
+  </data>
+  <data name="About_Version" xml:space="preserve">
+    <value>Версия приложения</value>
+  </data>
+  <data name="Tray_Open" xml:space="preserve">
+    <value>Открыть</value>
+  </data>
+  <data name="Tray_Exit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  <data name="BundleExport_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="BundleExport_ConfigsSection" xml:space="preserve">
+    <value>КОНФИГУРАЦИИ</value>
+  </data>
+  <data name="BundleExport_CopyButton" xml:space="preserve">
+    <value>Скопировать содержимое</value>
+  </data>
+  <data name="BundleExport_DoneButton" xml:space="preserve">
+    <value>Готово</value>
+  </data>
+  <data name="BundleExport_ExportButton" xml:space="preserve">
+    <value>Экспортировать</value>
+  </data>
+  <data name="BundleExport_Heading" xml:space="preserve">
+    <value>Экспорт профилей, конфигураций и списков маршрутизации</value>
+  </data>
+  <data name="BundleExport_PrivateKeyWarning" xml:space="preserve">
+    <value>⚠ Экспортированный файл содержит приватные ключи конфигураций. Храните и передавайте его безопасно.</value>
+  </data>
+  <data name="BundleExport_ProfilesSection" xml:space="preserve">
+    <value>ПРОФИЛИ</value>
+  </data>
+  <data name="BundleExport_RoutingSection" xml:space="preserve">
+    <value>МАРШРУТИЗАЦИЯ</value>
+  </data>
+  <data name="BundleExport_RoutingRulesHint" xml:space="preserve">
+    <value>Снимите галочки с правил, которые не нужно выгружать (например приложения на этой машине).</value>
+  </data>
+  <data name="BundleExport_SaveToFileButton" xml:space="preserve">
+    <value>Сохранить в файл…</value>
+  </data>
+  <data name="BundleExport_WindowTitle" xml:space="preserve">
+    <value>Экспорт</value>
+  </data>
+  <data name="BundleImport_CloseButton" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="BundleImport_Heading" xml:space="preserve">
+    <value>Импорт профилей, конфигураций и списков маршрутизации</value>
+  </data>
+  <data name="BundleImport_ConflictLabel" xml:space="preserve">
+    <value>При совпадении имён:</value>
+  </data>
+  <data name="BundleImport_ConflictAddNew" xml:space="preserve">
+    <value>Добавить как новое</value>
+  </data>
+  <data name="BundleImport_ConflictReplace" xml:space="preserve">
+    <value>Заменить</value>
+  </data>
+  <data name="BundleImport_ConflictSkip" xml:space="preserve">
+    <value>Пропустить</value>
+  </data>
+  <data name="BundleImport_ConflictMerge" xml:space="preserve">
+    <value>Объединить</value>
+  </data>
+  <data name="BundleImport_ImportButton" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="BundleImport_LoadFileButton" xml:space="preserve">
+    <value>Выбрать файл…</value>
+  </data>
+  <data name="BundleImport_PayloadWatermark" xml:space="preserve">
+    <value>Вставьте JSON бандла (Ctrl+V) или выберите файл кнопкой «Выбрать файл…»</value>
+  </data>
+  <data name="BundleImport_SecurityWarning" xml:space="preserve">
+    <value>⚠ Импортируемый файл может содержать приватные ключи конфигураций - используйте файлы из доверенных источников.</value>
+  </data>
+  <data name="BundleImport_WindowTitle" xml:space="preserve">
+    <value>Импорт</value>
+  </data>
+  <data name="ConfigEditor_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="ConfigEditor_Hint" xml:space="preserve">
+    <value>Текст wg-quick (.conf). Должны быть секции [Interface] и [Peer].</value>
+  </data>
+  <data name="ConfigEditor_SaveButton" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Main_AccessTokenLabel" xml:space="preserve">
+    <value>ТОКЕН</value>
+  </data>
+  <data name="Main_AccessTokenWatermark" xml:space="preserve">
+    <value>токен доступа</value>
+  </data>
+  <data name="Main_ActionsTooltip" xml:space="preserve">
+    <value>Действия</value>
+  </data>
+  <data name="Main_AddButton" xml:space="preserve">
+    <value>Добавить</value>
+  </data>
+  <data name="Main_AddDatabaseLabel" xml:space="preserve">
+    <value>Добавить базу</value>
+  </data>
+  <data name="Main_AddEntryLabel" xml:space="preserve">
+    <value>ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)</value>
+  </data>
+  <data name="Main_AddEntryWatermark" xml:space="preserve">
+    <value>напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24</value>
+  </data>
+  <data name="Main_AddLocalSubnetsButton" xml:space="preserve">
+    <value>Добавить локальные сети</value>
+  </data>
+  <data name="Main_AgentLogSection" xml:space="preserve">
+    <value>Журналы</value>
+  </data>
+  <data name="Main_LogCaptureTitle" xml:space="preserve">
+    <value>Настройки журнала</value>
+  </data>
+  <data name="Main_LogViewerTitle" xml:space="preserve">
+    <value>Просмотр журнала</value>
+  </data>
+  <data name="Main_LogLegend" xml:space="preserve">
+    <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: VRB · DBG · INF · WRN · ERR · FTL.</value>
+  </data>
+  <data name="Main_AllUdpHint" xml:space="preserve">
+    <value>Отправляет в туннель весь UDP-трафик. Включите, если не работают звонки или игры: они находят свои серверы в обход DNS, поэтому обычные правила их не ловят. Локальная сеть не затрагивается.</value>
+  </data>
+  <data name="Main_AllUdpTitle" xml:space="preserve">
+    <value>Весь UDP через туннель</value>
+  </data>
+  <data name="Main_UseIpv6Hint" xml:space="preserve">
+    <value>Пускает в туннель ещё и IPv6. Включайте, только если у вашего сервера есть IPv6-адрес, иначе оставьте выключенным. Применится при следующем подключении.</value>
+  </data>
+  <data name="Main_UseIpv6Title" xml:space="preserve">
+    <value>Использовать IPv6</value>
+  </data>
+  <data name="Main_AmneziaEngineVersion" xml:space="preserve">
+    <value>Версия движка Amnezia</value>
+  </data>
+  <data name="Main_AppSourceFile" xml:space="preserve">
+    <value>Файл…</value>
+  </data>
+  <data name="Main_AppSourceFolder" xml:space="preserve">
+    <value>Папка…</value>
+  </data>
+  <data name="Main_AppSourceInstalled" xml:space="preserve">
+    <value>Установленное</value>
+  </data>
+  <data name="Main_AppSourceRunning" xml:space="preserve">
+    <value>Запущенное</value>
+  </data>
+  <data name="Main_AuthBasic" xml:space="preserve">
+    <value>Логин и пароль</value>
+  </data>
+  <data name="Main_AuthLabel" xml:space="preserve">
+    <value>АВТОРИЗАЦИЯ</value>
+  </data>
+  <data name="Main_AuthNone" xml:space="preserve">
+    <value>Без авторизации</value>
+  </data>
+  <data name="Main_AuthToken" xml:space="preserve">
+    <value>Токен</value>
+  </data>
+  <data name="Main_AutoCheckHint" xml:space="preserve">
+    <value>Периодически проверять источники на новую версию и уведомлять.</value>
+  </data>
+  <data name="Main_AutoCheckTitle" xml:space="preserve">
+    <value>Проверка обновлений</value>
+  </data>
+  <data name="Main_BackToProfilesTooltip" xml:space="preserve">
+    <value>Назад к профилям</value>
+  </data>
+  <data name="Main_BundleHint" xml:space="preserve">
+    <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
+  </data>
+  <data name="Main_CameraButton" xml:space="preserve">
+    <value>Сканировать QR-код</value>
+  </data>
+  <data name="Main_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Main_CancelRenameTooltip" xml:space="preserve">
+    <value>Отменить переименование</value>
+  </data>
+  <data name="Main_CheckUpdatesButton" xml:space="preserve">
+    <value>Проверить обновления</value>
+  </data>
+  <data name="Main_ChooseConfigLabel" xml:space="preserve">
+    <value>ВЫБЕРИТЕ КОНФИГУРАЦИЮ</value>
+  </data>
+  <data name="Main_ChooseListLabel" xml:space="preserve">
+    <value>ВЫБЕРИТЕ СПИСОК</value>
+  </data>
+  <data name="Main_ChooseProfileToSetup" xml:space="preserve">
+    <value>ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ НАСТРОЙКИ</value>
+  </data>
+  <data name="Main_SetActiveProfile" xml:space="preserve">
+    <value>Установить</value>
+  </data>
+  <data name="Main_ClearButton" xml:space="preserve">
+    <value>Очистить</value>
+  </data>
+  <data name="Main_ClearRulesTooltip" xml:space="preserve">
+    <value>Удалить все записи списка</value>
+  </data>
+  <data name="Main_SortRulesTooltip" xml:space="preserve">
+    <value>Сортировать записи по имени</value>
+  </data>
+  <data name="Main_CloseTooltip" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Main_LogFileLabel" xml:space="preserve">
+    <value>Файл:</value>
+  </data>
+  <data name="Main_LogFollowLabel" xml:space="preserve">
+    <value>Следить</value>
+  </data>
+  <data name="Main_LogLoadOlderButton" xml:space="preserve">
+    <value>Загрузить ранее</value>
+  </data>
+  <data name="Main_LogOlderTooltip" xml:space="preserve">
+    <value>Более ранние записи</value>
+  </data>
+  <data name="Main_ClearLogButton" xml:space="preserve">
+    <value>Очистить</value>
+  </data>
+  <data name="Main_LogNewerTooltip" xml:space="preserve">
+    <value>Более поздние записи</value>
+  </data>
+  <data name="Main_LogOlderShort" xml:space="preserve">
+    <value>Ранее</value>
+  </data>
+  <data name="Main_LogNewerShort" xml:space="preserve">
+    <value>Позднее</value>
+  </data>
+  <data name="Main_LogSearchWatermark" xml:space="preserve">
+    <value>Поиск в логе</value>
+  </data>
+  <data name="Main_QrConfTab" xml:space="preserve">
+    <value>QR: файл .conf</value>
+  </data>
+  <data name="Main_QrConfTabShort" xml:space="preserve">
+    <value>QR файл</value>
+  </data>
+  <data name="Main_QrLinkTab" xml:space="preserve">
+    <value>QR: ссылка vpn://</value>
+  </data>
+  <data name="Main_QrLinkTabShort" xml:space="preserve">
+    <value>QR ссылка</value>
+  </data>
+  <data name="Main_ConfigTextTab" xml:space="preserve">
+    <value>Конфиг</value>
+  </data>
+  <data name="Main_ConfigLabel" xml:space="preserve">
+    <value>КОНФИГУРАЦИЯ</value>
+  </data>
+  <data name="Main_ConfigNameLabel" xml:space="preserve">
+    <value>ИМЯ КОНФИГУРАЦИИ</value>
+  </data>
+  <data name="Main_ConfigSection" xml:space="preserve">
+    <value>Конфигурации</value>
+  </data>
+  <data name="Main_ConfigEditButton" xml:space="preserve">
+    <value>Ввести вручную</value>
+  </data>
+  <data name="Main_ConfigTextWatermark" xml:space="preserve">
+    <value>Здесь появится конфигурация</value>
+  </data>
+  <data name="Main_CopyButton" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="Main_DeleteConfigButton" xml:space="preserve">
+    <value>Удалить конфигурацию</value>
+  </data>
+  <data name="Main_DeleteConfigHint" xml:space="preserve">
+    <value>Сначала отвяжите её от профилей и остановите использующий её туннель.</value>
+  </data>
+  <data name="Main_DeleteConfigTitle" xml:space="preserve">
+    <value>Удаление конфигурации</value>
+  </data>
+  <data name="Main_DeleteConfigPrompt" xml:space="preserve">
+    <value>Удалить конфигурацию «{0}» из каталога. Это действие нельзя отменить.</value>
+  </data>
+  <data name="Main_DeleteListButton" xml:space="preserve">
+    <value>Удалить список</value>
+  </data>
+  <data name="Main_DeleteListTitle" xml:space="preserve">
+    <value>Удаление списка</value>
+  </data>
+  <data name="Main_DeleteListPrompt" xml:space="preserve">
+    <value>Удалить этот список маршрутизации из каталога. Это действие нельзя отменить.</value>
+  </data>
+  <data name="Main_DeleteListHint" xml:space="preserve">
+    <value>Список, привязанный к профилям, удалить нельзя.</value>
+  </data>
+  <data name="Main_RoutingListCardTitle" xml:space="preserve">
+    <value>Список маршрутизации</value>
+  </data>
+  <data name="Main_RoutingLoading" xml:space="preserve">
+    <value>Загрузка…</value>
+  </data>
+  <data name="Main_DeleteProfileButton" xml:space="preserve">
+    <value>Удалить профиль</value>
+  </data>
+  <data name="Main_DeleteProfileTitle" xml:space="preserve">
+    <value>Удаление профиля</value>
+  </data>
+  <data name="Main_DeleteProfilePrompt" xml:space="preserve">
+    <value>Удалить этот профиль из каталога. Это действие нельзя отменить.</value>
+  </data>
+  <data name="Main_ProfileSettingsTitle" xml:space="preserve">
+    <value>Настройки профиля</value>
+  </data>
+  <data name="Main_DeleteProfileHint" xml:space="preserve">
+    <value>Профиль удалится вместе со своими настройками. Запущенный профиль нужно сначала отключить.</value>
+  </data>
+  <data name="Main_ConfirmDeleteButton" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="Main_PendingDeleteHint" xml:space="preserve">
+    <value>Помечено на удаление. Нажмите «Сохранить», чтобы удалить, или «Отмена», чтобы оставить.</value>
+  </data>
+  <data name="Main_ConfigInUse" xml:space="preserve">
+    <value>Нельзя удалить: конфигурация используется в профилях:</value>
+  </data>
+  <data name="Main_RoutingInUse" xml:space="preserve">
+    <value>Нельзя удалить: список маршрутизации используется в профилях:</value>
+  </data>
+  <data name="Main_ProfileInUse" xml:space="preserve">
+    <value>Нельзя удалить: профиль подключён. Сначала отключите его.</value>
+  </data>
+  <data name="Main_DeletionLabel" xml:space="preserve">
+    <value>УДАЛЕНИЕ</value>
+  </data>
+  <data name="Main_DownloadButton" xml:space="preserve">
+    <value>Скачать</value>
+  </data>
+  <data name="Main_EntriesLabel" xml:space="preserve">
+    <value>ЗАПИСИ</value>
+  </data>
+  <data name="Main_ExclusionsHint" xml:space="preserve">
+    <value>Адреса, которые не заворачивать в VPN. По одному в строке. IP/подсеть идут напрямую мимо туннеля; домен резолвится локальным DNS (уходит напрямую, только если адрес локальный).</value>
+  </data>
+  <data name="Main_ExclusionsLabel" xml:space="preserve">
+    <value>ИСКЛЮЧЕНИЯ (ПРЯМОЙ ДОСТУП)</value>
+  </data>
+  <data name="Main_ExportButton" xml:space="preserve">
+    <value>Экспорт…</value>
+  </data>
+  <data name="Main_FileButton" xml:space="preserve">
+    <value>Загрузить файл</value>
+  </data>
+  <data name="Main_AddConfigTitle" xml:space="preserve">
+    <value>Добавьте конфигурацию</value>
+  </data>
+  <data name="Main_AddConfigSubtitle" xml:space="preserve">
+    <value>Выберите удобный способ</value>
+  </data>
+  <data name="Main_ChangeMethodButton" xml:space="preserve">
+    <value>Изменить способ</value>
+  </data>
+  <data name="Main_MethodLabel" xml:space="preserve">
+    <value>Способ: {0}</value>
+  </data>
+  <data name="Main_MethodManual" xml:space="preserve">
+    <value>вручную</value>
+  </data>
+  <data name="Main_MethodCamera" xml:space="preserve">
+    <value>камера</value>
+  </data>
+  <data name="Main_UnsavedChanges" xml:space="preserve">
+    <value>Есть несохранённые изменения</value>
+  </data>
+  <data name="Main_FullTunnel" xml:space="preserve">
+    <value>Полный туннель</value>
+  </data>
+  <data name="Main_GeoDismissTooltip" xml:space="preserve">
+    <value>Позже - можно обновить в настройках</value>
+  </data>
+  <data name="Main_GeoKindsHint" xml:space="preserve">
+    <value>geosite - категории доменов, geoip - страны.</value>
+  </data>
+  <data name="Main_ImportButton" xml:space="preserve">
+    <value>Импорт…</value>
+  </data>
+  <data name="Main_ImportExportLabel" xml:space="preserve">
+    <value>ИМПОРТ / ЭКСПОРТ</value>
+  </data>
+  <data name="Main_ImportExportSection" xml:space="preserve">
+    <value>Импорт / экспорт</value>
+  </data>
+  <data name="Main_TransferSubtitle" xml:space="preserve">
+    <value>Выберите формат передачи</value>
+  </data>
+  <data name="Main_TransferQrTab" xml:space="preserve">
+    <value>QR</value>
+  </data>
+  <data name="Main_TransferTextTab" xml:space="preserve">
+    <value>Конфиг</value>
+  </data>
+  <data name="Main_InstallButton" xml:space="preserve">
+    <value>Установить</value>
+  </data>
+  <data name="Main_ListNameLabel" xml:space="preserve">
+    <value>ИМЯ СПИСКА</value>
+  </data>
+  <data name="Main_ListNameWatermark" xml:space="preserve">
+    <value>напр. мой-список</value>
+  </data>
+  <data name="Main_RoutingOptionsLabel" xml:space="preserve">
+    <value>Параметры маршрутизации</value>
+  </data>
+  <data name="Main_RoleProxy" xml:space="preserve">
+    <value>Прокси</value>
+  </data>
+  <data name="Main_RoleDirect" xml:space="preserve">
+    <value>Директ</value>
+  </data>
+  <data name="Main_RoleBlock" xml:space="preserve">
+    <value>Блок</value>
+  </data>
+  <data name="Main_RoleProxyHint" xml:space="preserve">
+    <value>Направлять через туннель.</value>
+  </data>
+  <data name="Main_RoleDirectHint" xml:space="preserve">
+    <value>Мимо туннеля.</value>
+  </data>
+  <data name="Main_RoleBlockHint" xml:space="preserve">
+    <value>Полностью блокировать.</value>
+  </data>
+  <data name="Main_GlobalProxyTitle" xml:space="preserve">
+    <value>Глобальный прокси</value>
+  </data>
+  <data name="Main_GlobalProxyHint" xml:space="preserve">
+    <value>Заворачивать в туннель всё, кроме списка «Директ».</value>
+  </data>
+  <data name="Main_LoadFileButton" xml:space="preserve">
+    <value>Загрузить файл…</value>
+  </data>
+  <data name="Main_LogEmptyHint" xml:space="preserve">
+    <value>Записи появятся после запуска агента.</value>
+  </data>
+  <data name="Main_LogEmptyTitle" xml:space="preserve">
+    <value>Журнал пока пуст</value>
+  </data>
+  <data name="Main_LogVerbosityHint" xml:space="preserve">
+    <value>Определяет подробность журналирования. none - не логировать.</value>
+  </data>
+  <data name="Main_LogVerbosityTitle" xml:space="preserve">
+    <value>Уровень</value>
+  </data>
+  <data name="Main_LoginLabel" xml:space="preserve">
+    <value>ЛОГИН</value>
+  </data>
+  <data name="Main_LoginWatermark" xml:space="preserve">
+    <value>логин</value>
+  </data>
+  <data name="Main_MtuHint" xml:space="preserve">
+    <value>576-1500, по умолчанию 1420. При использовании прокси рекомендуется 1280.</value>
+  </data>
+  <data name="Main_NameLabel" xml:space="preserve">
+    <value>НАЗВАНИЕ</value>
+  </data>
+  <data name="Main_NameOptionalWatermark" xml:space="preserve">
+    <value>Имя (необязательно)</value>
+  </data>
+  <data name="Main_NewConfigButton" xml:space="preserve">
+    <value>Новый конфиг</value>
+  </data>
+  <data name="Main_NewConfigLabel" xml:space="preserve">
+    <value>НОВАЯ КОНФИГУРАЦИЯ</value>
+  </data>
+  <data name="Main_NewListButton" xml:space="preserve">
+    <value>Новый список</value>
+  </data>
+  <data name="Main_NoConfigsHint" xml:space="preserve">
+    <value>Конфигураций пока нет. Нажмите «+ Новая конфигурация», чтобы добавить сервер в каталог.</value>
+  </data>
+  <data name="Main_NoProfilesHint" xml:space="preserve">
+    <value>Добавьте профиль и конфигурацию в настройках.</value>
+  </data>
+  <data name="Main_NoProfilesYetHint" xml:space="preserve">
+    <value>Профилей пока нет. Нажмите «+ Профиль», чтобы создать профиль, затем задайте конфигурацию и маршрутизацию.</value>
+  </data>
+  <data name="Main_NoRoutingListsHint" xml:space="preserve">
+    <value>Списков пока нет. Нажмите «+ Новый список», чтобы задать правила (гео-категории, домены, CIDR, приложения).</value>
+  </data>
+  <data name="Main_NoSourcesHint" xml:space="preserve">
+    <value>Пока нет баз. Добавьте geosite/geoip выше.</value>
+  </data>
+  <data name="Main_NotSelected" xml:space="preserve">
+    <value>- не выбрано -</value>
+  </data>
+  <data name="Main_PasswordLabel" xml:space="preserve">
+    <value>ПАРОЛЬ</value>
+  </data>
+  <data name="Main_PasswordWatermark" xml:space="preserve">
+    <value>пароль</value>
+  </data>
+  <data name="Main_PasteButton" xml:space="preserve">
+    <value>Вставить</value>
+  </data>
+  <data name="Main_PerAppRoutingLabel" xml:space="preserve">
+    <value>МАРШРУТИЗАЦИЯ СЕТЕВЫХ ЗАПРОСОВ ПРИЛОЖЕНИЯ</value>
+  </data>
+  <data name="Main_ProfileAddButton" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
+  <data name="Main_ProfileNoConfigHint" xml:space="preserve">
+    <value>У профиля пока нет конфигурации. Выберите её из списка или добавьте в разделе «Конфигурации».</value>
+  </data>
+  <data name="Main_ProfileRenameHint" xml:space="preserve">
+    <value>Новое имя для этого профиля. Запущенный профиль переименовать нельзя.</value>
+  </data>
+  <data name="Main_ProfileSection" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
+  <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
+    <value>WebSocket-прокси</value>
+  </data>
+  <data name="Main_ProxyWebSocketHint" xml:space="preserve">
+    <value>Передаёт UDP поверх TCP и помогает при блокировке UDP.</value>
+  </data>
+  <data name="Main_UseWebSocketToggle" xml:space="preserve">
+    <value>Использовать прокси</value>
+  </data>
+  <data name="Main_ExportConfigTitle" xml:space="preserve">
+    <value>Экспорт конфигурации</value>
+  </data>
+  <data name="Main_ExportConfigSubtitle" xml:space="preserve">
+    <value>Выберите формат передачи</value>
+  </data>
+  <data name="Main_QrPrivateKeyWarning" xml:space="preserve">
+    <value>QR-код содержит приватный ключ. Не передавайте его посторонним.</value>
+  </data>
+  <data name="Main_CopyContentButton" xml:space="preserve">
+    <value>Скопировать содержимое</value>
+  </data>
+  <data name="Main_CopyContentButtonShort" xml:space="preserve">
+    <value>Скопировать</value>
+  </data>
+  <data name="Main_DownloadQrButton" xml:space="preserve">
+    <value>Скачать QR</value>
+  </data>
+  <data name="Main_QrUnavailableHint" xml:space="preserve">
+    <value>Конфигурация не помещается в QR-код. Используйте вкладку «Конфиг» или ссылку vpn://.</value>
+  </data>
+  <data name="Main_RailConfigSubtitle" xml:space="preserve">
+    <value>Каталог серверов</value>
+  </data>
+  <data name="Main_RailConfigTitle" xml:space="preserve">
+    <value>Конфигурации</value>
+  </data>
+  <data name="Main_RailGeneralSubtitle" xml:space="preserve">
+    <value>Оформление и сведения</value>
+  </data>
+  <data name="Main_RailGeneralTitle" xml:space="preserve">
+    <value>Общие</value>
+  </data>
+  <data name="Main_RailLogsSubtitle" xml:space="preserve">
+    <value>Журнал работы агента</value>
+  </data>
+  <data name="Main_RailLogsTitle" xml:space="preserve">
+    <value>Логи</value>
+  </data>
+  <data name="Main_RailProfileSubtitle" xml:space="preserve">
+    <value>Конфигурация + маршрутизация</value>
+  </data>
+  <data name="Main_RailProfileTitle" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
+  <data name="Main_RailRoutingSubtitle" xml:space="preserve">
+    <value>Списки правил и трафик</value>
+  </data>
+  <data name="Main_RailRoutingTitle" xml:space="preserve">
+    <value>Маршрутизация</value>
+  </data>
+  <data name="Main_RailSourcesSubtitle" xml:space="preserve">
+    <value>Базы доменов и стран</value>
+  </data>
+  <data name="Main_RailSourcesTitle" xml:space="preserve">
+    <value>Источники geo</value>
+  </data>
+  <data name="Main_RenameProfileTooltip" xml:space="preserve">
+    <value>Переименовать профиль</value>
+  </data>
+  <data name="Main_RenameTooltip" xml:space="preserve">
+    <value>Переименовать</value>
+  </data>
+  <data name="Main_RouteLogHint" xml:space="preserve">
+    <value>Записывает маршруты и разрешения адресов.</value>
+  </data>
+  <data name="Main_RouteLogTitle" xml:space="preserve">
+    <value>Логировать подключения</value>
+  </data>
+  <data name="Main_RoutingCopyTooltip" xml:space="preserve">
+    <value>Скопировать список в буфер обмена</value>
+  </data>
+  <data name="Main_RoutingLabel" xml:space="preserve">
+    <value>МАРШРУТИЗАЦИЯ</value>
+  </data>
+  <data name="Main_RoutingPasteTooltip" xml:space="preserve">
+    <value>Импортировать список из буфера обмена</value>
+  </data>
+  <data name="Main_RoutingSection" xml:space="preserve">
+    <value>Маршрутизация</value>
+  </data>
+  <data name="Main_SaveButton" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="Main_SaveNameTooltip" xml:space="preserve">
+    <value>Сохранить имя</value>
+  </data>
+  <data name="Main_SaveToFileButton" xml:space="preserve">
+    <value>Сохранить в файл…</value>
+  </data>
+  <data name="Main_ServerHostLabel" xml:space="preserve">
+    <value>ХОСТ</value>
+  </data>
+  <data name="Main_ServerHostWatermark" xml:space="preserve">
+    <value>proxy.example.com</value>
+  </data>
+  <data name="Main_ServerPortLabel" xml:space="preserve">
+    <value>ПОРТ</value>
+  </data>
+  <data name="Main_SettingsTooltip" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="Main_ShowQrButton" xml:space="preserve">
+    <value>Показать QR</value>
+  </data>
+  <data name="Main_HideQrButton" xml:space="preserve">
+    <value>Скрыть QR</value>
+  </data>
+  <data name="Main_ShowQrTooltip" xml:space="preserve">
+    <value>Показать QR-код списка для переноса</value>
+  </data>
+  <data name="Main_SourceDropdown" xml:space="preserve">
+    <value>Источник ▾</value>
+  </data>
+  <data name="Main_SourceKindTooltip" xml:space="preserve">
+    <value>Тип определён по имени файла в URL</value>
+  </data>
+  <data name="Main_SourceRowTooltip" xml:space="preserve">
+    <value>Правый клик или ⋮ - обновить / удалить базу</value>
+  </data>
+  <data name="Main_SourcesLabel" xml:space="preserve">
+    <value>Источники</value>
+  </data>
+  <data name="Main_SourcesSection" xml:space="preserve">
+    <value>Источники geo</value>
+  </data>
+  <data name="Main_TunnelMtuLabel" xml:space="preserve">
+    <value>MTU ТУННЕЛЯ</value>
+  </data>
+  <data name="Main_UpdateAllButton" xml:space="preserve">
+    <value>Обновить все</value>
+  </data>
+  <data name="Main_UpdateAvailableBadge" xml:space="preserve">
+    <value>● Доступно обновление</value>
+  </data>
+  <data name="Main_UpdateDatabaseTooltip" xml:space="preserve">
+    <value>Обновить базу</value>
+  </data>
+  <data name="Main_UpdateNowButton" xml:space="preserve">
+    <value>Обновить сейчас</value>
+  </data>
+  <data name="Main_ReconnectButton" xml:space="preserve">
+    <value>Переподключиться</value>
+  </data>
+  <data name="Main_RetryDisconnectButton" xml:space="preserve">
+    <value>Повторить отключение</value>
+  </data>
+  <data name="Main_UpdateSection" xml:space="preserve">
+    <value>Обновление</value>
+  </data>
+  <data name="Main_UseWebSocketCheckbox" xml:space="preserve">
+    <value>Использовать WebSocket (UDP поверх TCP, обход блокировки UDP)</value>
+  </data>
+  <data name="Qr_CloseButton" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Qr_CopyButton" xml:space="preserve">
+    <value>Копировать</value>
+  </data>
+  <data name="Qr_SaveButton" xml:space="preserve">
+    <value>Сохранить...</value>
+  </data>
+  <data name="Qr_TooLargeHint" xml:space="preserve">
+    <value>Слишком большой для QR - используйте «Сохранить...» или «Копировать».</value>
+  </data>
+  <data name="Qr_WindowTitle" xml:space="preserve">
+    <value>QR-код</value>
+  </data>
+  <data name="Scan_CancelButton" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Scan_Title" xml:space="preserve">
+    <value>Сканировать QR с камеры</value>
+  </data>
+  <data name="Profile_ConnectAction" xml:space="preserve">
+    <value>Подключить</value>
+  </data>
+  <data name="Profile_NoConfig" xml:space="preserve">
+    <value>нет конфигурации</value>
+  </data>
+  <data name="Profile_SwitchAction" xml:space="preserve">
+    <value>Переключить</value>
+  </data>
+  <data name="BundleExportCode_CopiedToClipboard" xml:space="preserve">
+    <value>Скопировано в буфер обмена.</value>
+  </data>
+  <data name="BundleExportCode_SaveBundleTitle" xml:space="preserve">
+    <value>Сохранить бандл</value>
+  </data>
+  <data name="BundleExportCode_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="BundleExportVm_NoConfiguration" xml:space="preserve">
+    <value>нет конфигурации</value>
+  </data>
+  <data name="BundleImportCode_BundleFileTitle" xml:space="preserve">
+    <value>Файл бандла</value>
+  </data>
+  <data name="BundleImportCode_ClipboardEmpty" xml:space="preserve">
+    <value>В буфере обмена нет текста.</value>
+  </data>
+  <data name="BundleImportVm_PasteOrLoadBundle" xml:space="preserve">
+    <value>Вставьте или загрузите содержимое файла бандла.</value>
+  </data>
+  <data name="ConfigChoice_NoneLabel" xml:space="preserve">
+    <value>- не выбрано -</value>
+  </data>
+  <data name="ConfigEditorVm_NotAConfig" xml:space="preserve">
+    <value>Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).</value>
+  </data>
+  <data name="ConfigEditorVm_TitleEdit" xml:space="preserve">
+    <value>Редактирование: {0}</value>
+  </data>
+  <data name="ConfigEditorVm_TitleNew" xml:space="preserve">
+    <value>Конфигурация вручную</value>
+  </data>
+  <data name="Exclusions_AllLocalSubnetsPresent" xml:space="preserve">
+    <value>Все локальные сети уже в списке.</value>
+  </data>
+  <data name="Exclusions_LocalSubnetsAdded" xml:space="preserve">
+    <value>Добавлено локальных сетей: {0}. Проверьте список и нажмите «Сохранить».</value>
+  </data>
+  <data name="Exclusions_NoActiveLocalSubnets" xml:space="preserve">
+    <value>Активные локальные сети не обнаружены.</value>
+  </data>
+  <data name="ExportVm_NotWireGuardConfig" xml:space="preserve">
+    <value>Не похоже на конфигурацию WireGuard/AmneziaWG (нужны [Interface] и [Peer]).</value>
+  </data>
+  <data name="ExportVm_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="InstalledApps_Installed" xml:space="preserve">
+    <value>{0} · установлено</value>
+  </data>
+  <data name="MainCode_AppFolderTitle" xml:space="preserve">
+    <value>Папка приложения</value>
+  </data>
+  <data name="MainCode_ApplicationTitle" xml:space="preserve">
+    <value>Приложение</value>
+  </data>
+  <data name="MainCode_ClipboardNoText" xml:space="preserve">
+    <value>В буфере обмена нет текста.</value>
+  </data>
+  <data name="MainCode_ConfigurationTitle" xml:space="preserve">
+    <value>Файл конфигурации или QR-картинка</value>
+  </data>
+  <data name="MainCode_CopiedToClipboard" xml:space="preserve">
+    <value>Скопировано в буфер обмена.</value>
+  </data>
+  <data name="MainCode_DeleteDatabase" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="MainCode_EditDatabase" xml:space="preserve">
+    <value>Изменить</value>
+  </data>
+  <data name="MainCode_QrNotConfig" xml:space="preserve">
+    <value>QR распознан, но это не конфигурация</value>
+  </data>
+  <data name="MainCode_QrNotFound" xml:space="preserve">
+    <value>QR-код не найден на картинке</value>
+  </data>
+  <data name="MainCode_RoutingListQrTitle" xml:space="preserve">
+    <value>QR списка маршрутизации</value>
+  </data>
+  <data name="MainCode_RoutingListTitle" xml:space="preserve">
+    <value>Список маршрутизации</value>
+  </data>
+  <data name="MainCode_SaveRoutingListTitle" xml:space="preserve">
+    <value>Сохранить список маршрутизации</value>
+  </data>
+  <data name="MainCode_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="MainCode_UpdateDatabase" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
+    <value>Не распознано (.conf или vpn://)</value>
+  </data>
+  <data name="MainVm_Connect" xml:space="preserve">
+    <value>Подключить</value>
+  </data>
+  <data name="MainVm_ConnectHintClickToConnect" xml:space="preserve">
+    <value>Нажмите, чтобы подключиться</value>
+  </data>
+  <data name="MainVm_ConnectHintClickToDisconnect" xml:space="preserve">
+    <value>Нажмите, чтобы отключиться</value>
+  </data>
+  <data name="MainVm_ConnectHintConnecting" xml:space="preserve">
+    <value>Устанавливается соединение…</value>
+  </data>
+  <data name="MainVm_ConnectHintRetrying" xml:space="preserve">
+    <value>Нажмите, чтобы отменить</value>
+  </data>
+  <data name="MainVm_ConnectAttempt" xml:space="preserve">
+    <value>Попытка {0}</value>
+  </data>
+  <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
+    <value>У профиля нет конфигурации - задайте её в настройках</value>
+  </data>
+  <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
+    <value>Выберите профиль</value>
+  </data>
+  <data name="MainVm_Disconnect" xml:space="preserve">
+    <value>Отключить</value>
+  </data>
+  <data name="MainVm_LogSearchMatches" xml:space="preserve">
+    <value>совпадений: {0}</value>
+  </data>
+  <data name="MainVm_NewProfileDefaultName" xml:space="preserve">
+    <value>Новый профиль</value>
+  </data>
+  <data name="MainVm_NoAgentConnection" xml:space="preserve">
+    <value>Нет связи с агентом</value>
+  </data>
+  <data name="MainVm_NotAvailable" xml:space="preserve">
+    <value>н/д</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed" xml:space="preserve">
+    <value>Не удалось подключиться - сервер не ответил.</value>
+  </data>
+  <data name="MainVm_NoticeDisconnectFailed" xml:space="preserve">
+    <value>Не удалось завершить отключение - служба туннеля не остановилась.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ConfigMissing" xml:space="preserve">
+    <value>Не удалось подключиться: конфигурация не найдена.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ServiceStartFailed" xml:space="preserve">
+    <value>Не удалось запустить службу туннеля ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ServiceLaunchFailed" xml:space="preserve">
+    <value>Служба туннеля не запустилась ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_UnderlayUnreachable" xml:space="preserve">
+    <value>Транспорт (wstunnel) не поднялся - сервер недоступен.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_AdapterStartFailed" xml:space="preserve">
+    <value>Не удалось поднять сетевой адаптер туннеля.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
+    <value>Сервер не ответил (нет рукопожатия) - недоступен или отклонил ключ.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
+    <value>Время ожидания подключения истекло.</value>
+  </data>
+  <data name="MainVm_NoticeProfileEmpty" xml:space="preserve">
+    <value>Профиль «{0}» пуст - добавьте конфигурацию.</value>
+  </data>
+  <data name="MainVm_NoticeProfileSelected" xml:space="preserve">
+    <value>Выбран профиль «{0}». Переподключитесь, чтобы применить.</value>
+  </data>
+  <data name="MainVm_NoticeSettingsChanged" xml:space="preserve">
+    <value>Настройки изменены. Переподключитесь, чтобы применить.</value>
+  </data>
+  <data name="MainVm_UpdateChecking" xml:space="preserve">
+    <value>Проверка…</value>
+  </data>
+  <data name="MainVm_UpdateDownloading" xml:space="preserve">
+    <value>Загрузка установщика…</value>
+  </data>
+  <data name="MainVm_UpdateError" xml:space="preserve">
+    <value>Ошибка: {0}</value>
+  </data>
+  <data name="MainVm_UpdateDownloadFailed" xml:space="preserve">
+    <value>Не удалось скачать обновление. Повторите позже.</value>
+  </data>
+  <data name="MainVm_UpdateLaunching" xml:space="preserve">
+    <value>Запуск установщика…</value>
+  </data>
+  <data name="MainVm_UpdateReadyToInstall" xml:space="preserve">
+    <value>Обновление скачано - можно устанавливать.</value>
+  </data>
+  <data name="MainVm_UpdateVerifying" xml:space="preserve">
+    <value>Проверка установщика…</value>
+  </data>
+  <data name="MainVm_UpdateVerifyFailed" xml:space="preserve">
+    <value>Скачанный установщик не прошёл проверку. Скачайте его заново.</value>
+  </data>
+  <data name="MainVm_UpToDate" xml:space="preserve">
+    <value>У вас последняя версия.</value>
+  </data>
+  <data name="Update_Retry" xml:space="preserve">
+    <value>Повторить</value>
+  </data>
+  <data name="Update_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="ProfileChoice_NoneLabel" xml:space="preserve">
+    <value>- не выбрано -</value>
+  </data>
+  <data name="QrCode_CopiedToClipboard" xml:space="preserve">
+    <value>Скопировано в буфер обмена.</value>
+  </data>
+  <data name="QrCode_SaveTitle" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="QrCode_Saved" xml:space="preserve">
+    <value>Сохранено.</value>
+  </data>
+  <data name="QrScanner_CameraNotFound" xml:space="preserve">
+    <value>Камера не найдена</value>
+  </data>
+  <data name="RoutingChoice_None" xml:space="preserve">
+    <value>- не задан -</value>
+  </data>
+  <data name="RoutingEditor_AddAtLeastOneEntry" xml:space="preserve">
+    <value>Добавьте хотя бы одну запись, чтобы сохранить список.</value>
+  </data>
+  <data name="RoutingEditor_AppKindApplication" xml:space="preserve">
+    <value>{0} · приложение</value>
+  </data>
+  <data name="RoutingEditor_AppKindService" xml:space="preserve">
+    <value>{0} · служба</value>
+  </data>
+  <data name="RoutingEditor_AppWatermarkInstalled" xml:space="preserve">
+    <value>имя установленного приложения</value>
+  </data>
+  <data name="RoutingEditor_AppWatermarkRunning" xml:space="preserve">
+    <value>имя запущенного приложения или службы</value>
+  </data>
+  <data name="RoutingEditor_EmptyPath" xml:space="preserve">
+    <value>Пустой путь.</value>
+  </data>
+  <data name="RoutingEditor_EnterRuleName" xml:space="preserve">
+    <value>Введите имя правила</value>
+  </data>
+  <data name="RoutingEditor_ImportedRules" xml:space="preserve">
+    <value>Импортировано правил: {0}.</value>
+  </data>
+  <data name="RoutingEditor_ImportedRulesNeedName" xml:space="preserve">
+    <value>Импортировано правил: {0}. Введите имя, чтобы сохранить.</value>
+  </data>
+  <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
+    <value>Не похоже на список маршрутизации.</value>
+  </data>
+  <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
+    <value>Слишком широкий путь - выберите конкретную папку приложения.</value>
+  </data>
+  <data name="RoutingEditor_Saved" xml:space="preserve">
+    <value>Сохранено</value>
+  </data>
+  <data name="RoutingEditor_SelectAppOrService" xml:space="preserve">
+    <value>Выберите приложение или службу из списка.</value>
+  </data>
+  <data name="RoutingEditor_SvchostTooBroad" xml:space="preserve">
+    <value>svchost.exe - общий хост служб, затуннелит много чужого. Выберите службу из списка.</value>
+  </data>
+  <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
+    <value>Это общий хост WebView2 - правило на нём затуннелит все приложения на WebView2. Добавьте конкретное приложение, его веб-трафик пойдёт вместе с ним.</value>
+  </data>
+  <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
+    <value>Все локальные сети уже в списке.</value>
+  </data>
+  <data name="RoutingSettings_LocalSubnetsAdded" xml:space="preserve">
+    <value>Добавлено локальных сетей: {0}. Проверьте список и нажмите «Сохранить».</value>
+  </data>
+  <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
+    <value>Активные локальные сети не обнаружены.</value>
+  </data>
+  <data name="RoutingSummary_Detail" xml:space="preserve">
+    <value>{0} правил · {1} маршрутов · {2} доменов</value>
+  </data>
+  <data name="ScanCode_QrNotConfig" xml:space="preserve">
+    <value>QR распознан, но это не конфигурация - продолжаю…</value>
+  </data>
+  <data name="ScanVm_AimCameraAtQr" xml:space="preserve">
+    <value>Наведите камеру на QR-код…</value>
+  </data>
+  <data name="Source_DetailError" xml:space="preserve">
+    <value>{0} · ошибка: {1}</value>
+  </data>
+  <data name="Source_DetailLoaded" xml:space="preserve">
+    <value>{0} · {1} категорий · {2}</value>
+  </data>
+  <data name="Source_DetailNotLoaded" xml:space="preserve">
+    <value>{0} · не загружен</value>
+  </data>
+  <data name="Status_Connected" xml:space="preserve">
+    <value>Подключено</value>
+  </data>
+  <data name="Status_Connecting" xml:space="preserve">
+    <value>Подключение</value>
+  </data>
+  <data name="Status_Disconnected" xml:space="preserve">
+    <value>Отключено</value>
+  </data>
+  <data name="Status_Disconnecting" xml:space="preserve">
+    <value>Отключение</value>
+  </data>
+  <data name="Status_Failed" xml:space="preserve">
+    <value>Сбой</value>
+  </data>
+  <data name="Status_Idle" xml:space="preserve">
+    <value>Простаивает</value>
+  </data>
+  <data name="Status_Preempted" xml:space="preserve">
+    <value>Вытеснено</value>
+  </data>
+  <data name="Transport_InvalidMtu" xml:space="preserve">
+    <value>MTU: 576-1500 (пусто = 1280).</value>
+  </data>
+  <data name="Transport_InvalidPort" xml:space="preserve">
+    <value>Укажите корректный порт WebSocket (1-65535).</value>
+  </data>
+  <data name="Main_UpdateAvailableVersion" xml:space="preserve">
+    <value>Доступна версия {0}</value>
+  </data>
+  <data name="Main_UpdateBanner" xml:space="preserve">
+    <value>Доступно обновление {0}</value>
+  </data>
+  <data name="Main_GeoUpdateBanner" xml:space="preserve">
+    <value>Доступны обновления geo-списков: {0}</value>
+  </data>
+  <data name="Unit_Hours" xml:space="preserve">
+    <value>ч</value>
+  </data>
+  <data name="Agent_BundleImported" xml:space="preserve">
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.</value>
+  </data>
+  <data name="Agent_BundleImportedRenamed" xml:space="preserve">
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.
+Переименовано при импорте: {3}.</value>
+  </data>
+  <data name="Agent_BundleImportedRenamedMany" xml:space="preserve">
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.
+Переименовано при импорте: несколько имён совпали с уже существующими.</value>
+  </data>
+  <data name="Agent_BundleParseFailed" xml:space="preserve">
+    <value>не удалось разобрать файл: {0}</value>
+  </data>
+  <data name="Agent_BundleTooNew" xml:space="preserve">
+    <value>файл новее (v{0}); обновите приложение</value>
+  </data>
+  <data name="Agent_CheckedNoUpdates" xml:space="preserve">
+    <value>Проверено источников: {0}. Обновлений нет.</value>
+  </data>
+  <data name="Agent_CheckedUpdatesAvailable" xml:space="preserve">
+    <value>Проверено источников: {0}. Доступно обновлений: {1}.</value>
+  </data>
+  <data name="Agent_ConfigCopied" xml:space="preserve">
+    <value>конфигурация скопирована: {0}</value>
+  </data>
+  <data name="Agent_ConfigImported" xml:space="preserve">
+    <value>импортирован {0}</value>
+  </data>
+  <data name="Agent_ConfigSaved" xml:space="preserve">
+    <value>сохранён {0}</value>
+  </data>
+  <data name="Agent_DiagnosticsFailed" xml:space="preserve">
+    <value>Не удалось собрать логи: {0}</value>
+  </data>
+  <data name="Agent_DnsReset" xml:space="preserve">
+    <value>DNS сброшен на автоопределение (применится при переподключении)</value>
+  </data>
+  <data name="Agent_DnsSaved" xml:space="preserve">
+    <value>DNS сохранён: {0} (применится при переподключении)</value>
+  </data>
+  <data name="Agent_DowngradeAvailable" xml:space="preserve">
+    <value>Доступен откат к версии {0}.</value>
+  </data>
+  <data name="Agent_ExclusionsSaved" xml:space="preserve">
+    <value>Исключения сохранены (применятся при переподключении)</value>
+  </data>
+  <data name="Agent_ExportSelectionParseFailed" xml:space="preserve">
+    <value>не удалось разобрать выбор для экспорта</value>
+  </data>
+  <data name="Agent_ListsDownloaded" xml:space="preserve">
+    <value>Списки загружены ({0}).</value>
+  </data>
+  <data name="Agent_ListsDownloadedPartial" xml:space="preserve">
+    <value>Загружено {0} из {1}; не удалось: {2}.</value>
+  </data>
+  <data name="Agent_ListsDownloadedProcessFailed" xml:space="preserve">
+    <value>Списки скачаны, но не удалось обработать: {0}</value>
+  </data>
+  <data name="Agent_NameTaken" xml:space="preserve">
+    <value>имя {0} уже занято</value>
+  </data>
+  <data name="Agent_NameUnchanged" xml:space="preserve">
+    <value>имя не изменилось</value>
+  </data>
+  <data name="Agent_NoSourcesToCheck" xml:space="preserve">
+    <value>Нет источников для проверки.</value>
+  </data>
+  <data name="Agent_NoSourcesToDownload" xml:space="preserve">
+    <value>Нет источников для загрузки.</value>
+  </data>
+  <data name="Agent_NotAnAmneziaGeoFile" xml:space="preserve">
+    <value>это не файл AmneziaGeo</value>
+  </data>
+  <data name="Agent_NothingSelectedForExport" xml:space="preserve">
+    <value>Не выбрано ничего для экспорта</value>
+  </data>
+  <data name="Agent_RenamedTo" xml:space="preserve">
+    <value>переименован в {0}</value>
+  </data>
+  <data name="Agent_RoutingSettingsSaved" xml:space="preserve">
+    <value>Настройки маршрутизации сохранены (применятся при переподключении)</value>
+  </data>
+  <data name="Agent_SourceAdded" xml:space="preserve">
+    <value>добавлен {0}, загрузка…</value>
+  </data>
+  <data name="Agent_SourceCheckFailed" xml:space="preserve">
+    <value>{0}: не удалось проверить.</value>
+  </data>
+  <data name="Agent_SourceEdited" xml:space="preserve">
+    <value>источник изменён: {0}</value>
+  </data>
+  <data name="Agent_SourceRemoved" xml:space="preserve">
+    <value>удалён {0}</value>
+  </data>
+  <data name="Agent_SourceUpToDate" xml:space="preserve">
+    <value>{0}: актуально.</value>
+  </data>
+  <data name="Agent_SourceUpdateAvailable" xml:space="preserve">
+    <value>Доступно обновление: {0}.</value>
+  </data>
+  <data name="Agent_UpToDate" xml:space="preserve">
+    <value>Установлена актуальная версия.</value>
+  </data>
+  <data name="Agent_UpdateAllStarted" xml:space="preserve">
+    <value>обновление запущено ({0})</value>
+  </data>
+  <data name="Agent_UpdateAvailable" xml:space="preserve">
+    <value>Доступно обновление до версии {0}.</value>
+  </data>
+  <data name="Agent_UpdateServerUnavailable" xml:space="preserve">
+    <value>Сервер обновлений недоступен.</value>
+  </data>
+  <data name="Agent_UpdateCheckFailed" xml:space="preserve">
+    <value>Не удалось получить сведения об обновлении.</value>
+  </data>
+  <data name="Agent_UpdateSourceStarted" xml:space="preserve">
+    <value>обновление {0} запущено</value>
+  </data>
+  <data name="Agent_UpdateUrlNotSet" xml:space="preserve">
+    <value>URL обновлений не задан.</value>
+  </data>
+  <data name="Agent_WebSocketDisabled" xml:space="preserve">
+    <value>WebSocket выключен (применится при переподключении)</value>
+  </data>
+  <data name="Agent_WebSocketEnabled" xml:space="preserve">
+    <value>WebSocket включён, порт {0} (применится при переподключении)</value>
+  </data>
+  <data name="Installer_NotDirectRun" xml:space="preserve">
+    <value>Это внутренний компонент установщика AmneziaGeo и не запускается напрямую.
+
+Запустите AmneziaGeoSetup.exe - это и есть установщик.</value>
+  </data>
+  <data name="InstallerBa_ApplyError" xml:space="preserve">
+    <value>Ошибка (0x{0:X8}).</value>
+  </data>
+  <data name="InstallerBa_GeoUpToDate" xml:space="preserve">
+    <value>Базы гео актуальны - загрузка не требуется.</value>
+  </data>
+  <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
+    <value>Не удалось обновить базы гео ({0}). Можно сделать это позже в приложении.</value>
+  </data>
+  <data name="InstallerBa_PlanFailed" xml:space="preserve">
+    <value>Не удалось спланировать операцию.</value>
+  </data>
+  <data name="InstallerBa_StopAppFailed" xml:space="preserve">
+    <value>Не удалось остановить запущенное приложение AmneziaGeo. Закройте его и повторите.</value>
+  </data>
+  <data name="InstallerBa_SuccessInstall" xml:space="preserve">
+    <value>Установка завершена.</value>
+  </data>
+  <data name="InstallerBa_SuccessRemove" xml:space="preserve">
+    <value>AmneziaGeo удалён.</value>
+  </data>
+  <data name="InstallerBa_SuccessRepair" xml:space="preserve">
+    <value>Восстановление завершено.</value>
+  </data>
+  <data name="InstallerBa_SuccessUpdate" xml:space="preserve">
+    <value>Обновление завершено.</value>
+  </data>
+  <data name="InstallerUi_Close" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="InstallerUi_DownloadGeoDbUpdates" xml:space="preserve">
+    <value>Скачать обновления файлов баз гео</value>
+  </data>
+  <data name="InstallerUi_LaunchAfterInstall" xml:space="preserve">
+    <value>Запустить AmneziaGeo после установки</value>
+  </data>
+  <data name="InstallerUi_AutoConnect" xml:space="preserve">
+    <value>Выполнить подключение</value>
+  </data>
+  <data name="InstallerUi_DesktopShortcut" xml:space="preserve">
+    <value>Ярлык на рабочем столе</value>
+  </data>
+  <data name="InstallerUi_StartMenuShortcut" xml:space="preserve">
+    <value>Ярлык в меню Пуск</value>
+  </data>
+  <data name="InstallerUi_Remove" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="InstallerUi_Repair" xml:space="preserve">
+    <value>Восстановить</value>
+  </data>
+  <data name="InstallerUi_Update" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="InstallerVm_AlreadyInstalled" xml:space="preserve">
+    <value>AmneziaGeo уже установлен. Можно обновить, восстановить или удалить.</value>
+  </data>
+  <data name="InstallerVm_CheckingGeoUpdates" xml:space="preserve">
+    <value>Проверка обновлений баз гео…</value>
+  </data>
+  <data name="InstallerVm_CheckingInstall" xml:space="preserve">
+    <value>Проверка установки…</value>
+  </data>
+  <data name="InstallerVm_DownloadingGeo" xml:space="preserve">
+    <value>Загрузка файлов баз гео…</value>
+  </data>
+  <data name="InstallerVm_Install" xml:space="preserve">
+    <value>Установить</value>
+  </data>
+  <data name="InstallerVm_InstallDowngrade" xml:space="preserve">
+    <value>Установить (откат версии)</value>
+  </data>
+  <data name="InstallerVm_InstalledVersion" xml:space="preserve">
+    <value>Установлено: {0}</value>
+  </data>
+  <data name="InstallerVm_InstallVersion" xml:space="preserve">
+    <value>Установка: {0}</value>
+  </data>
+  <data name="InstallerVm_UpdateVersion" xml:space="preserve">
+    <value>Обновление: {0} → {1}</value>
+  </data>
+  <data name="InstallerVm_Installing" xml:space="preserve">
+    <value>Установка…</value>
+  </data>
+  <data name="InstallerVm_NewerInstalled" xml:space="preserve">
+    <value>Установлена более новая версия. Можно откатиться на эту или удалить.</value>
+  </data>
+  <data name="InstallerVm_Ready" xml:space="preserve">
+    <value>Готово.</value>
+  </data>
+  <data name="InstallerVm_ReadyToInstall" xml:space="preserve">
+    <value>Готово к установке.</value>
+  </data>
+  <data name="InstallerVm_Removing" xml:space="preserve">
+    <value>Удаление…</value>
+  </data>
+  <data name="InstallerVm_Repairing" xml:space="preserve">
+    <value>Восстановление…</value>
+  </data>
+  <data name="InstallerVm_Updating" xml:space="preserve">
+    <value>Обновление…</value>
+  </data>
+  <data name="Main_HomeSelectConfigHint" xml:space="preserve">
+    <value>Выберите конфигурацию для подключения.</value>
+  </data>
+  <data name="Main_ProfileNeedsConfigHint" xml:space="preserve">
+    <value>Чтобы добавить профиль, сначала добавьте конфигурацию.</value>
+  </data>
+  <data name="InstallerVm_ResetSettings" xml:space="preserve">
+    <value>Сбросить настройки</value>
+  </data>
+  <data name="InstallerVm_DeleteConfigAndCache" xml:space="preserve">
+    <value>Удалить конфигурацию и кэш</value>
+  </data>
+  <data name="InstallerVm_OptionsInstall" xml:space="preserve">
+    <value>Параметры установки</value>
+  </data>
+  <data name="InstallerVm_OptionsUpdate" xml:space="preserve">
+    <value>Параметры обновления</value>
+  </data>
+  <data name="InstallerVm_OptionsRepair" xml:space="preserve">
+    <value>Параметры восстановления</value>
+  </data>
+  <data name="InstallerVm_OptionsRemove" xml:space="preserve">
+    <value>Параметры удаления</value>
+  </data>
+  <data name="InstallerUi_Continue" xml:space="preserve">
+    <value>Продолжить</value>
+  </data>
+  <data name="InstallerUi_Back" xml:space="preserve">
+    <value>Назад</value>
+  </data>
+  <data name="MainVm_NewConfigDefaultName" xml:space="preserve">
+    <value>Новая конфигурация</value>
+  </data>
+  <data name="MainVm_NewListDefaultName" xml:space="preserve">
+    <value>Новый список</value>
+  </data>
+  <data name="Main_ConfigNameWatermark" xml:space="preserve">
+    <value>Название конфигурации</value>
+  </data>
+  <data name="Main_RequiredEmptyWarning" xml:space="preserve">
+    <value>Обязательное поле - изменения не сохранятся, пока оно пустое.</value>
+  </data>
+  <data name="Launcher_Title" xml:space="preserve">
+    <value>Быстрый запуск</value>
+  </data>
+  <data name="Launcher_ActiveProfile" xml:space="preserve">
+    <value>Активный профиль</value>
+  </data>
+  <data name="Launcher_Loading" xml:space="preserve">
+    <value>Загрузка профилей…</value>
+  </data>
+  <data name="Launcher_OpenApp" xml:space="preserve">
+    <value>Открыть настройки</value>
+  </data>
+  <data name="Launcher_Less" xml:space="preserve">
+    <value>Скрыть настройки</value>
+  </data>
+  <data name="Launcher_Cancel" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="Launcher_TrayHint" xml:space="preserve">
+    <value>После закрытия приложение останется в трее.</value>
+  </data>
+  <data name="Main_LogTabView" xml:space="preserve">
+    <value>Просмотр</value>
+  </data>
+  <data name="Main_LogTabSettings" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="Main_LogTypeLabel" xml:space="preserve">
+    <value>Журнал</value>
+  </data>
+  <data name="Main_ExportLogButton" xml:space="preserve">
+    <value>Экспорт</value>
+  </data>
+  <data name="Main_LogCaptureLevelTitle" xml:space="preserve">
+    <value>Максимальный уровень</value>
+  </data>
+  <data name="Android_EngineNotReady" xml:space="preserve">
+    <value>Android VPN-движок пока не подключён.</value>
+  </data>
+</root>

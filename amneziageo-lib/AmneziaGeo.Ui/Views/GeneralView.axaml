@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
@@ -31,11 +32,11 @@
 
             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="12">
               <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr General_Theme}" FontSize="13.5" VerticalAlignment="Center" />
-              <ComboBox Grid.Row="0" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+              <controls:AdaptiveComboBox Grid.Row="0" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                         ItemsSource="{Binding Themes}"
                         SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}" />
               <TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Tr General_Language}" FontSize="13.5" VerticalAlignment="Center" />
-              <ComboBox Grid.Row="1" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+              <controls:AdaptiveComboBox Grid.Row="1" Grid.Column="1" Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                         ItemsSource="{Binding Languages}"
                         SelectedIndex="{Binding SelectedLanguageIndex, Mode=TwoWay}" />
             </Grid>
@@ -157,15 +158,15 @@
                         Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
                         Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
-              <ComboBox Classes="field" Width="92" VerticalAlignment="Center"
+              <controls:AdaptiveComboBox Classes="field" Width="92" VerticalAlignment="Center"
                         ItemsSource="{Binding ReconnectIntervals}"
                         SelectedItem="{Binding ReconnectIntervalSeconds, Mode=TwoWay}">
-                <ComboBox.ItemTemplate>
+                <controls:AdaptiveComboBox.ItemTemplate>
                   <DataTemplate x:DataType="x:Int32">
                     <TextBlock Text="{Binding}" />
                   </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
+                </controls:AdaptiveComboBox.ItemTemplate>
+              </controls:AdaptiveComboBox>
               <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
             </StackPanel>
           </Grid>

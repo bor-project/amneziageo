@@ -1,15 +1,28 @@
+#if !DEBUG
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+#endif
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Resolves the per-user runtime data root.
+/// Resolves the runtime data root.
 /// </summary>
 internal static class AppDataRoot
 {
     private const string AppFolder = "AmneziaGeo";
+
+#if DEBUG
+    // Debug: единый машинный каталог для агента и SYSTEM-службы
+    /// <summary>
+    /// Path to the data directory.
+    /// </summary>
+    public static string Base()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), AppFolder);
+    }
+#else
     private const uint InvalidSession = 0xFFFFFFFF;
 
     private static readonly bool RunningAsSystem = IsSystemAccount();
@@ -109,4 +122,5 @@ internal static class AppDataRoot
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr handle);
+#endif
 }

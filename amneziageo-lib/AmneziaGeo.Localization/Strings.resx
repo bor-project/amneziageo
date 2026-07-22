@@ -1478,4 +1478,31 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Android_EngineNotReady" xml:space="preserve">
     <value>The Android VPN engine is not connected yet.</value>
   </data>
+  <data name="Main_SettingsTab" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Main_ExportListTitle" xml:space="preserve">
+    <value>Export list</value>
+  </data>
+  <data name="Main_AddListTitle" xml:space="preserve">
+    <value>Add a list</value>
+  </data>
+  <data name="Main_BlankListButton" xml:space="preserve">
+    <value>Blank</value>
+  </data>
+  <data name="Main_NewListLabel" xml:space="preserve">
+    <value>New list</value>
+  </data>
+  <data name="Main_ConfigTab" xml:space="preserve">
+    <value>Config</value>
+  </data>
+  <data name="Main_ImportTab" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="Main_ExportTab" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="Main_ConfigTextLabel" xml:space="preserve">
+    <value>CONFIGURATION TEXT</value>
+  </data>
 </root>

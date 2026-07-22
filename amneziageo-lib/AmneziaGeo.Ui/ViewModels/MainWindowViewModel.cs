@@ -101,6 +101,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Sources = new SourcesViewModel(connection, notice => Home.ShowNotice(notice), () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
         // Seed backing field from prefs without echoing OnChanged.
         _settingsSection = prefs.SettingsSection;
+        UpdateActiveSection();
         General.PropertyChanged += OnGeneralPropertyChanged;
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
@@ -231,6 +232,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Nav = "home";
         Profile.OpenProfile = null;
         Config.AbandonCreate();
+        Routing.AbandonCreate();
         RefreshLogsActive();
     }
 
@@ -285,11 +287,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         if (section == "routing")
         {
-            Routing.SelectFirstIfNone();
+            Routing.EnterSection();
         }
         else if (section == "config")
         {
-            Config.SelectFirstIfNone();
+            Config.EnterSection();
         }
     }
 
@@ -325,6 +327,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _prefs.SettingsSection = value;
         _prefs.Save();
+        UpdateActiveSection();
 
         // Changing section disarms any pending delete confirmation AND clears any blocked-delete reason line in
         // the section being left, so a stale red error does not linger on return (#3/#4).
@@ -341,6 +344,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Config.AbandonCreate();
         }
 
+        // Leaving routing discards an in-progress import draft (and stops its scanner).
+        if (value != "routing")
+        {
+            Routing.AbandonCreate();
+        }
+
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.
         RefreshLogsActive();
 
@@ -354,6 +363,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         // Still empty after the profile cascade: fall back to the first available list / config.
         SelectSectionDefault(value);
+    }
+
+    // Push the active-section flag to the config / routing screens so their footer Save bar shows only for
+    // the section on screen.
+    private void UpdateActiveSection()
+    {
+        Config.IsActiveSection = SettingsSection == "config";
+        Routing.IsActiveSection = SettingsSection == "routing";
     }
 
     private void OnGeneralPropertyChanged(object? sender, PropertyChangedEventArgs e)

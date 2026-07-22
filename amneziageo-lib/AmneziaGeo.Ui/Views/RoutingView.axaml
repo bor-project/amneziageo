@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
              xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.RoutingView"
@@ -10,28 +11,34 @@
   <UserControl.Resources>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
     <StreamGeometry x:Key="AgPasteGeometry">M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M7,7H17V5H19V19H5V5H7V7Z</StreamGeometry>
-    <StreamGeometry x:Key="AgUploadGeometry">M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z</StreamGeometry>
-    <StreamGeometry x:Key="AgDownloadGeometry">M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z</StreamGeometry>
+    <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
+    <StreamGeometry x:Key="AgFileGeometry">M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z</StreamGeometry>
+    <StreamGeometry x:Key="AgQrGeometry">M3,11H5V13H3V11M11,5H13V9H11V5M9,11H13V15H11V13H9V11M15,11H17V13H19V11H21V13H19V15H21V19H19V21H17V19H13V21H11V17H15V15H17V13H15V11M19,19V15H17V19H19M15,3H21V9H15V3M17,5V7H19V5H17M3,3H9V9H3V3M5,5V7H7V5H5M3,15H9V21H3V15M5,17V19H7V17H5Z</StreamGeometry>
+    <StreamGeometry x:Key="AgPencilGeometry">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
   </UserControl.Resources>
-  <!-- Edits autosave: rules / toggles at once, text fields on blur (LostFocus). -->
-  <StackPanel Spacing="14" LostFocus="OnRoutingFieldBlur">
-    <!-- Header: section title + count pill + new-list button. -->
-    <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_RoutingSection}" VerticalAlignment="Center" />
-      <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-              Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-        <TextBlock Text="{Binding RoutingLists.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-      </Border>
-      <Button Grid.Column="3" Classes="accent" Width="130" Command="{Binding CreateRoutingListCommand}">
-        <StackPanel Orientation="Horizontal" Spacing="4">
-          <TextBlock Text="+" />
-          <TextBlock Text="{l:Tr Main_NewListButton}" />
-        </StackPanel>
-      </Button>
-    </Grid>
+  <Grid RowDefinitions="Auto,Auto,*">
 
-    <!-- Routing-list catalogue combo: «- не выбрано -» then saved lists. -->
-    <StackPanel Spacing="6">
+    <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. -->
+    <Border Grid.Row="0" Background="{DynamicResource AgInsetBrush}"
+            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="9" Padding="3" MaxWidth="420" HorizontalAlignment="Left">
+      <UniformGrid Columns="3">
+        <Button Classes="seg" Classes.active="{Binding SegSettingsActive}"
+                Command="{Binding SelectRoutingSectionCommand}" CommandParameter="settings"
+                IsEnabled="{Binding CanSettingsSection}"
+                Content="{l:Tr Main_SettingsTab}" HorizontalAlignment="Stretch" Padding="8,6" />
+        <Button Classes="seg" Classes.active="{Binding SegImportActive}"
+                Command="{Binding SelectRoutingSectionCommand}" CommandParameter="import"
+                Content="{l:Tr Main_ImportTab}" HorizontalAlignment="Stretch" Padding="8,6" />
+        <Button Classes="seg" Classes.active="{Binding SegExportActive}"
+                Command="{Binding SelectRoutingSectionCommand}" CommandParameter="export"
+                IsEnabled="{Binding CanExportSection}"
+                Content="{l:Tr Main_ExportTab}" HorizontalAlignment="Stretch" Padding="8,6" />
+      </UniformGrid>
+    </Border>
+
+    <!-- Routing-list catalogue combo: «- не выбрано -» then saved lists. Hidden while importing. -->
+    <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6" IsVisible="{Binding !IsSectionImport}">
       <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" />
       <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                 ItemsSource="{Binding RoutingCatalogueOptions}"
@@ -50,243 +57,64 @@
                  Text="{l:Tr Main_NoRoutingListsHint}" />
     </StackPanel>
 
-    <!-- Section loader until an opened list's rules + traffic settings finish, so the editor reveals fully
-         populated with no reflow (#193); matches the main window's first-load loader. -->
-    <StackPanel IsVisible="{Binding EditorLoading}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
-      <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
-      <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
-    </StackPanel>
+    <!-- Content: one section shown at a time. -->
+    <Panel Grid.Row="2" Margin="0,14,0,0">
 
-    <!-- Editor for the selected / new list. -->
-    <StackPanel IsVisible="{Binding EditorReady}" Spacing="14">
+      <!-- Section loader until an opened list's rules + traffic settings finish (#193). -->
+      <StackPanel IsVisible="{Binding ShowSettingsLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
+        <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+        <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+      </StackPanel>
 
-      <!-- Rules card: name + per-app tunneling + geo/domain/cidr entries + import/export. -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
-        <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-          <!-- Title left; global-proxy flag right. Compact drops the flag to its own row under the title. -->
-          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-            <TextBlock Grid.Column="0" Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15"
-                       TextWrapping="Wrap" VerticalAlignment="Center"
-                       Grid.ColumnSpan="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                        ToolTip.Tip="{l:Tr Main_GlobalProxyHint}"
-                        Grid.Row="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                        Grid.Column="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                        HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
-              <TextBlock Text="{l:Tr Main_GlobalProxyTitle}" FontSize="12.5" Classes="muted" VerticalAlignment="Center" />
-              <ToggleSwitch VerticalAlignment="Center" MinWidth="0"
-                            IsChecked="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).RoutingSettings.UseGlobalProxy, Mode=TwoWay}" />
-            </StackPanel>
-          </Grid>
+      <!-- Settings section: the shared editor + delete card. -->
+      <StackPanel IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
+        <views:RoutingEditorView />
 
-          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
-            <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
-                      Width="14" Height="14" Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-            <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
-          </StackPanel>
-
-          <StackPanel Spacing="2">
-            <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
-            <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
-                     Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
-            <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
-                       Text="{l:Tr Main_RequiredEmptyWarning}" />
-          </StackPanel>
-
-          <!-- Per-app tunneling. -->
-          <StackPanel Spacing="6">
-            <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
-
-            <!-- Wide: source picker, app input, and add button inline. -->
-            <Grid ColumnDefinitions="Auto,*,Auto"
-                  IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-              <Button Grid.Column="0" Classes="softbtn" Width="130" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
-                <Button.Flyout>
-                  <MenuFlyout>
-                    <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
-                    <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
-                    <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
-                    <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
-                  </MenuFlyout>
-                </Button.Flyout>
-              </Button>
-              <AutoCompleteBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
-                               Watermark="{Binding AppWatermark}"
-                               Text="{Binding AppInput, Mode=TwoWay}"
-                               SelectedItem="{Binding AppSelected, Mode=TwoWay}"
-                               ItemsSource="{Binding AppSuggestions}"
-                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                               IsEnabled="{Binding IsAppPickerActive}" />
-              <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddAppCommand}"
-                      IsEnabled="{Binding IsAppPickerActive}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock Text="+" />
-                  <TextBlock Text="{l:Tr Main_AddButton}" />
-                </StackPanel>
-              </Button>
-            </Grid>
-
-            <!-- Compact: source picker and add button split the row evenly; app input drops to its own row. -->
-            <StackPanel Spacing="8"
-                        IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                <Button Grid.Column="0" Classes="softbtn" HorizontalAlignment="Stretch" Content="{l:Tr Main_SourceDropdown}">
-                  <Button.Flyout>
-                    <MenuFlyout>
-                      <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
-                      <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
-                      <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
-                      <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
-                    </MenuFlyout>
-                  </Button.Flyout>
-                </Button>
-                <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddAppCommand}"
-                        IsEnabled="{Binding IsAppPickerActive}">
-                  <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
-                    <TextBlock Text="+" />
-                    <TextBlock Text="{l:Tr Main_AddButton}" />
-                  </StackPanel>
-                </Button>
+        <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
+             the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
+        <Border Background="Transparent" IsVisible="{Binding ShowDeleteCard}"
+                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                CornerRadius="12" Padding="16">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+              <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
+                          Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                <TextBlock Text="{l:Tr Main_DeleteListTitle}" FontWeight="SemiBold" FontSize="13.5" />
+                <TextBlock Text="{l:Tr Main_DeleteListPrompt}" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteListHint}" />
+              </StackPanel>
+              <Grid VerticalAlignment="Center"
+                    Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                    Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                    ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
+                        Content="{l:Tr Main_DeleteListButton}"
+                        IsVisible="{Binding !RoutingDeletePending}"
+                        Command="{Binding RequestDeleteSectionRoutingListCommand}" />
+                <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                        Content="{l:Tr Main_ConfirmDeleteButton}"
+                        IsVisible="{Binding RoutingDeletePending}"
+                        Command="{Binding ConfirmDeleteSectionRoutingListCommand}" />
+                <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                        Content="{l:Tr Main_CancelButton}"
+                        IsVisible="{Binding RoutingDeletePending}"
+                        Command="{Binding CancelDeleteRoutingCommand}" />
               </Grid>
-              <AutoCompleteBox Classes="field"
-                               Watermark="{Binding AppWatermark}"
-                               Text="{Binding AppInput, Mode=TwoWay}"
-                               SelectedItem="{Binding AppSelected, Mode=TwoWay}"
-                               ItemsSource="{Binding AppSuggestions}"
-                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                               IsEnabled="{Binding IsAppPickerActive}" />
-            </StackPanel>
-          </StackPanel>
-
-          <!-- Add a geo category / domain / cidr entry. -->
-          <StackPanel Spacing="6">
-            <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
-            <Grid ColumnDefinitions="*,Auto">
-              <AutoCompleteBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
-                               Watermark="{l:Tr Main_AddEntryWatermark}"
-                               Text="{Binding RuleInput, Mode=TwoWay}"
-                               ItemsSource="{Binding GeoSuggestions}"
-                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
-              <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock Text="+" />
-                  <TextBlock Text="{l:Tr Main_AddButton}" />
-                </StackPanel>
-              </Button>
             </Grid>
+            <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                       IsVisible="{Binding RoutingDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
+        </Border>
+      </StackPanel>
 
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-          <!-- Required-field validation, red; clears on any edit (#2/#3). -->
-          <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
-                     IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-          <!-- Role segment [Прокси | Директ | Блок]: which bucket the add rows target and the list below shows. -->
-          <StackPanel Spacing="6">
-            <Border Background="{DynamicResource AgInsetBrush}"
-                    BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                    CornerRadius="9" Padding="3">
-              <UniformGrid Columns="3">
-                <Button Classes="seg" Classes.active="{Binding IsProxyRole}" Content="{l:Tr Main_RoleProxy}"
-                        Command="{Binding SelectRoleCommand}" CommandParameter="proxy"
-                        HorizontalAlignment="Stretch" Padding="12,6" />
-                <Button Classes="seg" Classes.active="{Binding IsDirectRole}" Content="{l:Tr Main_RoleDirect}"
-                        Command="{Binding SelectRoleCommand}" CommandParameter="direct"
-                        HorizontalAlignment="Stretch" Padding="12,6" />
-                <Button Classes="seg" Classes.active="{Binding IsBlockRole}" Content="{l:Tr Main_RoleBlock}"
-                        Command="{Binding SelectRoleCommand}" CommandParameter="block"
-                        HorizontalAlignment="Stretch" Padding="12,6" />
-              </UniformGrid>
-            </Border>
-            <!-- Role hint left; a blue link (Direct only) fills the Direct bucket with the machine's local subnets. -->
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Grid.Column="0" Text="{Binding RoleHint}" Classes="muted" FontSize="11.5"
-                         TextWrapping="Wrap" VerticalAlignment="Top" />
-              <Button Grid.Column="1" Classes="linkbtn" IsVisible="{Binding IsDirectRole}" Margin="12,0,0,0"
-                      Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}"
-                      VerticalAlignment="Top" HorizontalAlignment="Right">
-                <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap" />
-              </Button>
-            </Grid>
-          </StackPanel>
-
-          <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-              <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
-              <Button Grid.Column="1" Classes="icon" Content="⇅" FontSize="13" Margin="6,0,0,0"
-                      VerticalAlignment="Center"
-                      Command="{Binding SortRulesCommand}"
-                      ToolTip.Tip="{l:Tr Main_SortRulesTooltip}" />
-              <Button Grid.Column="3" Command="{Binding ClearRulesCommand}"
-                      Background="Transparent" BorderThickness="0" Padding="0"
-                      Cursor="Hand" VerticalAlignment="Center" HorizontalAlignment="Right"
-                      ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}">
-                <TextBlock Text="{l:Tr Main_ClearButton}" FontSize="11.5"
-                           Foreground="{DynamicResource AgAccentBrush}" />
-              </Button>
-            </Grid>
-            <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                    Background="{DynamicResource AgPanelBrush}" CornerRadius="10">
-              <ItemsControl ItemsSource="{Binding Rules}" Margin="8,8">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="x:String">
-                    <Border Background="{DynamicResource AgInsetBrush}"
-                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                            CornerRadius="8" Padding="10,7" Margin="0,3">
-                      <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="{Binding}" Classes="mono" FontSize="12.5"
-                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                        <Button Grid.Column="1" Classes="icon" Content="✕"
-                                Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).RemoveRuleCommand}"
-                                CommandParameter="{Binding}" />
-                      </Grid>
-                    </Border>
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </Border>
-          </StackPanel>
-        </StackPanel>
-      </Border>
-
-      <!-- Per-routing traffic card: exclusions + all-UDP + IPv6. -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent"
-              IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
-        <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
-          <TextBlock Text="{l:Tr Main_RoutingOptionsLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-              <TextBlock Text="{l:Tr Main_AllUdpTitle}" FontSize="13.5" />
-              <TextBlock Text="{l:Tr Main_AllUdpHint}"
-                         Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-            </StackPanel>
-            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
-          </Grid>
-
-          <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-              <TextBlock Text="{l:Tr Main_UseIpv6Title}" FontSize="13.5" />
-              <TextBlock Text="{l:Tr Main_UseIpv6Hint}"
-                         Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-            </StackPanel>
-            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
-          </Grid>
-
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        </StackPanel>
-      </Border>
-
-      <!-- Transfer card: QR / raw payload of the list, with copy / paste / load / save (replaces the modal). -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+      <!-- Export section: QR / raw payload of the list, with copy / save. -->
+      <Border IsVisible="{Binding IsSectionExport}"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" Background="Transparent">
         <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
           <StackPanel Spacing="2">
-            <TextBlock Text="{l:Tr Main_ImportExportSection}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+            <TextBlock Text="{l:Tr Main_ExportListTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
             <TextBlock Text="{l:Tr Main_TransferSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
           </StackPanel>
 
@@ -302,8 +130,7 @@
             </UniformGrid>
           </Border>
 
-          <!-- QR tab: fixed 240x240 stage so the image (or notice) appearing never reflows the card or jumps
-               the scroll; blank while the QR is still being built. -->
+          <!-- QR tab: fixed 240x240 stage so the image (or notice) appearing never reflows the card. -->
           <Panel Height="240" IsVisible="{Binding IsTransferQr}">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
                     IsVisible="{Binding RoutingQrImage, Converter={x:Static ObjectConverters.IsNotNull}}">
@@ -329,7 +156,7 @@
                      HorizontalAlignment="Center" TextAlignment="Center"
                      IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-          <!-- Shared actions: copy / paste / load / save. -->
+          <!-- Export actions: copy (QR) / save (text). -->
           <WrapPanel HorizontalAlignment="Center">
             <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingExportCopy"
                     IsVisible="{Binding IsTransferQr}"
@@ -337,21 +164,6 @@
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
                 <TextBlock Text="{l:Tr Main_CopyButton}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingImportPaste"
-                    IsVisible="{Binding IsTransferQr}"
-                    ToolTip.Tip="{l:Tr Main_RoutingPasteTooltip}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgPasteGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_PasteButton}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingImportFile"
-                    IsVisible="{Binding IsTransferText}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgUploadGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_LoadFileButton}" />
               </StackPanel>
             </Button>
             <Button Classes="accent" Margin="4" Padding="14,6" Click="OnRoutingExportSave"
@@ -365,44 +177,62 @@
         </StackPanel>
       </Border>
 
-      <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
-           the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). Hidden for an
-           unsaved new-list draft. -->
-      <Border Background="Transparent"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" IsVisible="{Binding !RoutingEditor.IsNew}">
-        <StackPanel Spacing="10">
-          <!-- Compact stacks the trigger under the description; wide keeps them side by side. -->
-          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
-                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-              <TextBlock Text="{l:Tr Main_DeleteListTitle}" FontWeight="SemiBold" FontSize="13.5" />
-              <TextBlock Text="{l:Tr Main_DeleteListPrompt}" FontSize="12" TextWrapping="Wrap" />
-              <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_DeleteListHint}" />
-            </StackPanel>
-            <Grid VerticalAlignment="Center"
-                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
-                  ColumnDefinitions="*,*" ColumnSpacing="8">
-              <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_DeleteListButton}"
-                      IsVisible="{Binding !RoutingDeletePending}"
-                      Command="{Binding RequestDeleteSectionRoutingListCommand}" />
-              <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_ConfirmDeleteButton}"
-                      IsVisible="{Binding RoutingDeletePending}"
-                      Command="{Binding ConfirmDeleteSectionRoutingListCommand}" />
-              <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_CancelButton}"
-                      IsVisible="{Binding RoutingDeletePending}"
-                      Command="{Binding CancelDeleteRoutingCommand}" />
-            </Grid>
-          </Grid>
-          <TextBlock Text="{Binding RoutingDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
-                     IsVisible="{Binding RoutingDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <!-- Import section - method picker: blank / file / paste / QR. -->
+      <Border IsVisible="{Binding ShowImportPicker}"
+              Background="{DynamicResource AgPanelBrush}"
+              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="9" MinHeight="220">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4" Margin="16">
+          <TextBlock Text="{l:Tr Main_AddListTitle}" FontSize="16" FontWeight="SemiBold"
+                     HorizontalAlignment="Center" />
+          <TextBlock Text="{l:Tr Main_AddConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                     HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12" />
+          <WrapPanel HorizontalAlignment="Center">
+            <Button Classes="methodpick" Margin="4" Command="{Binding BeginManualImportCommand}" Width="160">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgPencilGeometry}" Width="15" Height="15" />
+                <TextBlock Text="{l:Tr Main_BlankListButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="methodpick" Margin="4" Click="OnRoutingImportFile" Width="160">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgFileGeometry}" Width="15" Height="15" />
+                <TextBlock Text="{l:Tr Main_FileButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="methodpick" Margin="4" Click="OnRoutingImportPaste" Width="160">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgPasteGeometry}" Width="15" Height="15" />
+                <TextBlock Text="{l:Tr Main_PasteButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="methodpick" Margin="4" Command="{Binding BeginCameraImportCommand}" Width="160">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgQrGeometry}" Width="15" Height="15" />
+                <TextBlock Text="{l:Tr Main_CameraButton}" />
+              </StackPanel>
+            </Button>
+          </WrapPanel>
         </StackPanel>
       </Border>
-    </StackPanel>
-  </StackPanel>
+
+      <!-- Import section - draft editor (blank or prefilled from file / paste / QR). -->
+      <StackPanel IsVisible="{Binding ShowImportEditor}" Spacing="14">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_NewListLabel}" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="methodpick" Command="{Binding ChangeMethodCommand}" Width="160">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{l:Tr Main_ChangeMethodButton}" />
+            </StackPanel>
+          </Button>
+        </Grid>
+        <views:RoutingEditorView />
+      </StackPanel>
+
+      <!-- Import section - live QR scanner. -->
+      <Panel IsVisible="{Binding ShowImportCamera}" MinHeight="220">
+        <views:ScanView DataContext="{Binding SectionScan}" />
+      </Panel>
+
+    </Panel>
+  </Grid>
 </UserControl>

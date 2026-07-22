@@ -17,28 +17,32 @@
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
-  <!-- Row 3 stars to fill the pane with the config-text box. -->
+  <!-- Row 3 stars to fill the pane with the import config-text box. -->
   <Grid RowDefinitions="Auto,Auto,Auto,*">
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto">
-      <TextBlock Grid.Column="0" Classes="section" Text="{l:Tr Main_ConfigSection}" VerticalAlignment="Center" />
-      <Border Grid.Column="1" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-              Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center">
-        <TextBlock Text="{Binding Configs.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-      </Border>
-      <Button Grid.Column="3" Classes="accent" Width="130" Command="{Binding BeginSectionConfigCommand}"
-              IsEnabled="{Binding !IsCreatingSectionConfig}">
-        <StackPanel Orientation="Horizontal" Spacing="4">
-          <TextBlock Text="+" />
-          <TextBlock Text="{l:Tr Main_NewConfigButton}" />
-        </StackPanel>
-      </Button>
-    </Grid>
 
-    <!-- Config catalogue combo: «- не выбрано -» then saved configs. -->
-    <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6">
+    <!-- Section menu: Settings / Import / Export. Settings and Export disable while no config exists. -->
+    <Border Grid.Row="0" Background="{DynamicResource AgInsetBrush}"
+            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="9" Padding="3" MaxWidth="420" HorizontalAlignment="Left">
+      <UniformGrid Columns="3">
+        <Button Classes="seg" Classes.active="{Binding SegConfigActive}"
+                Command="{Binding SelectConfigSectionCommand}" CommandParameter="config"
+                IsEnabled="{Binding CanConfigSection}"
+                Content="{l:Tr Main_SettingsTab}" HorizontalAlignment="Stretch" Padding="8,6" />
+        <Button Classes="seg" Classes.active="{Binding SegImportActive}"
+                Command="{Binding SelectConfigSectionCommand}" CommandParameter="import"
+                Content="{l:Tr Main_ImportTab}" HorizontalAlignment="Stretch" Padding="8,6" />
+        <Button Classes="seg" Classes.active="{Binding SegExportActive}"
+                Command="{Binding SelectConfigSectionCommand}" CommandParameter="export"
+                IsEnabled="{Binding CanExportSection}"
+                Content="{l:Tr Main_ExportTab}" HorizontalAlignment="Stretch" Padding="8,6" />
+      </UniformGrid>
+    </Border>
+
+    <!-- Config catalogue combo: «- не выбрано -» then saved configs. Hidden while importing. -->
+    <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6" IsVisible="{Binding !IsSectionImport}">
       <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
       <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                IsEnabled="{Binding !IsCreatingSectionConfig}"
                 ItemsSource="{Binding ConfigCatalogueOptions}"
                 SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
         <controls:AdaptiveComboBox.ItemTemplate>
@@ -51,9 +55,9 @@
                  Text="{l:Tr Main_NoConfigsHint}" />
     </StackPanel>
 
-    <!-- Standalone import form (Row 3). Imported with the header Save once text parses + name is set (#143). -->
+    <!-- Import section (Row 3). Imported with the footer Save once text parses + name is set (#143). -->
     <Border Grid.Row="3" Margin="0,14,0,0"
-            IsVisible="{Binding IsCreatingSectionConfig}"
+            IsVisible="{Binding IsSectionImport}"
             Background="Transparent"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
             CornerRadius="12" Padding="10">
@@ -77,12 +81,6 @@
           <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
-        <!-- MTU + WebSocket proxy for the new config: same card as the edit form. -->
-        <Border DockPanel.Dock="Bottom" Margin="0,12,0,0"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="12" Padding="16" Background="Transparent">
-          <views:ConfigTransportView DataContext="{Binding SectionConfigTransport}" />
-        </Border>
         <TextBlock DockPanel.Dock="Bottom" Text="{Binding SectionConfigStatus}" Classes="fieldwarn"
                    FontSize="11.5" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
                    Margin="0,10,0,0"
@@ -143,10 +141,9 @@
       </DockPanel>
     </Border>
 
-    <!-- Open config (Row 2): name editor + QR / .conf text + proxy + delete. Fields autosave on blur. -->
-    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsConfigManage}" Spacing="14"
-                LostFocus="OnConfigFieldBlur">
-      <!-- Config name: per-keystroke so the required-field border reacts at once; committed with the header Save (#143). -->
+    <!-- Config section (Row 2): name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
+    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionConfig}" Spacing="14">
+      <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
       <StackPanel Spacing="2">
         <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
         <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
@@ -157,100 +154,23 @@
                    IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
 
-      <!-- Export card: QR of the .conf / of the vpn:// link, or the .conf text itself. The text is edited in
-           place and committed by the header Save (#143), so the mode switch locks while it is dirty. -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
-        <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
-          <StackPanel Spacing="2">
-            <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-            <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-          </StackPanel>
-          <Border Background="{DynamicResource AgInsetBrush}"
-                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                  CornerRadius="9" Padding="3" MaxWidth="720" HorizontalAlignment="Center"
-                  IsEnabled="{Binding !IsDirty}">
-            <UniformGrid Columns="3">
-              <!-- Compact shortens the two QR tab labels so all three fit the narrow segment. -->
-              <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
-                      HorizontalAlignment="Stretch" Padding="20,6">
-                <Panel>
-                  <TextBlock Text="{l:Tr Main_QrConfTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                  <TextBlock Text="{l:Tr Main_QrConfTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                </Panel>
-              </Button>
-              <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
-                      HorizontalAlignment="Stretch" Padding="20,6">
-                <Panel>
-                  <TextBlock Text="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                  <TextBlock Text="{l:Tr Main_QrLinkTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                </Panel>
-              </Button>
-              <Button Classes="seg" Classes.active="{Binding IsText}" Command="{Binding ShowTextCommand}"
-                      Content="{l:Tr Main_ConfigTextTab}" HorizontalAlignment="Stretch" Padding="20,6" />
-            </UniformGrid>
-          </Border>
-          <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
-                  IsVisible="{Binding ShowQr}">
-            <Image Source="{Binding QrImage}" Width="220" Height="220" />
-          </Border>
-          <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
-                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                  CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
-            <TextBlock Text="{l:Tr Main_QrUnavailableHint}"
-                       Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
-          </Border>
-          <!-- vpn:// link under its QR: read-only, borderless, selectable to copy. -->
-          <TextBox Text="{Binding LinkText}" IsReadOnly="True" IsVisible="{Binding IsQrLink}"
-                   TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0"
-                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11.5" />
-          <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                  CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
-                  IsVisible="{Binding IsText}" IsEnabled="{Binding IsReady}">
-            <TextBox Text="{Binding ConfText, Mode=TwoWay}"
-                     AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-                     VerticalContentAlignment="Top" Height="240"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     BorderThickness="0" Background="Transparent"
-                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
-          </Border>
-          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" IsVisible="{Binding !IsText}">
-            <PathIcon Data="{StaticResource AgLockGeometry}" Width="13" Height="13"
-                      Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-            <TextBlock Text="{l:Tr Main_QrPrivateKeyWarning}" Classes="muted" FontSize="12"
-                       TextWrapping="Wrap" VerticalAlignment="Center" />
-          </StackPanel>
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     HorizontalAlignment="Center" TextAlignment="Center" />
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="10" MaxWidth="520" HorizontalAlignment="Center">
-            <Button Grid.Column="0" Classes="methodpick" HorizontalAlignment="Stretch" Padding="16,6"
-                    Click="OnCopyExport" IsEnabled="{Binding IsReady}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-                <!-- Compact drops the label to just "Copy" so it fits the narrow half-width button. -->
-                <Panel>
-                  <TextBlock Text="{l:Tr Main_CopyContentButton}"
-                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                  <TextBlock Text="{l:Tr Main_CopyContentButtonShort}"
-                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                </Panel>
-              </StackPanel>
-            </Button>
-            <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Padding="16,6"
-                    Click="OnDownloadQr" IsVisible="{Binding ShowQr}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_DownloadQrButton}" />
-              </StackPanel>
-            </Button>
-          </Grid>
-        </StackPanel>
-      </Border>
+      <!-- Editable .conf text: committed on the footer Save through the shared config view model. -->
+      <StackPanel Spacing="2">
+        <TextBlock Classes="label" Text="{l:Tr Main_ConfigTextLabel}" />
+        <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+                IsEnabled="{Binding ConfigExport.IsReady}">
+          <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
+                   AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                   VerticalContentAlignment="Top" Height="240"
+                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto"
+                   BorderThickness="0" Background="Transparent"
+                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+        </Border>
+        <TextBlock Text="{Binding ConfigExport.StatusMessage}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                   IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
 
       <!-- Proxy (WebSocket) card. -->
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
@@ -293,6 +213,88 @@
           </Grid>
           <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                      IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <!-- Export section (Row 2): read-only QR of the .conf / of the vpn:// link, with copy / save. -->
+    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionExport}" Spacing="14">
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent">
+        <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+            <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+          <Border Background="{DynamicResource AgInsetBrush}"
+                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                  CornerRadius="9" Padding="3" MaxWidth="480" HorizontalAlignment="Center">
+            <UniformGrid Columns="2">
+              <!-- Compact shortens the two QR tab labels so both fit the narrow segment. -->
+              <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
+                      HorizontalAlignment="Stretch" Padding="20,6">
+                <Panel>
+                  <TextBlock Text="{l:Tr Main_QrConfTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                  <TextBlock Text="{l:Tr Main_QrConfTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                </Panel>
+              </Button>
+              <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
+                      HorizontalAlignment="Stretch" Padding="20,6">
+                <Panel>
+                  <TextBlock Text="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                  <TextBlock Text="{l:Tr Main_QrLinkTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                </Panel>
+              </Button>
+            </UniformGrid>
+          </Border>
+          <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+                  IsVisible="{Binding ShowQr}">
+            <Image Source="{Binding QrImage}" Width="220" Height="220" />
+          </Border>
+          <Border HorizontalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                  CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
+            <TextBlock Text="{l:Tr Main_QrUnavailableHint}"
+                       Classes="muted" FontSize="12" TextAlignment="Center" TextWrapping="Wrap" />
+          </Border>
+          <!-- vpn:// link under its QR: read-only, borderless, selectable to copy. -->
+          <TextBox Text="{Binding LinkText}" IsReadOnly="True" IsVisible="{Binding IsQrLink}"
+                   TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0"
+                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11.5" />
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" MaxWidth="480" HorizontalAlignment="Center">
+            <PathIcon Grid.Column="0" Data="{StaticResource AgLockGeometry}" Width="13" Height="13"
+                      Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Top" Margin="0,2,0,0" />
+            <TextBlock Grid.Column="1" Text="{l:Tr Main_QrPrivateKeyWarning}" Classes="muted" FontSize="12"
+                       TextWrapping="Wrap" VerticalAlignment="Center" />
+          </Grid>
+          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                     HorizontalAlignment="Center" TextAlignment="Center" />
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10" MaxWidth="520" HorizontalAlignment="Center">
+            <Button Grid.Column="0" Classes="methodpick" HorizontalAlignment="Stretch" Padding="16,6"
+                    Click="OnCopyExport" IsEnabled="{Binding IsReady}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+                <!-- Compact drops the label to just "Copy" so it fits the narrow half-width button. -->
+                <Panel>
+                  <TextBlock Text="{l:Tr Main_CopyContentButton}"
+                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                  <TextBlock Text="{l:Tr Main_CopyContentButtonShort}"
+                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
+                </Panel>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Padding="16,6"
+                    Click="OnDownloadQr" IsVisible="{Binding ShowQr}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_DownloadQrButton}" />
+              </StackPanel>
+            </Button>
+          </Grid>
         </StackPanel>
       </Border>
     </StackPanel>

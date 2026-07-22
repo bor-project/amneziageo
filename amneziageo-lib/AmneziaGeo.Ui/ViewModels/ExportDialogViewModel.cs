@@ -151,6 +151,11 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
         _ = RefreshQrAsync(payload);
     }
 
+    /// <summary>
+    /// Re-encodes the QR for the current mode after the baseline changed elsewhere.
+    /// </summary>
+    public void RefreshExport() => Refresh();
+
     // Discards a stale QR build.
     private int _qrRefreshToken;
 
@@ -244,6 +249,7 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
         _baseConfText = text;
         ConfText = text;
         StatusMessage = Loc.Instance.Get("ExportVm_Saved");
+        Refresh();
         return true;
     }
 }

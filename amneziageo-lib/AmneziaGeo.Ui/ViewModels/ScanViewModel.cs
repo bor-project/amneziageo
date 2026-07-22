@@ -1,25 +1,25 @@
 using System;
 using Avalonia.Media.Imaging;
-using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Inline camera QR-scan view model: holds the live preview frame and status; a decoded config is
-/// reported through the callback given at construction.
+/// Inline camera QR-scan view model: holds the live preview frame and status. A decoded QR's raw text is
+/// handed to the accept callback given at construction, which decodes it for its own screen and returns whether
+/// it was recognised; an unrecognised payload keeps the scanner running with a hint.
 /// </summary>
 internal sealed partial class ScanViewModel : ViewModelBase
 {
-    private readonly Action<VpnLinkCodec.Imported> _onResult;
+    private readonly Func<string, bool> _tryAccept;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public ScanViewModel(Action<VpnLinkCodec.Imported> onResult)
+    public ScanViewModel(Func<string, bool> tryAccept)
     {
-        _onResult = onResult;
+        _tryAccept = tryAccept;
     }
 
     [ObservableProperty]
@@ -29,16 +29,13 @@ internal sealed partial class ScanViewModel : ViewModelBase
     private string _statusMessage = Loc.Instance.Get("ScanVm_AimCameraAtQr");
 
     /// <summary>
-    /// The decoded config once a valid QR is read.
+    /// Hands a decoded QR's raw text to the owning screen; on an unrecognised payload keeps scanning with a hint.
     /// </summary>
-    public VpnLinkCodec.Imported? Result { get; private set; }
-
-    /// <summary>
-    /// Reports a decoded config to the create form.
-    /// </summary>
-    public void ReportResult(VpnLinkCodec.Imported imported)
+    public void ReportRaw(string text)
     {
-        Result = imported;
-        _onResult(imported);
+        if (!_tryAccept(text))
+        {
+            StatusMessage = Loc.Instance.Get("ScanCode_QrNotConfig");
+        }
     }
 }

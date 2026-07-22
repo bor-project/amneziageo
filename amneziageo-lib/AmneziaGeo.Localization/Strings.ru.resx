@@ -1478,4 +1478,31 @@
   <data name="Android_EngineNotReady" xml:space="preserve">
     <value>Android VPN-движок пока не подключён.</value>
   </data>
+  <data name="Main_SettingsTab" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="Main_ExportListTitle" xml:space="preserve">
+    <value>Экспорт списка</value>
+  </data>
+  <data name="Main_AddListTitle" xml:space="preserve">
+    <value>Добавить список</value>
+  </data>
+  <data name="Main_BlankListButton" xml:space="preserve">
+    <value>Пустой</value>
+  </data>
+  <data name="Main_NewListLabel" xml:space="preserve">
+    <value>Новый список</value>
+  </data>
+  <data name="Main_ConfigTab" xml:space="preserve">
+    <value>Конфиг</value>
+  </data>
+  <data name="Main_ImportTab" xml:space="preserve">
+    <value>Импорт</value>
+  </data>
+  <data name="Main_ExportTab" xml:space="preserve">
+    <value>Экспорт</value>
+  </data>
+  <data name="Main_ConfigTextLabel" xml:space="preserve">
+    <value>ТЕКСТ КОНФИГУРАЦИИ</value>
+  </data>
 </root>

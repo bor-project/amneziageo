@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
-using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -50,7 +49,7 @@ internal sealed partial class ScanView : UserControl
 
             var scanner = new QrCameraScanner(
                 bitmap => Dispatcher.UIThread.Post(() => vm.Preview = bitmap),
-                text => Dispatcher.UIThread.Post(() => OnDecoded(vm, text)));
+                text => Dispatcher.UIThread.Post(() => vm.ReportRaw(text)));
             _scanner = scanner;
             try
             {
@@ -75,17 +74,5 @@ internal sealed partial class ScanView : UserControl
         {
             await scanner.DisposeAsync();
         }
-    }
-
-    private void OnDecoded(ScanViewModel vm, string text)
-    {
-        var imported = VpnLinkCodec.TryDecodeQr(text);
-        if (imported is null)
-        {
-            vm.StatusMessage = Loc.Instance.Get("ScanCode_QrNotConfig");
-            return;
-        }
-
-        vm.ReportResult(imported);
     }
 }

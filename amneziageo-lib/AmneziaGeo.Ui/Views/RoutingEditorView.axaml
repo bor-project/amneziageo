@@ -1,0 +1,234 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Views.RoutingEditorView"
+             x:CompileBindings="True"
+             x:DataType="vm:RoutingViewModel">
+  <!-- Shared rule + traffic editor, bound to RoutingEditor / RoutingSettings; used by both the Settings and
+       Import sections. -->
+  <StackPanel Spacing="14">
+
+    <!-- Rules card: name + per-app tunneling + geo/domain/cidr entries. -->
+    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="16" Background="Transparent">
+      <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
+        <!-- Title left; global-proxy flag right. Compact drops the flag to its own row under the title. -->
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+          <TextBlock Grid.Column="0" Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15"
+                     TextWrapping="Wrap" VerticalAlignment="Center"
+                     Grid.ColumnSpan="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                      ToolTip.Tip="{l:Tr Main_GlobalProxyHint}"
+                      Grid.Row="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                      Grid.Column="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                      HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
+            <TextBlock Text="{l:Tr Main_GlobalProxyTitle}" FontSize="12.5" Classes="muted" VerticalAlignment="Center" />
+            <ToggleSwitch VerticalAlignment="Center" MinWidth="0"
+                          IsChecked="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).RoutingSettings.UseGlobalProxy, Mode=TwoWay}" />
+          </StackPanel>
+        </Grid>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
+          <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
+                    Width="14" Height="14" Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+          <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="12.5" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <StackPanel Spacing="2">
+          <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
+          <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
+                   Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
+          <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
+                     Text="{l:Tr Main_RequiredEmptyWarning}" />
+        </StackPanel>
+
+        <!-- Per-app tunneling. -->
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
+
+          <!-- Wide: source picker, app input, and add button inline. -->
+          <Grid ColumnDefinitions="Auto,*,Auto"
+                IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+            <Button Grid.Column="0" Classes="softbtn" Width="130" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
+                  <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
+                  <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
+                  <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+            <AutoCompleteBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
+                             Watermark="{Binding AppWatermark}"
+                             Text="{Binding AppInput, Mode=TwoWay}"
+                             SelectedItem="{Binding AppSelected, Mode=TwoWay}"
+                             ItemsSource="{Binding AppSuggestions}"
+                             FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
+                             IsEnabled="{Binding IsAppPickerActive}" />
+            <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddAppCommand}"
+                    IsEnabled="{Binding IsAppPickerActive}">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="+" />
+                <TextBlock Text="{l:Tr Main_AddButton}" />
+              </StackPanel>
+            </Button>
+          </Grid>
+
+          <!-- Compact: source picker and add button split the row evenly; app input drops to its own row. -->
+          <StackPanel Spacing="8"
+                      IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Grid.Column="0" Classes="softbtn" HorizontalAlignment="Stretch" Content="{l:Tr Main_SourceDropdown}">
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
+                    <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
+                    <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
+                    <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+              <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddAppCommand}"
+                      IsEnabled="{Binding IsAppPickerActive}">
+                <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                  <TextBlock Text="+" />
+                  <TextBlock Text="{l:Tr Main_AddButton}" />
+                </StackPanel>
+              </Button>
+            </Grid>
+            <AutoCompleteBox Classes="field"
+                             Watermark="{Binding AppWatermark}"
+                             Text="{Binding AppInput, Mode=TwoWay}"
+                             SelectedItem="{Binding AppSelected, Mode=TwoWay}"
+                             ItemsSource="{Binding AppSuggestions}"
+                             FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
+                             IsEnabled="{Binding IsAppPickerActive}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Add a geo category / domain / cidr entry. -->
+        <StackPanel Spacing="6">
+          <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
+          <Grid ColumnDefinitions="*,Auto">
+            <AutoCompleteBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
+                             Watermark="{l:Tr Main_AddEntryWatermark}"
+                             Text="{Binding RuleInput, Mode=TwoWay}"
+                             ItemsSource="{Binding GeoSuggestions}"
+                             FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
+            <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="+" />
+                <TextBlock Text="{l:Tr Main_AddButton}" />
+              </StackPanel>
+            </Button>
+          </Grid>
+        </StackPanel>
+
+        <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <!-- Required-field validation, red; clears on any edit (#2/#3). -->
+        <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                   IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <!-- Role segment [Прокси | Директ | Блок]: which bucket the add rows target and the list below shows. -->
+        <StackPanel Spacing="6">
+          <Border Background="{DynamicResource AgInsetBrush}"
+                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                  CornerRadius="9" Padding="3">
+            <UniformGrid Columns="3">
+              <Button Classes="seg" Classes.active="{Binding IsProxyRole}" Content="{l:Tr Main_RoleProxy}"
+                      Command="{Binding SelectRoleCommand}" CommandParameter="proxy"
+                      HorizontalAlignment="Stretch" Padding="12,6" />
+              <Button Classes="seg" Classes.active="{Binding IsDirectRole}" Content="{l:Tr Main_RoleDirect}"
+                      Command="{Binding SelectRoleCommand}" CommandParameter="direct"
+                      HorizontalAlignment="Stretch" Padding="12,6" />
+              <Button Classes="seg" Classes.active="{Binding IsBlockRole}" Content="{l:Tr Main_RoleBlock}"
+                      Command="{Binding SelectRoleCommand}" CommandParameter="block"
+                      HorizontalAlignment="Stretch" Padding="12,6" />
+            </UniformGrid>
+          </Border>
+          <!-- Role hint left; a blue link (Direct only) fills the Direct bucket with the machine's local subnets. -->
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="{Binding RoleHint}" Classes="muted" FontSize="11.5"
+                       TextWrapping="Wrap" VerticalAlignment="Top" />
+            <Button Grid.Column="1" Classes="linkbtn" IsVisible="{Binding IsDirectRole}" Margin="12,0,0,0"
+                    Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}"
+                    VerticalAlignment="Top" HorizontalAlignment="Right">
+              <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap" />
+            </Button>
+          </Grid>
+        </StackPanel>
+
+        <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+            <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="icon" Content="⇅" FontSize="13" Margin="6,0,0,0"
+                    VerticalAlignment="Center"
+                    Command="{Binding SortRulesCommand}"
+                    ToolTip.Tip="{l:Tr Main_SortRulesTooltip}" />
+            <Button Grid.Column="3" Command="{Binding ClearRulesCommand}"
+                    Background="Transparent" BorderThickness="0" Padding="0"
+                    Cursor="Hand" VerticalAlignment="Center" HorizontalAlignment="Right"
+                    ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}">
+              <TextBlock Text="{l:Tr Main_ClearButton}" FontSize="11.5"
+                         Foreground="{DynamicResource AgAccentBrush}" />
+            </Button>
+          </Grid>
+          <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                  Background="{DynamicResource AgPanelBrush}" CornerRadius="10">
+            <ItemsControl ItemsSource="{Binding Rules}" Margin="8,8">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <Border Background="{DynamicResource AgInsetBrush}"
+                          BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                          CornerRadius="8" Padding="10,7" Margin="0,3">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Grid.Column="0" Text="{Binding}" Classes="mono" FontSize="12.5"
+                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                      <Button Grid.Column="1" Classes="icon" Content="✕"
+                              Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).RemoveRuleCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Border>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- Per-routing traffic card: all-UDP + IPv6. -->
+    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="16" Background="Transparent"
+            IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
+        <TextBlock Text="{l:Tr Main_RoutingOptionsLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
+            <TextBlock Text="{l:Tr Main_AllUdpTitle}" FontSize="13.5" />
+            <TextBlock Text="{l:Tr Main_AllUdpHint}"
+                       Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+          </StackPanel>
+          <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
+            <TextBlock Text="{l:Tr Main_UseIpv6Title}" FontSize="13.5" />
+            <TextBlock Text="{l:Tr Main_UseIpv6Hint}"
+                       Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+          </StackPanel>
+          <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
+        </Grid>
+
+        <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>

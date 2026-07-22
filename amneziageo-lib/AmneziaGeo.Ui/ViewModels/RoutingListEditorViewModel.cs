@@ -128,6 +128,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsNameMissing => string.IsNullOrWhiteSpace(Name);
 
     /// <summary>
+    /// True when at least one rule exists in any bucket.
+    /// </summary>
+    public bool HasAnyRule => TotalRules > 0;
+
+    /// <summary>
     /// The Proxy bucket: tunneled while the global proxy is off.
     /// </summary>
     public ObservableCollection<string> ProxyRules { get; } = [];
@@ -436,6 +441,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             DirtyChanged?.Invoke(this, EventArgs.Empty);
         }
 
+        OnPropertyChanged(nameof(HasAnyRule));
         RefreshTransfer();
     }
 
@@ -910,6 +916,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     {
         IsTransferQr = false;
     }
+
+    /// <summary>
+    /// Rebuilds the export payload / QR for the current list (called when the Export section is opened).
+    /// </summary>
+    public void EnsureTransfer() => RefreshTransfer();
 
     // Keeps the QR / payload text in sync with the current list.
     private void RefreshTransfer()

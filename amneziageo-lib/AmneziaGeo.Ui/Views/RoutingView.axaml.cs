@@ -24,13 +24,7 @@ internal sealed partial class RoutingView : UserControl
         InitializeComponent();
     }
 
-    // Autosave the open list when focus leaves one of its fields.
-    private void OnRoutingFieldBlur(object? sender, RoutedEventArgs e)
-    {
-        (DataContext as RoutingViewModel)?.AutoSaveOnBlur();
-    }
-
-    // Routing-list share (copy / save / paste / load).
+    // Routing-list export: copy the QR payload / save the raw payload to a file.
     private async void OnRoutingExportCopy(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
@@ -69,9 +63,10 @@ internal sealed partial class RoutingView : UserControl
         vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
     }
 
+    // Routing-list import: paste from the clipboard / load from a file into the draft editor.
     private async void OnRoutingImportPaste(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
+        if (DataContext is not RoutingViewModel vm)
         {
             return;
         }
@@ -85,16 +80,20 @@ internal sealed partial class RoutingView : UserControl
         var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            vm.StatusMessage = Loc.Instance.Get("MainCode_ClipboardNoText");
+            if (vm.RoutingEditor is { } editor)
+            {
+                editor.StatusMessage = Loc.Instance.Get("MainCode_ClipboardNoText");
+            }
+
             return;
         }
 
-        vm.ApplyImport(text);
+        vm.ApplyImportText(text);
     }
 
     private async void OnRoutingImportFile(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
+        if (DataContext is not RoutingViewModel vm)
         {
             return;
         }
@@ -107,62 +106,14 @@ internal sealed partial class RoutingView : UserControl
 
         try
         {
-            vm.ApplyImport(await File.ReadAllTextAsync(path));
+            vm.ApplyImportText(await File.ReadAllTextAsync(path));
         }
         catch (Exception ex)
         {
-            vm.StatusMessage = ex.Message;
-        }
-    }
-
-    // Per-app tunneling source picks. Editor VM resolved via the window VM's RoutingEditor (MenuFlyout
-    // items do not inherit the editor's DataContext).
-    private async void OnAppSourceRunning(object? sender, RoutedEventArgs e)
-    {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is { } vm)
-        {
-            await vm.EnterRunningModeAsync();
-        }
-    }
-
-    private async void OnAppSourceInstalled(object? sender, RoutedEventArgs e)
-    {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is { } vm)
-        {
-            await vm.EnterInstalledModeAsync();
-        }
-    }
-
-    private async void OnAppSourceFolder(object? sender, RoutedEventArgs e)
-    {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is not { } vm || TopLevel.GetTopLevel(this) is not { } top)
-        {
-            return;
-        }
-
-        var folders = await top.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = Loc.Instance.Get("MainCode_AppFolderTitle"),
-            AllowMultiple = false,
-        });
-        var path = folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
-        if (!string.IsNullOrEmpty(path))
-        {
-            vm.AddAppToken($"app:dir={path}");
-        }
-    }
-
-    private async void OnAppSourceFile(object? sender, RoutedEventArgs e)
-    {
-        if ((DataContext as RoutingViewModel)?.RoutingEditor is not { } vm)
-        {
-            return;
-        }
-
-        var path = await PickFileAsync(Loc.Instance.Get("MainCode_ApplicationTitle"), "exe");
-        if (!string.IsNullOrEmpty(path))
-        {
-            vm.AddAppToken($"app:path={path}");
+            if (vm.RoutingEditor is { } editor)
+            {
+                editor.StatusMessage = ex.Message;
+            }
         }
     }
 

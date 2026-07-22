@@ -25,12 +25,6 @@ internal sealed partial class ConfigView : UserControl
         InitializeComponent();
     }
 
-    // Autosave the open config when focus leaves one of its fields.
-    private void OnConfigFieldBlur(object? sender, RoutedEventArgs e)
-    {
-        (DataContext as ConfigViewModel)?.AutoSaveOnBlur();
-    }
-
     // Copy the export payload (vpn link or .conf text) to the clipboard.
     private async void OnCopyExport(object? sender, RoutedEventArgs e)
     {

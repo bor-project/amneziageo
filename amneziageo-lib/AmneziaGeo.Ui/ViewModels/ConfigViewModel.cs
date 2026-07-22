@@ -20,24 +20,30 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private IReadOnlyList<string> _configNames = [];
     private string? _pendingOpenConfig;
     private string? _configBeforeCreate;
-    private bool _autoSaving;
-    private bool _autoSavePending;
     private string _sectionConfigDefaultName = string.Empty;
     private bool _sectionConfigSaving;
     private bool _suppressCatalogueConfig;
 
-    // Rename baseline: the open config's persisted name; a differing ConfigRename autosaves on blur.
+    // Rename baseline: the open config's persisted name; a differing ConfigRename saves on the section Save.
     private string _baseConfigRename = string.Empty;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     private bool _isCompact;
 
+    // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar so a
+    // dirty edit does not bleed the bar over another section.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    private bool _isActiveSection;
+
     [ObservableProperty]
     private ConfigChoice? _selectedCatalogueConfig = ConfigChoice.None;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConfigManage))]
+    [NotifyPropertyChangedFor(nameof(IsSectionConfig))]
+    [NotifyPropertyChangedFor(nameof(IsSectionExport))]
     [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
     private string? _openConfig;
 
@@ -61,30 +67,49 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private string _configRenameStatus = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSectionImport))]
+    [NotifyPropertyChangedFor(nameof(IsSectionConfig))]
+    [NotifyPropertyChangedFor(nameof(IsSectionExport))]
+    [NotifyPropertyChangedFor(nameof(SegImportActive))]
+    [NotifyPropertyChangedFor(nameof(SegConfigActive))]
+    [NotifyPropertyChangedFor(nameof(SegExportActive))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveButton))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private bool _isCreatingSectionConfig;
+
+    // Manage sub-section shown by the top menu (Config vs Export). Import is IsCreatingSectionConfig.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSectionConfig))]
+    [NotifyPropertyChangedFor(nameof(IsSectionExport))]
+    [NotifyPropertyChangedFor(nameof(SegConfigActive))]
+    [NotifyPropertyChangedFor(nameof(SegExportActive))]
+    [NotifyPropertyChangedFor(nameof(IsEditDirty))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
+    private ConfigSection _manageSection = ConfigSection.Config;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSaveSectionConfig))]
     [NotifyPropertyChangedFor(nameof(SectionConfigNameMissing))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _sectionConfigName = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSaveSectionConfig))]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _sectionConfigText = string.Empty;
 
     [ObservableProperty]
     private string _sectionConfigStatus = string.Empty;
-
-    // Transport (MTU / WebSocket proxy) editor for the config create form (#143): built by BeginSectionConfig
-    // so the user can set MTU + proxy right when adding a config, applied to the just-created config on Save.
-    [ObservableProperty]
-    private ConfigTransportViewModel? _sectionConfigTransport;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsImportPicker))]
     [NotifyPropertyChangedFor(nameof(IsImportManual))]
     [NotifyPropertyChangedFor(nameof(IsImportCamera))]
     [NotifyPropertyChangedFor(nameof(SectionMethodLabel))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveButton))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     private ConfigImportMethod _importMethod = ConfigImportMethod.Picker;
 
     // Live QR scanner for the create form; non-null only while the camera method is active.
@@ -123,6 +148,23 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     public bool IsConfigManage => OpenConfig is not null;
 
+    public bool IsSectionImport => IsCreatingSectionConfig;
+
+    public bool IsSectionConfig => !IsCreatingSectionConfig && OpenConfig is not null && ManageSection == ConfigSection.Config;
+
+    public bool IsSectionExport => !IsCreatingSectionConfig && OpenConfig is not null && ManageSection == ConfigSection.Export;
+
+    // Segment highlight, independent of an open config so the pill still marks the section when none is selected.
+    public bool SegImportActive => IsCreatingSectionConfig;
+
+    public bool SegConfigActive => !IsCreatingSectionConfig && ManageSection == ConfigSection.Config;
+
+    public bool SegExportActive => !IsCreatingSectionConfig && ManageSection == ConfigSection.Export;
+
+    public bool CanConfigSection => HasConfigs;
+
+    public bool CanExportSection => HasConfigs;
+
     /// <summary>
     /// Delete-card prompt naming the open config.
     /// </summary>
@@ -152,14 +194,117 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _ => string.Empty,
     };
 
-    // Landing on the Config section with nothing open: open the first config so it never opens empty. The active
-    // profile's config is already reflected via OnOpenProfileChanged; this fills the gap when the profile has
-    // none. A create-form draft in progress is left alone.
+    // ---- Section Save/Cancel bar (#143): the open-config edits (name / .conf text / transport) are held and
+    // committed atomically on the footer Save, reverted on Cancel; the same footer serves the import draft. ----
+
+    // The open config's edits differ from their loaded baseline (name / .conf / transport).
+    private bool RenameDirty => !string.Equals(ConfigRename ?? string.Empty, _baseConfigRename, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether the open-config editors hold uncommitted changes. Not gated on the sub-section, so the footer
+    /// stays up when switching Config ↔ Export with a pending edit (the editors are null during Import).
+    /// </summary>
+    public bool IsEditDirty =>
+        (ConfigExport?.IsDirty ?? false) || (ConfigTransport?.IsDirty ?? false) || RenameDirty;
+
+    /// <summary>
+    /// Whether the footer Save/Cancel bar is shown: an import draft, or dirty open-config edits (only while this
+    /// section is the one on screen).
+    /// </summary>
+    public bool ShowSaveBar => IsActiveSection && (IsCreatingSectionConfig ? !IsImportPicker : IsEditDirty);
+
+    /// <summary>
+    /// Whether the footer Save button is shown: the import draft shows it once in manual entry; edits always.
+    /// </summary>
+    public bool ShowSaveButton => !IsCreatingSectionConfig || IsImportManual;
+
+    /// <summary>
+    /// Whether the footer Save button is enabled.
+    /// </summary>
+    public bool CanSave => IsCreatingSectionConfig ? CanSaveSectionConfig : IsEditDirty;
+
+    private void RefreshEditBar()
+    {
+        OnPropertyChanged(nameof(IsEditDirty));
+        OnPropertyChanged(nameof(ShowSaveBar));
+        OnPropertyChanged(nameof(ShowSaveButton));
+        OnPropertyChanged(nameof(CanSave));
+    }
+
+    private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
+
+    // Landing on the Config section with nothing open: open the active profile's config, or the first one, so it
+    // never opens empty. A create-form draft in progress is left alone.
     public void SelectFirstIfNone()
     {
-        if (OpenConfig is null && !IsCreatingSectionConfig && Configs.Count > 0)
+        if (OpenConfig is not null || IsCreatingSectionConfig || Configs.Count == 0)
         {
-            OpenConfig = Configs[0].Name;
+            return;
+        }
+
+        OpenConfig = PreferredDefaultConfig();
+    }
+
+    // The active profile's config when it is one of ours, else the first in the catalogue.
+    private string PreferredDefaultConfig()
+    {
+        var active = _host.Home.ActiveProfile;
+        if (active is { Config.Length: > 0 } && Configs.Any(c => string.Equals(c.Name, active.Config, StringComparison.Ordinal)))
+        {
+            return active.Config;
+        }
+
+        return Configs[0].Name;
+    }
+
+    // Entering the config settings section: keep an in-progress draft, land on the active / first config, or fall
+    // back to Import when there are no configs to show.
+    public void EnterSection()
+    {
+        if (IsCreatingSectionConfig)
+        {
+            return;
+        }
+
+        if (Configs.Count == 0)
+        {
+            BeginSectionConfig();
+            return;
+        }
+
+        SelectFirstIfNone();
+    }
+
+    // Top menu: Config / Import / Export. Import begins a fresh create draft; Config / Export land on the open
+    // config (or the active / first when none is open) and pick the sub-section.
+    [RelayCommand]
+    private void SelectConfigSection(string target)
+    {
+        if (target == "import")
+        {
+            if (!IsCreatingSectionConfig)
+            {
+                BeginSectionConfig();
+            }
+
+            return;
+        }
+
+        LeaveImport();
+        SelectFirstIfNone();
+        ManageSection = target == "export" ? ConfigSection.Export : ConfigSection.Config;
+        if (ManageSection == ConfigSection.Export)
+        {
+            ConfigExport?.RefreshExport();
+        }
+    }
+
+    // Discard an in-progress draft before switching to Config / Export.
+    private void LeaveImport()
+    {
+        if (IsCreatingSectionConfig)
+        {
+            AbandonCreate();
         }
     }
 
@@ -225,6 +370,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         // Re-select the section combo now that the option list is current: an OpenConfig set above (or a
         // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
         SyncCatalogueConfig();
+        NotifyHasConfigsChanged();
     }
 
     /// <summary>
@@ -240,8 +386,17 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         IsCreatingSectionConfig = false;
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
+        ManageSection = ConfigSection.Config;
         ReconcileConfigCatalogueOptions();
         SyncCatalogueConfig();
+        NotifyHasConfigsChanged();
+    }
+
+    private void NotifyHasConfigsChanged()
+    {
+        OnPropertyChanged(nameof(HasConfigs));
+        OnPropertyChanged(nameof(CanConfigSection));
+        OnPropertyChanged(nameof(CanExportSection));
     }
 
     partial void OnOpenConfigChanged(string? value)
@@ -257,6 +412,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         {
             ConfigExport = null;
             ConfigTransport = null;
+            RefreshEditBar();
             return;
         }
 
@@ -266,7 +422,38 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         var item = Configs.FirstOrDefault(c => string.Equals(c.Name, value, StringComparison.Ordinal));
         ConfigTransport = new ConfigTransportViewModel(_connection, value, item?.Endpoint ?? string.Empty, item?.UseWebSocket ?? false, item?.WebSocketHost ?? string.Empty, item?.WebSocketPort ?? 443, item?.Mtu ?? 0);
-        ConfigTransport.AutoSave = true;
+        RefreshEditBar();
+    }
+
+    // Subscribe the open-config editors' dirty signal so the footer Save/Cancel bar tracks their state.
+    partial void OnConfigExportChanged(ExportDialogViewModel? oldValue, ExportDialogViewModel? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.DirtyChanged -= OnEditScopeDirty;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.DirtyChanged += OnEditScopeDirty;
+        }
+
+        RefreshEditBar();
+    }
+
+    partial void OnConfigTransportChanged(ConfigTransportViewModel? oldValue, ConfigTransportViewModel? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.DirtyChanged -= OnEditScopeDirty;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.DirtyChanged += OnEditScopeDirty;
+        }
+
+        RefreshEditBar();
     }
 
     partial void OnSelectedCatalogueConfigChanged(ConfigChoice? value)
@@ -287,12 +474,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     partial void OnIsCreatingSectionConfigChanged(bool value)
     {
         SyncCatalogueConfig();
+        RefreshEditBar();
     }
 
-    // The rename field changed: clear a stale validation line (#3). It autosaves on blur, not per keystroke.
+    // The rename field changed: clear a stale validation line (#3) and refresh the Save bar.
     partial void OnConfigRenameChanged(string value)
     {
         ConfigRenameStatus = string.Empty;
+        RefreshEditBar();
     }
 
     // Editing the new-config name or text clears a stale validation / status line (#3).
@@ -468,23 +657,18 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         SectionConfigName = _sectionConfigDefaultName;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
-        // Transport (MTU / WebSocket) editor so the proxy can be set right when adding a config (#143). The config
-        // does not exist yet (no endpoint), so it seeds from defaults; Save retargets it at the final name and
-        // applies it after the import. A left-at-defaults transport stays clean, so no set-websocket is sent.
-        SectionConfigTransport = new ConfigTransportViewModel(_connection, SectionConfigName, string.Empty, false, string.Empty, 443, 0);
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
         IsCreatingSectionConfig = true;
     }
 
-    // Discards the create-form draft. Called by the header Cancel (#143 revert) and on disconnect.
+    // Discards the create-form draft. Called when the import section is left (tab switch / home) and on disconnect.
     private void CancelSectionConfig()
     {
         IsCreatingSectionConfig = false;
         SectionConfigName = string.Empty;
         SectionConfigText = string.Empty;
         SectionConfigStatus = string.Empty;
-        SectionConfigTransport = null;
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
     }
@@ -500,8 +684,21 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private void BeginCameraImport()
     {
-        SectionScan = new ScanViewModel(ApplyScannedConfig);
+        SectionScan = new ScanViewModel(TryAcceptScannedConfig);
         ImportMethod = ConfigImportMethod.Camera;
+    }
+
+    // The scanner reports a decoded QR's raw text; accept it only when it decodes to a config.
+    private bool TryAcceptScannedConfig(string text)
+    {
+        var imported = VpnLinkCodec.TryDecodeQr(text);
+        if (imported is null)
+        {
+            return false;
+        }
+
+        ApplyScannedConfig(imported);
+        return true;
     }
 
     // Return to the method picker from manual / camera, discarding the drafted text.
@@ -514,19 +711,79 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ImportMethod = ConfigImportMethod.Picker;
     }
 
-    // Footer Cancel: discard the draft and restore the config open before "+ Новая" (or «— не выбрано —»).
+    // Footer Save/Cancel: the same bar serves the import draft and the open-config edits.
     [RelayCommand]
-    private void CancelNewConfig()
+    private async Task SaveSection()
     {
-        CancelSectionConfig();
-        OpenConfig = _configBeforeCreate;
+        if (IsCreatingSectionConfig)
+        {
+            await SaveSectionConfig();
+        }
+        else
+        {
+            await SaveConfigEdit();
+        }
     }
 
-    // Footer Save: import the drafted config.
+    // Footer Cancel: an import draft returns to the method picker in place (discards the drafted text, no
+    // navigation); an open-config edit reverts to its baseline. Leaving the import section fully is the top tabs.
     [RelayCommand]
-    private async Task SaveNewConfig()
+    private void CancelSection()
     {
-        await SaveSectionConfig();
+        if (IsCreatingSectionConfig)
+        {
+            ChangeMethod();
+        }
+        else
+        {
+            CancelConfigEdit();
+        }
+    }
+
+    // Footer Save (open config): commit the dirty .conf text, transport, and rename atomically. A rejected step
+    // surfaces its own reason and leaves the rest pending. Order: rename last so the .conf / transport ops still
+    // key by the old name.
+    private async Task SaveConfigEdit()
+    {
+        if (OpenConfig is null)
+        {
+            return;
+        }
+
+        if (ConfigExport is { IsDirty: true } export && !await export.CommitAsync())
+        {
+            RefreshEditBar();
+            return;
+        }
+
+        if (ConfigTransport is { IsDirty: true } transport)
+        {
+            if (!await transport.CommitAsync())
+            {
+                RefreshEditBar();
+                return;
+            }
+
+            transport.CaptureBaseline();
+        }
+
+        if (RenameDirty && !await CommitConfigRenameAsync())
+        {
+            RefreshEditBar();
+            return;
+        }
+
+        RefreshEditBar();
+    }
+
+    // Footer Cancel (open config): revert the .conf text, transport, and rename to their loaded baseline.
+    private void CancelConfigEdit()
+    {
+        ConfigExport?.Revert();
+        ConfigTransport?.Revert();
+        ConfigRename = _baseConfigRename;
+        ConfigRenameStatus = string.Empty;
+        RefreshEditBar();
     }
 
     // Discard the create draft when the config section is left for another one.
@@ -536,52 +793,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         {
             CancelSectionConfig();
             OpenConfig = _configBeforeCreate;
-        }
-    }
-
-    // Commits the open config's dirty fields when focus leaves one (autosave, existing config only). A blur that
-    // arrives mid-commit re-runs once the in-flight commit settles, so the last field is never dropped.
-    public async void AutoSaveOnBlur()
-    {
-        if (OpenConfig is null)
-        {
-            return;
-        }
-
-        if (_autoSaving)
-        {
-            _autoSavePending = true;
-            return;
-        }
-
-        _autoSaving = true;
-        try
-        {
-            do
-            {
-                _autoSavePending = false;
-
-                if (ConfigExport is { IsDirty: true } export)
-                {
-                    await export.CommitAsync();
-                }
-
-                if (ConfigTransport is { } transport)
-                {
-                    await transport.AutoSaveAsync();
-                }
-
-                // Rename last so the .conf / transport ops still key by the old name.
-                if (!string.Equals(ConfigRename ?? string.Empty, _baseConfigRename, StringComparison.Ordinal))
-                {
-                    await CommitConfigRenameAsync();
-                }
-            }
-            while (_autoSavePending);
-        }
-        finally
-        {
-            _autoSaving = false;
         }
     }
 
@@ -641,23 +852,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
                 return false;
             }
 
-            // Apply the create-form transport (MTU / WebSocket proxy) to the just-created config. Only when the
-            // user actually touched it (a defaults-only editor stays clean). The config exists now, so a rejected
-            // transport does not undo the import - surface it as a notice and still open the config to fix there.
-            if (SectionConfigTransport is { IsDirty: true } transport)
-            {
-                transport.Retarget(name);
-                if (!await transport.CommitAsync())
-                {
-                    _host.Home.ShowNotice(transport.StatusMessage);
-                }
-            }
-
             IsCreatingSectionConfig = false;
             SectionConfigName = string.Empty;
             SectionConfigText = string.Empty;
             SectionConfigStatus = string.Empty;
-            SectionConfigTransport = null;
             // Open the just-imported config once its row lands in the next snapshot, so the transport editor
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
@@ -708,4 +906,13 @@ internal enum ConfigImportMethod
     Picker,
     Manual,
     Camera,
+}
+
+/// <summary>
+/// Config screen manage sub-section.
+/// </summary>
+internal enum ConfigSection
+{
+    Config,
+    Export,
 }

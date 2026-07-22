@@ -19,23 +19,10 @@
   <Grid RowDefinitions="Auto,Auto,*">
 
     <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. -->
-    <Border Grid.Row="0" Background="{DynamicResource AgInsetBrush}"
-            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-            CornerRadius="9" Padding="3" MaxWidth="420" HorizontalAlignment="Left">
-      <UniformGrid Columns="3">
-        <Button Classes="seg" Classes.active="{Binding SegSettingsActive}"
-                Command="{Binding SelectRoutingSectionCommand}" CommandParameter="settings"
-                IsEnabled="{Binding CanSettingsSection}"
-                Content="{l:Tr Main_SettingsTab}" HorizontalAlignment="Stretch" Padding="8,6" />
-        <Button Classes="seg" Classes.active="{Binding SegImportActive}"
-                Command="{Binding SelectRoutingSectionCommand}" CommandParameter="import"
-                Content="{l:Tr Main_ImportTab}" HorizontalAlignment="Stretch" Padding="8,6" />
-        <Button Classes="seg" Classes.active="{Binding SegExportActive}"
-                Command="{Binding SelectRoutingSectionCommand}" CommandParameter="export"
-                IsEnabled="{Binding CanExportSection}"
-                Content="{l:Tr Main_ExportTab}" HorizontalAlignment="Stretch" Padding="8,6" />
-      </UniformGrid>
-    </Border>
+    <controls:SectionMenu Grid.Row="0" Command="{Binding SelectRoutingSectionCommand}"
+                          Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
+                          Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
+                          Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
 
     <!-- Routing-list catalogue combo: «- не выбрано -» then saved lists. Hidden while importing. -->
     <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6" IsVisible="{Binding !IsSectionImport}">

@@ -7,6 +7,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
@@ -32,35 +33,23 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard is not null)
+        if (await ExportActions.CopyToClipboardAsync(this, vm.BuildTransferPayload()))
         {
-            await clipboard.SetTextAsync(vm.BuildTransferPayload());
             vm.StatusMessage = Loc.Instance.Get("MainCode_CopiedToClipboard");
         }
     }
 
     private async void OnRoutingExportSave(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: RoutingListEditorViewModel vm } || TopLevel.GetTopLevel(this) is not { } top)
+        if (sender is not Control { DataContext: RoutingListEditorViewModel vm })
         {
             return;
         }
 
-        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        if (await ExportActions.SaveTextAsync(this, vm.BuildTransferPayload(), Loc.Instance.Get("MainCode_SaveRoutingListTitle"), vm.SuggestedFileName))
         {
-            Title = Loc.Instance.Get("MainCode_SaveRoutingListTitle"),
-            SuggestedFileName = vm.SuggestedFileName,
-        });
-        if (file is null)
-        {
-            return;
+            vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
         }
-
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(vm.BuildTransferPayload());
-        vm.StatusMessage = Loc.Instance.Get("MainCode_Saved");
     }
 
     // Routing-list import: paste from the clipboard / load from a file into the draft editor.

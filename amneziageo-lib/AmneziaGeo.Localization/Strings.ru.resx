@@ -1496,6 +1496,9 @@
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Конфиг</value>
   </data>
+  <data name="Main_ProfileTab" xml:space="preserve">
+    <value>Профиль</value>
+  </data>
   <data name="Main_ImportTab" xml:space="preserve">
     <value>Импорт</value>
   </data>

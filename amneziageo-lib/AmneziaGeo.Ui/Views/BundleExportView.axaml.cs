@@ -1,8 +1,7 @@
-using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
@@ -27,33 +26,22 @@ internal sealed partial class BundleExportView : UserControl
             return;
         }
 
-        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        if (await ExportActions.CopyToClipboardAsync(this, vm.Payload))
         {
-            await clipboard.SetTextAsync(vm.Payload);
             vm.StatusMessage = Loc.Instance.Get("BundleExportCode_CopiedToClipboard");
         }
     }
 
     private async void OnSaveFile(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not BundleExportViewModel vm || TopLevel.GetTopLevel(this) is not { } top)
+        if (DataContext is not BundleExportViewModel vm)
         {
             return;
         }
 
-        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        if (await ExportActions.SaveTextAsync(this, vm.Payload, Loc.Instance.Get("BundleExportCode_SaveBundleTitle"), vm.SuggestedFileName))
         {
-            Title = Loc.Instance.Get("BundleExportCode_SaveBundleTitle"),
-            SuggestedFileName = vm.SuggestedFileName,
-        });
-        if (file is null)
-        {
-            return;
+            vm.StatusMessage = Loc.Instance.Get("BundleExportCode_Saved");
         }
-
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(vm.Payload);
-        vm.StatusMessage = Loc.Instance.Get("BundleExportCode_Saved");
     }
 }

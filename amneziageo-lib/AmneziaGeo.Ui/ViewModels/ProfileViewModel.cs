@@ -8,10 +8,10 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Profile screen: the profile catalogue (profile = config × routing), the open-profile editor (rename /
-/// config picker / routing picker / delete), and profile creation. The connection card's active-profile
-/// selection, the config catalogue, and the shared-namespace name check live on the shell, reached through
-/// <c>_host</c>.
+/// Profile screen: the top Profile / Import / Export menu, the profile catalogue (profile = config × routing),
+/// the open-profile editor (rename / config picker / routing picker / delete), profile creation, and the reused
+/// bundle import / export. The connection card's active-profile selection, the config catalogue, and the
+/// shared-namespace name check live on the shell, reached through <c>_host</c>.
 /// </summary>
 internal sealed partial class ProfileViewModel : ViewModelBase
 {
@@ -24,9 +24,34 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     private long? _pendingAdoptRoutingList;
     private bool _suppressOpenChoice;
 
+    // Rename baseline: the open profile's persisted name; a differing ProfileRename saves on the section Save.
+    private string _baseProfileName = string.Empty;
+
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     private bool _isCompact;
+
+    // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    private bool _isActiveSection;
+
+    // Top menu section: Profile (edit) / Import (bundle) / Export (bundle).
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSectionProfile))]
+    [NotifyPropertyChangedFor(nameof(IsSectionImport))]
+    [NotifyPropertyChangedFor(nameof(IsSectionExport))]
+    [NotifyPropertyChangedFor(nameof(SegProfileActive))]
+    [NotifyPropertyChangedFor(nameof(SegImportActive))]
+    [NotifyPropertyChangedFor(nameof(SegExportActive))]
+    [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
+    private ProfileScreenSection _screenSection = ProfileScreenSection.Profile;
+
+    [ObservableProperty]
+    private BundleImportViewModel? _bundleImport;
+
+    [ObservableProperty]
+    private BundleExportViewModel? _bundleExport;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
@@ -84,6 +109,57 @@ internal sealed partial class ProfileViewModel : ViewModelBase
 
     public bool ShowNoProfilesYetHint => _host.ShowNoProfilesYetHint;
 
+    // ---- Top menu sections (Profile / Import / Export), mirroring the Config screen. ----
+
+    public bool IsSectionProfile => ScreenSection == ProfileScreenSection.Profile;
+
+    public bool IsSectionImport => ScreenSection == ProfileScreenSection.Import;
+
+    public bool IsSectionExport => ScreenSection == ProfileScreenSection.Export;
+
+    public bool SegProfileActive => ScreenSection == ProfileScreenSection.Profile;
+
+    public bool SegImportActive => ScreenSection == ProfileScreenSection.Import;
+
+    public bool SegExportActive => ScreenSection == ProfileScreenSection.Export;
+
+    // ---- Footer Save/Cancel bar: the open-profile edits (rename / config / routing) are held and committed
+    // atomically on the footer Save, reverted on Cancel. Only the Profile section is editable; Import / Export
+    // are self-contained bundle tools with their own buttons. ----
+
+    // The open profile's rename differs from its persisted name.
+    private bool RenameDirty => !string.Equals(ProfileRename ?? string.Empty, _baseProfileName, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether the open-profile editors hold uncommitted changes (config / routing picks or the rename).
+    /// </summary>
+    public bool IsEditDirty => (OpenProfile?.IsDirty ?? false) || RenameDirty;
+
+    /// <summary>
+    /// Whether the footer Save/Cancel bar is shown: dirty open-profile edits while the Profile section is on screen.
+    /// </summary>
+    public bool ShowSaveBar => IsActiveSection && IsSectionProfile && IsEditDirty;
+
+    /// <summary>
+    /// Whether the footer Save button is shown.
+    /// </summary>
+    public bool ShowSaveButton => true;
+
+    /// <summary>
+    /// Whether the footer Save button is enabled.
+    /// </summary>
+    public bool CanSave => IsEditDirty;
+
+    private void RefreshEditBar()
+    {
+        OnPropertyChanged(nameof(IsEditDirty));
+        OnPropertyChanged(nameof(ShowSaveBar));
+        OnPropertyChanged(nameof(ShowSaveButton));
+        OnPropertyChanged(nameof(CanSave));
+    }
+
+    private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
+
     // Re-raise the host-derived flags after the shell recomputes them on a snapshot.
     public void NotifyHostFlagsChanged()
     {
@@ -111,6 +187,105 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         {
             _host.Home.ActiveProfile = OpenProfile;
         }
+    }
+
+    // Top menu: Profile / Import / Export. Import / Export open the reused bundle tools; Profile lands on the
+    // open (active / first) profile's editor.
+    [RelayCommand]
+    private void SelectProfileSection(string target)
+    {
+        if (target == "import")
+        {
+            BundleImport ??= new BundleImportViewModel(_connection);
+            ScreenSection = ProfileScreenSection.Import;
+            return;
+        }
+
+        if (target == "export")
+        {
+            var export = new BundleExportViewModel(_connection, Profiles, _host.Config.Configs, _host.Routing.RoutingLists);
+            BundleExport = export;
+            ScreenSection = ProfileScreenSection.Export;
+            _ = export.LoadRoutingRulesAsync();
+            return;
+        }
+
+        ScreenSection = ProfileScreenSection.Profile;
+        EnterSection();
+    }
+
+    // Entering the profile section: land on the Profile tab and open the active profile, or the first one, so it
+    // never opens empty (#28).
+    public void EnterSection()
+    {
+        ScreenSection = ProfileScreenSection.Profile;
+        if (OpenProfile is not null)
+        {
+            return;
+        }
+
+        var target = PreferredProfile();
+        if (target is not null)
+        {
+            OpenProfile = target;
+        }
+    }
+
+    // The active profile when it is one of our rows, else the first in the catalogue.
+    private ProfileItemViewModel? PreferredProfile()
+    {
+        var active = _host.Home.ActiveProfile;
+        if (active is not null)
+        {
+            var match = Profiles.FirstOrDefault(p => string.Equals(p.Name, active.Name, StringComparison.Ordinal));
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return Profiles.FirstOrDefault();
+    }
+
+    // Footer Save: commit the open profile's config / routing picks then its rename atomically. A rejected step
+    // surfaces its own reason and leaves the rest pending. Order: rename last so the config / routing ops key by
+    // the old name.
+    [RelayCommand]
+    private async Task SaveSection()
+    {
+        if (OpenProfile is null)
+        {
+            return;
+        }
+
+        if (OpenProfile is { IsDirty: true } profile)
+        {
+            if (!await profile.CommitAsync())
+            {
+                RefreshEditBar();
+                return;
+            }
+
+            profile.CaptureBaseline();
+        }
+
+        if (RenameDirty && !await CommitProfileRenameAsync())
+        {
+            RefreshEditBar();
+            return;
+        }
+
+        RefreshEditBar();
+    }
+
+    // Footer Cancel: revert the config / routing picks and the rename to their loaded baseline.
+    [RelayCommand]
+    private void CancelSection()
+    {
+        OpenProfile?.Revert();
+        ProfileRename = _baseProfileName;
+        ProfileRenameStatus = string.Empty;
+        RefreshEditBar();
     }
 
     /// <summary>
@@ -204,8 +379,8 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         }
     }
 
-    // Picks a pending config / routing list in the profile it was armed for, which autosaves it like a manual
-    // pick. Applies at most once - a differing open profile drops it, an unresolved option is not retried.
+    // Picks a pending config / routing list in the profile it was armed for, staging it like a manual pick.
+    // Applies at most once - a differing open profile drops it, an unresolved option is not retried.
     private void AdoptPending()
     {
         if (_pendingAdoptConfig is null && _pendingAdoptRoutingList is null)
@@ -252,6 +427,10 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         _adoptTarget = null;
         _pendingAdoptConfig = null;
         _pendingAdoptRoutingList = null;
+        _baseProfileName = string.Empty;
+        ScreenSection = ProfileScreenSection.Profile;
+        BundleImport = null;
+        BundleExport = null;
         ReconcileProfileOptions();
     }
 
@@ -273,6 +452,13 @@ internal sealed partial class ProfileViewModel : ViewModelBase
             && string.Equals(oldValue.Name, newValue.Name, StringComparison.Ordinal);
         if (!sameProfile)
         {
+            // Leaving a profile with staged (unsaved) config / routing picks discards them, so a stale dirty row
+            // does not linger and freeze its snapshot reseed. Only on a real identity change.
+            if (oldValue is { IsDirty: true })
+            {
+                oldValue.Revert();
+            }
+
             // Discard any live rename preview on the profile we are leaving: snap its combo label back to the
             // persisted name so an unsaved (or agent-rejected) edit does not linger in the picker (#110). Only
             // on a real identity change - a background re-bind of the same profile keeps the in-progress name.
@@ -281,7 +467,8 @@ internal sealed partial class ProfileViewModel : ViewModelBase
                 ResetProfileOptionLabel(oldValue.Name);
             }
 
-            // Seed the rename field from the persisted name; it autosaves on blur.
+            // Set the rename baseline before the field so seeding it does not read as a dirty edit.
+            _baseProfileName = newValue?.Name ?? string.Empty;
             ProfileRename = newValue?.Name ?? string.Empty;
             ProfileRenameStatus = string.Empty;
             // Reflect the profile's routing list into the Routing section too (mirrors OpenConfig above), so
@@ -291,22 +478,23 @@ internal sealed partial class ProfileViewModel : ViewModelBase
             _host.Routing.OpenForProfile(newValue);
         }
 
-        // Only the open profile autosaves its config / routing picks; the other catalogue rows stay passive.
+        // Only the open profile's edit-scope drives the footer Save bar; the other catalogue rows stay passive.
         if (oldValue is not null)
         {
             oldValue.PropertyChanged -= OnOpenProfilePropertyChanged;
-            oldValue.AutoSave = false;
+            oldValue.DirtyChanged -= OnEditScopeDirty;
         }
 
         if (newValue is not null)
         {
             newValue.PropertyChanged += OnOpenProfilePropertyChanged;
-            newValue.AutoSave = true;
+            newValue.DirtyChanged += OnEditScopeDirty;
         }
 
         // Mirror the open profile into the Profile-section combo so it shows «— не выбрано —» / the name.
         SyncOpenProfileChoice();
         SetActiveProfileCommand.NotifyCanExecuteChanged();
+        RefreshEditBar();
     }
 
     private void OnOpenProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -329,28 +517,12 @@ internal sealed partial class ProfileViewModel : ViewModelBase
             : null;
     }
 
-    // The rename field changed: clear a stale validation line (#3). It autosaves on blur, not per keystroke.
+    // The rename field changed: clear a stale validation line (#3) and refresh the Save bar. It commits on the
+    // footer Save, not per keystroke.
     partial void OnProfileRenameChanged(string value)
     {
         ProfileRenameStatus = string.Empty;
-    }
-
-    // Autosave the open profile's rename when focus leaves the name field. An empty or unchanged name is skipped
-    // (the empty-name border already flags it); the agent rejects a taken name and its reason is surfaced.
-    public async void AutoSaveOnBlur()
-    {
-        if (OpenProfile is null)
-        {
-            return;
-        }
-
-        var next = (ProfileRename ?? string.Empty).Trim();
-        if (next.Length == 0 || string.Equals(next, OpenProfile.Name, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        await CommitProfileRenameAsync();
+        RefreshEditBar();
     }
 
     private void SyncOpenProfileChoice()
@@ -563,6 +735,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
 
         if (string.Equals(next, profile.Name, StringComparison.Ordinal))
         {
+            _baseProfileName = next;
             return true;
         }
 
@@ -571,6 +744,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         if (ack.Ok)
         {
             profile.Name = next;
+            _baseProfileName = next;
             return true;
         }
 
@@ -578,4 +752,14 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         ResetProfileOptionLabel(profile.Name);
         return false;
     }
+}
+
+/// <summary>
+/// Profile screen top-menu section.
+/// </summary>
+internal enum ProfileScreenSection
+{
+    Profile,
+    Import,
+    Export,
 }

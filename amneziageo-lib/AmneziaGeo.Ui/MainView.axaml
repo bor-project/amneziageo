@@ -410,6 +410,27 @@
               </StackPanel>
             </Grid>
           </Border>
+          <!-- Static footer for profile: open-profile edits. Save / Cancel + unsaved indicator. -->
+          <Border DockPanel.Dock="Bottom" IsVisible="{Binding Profile.ShowSaveBar}"
+                  Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
+                  BorderThickness="0,1,0,0" Height="52" Padding="18,0">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Classes="methodpick" Content="{l:Tr Main_CancelButton}"
+                        Width="120"
+                        Command="{Binding Profile.CancelSectionCommand}" />
+                <Button Classes="accent" Content="{l:Tr Main_SaveButton}"
+                        Width="120" Padding="6"
+                        Command="{Binding Profile.SaveSectionCommand}"
+                        IsVisible="{Binding Profile.ShowSaveButton}"
+                        IsEnabled="{Binding Profile.CanSave}" />
+              </StackPanel>
+            </Grid>
+          </Border>
         <!-- ALL insets live on the inner Grid's Margin, none on the ScrollViewer. A ScrollViewer Padding is
              applied asymmetrically between the measure and arrange passes, so the padded side is pushed past
              the presenter's clip: horizontally it shoved stretched fields off the edge; vertically the

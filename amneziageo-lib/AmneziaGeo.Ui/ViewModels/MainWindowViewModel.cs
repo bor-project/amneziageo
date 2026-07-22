@@ -293,6 +293,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         {
             Config.EnterSection();
         }
+        else if (section == "profile")
+        {
+            Profile.EnterSection();
+        }
     }
 
     [RelayCommand]
@@ -371,6 +375,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         Config.IsActiveSection = SettingsSection == "config";
         Routing.IsActiveSection = SettingsSection == "routing";
+        Profile.IsActiveSection = SettingsSection == "profile";
     }
 
     private void OnGeneralPropertyChanged(object? sender, PropertyChangedEventArgs e)

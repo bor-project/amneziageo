@@ -33,9 +33,8 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
-        if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+        if (await ExportActions.CopyToClipboardAsync(this, vm.Payload))
         {
-            await clipboard.SetTextAsync(vm.Payload);
             vm.StatusMessage = Loc.Instance.Get("QrCode_CopiedToClipboard");
         }
     }

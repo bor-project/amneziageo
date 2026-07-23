@@ -1,8 +1,10 @@
+using AmneziaGeo.Dal;
+
 namespace AmneziaGeo.Windows.Tray;
 
 /// <summary>
-/// The context-menu labels, resolved once from the saved UI language (the tray-lang marker), falling back to
-/// the OS UI language. A tiny table instead of the localization stack, so the native image carries no cultures.
+/// The context-menu labels, resolved once from the saved UI language, falling back to the OS UI language.
+/// A tiny table instead of the localization stack, so the native image carries no cultures.
 /// </summary>
 internal static class Labels
 {
@@ -190,8 +192,7 @@ internal static class Labels
         }
     }
 
-    // The tray-lang marker holds the "ru"/"en" token (empty follows the system language), written by the app on
-    // save; the tray reads it directly so it stays free of the SQLite state store the app now keeps prefs in.
+    // The "ru"/"en" token the app stores with the rest of the UI preferences; empty follows the system language.
     private static string ReadSavedLanguage()
     {
         try
@@ -199,8 +200,8 @@ internal static class Labels
             var path = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "AmneziaGeo",
-                "tray-lang");
-            return File.ReadAllText(path).Trim();
+                "state.db");
+            return new LocalKeyValueStore(path).Read("ui", "language")?.Trim() ?? string.Empty;
         }
         catch
         {

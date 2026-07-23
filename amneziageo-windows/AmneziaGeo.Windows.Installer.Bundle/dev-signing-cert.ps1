@@ -12,14 +12,34 @@
   so no key material lands in the repo. The build selects the cert by Subject (signtool /n), so the
   committed installer.config.json stays machine-independent - just run this once on each build machine.
 
-  Run:  powershell -File dev-signing-cert.ps1
+  Run:  powershell -File dev-signing-cert.ps1 [-s <subject>] [-y <years>]
+  Every flag has a short lowercase alias; -h lists them.
 #>
 param(
+    [Alias('s')]
     [string]$Subject = 'AmneziaGeo (Self-Signed Dev)',
-    [int]$Years = 5
+    [Alias('y')]
+    [int]$Years = 5,
+    [Alias('h')]
+    [switch]$Help
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($Help) {
+    @(
+        'dev-signing-cert.ps1 [flags] - creates a self-signed code-signing cert for dev/test builds.',
+        '',
+        '  -s, -Subject <name>   certificate subject, without the CN=',
+        '                        (default: signingCert.subject from the merged installer config)',
+        '  -y, -Years <n>        validity in years (default 5)',
+        '  -h, -Help             this text',
+        '',
+        'Idempotent: an existing valid cert with the same subject is reused. Run elevated to also',
+        'trust it in LocalMachine\Root and TrustedPublisher, so signatures verify on this machine.'
+    ) | Write-Host
+    return
+}
 
 # Default the subject from the merged installer config (so the dev cert matches what the build selects),
 # unless -Subject was passed explicitly.

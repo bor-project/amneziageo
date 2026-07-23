@@ -18,6 +18,9 @@ project.lock.json
 *.jks
 Resources/Resource.designer.cs
 
+# Native engine build output (from tools\build-engine-android.ps1)
+AmneziaGeo.Android.Engine/native/
+
 # Build / IDE cruft
 *.cache
 *.user

@@ -56,7 +56,7 @@ AmneziaGeo solves this with live DNS interception. A local DNS proxy observes th
 
 ### Three tiers
 1. Control plane (C#). Parses `geosite.dat` and `geoip.dat`, resolves rule tokens (`geosite:x` into domain suffixes, `geoip:cc` into CIDRs), generates the config, and runs the DNS proxy and route programmer.
-2. Data plane (Go). The AmneziaWG obfuscation engine (`amneziawg-go`), shipped as an opaque per-OS native artifact (`tunnel.dll` on Windows). It is never reimplemented, only driven over the WireGuard UAPI (`set`, `replace_allowed_ips`).
+2. Data plane (Go). The AmneziaWG obfuscation engine (`amneziawg-go`), shipped as an opaque per-OS native artifact (`tunnel.dll` on Windows, `libamneziawg-go.so` on Android). It is never reimplemented, only driven over the WireGuard UAPI (`set`, `replace_allowed_ips`).
 3. Privileged execution. A Windows service hosts the engine and programs the OS route table and firewall, while the UI stays unprivileged.
 
 ### Routing by layer
@@ -145,7 +145,7 @@ Discord text and voice now go through the tunnel over TCP 443, and everything el
 | [`amneziageo-lib`](amneziageo-lib/) | shared (C#) | Avalonia views/view models plus declarations, persistence, geo parsing, IPC, localization | in use |
 | [`amneziageo-windows`](amneziageo-windows/) | Windows | C# host plus `tunnel.dll` (c-shared) via P/Invoke | beta |
 | [`amneziageo-linux`](amneziageo-linux/) | Linux | C# plus `amneziawg-go` userspace daemon (UAPI) | planned |
-| [`amneziageo-android`](amneziageo-android/) | Android | C# (.NET) `VpnService` plus gomobile `.aar` | planned |
+| [`amneziageo-android`](amneziageo-android/) | Android | C# (.NET) `VpnService` plus `libamneziawg-go.so` (c-shared) via P/Invoke | planned |
 | [`amneziageo-apple`](amneziageo-apple/) | macOS and iOS | native Swift, shared `AmneziaGeoKit` over `libwg-go.a` | planned |
 
 Shared code is organized per language. [`amneziageo-lib`](amneziageo-lib/) contains .NET class libraries referenced by the Windows, Linux, and Android heads through `<ProjectReference>` (not a submodule), and each head keeps its own solution. `AmneziaGeoKit` (Swift) is shared across the two Apple platforms. Git submodules are reserved for the upstream engines (`amneziawg-windows`, `amneziawg-apple`).
@@ -158,7 +158,7 @@ A single C# codebase does not cover every platform, because platform VPN APIs di
 Windows is available today; the other clients are planned.
 
 - Windows: current focus, a feature-complete beta (see the feature list above).
-- Android: C# (.NET) `VpnService` with the engine as a gomobile `.aar`.
+- Android: C# (.NET) `VpnService` with the engine as a c-shared `libamneziawg-go.so`.
 - Linux: C# (Avalonia) UI plus an `amneziawg-go` userspace daemon over UAPI, driven by a small privileged helper (systemd, `setcap`), with geo split and a kill-switch via `nftables`. Mostly out-of-process orchestration, no P/Invoke.
 - macOS: native Swift over a native NetworkExtension, sharing the `AmneziaGeoKit` core.
 - iOS: the same native Swift core (`AmneziaGeoKit`), in one Xcode project shared with macOS.

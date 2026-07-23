@@ -221,6 +221,23 @@ public static class WgConfigEditor
     }
 
     /// <summary>
+    /// Returns the [Interface] MTU declared in the config, or 0 when absent or unparseable.
+    /// </summary>
+    public static int GetMtu(string config)
+    {
+        foreach (var line in config.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("MTU", StringComparison.OrdinalIgnoreCase))
+            {
+                var value = trimmed[(trimmed.IndexOf('=') + 1)..].Trim();
+                return int.TryParse(value, out var mtu) ? mtu : 0;
+            }
+        }
+
+        return 0;
+    }
+    /// <summary>
     /// Returns the config with its [Interface] MTU set to the given value.
     /// </summary>
     public static string SetMtu(string config, int mtu)

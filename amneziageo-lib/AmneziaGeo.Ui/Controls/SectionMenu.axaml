@@ -1,29 +1,30 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
-             x:Class="AmneziaGeo.Ui.Controls.SectionMenu">
+             x:Class="AmneziaGeo.Ui.Controls.SectionMenu"
+             x:Name="Root">
   <Border Background="{DynamicResource AgInsetBrush}"
           BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
           CornerRadius="9" Padding="3" MaxWidth="420" HorizontalAlignment="Left">
     <UniformGrid Columns="3">
       <Button Classes="seg" HorizontalAlignment="Stretch" Padding="8,6"
-              Classes.active="{Binding Item1Active, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              Command="{Binding Command, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              CommandParameter="{Binding Item1Param, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              IsEnabled="{Binding Item1Enabled, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              Content="{Binding Item1Text, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}" />
+              Classes.active="{Binding #Root.Item1Active}"
+              Command="{Binding #Root.Command}"
+              CommandParameter="{Binding #Root.Item1Param}"
+              IsEnabled="{Binding #Root.Item1Enabled}"
+              Content="{Binding #Root.Item1Text}" />
       <Button Classes="seg" HorizontalAlignment="Stretch" Padding="8,6"
-              Classes.active="{Binding Item2Active, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              Command="{Binding Command, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              CommandParameter="{Binding Item2Param, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              IsEnabled="{Binding Item2Enabled, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              Content="{Binding Item2Text, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}" />
+              Classes.active="{Binding #Root.Item2Active}"
+              Command="{Binding #Root.Command}"
+              CommandParameter="{Binding #Root.Item2Param}"
+              IsEnabled="{Binding #Root.Item2Enabled}"
+              Content="{Binding #Root.Item2Text}" />
       <Button Classes="seg" HorizontalAlignment="Stretch" Padding="8,6"
-              Classes.active="{Binding Item3Active, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              Command="{Binding Command, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              CommandParameter="{Binding Item3Param, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              IsEnabled="{Binding Item3Enabled, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}"
-              Content="{Binding Item3Text, RelativeSource={RelativeSource AncestorType=controls:SectionMenu}}" />
+              Classes.active="{Binding #Root.Item3Active}"
+              Command="{Binding #Root.Command}"
+              CommandParameter="{Binding #Root.Item3Param}"
+              IsEnabled="{Binding #Root.Item3Enabled}"
+              Content="{Binding #Root.Item3Text}" />
     </UniformGrid>
   </Border>
 </UserControl>

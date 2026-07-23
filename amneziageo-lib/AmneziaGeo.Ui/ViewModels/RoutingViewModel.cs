@@ -80,6 +80,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [RoutingListChoice.None];
 
     /// <summary>
+    /// Имена сохранённых списков маршрутизации.
+    /// </summary>
+    public IReadOnlyList<string> ListNames => RoutingLists.Select(r => r.Name).ToList();
+
+    /// <summary>
     /// ctor
     /// </summary>
     public RoutingViewModel(MainWindowViewModel host, IAgentConnection connection)
@@ -691,6 +696,48 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         RoutingEditor.ApplyImport(text);
         SectionScan = null;
         ImportMethod = RoutingImportMethod.Manual;
+    }
+
+    /// <summary>
+    /// Импортирует брошенный драгом список маршрутизации: уникализирует имя, сохраняет и выбирает.
+    /// </summary>
+    public async Task<bool> ImportDroppedListAsync(string text, ISet<string> reserved)
+    {
+        if (!PortableTransfer.TryDecodeRouting(text, out var importedName, out _))
+        {
+            return false;
+        }
+
+        var editor = new RoutingListEditorViewModel(_connection);
+        editor.ApplyImport(text);
+        var baseName = string.IsNullOrWhiteSpace(importedName)
+            ? Loc.Instance.Get("MainVm_NewListDefaultName")
+            : importedName;
+        editor.Name = UniqueName.Resolve(baseName, reserved);
+
+        if (!await editor.SaveAsync())
+        {
+            return false;
+        }
+
+        reserved.Add(editor.Name);
+        _host.Profile.AdoptRoutingList(editor.Id);
+
+        if (!IsCreatingSectionRouting && !IsEditDirty)
+        {
+            var row = RoutingLists.FirstOrDefault(r => r.Id == editor.Id);
+            if (row is not null)
+            {
+                _pendingEditRoutingListId = null;
+                EditRoutingList = row;
+            }
+            else
+            {
+                _pendingEditRoutingListId = editor.Id;
+            }
+        }
+
+        return true;
     }
 
     // The scanner reports a decoded QR's raw text; accept it only when it decodes to a routing list.

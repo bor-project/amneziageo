@@ -16,6 +16,7 @@
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
+    <StreamGeometry x:Key="AgDropGeometry">M2,12H4V17H20V12H22V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V12M12,15L7,10H10V4H14V10H17L12,15Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Row 3 stars to fill the pane with the import config-text box. -->
   <Grid RowDefinitions="Auto,Auto,Auto,*">
@@ -104,6 +105,11 @@
                   </StackPanel>
                 </Button>
               </WrapPanel>
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" Margin="0,10,0,0">
+                <PathIcon Data="{StaticResource AgDropGeometry}" Width="15" Height="15"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_DropFilesHint}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+              </StackPanel>
             </StackPanel>
           </Border>
 

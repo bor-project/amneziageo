@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Controls;
 
 namespace AmneziaGeo.Windows.Ui;
@@ -10,5 +11,9 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Opened += OnWindowOpened;
     }
+
+    // Снимает UIPI-фильтр drag-and-drop с окна.
+    private void OnWindowOpened(object? sender, EventArgs e) => DragDropFilter.Allow(this);
 }

@@ -366,7 +366,8 @@
 
       <!-- Content pane. -->
       <Border Grid.Column="2" Grid.Row="1" Classes="card" CornerRadius="0" Margin="0,12,0,0" Padding="0"
-              IsVisible="{Binding ShowContent}">
+              IsVisible="{Binding ShowContent}"
+              controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
         <DockPanel LastChildFill="True">
           <!-- Static footer for config: import-draft or open-config edits. Save / Cancel + unsaved indicator. -->
           <Border DockPanel.Dock="Bottom" IsVisible="{Binding Config.ShowSaveBar}"

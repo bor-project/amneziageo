@@ -555,6 +555,32 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportConfig, [name, confText]));
     }
 
+    /// <summary>
+    /// Импортирует брошенный драгом конфиг: уникализирует имя, добавляет в каталог и открывает.
+    /// </summary>
+    public async Task<bool> ImportDroppedConfigAsync(VpnLinkCodec.Imported imported, ISet<string> reserved)
+    {
+        var baseName = string.IsNullOrWhiteSpace(imported.Name)
+            ? Loc.Instance.Get("MainVm_NewConfigDefaultName")
+            : imported.Name!;
+        var name = UniqueName.Resolve(baseName, reserved);
+
+        var ack = await ImportConfigAsync(name, imported.ConfText);
+        if (!ack.Ok)
+        {
+            return false;
+        }
+
+        reserved.Add(name);
+        if (!IsCreatingSectionConfig && !IsEditDirty)
+        {
+            _pendingOpenConfig = name;
+            _host.Profile.AdoptConfig(name);
+        }
+
+        return true;
+    }
+
     internal async Task<IpcAck> RemoveConfigAsync(string name)
     {
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));

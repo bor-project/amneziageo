@@ -56,4 +56,28 @@ internal sealed partial class BundleImportViewModel : ViewModelBase
             IsBusy = false;
         }
     }
+
+    /// <summary>
+    /// Загружает брошенный драгом файл бэкапа в поле импорта.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadDroppedFile(IReadOnlyList<string>? paths)
+    {
+        var path = paths?.FirstOrDefault(p => !string.IsNullOrEmpty(p));
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Payload = await File.ReadAllTextAsync(path);
+            StatusMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Payload = string.Empty;
+            StatusMessage = ex.Message;
+        }
+    }
 }

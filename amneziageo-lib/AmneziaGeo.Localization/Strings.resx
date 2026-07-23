@@ -478,6 +478,9 @@
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
     <value>Choose a method</value>
   </data>
+  <data name="Main_DropFilesHint" xml:space="preserve">
+    <value>or drag a file here</value>
+  </data>
   <data name="Main_ChangeMethodButton" xml:space="preserve">
     <value>Change method</value>
   </data>
@@ -1447,6 +1450,18 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="MainVm_NewListDefaultName" xml:space="preserve">
     <value>New list</value>
+  </data>
+  <data name="Drop_ImportedConfigs" xml:space="preserve">
+    <value>Configs added: {0}</value>
+  </data>
+  <data name="Drop_ImportedRouting" xml:space="preserve">
+    <value>Routing lists added: {0}</value>
+  </data>
+  <data name="Drop_Skipped" xml:space="preserve">
+    <value>Skipped: {0}</value>
+  </data>
+  <data name="Drop_BundleHint" xml:space="preserve">
+    <value>A backup is imported in the import window</value>
   </data>
   <data name="Main_ConfigNameWatermark" xml:space="preserve">
     <value>Configuration name</value>

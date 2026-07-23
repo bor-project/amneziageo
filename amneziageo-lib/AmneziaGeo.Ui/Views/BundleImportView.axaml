@@ -27,7 +27,8 @@
     </StackPanel>
 
     <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-            CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
+            CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+            controls:FileDropBehavior.Command="{Binding LoadDroppedFileCommand}">
       <TextBox Text="{Binding Payload, Mode=TwoWay}" AcceptsReturn="True" AcceptsTab="True"
                TextWrapping="NoWrap" VerticalContentAlignment="Top" Height="280"
                ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"

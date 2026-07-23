@@ -478,6 +478,9 @@
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
     <value>Выберите удобный способ</value>
   </data>
+  <data name="Main_DropFilesHint" xml:space="preserve">
+    <value>или перетащите файл сюда</value>
+  </data>
   <data name="Main_ChangeMethodButton" xml:space="preserve">
     <value>Изменить способ</value>
   </data>
@@ -1447,6 +1450,18 @@
   </data>
   <data name="MainVm_NewListDefaultName" xml:space="preserve">
     <value>Новый список</value>
+  </data>
+  <data name="Drop_ImportedConfigs" xml:space="preserve">
+    <value>Добавлено конфигураций: {0}</value>
+  </data>
+  <data name="Drop_ImportedRouting" xml:space="preserve">
+    <value>Добавлено настроек маршрутизации: {0}</value>
+  </data>
+  <data name="Drop_Skipped" xml:space="preserve">
+    <value>Пропущено: {0}</value>
+  </data>
+  <data name="Drop_BundleHint" xml:space="preserve">
+    <value>Бэкап импортируется в окне импорта</value>
   </data>
   <data name="Main_ConfigNameWatermark" xml:space="preserve">
     <value>Название конфигурации</value>

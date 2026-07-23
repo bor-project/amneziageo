@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia.Threading;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -325,6 +326,106 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     internal bool IsNameTaken(string name) =>
         Config.ConfigNames.Any(n => string.Equals(n, name, StringComparison.Ordinal))
         || Profile.Profiles.Any(b => string.Equals(b.Name, name, StringComparison.Ordinal));
+
+    // Импорт брошенных драгом файлов: тип определяется по содержимому, конфиги и списки маршрутизации
+    // добавляются в каталог с авто-инкрементом имени, бэкап отклоняется с подсказкой (окно импорта).
+    [RelayCommand]
+    private async Task ImportDroppedFiles(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0)
+        {
+            return;
+        }
+
+        var configTaken = new HashSet<string>(Config.ConfigNames, StringComparer.Ordinal);
+        var routingTaken = new HashSet<string>(Routing.ListNames, StringComparer.Ordinal);
+        var configs = 0;
+        var routing = 0;
+        var bundle = 0;
+        var rejected = 0;
+
+        foreach (var path in paths)
+        {
+            var raw = await TryReadFileAsync(path);
+            if (raw is null)
+            {
+                rejected++;
+                continue;
+            }
+
+            var item = ImportDispatcher.Classify(raw);
+            if (item.Kind == DroppedKind.VpnConfig)
+            {
+                if (await Config.ImportDroppedConfigAsync(item.Config!, configTaken))
+                {
+                    configs++;
+                }
+                else
+                {
+                    rejected++;
+                }
+            }
+            else if (item.Kind == DroppedKind.RoutingList)
+            {
+                if (await Routing.ImportDroppedListAsync(item.RoutingText!, routingTaken))
+                {
+                    routing++;
+                }
+                else
+                {
+                    rejected++;
+                }
+            }
+            else if (item.Kind == DroppedKind.Bundle)
+            {
+                bundle++;
+            }
+            else
+            {
+                rejected++;
+            }
+        }
+
+        Home.ShowNotice(BuildImportNotice(configs, routing, bundle, rejected));
+    }
+
+    private static async Task<byte[]?> TryReadFileAsync(string path)
+    {
+        try
+        {
+            return await File.ReadAllBytesAsync(path);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? BuildImportNotice(int configs, int routing, int bundle, int rejected)
+    {
+        var parts = new List<string>();
+        if (configs > 0)
+        {
+            parts.Add(Loc.Instance.Get("Drop_ImportedConfigs", configs));
+        }
+
+        if (routing > 0)
+        {
+            parts.Add(Loc.Instance.Get("Drop_ImportedRouting", routing));
+        }
+
+        if (bundle > 0)
+        {
+            parts.Add(Loc.Instance.Get("Drop_BundleHint"));
+        }
+
+        if (rejected > 0)
+        {
+            parts.Add(Loc.Instance.Get("Drop_Skipped", rejected));
+        }
+
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
 
     // Persist the selected settings section (#51) whenever it changes.
     partial void OnSettingsSectionChanged(string value)

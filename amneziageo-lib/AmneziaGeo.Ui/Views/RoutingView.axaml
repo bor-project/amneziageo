@@ -15,6 +15,7 @@
     <StreamGeometry x:Key="AgFileGeometry">M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z</StreamGeometry>
     <StreamGeometry x:Key="AgQrGeometry">M3,11H5V13H3V11M11,5H13V9H11V5M9,11H13V15H11V13H9V11M15,11H17V13H19V11H21V13H19V15H21V19H19V21H17V19H13V21H11V17H15V15H17V13H15V11M19,19V15H17V19H19M15,3H21V9H15V3M17,5V7H19V5H17M3,3H9V9H3V3M5,5V7H7V5H5M3,15H9V21H3V15M5,17V19H7V17H5Z</StreamGeometry>
     <StreamGeometry x:Key="AgPencilGeometry">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
+    <StreamGeometry x:Key="AgDropGeometry">M2,12H4V17H20V12H22V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V12M12,15L7,10H10V4H14V10H17L12,15Z</StreamGeometry>
   </UserControl.Resources>
   <Grid RowDefinitions="Auto,Auto,*">
 
@@ -199,6 +200,11 @@
               </StackPanel>
             </Button>
           </WrapPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" Margin="0,10,0,0">
+            <PathIcon Data="{StaticResource AgDropGeometry}" Width="15" Height="15"
+                      Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_DropFilesHint}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+          </StackPanel>
         </StackPanel>
       </Border>
 

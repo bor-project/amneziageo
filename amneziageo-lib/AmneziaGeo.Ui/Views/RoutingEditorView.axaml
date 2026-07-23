@@ -44,8 +44,9 @@
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
 
-        <!-- Per-app tunneling. -->
-        <StackPanel Spacing="6">
+        <!-- Per-app tunneling. Hidden unless %LOCALAPPDATA%\AmneziaGeo\DEBUG exists: the feature is unstable
+             and stays reachable only for testing. -->
+        <StackPanel Spacing="6" IsVisible="{Binding ShowPerAppRouting}">
           <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
 
           <!-- Wide: source picker, app input, and add button inline. -->

@@ -9,4 +9,17 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AndroidNativeLibrary Include="native\arm64-v8a\libamneziawg-go.so">
+      <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="native\x86_64\libamneziawg-go.so">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+  </ItemGroup>
+
 </Project>

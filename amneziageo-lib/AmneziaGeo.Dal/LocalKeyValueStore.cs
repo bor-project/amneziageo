@@ -36,6 +36,25 @@ public sealed class LocalKeyValueStore(string databasePath)
     }
 
     /// <summary>
+    /// Reads one value, without creating the database or the table.
+    /// </summary>
+    public string? Read(string scope, string key)
+    {
+        if (!File.Exists(databasePath))
+        {
+            return null;
+        }
+
+        using var connection = Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT value FROM local_prefs WHERE scope = $scope AND key = $key;";
+        command.Parameters.AddWithValue("$scope", scope);
+        command.Parameters.AddWithValue("$key", key);
+        return command.ExecuteScalar() as string;
+    }
+
+    /// <summary>
     /// Upserts every key/value pair under a scope in one transaction.
     /// </summary>
     public void Save(string scope, IReadOnlyDictionary<string, string> values)

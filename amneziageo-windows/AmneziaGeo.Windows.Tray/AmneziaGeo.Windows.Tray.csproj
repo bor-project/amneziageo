@@ -27,6 +27,11 @@
     <ApplicationIcon Condition="'$(HasIcon)' == 'true'">$(IconFile)</ApplicationIcon>
   </PropertyGroup>
 
+  <!-- The state database, for the saved UI language behind the menu labels. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
+  </ItemGroup>
+
   <!-- Windows-only WinExe (Win32 interop); declaring it satisfies the platform-compat analyzer (CA1416). -->
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatform">

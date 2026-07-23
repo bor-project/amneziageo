@@ -947,7 +947,7 @@ internal static unsafe class Program
         }
     }
 
-    // Draws the app glyph (white power symbol on a state-coloured disc) as an HICON: a 32bpp colour bitmap plus
+    // Draws the app glyph (white power symbol on a state-coloured disc) as an HICON: a 32bpp colour DIB plus
     // a 1bpp mask that carves the disc shape.
     private static nint MakeStateIcon(byte r, byte g, byte b)
     {
@@ -987,13 +987,31 @@ internal static unsafe class Program
             }
         }
 
-        nint hColor;
-        nint hMask;
-        fixed (uint* colorBits = color)
+        // A DIB section, not CreateBitmap: a 32bpp device-dependent bitmap carries the display's own format and
+        // renders as a black disc on Windows 7.
+        var header = new Native.BITMAPINFOHEADER
         {
-            hColor = Native.CreateBitmap(size, size, 1, 32, (nint)colorBits);
+            biSize = (uint)sizeof(Native.BITMAPINFOHEADER),
+            biWidth = size,
+            // negative height selects top-down rows, matching the buffer above
+            biHeight = -size,
+            biPlanes = 1,
+            biBitCount = 32,
+            biCompression = Native.BI_RGB,
+        };
+
+        var hColor = Native.CreateDIBSection(0, ref header, Native.DIB_RGB_COLORS, out var bits, 0, 0);
+        if (hColor == 0 || bits == 0)
+        {
+            return 0;
         }
 
+        fixed (uint* src = color)
+        {
+            Buffer.MemoryCopy(src, (void*)bits, (long)color.Length * 4, (long)color.Length * 4);
+        }
+
+        nint hMask;
         fixed (byte* maskBits = mask)
         {
             hMask = Native.CreateBitmap(size, size, 1, 1, (nint)maskBits);

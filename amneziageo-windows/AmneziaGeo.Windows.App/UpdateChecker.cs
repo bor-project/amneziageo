@@ -116,8 +116,8 @@ internal sealed class UpdateChecker(HttpClient http)
         return true;
     }
 
-    // A remote version differing in either direction is an update; downgrade is supported (the bundle
-    // removes a newer related install and the MSI's AllowDowngrades reinstalls the target).
+    // A remote version differing in either direction is an update. A downgrade needs the interactive
+    // installer, which removes the newer install first; a silent run refuses it.
     private static bool IsUpdate(string remote, string current)
     {
         if (System.Version.TryParse(remote, out var r) && System.Version.TryParse(current, out var c))

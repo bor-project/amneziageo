@@ -1298,14 +1298,23 @@
   <data name="InstallerBa_ApplyError" xml:space="preserve">
     <value>Ошибка (0x{0:X8}).</value>
   </data>
+  <data name="InstallerBa_DowngradeBlocked" xml:space="preserve">
+    <value>Нельзя установить более раннюю версию поверх установленной. Сначала удалите AmneziaGeo.</value>
+  </data>
   <data name="InstallerBa_GeoUpToDate" xml:space="preserve">
     <value>Базы гео актуальны - загрузка не требуется.</value>
   </data>
   <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
     <value>Не удалось обновить базы гео ({0}). Можно сделать это позже в приложении.</value>
   </data>
+  <data name="InstallerBa_NewerNotFound" xml:space="preserve">
+    <value>Деинсталлятор установленной версии не найден. Удалите AmneziaGeo через «Установка и удаление программ» и повторите.</value>
+  </data>
   <data name="InstallerBa_PlanFailed" xml:space="preserve">
     <value>Не удалось спланировать операцию.</value>
+  </data>
+  <data name="InstallerBa_RemoveNewerFailed" xml:space="preserve">
+    <value>Не удалось удалить установленную версию. Удалите AmneziaGeo через «Установка и удаление программ» и повторите.</value>
   </data>
   <data name="InstallerBa_StopAppFailed" xml:space="preserve">
     <value>Не удалось остановить запущенное приложение AmneziaGeo. Закройте его и повторите.</value>
@@ -1373,6 +1382,9 @@
   <data name="InstallerVm_InstallVersion" xml:space="preserve">
     <value>Установка: {0}</value>
   </data>
+  <data name="InstallerVm_DowngradeVersion" xml:space="preserve">
+    <value>Установлено: {0}, откат на: {1}</value>
+  </data>
   <data name="InstallerVm_UpdateVersion" xml:space="preserve">
     <value>Обновление: {0} → {1}</value>
   </data>
@@ -1390,6 +1402,9 @@
   </data>
   <data name="InstallerVm_Removing" xml:space="preserve">
     <value>Удаление…</value>
+  </data>
+  <data name="InstallerVm_RemovingNewer" xml:space="preserve">
+    <value>Удаление установленной версии…</value>
   </data>
   <data name="InstallerVm_Repairing" xml:space="preserve">
     <value>Восстановление…</value>

@@ -1298,14 +1298,23 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="InstallerBa_ApplyError" xml:space="preserve">
     <value>Error (0x{0:X8}).</value>
   </data>
+  <data name="InstallerBa_DowngradeBlocked" xml:space="preserve">
+    <value>Cannot install an earlier version over the installed one. Remove AmneziaGeo first.</value>
+  </data>
   <data name="InstallerBa_GeoUpToDate" xml:space="preserve">
     <value>Geo databases are up to date - no download needed.</value>
   </data>
   <data name="InstallerBa_GeoUpdateFailed" xml:space="preserve">
     <value>Failed to update the geo databases ({0}). You can do this later in the application.</value>
   </data>
+  <data name="InstallerBa_NewerNotFound" xml:space="preserve">
+    <value>The uninstaller of the installed version was not found. Remove AmneziaGeo through Apps and features and try again.</value>
+  </data>
   <data name="InstallerBa_PlanFailed" xml:space="preserve">
     <value>Failed to plan the operation.</value>
+  </data>
+  <data name="InstallerBa_RemoveNewerFailed" xml:space="preserve">
+    <value>Failed to remove the installed version. Remove AmneziaGeo through Apps and features and try again.</value>
   </data>
   <data name="InstallerBa_StopAppFailed" xml:space="preserve">
     <value>Failed to stop the running AmneziaGeo application. Close it and try again.</value>
@@ -1373,6 +1382,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="InstallerVm_InstallVersion" xml:space="preserve">
     <value>Install: {0}</value>
   </data>
+  <data name="InstallerVm_DowngradeVersion" xml:space="preserve">
+    <value>Installed: {0}, rollback to: {1}</value>
+  </data>
   <data name="InstallerVm_UpdateVersion" xml:space="preserve">
     <value>Update: {0} → {1}</value>
   </data>
@@ -1390,6 +1402,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="InstallerVm_Removing" xml:space="preserve">
     <value>Removing…</value>
+  </data>
+  <data name="InstallerVm_RemovingNewer" xml:space="preserve">
+    <value>Removing the installed version…</value>
   </data>
   <data name="InstallerVm_Repairing" xml:space="preserve">
     <value>Repairing…</value>

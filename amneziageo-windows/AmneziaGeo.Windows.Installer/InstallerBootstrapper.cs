@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using AmneziaGeo.Localization;
+using Microsoft.Win32;
 using WixToolset.BootstrapperApplicationApi;
 
 namespace AmneziaGeo.Windows.Installer;
@@ -15,6 +16,14 @@ namespace AmneziaGeo.Windows.Installer;
 public sealed class InstallerBootstrapper : BootstrapperApplication
 {
     private const string MsiPackageId = "AmneziaGeoMsi";
+
+    // What to run after the installed newer bundle is removed by its own uninstaller.
+    private enum ChainStep
+    {
+        None,
+        Remove,
+        Downgrade,
+    }
 
     private Dispatcher _dispatcher = null!;
     private InstallerViewModel _vm = null!;
@@ -27,6 +36,10 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private bool _newerRelated;
     private string? _installedVersion;
     private string? _myVersion;
+    private string? _newerVersion;
+    private string? _newerBundleId;
+    private bool _newerMissingFromCache;
+    private ChainStep _chain;
 
     private InstallerAction _action;
     private LaunchAction _launch;
@@ -104,6 +117,14 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         if (engine.CompareVersions(e.Version, _myVersion) > 0)
         {
             _newerRelated = true;
+            // Burn aborts a downgrade before it executes anything, so rolling back means running the installed
+            // bundle's own uninstaller first: keep its identity.
+            if (_newerVersion is null || engine.CompareVersions(e.Version, _newerVersion) > 0)
+            {
+                _newerVersion = e.Version;
+                _newerBundleId = e.ProductCode;
+                _newerMissingFromCache = e.MissingFromCache;
+            }
         }
         else
         {
@@ -128,13 +149,27 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             : (_msiPresent || _olderRelated) ? InstallState.Installed : InstallState.NotInstalled;
         _detectedState = state;
 
+        if (_chain != ChainStep.None)
+        {
+            ContinueChain(state);
+            return;
+        }
+
         _dispatcher.BeginInvoke(() =>
         {
             _vm.SetDetected(state, _installedVersion, _myVersion);
 
             if (!_interactive)
             {
-                OnUserAction(MapCommandAction(_command.Action, state));
+                var mapped = MapCommandAction(_command.Action, state);
+                if (state == InstallState.NewerInstalled && mapped is InstallerAction.Install or InstallerAction.Update)
+                {
+                    // Nobody is here to confirm removing the newer install, and Burn cannot downgrade in one run.
+                    Finish(false, Loc.Instance.Get("InstallerBa_DowngradeBlocked"));
+                    return;
+                }
+
+                OnUserAction(mapped);
             }
             else if (IsUpdateFlow())
             {
@@ -166,6 +201,171 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 _ = _dispatcher.BeginInvoke(() => _vm.SetCanAutoConnect(true));
             }
         });
+    }
+
+    // ---- Rollback over a newer install ----
+
+    // Second detect, after the installed newer bundle was removed by its own uninstaller.
+    private void ContinueChain(InstallState state)
+    {
+        var next = _chain;
+        _chain = ChainStep.None;
+
+        _dispatcher.BeginInvoke(() =>
+        {
+            if (state == InstallState.NewerInstalled)
+            {
+                Finish(false, Loc.Instance.Get("InstallerBa_RemoveNewerFailed"));
+                return;
+            }
+
+            if (next == ChainStep.Remove)
+            {
+                Finish(true, SuccessText(InstallerAction.Remove));
+                return;
+            }
+
+            _vm.SetDetected(state, _installedVersion, _myVersion);
+            OnUserAction(InstallerAction.Install);
+        });
+    }
+
+    // Runs the installed bundle's own cached setup to remove it, then re-detects.
+    private void RemoveNewerThen(ChainStep next)
+    {
+        var command = FindUninstallCommand();
+        if (command is null)
+        {
+            Finish(false, Loc.Instance.Get("InstallerBa_NewerNotFound"));
+            return;
+        }
+
+        var exe = command.Value.Exe;
+        var args = command.Value.Args;
+        var wipe = next == ChainStep.Remove && _vm.DeleteConfig;
+        _vm.BeginRemoveNewer();
+
+        _ = Task.Run(() =>
+        {
+            var ok = RunUninstaller(exe, args, wipe);
+            _ = _dispatcher.BeginInvoke(() =>
+            {
+                if (!ok)
+                {
+                    Finish(false, Loc.Instance.Get("InstallerBa_RemoveNewerFailed"));
+                    return;
+                }
+
+                _chain = next;
+                ResetDetect();
+                engine.Detect();
+            });
+        });
+    }
+
+    // Burn re-raises the whole detect sequence, so the accumulated flags start clean.
+    private void ResetDetect()
+    {
+        _msiPresent = false;
+        _olderRelated = false;
+        _newerRelated = false;
+        _installedVersion = null;
+        _newerVersion = null;
+        _newerBundleId = null;
+        _newerMissingFromCache = false;
+    }
+
+    // The uninstall command the installed bundle registered for itself.
+    private (string Exe, string Args)? FindUninstallCommand()
+    {
+        if (string.IsNullOrEmpty(_newerBundleId) || _newerMissingFromCache)
+        {
+            return null;
+        }
+
+        var subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\" + _newerBundleId;
+        foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        {
+            foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                var found = ReadUninstallCommand(hive, view, subKey);
+                if (found is not null)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static (string Exe, string Args)? ReadUninstallCommand(RegistryHive hive, RegistryView view, string subKey)
+    {
+        try
+        {
+            using var root = RegistryKey.OpenBaseKey(hive, view);
+            using var key = root.OpenSubKey(subKey);
+            var quiet = key?.GetValue("QuietUninstallString") as string;
+            var line = string.IsNullOrWhiteSpace(quiet) ? key?.GetValue("UninstallString") as string : quiet;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return null;
+            }
+
+            var (exe, args) = SplitCommand(line);
+            if (!File.Exists(exe))
+            {
+                return null;
+            }
+
+            return (exe, string.IsNullOrWhiteSpace(quiet) ? (args + " /quiet").Trim() : args);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // "C:\...\setup.exe" /uninstall /quiet -> executable plus the rest.
+    private static (string Exe, string Args) SplitCommand(string line)
+    {
+        line = line.Trim();
+        if (line.StartsWith('"'))
+        {
+            var end = line.IndexOf('"', 1);
+            if (end > 0)
+            {
+                return (line[1..end], line[(end + 1)..].Trim());
+            }
+        }
+
+        var space = line.IndexOf(' ');
+        return space < 0 ? (line, string.Empty) : (line[..space], line[(space + 1)..].Trim());
+    }
+
+    private static bool RunUninstaller(string exe, string args, bool wipe)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(exe)
+            {
+                Arguments = wipe ? (args + " DELETECONFIG=1").Trim() : args,
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(exe) ?? string.Empty,
+            };
+            using var p = Process.Start(psi);
+            if (p is null)
+            {
+                return false;
+            }
+
+            p.WaitForExit();
+            return p.ExitCode is 0 or 3010 or 1641;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // ---- Plan ----
@@ -388,6 +588,20 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private void OnUserAction(InstallerAction action)
     {
         _action = action;
+
+        // A newer install is not ours to plan against: this bundle is not the registered one, so Plan(Uninstall)
+        // yields an empty plan and reports a false success, and Plan(Install) is refused as a downgrade. Both
+        // buttons run the installed bundle's own uninstaller instead. Only a standalone interactive run does
+        // this: when Burn itself launches this bundle to clear a related install, the newer bundle it would
+        // find is the one currently installing.
+        if (_interactive && _command.Relation == RelationType.None
+            && _detectedState == InstallState.NewerInstalled
+            && action is InstallerAction.Install or InstallerAction.Remove)
+        {
+            RemoveNewerThen(action == InstallerAction.Install ? ChainStep.Downgrade : ChainStep.Remove);
+            return;
+        }
+
         _launch = action switch
         {
             InstallerAction.Repair => LaunchAction.Repair,

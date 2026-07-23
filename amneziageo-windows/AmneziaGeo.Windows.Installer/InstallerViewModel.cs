@@ -393,7 +393,8 @@ public sealed class InstallerViewModel : ObservableObject
         }
     }
 
-    // Version line: install shows the incoming version, an upgrade shows from -> to, otherwise the installed one.
+    // Version line: install shows the incoming version, an upgrade and a rollback show from -> to, otherwise
+    // the installed one.
     private static string BuildVersionText(InstallState state, string? installed, string? next)
     {
         if (state == InstallState.NotInstalled)
@@ -404,6 +405,11 @@ public sealed class InstallerViewModel : ObservableObject
         if (state == InstallState.Installed && IsUpgrade(installed, next))
         {
             return Loc.Instance.Get("InstallerVm_UpdateVersion", installed!, next!);
+        }
+
+        if (state == InstallState.NewerInstalled && !string.IsNullOrEmpty(installed) && !string.IsNullOrEmpty(next))
+        {
+            return Loc.Instance.Get("InstallerVm_DowngradeVersion", installed, next);
         }
 
         return string.IsNullOrEmpty(installed) ? string.Empty : Loc.Instance.Get("InstallerVm_InstalledVersion", installed);
@@ -438,6 +444,17 @@ public sealed class InstallerViewModel : ObservableObject
             InstallerAction.Update => Loc.Instance.Get("InstallerVm_Updating"),
             _ => Loc.Instance.Get("InstallerVm_Installing"),
         };
+        Phase = Phase.Applying;
+    }
+
+    /// <summary>
+    /// Switch to the removing-the-installed-version view.
+    /// </summary>
+    public void BeginRemoveNewer()
+    {
+        Progress = 0;
+        SubText = Loc.Instance.Get("InstallerVm_RemovingNewer");
+        IsIndeterminate = true;
         Phase = Phase.Applying;
     }
 

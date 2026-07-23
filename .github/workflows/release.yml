@@ -22,10 +22,10 @@ jobs:
       fail-fast: false   # a broken arch (e.g. arm64) must not block the arches that do build
       matrix:
         include:
-          - { arch: x64,   sc: 'false', variant: fdd }
-          - { arch: x64,   sc: 'true',  variant: scd }
-          - { arch: arm64, sc: 'false', variant: fdd }
-          - { arch: arm64, sc: 'true',  variant: scd }
+          - { arch: x64,   variant: fdd }
+          - { arch: x64,   variant: scd }
+          - { arch: arm64, variant: fdd }
+          - { arch: arm64, variant: scd }
     steps:
       - name: Checkout (submodules + tags)
         uses: actions/checkout@v4
@@ -87,9 +87,9 @@ jobs:
             # A prerelease tag (v1.2.3.4-beta.1) bakes allowPrerelease=1 so the beta build stays on the beta
             # channel instead of offering a downgrade to the stable latest.
             $pre = [bool]("$env:GITHUB_REF_NAME" -match '-')
-            & $script ci -Version $ver -Arch ${{ matrix.arch }} -SelfContained ${{ matrix.sc }} -AllowPrerelease:$pre
+            & $script ci -Version $ver -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }} -Prerelease:$pre
           } else {
-            & $script ci -Arch ${{ matrix.arch }} -SelfContained ${{ matrix.sc }}
+            & $script ci -Arch ${{ matrix.arch }} -Payload ${{ matrix.variant }}
           }
 
       - name: Upload unsigned installer

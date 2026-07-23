@@ -7,17 +7,19 @@
     5. builds the Burn bundle that hosts the BA and chains the MSI,
   then copies the signed bundle into dist\ under an arch/payload-tagged name.
 
-  BUILD MATRIX (#49) - which variants to build is the cross product of:
-    * arch          : x64 and/or arm64                         (-> dotnet -r win-<arch>, WiX -p:Platform)
-    * selfContained : true (bundles the .NET runtime, installs anywhere, large) and/or
-                      false (framework-dependent: needs the .NET 10 Desktop Runtime on the target, light)
-  Defaults come from installer.config.json -> build.{arch,selfContained} (arrays). Script flags override:
-    -Arch x64,arm64           build only these arches
-    -SelfContained true,false build only these payload kinds
-    -All                      the full 2x2 matrix (x64/arm64 x fdd/scd)
-    -AllowPrerelease          bake allowPrerelease=1 (beta channel) regardless of the config value
-    -ListOnly                 print the resolved matrix and exit (build nothing)
-  With no flags and no config, the default is a single x64 framework-dependent build (the prior behaviour).
+  BUILD MATRIX (#49) - which variants to build is the cross product of two axes, both spelled the way
+  the output file is tagged (AmneziaGeo-<version>-win-<arch>-<payload>.exe):
+    * arch    : x64 and/or arm64   (-> dotnet -r win-<arch>, WiX -p:Platform)
+    * payload : fdd = framework-dependent deployment, needs the .NET 10 Desktop Runtime on the
+                      target, light
+                scd = self-contained deployment, bundles the runtime, installs anywhere, large
+  Each axis takes a list or "all". Defaults come from installer.config.json -> build.{arch,payload}
+  (arrays). Script flags override:
+    -a,   -Arch x64,arm64     build only these arches, or all
+    -p,   -Payload fdd,scd    build only these payload kinds, or all
+    -pre, -Prerelease         bake allowPrerelease=1 (beta channel) regardless of the config value
+    -l,   -ListOnly           print the resolved matrix and exit (build nothing)
+  With no flags and no config, the default is a single x64 fdd build (the prior behaviour).
 
   NOTE: arm64 publishes the managed code for win-arm64, but the bundled NATIVE deps (tunnel.dll,
   wintun.dll, wstunnel.exe) currently ship x64-only - an arm64 build is wired end-to-end but is not
@@ -32,22 +34,54 @@
   is always overlaid when present. Precedence: CLI flags > env overlay > local overlay > installer.config.json.
 
   Usage (on the build machine):
-    pwsh -File build-installer.ps1 [<env>] [-Configuration Release] [-Arch x64,arm64] [-SelfContained true,false] [-All] [-Rebuild] [-ListOnly]
+    pwsh -File build-installer.ps1 [<env>] [-c Release] [-a x64,arm64] [-p fdd,scd] [-r] [-l]
+  Every flag has a short lowercase alias; -h lists them.
 #>
 param(
     [Parameter(Position = 0)]
+    [Alias('e')]
     [string]$Environment,
+    [Alias('c')]
     [string]$Configuration,
+    [Alias('v')]
     [string]$Version,
+    [Alias('a')]
     [string[]]$Arch,
-    [string[]]$SelfContained,
-    [switch]$AllowPrerelease,
-    [switch]$All,
+    # -SelfContained true,false is the older spelling of this axis; still bound, no longer documented.
+    [Alias('p', 'SelfContained')]
+    [string[]]$Payload,
+    [Alias('pre', 'AllowPrerelease')]
+    [switch]$Prerelease,
+    [Alias('r')]
     [switch]$Rebuild,
-    [switch]$ListOnly
+    [Alias('l')]
+    [switch]$ListOnly,
+    [Alias('h')]
+    [switch]$Help
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($Help) {
+    @(
+        'build-installer.ps1 [<env>] [flags] - builds AmneziaGeoSetup.exe into dist\.',
+        '',
+        '  -e,   <env>               overlay installer.config.<env>.json, positional (e.g. ci)',
+        '  -c,   -Configuration      Debug | Release',
+        '  -v,   -Version N.N.N.N    bundle and binary version',
+        '  -a,   -Arch x64,arm64     arches to build, or all',
+        '  -p,   -Payload fdd,scd    fdd = framework-dependent, scd = self-contained, or all',
+        '  -pre, -Prerelease         bake the beta update channel',
+        '  -r,   -Rebuild            clean before building',
+        '  -l,   -ListOnly           print the resolved matrix and exit',
+        '  -h,   -Help               this text',
+        '',
+        'Both axes take a list; every output is named AmneziaGeo-<version>-win-<arch>-<payload>.exe.',
+        'Defaults, icon, update URL and signing come from installer.config.json plus the',
+        '.local and .<env> overlays. Precedence: flags > env > local > installer.config.json.'
+    ) | Write-Host
+    return
+}
 
 $bundleDir = $PSScriptRoot
 $win       = Split-Path $bundleDir -Parent                       # ...\amneziageo-windows
@@ -82,9 +116,9 @@ if ($Configuration -notin @('Debug', 'Release')) { throw "Invalid Configuration 
 $updateUrl = if ($cfg -and $cfg.updateUrl) { [string]$cfg.updateUrl } else { '' }
 
 # Hidden channel toggle (not shown in the UI): installer.config.json -> allowPrerelease (0/1 or true/false),
-# overridable by -AllowPrerelease (CI forces it on for prerelease tags so a beta build stays on the beta
+# overridable by -Prerelease (CI forces it on for prerelease tags so a beta build stays on the beta
 # channel). Baked into the app; "1" lets the update check offer prereleases. Default 0.
-$allowPre = if ($AllowPrerelease) { '1' } elseif ($cfg -and $null -ne $cfg.allowPrerelease -and [bool]$cfg.allowPrerelease) { '1' } else { '0' }
+$allowPre = if ($Prerelease) { '1' } elseif ($cfg -and $null -ne $cfg.allowPrerelease -and [bool]$cfg.allowPrerelease) { '1' } else { '0' }
 $prereleaseProps = @("-p:AllowPrerelease=$allowPre")
 
 $iconAbs = ''
@@ -102,30 +136,40 @@ $hasIcon = if ($iconAbs) { 'true' } else { 'false' }
 $iconProps   = if ($hasIcon -eq 'true') { @('-p:HasIcon=true', "-p:IconFile=$iconAbs") } else { @('-p:HasIcon=false') }
 $updateProps = if ($updateUrl) { @("-p:UpdateUrl=$updateUrl") } else { @() }
 
-# ---- build matrix (arch x selfContained). Flags override installer.config.json -> build.* ----
-$cfgArch = if ($cfg -and $cfg.build -and $cfg.build.arch) { @($cfg.build.arch | ForEach-Object { [string]$_ }) } else { @('x64') }
-$cfgSc   = if ($cfg -and $cfg.build -and $null -ne $cfg.build.selfContained) { @($cfg.build.selfContained | ForEach-Object { [bool]$_ }) } else { @($false) }
+# ---- build matrix (arch x payload). Flags override installer.config.json -> build.* ----
+$cfgArch    = if ($cfg -and $cfg.build -and $cfg.build.arch) { @($cfg.build.arch | ForEach-Object { [string]$_ }) } else { @('x64') }
+if ($cfg -and $cfg.build -and $null -ne $cfg.build.selfContained) {
+    throw 'installer.config.json: build.selfContained was renamed to build.payload (["fdd"] and/or ["scd"]).'
+}
+$cfgPayload = if ($cfg -and $cfg.build -and $cfg.build.payload) { @($cfg.build.payload | ForEach-Object { [string]$_ }) } else { @('fdd') }
 
-# normalise flag inputs: accept comma- or space-separated (e.g. -Arch x64,arm64 or -Arch x64 arm64),
-# tolerant of how `powershell -File` passes them, then validate against the allowed sets.
-$archIn = @($Arch | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-$scIn   = @($SelfContained | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-foreach ($a in $archIn) { if ($a -notin @('x64', 'arm64')) { throw "Invalid -Arch '$a' (expected x64 or arm64)." } }
-foreach ($s in $scIn)   { if ($s -notin @('true', 'false')) { throw "Invalid -SelfContained '$s' (expected true or false)." } }
+# normalise flag inputs: accept comma- or space-separated (e.g. -a x64,arm64 or -a x64 arm64), tolerant of
+# how `powershell -File` passes them, then validate against the allowed sets.
+$archIn    = @($Arch    | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
+$payloadIn = @($Payload | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
 
-$archList = if ($All) { @('x64', 'arm64') } elseif ($archIn) { $archIn } else { $cfgArch }
-$scList   = if ($All) { @($true, $false) } elseif ($scIn) { @($scIn | ForEach-Object { $_ -eq 'true' }) } else { $cfgSc }
+# true/false is how -SelfContained spelled the payload axis.
+$payloadIn = @($payloadIn | ForEach-Object { switch ($_) { 'true' { 'scd' } 'false' { 'fdd' } default { $_ } } })
 
-$archList = @($archList | Select-Object -Unique)
-$scList   = @($scList | Select-Object -Unique)
+if ($archIn -contains 'all')    { $archIn    = @('x64', 'arm64') }
+if ($payloadIn -contains 'all') { $payloadIn = @('fdd', 'scd') }
+
+foreach ($a in $archIn)    { if ($a -notin @('x64', 'arm64')) { throw "Invalid -Arch '$a' (expected x64, arm64 or all)." } }
+foreach ($p in $payloadIn) { if ($p -notin @('fdd', 'scd'))   { throw "Invalid -Payload '$p' (expected fdd, scd or all)." } }
+
+$archList    = if ($archIn)    { $archIn }    else { $cfgArch }
+$payloadList = if ($payloadIn) { $payloadIn } else { $cfgPayload }
+
+$archList    = @($archList    | Select-Object -Unique)
+$payloadList = @($payloadList | Select-Object -Unique)
 
 $variants = @(foreach ($a in $archList) {
-    foreach ($s in $scList) { [pscustomobject]@{ Arch = $a; SelfContained = [bool]$s } }
+    foreach ($p in $payloadList) { [pscustomobject]@{ Arch = $a; SelfContained = ($p -eq 'scd') } }
 })
 
 Write-Host "== build matrix: $($variants.Count) variant(s) =="
 foreach ($v in $variants) {
-    Write-Host ("   - win-{0} {1}" -f $v.Arch, $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
+    Write-Host ("   - win-{0} {1} ({2})" -f $v.Arch, $(if ($v.SelfContained) { 'scd' } else { 'fdd' }), $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
 }
 $hasLocal = Test-Path (Join-Path $bundleDir 'installer.config.local.json')
 Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); allowPrerelease=$allowPre; signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="

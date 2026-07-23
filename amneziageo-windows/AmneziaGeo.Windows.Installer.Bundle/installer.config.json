@@ -1,7 +1,7 @@
 {
   "build": {
     "arch": ["x64"],
-    "selfContained": [false],
+    "payload": ["fdd"],
     "configuration": "Release",
     "rebuild": true
   },

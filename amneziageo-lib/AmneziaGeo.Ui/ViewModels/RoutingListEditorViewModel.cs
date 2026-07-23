@@ -236,6 +236,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsAppPickerActive => AppMode is "running" or "installed";
 
     /// <summary>
+    /// Whether the per-app add-row is shown; the DEBUG marker gates it while the feature is unstable.
+    /// </summary>
+    public bool ShowPerAppRouting => AppFeatures.PerAppRouting;
+
+    /// <summary>
     /// Watermark for the app add-row input, reflects the selected source mode.
     /// </summary>
     public string AppWatermark => AppMode switch

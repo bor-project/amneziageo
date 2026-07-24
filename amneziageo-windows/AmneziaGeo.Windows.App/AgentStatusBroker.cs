@@ -315,7 +315,13 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         await configRepo.RemoveAsync(name, ct);
-        await ClearBindingIfTargetAsync(name, ct);
+
+        // A profile of the same name keeps its own binding.
+        if (await store.GetProfileAsync(name, ct) is null)
+        {
+            await ClearBindingIfTargetAsync(name, ct);
+        }
+
         logger.LogInformation("removed config {Name}", name);
         return new IpcAck(true, $"removed config {name}");
     }
@@ -369,7 +375,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {source}");
         }
 
-        if (await configRepo.ExistsAsync(destination, ct) || await store.GetProfileAsync(destination, ct) is not null)
+        if (await configRepo.ExistsAsync(destination, ct))
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", destination));
         }
@@ -398,7 +404,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {oldName}");
         }
 
-        if (await configRepo.ExistsAsync(newName, ct) || await store.GetProfileAsync(newName, ct) is not null)
+        if (await configRepo.ExistsAsync(newName, ct))
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
@@ -411,8 +417,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
         await configRepo.RenameAsync(oldName, newName, ct);
 
-        // A same-named single-config target follows the rename.
-        if (string.Equals(oldName, control.Target, StringComparison.Ordinal))
+        // A same-named single-config target follows the rename; a profile of that name owns the binding instead.
+        if (string.Equals(oldName, control.Target, StringComparison.Ordinal)
+            && await store.GetProfileAsync(oldName, ct) is null)
         {
             control.SetTarget(newName);
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, newName, ct);
@@ -442,7 +449,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown profile: {oldName}");
         }
 
-        if (await store.GetProfileAsync(newName, ct) is not null || await configRepo.ExistsAsync(newName, ct))
+        if (await store.GetProfileAsync(newName, ct) is not null)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
@@ -685,20 +692,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, IpcMessage.Key("Agent_BundleTooNew", bundle.Version));
         }
 
-        // Config and profile names live in one global namespace (rename refuses a name used by either);
-        // routing-list names are a separate space. Snapshots taken before import drive collision detection.
+        // Configs, profiles and routing lists each own a separate name space. Snapshots taken before import
+        // drive collision detection.
         var existingConfigs = new HashSet<string>(await configRepo.ListAsync(ct), StringComparer.Ordinal);
         var existingProfiles = new HashSet<string>(await store.ListProfileNamesAsync(ct), StringComparer.Ordinal);
         var existingLists = (await store.ListRoutingListsAsync(ct))
             .ToDictionary(l => l.Name, l => l, StringComparer.Ordinal);
 
-        // Growing namespaces so the add-as-new path never reuses a name taken earlier in THIS import.
-        var taken = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
-        foreach (var p in existingProfiles)
-        {
-            taken.Add(p);
-        }
-
+        // Growing name spaces so the add-as-new path never reuses a name taken earlier in THIS import.
+        var configNames = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
+        var profileNames = new HashSet<string>(existingProfiles, StringComparer.Ordinal);
         var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
 
         var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -742,8 +745,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 continue;
             }
 
-            var finalName = FreeName(incoming, taken);
-            taken.Add(finalName);
+            var finalName = FreeName(incoming, configNames);
+            configNames.Add(finalName);
             if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
             {
                 renames.Add($"«{block.Name}» → «{finalName}»");
@@ -844,8 +847,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 continue;
             }
 
-            var finalName = FreeName(block.Name, taken);
-            taken.Add(finalName);
+            var finalName = FreeName(block.Name, profileNames);
+            profileNames.Add(finalName);
             if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
             {
                 renames.Add($"«{block.Name}» → «{finalName}»");

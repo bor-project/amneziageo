@@ -459,7 +459,8 @@ internal sealed class TunnelRunner(
         // Start wstunnel last so a failure can't orphan it.
         if (useWebSocket)
         {
-            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials, loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
+            wsTransport = await WsTunnelTransport.StartAsync(wsHost!, wsPort, wsTargetPort, wsPathPrefix, wsCredentials,
+                line => RecordRejection(name, line), loggerFactory.CreateLogger<WsTunnelTransport>(), CancellationToken.None);
             if (wsTransport is null)
             {
                 throw new ConnectFailureException(ConnectFailureReason.UnderlayUnreachable, $"WebSocket transport (wstunnel) failed to start for {name}");
@@ -513,6 +514,21 @@ internal sealed class TunnelRunner(
             {
                 routes.RemoveLanExclusions(name);
             }
+        }
+    }
+
+    // Records a permanent carrier rejection: the session is already up, so the agent reads the cause from the
+    // store instead of inferring a retryable no-handshake.
+    private void RecordRejection(string name, string line)
+    {
+        try
+        {
+            store.SetSettingAsync(TunnelPaths.ConnectMessageKey(name), line).GetAwaiter().GetResult();
+            store.SetSettingAsync(TunnelPaths.ConnectReasonKey(name), nameof(ConnectFailureReason.TransportRejected)).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "recording the transport rejection for {Name} failed", name);
         }
     }
 

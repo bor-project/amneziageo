@@ -16,12 +16,14 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
     private readonly string _pathPrefix; // path token for server-side --restrict-http-upgrade-path-prefix
     private readonly string _credentials; // optional basic-auth "user[:pass]"
+    private readonly Action<string>? _onRejected;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private Process? _process;
     private Task? _supervisor;
+    private int _rejectionReported;
 
-    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, int localPort, ILogger logger)
+    private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, int localPort, Action<string>? onRejected, ILogger logger)
     {
         _serverHost = serverHost;
         _wsPort = wsPort;
@@ -29,6 +31,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         _pathPrefix = pathPrefix;
         _credentials = credentials;
         LocalPort = localPort;
+        _onRejected = onRejected;
         _logger = logger;
     }
 
@@ -39,8 +42,9 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     /// <summary>
     /// Starts a wstunnel client and waits until its local UDP listener is bound; null on missing binary or timeout.
+    /// The callback fires once when the carrier reports a permanent rejection (TLS certificate).
     /// </summary>
-    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, ILogger logger, CancellationToken ct)
+    public static async Task<WsTunnelTransport?> StartAsync(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, Action<string>? onRejected, ILogger logger, CancellationToken ct)
     {
         var exe = TunnelPaths.WsTunnelExe();
         if (!File.Exists(exe))
@@ -49,7 +53,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return null;
         }
 
-        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, FreeUdpPort(), logger);
+        var transport = new WsTunnelTransport(serverHost, wsPort, targetPort, pathPrefix, credentials, FreeUdpPort(), onRejected, logger);
         transport.Spawn();
         transport._supervisor = Task.Run(() => transport.SuperviseAsync(transport._cts.Token));
 
@@ -106,14 +110,78 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return;
         }
 
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) { _logger.LogDebug("wstunnel: {Line}", e.Data); } };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { _logger.LogDebug("wstunnel: {Line}", e.Data); } };
+        process.OutputDataReceived += (_, e) => Trace(e.Data);
+        process.ErrorDataReceived += (_, e) => Trace(e.Data);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         _process = process;
         _logger.LogInformation(
             "wstunnel started (pid {Pid}): local udp :{Local} -> wss://{Host}:{Ws} -> 127.0.0.1:{Target}",
             process.Id, LocalPort, _serverHost, _wsPort, _targetPort);
+    }
+
+    // wstunnel carries its own level in every line; keep that level instead of burying the whole stream at Debug,
+    // where the cause of a refused carrier never reaches the journal.
+    private void Trace(string? line)
+    {
+        if (line is null)
+        {
+            return;
+        }
+
+        if (IsRejection(line))
+        {
+            _logger.LogError("wstunnel: {Line}", line);
+            ReportRejection(line);
+            return;
+        }
+
+        if (line.Contains("ERROR", StringComparison.Ordinal) || line.Contains("WARN", StringComparison.Ordinal))
+        {
+            _logger.LogWarning("wstunnel: {Line}", line);
+            return;
+        }
+
+        _logger.LogInformation("wstunnel: {Line}", line);
+    }
+
+    // A refused certificate is permanent: an expired or untrusted server cert never clears by re-dialing.
+    private static bool IsRejection(string line)
+    {
+        if (line.Contains("invalid peer certificate", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!line.Contains("certificate", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return line.Contains("expired", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("unknown issuer", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("unknownissuer", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("not valid", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("notvalidfor", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("verify failed", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("bad certificate", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ReportRejection(string line)
+    {
+        if (Interlocked.Exchange(ref _rejectionReported, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            _onRejected?.Invoke(line);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "reporting a rejected wstunnel carrier failed");
+        }
     }
 
     private async Task SuperviseAsync(CancellationToken ct)

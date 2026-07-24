@@ -145,9 +145,6 @@
   <data name="BundleExport_Heading" xml:space="preserve">
     <value>Export profiles, configurations and routing lists</value>
   </data>
-  <data name="BundleExport_PrivateKeyWarning" xml:space="preserve">
-    <value>⚠ The exported file contains configuration private keys. Store and share it securely.</value>
-  </data>
   <data name="BundleExport_ProfilesSection" xml:space="preserve">
     <value>PROFILES</value>
   </data>
@@ -192,9 +189,6 @@
   </data>
   <data name="BundleImport_PayloadWatermark" xml:space="preserve">
     <value>Paste the bundle JSON (Ctrl+V) or pick a file with the “Choose file…” button</value>
-  </data>
-  <data name="BundleImport_SecurityWarning" xml:space="preserve">
-    <value>⚠ The imported file may contain private configuration keys - use files from trusted sources only.</value>
   </data>
   <data name="BundleImport_WindowTitle" xml:space="preserve">
     <value>Import</value>
@@ -990,6 +984,9 @@
   </data>
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
     <value>The server did not answer (no handshake) - unreachable or key rejected.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
+    <value>The transport refused the connection - check the server TLS certificate ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>The connection timed out.</value>

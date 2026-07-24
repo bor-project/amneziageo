@@ -46,6 +46,11 @@ public enum ConnectFailureReason
     NoHandshake,
 
     /// <summary>
+    /// The transport carrier refused the connection for good: an expired or untrusted TLS certificate.
+    /// </summary>
+    TransportRejected,
+
+    /// <summary>
     /// The overall connect deadline elapsed.
     /// </summary>
     Timeout,

@@ -44,6 +44,8 @@ internal sealed class TunnelRunner(
         catch (Exception ex)
         {
             logger.LogError(ex, "connect {Name}: bring-up failed - {Reason}", name, ex.Message);
+            // Bring-up can throw past the session teardown; the machine must never keep a kill-switch it can't reach.
+            firewall.Disable();
 
             var reason = ex is ConnectFailureException cfe ? cfe.Reason : ConnectFailureReason.Unknown;
             try
@@ -486,6 +488,7 @@ internal sealed class TunnelRunner(
         finally
         {
             logger.LogInformation("connect {Name}: session ended after {Elapsed} ms, tearing down", name, connectSw.ElapsedMilliseconds);
+            // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
             sessionCts.Cancel();
             firewall.Disable();
 
@@ -789,28 +792,76 @@ internal sealed class TunnelRunner(
     {
         try
         {
-            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-            while (DateTimeOffset.UtcNow < deadline)
+            var index = await WaitForAdapterAsync(name, ct);
+            if (index is null)
             {
-                ct.ThrowIfCancellationRequested();
-                if (routes.FindInterfaceIndex(name) is { } index)
-                {
-                    firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs);
-                    if (ct.IsCancellationRequested)
-                    {
-                        firewall.Disable();
-                    }
+                logger.LogWarning("firewall: tunnel adapter {Name} did not appear; not armed", name);
+                return;
+            }
 
+            if (killSwitch)
+            {
+                // Block-list drops are user intent and go up with the adapter; only the kill-switch waits.
+                if (blockCidrs.Count > 0 && !Arm(index.Value, killSwitch: false, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct))
+                {
                     return;
                 }
 
-                await Task.Delay(500, ct);
+                // The kill-switch protects an established tunnel, not the dial: a server that never answers
+                // would otherwise firewall the machine off for the whole attempt (#208).
+                logger.LogDebug("firewall: kill-switch for {Name} deferred until the first handshake", name);
+                await WaitForHandshakeAsync(name, ct);
             }
 
-            logger.LogWarning("firewall: tunnel adapter {Name} did not appear; not armed", name);
+            Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct);
         }
         catch (OperationCanceledException)
         {
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "firewall: arming failed for {Name}", name);
+        }
+    }
+
+    // Installs the filters and returns whether they survived. The session cancels before the teardown disables,
+    // so a set that lands after it undoes itself here.
+    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs);
+        if (ct.IsCancellationRequested)
+        {
+            firewall.Disable();
+            return false;
+        }
+
+        return true;
+    }
+
+    // Returns the tunnel interface index, or null when the adapter never appears.
+    private async Task<uint?> WaitForAdapterAsync(string name, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (routes.FindInterfaceIndex(name) is { } index)
+            {
+                return index;
+            }
+
+            await Task.Delay(500, ct);
+        }
+
+        return null;
+    }
+
+    // Waits for the peer to answer. No deadline: the session token ends the wait when the attempt is torn down.
+    private async Task WaitForHandshakeAsync(string name, CancellationToken ct)
+    {
+        while (uapi.TryGetLastHandshake(name) is not > 0)
+        {
+            await Task.Delay(500, ct);
         }
     }
 }

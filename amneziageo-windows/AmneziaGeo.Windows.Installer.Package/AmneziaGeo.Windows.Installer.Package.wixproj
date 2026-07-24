@@ -5,14 +5,19 @@
          is supplied by build-installer.ps1 (-p:Platform=x64|arm64) and defaults to x64 for a plain
          `dotnet build`; the output name follows the arch so per-arch MSIs do not collide. -->
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
-    <OutputName>AmneziaGeo-1.0.1-win-$(Platform)</OutputName>
+    <OutputName>AmneziaGeo-win-$(Platform)</OutputName>
+
+    <!-- ProductVersion, supplied by build-installer.ps1 (-p:Version) alongside the bundle version so the
+         two stay in step; a plain `dotnet build` gets the dev placeholder. The file name deliberately
+         carries no version: only the bundle is version-stamped (#210). -->
+    <Version Condition="'$(Version)' == ''">0.0.1.0</Version>
 
     <!-- StageDir (the staged self-contained publish to harvest) is supplied by build-installer.ps1
          via -p:StageDir=...; expose it to the WXS preprocessor as $(var.StageDir). HasIcon (also from
          build-installer.ps1, sourced from installer.config.json) gates the ARP/shortcut icon: "false"
          omits it entirely. -->
     <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
-    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon)</DefineConstants>
+    <DefineConstants>StageDir=$(StageDir);HasIcon=$(HasIcon);Version=$(Version)</DefineConstants>
   </PropertyGroup>
 
   <Target Name="EnsureStageDir" BeforeTargets="Build"

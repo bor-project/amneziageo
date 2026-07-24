@@ -27,7 +27,7 @@
 
   <Package Name="AmneziaGeo"
            Manufacturer="AmneziaGeo"
-           Version="1.0.1.0"
+           Version="$(var.Version)"
            UpgradeCode="CF01DE97-3FF5-4A9A-B106-DAD6D3D95CB5"
            Scope="perMachine"
            Compressed="yes">
@@ -37,6 +37,11 @@
          accept an equal-or-lower version (a major upgrade that removes the prior install and lays the
          new files down fresh) instead of blocking it. -->
     <MajorUpgrade AllowDowngrades="yes" />
+
+    <!-- Hides the MSI from Programs and Features. The user installs and removes through the bundle, whose
+         own ARP entry stays visible; listing both put two AmneziaGeo rows there (#210). -->
+    <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+
     <MediaTemplate EmbedCab="yes" />
 
     <!-- "Delete configuration on removal" choice (#105), passed by the Burn bundle from the BA checkbox

@@ -25,9 +25,9 @@
   wintun.dll, wstunnel.exe) currently ship x64-only - an arm64 build is wired end-to-end but is not
   runtime-correct until arm64 natives are added. x64 is the supported target today.
 
-  The bundle Version comes from -Version (the release tag), else 0.0.1.<git-commit-count>; combined
-  with the MSI MajorUpgrade/@AllowDowngrades this makes reinstall-same-code, update and downgrade all
-  work.
+  The Version comes from -Version (the release tag), else 0.0.1.<git-commit-count>, and is stamped on
+  both the bundle and the MSI; combined with the MSI MajorUpgrade/@AllowDowngrades this makes
+  reinstall-same-code, update and downgrade all work.
 
   CONFIG OVERLAY: an optional positional environment name (prod/test/dev/...) overlays
   installer.config.<name>.json onto the base config (see installer-config.ps1). installer.config.local.json
@@ -315,7 +315,7 @@ function Build-Variant {
 
     # ---- 2. build the MSI from the stage (per-arch Platform => per-arch bin\ and output name) ----
     Write-Host '== build MSI =='
-    dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:StageDir=$stage "-p:HasIcon=$hasIcon"
+    dotnet build $msiProj -c $Configuration -p:Platform=$Arch -p:Version=$version -p:StageDir=$stage "-p:HasIcon=$hasIcon"
     if ($LASTEXITCODE -ne 0) { throw "MSI build failed ($LASTEXITCODE)" }
 
     $msiBin = Join-Path (Split-Path $msiProj -Parent) (Join-Path 'bin' $Arch)

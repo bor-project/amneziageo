@@ -189,7 +189,7 @@ dotnet build amneziageo-windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.cspr
 amneziageo-windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
 ```
 
-The bundle version is `1.0.1.<git-commit-count>`, so every build is strictly newer to Burn. Combined with the MSI's `MajorUpgrade AllowDowngrades`, a same-version rebuild with different code reinstalls cleanly as an update.
+A local build is versioned `0.0.1.<git-commit-count>`, so every build is strictly newer to Burn; a release build takes its version from the tag. The same version is stamped on the MSI, which combined with its `MajorUpgrade AllowDowngrades` makes a same-version rebuild with different code reinstall cleanly as an update.
 
 ## Tech stack
 

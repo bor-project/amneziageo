@@ -51,20 +51,69 @@ internal static class AppDataRoot
 
     private static string SystemSideLocalAppData()
     {
-        var session = WTSGetActiveConsoleSessionId();
-        if (session == _systemCachedSession && _systemCached is { } cached)
+        var console = WTSGetActiveConsoleSessionId();
+        if (console == _systemCachedSession && _systemCached is { } cached)
         {
             return cached;
         }
 
-        if (InteractiveUserLocalAppData(session) is { } interactive)
+        foreach (var session in InteractiveSessions(console))
         {
-            _systemCached = interactive;
-            _systemCachedSession = session;
-            return interactive;
+            if (InteractiveUserLocalAppData(session) is { } interactive)
+            {
+                _systemCached = interactive;
+                _systemCachedSession = console;
+                return interactive;
+            }
         }
 
         return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    }
+
+    // Console seat first, then any active session: on a host worked over RDP the console seat is empty, its token
+    // query fails and the service would drop into the SYSTEM profile while the tray and UI use the user profile.
+    private static IEnumerable<uint> InteractiveSessions(uint console)
+    {
+        if (console != InvalidSession)
+        {
+            yield return console;
+        }
+
+        foreach (var session in ActiveSessions())
+        {
+            if (session != console)
+            {
+                yield return session;
+            }
+        }
+    }
+
+    private static List<uint> ActiveSessions()
+    {
+        var sessions = new List<uint>();
+        if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out var buffer, out var count))
+        {
+            return sessions;
+        }
+
+        try
+        {
+            var size = Marshal.SizeOf<WtsSessionInfo>();
+            for (var i = 0; i < count; i++)
+            {
+                var info = Marshal.PtrToStructure<WtsSessionInfo>(IntPtr.Add(buffer, i * size));
+                if (info.State == WtsActive)
+                {
+                    sessions.Add(info.SessionId);
+                }
+            }
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
+        }
+
+        return sessions;
     }
 
     private static bool IsSystemAccount()
@@ -108,12 +157,30 @@ internal static class AppDataRoot
         }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WtsSessionInfo
+    {
+        public uint SessionId;
+        public IntPtr WinStationName;
+        public int State;
+    }
+
+    // WTS_CONNECTSTATE_CLASS.WTSActive
+    private const int WtsActive = 0;
+
     [DllImport("kernel32.dll")]
     private static extern uint WTSGetActiveConsoleSessionId();
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr token);
+
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "WTSEnumerateSessionsW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSEnumerateSessions(IntPtr server, uint reserved, uint version, out IntPtr sessionInfo, out int count);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr memory);
 
     [DllImport("userenv.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]

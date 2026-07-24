@@ -319,14 +319,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Logs.SetActive(Nav == "settings" && SettingsSection == "logs" && (!IsCompact || SettingsDetailOpen));
     }
 
-    // A name is taken if any config OR profile already uses it: the agent enforces one shared namespace
-    // (AgentStatusBroker rename/copy checks configRepo.ExistsAsync || store.GetProfileAsync). Ordinal, so this
-    // is never STRICTER than the agent - a case-variant it would still reject just falls through to the server,
-    // keeping the check a safe best-effort. Call only after confirming the new name differs from the current one.
-    internal bool IsNameTaken(string name) =>
-        Config.ConfigNames.Any(n => string.Equals(n, name, StringComparison.Ordinal))
-        || Profile.Profiles.Any(b => string.Equals(b.Name, name, StringComparison.Ordinal));
-
     // Импорт брошенных драгом файлов: тип определяется по содержимому, конфиги и списки маршрутизации
     // добавляются в каталог с авто-инкрементом имени, бэкап отклоняется с подсказкой (окно импорта).
     [RelayCommand]

@@ -2,7 +2,7 @@
 <!-- SignPath artifact configuration, slug: payload.
 
      Input: a zip of the runner's to-sign/ directory, submitted BEFORE the bundle is linked:
-         msi/AmneziaGeo-1.0.1-win-<arch>.msi   the chained package (see the version note below)
+         msi/AmneziaGeo-win-<arch>.msi         the chained package (see the version note below)
          ba/**                                 the published bootstrapper application
 
      Purpose: sign the binaries we own where they actually live, inside the MSI cabinet and among the
@@ -22,12 +22,12 @@
      libSkiaSharp.dll, libHarfBuzzSharp.dll, Dia2Lib.dll, TraceReloggerLib.dll, amd64\*.dll (Microsoft),
      and, in the self-contained variants, the whole .NET runtime.
 
-     VERSION NOTE: the 1.0.1 in the MSI file name is hardcoded in the wixproj OutputName and does not
-     track the release version, which only the bundle carries. Match it literally, never by version. -->
+     VERSION NOTE: the MSI file name carries no version (only the bundle exe does), so the path below is
+     stable across releases. Match it literally, never by version. -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <zip-file>
 
-    <msi-file path="msi/AmneziaGeo-1.0.1-win-*.msi">
+    <msi-file path="msi/AmneziaGeo-win-*.msi">
       <!-- App.exe, Ui.exe and Tray.exe (the last is NativeAOT, so it has no companion dll). -->
       <pe-file path="**/AmneziaGeo*.exe" max-matches="unbounded">
         <authenticode-sign />

@@ -197,6 +197,17 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Returns whether the adapter is one of ours.
+    /// </summary>
+    public static bool IsTunnelAdapter(NetworkInterface ni)
+    {
+        return ni.Name.StartsWith("AmneziaGeo", StringComparison.OrdinalIgnoreCase)
+            || ni.Description.Contains("WireGuard", StringComparison.OrdinalIgnoreCase)
+            || ni.Description.Contains("AmneziaWG", StringComparison.OrdinalIgnoreCase)
+            || ni.Description.Contains("Wintun", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Lists connected local IPv4 subnets.
     /// </summary>
     public IReadOnlyList<string> LocalSubnets()
@@ -205,16 +216,8 @@ internal sealed partial class RouteManager
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (ni.OperationalStatus != OperationalStatus.Up
-                || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
-            {
-                continue;
-            }
-
-            // Skip our own tunnel adapter.
-            if (ni.Name.StartsWith("AmneziaGeo", StringComparison.OrdinalIgnoreCase)
-                || ni.Description.Contains("WireGuard", StringComparison.OrdinalIgnoreCase)
-                || ni.Description.Contains("AmneziaWG", StringComparison.OrdinalIgnoreCase)
-                || ni.Description.Contains("Wintun", StringComparison.OrdinalIgnoreCase))
+                || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel
+                || IsTunnelAdapter(ni))
             {
                 continue;
             }

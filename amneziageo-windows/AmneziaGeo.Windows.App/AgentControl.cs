@@ -24,7 +24,9 @@ internal sealed class AgentControl
     private volatile string? _disconnectFailDetail;
     private volatile int _retryAttempt;
     private volatile bool _awaitingRetry;
+    private volatile bool _wakePending;
     private CancellationTokenSource _change = new();
+    private CancellationTokenSource _wake = new();
 
     /// <summary>
     /// Whether the agent keeps a tunnel up.
@@ -102,6 +104,7 @@ internal sealed class AgentControl
         _disconnectFailed = false;
         _disconnectFailDetail = null;
         _retryAttempt = 0;
+        _wakePending = false;
         if (value)
         {
             _runningTarget = _target;
@@ -220,25 +223,64 @@ internal sealed class AgentControl
     {
         _retryAttempt = 0;
         _awaitingRetry = false;
+        _wakePending = false;
     }
 
     /// <summary>
-    /// Marks whether the runner is waiting out a retry backoff (vs mid-attempt).
+    /// Opens a retry backoff and returns the token that ends the wait early.
     /// </summary>
-    public void SetAwaitingRetry(bool value)
+    public CancellationToken BeginRetryWait()
     {
-        _awaitingRetry = value;
+        lock (_gate)
+        {
+            _wake = new CancellationTokenSource();
+            _awaitingRetry = true;
+            if (_wakePending)
+            {
+                _wakePending = false;
+                _wake.Cancel();
+            }
+
+            return _wake.Token;
+        }
     }
 
     /// <summary>
-    /// Signals a re-dial only while waiting out a backoff, so a network change shortens the wait without
-    /// aborting an in-flight connect attempt or tearing down a live tunnel.
+    /// Closes the retry backoff.
+    /// </summary>
+    public void EndRetryWait()
+    {
+        _awaitingRetry = false;
+    }
+
+    /// <summary>
+    /// Ends the backoff wait early on a network change. Deliberately not a change signal: a wake shortens the
+    /// wait without aborting an in-flight connect attempt, re-entering the supervisor or tearing down a tunnel.
     /// </summary>
     public void WakeIfRetrying()
     {
-        if (_running && _awaitingRetry)
+        var wake = TakeWake();
+        wake?.Cancel();
+    }
+
+    // Returns the open backoff, or null after latching the change for the next one - a network that recovers
+    // mid-attempt must still shorten the backoff that follows the failure.
+    private CancellationTokenSource? TakeWake()
+    {
+        lock (_gate)
         {
-            Signal();
+            if (!_running)
+            {
+                return null;
+            }
+
+            if (!_awaitingRetry)
+            {
+                _wakePending = true;
+                return null;
+            }
+
+            return _wake;
         }
     }
 

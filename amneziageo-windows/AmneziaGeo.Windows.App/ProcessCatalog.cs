@@ -92,6 +92,22 @@ internal static class ProcessCatalog
         return processName;
     }
 
+    /// <summary>
+    /// Returns the process id of a running service, or 0.
+    /// </summary>
+    public static uint PidOf(string serviceName)
+    {
+        foreach (var (name, _, pid) in EnumerateServices())
+        {
+            if (string.Equals(name, serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                return pid;
+            }
+        }
+
+        return 0;
+    }
+
     private static List<(string Name, string Display, uint Pid)> EnumerateServices()
     {
         var result = new List<(string, string, uint)>();

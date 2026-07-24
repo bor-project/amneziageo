@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,12 @@ internal sealed class ProfileRunner(
 
     // No-handshake/no-rx window: data-driven unreachable signal.
     private static readonly TimeSpan _noResponseWindow = TimeSpan.FromSeconds(12);
+
+    // Stop budget before the tunnel process is killed outright.
+    private static readonly TimeSpan _stopTimeout = TimeSpan.FromSeconds(15);
+
+    // Interval between re-issued stop requests.
+    private static readonly TimeSpan _stopRetry = TimeSpan.FromSeconds(1);
 
     private Profile _group = null!;
     private AppSettings _settings = new();
@@ -262,13 +269,28 @@ internal sealed class ProfileRunner(
             logger.LogWarning("connect unreachable: {Config} ({Profile}) - {Reason}; retry #{Attempt} in {Delay}s",
                 config, profile, outcome.Reason, attempt, (int)delay.TotalSeconds);
             await SetStateAsync("connecting");
-            // Only a backoff wait is interruptible by a network wake; an in-flight attempt is never aborted.
-            control.SetAwaitingRetry(true);
-            await DelayAsync(delay, ct);
-            control.SetAwaitingRetry(false);
+            await WaitRetryAsync(delay, ct);
         }
 
         return false;
+    }
+
+    // Serves the announced backoff. A network wake ends this wait and nothing else: it must not cancel the
+    // change token, or the supervisor re-enters from the top and dials again immediately (#206).
+    private async Task WaitRetryAsync(TimeSpan delay, CancellationToken ct)
+    {
+        var wake = control.BeginRetryWait();
+        try
+        {
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, wake))
+            {
+                await DelayAsync(delay, linked.Token);
+            }
+        }
+        finally
+        {
+            control.EndRetryWait();
+        }
     }
 
     // A transient failure is a network/server condition worth retrying; the rest are local/config faults that
@@ -448,7 +470,17 @@ internal sealed class ProfileRunner(
         }
 
         var outcome = await ClassifyFailureAsync(member, sawService, serverSilent, startFailed, created, started, ct);
-        Stop(member);
+        // A retryable failure keeps the service installed, so the next attempt only restarts it instead of
+        // reinstalling a fresh service on every pass (#206).
+        if (IsTransient(outcome.Reason))
+        {
+            Halt(member);
+        }
+        else
+        {
+            Stop(member);
+        }
+
         return outcome;
     }
 
@@ -556,15 +588,30 @@ internal sealed class ProfileRunner(
             return;
         }
 
-        serviceManager.StopQuiet(member);
-        WaitStopped(member);
+        StopService(member);
         serviceManager.DeleteService(member);
         reconciler.Reconcile();
     }
 
-    private void WaitStopped(string member)
+    // Stops the tunnel and leaves the service installed for the next retry.
+    private void Halt(string member)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+        if (string.IsNullOrEmpty(member))
+        {
+            return;
+        }
+
+        StopService(member);
+        reconciler.Reconcile();
+    }
+
+    // Stops the service and waits for it to die. A service still starting refuses the stop, so it is re-issued
+    // until it takes; one that outlives the budget is killed, which drops its WFP kill-switch with the process.
+    private void StopService(string member)
+    {
+        serviceManager.StopQuiet(member);
+        var deadline = DateTimeOffset.UtcNow + _stopTimeout;
+        var lastStop = DateTimeOffset.UtcNow;
         while (DateTimeOffset.UtcNow < deadline)
         {
             if (serviceManager.QueryState(member) is "STOPPED" or "ABSENT")
@@ -572,7 +619,47 @@ internal sealed class ProfileRunner(
                 return;
             }
 
+            if (DateTimeOffset.UtcNow - lastStop >= _stopRetry)
+            {
+                lastStop = DateTimeOffset.UtcNow;
+                serviceManager.StopQuiet(member);
+            }
+
             Thread.Sleep(300);
+        }
+
+        KillService(member);
+    }
+
+    private void KillService(string member)
+    {
+        var pid = serviceManager.QueryPid(member);
+        if (pid == 0)
+        {
+            logger.LogWarning("tunnel service {Member} did not stop in {Sec}s and has no process to kill", member, (int)_stopTimeout.TotalSeconds);
+            return;
+        }
+
+        try
+        {
+            using (var self = Process.GetCurrentProcess())
+            using (var process = Process.GetProcessById((int)pid))
+            {
+                // The tunnel service runs our own image; a recycled pid must not have its tree killed.
+                if (!string.Equals(process.ProcessName, self.ProcessName, StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogWarning("tunnel service {Member} pid {Pid} belongs to {Name}; not killing", member, pid, process.ProcessName);
+                    return;
+                }
+
+                logger.LogWarning("tunnel service {Member} did not stop in {Sec}s; killing pid {Pid}", member, (int)_stopTimeout.TotalSeconds, pid);
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(5000);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "could not kill tunnel service {Member} (pid {Pid})", member, pid);
         }
     }
 

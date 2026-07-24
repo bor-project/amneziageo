@@ -58,6 +58,14 @@ internal sealed class ServiceManager
     }
 
     /// <summary>
+    /// Returns the process id of the running tunnel service, or 0.
+    /// </summary>
+    public uint QueryPid(string name)
+    {
+        return ProcessCatalog.PidOf(TunnelPaths.ServiceName(name));
+    }
+
+    /// <summary>
     /// Returns the agent service state as RUNNING, STOPPED, PENDING, or ABSENT.
     /// </summary>
     public string AgentState()

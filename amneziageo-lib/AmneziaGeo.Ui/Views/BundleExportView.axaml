@@ -11,8 +11,6 @@
   </UserControl.Resources>
   <StackPanel Spacing="12">
     <TextBlock Text="{l:Tr BundleExport_Heading}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-    <TextBlock Text="{l:Tr BundleExport_PrivateKeyWarning}" Foreground="{DynamicResource AgWarnBrush}"
-               FontSize="12" TextWrapping="Wrap" />
 
     <!-- PHASE 1: selection tree. -->
     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"

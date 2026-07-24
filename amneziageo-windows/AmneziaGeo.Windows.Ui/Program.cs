@@ -1,3 +1,4 @@
+using AmneziaGeo.Dal;
 using Avalonia;
 using System.Runtime.InteropServices;
 
@@ -16,16 +17,34 @@ public static partial class Program
     {
         SetAppUserModelId();
 
+        OpenLog();
+        ClientLog.Info($"GUI starting: pid {Environment.ProcessId}, args [{string.Join(' ', args)}]");
+
         // Single-instance: a second launch surfaces the existing window, or asks it to download (--update) or
         // install (--apply) the update, then exits.
         var requestUpdate = Array.IndexOf(args, "--update") >= 0;
         var requestApply = Array.IndexOf(args, "--apply") >= 0;
         if (!SingleInstance.TryAcquire(requestUpdate, requestApply))
         {
+            ClientLog.Flush();
             return;
         }
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+
+        ClientLog.Info("GUI exited");
+        ClientLog.Flush();
+    }
+
+    // Binds the GUI to the shared log database, so a launch that never shows a window leaves a record (#209).
+    private static void OpenLog()
+    {
+        var path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AmneziaGeo",
+            "logs",
+            "log.db");
+        ClientLog.Open(path, "Ui");
     }
 
     private static void SetAppUserModelId()

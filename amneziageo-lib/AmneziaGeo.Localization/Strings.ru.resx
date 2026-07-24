@@ -145,9 +145,6 @@
   <data name="BundleExport_Heading" xml:space="preserve">
     <value>Экспорт профилей, конфигураций и списков маршрутизации</value>
   </data>
-  <data name="BundleExport_PrivateKeyWarning" xml:space="preserve">
-    <value>⚠ Экспортированный файл содержит приватные ключи конфигураций. Храните и передавайте его безопасно.</value>
-  </data>
   <data name="BundleExport_ProfilesSection" xml:space="preserve">
     <value>ПРОФИЛИ</value>
   </data>
@@ -192,9 +189,6 @@
   </data>
   <data name="BundleImport_PayloadWatermark" xml:space="preserve">
     <value>Вставьте JSON бандла (Ctrl+V) или выберите файл кнопкой «Выбрать файл…»</value>
-  </data>
-  <data name="BundleImport_SecurityWarning" xml:space="preserve">
-    <value>⚠ Импортируемый файл может содержать приватные ключи конфигураций - используйте файлы из доверенных источников.</value>
   </data>
   <data name="BundleImport_WindowTitle" xml:space="preserve">
     <value>Импорт</value>
@@ -990,6 +984,9 @@
   </data>
   <data name="MainVm_NoticeConnectFailed_NoHandshake" xml:space="preserve">
     <value>Сервер не ответил (нет рукопожатия) - недоступен или отклонил ключ.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_TransportRejected" xml:space="preserve">
+    <value>Транспорт отклонил соединение - проверьте TLS-сертификат сервера ({0}).</value>
   </data>
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>Время ожидания подключения истекло.</value>

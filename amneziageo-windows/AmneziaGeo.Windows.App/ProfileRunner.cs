@@ -489,6 +489,18 @@ internal sealed class ProfileRunner(
     // Classifies a failed connect attempt; the service's own stored reason wins over an inferred one.
     private async Task<ConnectOutcome> ClassifyFailureAsync(string member, bool sawService, bool serverSilent, bool startFailed, int created, int started, CancellationToken ct)
     {
+        var storedReason = await store.GetSettingAsync(TunnelPaths.ConnectReasonKey(member), ct);
+        var storedMessage = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(member), ct);
+        var stored = Enum.TryParse<ConnectFailureReason>(storedReason, out var parsed) ? parsed : ConnectFailureReason.Unknown;
+
+        // A carrier that refused the connection outright silences the handshake exactly like an unreachable
+        // server, so the stored reason wins - otherwise a permanent fault is retried forever.
+        if (stored == ConnectFailureReason.TransportRejected)
+        {
+            logger.LogWarning("{Member}: transport refused the connection: {Message}", member, storedMessage);
+            return new ConnectOutcome(false, stored, TrimDetail(storedMessage));
+        }
+
         if (serverSilent)
         {
             return new ConnectOutcome(false, ConnectFailureReason.NoHandshake, string.Empty);
@@ -501,16 +513,14 @@ internal sealed class ProfileRunner(
         }
 
         // Service never answered UAPI: prefer the reason it stored, else infer from the sc codes.
-        var storedReason = await store.GetSettingAsync(TunnelPaths.ConnectReasonKey(member), ct);
-        var storedMessage = await store.GetSettingAsync(TunnelPaths.ConnectMessageKey(member), ct);
         logger.LogWarning(
             "{Member}: tunnel service never responded over UAPI within {Sec}s - it likely failed to launch (sc start={Start}: {StartMsg}){Reason}",
             member, _settings.ConnectTimeoutSeconds, started, ScError(started),
             string.IsNullOrWhiteSpace(storedMessage) ? string.Empty : $"; reason: {storedMessage}");
 
-        if (Enum.TryParse<ConnectFailureReason>(storedReason, out var specific) && specific != ConnectFailureReason.Unknown)
+        if (stored != ConnectFailureReason.Unknown)
         {
-            return new ConnectOutcome(false, specific, TrimDetail(storedMessage));
+            return new ConnectOutcome(false, stored, TrimDetail(storedMessage));
         }
 
         if (startFailed)

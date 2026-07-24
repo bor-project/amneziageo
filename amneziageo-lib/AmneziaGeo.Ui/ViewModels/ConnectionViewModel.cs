@@ -548,6 +548,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             "UnderlayUnreachable" => "MainVm_NoticeConnectFailed_UnderlayUnreachable",
             "AdapterStartFailed" => "MainVm_NoticeConnectFailed_AdapterStartFailed",
             "NoHandshake" => "MainVm_NoticeConnectFailed_NoHandshake",
+            "TransportRejected" => "MainVm_NoticeConnectFailed_TransportRejected",
             "Timeout" => "MainVm_NoticeConnectFailed_Timeout",
             _ => "MainVm_NoticeConnectFailed",
         };
@@ -557,7 +558,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private static bool NoticeUsesDetail(string key)
     {
         return key is "MainVm_NoticeConnectFailed_ServiceStartFailed"
-            or "MainVm_NoticeConnectFailed_ServiceLaunchFailed";
+            or "MainVm_NoticeConnectFailed_ServiceLaunchFailed"
+            or "MainVm_NoticeConnectFailed_TransportRejected";
     }
 
     /// <summary>

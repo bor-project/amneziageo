@@ -20,10 +20,12 @@ internal static class SingleInstance
 
     /// <summary>
     /// Returns true when this is the only tray and startup should continue. Returns false when another tray
-    /// already runs (it has been signalled to open the GUI).
+    /// already runs; <paramref name="signalled"/> then tells whether it was actually nudged to open the GUI -
+    /// a tray that has not armed its wait yet cannot be, and the caller opens the GUI itself (#209).
     /// </summary>
-    public static bool TryAcquire()
+    public static bool TryAcquire(out bool signalled)
     {
+        signalled = false;
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (createdNew)
         {
@@ -35,6 +37,7 @@ internal static class SingleInstance
             using (existing)
             {
                 existing.Set();
+                signalled = true;
             }
         }
 

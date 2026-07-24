@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
+using AmneziaGeo.Dal;
+
 namespace AmneziaGeo.Windows.Tray;
 
 /// <summary>
@@ -94,9 +96,23 @@ internal static unsafe class Program
 
         Native.SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
 
+        OpenLog();
+        ClientLog.Info($"tray starting: pid {Environment.ProcessId}, args [{string.Join(' ', args)}]");
+
         // A second launch (shortcut clicked again) hands the running tray the "open GUI" nudge and exits.
-        if (!SingleInstance.TryAcquire())
+        if (!SingleInstance.TryAcquire(out var signalled))
         {
+            if (signalled)
+            {
+                ClientLog.Info($"tray already resident ({OtherTrayPids()}): activation handed over, this launch exits");
+            }
+            else
+            {
+                ClientLog.Warning($"tray already resident ({OtherTrayPids()}) but not listening: opening the GUI from this launch");
+                LaunchUi("handoff fallback");
+            }
+
+            ClientLog.Flush();
             return 0;
         }
 
@@ -156,7 +172,45 @@ internal static unsafe class Program
             Native.DestroyIcon(icon);
         }
 
+        ClientLog.Info("tray exited");
+        ClientLog.Flush();
         return 0;
+    }
+
+    // Binds the tray to the shared log database, so every launch attempt and its outcome are on the record (#209).
+    private static void OpenLog()
+    {
+        var path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AmneziaGeo",
+            "logs",
+            "log.db");
+        ClientLog.Open(path, "Tray");
+    }
+
+    // Process ids of the other trays in this session, for the activation handoff record.
+    private static string OtherTrayPids()
+    {
+        try
+        {
+            var pids = new List<int>();
+            foreach (var process in Process.GetProcessesByName("AmneziaGeo.Windows.Tray"))
+            {
+                using (process)
+                {
+                    if (process.Id != Environment.ProcessId)
+                    {
+                        pids.Add(process.Id);
+                    }
+                }
+            }
+
+            return pids.Count == 0 ? "pid unknown" : "pid " + string.Join(", ", pids);
+        }
+        catch (Exception)
+        {
+            return "pid unknown";
+        }
     }
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
@@ -169,7 +223,7 @@ internal static unsafe class Program
                 var ev = (uint)(lParam & 0xFFFF);
                 if (ev == Native.WM_LBUTTONUP)
                 {
-                    LaunchUi();
+                    LaunchUi("tray click");
                 }
                 else if (ev == Native.WM_RBUTTONUP)
                 {
@@ -189,7 +243,7 @@ internal static unsafe class Program
                             LaunchInstall();
                             break;
                         default:
-                            LaunchUi();
+                            LaunchUi("balloon click");
                             break;
                     }
                 }
@@ -258,7 +312,7 @@ internal static unsafe class Program
 
             if (msg == Native.WM_OPENUI)
             {
-                LaunchUi();
+                LaunchUi("second launch");
                 return 0;
             }
 
@@ -282,9 +336,10 @@ internal static unsafe class Program
                 return 0;
             }
         }
-        catch
+        catch (Exception ex)
         {
             // A message handler must never throw across the native boundary.
+            ClientLog.Error($"tray message {msg} failed", ex);
         }
 
         return Native.DefWindowProcW(hWnd, msg, wParam, lParam);
@@ -295,7 +350,7 @@ internal static unsafe class Program
         switch (id)
         {
             case Native.ID_OPEN:
-                LaunchUi();
+                LaunchUi("menu open");
                 break;
             case Native.ID_CONNECT:
                 AgentLink.SendConnect();
@@ -539,7 +594,7 @@ internal static unsafe class Program
             }
             else
             {
-                LaunchUi();
+                LaunchUi("post-update relaunch");
             }
 
             return;
@@ -549,7 +604,11 @@ internal static unsafe class Program
         // (--autostart) otherwise stays windowless, resident icon only.
         if (_showConsole || (!autoDial && !_autostart))
         {
-            LaunchUi();
+            LaunchUi("cold launch");
+        }
+        else
+        {
+            ClientLog.Info($"cold launch stays windowless: autostart {_autostart}, auto-connect {autoDial}");
         }
     }
 
@@ -634,13 +693,13 @@ internal static unsafe class Program
     // it completes.
     private static void LaunchDownload()
     {
-        LaunchUi("--update");
+        LaunchUi("update download", "--update");
     }
 
     // Installs the already-downloaded setup in the GUI process (verify + launch, windowless).
     private static void LaunchInstall()
     {
-        LaunchUi("--apply");
+        LaunchUi("update install", "--apply");
     }
 
     // Reads the post-update origin marker (settings / none) without clearing it, so the UI can also consume it
@@ -917,11 +976,13 @@ internal static unsafe class Program
         return 1;
     }
 
-    private static void LaunchUi(string? arg = null)
+    // Starts the GUI process; reason names what asked for it, so the journal ties a click to its outcome (#209).
+    private static void LaunchUi(string reason, string? arg = null)
     {
+        var exe = Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.Windows.Ui.exe");
+        var mode = string.IsNullOrEmpty(arg) ? reason : $"{reason}, {arg}";
         try
         {
-            var exe = Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.Windows.Ui.exe");
             var psi = new ProcessStartInfo(exe)
             {
                 UseShellExecute = false,
@@ -940,10 +1001,14 @@ internal static unsafe class Program
                 Native.AllowSetForegroundWindow(Native.ASFW_ANY);
             }
 
-            Process.Start(psi);
+            using var started = Process.Start(psi);
+            ClientLog.Info(started is null
+                ? $"GUI launch ({mode}) returned no process: {exe}"
+                : $"GUI launched ({mode}): pid {started.Id}");
         }
-        catch
+        catch (Exception ex)
         {
+            ClientLog.Error($"GUI launch ({mode}) failed: {exe}", ex);
         }
     }
 

@@ -21,13 +21,15 @@ internal static partial class ForegroundWindow
     /// </summary>
     public static void Raise(Window window)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
+        Raise(window.TryGetPlatformHandle()?.Handle ?? 0);
+    }
 
-        var handle = window.TryGetPlatformHandle()?.Handle ?? 0;
-        if (handle == 0)
+    /// <summary>
+    /// Same, for a window owned by another process (the activation watchdog, #209).
+    /// </summary>
+    public static void Raise(nint handle)
+    {
+        if (!OperatingSystem.IsWindows() || handle == 0)
         {
             return;
         }

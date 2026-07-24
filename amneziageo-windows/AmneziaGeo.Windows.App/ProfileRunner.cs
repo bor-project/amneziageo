@@ -90,8 +90,9 @@ internal sealed class ProfileRunner(
 
     private async Task<Profile?> ResolveAsync(Profile initial, CancellationToken ct)
     {
-        // Latch the running target so a new selection doesn't switch until reconnect.
-        var name = (control.Running ? control.RunningTarget : control.Target) ?? control.Target ?? initial.Name;
+        // Latch the running target so a new selection doesn't switch until reconnect; teardown follows the same
+        // latch, otherwise a disconnect after a mid-session switch stops the service of the wrong config.
+        var name = control.RunningTarget ?? control.Target ?? initial.Name;
         var profile = await store.GetProfileAsync(name, ct);
         if (profile is not null)
         {
@@ -381,6 +382,7 @@ internal sealed class ProfileRunner(
         }
 
         control.ClearDisconnectFail();
+        control.ClearRunningTarget();
         await SetStateAsync("disconnected");
     }
 

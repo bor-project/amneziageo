@@ -132,6 +132,14 @@ internal sealed class AgentControl
     }
 
     /// <summary>
+    /// Drops the running binding after a clean teardown.
+    /// </summary>
+    public void ClearRunningTarget()
+    {
+        _runningTarget = null;
+    }
+
+    /// <summary>
     /// Follows a profile rename in the live binding without switching the tunnel, so the supervisor keeps
     /// resolving the running profile - a stale target reads as a broken binding on the next re-dial.
     /// </summary>

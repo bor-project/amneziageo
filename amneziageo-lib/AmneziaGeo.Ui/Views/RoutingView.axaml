@@ -17,10 +17,11 @@
     <StreamGeometry x:Key="AgPencilGeometry">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
     <StreamGeometry x:Key="AgDropGeometry">M2,12H4V17H20V12H22V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V12M12,15L7,10H10V4H14V10H17L12,15Z</StreamGeometry>
   </UserControl.Resources>
-  <Grid RowDefinitions="Auto,Auto,*">
+  <!-- Content column capped and left-aligned so fields never stretch across a wide pane (finding #5). -->
+  <Grid RowDefinitions="Auto,Auto,*" MaxWidth="880" HorizontalAlignment="Left">
 
     <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. -->
-    <controls:SectionMenu Grid.Row="0" Command="{Binding SelectRoutingSectionCommand}"
+    <controls:SegmentedSelector Grid.Row="0" Command="{Binding SelectRoutingSectionCommand}" IsCompact="{Binding IsCompact}"
                           Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
                           Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
                           Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />

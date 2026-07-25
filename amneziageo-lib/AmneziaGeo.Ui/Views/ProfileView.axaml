@@ -8,10 +8,11 @@
              x:Class="AmneziaGeo.Ui.Views.ProfileView"
              x:CompileBindings="True"
              x:DataType="vm:ProfileViewModel">
-  <StackPanel Spacing="14">
+  <!-- Content column capped and left-aligned so fields never stretch across a wide pane (finding #5). -->
+  <StackPanel Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
 
     <!-- Section menu: Profile / Import / Export. -->
-    <controls:SectionMenu Command="{Binding SelectProfileSectionCommand}"
+    <controls:SegmentedSelector Command="{Binding SelectProfileSectionCommand}" IsCompact="{Binding IsCompact}"
                           Item1Text="{l:Tr Main_ProfileTab}" Item1Param="profile" Item1Active="{Binding SegProfileActive}"
                           Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
                           Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" />

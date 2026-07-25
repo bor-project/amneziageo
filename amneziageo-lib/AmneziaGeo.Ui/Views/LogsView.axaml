@@ -85,13 +85,9 @@
             </StackPanel>
 
             <!-- routes: on/off (no level). -->
-            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsAgentLog}">
-              <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,12,0">
-                <TextBlock Text="{l:Tr Main_RouteLogTitle}" FontSize="13.5" />
-                <TextBlock Text="{l:Tr Main_RouteLogHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-              </StackPanel>
-              <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" />
-            </Grid>
+            <controls:SettingSwitchRow IsVisible="{Binding !IsAgentLog}"
+                Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
+                IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
           </Panel>
 
           <Border Height="1" Background="{DynamicResource AgBorderBrush}" Opacity="0.6" />

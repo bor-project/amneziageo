@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
-             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.RoutingEditorView"
              x:CompileBindings="True"
@@ -14,21 +14,9 @@
     <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
             CornerRadius="12" Padding="16" Background="Transparent">
       <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-        <!-- Title left; global-proxy flag right. Compact drops the flag to its own row under the title. -->
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-          <TextBlock Grid.Column="0" Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15"
-                     TextWrapping="Wrap" VerticalAlignment="Center"
-                     Grid.ColumnSpan="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
-          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                      ToolTip.Tip="{l:Tr Main_GlobalProxyHint}"
-                      Grid.Row="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                      Grid.Column="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                      HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
-            <TextBlock Text="{l:Tr Main_GlobalProxyTitle}" FontSize="12.5" Classes="muted" VerticalAlignment="Center" />
-            <ToggleSwitch VerticalAlignment="Center" MinWidth="0"
-                          IsChecked="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).RoutingSettings.UseGlobalProxy, Mode=TwoWay}" />
-          </StackPanel>
-        </Grid>
+        <!-- Card title. The global-proxy switch lives in the traffic card below as a full-width setting row. -->
+        <TextBlock Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15"
+                   TextWrapping="Wrap" VerticalAlignment="Center" />
 
         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
           <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
@@ -44,41 +32,15 @@
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
 
-        <!-- Add an entry by address (geo / domain / cidr) or per-application. The method segment mirrors the
-             Logs view/settings toggle: left-aligned when wide, stretched full-width when compact. -->
+        <!-- Add an entry by address (geo / domain / cidr) or per-application. One content-width segment at
+             every window width - never stretched (finding #1). -->
         <StackPanel Spacing="6">
 
-          <!-- Wide: method segment left-aligned, capped. -->
-          <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
-                  CornerRadius="9" Padding="3" MaxWidth="360" HorizontalAlignment="Left"
-                  IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-            <UniformGrid Columns="2">
-              <Button Classes="seg" Classes.active="{Binding IsAddressMethod}" Command="{Binding SelectAddMethodCommand}"
-                      CommandParameter="address" HorizontalAlignment="Stretch" Padding="20,6">
-                <TextBlock Text="{l:Tr Main_AddByAddressTab}" HorizontalAlignment="Center" />
-              </Button>
-              <Button Classes="seg" Classes.active="{Binding IsAppMethod}" Command="{Binding SelectAddMethodCommand}"
-                      CommandParameter="app" HorizontalAlignment="Stretch" Padding="20,6">
-                <TextBlock Text="{l:Tr Main_AddByAppTab}" HorizontalAlignment="Center" />
-              </Button>
-            </UniformGrid>
-          </Border>
-
-          <!-- Compact: method segment stretches full width. -->
-          <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
-                  CornerRadius="9" Padding="3"
-                  IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-            <UniformGrid Columns="2">
-              <Button Classes="seg" Classes.active="{Binding IsAddressMethod}" Command="{Binding SelectAddMethodCommand}"
-                      CommandParameter="address" HorizontalAlignment="Stretch" Padding="20,6">
-                <TextBlock Text="{l:Tr Main_AddByAddressTab}" HorizontalAlignment="Center" />
-              </Button>
-              <Button Classes="seg" Classes.active="{Binding IsAppMethod}" Command="{Binding SelectAddMethodCommand}"
-                      CommandParameter="app" HorizontalAlignment="Stretch" Padding="20,6">
-                <TextBlock Text="{l:Tr Main_AddByAppTab}" HorizontalAlignment="Center" />
-              </Button>
-            </UniformGrid>
-          </Border>
+          <controls:SegmentedSelector Label="{l:Tr Main_AddMethodLabel}"
+              Command="{Binding SelectAddMethodCommand}"
+              IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
+              Item1Text="{l:Tr Main_AddByAddressTab}" Item1Param="address" Item1Active="{Binding IsAddressMethod}"
+              Item2Text="{l:Tr Main_AddByAppTab}" Item2Param="app" Item2Active="{Binding IsAppMethod}" />
 
           <!-- Address entry: geo category / domain / cidr. -->
           <StackPanel Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsAddressMethod}">
@@ -183,21 +145,12 @@
 
         <!-- Role segment [Прокси | Директ | Блок]: which bucket the add rows target and the list below shows. -->
         <StackPanel Spacing="6">
-          <Border Background="{DynamicResource AgInsetBrush}"
-                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                  CornerRadius="9" Padding="3">
-            <UniformGrid Columns="3">
-              <Button Classes="seg" Classes.active="{Binding IsProxyRole}" Content="{l:Tr Main_RoleProxy}"
-                      Command="{Binding SelectRoleCommand}" CommandParameter="proxy"
-                      HorizontalAlignment="Stretch" Padding="12,6" />
-              <Button Classes="seg" Classes.active="{Binding IsDirectRole}" Content="{l:Tr Main_RoleDirect}"
-                      Command="{Binding SelectRoleCommand}" CommandParameter="direct"
-                      HorizontalAlignment="Stretch" Padding="12,6" />
-              <Button Classes="seg" Classes.active="{Binding IsBlockRole}" Content="{l:Tr Main_RoleBlock}"
-                      Command="{Binding SelectRoleCommand}" CommandParameter="block"
-                      HorizontalAlignment="Stretch" Padding="12,6" />
-            </UniformGrid>
-          </Border>
+          <controls:SegmentedSelector Label="{l:Tr Main_RoleLabel}"
+              Command="{Binding SelectRoleCommand}"
+              IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
+              Item1Text="{l:Tr Main_RoleProxy}" Item1Param="proxy" Item1Active="{Binding IsProxyRole}"
+              Item2Text="{l:Tr Main_RoleDirect}" Item2Param="direct" Item2Active="{Binding IsDirectRole}"
+              Item3Text="{l:Tr Main_RoleBlock}" Item3Param="block" Item3Active="{Binding IsBlockRole}" />
           <!-- Role hint left; a blue link (Direct only) fills the Direct bucket with the machine's local subnets. -->
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Grid.Column="0" Text="{Binding RoleHint}" Classes="muted" FontSize="11.5"
@@ -256,23 +209,14 @@
       <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
         <TextBlock Text="{l:Tr Main_RoutingOptionsLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
 
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-            <TextBlock Text="{l:Tr Main_AllUdpTitle}" FontSize="13.5" />
-            <TextBlock Text="{l:Tr Main_AllUdpHint}"
-                       Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-          </StackPanel>
-          <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding AllUdp, Mode=TwoWay}" />
-        </Grid>
+        <controls:SettingSwitchRow Label="{l:Tr Main_GlobalProxyTitle}" Description="{l:Tr Main_GlobalProxyHint}"
+                                   IsChecked="{Binding UseGlobalProxy, Mode=TwoWay}" />
 
-        <Grid ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" MaxWidth="430" HorizontalAlignment="Left">
-            <TextBlock Text="{l:Tr Main_UseIpv6Title}" FontSize="13.5" />
-            <TextBlock Text="{l:Tr Main_UseIpv6Hint}"
-                       Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-          </StackPanel>
-          <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
-        </Grid>
+        <controls:SettingSwitchRow Label="{l:Tr Main_AllUdpTitle}" Description="{l:Tr Main_AllUdpHint}"
+                                   IsChecked="{Binding AllUdp, Mode=TwoWay}" />
+
+        <controls:SettingSwitchRow Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
+                                   IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
 
         <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                    IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

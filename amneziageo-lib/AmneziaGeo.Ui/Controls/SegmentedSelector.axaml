@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AmneziaGeo.Ui.Controls.SegmentedSelector"
+             x:Name="Root">
+  <!-- Choose one of 2-4 mutually exclusive options. Shared command + per-item parameter; the visible
+       item count sets the columns. Track stays content-width, left, capped - never full-width. -->
+  <StackPanel Spacing="8">
+
+    <!-- Field-style caption above the control: without one a segment reads as action buttons. -->
+    <TextBlock Classes="label" Text="{Binding #Root.Label}"
+               IsVisible="{Binding #Root.Label, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+    <Border Classes="segtrack" Classes.compact="{Binding #Root.IsCompact}"
+            HorizontalAlignment="{Binding #Root.Align}">
+      <UniformGrid Rows="1">
+        <Button Classes="seg" Content="{Binding #Root.Item1Text}"
+                Classes.active="{Binding #Root.Item1Active}"
+                IsEnabled="{Binding #Root.Item1Enabled}"
+                Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item1Param}"
+                IsVisible="{Binding #Root.Item1Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <Button Classes="seg" Content="{Binding #Root.Item2Text}"
+                Classes.active="{Binding #Root.Item2Active}"
+                IsEnabled="{Binding #Root.Item2Enabled}"
+                Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item2Param}"
+                IsVisible="{Binding #Root.Item2Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <Button Classes="seg" Content="{Binding #Root.Item3Text}"
+                Classes.active="{Binding #Root.Item3Active}"
+                IsEnabled="{Binding #Root.Item3Enabled}"
+                Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item3Param}"
+                IsVisible="{Binding #Root.Item3Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <Button Classes="seg" Content="{Binding #Root.Item4Text}"
+                Classes.active="{Binding #Root.Item4Active}"
+                IsEnabled="{Binding #Root.Item4Enabled}"
+                Command="{Binding #Root.Command}" CommandParameter="{Binding #Root.Item4Param}"
+                IsVisible="{Binding #Root.Item4Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      </UniformGrid>
+    </Border>
+
+    <!-- Explanation under the control; changes with the selection. -->
+    <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{Binding #Root.Hint}"
+               IsVisible="{Binding #Root.Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+  </StackPanel>
+</UserControl>

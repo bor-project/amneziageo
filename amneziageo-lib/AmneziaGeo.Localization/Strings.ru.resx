@@ -628,6 +628,12 @@
   <data name="Main_AddByAppTab" xml:space="preserve">
     <value>Приложение</value>
   </data>
+  <data name="Main_AddMethodLabel" xml:space="preserve">
+    <value>ТИП ЗАПИСИ</value>
+  </data>
+  <data name="Main_RoleLabel" xml:space="preserve">
+    <value>ЧТО ДЕЛАТЬ С ТРАФИКОМ</value>
+  </data>
   <data name="Main_PerAppExperimentalWarning" xml:space="preserve">
     <value>Маршрутизация по приложениям — экспериментальная функция и может работать нестабильно.</value>
   </data>

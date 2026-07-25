@@ -1,0 +1,20 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AmneziaGeo.Ui.Controls.SettingSwitchRow"
+             x:Name="Root">
+  <!-- On/off for one setting: label left, switch right, description under the label. The whole label
+       row is the hit target - never a switch alone in a card header. -->
+  <StackPanel Spacing="4">
+    <Grid ColumnDefinitions="*,Auto" MinHeight="40">
+      <TextBlock Grid.Column="0" Text="{Binding #Root.Label}" FontSize="13.5"
+                 Foreground="{DynamicResource AgFgBrush}" VerticalAlignment="Center"
+                 TextWrapping="Wrap" Background="Transparent" Cursor="Hand" Tapped="OnLabelTapped" />
+      <ToggleSwitch Grid.Column="1" VerticalAlignment="Center" MinWidth="0"
+                    IsChecked="{Binding #Root.IsChecked, Mode=TwoWay}"
+                    IsEnabled="{Binding #Root.SwitchEnabled}" />
+    </Grid>
+    <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5"
+               TextWrapping="Wrap" MaxWidth="430" HorizontalAlignment="Left"
+               IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+  </StackPanel>
+</UserControl>

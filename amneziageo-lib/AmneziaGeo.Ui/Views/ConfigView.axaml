@@ -18,11 +18,12 @@
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
     <StreamGeometry x:Key="AgDropGeometry">M2,12H4V17H20V12H22V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V12M12,15L7,10H10V4H14V10H17L12,15Z</StreamGeometry>
   </UserControl.Resources>
-  <!-- Row 3 stars to fill the pane with the import config-text box. -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*">
+  <!-- Row 3 stars to fill the pane with the import config-text box. Column capped left so fields do not
+       stretch across a wide pane (finding #5). -->
+  <Grid RowDefinitions="Auto,Auto,Auto,*" MaxWidth="880" HorizontalAlignment="Left">
 
     <!-- Section menu: Settings / Import / Export. Settings and Export disable while no config exists. -->
-    <controls:SectionMenu Grid.Row="0" Command="{Binding SelectConfigSectionCommand}"
+    <controls:SegmentedSelector Grid.Row="0" Command="{Binding SelectConfigSectionCommand}" IsCompact="{Binding IsCompact}"
                           Item1Text="{l:Tr Main_SettingsTab}" Item1Param="config" Item1Active="{Binding SegConfigActive}" Item1Enabled="{Binding CanConfigSection}"
                           Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
                           Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />

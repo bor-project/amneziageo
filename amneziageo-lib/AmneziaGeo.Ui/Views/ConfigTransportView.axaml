@@ -13,13 +13,8 @@
   <StackPanel Spacing="14">
     <TextBlock Text="{l:Tr Main_ProxyWebSocketLabel}" FontWeight="SemiBold" FontSize="15" />
 
-    <StackPanel Spacing="6">
-      <StackPanel Orientation="Horizontal" Spacing="10">
-        <ToggleSwitch IsChecked="{Binding UseWebSocket}" OnContent="" OffContent="" VerticalAlignment="Center" />
-        <TextBlock Classes="label" Text="{l:Tr Main_UseWebSocketToggle}" VerticalAlignment="Center" />
-      </StackPanel>
-      <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_ProxyWebSocketHint}" />
-    </StackPanel>
+    <controls:SettingSwitchRow Label="{l:Tr Main_UseWebSocketToggle}" Description="{l:Tr Main_ProxyWebSocketHint}"
+                               IsChecked="{Binding UseWebSocket, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
     <!-- Fixed-width blocks so a narrow card wraps them to the next line instead of clipping the fields. -->
     <WrapPanel IsVisible="{Binding UseWebSocket}" MaxWidth="980" HorizontalAlignment="Left">

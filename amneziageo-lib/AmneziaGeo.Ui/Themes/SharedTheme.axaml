@@ -46,24 +46,53 @@
     </Style>
 
     <!-- Shared text-button base: 11.5px medium label, centered. -->
-    <Style Selector="Button.seg, Button.softbtn, Button.danger">
+    <Style Selector="Button.softbtn, Button.danger">
       <Setter Property="FontSize" Value="11.5" />
       <Setter Property="FontWeight" Value="Medium" />
       <Setter Property="Padding" Value="6" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
-    <!-- Sidebar nav segment. -->
+
+    <!-- Segmented-control button: shared by SegmentedSelector and the inline export/logs segments.
+         One selected look app-wide so no segment reads as an action button. box-sizing parity: the
+         inactive segment carries a transparent 1px border so it keeps the active segment's height. -->
     <Style Selector="Button.seg">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="Transparent" />
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="16,0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.seg.active">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
       <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <!-- Selected segment lift: soft shadow that separates it from the track. -->
+    <Style Selector="Button.seg.active /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="BoxShadow" Value="0 1 2 0 #1A101828" />
+    </Style>
+
+    <!-- Segmented-control track: content-width, left, capped - never full-width. The 900px-class touch
+         step is folded onto the app's compact signal: 44px height when narrow, 36px otherwise. -->
+    <Style Selector="Border.segtrack">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="3" />
+      <Setter Property="MaxWidth" Value="480" />
+    </Style>
+    <Style Selector="Border.segtrack.compact Button.seg">
+      <Setter Property="MinHeight" Value="44" />
     </Style>
 
     <Style Selector="Button.softbtn">

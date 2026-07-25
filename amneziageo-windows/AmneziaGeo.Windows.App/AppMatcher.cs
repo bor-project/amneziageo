@@ -1,29 +1,17 @@
-using System.Net;
-using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using System.Linq;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Per-app split tunneling by owning process.
+/// Per-app match engine: resolves whether a PID belongs to the app rules (path/dir/name/service).
+/// The flow tracker uses it to steer matched apps' remotes.
 /// </summary>
-internal sealed class AppRouteWatcher
+internal sealed class AppMatcher
 {
-    // Poll ~1s: routes within a TCP retry.
-    private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
-
     // Cap the ancestry walk.
     private const int MaxAncestryDepth = 8;
 
-    // LISTEN state has no remote peer.
-    private const uint MibTcpStateListen = 2;
-    private const int AfInet = 2;
-    private const int AfInet6 = 23;
-    private const int TcpTableOwnerPidAll = 5;
-
-    private readonly DomainTracker _tracker;
     private readonly ILogger _logger;
 
     // Parsed matchers. pkg= not matched in v1.
@@ -31,9 +19,6 @@ internal sealed class AppRouteWatcher
     private readonly List<string> _dirs = [];
     private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _services = [];
-
-    // Log each remote once per session.
-    private readonly HashSet<string> _loggedRemotes = new(StringComparer.Ordinal);
 
     // Stop the ancestry walk at generic hosts so an app rule stays scoped to its own tree.
     private static readonly HashSet<string> _ancestryStops = new(StringComparer.OrdinalIgnoreCase)
@@ -45,9 +30,8 @@ internal sealed class AppRouteWatcher
     /// <summary>
     /// ctor
     /// </summary>
-    public AppRouteWatcher(DomainTracker tracker, IReadOnlyList<string> matchers, ILogger logger)
+    public AppMatcher(IReadOnlyList<string> matchers, ILogger logger)
     {
-        _tracker = tracker;
         _logger = logger;
 
         foreach (var raw in matchers)
@@ -86,7 +70,7 @@ internal sealed class AppRouteWatcher
                     break;
                 default:
                     // pkg= (UWP) and unknown kinds: not matched by image path.
-                    _logger.LogInformation("app route watcher: matcher kind '{Kind}' is not supported yet; ignored", kind);
+                    _logger.LogInformation("app matcher: matcher kind '{Kind}' is not supported yet; ignored", kind);
                     break;
             }
         }
@@ -101,91 +85,6 @@ internal sealed class AppRouteWatcher
     /// Has any matcher.
     /// </summary>
     public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0;
-
-    /// <summary>
-    /// Poll and route matched apps' remotes.
-    /// </summary>
-    public async Task RunAsync(CancellationToken ct)
-    {
-        _logger.LogInformation(
-            "app route watcher started: paths={Paths} dirs={Dirs} names={Names} services={Services}",
-            _paths.Count, _dirs.Count, _names.Count, _services.Count);
-
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                try
-                {
-                    Tick();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "app route watcher tick failed");
-                }
-
-                await Task.Delay(_pollInterval, ct).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Tunnel torn down.
-        }
-    }
-
-    private void Tick()
-    {
-        // Re-resolve service PIDs each tick (services restart).
-        var servicePids = ResolveServicePids();
-
-        // One process-tree snapshot per tick for ancestry matching.
-        var tree = SnapshotProcessTree();
-
-        // Per-tick pid -> (path, creation) cache; per-tick lifetime avoids cross-tick PID-reuse staleness.
-        var procCache = new Dictionary<uint, (string? Path, long Created)>();
-
-        // Per-tick decision cache.
-        var decision = new Dictionary<uint, bool>();
-        var matchedIps = new List<string>();
-
-        foreach (var (remote, pid) in EnumerateTcpConnections().Concat(EnumerateTcp6Connections()))
-        {
-            if (!decision.TryGetValue(pid, out var matched))
-            {
-                matched = servicePids.Contains(pid) || MatchesByImageOrAncestor(pid, tree, procCache);
-                decision[pid] = matched;
-            }
-
-            if (matched)
-            {
-                var key = remote.ToString();
-                matchedIps.Add(key);
-
-                // Teach the tracker which domain this app used; routes the domain's known siblings now.
-                _tracker.NoteAppRemote(key);
-
-                // Log each new matched remote once.
-                if (_loggedRemotes.Count >= 65536)
-                {
-                    _loggedRemotes.Clear();
-                }
-
-                if (_loggedRemotes.Add(key))
-                {
-                    _logger.LogTrace("tcp request -> {Remote} (pid {Pid})", remote, pid);
-                    if (RouteLog.Enabled)
-                    {
-                        RouteLog.Note($"tcp request -> {remote} (pid {pid})");
-                    }
-                }
-            }
-        }
-
-        if (matchedIps.Count > 0)
-        {
-            _tracker.UpdateAppIps(matchedIps);
-        }
-    }
 
     // Match the owning image, or any ancestor's. WebView2/Electron/UWP apps run their networking in a
     // shared child process whose own image sits outside the app; the rule matches up the parent chain.
@@ -220,7 +119,7 @@ internal sealed class AppRouteWatcher
         return false;
     }
 
-    // pid -> (parent pid, image name), one snapshot per tick.
+    // pid -> (parent pid, image name), one snapshot per resolve.
     private static Dictionary<uint, (uint Parent, string Name)> SnapshotProcessTree()
     {
         var map = new Dictionary<uint, (uint Parent, string Name)>();
@@ -315,150 +214,6 @@ internal sealed class AppRouteWatcher
         return pids;
     }
 
-    // --- Win32 connection enumeration ---------------------------------------------------------------
-
-    private static IEnumerable<(IPAddress Remote, uint Pid)> EnumerateTcpConnections()
-    {
-        var size = 0;
-        GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
-        if (size <= 0)
-        {
-            yield break;
-        }
-
-        var buffer = Marshal.AllocHGlobal(size);
-        try
-        {
-            if (GetExtendedTcpTable(buffer, ref size, false, AfInet, TcpTableOwnerPidAll, 0) != 0)
-            {
-                yield break;
-            }
-
-            var count = Marshal.ReadInt32(buffer);
-            var rowPtr = buffer + 4;
-            var rowSize = Marshal.SizeOf<MibTcpRowOwnerPid>();
-            for (var i = 0; i < count; i++)
-            {
-                var row = Marshal.PtrToStructure<MibTcpRowOwnerPid>(rowPtr);
-                rowPtr += rowSize;
-
-                if (row.dwState == MibTcpStateListen || row.dwRemoteAddr == 0)
-                {
-                    continue; // no remote peer to route
-                }
-
-                // dwRemoteAddr is a network-byte-order DWORD; its in-memory bytes are the address octets.
-                var remote = new IPAddress(BitConverter.GetBytes(row.dwRemoteAddr));
-                if (!IsTunnelableRemote(remote))
-                {
-                    // Skip loopback/LAN: routing 127.0.0.1 into the tunnel broke the agent's DNS and app IPC.
-                    continue;
-                }
-
-                yield return (remote, row.dwOwningPid);
-            }
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
-    }
-
-    private static IEnumerable<(IPAddress Remote, uint Pid)> EnumerateTcp6Connections()
-    {
-        var size = 0;
-        GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet6, TcpTableOwnerPidAll, 0);
-        if (size <= 0)
-        {
-            yield break;
-        }
-
-        var buffer = Marshal.AllocHGlobal(size);
-        try
-        {
-            if (GetExtendedTcpTable(buffer, ref size, false, AfInet6, TcpTableOwnerPidAll, 0) != 0)
-            {
-                yield break;
-            }
-
-            var count = Marshal.ReadInt32(buffer);
-            var rowPtr = buffer + 4;
-            var rowSize = Marshal.SizeOf<MibTcp6RowOwnerPid>();
-            for (var i = 0; i < count; i++)
-            {
-                var row = Marshal.PtrToStructure<MibTcp6RowOwnerPid>(rowPtr);
-                rowPtr += rowSize;
-
-                if (row.dwState == MibTcpStateListen)
-                {
-                    continue; // no remote peer to route
-                }
-
-                var remote = new IPAddress(row.ucRemoteAddr);
-                if (remote.Equals(IPAddress.IPv6Any))
-                {
-                    continue; // no remote peer
-                }
-
-                if (!IsTunnelableRemote(remote))
-                {
-                    continue; // loopback/ULA/link-local/multicast
-                }
-
-                yield return (remote, row.dwOwningPid);
-            }
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
-    }
-
-    // Keep only public routable remotes; v6 arms for a future pass.
-    internal static bool IsTunnelableRemote(IPAddress addr)
-    {
-        if (addr.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var b = addr.GetAddressBytes(); // network order: b[0] is the high octet
-            return b[0] switch
-            {
-                0 => false,                                  // 0.0.0.0/8   "this network"
-                10 => false,                                 // 10.0.0.0/8  private
-                127 => false,                                // 127.0.0.0/8 loopback
-                100 when b[1] is >= 64 and <= 127 => false,  // 100.64.0.0/10 CGNAT
-                169 when b[1] == 254 => false,               // 169.254.0.0/16 link-local
-                172 when b[1] is >= 16 and <= 31 => false,   // 172.16.0.0/12 private
-                192 when b[1] == 168 => false,               // 192.168.0.0/16 private
-                >= 224 => false,                             // 224.0.0.0/4 multicast + 240/4 reserved + 255.255.255.255
-                _ => true,
-            };
-        }
-
-        // IPv6: skip loopback (::1), unspecified (::), link-local (fe80::/10), ULA (fc00::/7), multicast (ff00::/8).
-        if (IPAddress.IsLoopback(addr) || addr.Equals(IPAddress.IPv6Any))
-        {
-            return false;
-        }
-
-        var v6 = addr.GetAddressBytes();
-        if (v6[0] == 0xff)
-        {
-            return false; // multicast ff00::/8
-        }
-
-        if (v6[0] == 0xfe && (v6[1] & 0xc0) == 0x80)
-        {
-            return false; // link-local fe80::/10
-        }
-
-        if ((v6[0] & 0xfe) == 0xfc)
-        {
-            return false; // ULA fc00::/7
-        }
-
-        return true;
-    }
-
     // Image path + creation time from one handle; creation time validates PID identity across the tree.
     private static (string? Path, long Created) QueryProc(uint pid)
     {
@@ -535,32 +290,6 @@ internal sealed class AppRouteWatcher
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct MibTcpRowOwnerPid
-    {
-        public uint dwState;
-        public uint dwLocalAddr;
-        public uint dwLocalPort;
-        public uint dwRemoteAddr;
-        public uint dwRemotePort;
-        public uint dwOwningPid;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MibTcp6RowOwnerPid
-    {
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
-        public byte[] ucLocalAddr;
-        public uint dwLocalScopeId;
-        public uint dwLocalPort;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
-        public byte[] ucRemoteAddr;
-        public uint dwRemoteScopeId;
-        public uint dwRemotePort;
-        public uint dwState;
-        public uint dwOwningPid;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     private struct ServiceStatusProcess
     {
         public uint dwServiceType;
@@ -596,9 +325,6 @@ internal sealed class AppRouteWatcher
     private const int ScStatusProcessInfo = 0;
     private const uint Th32csSnapProcess = 0x00000002;
     private static readonly IntPtr InvalidHandleValue = new(-1);
-
-    [DllImport("iphlpapi.dll", SetLastError = true)]
-    private static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int pdwSize, bool bOrder, int ulAf, int tableClass, int reserved);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);

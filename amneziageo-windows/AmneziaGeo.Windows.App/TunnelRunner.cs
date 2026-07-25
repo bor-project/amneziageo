@@ -437,23 +437,22 @@ internal sealed class TunnelRunner(
             // (DnsProxy.SeedRoutesAsync is kept for easy revert but intentionally not invoked.)
         }
 
-        // App route watcher pins matched apps' TCP remote IPs into the tracker.
-        AppRouteWatcher? watcher = null;
+        // App matcher: resolves whether a PID belongs to the app rules; the flow tracker steers matched apps.
+        AppMatcher? matcher = null;
         if (trackApps && tracker is not null)
         {
-            var candidate = new AppRouteWatcher(tracker, apps, loggerFactory.CreateLogger<AppRouteWatcher>());
+            var candidate = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>());
             if (candidate.HasMatchers)
             {
-                watcher = candidate;
-                _ = Task.Run(() => watcher.RunAsync(sessionCts.Token));
+                matcher = candidate;
             }
         }
 
-        // UDP tracker: routes UDP by signaling (not DNS); not a using to avoid racing Task.Run.
-        if (tracker is not null && (watcher is not null || allUdp))
+        // Flow tracker: routes matched apps' TCP+UDP remotes by ETW signaling (not DNS); not a using to avoid racing Task.Run.
+        if (tracker is not null && (matcher is not null || allUdp))
         {
-            var udpTracker = new UdpFlowTracker(watcher, tracker, allUdp, endpoint, loggerFactory.CreateLogger<UdpFlowTracker>());
-            _ = Task.Run(() => udpTracker.RunAsync(sessionCts.Token));
+            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>());
+            _ = Task.Run(() => flowTracker.RunAsync(sessionCts.Token));
         }
 
         // Start wstunnel last so a failure can't orphan it.

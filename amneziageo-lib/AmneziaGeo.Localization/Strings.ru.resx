@@ -622,6 +622,15 @@
   <data name="Main_PerAppRoutingLabel" xml:space="preserve">
     <value>МАРШРУТИЗАЦИЯ СЕТЕВЫХ ЗАПРОСОВ ПРИЛОЖЕНИЯ</value>
   </data>
+  <data name="Main_AddByAddressTab" xml:space="preserve">
+    <value>Адрес</value>
+  </data>
+  <data name="Main_AddByAppTab" xml:space="preserve">
+    <value>Приложение</value>
+  </data>
+  <data name="Main_PerAppExperimentalWarning" xml:space="preserve">
+    <value>Маршрутизация по приложениям — экспериментальная функция и может работать нестабильно.</value>
+  </data>
   <data name="Main_ProfileAddButton" xml:space="preserve">
     <value>Профиль</value>
   </data>

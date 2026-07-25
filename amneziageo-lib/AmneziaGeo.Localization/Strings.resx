@@ -622,6 +622,15 @@
   <data name="Main_PerAppRoutingLabel" xml:space="preserve">
     <value>ROUTING OF AN APP'S NETWORK REQUESTS</value>
   </data>
+  <data name="Main_AddByAddressTab" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="Main_AddByAppTab" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="Main_PerAppExperimentalWarning" xml:space="preserve">
+    <value>Per-application routing is experimental and may be unstable.</value>
+  </data>
   <data name="Main_ProfileAddButton" xml:space="preserve">
     <value>Profile</value>
   </data>

@@ -44,45 +44,79 @@
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
 
-        <!-- Per-app tunneling. Hidden unless %LOCALAPPDATA%\AmneziaGeo\DEBUG exists: the feature is unstable
-             and stays reachable only for testing. -->
-        <StackPanel Spacing="6" IsVisible="{Binding ShowPerAppRouting}">
-          <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
+        <!-- Add an entry by address (geo / domain / cidr) or per-application. The method segment mirrors the
+             Logs view/settings toggle: left-aligned when wide, stretched full-width when compact. -->
+        <StackPanel Spacing="6">
 
-          <!-- Wide: source picker, app input, and add button inline. -->
-          <Grid ColumnDefinitions="Auto,*,Auto"
-                IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-            <Button Grid.Column="0" Classes="softbtn" Width="130" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
-              <Button.Flyout>
-                <MenuFlyout>
-                  <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
-                  <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
-                  <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
-                  <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
-                </MenuFlyout>
-              </Button.Flyout>
-            </Button>
-            <AutoCompleteBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
-                             Watermark="{Binding AppWatermark}"
-                             Text="{Binding AppInput, Mode=TwoWay}"
-                             SelectedItem="{Binding AppSelected, Mode=TwoWay}"
-                             ItemsSource="{Binding AppSuggestions}"
-                             FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                             IsEnabled="{Binding IsAppPickerActive}" />
-            <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddAppCommand}"
-                    IsEnabled="{Binding IsAppPickerActive}">
-              <StackPanel Orientation="Horizontal" Spacing="4">
-                <TextBlock Text="+" />
-                <TextBlock Text="{l:Tr Main_AddButton}" />
+          <!-- Wide: method segment left-aligned, capped. -->
+          <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
+                  CornerRadius="9" Padding="3" MaxWidth="360" HorizontalAlignment="Left"
+                  IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+            <UniformGrid Columns="2">
+              <Button Classes="seg" Classes.active="{Binding IsAddressMethod}" Command="{Binding SelectAddMethodCommand}"
+                      CommandParameter="address" HorizontalAlignment="Stretch" Padding="20,6">
+                <TextBlock Text="{l:Tr Main_AddByAddressTab}" HorizontalAlignment="Center" />
+              </Button>
+              <Button Classes="seg" Classes.active="{Binding IsAppMethod}" Command="{Binding SelectAddMethodCommand}"
+                      CommandParameter="app" HorizontalAlignment="Stretch" Padding="20,6">
+                <TextBlock Text="{l:Tr Main_AddByAppTab}" HorizontalAlignment="Center" />
+              </Button>
+            </UniformGrid>
+          </Border>
+
+          <!-- Compact: method segment stretches full width. -->
+          <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
+                  CornerRadius="9" Padding="3"
+                  IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+            <UniformGrid Columns="2">
+              <Button Classes="seg" Classes.active="{Binding IsAddressMethod}" Command="{Binding SelectAddMethodCommand}"
+                      CommandParameter="address" HorizontalAlignment="Stretch" Padding="20,6">
+                <TextBlock Text="{l:Tr Main_AddByAddressTab}" HorizontalAlignment="Center" />
+              </Button>
+              <Button Classes="seg" Classes.active="{Binding IsAppMethod}" Command="{Binding SelectAddMethodCommand}"
+                      CommandParameter="app" HorizontalAlignment="Stretch" Padding="20,6">
+                <TextBlock Text="{l:Tr Main_AddByAppTab}" HorizontalAlignment="Center" />
+              </Button>
+            </UniformGrid>
+          </Border>
+
+          <!-- Address entry: geo category / domain / cidr. -->
+          <StackPanel Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsAddressMethod}">
+            <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
+            <Grid ColumnDefinitions="*,Auto">
+              <AutoCompleteBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
+                               Watermark="{l:Tr Main_AddEntryWatermark}"
+                               Text="{Binding RuleInput, Mode=TwoWay}"
+                               ItemsSource="{Binding GeoSuggestions}"
+                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
+              <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Text="+" />
+                  <TextBlock Text="{l:Tr Main_AddButton}" />
+                </StackPanel>
+              </Button>
+            </Grid>
+          </StackPanel>
+
+          <!-- Per-application entry (experimental). -->
+          <StackPanel Spacing="8" Margin="0,4,0,0" IsVisible="{Binding IsAppMethod}">
+            <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
+
+            <!-- Experimental-feature warning. -->
+            <Border Background="{DynamicResource AgInsetBrush}"
+                    BorderBrush="{DynamicResource AgWarnBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="10,8">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Top" Margin="0,4,0,0" />
+                <TextBlock Text="{l:Tr Main_PerAppExperimentalWarning}" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
               </StackPanel>
-            </Button>
-          </Grid>
+            </Border>
 
-          <!-- Compact: source picker and add button split the row evenly; app input drops to its own row. -->
-          <StackPanel Spacing="8"
-                      IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-              <Button Grid.Column="0" Classes="softbtn" HorizontalAlignment="Stretch" Content="{l:Tr Main_SourceDropdown}">
+            <!-- Wide: source picker, app input, and add button inline. -->
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+              <Button Grid.Column="0" Classes="softbtn" Width="130" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
                 <Button.Flyout>
                   <MenuFlyout>
                     <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
@@ -92,40 +126,53 @@
                   </MenuFlyout>
                 </Button.Flyout>
               </Button>
-              <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddAppCommand}"
+              <AutoCompleteBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
+                               Watermark="{Binding AppWatermark}"
+                               Text="{Binding AppInput, Mode=TwoWay}"
+                               SelectedItem="{Binding AppSelected, Mode=TwoWay}"
+                               ItemsSource="{Binding AppSuggestions}"
+                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
+                               IsEnabled="{Binding IsAppPickerActive}" />
+              <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddAppCommand}"
                       IsEnabled="{Binding IsAppPickerActive}">
-                <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="+" />
                   <TextBlock Text="{l:Tr Main_AddButton}" />
                 </StackPanel>
               </Button>
             </Grid>
-            <AutoCompleteBox Classes="field"
-                             Watermark="{Binding AppWatermark}"
-                             Text="{Binding AppInput, Mode=TwoWay}"
-                             SelectedItem="{Binding AppSelected, Mode=TwoWay}"
-                             ItemsSource="{Binding AppSuggestions}"
-                             FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                             IsEnabled="{Binding IsAppPickerActive}" />
-          </StackPanel>
-        </StackPanel>
 
-        <!-- Add a geo category / domain / cidr entry. -->
-        <StackPanel Spacing="6">
-          <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
-          <Grid ColumnDefinitions="*,Auto">
-            <AutoCompleteBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
-                             Watermark="{l:Tr Main_AddEntryWatermark}"
-                             Text="{Binding RuleInput, Mode=TwoWay}"
-                             ItemsSource="{Binding GeoSuggestions}"
-                             FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
-            <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}">
-              <StackPanel Orientation="Horizontal" Spacing="4">
-                <TextBlock Text="+" />
-                <TextBlock Text="{l:Tr Main_AddButton}" />
-              </StackPanel>
-            </Button>
-          </Grid>
+            <!-- Compact: source picker and add button split the row evenly; app input drops to its own row. -->
+            <StackPanel Spacing="8"
+                        IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button Grid.Column="0" Classes="softbtn" HorizontalAlignment="Stretch" Content="{l:Tr Main_SourceDropdown}">
+                  <Button.Flyout>
+                    <MenuFlyout>
+                      <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
+                      <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
+                      <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
+                      <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+                <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddAppCommand}"
+                        IsEnabled="{Binding IsAppPickerActive}">
+                  <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                    <TextBlock Text="+" />
+                    <TextBlock Text="{l:Tr Main_AddButton}" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+              <AutoCompleteBox Classes="field"
+                               Watermark="{Binding AppWatermark}"
+                               Text="{Binding AppInput, Mode=TwoWay}"
+                               SelectedItem="{Binding AppSelected, Mode=TwoWay}"
+                               ItemsSource="{Binding AppSuggestions}"
+                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
+                               IsEnabled="{Binding IsAppPickerActive}" />
+            </StackPanel>
+          </StackPanel>
         </StackPanel>
 
         <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"

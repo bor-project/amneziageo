@@ -75,6 +75,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [ObservableProperty]
     private AppCandidate? _appSelected;
 
+    // Add-entry method segment: "address" (geo / domain / cidr) or "app" (per-application, experimental).
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAddressMethod))]
+    [NotifyPropertyChangedFor(nameof(IsAppMethod))]
+    private string _addMethod = "address";
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -236,9 +242,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsAppPickerActive => AppMode is "running" or "installed";
 
     /// <summary>
-    /// Whether the per-app add-row is shown; the DEBUG marker gates it while the feature is unstable.
+    /// True when the add-entry segment targets address entries (geo / domain / cidr).
     /// </summary>
-    public bool ShowPerAppRouting => AppFeatures.PerAppRouting;
+    public bool IsAddressMethod => AddMethod == "address";
+
+    /// <summary>
+    /// True when the add-entry segment targets per-application entries (experimental).
+    /// </summary>
+    public bool IsAppMethod => AddMethod == "app";
 
     /// <summary>
     /// Watermark for the app add-row input, reflects the selected source mode.
@@ -591,6 +602,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private void SelectRole(string role)
     {
         SelectedRole = role;
+    }
+
+    // Switches the add-entry method segment between address and per-application entries.
+    [RelayCommand]
+    private void SelectAddMethod(string method)
+    {
+        AddMethod = method;
     }
 
     /// <summary>

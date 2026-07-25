@@ -92,7 +92,7 @@ internal sealed partial class RouteManager
         RouteLog.Write("endpoint-excl", $"{endpoint}/32", $"{gateway} if{interfaceIndex}", ok);
         if (ok)
         {
-            UpdateState(name, endpoint.ToString(), add: true);
+            PersistStateAdds(TunnelPaths.RouteStateFile(name), [endpoint.ToString()]);
             return true;
         }
 
@@ -140,6 +140,7 @@ internal sealed partial class RouteManager
     public bool AddLanExclusions(string name, bool dualStack, IReadOnlyList<string> extraCidrs)
     {
         var any = false;
+        var added = new List<string>();
 
         // IPv4 bypass CIDRs routed out the physical gateway.
         foreach (var cidr in extraCidrs)
@@ -165,7 +166,7 @@ internal sealed partial class RouteManager
             RouteLog.Write("lan-excl", $"{dest}/{prefix}", $"{gateway} if{interfaceIndex}", ok);
             if (ok)
             {
-                UpdateStateFile(TunnelPaths.LanStateFile(name), $"{dest}/{prefix}", add: true);
+                added.Add($"{dest}/{prefix}");
                 any = true;
             }
         }
@@ -187,12 +188,13 @@ internal sealed partial class RouteManager
                 RouteLog.Write("lan-excl6", $"{network}/{prefix}", $"if{best.InterfaceIndex}", ok);
                 if (ok)
                 {
-                    UpdateStateFile(TunnelPaths.LanStateFile(name), $"{network}/{prefix}", add: true);
+                    added.Add($"{network}/{prefix}");
                     any = true;
                 }
             }
         }
 
+        PersistStateAdds(TunnelPaths.LanStateFile(name), added);
         return any;
     }
 
@@ -222,7 +224,7 @@ internal sealed partial class RouteManager
                 continue;
             }
 
-            foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+            foreach (var ua in UnicastAddresses(ni))
             {
                 if (ua.Address.AddressFamily != AddressFamily.InterNetwork)
                 {
@@ -472,7 +474,7 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
-    /// Removes host routes for many IPs with one forwarding-table read.
+    /// Removes host routes for many IPs.
     /// </summary>
     public void RemoveTunnelRoutes(IReadOnlyCollection<IPAddress> ips, uint tunnelInterfaceIndex)
     {
@@ -483,8 +485,7 @@ internal sealed partial class RouteManager
 
         RouteLog.Write("tunnel -hosts", $"{ips.Count} route(s)", $"if{tunnelInterfaceIndex}", ok: true);
 
-        // Fast-path each remembered route; only routes we did not install this session fall through to the scan.
-        var v4 = new HashSet<uint>();
+        // Fast-path each remembered route; routes we did not install this session fall through to a targeted lookup.
         foreach (var ip in ips)
         {
             if (ip.AddressFamily == AddressFamily.InterNetworkV6)
@@ -494,30 +495,10 @@ internal sealed partial class RouteManager
                     DeleteManagedV6Routes(ip, 128);
                 }
             }
-            else if (!TryDeleteRemembered(ip, 32, tunnelInterfaceIndex))
+            else if (ip.AddressFamily == AddressFamily.InterNetwork && !TryDeleteRemembered(ip, 32, tunnelInterfaceIndex))
             {
-                v4.Add(ToRouteAddress(ip));
+                DeleteManagedRoutes(ip, tunnelInterfaceIndex, 32);
             }
-        }
-
-        if (v4.Count == 0)
-        {
-            return;
-        }
-
-        // One table read, then delete every matching managed route on this interface.
-        foreach (var row in ReadForwardTable(AfInet))
-        {
-            if (row.DestinationPrefix.Prefix.si_family != AfInet
-                || row.Protocol != MibIpProtoNetMgmt
-                || row.InterfaceIndex != tunnelInterfaceIndex
-                || !v4.Contains(row.DestinationPrefix.Prefix.sin_addr))
-            {
-                continue;
-            }
-
-            var copy = row;
-            DeleteIpForwardEntry2(ref copy);
         }
     }
 
@@ -658,72 +639,57 @@ internal sealed partial class RouteManager
 
     private static void DeleteManagedV6Routes(IPAddress destination, byte prefixLength)
     {
-        foreach (var row in ReadForwardTable(AfInet6))
+        var dest = new SOCKADDR_INET { si_family = AfInet6 };
+        WriteV6(ref dest, destination);
+        var best = new MIB_IPFORWARD_ROW2();
+        var bestSource = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, ref dest, 0, ref best, ref bestSource) != NoError)
         {
-            if (row.DestinationPrefix.Prefix.si_family != AfInet6
-                || row.Protocol != MibIpProtoNetMgmt
-                || row.DestinationPrefix.PrefixLength != prefixLength
-                || !V6Equals(row.DestinationPrefix.Prefix, destination))
-            {
-                continue;
-            }
-
-            var copy = row;
-            DeleteIpForwardEntry2(ref copy);
+            return;
         }
+
+        if (best.DestinationPrefix.Prefix.si_family != AfInet6
+            || best.Protocol != MibIpProtoNetMgmt
+            || best.DestinationPrefix.PrefixLength != prefixLength
+            || !V6Equals(best.DestinationPrefix.Prefix, destination))
+        {
+            return;
+        }
+
+        DeleteIpForwardEntry2(ref best);
     }
 
+    // Deletes our managed route to a destination via one GetBestRoute2 lookup, avoiding the GetIpForwardTable2 table
+    // read that stalls in session 0. The Protocol==NetMgmt and destination match keep it off non-managed routes.
     private static void DeleteManagedRoutes(IPAddress destination, uint? ifIndex, byte? prefixLength = null)
     {
-        var dest = ToRouteAddress(destination);
-        foreach (var row in ReadForwardTable(AfInet))
+        var target = ToRouteAddress(destination);
+        var dest = new SOCKADDR_INET { si_family = AfInet, sin_addr = target };
+        var best = new MIB_IPFORWARD_ROW2();
+        var bestSource = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, ref dest, 0, ref best, ref bestSource) != NoError)
         {
-            if (row.DestinationPrefix.Prefix.si_family != AfInet
-                || row.DestinationPrefix.Prefix.sin_addr != dest
-                || row.Protocol != MibIpProtoNetMgmt)
-            {
-                continue;
-            }
-
-            if (ifIndex is not null && row.InterfaceIndex != ifIndex.Value)
-            {
-                continue;
-            }
-
-            if (prefixLength is not null && row.DestinationPrefix.PrefixLength != prefixLength.Value)
-            {
-                continue;
-            }
-
-            var copy = row;
-            DeleteIpForwardEntry2(ref copy);
-        }
-    }
-
-    private static List<MIB_IPFORWARD_ROW2> ReadForwardTable(ushort family)
-    {
-        var rows = new List<MIB_IPFORWARD_ROW2>();
-        if (GetIpForwardTable2(family, out var table) != NoError || table == IntPtr.Zero)
-        {
-            return rows;
+            return;
         }
 
-        try
+        if (best.DestinationPrefix.Prefix.si_family != AfInet
+            || best.DestinationPrefix.Prefix.sin_addr != target
+            || best.Protocol != MibIpProtoNetMgmt)
         {
-            // MIB_IPFORWARD_TABLE2: ULONG NumEntries; then (8-aligned) the MIB_IPFORWARD_ROW2 array.
-            var count = Marshal.ReadInt32(table);
-            var stride = Marshal.SizeOf<MIB_IPFORWARD_ROW2>();
-            for (var i = 0; i < count; i++)
-            {
-                rows.Add(Marshal.PtrToStructure<MIB_IPFORWARD_ROW2>(table + 8 + (i * stride)));
-            }
-        }
-        finally
-        {
-            FreeMibTable(table);
+            return;
         }
 
-        return rows;
+        if (ifIndex is not null && best.InterfaceIndex != ifIndex.Value)
+        {
+            return;
+        }
+
+        if (prefixLength is not null && best.DestinationPrefix.PrefixLength != prefixLength.Value)
+        {
+            return;
+        }
+
+        DeleteIpForwardEntry2(ref best);
     }
 
     private static int? Ipv4Index(NetworkInterface nic)
@@ -738,32 +704,38 @@ internal sealed partial class RouteManager
         }
     }
 
+    // Adapter unicast addresses, empty when the adapter can't be queried.
+    private static IReadOnlyList<UnicastIPAddressInformation> UnicastAddresses(NetworkInterface nic)
+    {
+        try
+        {
+            return [.. nic.GetIPProperties().UnicastAddresses];
+        }
+        catch (NetworkInformationException)
+        {
+            return [];
+        }
+    }
+
+    // Physical next hop for a destination read straight from the OS routing table in one native lookup, skipping
+    // the GetAllNetworkInterfaces + per-adapter GetIPProperties enumeration that stalls on adapter-heavy hosts.
     private static (IPAddress? Gateway, uint InterfaceIndex) FindPhysicalGateway(IPAddress endpoint)
     {
-        var destination = ToRouteAddress(endpoint);
-        if (GetBestInterface(destination, out var interfaceIndex) != 0)
+        var dest = new SOCKADDR_INET { si_family = AfInet, sin_addr = ToRouteAddress(endpoint) };
+        var best = new MIB_IPFORWARD_ROW2();
+        var bestSource = new SOCKADDR_INET();
+        if (GetBestRoute2(IntPtr.Zero, 0, IntPtr.Zero, ref dest, 0, ref best, ref bestSource) != NoError)
         {
             return (null, 0);
         }
 
-        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        // NextHop 0.0.0.0 = on-link: the destination is directly reachable and needs no gateway route.
+        if (best.NextHop.si_family != AfInet || best.NextHop.sin_addr == 0)
         {
-            if (Ipv4Index(nic) != interfaceIndex)
-            {
-                continue;
-            }
-
-            var properties = nic.GetIPProperties();
-            foreach (var gateway in properties.GatewayAddresses)
-            {
-                if (gateway.Address.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    return (gateway.Address, interfaceIndex);
-                }
-            }
+            return (null, best.InterfaceIndex);
         }
 
-        return (null, 0);
+        return (new IPAddress(BitConverter.GetBytes(best.NextHop.sin_addr)), best.InterfaceIndex);
     }
 
     private static void UpdateState(string name, string endpoint, bool add)
@@ -816,6 +788,49 @@ internal sealed partial class RouteManager
         return saved;
     }
 
+    private const int StateWriteBudgetMs = 2000;
+
+    // Persists added exclusions to the state file off the connect thread, blocking it only a short bound.
+    private static void PersistStateAdds(string path, IReadOnlyCollection<string> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        var write = Task.Run(() => AddEntriesToStateFile(path, entries));
+        if (write.Wait(StateWriteBudgetMs))
+        {
+            return;
+        }
+
+        _ = write.ContinueWith(
+            faulted => RouteLog.Write("state-add", path, "deferred persist", ok: false, faulted.Exception!.GetBaseException().Message),
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+    }
+
+    private static void AddEntriesToStateFile(string path, IReadOnlyCollection<string> entries)
+    {
+        var saved = ReadStateFile(path);
+        var changed = false;
+        foreach (var entry in entries)
+        {
+            if (!saved.Contains(entry))
+            {
+                saved.Add(entry);
+                changed = true;
+            }
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllLines(path, saved);
+    }
+
     private static void TryDelete(string path)
     {
         if (File.Exists(path))
@@ -866,9 +881,6 @@ internal sealed partial class RouteManager
     }
 
     [LibraryImport("iphlpapi.dll")]
-    private static partial uint GetBestInterface(uint destAddr, out uint bestIfIndex);
-
-    [LibraryImport("iphlpapi.dll")]
     private static partial uint GetBestRoute2(IntPtr interfaceLuid, uint interfaceIndex, IntPtr sourceAddress, ref SOCKADDR_INET destinationAddress, uint addressSortOptions, ref MIB_IPFORWARD_ROW2 bestRoute, ref SOCKADDR_INET bestSourceAddress);
 
     [LibraryImport("iphlpapi.dll")]
@@ -879,10 +891,4 @@ internal sealed partial class RouteManager
 
     [LibraryImport("iphlpapi.dll")]
     private static partial uint DeleteIpForwardEntry2(ref MIB_IPFORWARD_ROW2 row);
-
-    [LibraryImport("iphlpapi.dll")]
-    private static partial uint GetIpForwardTable2(ushort family, out IntPtr table);
-
-    [LibraryImport("iphlpapi.dll")]
-    private static partial void FreeMibTable(IntPtr table);
 }

@@ -634,9 +634,6 @@
   <data name="Main_RoleLabel" xml:space="preserve">
     <value>ЧТО ДЕЛАТЬ С ТРАФИКОМ</value>
   </data>
-  <data name="Main_PerAppExperimentalWarning" xml:space="preserve">
-    <value>Маршрутизация по приложениям — экспериментальная функция и может работать нестабильно.</value>
-  </data>
   <data name="Main_ProfileAddButton" xml:space="preserve">
     <value>Профиль</value>
   </data>

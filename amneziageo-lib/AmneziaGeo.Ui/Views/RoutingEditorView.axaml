@@ -60,20 +60,9 @@
             </Grid>
           </StackPanel>
 
-          <!-- Per-application entry (experimental). -->
+          <!-- Per-application entry. -->
           <StackPanel Spacing="8" Margin="0,4,0,0" IsVisible="{Binding IsAppMethod}">
             <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
-
-            <!-- Experimental-feature warning. -->
-            <Border Background="{DynamicResource AgInsetBrush}"
-                    BorderBrush="{DynamicResource AgWarnBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="10,8">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Top" Margin="0,4,0,0" />
-                <TextBlock Text="{l:Tr Main_PerAppExperimentalWarning}" FontSize="12" TextWrapping="Wrap"
-                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-              </StackPanel>
-            </Border>
 
             <!-- Wide: source picker, app input, and add button inline. -->
             <Grid ColumnDefinitions="Auto,*,Auto"

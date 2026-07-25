@@ -634,9 +634,6 @@
   <data name="Main_RoleLabel" xml:space="preserve">
     <value>WHAT TO DO WITH TRAFFIC</value>
   </data>
-  <data name="Main_PerAppExperimentalWarning" xml:space="preserve">
-    <value>Per-application routing is experimental and may be unstable.</value>
-  </data>
   <data name="Main_ProfileAddButton" xml:space="preserve">
     <value>Profile</value>
   </data>

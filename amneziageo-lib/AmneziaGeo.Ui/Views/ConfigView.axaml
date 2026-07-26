@@ -42,6 +42,7 @@
                   Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}">
         <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" IsVisible="{Binding IsCompact}" />
         <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w160}"
                   ItemsSource="{Binding ConfigCatalogueOptions}"
                   SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
           <controls:AdaptiveComboBox.ItemTemplate>

@@ -838,6 +838,9 @@
   <data name="Profile_NoConfig" xml:space="preserve">
     <value>no configuration</value>
   </data>
+  <data name="Profile_ConfigRequired" xml:space="preserve">
+    <value>Select a configuration - the profile will not be saved without one.</value>
+  </data>
   <data name="Profile_SwitchAction" xml:space="preserve">
     <value>Switch</value>
   </data>

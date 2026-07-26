@@ -423,6 +423,12 @@ internal sealed partial class ProfileItemViewModel : ViewModelBase, IEditScope
     public async Task<bool> CommitAsync()
     {
         var configName = CurrentConfigName();
+        if (configName.Length == 0)
+        {
+            EditStatus = Loc.Instance.Get("Profile_ConfigRequired");
+            return false;
+        }
+
         if (!string.Equals(configName, _baseConfigName, StringComparison.Ordinal))
         {
             Config = configName;

@@ -34,7 +34,7 @@
         <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
           <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" IsVisible="{Binding IsCompact}" />
           <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w160}"
                     ItemsSource="{Binding ProfileOptions}"
                     SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
             <controls:AdaptiveComboBox.ItemTemplate>
@@ -119,6 +119,12 @@
                 <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                           ItemsSource="{Binding ConfigOptions}"
                           SelectedItem="{Binding SelectedConfig, Mode=TwoWay}">
+                  <!-- «- не выбрано -» недоступно: конфигурация у профиля обязательна. -->
+                  <controls:AdaptiveComboBox.Styles>
+                    <Style Selector="ComboBoxItem" x:DataType="vm:ConfigChoice">
+                      <Setter Property="IsEnabled" Value="{Binding IsReal}" />
+                    </Style>
+                  </controls:AdaptiveComboBox.Styles>
                   <controls:AdaptiveComboBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:ConfigChoice">
                       <TextBlock Text="{Binding Name}" />

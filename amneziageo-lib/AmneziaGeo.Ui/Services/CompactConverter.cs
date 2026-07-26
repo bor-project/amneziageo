@@ -35,6 +35,7 @@ internal sealed class CompactConverter : IValueConverter
             "w100" => compact ? double.NaN : 100d,
             "w110" => compact ? double.NaN : 110d,
             "w130" => compact ? double.NaN : 130d,
+            "w160" => compact ? double.NaN : 160d,
             "w170" => compact ? double.NaN : 170d,
             "w180" => compact ? double.NaN : 180d,
             // Width caps that lift in compact so the segment track / catalogue combo fills the row.

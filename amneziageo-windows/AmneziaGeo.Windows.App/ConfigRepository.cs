@@ -1,4 +1,5 @@
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -310,11 +311,11 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
     private static void EnsureValidConfig(string text)
     {
-        if (string.IsNullOrWhiteSpace(text)
-            || !text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
-            || !text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(text))
         {
             throw new InvalidOperationException("not a valid WireGuard/AmneziaWG configuration");
         }
+
+        WgConfigValidator.Validate(text);
     }
 }

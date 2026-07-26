@@ -134,6 +134,7 @@ internal sealed class DomainTracker(
     /// </summary>
     public void Add(string domain, IReadOnlyList<string> ips, bool persist = true)
     {
+        var addedCidrs = new List<string>();
         lock (_lock)
         {
             var index = EnsureIndex();
@@ -149,7 +150,6 @@ internal sealed class DomainTracker(
             _current.TryGetValue(key, out var old);
             old ??= [];
 
-            var addedCidrs = new List<string>();
             var added = new HashSet<string>();
             foreach (var ip in effective)
             {
@@ -188,9 +188,6 @@ internal sealed class DomainTracker(
                 RouteLog.Note($"resolve {key} -> [{string.Join(",", union)}] (+{addedCidrs.Count} route(s))");
             }
 
-            // Advertise only the newly added IPs incrementally so route-before-answer stays O(new).
-            uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
-
             // Persist the domain's full current set. Skipped when hydrating (persist:false) - it already came
             // from the DB, so re-writing the same rows would be pointless churn.
             if (persist)
@@ -200,6 +197,10 @@ internal sealed class DomainTracker(
                 EnqueuePersist(() => store.SaveDomainResolutionAsync(tunnelName, new DomainResolution(key, snapshot), listId));
             }
         }
+
+        // Advertise off-lock: the UAPI pipe round-trip must not block concurrent resolves or serve-known lookups.
+        // Route-before-answer still holds - the caller waits here before serving, just not while holding _lock.
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
     }
 
     /// <summary>
@@ -212,6 +213,7 @@ internal sealed class DomainTracker(
     /// </summary>
     public void Replace(string domain, IReadOnlyList<string> ips)
     {
+        var addedCidrs = new List<string>();
         lock (_lock)
         {
             var index = EnsureIndex();
@@ -234,7 +236,8 @@ internal sealed class DomainTracker(
             var answerHasV4 = effective.Any(ip => !ip.Contains(':'));
             var answerHasV6 = effective.Any(ip => ip.Contains(':'));
 
-            // Install routes for genuinely new IPs; keep only those whose /32 actually installed.
+            // Install routes for genuinely new IPs; keep only those whose /32 actually installed. Collect the
+            // added CIDRs so the engine gets only the delta, not a rebuild of the whole set.
             var next = new HashSet<string>();
             foreach (var ip in effective)
             {
@@ -244,9 +247,11 @@ internal sealed class DomainTracker(
                     continue;
                 }
 
-                if (routes.AddTunnelRoute(IPAddress.Parse(ip), index.Value))
+                var parsed = IPAddress.Parse(ip);
+                if (routes.AddTunnelRoute(parsed, index.Value))
                 {
                     next.Add(ip);
+                    addedCidrs.Add(Cidr(parsed));
                 }
             }
 
@@ -282,9 +287,6 @@ internal sealed class DomainTracker(
                 routes.RemoveTunnelRoutes(stale, index.Value);
             }
 
-            // One authoritative allowed-ips rebuild reflecting both the additions and the evictions.
-            uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
-
             logger.LogInformation("re-resolved {Domain} -> {Ips} (evicted {Evicted})", key, string.Join(", ", next), stale?.Count ?? 0);
             if (RouteLog.Enabled)
             {
@@ -296,6 +298,10 @@ internal sealed class DomainTracker(
             var listId = _activeListId;
             EnqueuePersist(() => store.SaveDomainResolutionAsync(tunnelName, new DomainResolution(key, snapshot), listId));
         }
+
+        // Advertise the delta off-lock (O(new)); evictions already dropped their OS routes, and the pipe round-trip
+        // must not block concurrent resolves / serve-known held under _lock.
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
     }
 
     /// <summary>
@@ -342,8 +348,8 @@ internal sealed class DomainTracker(
             var index = EnsureIndex();
             if (index is not null && stale is not null)
             {
+                // Drop only the stale OS routes (O(stale)); the engine allowed-ips is left as a harmless superset.
                 routes.RemoveTunnelRoutes(stale, index.Value);
-                uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
             }
 
             logger.LogInformation("untracked {Domain}: left routing lists (-{Count} route(s))", key, stale?.Count ?? 0);
@@ -519,10 +525,16 @@ internal sealed class DomainTracker(
     /// </summary>
     public bool UpdateAppIps(IReadOnlyList<string> ips)
     {
+        List<string> addedCidrs;
+        bool allHandled;
         lock (_lock)
         {
-            return RouteAppIpsLocked(ips);
+            (allHandled, addedCidrs) = RouteAppIpsLocked(ips);
         }
+
+        // Advertise off-lock so the pipe round-trip never blocks the DNS resolve / serve-known path on _lock.
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        return allHandled;
     }
 
     // Admits an app destination to the tunnel. With a geosite configured, a destination we know a domain for passes
@@ -535,17 +547,17 @@ internal sealed class DomainTracker(
         || !_ipToNames.TryGetValue(ip, out var names)
         || names.Any(m.IsTunneled);
 
-    // Installs /32(/128) routes + allowed-ips for app IPs; assumes _lock held. Shared by the watcher path and
-    // the app-domain promotion path.
-    private bool RouteAppIpsLocked(IReadOnlyList<string> ips)
+    // Installs /32(/128) routes for app IPs; assumes _lock held. Returns the CIDRs whose routes were installed so
+    // the caller advertises them to the engine OFF-lock, plus whether every input IP was handled (else caller retries).
+    private (bool AllHandled, List<string> AddedCidrs) RouteAppIpsLocked(IReadOnlyList<string> ips)
     {
+        var addedCidrs = new List<string>();
         var index = EnsureIndex();
         if (index is null)
         {
-            return false; // adapter not up; caller retries
+            return (false, addedCidrs); // adapter not up; caller retries
         }
 
-        var addedCidrs = new List<string>();
         var allHandled = true;
         foreach (var ip in ips)
         {
@@ -573,7 +585,7 @@ internal sealed class DomainTracker(
                 break;
             }
 
-            // Advertise the IP only once its /32 route is installed, so routes and allowed-ips stay in sync.
+            // Record the IP only once its /32 route is installed, so routes and allowed-ips stay in sync.
             var parsed = IPAddress.Parse(ip);
             var ok = routes.AddTunnelRoute(parsed, index.Value);
             logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
@@ -588,9 +600,7 @@ internal sealed class DomainTracker(
             }
         }
 
-        // Advertise new IPs incrementally; the set only grows within a session.
-        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
-        return allHandled;
+        return (allHandled, addedCidrs);
     }
 
     /// <summary>
@@ -601,6 +611,7 @@ internal sealed class DomainTracker(
     public void NoteResolution(string name, IReadOnlyList<string> ips)
     {
         var key = name.TrimEnd('.').ToLowerInvariant();
+        var addedCidrs = new List<string>();
         lock (_lock)
         {
             // Bound the hint cache; wholesale clear mirrors the DNS cache eviction pattern.
@@ -620,9 +631,12 @@ internal sealed class DomainTracker(
 
             if (_promotedApps.Contains(key))
             {
-                RouteAppIpsLocked(ips);
+                addedCidrs = RouteAppIpsLocked(ips).AddedCidrs;
             }
         }
+
+        // Advertise off-lock (empty no-op unless the domain is app-promoted).
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
     }
 
     /// <summary>
@@ -632,6 +646,7 @@ internal sealed class DomainTracker(
     /// </summary>
     public void NoteAppRemote(string ip)
     {
+        var addedCidrs = new List<string>();
         lock (_lock)
         {
             if (!_ipToNames.TryGetValue(ip, out var names))
@@ -655,12 +670,15 @@ internal sealed class DomainTracker(
                 logger.LogInformation("app promoted domain {Name} via {Ip}", name, ip);
                 if (matcher is null && _nameToIps.TryGetValue(name, out var sib))
                 {
-                    RouteAppIpsLocked(sib.ToList());
+                    addedCidrs.AddRange(RouteAppIpsLocked(sib.ToList()).AddedCidrs);
                 }
             }
 
-            RouteAppIpsLocked(new[] { ip });
+            addedCidrs.AddRange(RouteAppIpsLocked(new[] { ip }).AddedCidrs);
         }
+
+        // One coalesced advertise off-lock for all promoted sibling + touched IPs.
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
     }
 
     // True when an IP is still held by another tracked domain or _appIps, excluding the just-applied set.
@@ -689,31 +707,12 @@ internal sealed class DomainTracker(
         return $"{ip}/{prefix}";
     }
 
-    private List<string> BuildAllowedIps()
-    {
-        var all = new List<string>(_staticRoutes);
-        foreach (var set in _current.Values)
-        {
-            foreach (var ip in set)
-            {
-                all.Add(Cidr(IPAddress.Parse(ip)));
-            }
-        }
-
-        // App-discovered IPs share the same allowed-ips authority.
-        foreach (var ip in _appIps)
-        {
-            all.Add(Cidr(IPAddress.Parse(ip)));
-        }
-
-        return all;
-    }
-
     // Reconciles the routing list's static geoip ranges live on a list change: adds ranges new to the list and
     // removes ranges that left it. Only the list subset (_listRoutes) is touched; infrastructure routes such as
     // the tunnel-DNS /32s are never removed.
     private void ReconcileStaticRoutes(IReadOnlyList<string> freshRoutes)
     {
+        var addedCidrs = new List<string>();
         lock (_lock)
         {
             var index = EnsureIndex();
@@ -727,7 +726,6 @@ internal sealed class DomainTracker(
                 stripV6 ? freshRoutes.Where(c => !c.Contains(':')) : freshRoutes,
                 StringComparer.Ordinal);
 
-            var addedCidrs = new List<string>();
             foreach (var cidr in fresh)
             {
                 if (!_listRoutes.Add(cidr))
@@ -769,16 +767,11 @@ internal sealed class DomainTracker(
                 logger.LogInformation("geo cache: removed {Count} departed range(s) live from {Tunnel}", removed, tunnelName);
             }
 
-            // One allowed-ips update reflecting both directions; full replace when anything was removed.
-            if (removed > 0)
-            {
-                uapi.SetAllowedIps(tunnelName, peerPublicKey, BuildAllowedIps());
-            }
-            else if (addedCidrs.Count > 0)
-            {
-                uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
-            }
         }
+
+        // Advertise added ranges off-lock (O(added)); removed ranges need no engine update - their OS routes are
+        // already gone, and the pipe round-trip must not block resolves waiting on _lock.
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
     }
 
     private uint? EnsureIndex()

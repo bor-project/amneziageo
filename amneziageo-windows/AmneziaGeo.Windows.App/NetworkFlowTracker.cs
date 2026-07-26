@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Session;
 using Microsoft.Extensions.Logging;
@@ -49,6 +50,15 @@ internal sealed class NetworkFlowTracker : IDisposable
     private const long PidCacheTtlMs = 1000;
     private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
 
+    // Proactive backstop: a matched app's SYN to a direct-blocked, DNS-less destination (Telegram MTProto DC)
+    // never yields an ETW send event, so poll the TCP table for its SYN_SENT remotes and route them. Own thread.
+    private const int ScanIntervalMs = 2000;
+    private const int AfInet = 2;
+    private const int AfInet6 = 23;
+    private const int TcpTableOwnerPidAll = 5;
+    private const int MibTcpStateSynSent = 3;
+    private readonly HashSet<string> _scanSeen = [];
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -82,6 +92,12 @@ internal sealed class NetworkFlowTracker : IDisposable
 
                 _session.Source.AllEvents += evt => Handle(evt, ct);
                 _logger.LogInformation("NetworkFlowTracker: ETW session {Name} started (v6={V6})", sessionName, _tunnelV6);
+
+                // Backstop scan for matched apps' SYN_SENT remotes; only meaningful with a TCP app matcher.
+                if (_matcher is not null)
+                {
+                    _ = Task.Run(() => ScanLoopAsync(ct), CancellationToken.None);
+                }
 
                 // Source.Process() blocks until Stop().
                 await Task.Run(() => _session.Source.Process(), CancellationToken.None).ConfigureAwait(false);
@@ -373,6 +389,153 @@ internal sealed class NetworkFlowTracker : IDisposable
         return true;
     }
 
+    // Polls the TCP table for matched apps' SYN_SENT remotes and routes them, covering destinations that never
+    // emit a send event because their handshake is blocked on the direct path. Own task; ends when ct cancels.
+    private async Task ScanLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(ScanIntervalMs, ct).ConfigureAwait(false);
+                try
+                {
+                    ScanConnections();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "NetworkFlowTracker: connection scan error");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void ScanConnections()
+    {
+        if (_matcher is null)
+        {
+            return;
+        }
+
+        var candidates = new List<(uint Pid, IPAddress Remote)>();
+        var pids = new HashSet<uint>();
+        CollectSynSent(AfInet, candidates, pids);
+        if (_tunnelV6)
+        {
+            CollectSynSent(AfInet6, candidates, pids);
+        }
+
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        var matched = _matcher.MatchPids(pids);
+        if (matched.Count == 0)
+        {
+            return;
+        }
+
+        var batch = new List<string>();
+        var picked = new HashSet<string>();
+        foreach (var (pid, remote) in candidates)
+        {
+            var key = remote.ToString();
+            if (matched.Contains(pid) && picked.Add(key))
+            {
+                batch.Add(key);
+            }
+        }
+
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
+        // Mark seen only on a successful route; a failed add retries on the next scan.
+        if (_tracker.UpdateAppIps(batch))
+        {
+            foreach (var ip in batch)
+            {
+                _scanSeen.Add(ip);
+                _logger.LogTrace("tcp scan -> {Remote} (matched app, syn-sent)", ip);
+                if (RouteLog.Enabled)
+                {
+                    RouteLog.Note($"tcp scan -> {ip} (matched app, syn-sent)");
+                }
+            }
+        }
+    }
+
+    // Reads the OWNER_PID TCP table and appends tunnelable SYN_SENT remotes not already routed by a prior scan.
+    private void CollectSynSent(int af, List<(uint Pid, IPAddress Remote)> candidates, HashSet<uint> pids)
+    {
+        var size = 0;
+        GetExtendedTcpTable(IntPtr.Zero, ref size, false, af, TcpTableOwnerPidAll, 0);
+        if (size <= 0)
+        {
+            return;
+        }
+
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (GetExtendedTcpTable(buffer, ref size, false, af, TcpTableOwnerPidAll, 0) != 0)
+            {
+                return;
+            }
+
+            var count = Marshal.ReadInt32(buffer);
+            var isV6 = af == AfInet6;
+            var rowSize = isV6 ? 56 : 24;
+            var stateOffset = isV6 ? 48 : 0;
+            var addrOffset = isV6 ? 24 : 12;
+            var addrLen = isV6 ? 16 : 4;
+            var pidOffset = isV6 ? 52 : 20;
+            var basePtr = buffer + 4;
+            for (var i = 0; i < count; i++)
+            {
+                var row = basePtr + (i * rowSize);
+                if (Marshal.ReadInt32(row, stateOffset) != MibTcpStateSynSent)
+                {
+                    continue;
+                }
+
+                var addr = new byte[addrLen];
+                Marshal.Copy(row + addrOffset, addr, 0, addrLen);
+                AddCandidate(new IPAddress(addr), (uint)Marshal.ReadInt32(row, pidOffset), candidates, pids);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    private void AddCandidate(IPAddress remote, uint pid, List<(uint Pid, IPAddress Remote)> candidates, HashSet<uint> pids)
+    {
+        if (pid == 0 || pid == OwnProcessId)
+        {
+            return;
+        }
+
+        if (_excludeEndpoint is not null && remote.Equals(_excludeEndpoint))
+        {
+            return;
+        }
+
+        if (!IsTunnelableRemote(remote) || _scanSeen.Contains(remote.ToString()))
+        {
+            return;
+        }
+
+        candidates.Add((pid, remote));
+        pids.Add(pid);
+    }
+
     // Cached per-pid app match; recomputes at most every PidCacheTtlMs so repeated events skip the snapshot.
     private bool MatchesPidCached(uint pid)
     {
@@ -474,4 +637,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     {
         _session?.Dispose();
     }
+
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    private static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int pdwSize, [MarshalAs(UnmanagedType.Bool)] bool bOrder, int ulAf, int tableClass, int reserved);
 }

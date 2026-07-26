@@ -82,6 +82,31 @@ internal sealed class AppMatcher
     internal bool MatchesPid(uint pid) => ResolveServicePids().Contains(pid) || MatchesByImageOrAncestor(pid, SnapshotProcessTree(), new Dictionary<uint, (string? Path, long Created)>());
 
     /// <summary>
+    /// Filters PIDs to those matching the app rules, snapshotting the process tree once.
+    /// </summary>
+    internal HashSet<uint> MatchPids(IReadOnlyCollection<uint> pids)
+    {
+        var matched = new HashSet<uint>();
+        if (pids.Count == 0)
+        {
+            return matched;
+        }
+
+        var services = ResolveServicePids();
+        var tree = SnapshotProcessTree();
+        var cache = new Dictionary<uint, (string? Path, long Created)>();
+        foreach (var pid in pids)
+        {
+            if (services.Contains(pid) || MatchesByImageOrAncestor(pid, tree, cache))
+            {
+                matched.Add(pid);
+            }
+        }
+
+        return matched;
+    }
+
+    /// <summary>
     /// Has any matcher.
     /// </summary>
     public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0;

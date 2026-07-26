@@ -165,6 +165,24 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 weight = 0xFFFF,
             };
             var rc = FwpmSubLayerAdd0(engine, ref sublayer, IntPtr.Zero);
+            if (rc == FwpAlreadyExists)
+            {
+                // Leftover sublayer from a prior or overlapping session (reconnect churn, in-place upgrade). Drop it
+                // when it is ours to drop, then re-add; if a live session still owns it, reuse it so the permits install.
+                var key = SublayerKey;
+                var del = FwpmSubLayerDeleteByKey0(engine, ref key);
+                if (del == 0 || del == FwpSublayerNotFound)
+                {
+                    rc = FwpmSubLayerAdd0(engine, ref sublayer, IntPtr.Zero);
+                }
+
+                if (rc == FwpAlreadyExists)
+                {
+                    logger.LogWarning("firewall: reusing existing kill-switch sublayer (leftover from a prior session)");
+                    return;
+                }
+            }
+
             if (rc != 0)
             {
                 throw new InvalidOperationException($"FwpmSubLayerAdd0 failed 0x{rc:X8}");
@@ -550,6 +568,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const uint FwpV4AddrMask = 256; // FWP_V4_ADDR_MASK
     private const uint FwpV6AddrMask = 257; // FWP_V6_ADDR_MASK
 
+    // FWP error codes (fwpmtypes.h).
+    private const uint FwpAlreadyExists = 0x80320009; // FWP_E_ALREADY_EXISTS
+    private const uint FwpSublayerNotFound = 0x80320007; // FWP_E_SUBLAYER_NOT_FOUND
+
     // FWP_MATCH_TYPE.
     private const uint MatchEqual = 0;
     private const uint MatchFlagsAllSet = 6;
@@ -650,6 +672,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     [LibraryImport("fwpuclnt.dll")]
     private static partial uint FwpmSubLayerAdd0(IntPtr engineHandle, ref FWPM_SUBLAYER0 subLayer, IntPtr sd);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmSubLayerDeleteByKey0(IntPtr engineHandle, ref Guid key);
 
     [LibraryImport("fwpuclnt.dll")]
     private static partial uint FwpmFilterAdd0(IntPtr engineHandle, ref FWPM_FILTER0 filter, IntPtr sd, out ulong id);

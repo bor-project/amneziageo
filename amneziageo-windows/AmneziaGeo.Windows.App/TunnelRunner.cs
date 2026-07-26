@@ -803,6 +803,9 @@ internal sealed class TunnelRunner(
         }
     }
 
+    private const int FirewallArmAttempts = 4;
+    private static readonly TimeSpan FirewallArmRetryDelay = TimeSpan.FromSeconds(2);
+
     private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, CancellationToken ct)
     {
         try
@@ -828,7 +831,10 @@ internal sealed class TunnelRunner(
                 await WaitForHandshakeAsync(name, ct);
             }
 
-            Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct);
+            if (!await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct), ct))
+            {
+                logger.LogError("firewall: kill-switch for {Name} did not arm after {Attempts} attempts; tunnel running without WFP protection", name, FirewallArmAttempts);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -844,14 +850,35 @@ internal sealed class TunnelRunner(
     private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs);
+        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs);
         if (ct.IsCancellationRequested)
         {
             firewall.Disable();
             return false;
         }
 
-        return true;
+        return armed;
+    }
+
+    // Retries the arm: a sublayer left by an overlapping teardown clears within seconds; without a retry the tunnel
+    // would run unprotected (or behind a stale block-all) until the next reconnect.
+    private async Task<bool> ArmWithRetryAsync(Func<bool> arm, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            if (arm())
+            {
+                return true;
+            }
+
+            if (attempt >= FirewallArmAttempts || ct.IsCancellationRequested)
+            {
+                return false;
+            }
+
+            logger.LogWarning("firewall: arm attempt {Attempt} did not stick; retrying in {Delay}s", attempt, FirewallArmRetryDelay.TotalSeconds);
+            await Task.Delay(FirewallArmRetryDelay, ct);
+        }
     }
 
     // Returns the tunnel interface index, or null when the adapter never appears.

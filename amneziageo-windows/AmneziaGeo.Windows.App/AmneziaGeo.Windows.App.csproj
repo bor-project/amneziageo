@@ -123,6 +123,14 @@
          Do NOT set InvariantGlobalization on the UI/Installer - they resolve named cultures (ru/en). -->
     <PublishReadyToRun>true</PublishReadyToRun>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Idle-footprint tuning for the resident agent and every per-tunnel copy: keep Workstation GC (default),
+         don't retain decommitted segments, and let the GC release eagerly. Paired with the post-disconnect /
+         post-geo-refresh heap compaction in MemoryReclaim. -->
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
   </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" Trim="false" />
+  </ItemGroup>
 
 </Project>

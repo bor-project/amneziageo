@@ -10,7 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Hosts the agent's status pipe: accepts UI clients and periodically pushes status snapshots.
 /// </summary>
-internal sealed class StatusPipeServer(AgentStatusBroker broker, ILogger<StatusPipeServer> logger) : BackgroundService
+internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentControl control, ILogger<StatusPipeServer> logger) : BackgroundService
 {
     private static readonly TimeSpan _pushInterval = TimeSpan.FromSeconds(2);
 
@@ -88,8 +88,19 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, ILogger<StatusP
         {
             try
             {
-                await Task.Delay(_pushInterval, ct);
-                await broker.BroadcastIfChangedAsync(ct);
+                if (control.Running)
+                {
+                    // Active session: poll so connect progress and liveness reach the UI promptly.
+                    await Task.Delay(_pushInterval, ct);
+                    await broker.BroadcastIfChangedAsync(ct);
+                }
+                else
+                {
+                    // Idle without a tunnel: wake on a status change instead of rebuilding the snapshot every 2s.
+                    var wait = control.WaitForStatusAsync(ct);
+                    await broker.BroadcastIfChangedAsync(ct);
+                    await wait;
+                }
             }
             catch (OperationCanceledException)
             {

@@ -14,7 +14,7 @@ internal static class LogLevelWatcher
     public const string SettingKey = "log-level";
 
     // How often the poll re-reads the setting.
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Applies the persisted diagnostic settings once.
@@ -72,11 +72,24 @@ internal static class LogLevelWatcher
 /// <summary>
 /// Hosted wrapper that runs the log-level poll for the agent process.
 /// </summary>
-internal sealed class LogLevelBackgroundWatcher(IStateStore store, LogLevelController controller) : BackgroundService
+internal sealed class LogLevelBackgroundWatcher(IStateStore store, LogLevelController controller, AgentControl control) : BackgroundService
 {
     /// <inheritdoc/>
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        return LogLevelWatcher.RunAsync(store, controller, stoppingToken);
+        try
+        {
+            // Apply the persisted level once so the agent honors it even while idle, then re-poll only while a tunnel is up.
+            await LogLevelWatcher.ApplyAsync(store, controller, stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await control.WaitUntilRunningAsync(stoppingToken);
+                await LogLevelWatcher.ApplyAsync(store, controller, stoppingToken);
+                await Task.Delay(LogLevelWatcher.PollInterval, stoppingToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 }

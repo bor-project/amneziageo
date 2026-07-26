@@ -358,6 +358,7 @@ internal sealed class ProfileRunner(
         try
         {
             await store.SaveProfileStateAsync(new ProfileState(_group.Name, status, DateTimeOffset.UtcNow));
+            control.SignalStatus();
         }
         catch (Exception ex)
         {
@@ -384,6 +385,9 @@ internal sealed class ProfileRunner(
         control.ClearDisconnectFail();
         control.ClearRunningTarget();
         await SetStateAsync("disconnected");
+
+        // Return the connect-session transient before the agent idles.
+        MemoryReclaim.Trim();
     }
 
     // Outcome of a single connect attempt with its classified reason.

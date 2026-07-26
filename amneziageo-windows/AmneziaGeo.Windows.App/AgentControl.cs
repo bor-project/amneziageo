@@ -27,6 +27,7 @@ internal sealed class AgentControl
     private volatile bool _wakePending;
     private CancellationTokenSource _change = new();
     private CancellationTokenSource _wake = new();
+    private CancellationTokenSource _status = new();
 
     /// <summary>
     /// Whether the agent keeps a tunnel up.
@@ -93,6 +94,67 @@ internal sealed class AgentControl
     }
 
     /// <summary>
+    /// Fires when a status change should be pushed to UI clients, without waking the supervisor.
+    /// </summary>
+    public CancellationToken StatusToken
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _status.Token;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Completes on the next status change; throws only on shutdown.
+    /// </summary>
+    public async Task WaitForStatusAsync(CancellationToken ct)
+    {
+        var token = StatusToken;
+        using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, token))
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, linked.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        ct.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>
+    /// Completes once a tunnel is desired, idling on the change signal until then.
+    /// </summary>
+    public async Task WaitUntilRunningAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            var token = ChangeToken;
+            if (_running)
+            {
+                return;
+            }
+
+            ct.ThrowIfCancellationRequested();
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, token))
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, linked.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Sets the desired connection state and signals the runner.
     /// </summary>
     public void SetRunning(bool value)
@@ -112,6 +174,7 @@ internal sealed class AgentControl
 
         _restartRequired = false;
         Signal();
+        SignalStatus();
     }
 
     /// <summary>
@@ -162,6 +225,7 @@ internal sealed class AgentControl
     public void Invalidate()
     {
         Signal();
+        SignalStatus();
     }
 
     /// <summary>
@@ -177,6 +241,7 @@ internal sealed class AgentControl
         _restartRequired = false;
         _retryAttempt = 0;
         Signal();
+        SignalStatus();
     }
 
     /// <summary>
@@ -299,6 +364,22 @@ internal sealed class AgentControl
         {
             old = _change;
             _change = new CancellationTokenSource();
+        }
+
+        old.Cancel();
+        old.Dispose();
+    }
+
+    /// <summary>
+    /// Wakes status waiters after a state change, without re-entering the supervisor.
+    /// </summary>
+    public void SignalStatus()
+    {
+        CancellationTokenSource old;
+        lock (_gate)
+        {
+            old = _status;
+            _status = new CancellationTokenSource();
         }
 
         old.Cancel();

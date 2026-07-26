@@ -9,6 +9,7 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class GeoUpdateCheckService(
     SettingsStore settingsStore,
     AgentStatusBroker broker,
+    AgentControl control,
     ILogger<GeoUpdateCheckService> logger) : BackgroundService
 {
     private static readonly TimeSpan _initialDelay = TimeSpan.FromMinutes(2);
@@ -29,6 +30,16 @@ internal sealed class GeoUpdateCheckService(
 
         while (!ct.IsCancellationRequested)
         {
+            // Skip geo checks without a tunnel: geo data only feeds an active tunnel's routing.
+            try
+            {
+                await control.WaitUntilRunningAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
             TimeSpan delay;
             try
             {
@@ -38,6 +49,8 @@ internal sealed class GeoUpdateCheckService(
                     var (available, total) = await broker.CheckAllSourcesAsync(ct);
                     logger.LogInformation("geo auto-check: {Available}/{Total} sources have updates", available, total);
                     await broker.RefreshStaleGeoAsync(ct);
+                    // Return the materialization transient before the long sleep.
+                    MemoryReclaim.Trim();
                     delay = TimeSpan.FromHours(Math.Clamp(settings.GeoCheckIntervalHours, MinIntervalHours, MaxIntervalHours));
                 }
                 else

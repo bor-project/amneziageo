@@ -37,6 +37,11 @@ internal sealed class CompactConverter : IValueConverter
             "w130" => compact ? double.NaN : 130d,
             "w170" => compact ? double.NaN : 170d,
             "w180" => compact ? double.NaN : 180d,
+            // Width caps that lift in compact so the segment track / catalogue combo fills the row.
+            "maxW260" => compact ? double.PositiveInfinity : 260d,
+            "maxW480" => compact ? double.PositiveInfinity : 480d,
+            // Top gap under the tabs when the catalogue combo drops to its own row in compact.
+            "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
             "homeOrientation" => compact ? Orientation.Horizontal : Orientation.Vertical,
             // Home status/hint column: matches the profile picker when stacked, free-width when the row is

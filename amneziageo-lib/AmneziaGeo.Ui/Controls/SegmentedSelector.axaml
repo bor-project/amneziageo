@@ -1,9 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              x:Class="AmneziaGeo.Ui.Controls.SegmentedSelector"
              x:Name="Root">
   <!-- Choose one of 2-4 mutually exclusive options. Shared command + per-item parameter; the visible
-       item count sets the columns. Track stays content-width, left, capped - never full-width. -->
+       item count sets the columns. Track is content-width and left when wide, full-width in compact. -->
   <StackPanel Spacing="8">
 
     <!-- Field-style caption above the control: without one a segment reads as action buttons. -->
@@ -11,7 +12,8 @@
                IsVisible="{Binding #Root.Label, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
     <Border Classes="segtrack" Classes.compact="{Binding #Root.IsCompact}"
-            HorizontalAlignment="{Binding #Root.Align}">
+            HorizontalAlignment="{Binding #Root.IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+            MaxWidth="{Binding #Root.IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW480}">
       <UniformGrid Rows="1">
         <Button Classes="seg" Content="{Binding #Root.Item1Text}"
                 Classes.active="{Binding #Root.Item1Active}"

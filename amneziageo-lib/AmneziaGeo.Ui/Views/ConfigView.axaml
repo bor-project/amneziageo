@@ -18,34 +18,43 @@
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
     <StreamGeometry x:Key="AgDropGeometry">M2,12H4V17H20V12H22V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V12M12,15L7,10H10V4H14V10H17L12,15Z</StreamGeometry>
   </UserControl.Resources>
-  <!-- Row 3 stars to fill the pane with the import config-text box. Column capped left so fields do not
-       stretch across a wide pane (finding #5). -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*" MaxWidth="880" HorizontalAlignment="Left">
+  <!-- Last row stars to fill the pane with the import config-text box. Cards stretch the full pane width. -->
+  <Grid RowDefinitions="Auto,Auto,*">
 
-    <!-- Section menu: Settings / Import / Export. Settings and Export disable while no config exists. -->
-    <controls:SegmentedSelector Grid.Row="0" Command="{Binding SelectConfigSectionCommand}" IsCompact="{Binding IsCompact}"
-                          Item1Text="{l:Tr Main_SettingsTab}" Item1Param="config" Item1Active="{Binding SegConfigActive}" Item1Enabled="{Binding CanConfigSection}"
-                          Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
-                          Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
+    <!-- Section tabs + catalogue combo. Wide: tabs left, combo right on the tab row. Compact: tabs full-width,
+         combo full-width on its own row below. -->
+    <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*">
+      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no config exists. -->
+      <controls:SegmentedSelector Grid.Row="0" Grid.Column="0"
+                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+                            Command="{Binding SelectConfigSectionCommand}" IsCompact="{Binding IsCompact}"
+                            Item1Text="{l:Tr Main_SettingsTab}" Item1Param="config" Item1Active="{Binding SegConfigActive}" Item1Enabled="{Binding CanConfigSection}"
+                            Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
+                            Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
 
-    <!-- Config catalogue combo: «- не выбрано -» then saved configs. Hidden while importing. -->
-    <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6" IsVisible="{Binding !IsSectionImport}">
-      <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" />
-      <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                ItemsSource="{Binding ConfigCatalogueOptions}"
-                SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
-        <controls:AdaptiveComboBox.ItemTemplate>
-          <DataTemplate x:DataType="vm:ConfigChoice">
-            <TextBlock Text="{Binding Name}" />
-          </DataTemplate>
-        </controls:AdaptiveComboBox.ItemTemplate>
-      </controls:AdaptiveComboBox>
-      <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                 Text="{l:Tr Main_NoConfigsHint}" />
-    </StackPanel>
+      <!-- Catalogue combo: «- не выбрано -» then saved configs. Hidden while importing. -->
+      <StackPanel Spacing="6" VerticalAlignment="Center" IsVisible="{Binding !IsSectionImport}"
+                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                  Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+                  HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
+                  MaxWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW260}"
+                  Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}">
+        <TextBlock Classes="label" Text="{l:Tr Main_ChooseConfigLabel}" IsVisible="{Binding IsCompact}" />
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding ConfigCatalogueOptions}"
+                  SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
+          <controls:AdaptiveComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ConfigChoice">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </controls:AdaptiveComboBox.ItemTemplate>
+        </controls:AdaptiveComboBox>
+      </StackPanel>
+    </Grid>
 
-    <!-- Import section (Row 3). Imported with the footer Save once text parses + name is set (#143). -->
-    <Border Grid.Row="3" Margin="0,14,0,0"
+    <!-- Import section (last row, stars). Imported with the footer Save once text parses + name is set (#143). -->
+    <Border Grid.Row="2" Margin="0,14,0,0"
             IsVisible="{Binding IsSectionImport}"
             Background="Transparent"
             BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
@@ -135,8 +144,8 @@
       </DockPanel>
     </Border>
 
-    <!-- Config section (Row 2): name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
-    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionConfig}" Spacing="14">
+    <!-- Config section: name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
+    <StackPanel Grid.Row="1" Margin="0,14,0,0" IsVisible="{Binding IsSectionConfig}" Spacing="14">
       <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
       <StackPanel Spacing="2">
         <TextBlock Classes="label" Text="{l:Tr Main_ConfigNameLabel}" />
@@ -211,8 +220,8 @@
       </Border>
     </StackPanel>
 
-    <!-- Export section (Row 2): read-only QR of the .conf / of the vpn:// link, with copy / save. -->
-    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionExport}" Spacing="14">
+    <!-- Export section: read-only QR of the .conf / of the vpn:// link, with copy / save. -->
+    <StackPanel Grid.Row="1" Margin="0,14,0,0" IsVisible="{Binding IsSectionExport}" Spacing="14">
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" Background="Transparent">
         <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">

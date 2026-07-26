@@ -17,37 +17,49 @@
     <StreamGeometry x:Key="AgPencilGeometry">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
     <StreamGeometry x:Key="AgDropGeometry">M2,12H4V17H20V12H22V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V12M12,15L7,10H10V4H14V10H17L12,15Z</StreamGeometry>
   </UserControl.Resources>
-  <!-- Content column capped and left-aligned so fields never stretch across a wide pane (finding #5). -->
-  <Grid RowDefinitions="Auto,Auto,*" MaxWidth="880" HorizontalAlignment="Left">
+  <!-- Cards stretch the full pane width. -->
+  <Grid RowDefinitions="Auto,*">
 
-    <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. -->
-    <controls:SegmentedSelector Grid.Row="0" Command="{Binding SelectRoutingSectionCommand}" IsCompact="{Binding IsCompact}"
-                          Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
-                          Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
-                          Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
+    <!-- Section tabs + catalogue combo. Wide: tabs left, combo right on the tab row. Compact: tabs full-width,
+         combo full-width on its own row below. -->
+    <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*">
+      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. -->
+      <controls:SegmentedSelector Grid.Row="0" Grid.Column="0"
+                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+                            Command="{Binding SelectRoutingSectionCommand}" IsCompact="{Binding IsCompact}"
+                            Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
+                            Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
+                            Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
 
-    <!-- Routing-list catalogue combo: «- не выбрано -» then saved lists. Hidden while importing. -->
-    <StackPanel Grid.Row="1" Margin="0,14,0,0" Spacing="6" IsVisible="{Binding !IsSectionImport}">
-      <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" />
-      <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                ItemsSource="{Binding RoutingCatalogueOptions}"
-                SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
-        <controls:AdaptiveComboBox.ItemTemplate>
-          <DataTemplate x:DataType="vm:RoutingListChoice">
-            <!-- «- не выбрано -» for the none sentinel. -->
-            <Panel>
-              <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
-              <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
-            </Panel>
-          </DataTemplate>
-        </controls:AdaptiveComboBox.ItemTemplate>
-      </controls:AdaptiveComboBox>
-      <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                 Text="{l:Tr Main_NoRoutingListsHint}" />
-    </StackPanel>
+      <!-- Catalogue combo: «- не выбрано -» then saved lists. Hidden while importing. -->
+      <StackPanel Spacing="6" VerticalAlignment="Center" IsVisible="{Binding !IsSectionImport}"
+                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                  Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+                  HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
+                  MaxWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW260}"
+                  Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}">
+        <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" IsVisible="{Binding IsCompact}" />
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding RoutingCatalogueOptions}"
+                  SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
+          <controls:AdaptiveComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:RoutingListChoice">
+              <!-- «- не выбрано -» for the none sentinel. -->
+              <Panel>
+                <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
+                <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
+              </Panel>
+            </DataTemplate>
+          </controls:AdaptiveComboBox.ItemTemplate>
+        </controls:AdaptiveComboBox>
+        <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                   Text="{l:Tr Main_NoRoutingListsHint}" />
+      </StackPanel>
+    </Grid>
 
     <!-- Content: one section shown at a time. -->
-    <Panel Grid.Row="2" Margin="0,14,0,0">
+    <Panel Grid.Row="1" Margin="0,14,0,0">
 
       <!-- Section loader until an opened list's rules + traffic settings finish (#193). -->
       <StackPanel IsVisible="{Binding ShowSettingsLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
@@ -175,13 +187,8 @@
                      HorizontalAlignment="Center" />
           <TextBlock Text="{l:Tr Main_AddConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                      HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12" />
+          <!-- «Новый» (пустой список) в конце, после способов импорта. -->
           <WrapPanel HorizontalAlignment="Center">
-            <Button Classes="methodpick" Margin="4" Command="{Binding BeginManualImportCommand}" Width="160">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgPencilGeometry}" Width="15" Height="15" />
-                <TextBlock Text="{l:Tr Main_BlankListButton}" />
-              </StackPanel>
-            </Button>
             <Button Classes="methodpick" Margin="4" Click="OnRoutingImportFile" Width="160">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgFileGeometry}" Width="15" Height="15" />
@@ -198,6 +205,12 @@
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgQrGeometry}" Width="15" Height="15" />
                 <TextBlock Text="{l:Tr Main_CameraButton}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="methodpick" Margin="4" Command="{Binding BeginManualImportCommand}" Width="160">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgPencilGeometry}" Width="15" Height="15" />
+                <TextBlock Text="{l:Tr Main_BlankListButton}" />
               </StackPanel>
             </Button>
           </WrapPanel>

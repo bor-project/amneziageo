@@ -262,6 +262,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Nav = "settings";
     }
 
+    /// <summary>
+    /// Открывает конфигурации на секции импорта, для перехода из профилей без конфигураций.
+    /// </summary>
+    public void ShowConfigImport()
+    {
+        Nav = "settings";
+        SettingsSection = "config";
+        SettingsDetailOpen = true;
+        Config.EnterImportSection();
+    }
+
     [RelayCommand]
     private void NavSettings()
     {

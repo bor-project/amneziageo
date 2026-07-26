@@ -632,6 +632,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 continue;
             }
 
+            // Профиль без конфигурации не экспортируется.
+            if (string.IsNullOrEmpty(profile.Config))
+            {
+                continue;
+            }
+
             var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
             string? routingListName = null;
             if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct) is { } list)
@@ -812,12 +818,21 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             routingMap[block.Name] = (finalName, newId);
         }
 
+        var importedProfiles = 0;
         foreach (var block in bundle.Profiles)
         {
             var config = block.Config is not null && configNameMap.TryGetValue(block.Config, out var cn) ? cn : string.Empty;
             long? routingId = block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rl)
                 ? rl.Id
                 : null;
+
+            // Профиль без выбранной конфигурации в метаданных импорта пропускается.
+            if (config.Length == 0)
+            {
+                continue;
+            }
+
+            importedProfiles++;
 
             // Same-name profile already here and a non-default policy.
             if (existingProfiles.Contains(block.Name) && policy != "new")
@@ -827,16 +842,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                     continue;
                 }
 
-                // Keep an existing config binding the file leaves empty (both replace and merge), so a
-                // restore whose profile omits the config never orphans a working profile. Symmetric with
-                // routing below, which is likewise preserved when the file carries none.
-                var boundConfig = config;
-                if (config.Length == 0)
-                {
-                    boundConfig = (await store.GetProfileAsync(block.Name, ct))?.Config ?? string.Empty;
-                }
-
-                await store.SaveProfileAsync(new Profile(block.Name, boundConfig), ct);
+                await store.SaveProfileAsync(new Profile(block.Name, config), ct);
 
                 // No auto-target here: bulk import must not steal the selection.
                 if (routingId is not null)
@@ -867,7 +873,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             "imported bundle: {Configs} configs, {Routing} routing lists, {Profiles} profiles",
             bundle.Configs.Count,
             bundle.RoutingLists.Count,
-            bundle.Profiles.Count);
+            importedProfiles);
 
         if (renames.Count == 0)
         {
@@ -875,7 +881,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 "Agent_BundleImported",
                 bundle.Configs.Count,
                 bundle.RoutingLists.Count,
-                bundle.Profiles.Count));
+                importedProfiles));
         }
 
         if (renames.Count <= 5)
@@ -884,7 +890,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 "Agent_BundleImportedRenamed",
                 bundle.Configs.Count,
                 bundle.RoutingLists.Count,
-                bundle.Profiles.Count,
+                importedProfiles,
                 string.Join(", ", renames)));
         }
 
@@ -892,7 +898,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             "Agent_BundleImportedRenamedMany",
             bundle.Configs.Count,
             bundle.RoutingLists.Count,
-            bundle.Profiles.Count));
+            importedProfiles));
     }
 
     // True when a profile still binds the config.

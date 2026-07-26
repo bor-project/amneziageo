@@ -81,15 +81,15 @@
       <Setter Property="BoxShadow" Value="0 1 2 0 #1A101828" />
     </Style>
 
-    <!-- Segmented-control track: content-width, left, capped - never full-width. The 900px-class touch
-         step is folded onto the app's compact signal: 44px height when narrow, 36px otherwise. -->
+    <!-- Segmented-control track: content-width and left when wide (cap + alignment set inline on the control),
+         full-width in compact. The 900px-class touch step is folded onto the app's compact signal: 44px height
+         when narrow, 36px otherwise. -->
     <Style Selector="Border.segtrack">
       <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="9" />
       <Setter Property="Padding" Value="3" />
-      <Setter Property="MaxWidth" Value="480" />
     </Style>
     <Style Selector="Border.segtrack.compact Button.seg">
       <Setter Property="MinHeight" Value="44" />

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Views.BundleImportView"
@@ -35,20 +36,24 @@
                Watermark="{l:Tr BundleImport_PayloadWatermark}" />
     </Border>
 
-    <StackPanel Orientation="Horizontal" Spacing="8">
-      <Button Classes="methodpick" Width="180" Click="OnLoadFile">
+    <!-- Load / import actions. A host may inject a leading action (e.g. «Новый» profile) so all three share
+         this wrap row at equal width and reflow to a new line when they don't fit. -->
+    <WrapPanel>
+      <ContentControl x:CompileBindings="False"
+                      Content="{Binding $parent[views:BundleImportView].LeadingAction}" />
+      <Button Classes="methodpick" Width="180" Margin="0,0,8,8" Click="OnLoadFile">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <PathIcon Data="{StaticResource AgUploadGeometry}" Width="14" Height="14" />
           <TextBlock Text="{l:Tr BundleImport_LoadFileButton}" />
         </StackPanel>
       </Button>
-      <Button Classes="accent" Width="180" Command="{Binding ImportCommand}" IsEnabled="{Binding !IsBusy}">
+      <Button Classes="accent" Width="180" Margin="0,0,8,8" Command="{Binding ImportCommand}" IsEnabled="{Binding !IsBusy}">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <PathIcon Data="{StaticResource AgCheckGeometry}" Width="14" Height="14" />
           <TextBlock Text="{l:Tr BundleImport_ImportButton}" />
         </StackPanel>
       </Button>
-    </StackPanel>
+    </WrapPanel>
 
     <!-- Carries both the success summary and error messages. -->
     <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"

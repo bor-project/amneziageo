@@ -55,6 +55,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsProfileDetail))]
+    [NotifyPropertyChangedFor(nameof(ShowAddProfileCta))]
     private ProfileItemViewModel? _openProfile;
 
     [ObservableProperty]
@@ -99,6 +100,11 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None];
 
     public bool IsProfileDetail => OpenProfile is not null;
+
+    /// <summary>
+    /// Есть конфигурация, но профиль не открыт: показать CTA создания профиля.
+    /// </summary>
+    public bool ShowAddProfileCta => HasConfigs && !IsProfileDetail;
 
     public bool ProfileNameMissing => string.IsNullOrWhiteSpace(ProfileRename);
 
@@ -165,6 +171,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HasConfigs));
         OnPropertyChanged(nameof(ShowNoProfilesYetHint));
+        OnPropertyChanged(nameof(ShowAddProfileCta));
         CreateProfileCommand.NotifyCanExecuteChanged();
     }
 
@@ -633,8 +640,13 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         if (ack.Ok)
         {
             _pendingOpenProfile = name;
+            ScreenSection = ProfileScreenSection.Profile;
         }
     }
+
+    // «Добавить конфигурацию»: переход в конфигурации-импорт, когда профиль создать нельзя без конфига.
+    [RelayCommand]
+    private void AddConfiguration() => _host.ShowConfigImport();
 
     private string UniqueProfileName()
     {

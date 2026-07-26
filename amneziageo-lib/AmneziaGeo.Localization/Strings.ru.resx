@@ -188,7 +188,7 @@
     <value>Выбрать файл…</value>
   </data>
   <data name="BundleImport_PayloadWatermark" xml:space="preserve">
-    <value>Вставьте JSON бандла (Ctrl+V) или выберите файл кнопкой «Выбрать файл…»</value>
+    <value>Вставьте данные (Ctrl+V) или выберите файл кнопкой «Выбрать файл…»</value>
   </data>
   <data name="BundleImport_WindowTitle" xml:space="preserve">
     <value>Импорт</value>
@@ -377,7 +377,7 @@
     <value>Конфигурации</value>
   </data>
   <data name="Main_ConfigEditButton" xml:space="preserve">
-    <value>Ввести вручную</value>
+    <value>Новый</value>
   </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
     <value>Здесь появится конфигурация</value>
@@ -592,14 +592,11 @@
   <data name="Main_NewListButton" xml:space="preserve">
     <value>Новый список</value>
   </data>
-  <data name="Main_NoConfigsHint" xml:space="preserve">
-    <value>Конфигураций пока нет. Нажмите «+ Новая конфигурация», чтобы добавить сервер в каталог.</value>
-  </data>
   <data name="Main_NoProfilesHint" xml:space="preserve">
     <value>Добавьте профиль и конфигурацию в настройках.</value>
   </data>
-  <data name="Main_NoProfilesYetHint" xml:space="preserve">
-    <value>Профилей пока нет. Нажмите «+ Профиль», чтобы создать профиль, затем задайте конфигурацию и маршрутизацию.</value>
+  <data name="Main_AddConfigButton" xml:space="preserve">
+    <value>Добавить конфигурацию</value>
   </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
     <value>Списков пока нет. Нажмите «+ Новый список», чтобы задать правила (гео-категории, домены, CIDR, приложения).</value>
@@ -632,10 +629,16 @@
     <value>ТИП ЗАПИСИ</value>
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
-    <value>ЧТО ДЕЛАТЬ С ТРАФИКОМ</value>
+    <value>ПРАВИЛА</value>
   </data>
   <data name="Main_ProfileAddButton" xml:space="preserve">
-    <value>Профиль</value>
+    <value>Новый</value>
+  </data>
+  <data name="Main_AddProfileButton" xml:space="preserve">
+    <value>Добавить профиль</value>
+  </data>
+  <data name="Main_NoProfileYetHint" xml:space="preserve">
+    <value>Создайте профиль, чтобы связать конфигурацию с маршрутизацией.</value>
   </data>
   <data name="Main_ProfileNoConfigHint" xml:space="preserve">
     <value>У профиля пока нет конфигурации. Выберите её из списка или добавьте в разделе «Конфигурации».</value>
@@ -1527,16 +1530,13 @@
     <value>Добавить список</value>
   </data>
   <data name="Main_BlankListButton" xml:space="preserve">
-    <value>Пустой</value>
+    <value>Новый</value>
   </data>
   <data name="Main_NewListLabel" xml:space="preserve">
     <value>Новый список</value>
   </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Конфиг</value>
-  </data>
-  <data name="Main_ProfileTab" xml:space="preserve">
-    <value>Профиль</value>
   </data>
   <data name="Main_ImportTab" xml:space="preserve">
     <value>Импорт</value>

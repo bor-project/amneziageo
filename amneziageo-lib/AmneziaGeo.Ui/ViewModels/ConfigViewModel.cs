@@ -299,6 +299,17 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Переводит секцию конфигураций в импорт для перехода из профилей.
+    /// </summary>
+    public void EnterImportSection()
+    {
+        if (!IsCreatingSectionConfig)
+        {
+            BeginSectionConfig();
+        }
+    }
+
     // Discard an in-progress draft before switching to Config / Export.
     private void LeaveImport()
     {
@@ -627,7 +638,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return;
         }
 
-        OpenConfig = NextConfigAfter(config);
+        // Последний конфиг удалён - переводим секцию на импорт, иначе открываем следующий.
+        var next = NextConfigAfter(config);
+        OpenConfig = next;
+        if (next is null)
+        {
+            EnterImportSection();
+        }
     }
 
     // Commit the open config's rename through the agent. Keyed by the current name; on OK it

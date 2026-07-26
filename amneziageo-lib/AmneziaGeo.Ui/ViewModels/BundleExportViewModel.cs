@@ -65,7 +65,8 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
 
         foreach (var profile in profiles)
         {
-            var item = new BundleItem { Name = profile.Name, Detail = ProfileDetail(profile) };
+            // Профиль без конфигурации экспортировать нельзя - чекбокс недоступен.
+            var item = new BundleItem { Name = profile.Name, Detail = ProfileDetail(profile), IsDisabled = profile.Config.Length == 0 };
 
             // Resolved once, by name, from the collections just built above - the profile's checkbox then
             // drives these two dependents directly (cascade described on BundleItem.CheckedChanged).

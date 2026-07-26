@@ -32,8 +32,8 @@
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
 
-        <!-- Add an entry by address (geo / domain / cidr) or per-application. One content-width segment at
-             every window width - never stretched (finding #1). -->
+        <!-- Add an entry by address (geo / domain / cidr) or per-application. Content-width when wide,
+             full-width in compact. -->
         <StackPanel Spacing="6">
 
           <controls:SegmentedSelector Label="{l:Tr Main_AddMethodLabel}"

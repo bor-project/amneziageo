@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -14,11 +15,26 @@ namespace AmneziaGeo.Ui.Views;
 internal sealed partial class BundleImportView : UserControl
 {
     /// <summary>
+    /// Extra action placed ahead of the load/import buttons in their wrap row.
+    /// </summary>
+    public static readonly StyledProperty<object?> LeadingActionProperty =
+        AvaloniaProperty.Register<BundleImportView, object?>(nameof(LeadingAction));
+
+    /// <summary>
     /// ctor
     /// </summary>
     public BundleImportView()
     {
         InitializeComponent();
+    }
+
+    /// <summary>
+    /// Extra action placed ahead of the load/import buttons in their wrap row.
+    /// </summary>
+    public object? LeadingAction
+    {
+        get => GetValue(LeadingActionProperty);
+        set => SetValue(LeadingActionProperty, value);
     }
 
     private async void OnLoadFile(object? sender, RoutedEventArgs e)

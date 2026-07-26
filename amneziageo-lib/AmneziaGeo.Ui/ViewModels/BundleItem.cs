@@ -21,10 +21,21 @@ internal sealed partial class BundleItem : ViewModelBase
     private bool _isChecked;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCheck))]
     private bool _isLocked;
+
+    // Профиль без конфигурации нельзя экспортировать.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCheck))]
+    private bool _isDisabled;
 
     [ObservableProperty]
     private bool _hasRules;
+
+    /// <summary>
+    /// Whether the checkbox is selectable: not locked by a checked dependant and not disabled.
+    /// </summary>
+    public bool CanCheck => !IsLocked && !IsDisabled;
 
     /// <summary>
     /// Store id of a routing list, so its rules can be fetched; 0 for profiles and configs.

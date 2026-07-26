@@ -8,44 +8,33 @@
              x:Class="AmneziaGeo.Ui.Views.ProfileView"
              x:CompileBindings="True"
              x:DataType="vm:ProfileViewModel">
-  <!-- Content column capped and left-aligned so fields never stretch across a wide pane (finding #5). -->
-  <StackPanel Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
+  <!-- Cards stretch the full pane width. -->
+  <StackPanel Spacing="14">
 
-    <!-- Section menu: Profile / Import / Export. -->
-    <controls:SegmentedSelector Command="{Binding SelectProfileSectionCommand}" IsCompact="{Binding IsCompact}"
-                          Item1Text="{l:Tr Main_ProfileTab}" Item1Param="profile" Item1Active="{Binding SegProfileActive}"
-                          Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
-                          Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" />
+    <!-- Section tabs + profile picker. Wide: tabs left, picker right on the tab row. Compact: tabs full-width,
+         picker full-width on its own row below. -->
+    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*">
+      <!-- Section menu: Settings / Import / Export. -->
+      <controls:SegmentedSelector Grid.Row="0" Grid.Column="0"
+                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+                            Command="{Binding SelectProfileSectionCommand}" IsCompact="{Binding IsCompact}"
+                            Item1Text="{l:Tr Main_SettingsTab}" Item1Param="profile" Item1Active="{Binding SegProfileActive}"
+                            Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
+                            Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" />
 
-    <!-- PROFILE SECTION: catalogue + open-profile editor. -->
-    <StackPanel IsVisible="{Binding IsSectionProfile}" Spacing="14">
-
-      <!-- Count pill + new-profile button. -->
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <Border Grid.Column="0" Background="{DynamicResource AgInsetBrush}" CornerRadius="20"
-                Padding="8,1" VerticalAlignment="Center">
-          <TextBlock Text="{Binding Profiles.Count}" FontSize="11" Classes="muted" FontWeight="SemiBold" />
-        </Border>
-        <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding CreateProfileCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="4">
-            <TextBlock Text="+" />
-            <TextBlock Text="{l:Tr Main_ProfileAddButton}" />
-          </StackPanel>
-        </Button>
-      </Grid>
-
-      <!-- No configurations yet: explain what to do first. -->
-      <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12.5"
-                 TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"
-                 Margin="0,24,0,8" MaxWidth="360"
-                 Text="{l:Tr Main_ProfileNeedsConfigHint}" />
-
-      <!-- Profile catalogue combo: «- не выбрано -» then saved profiles. -->
-      <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
-        <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" />
-        <!-- Combo picks the profile to set up; the button sets it as the active one (disabled when it already is). -->
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-          <controls:AdaptiveComboBox Grid.Column="0" Classes="field" HorizontalAlignment="Stretch"
+      <!-- Profile picker: combo to set up, centred against the tabs. The «Make active» link floats in the gap
+           below via a render transform, so it never lifts the combo off-centre. Shown only on the Profile section. -->
+      <Panel VerticalAlignment="Center" IsVisible="{Binding IsSectionProfile}" ClipToBounds="False"
+             Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+             Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+             HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
+             MaxWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW260}"
+             Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}">
+        <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
+          <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" IsVisible="{Binding IsCompact}" />
+          <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
                     ItemsSource="{Binding ProfileOptions}"
                     SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
             <controls:AdaptiveComboBox.ItemTemplate>
@@ -54,12 +43,49 @@
               </DataTemplate>
             </controls:AdaptiveComboBox.ItemTemplate>
           </controls:AdaptiveComboBox>
-          <Button Grid.Column="1" Classes="accent" MinWidth="110" VerticalAlignment="Stretch"
-                  Content="{l:Tr Main_SetActiveProfile}"
-                  Command="{Binding SetActiveProfileCommand}" />
-        </Grid>
-        <TextBlock IsVisible="{Binding ShowNoProfilesYetHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                   Text="{l:Tr Main_NoProfilesYetHint}" />
+        </StackPanel>
+        <!-- Make-active link (link style like «Add local networks»); pushed into the gap below the combo with a
+             render transform so it consumes no layout height. The command disables it when already active. -->
+        <Button Classes="linkbtn" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                IsVisible="{Binding HasConfigs}"
+                Command="{Binding SetActiveProfileCommand}" Content="{l:Tr Main_SetActiveProfile}">
+          <Button.RenderTransform>
+            <TranslateTransform Y="20" />
+          </Button.RenderTransform>
+        </Button>
+      </Panel>
+    </Grid>
+
+    <!-- PROFILE SECTION: catalogue + open-profile editor. -->
+    <StackPanel IsVisible="{Binding IsSectionProfile}" Spacing="14">
+
+      <!-- Нет конфигураций: профиль создать нельзя - CTA в конфигурации-импорт. -->
+      <StackPanel IsVisible="{Binding !HasConfigs}" HorizontalAlignment="Center" Spacing="10"
+                  Margin="0,24,0,8" MaxWidth="360">
+        <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
+                Command="{Binding AddConfigurationCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <TextBlock Text="+" />
+            <TextBlock Text="{l:Tr Main_AddConfigButton}" />
+          </StackPanel>
+        </Button>
+        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" TextAlignment="Center"
+                   Text="{l:Tr Main_ProfileNeedsConfigHint}" />
+      </StackPanel>
+
+      <!-- Есть конфигурация, но профиль не выбран / отсутствует: CTA на создание профиля (тот же обработчик,
+           что «Новый»), в том же месте и стиле, что и CTA добавления конфигурации. -->
+      <StackPanel IsVisible="{Binding ShowAddProfileCta}" HorizontalAlignment="Center" Spacing="10"
+                  Margin="0,24,0,8" MaxWidth="360">
+        <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
+                Command="{Binding CreateProfileCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="4">
+            <TextBlock Text="+" />
+            <TextBlock Text="{l:Tr Main_AddProfileButton}" />
+          </StackPanel>
+        </Button>
+        <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" TextAlignment="Center"
+                   Text="{l:Tr Main_NoProfileYetHint}" />
       </StackPanel>
 
       <!-- Open profile's editor. Rename / config / routing picks are committed together by the footer Save. -->
@@ -168,9 +194,22 @@
       </StackPanel>
     </StackPanel>
 
-    <!-- IMPORT SECTION: reused bundle import. -->
-    <StackPanel IsVisible="{Binding IsSectionImport}">
-      <views:BundleImportView DataContext="{Binding BundleImport}" />
+    <!-- IMPORT SECTION: reused bundle import, with «Новый» profile injected into its action row. -->
+    <StackPanel IsVisible="{Binding IsSectionImport}" Spacing="14">
+      <views:BundleImportView DataContext="{Binding BundleImport}">
+        <!-- Создание пустого профиля: та же строка кнопок, что «Выбрать файл» / «Импортировать», равный размер.
+             Команда живёт на ProfileViewModel, поэтому тянем её через предка. -->
+        <views:BundleImportView.LeadingAction>
+          <Button Classes="accent" Width="180" Margin="0,0,8,8" x:CompileBindings="False"
+                  DataContext="{Binding $parent[views:ProfileView].DataContext}"
+                  IsVisible="{Binding HasConfigs}" Command="{Binding CreateProfileCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Text="+" />
+              <TextBlock Text="{l:Tr Main_ProfileAddButton}" />
+            </StackPanel>
+          </Button>
+        </views:BundleImportView.LeadingAction>
+      </views:BundleImportView>
     </StackPanel>
 
     <!-- EXPORT SECTION: reused bundle export. -->

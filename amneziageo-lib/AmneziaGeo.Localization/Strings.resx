@@ -188,7 +188,7 @@
     <value>Choose file…</value>
   </data>
   <data name="BundleImport_PayloadWatermark" xml:space="preserve">
-    <value>Paste the bundle JSON (Ctrl+V) or pick a file with the “Choose file…” button</value>
+    <value>Paste the data (Ctrl+V) or pick a file with the “Choose file…” button</value>
   </data>
   <data name="BundleImport_WindowTitle" xml:space="preserve">
     <value>Import</value>
@@ -377,7 +377,7 @@
     <value>Configurations</value>
   </data>
   <data name="Main_ConfigEditButton" xml:space="preserve">
-    <value>Enter manually</value>
+    <value>New</value>
   </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
     <value>The configuration will appear here</value>
@@ -592,14 +592,11 @@
   <data name="Main_NewListButton" xml:space="preserve">
     <value>New list</value>
   </data>
-  <data name="Main_NoConfigsHint" xml:space="preserve">
-    <value>No configurations yet. Use the «+ New configuration» button to add a server to the catalogue.</value>
-  </data>
   <data name="Main_NoProfilesHint" xml:space="preserve">
     <value>Add a profile and a configuration in settings.</value>
   </data>
-  <data name="Main_NoProfilesYetHint" xml:space="preserve">
-    <value>No profiles yet. Use the «+ Profile» button to create one, then set its configuration and routing.</value>
+  <data name="Main_AddConfigButton" xml:space="preserve">
+    <value>Add configuration</value>
   </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
     <value>No lists yet. Click «+ New list» to set rules (geo categories, domains, CIDR, apps).</value>
@@ -632,10 +629,16 @@
     <value>ENTRY TYPE</value>
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
-    <value>WHAT TO DO WITH TRAFFIC</value>
+    <value>RULES</value>
   </data>
   <data name="Main_ProfileAddButton" xml:space="preserve">
-    <value>Profile</value>
+    <value>New</value>
+  </data>
+  <data name="Main_AddProfileButton" xml:space="preserve">
+    <value>Add profile</value>
+  </data>
+  <data name="Main_NoProfileYetHint" xml:space="preserve">
+    <value>Create a profile to link a configuration with routing.</value>
   </data>
   <data name="Main_ProfileNoConfigHint" xml:space="preserve">
     <value>This profile has no configuration yet. Pick one from the list, or add it in the «Configurations» section.</value>
@@ -1527,16 +1530,13 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Add a list</value>
   </data>
   <data name="Main_BlankListButton" xml:space="preserve">
-    <value>Blank</value>
+    <value>New</value>
   </data>
   <data name="Main_NewListLabel" xml:space="preserve">
     <value>New list</value>
   </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Config</value>
-  </data>
-  <data name="Main_ProfileTab" xml:space="preserve">
-    <value>Profile</value>
   </data>
   <data name="Main_ImportTab" xml:space="preserve">
     <value>Import</value>

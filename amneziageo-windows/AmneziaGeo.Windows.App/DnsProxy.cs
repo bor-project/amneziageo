@@ -87,12 +87,15 @@ internal sealed class DnsProxy
     private readonly DomainTracker? _tracker;
     private readonly ILogger<DnsProxy> _logger;
     private readonly bool _stripV6;
+    // Names queried by a matched app resolve through the tunnel and route their answer, even with no geo rule.
+    private readonly AppDnsTracker? _appDns;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null)
     {
+        _appDns = appDns;
         _domains = domains;
         _matcher = new DomainMatcher(domains);
         _blockMatcher = new DomainMatcher(blockDomains);
@@ -177,6 +180,19 @@ internal sealed class DnsProxy
     {
         _cache.Clear();
         _bypass.Clear();
+    }
+
+    /// <summary>
+    /// Drops any cached local answer and negative-cache entry for a name, so a name just marked app-tunneled is
+    /// re-resolved through the tunnel on its next query instead of serving a pre-mark local (poisoned) result.
+    /// </summary>
+    public void InvalidateName(string name)
+    {
+        var key = name.TrimEnd('.').ToLowerInvariant();
+        _cache.TryRemove(CacheKey(key, TypeA), out _);
+        _cache.TryRemove(CacheKey(key, TypeAaaa), out _);
+        _cache.TryRemove(CacheKey(key, TypeHttps), out _);
+        _bypass.TryRemove(key, out _);
     }
 
     // Whether a name is currently negative-cached as matching no geo rule.
@@ -417,11 +433,17 @@ internal sealed class DnsProxy
             // Negative cache: a name already proven to be in no geo rule bypasses the matcher and the tunnel.
             var bypassed = name is not null && IsBypassed(name);
 
+            // App-tunnel: a name recently queried by a matched app resolves through the tunnel and routes its
+            // answer, even with no geo rule. Its decision comes from DNS-Client ETW, not the geo matcher, so it
+            // overrides the bypass negative-cache.
+            var appDns = name is not null && !isLocal && _appDns is not null && _appDns.IsTunneled(name);
+
             // Matched names resolve via the clean tunnel resolver; others use the local resolver.
             var geoMatch = !isLocal && !bypassed && name is not null ? _matcher.Match(name) : null;
-            var matched = geoMatch is not null;
+            var matched = geoMatch is not null || appDns;
 
-            // Remember a non-local miss so the matcher isn't re-run for it until the lists change.
+            // Remember a non-local miss so the matcher isn't re-run for it until the lists change. An app-tunnel
+            // name is matched, so it is never bypassed.
             if (name is not null && !isLocal && !bypassed && !matched)
             {
                 MarkBypassed(name);
@@ -497,7 +519,7 @@ internal sealed class DnsProxy
                     _logger.LogWarning("dns query {Name} type={Type} -> {Route} unreachable: {Reason}", name, type, route, result.Error.Message);
                     if (RouteLog.Enabled && name is not null && result.Leader)
                     {
-                        RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, geoMatch, upstream, started, ips: null, failure: result.Error.Message));
+                        RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, ips: null, failure: result.Error.Message));
                     }
 
                     // Answer SERVFAIL instead of dropping the query, so the client fails fast and
@@ -512,6 +534,22 @@ internal sealed class DnsProxy
                 }
 
                 var shared = result.Response!;
+
+                // The app-tunnel mark can land while this local forward was in flight. If the name flipped to
+                // app-tunneled, don't serve or cache the local (possibly poisoned) answer: drop it and fail
+                // transient so the app's retry resolves through the tunnel instead.
+                if (!matched && name is not null && _appDns is not null && _appDns.IsTunneled(name))
+                {
+                    InvalidateName(name);
+                    var servfail = DnsMessage.BuildServFail(query);
+                    lock (server)
+                    {
+                        server.Send(servfail, servfail.Length, client);
+                    }
+
+                    return;
+                }
+
                 StoreInCache(name, type, shared);
                 // Followers share the leader's buffer; answer each client with its own transaction id.
                 response = ApplyTransactionId(shared, query);
@@ -531,7 +569,7 @@ internal sealed class DnsProxy
                 if (RouteLog.Enabled && name is not null && result.Leader)
                 {
                     var ips = DnsMessage.Addresses(shared).Select(a => a.ToString()).ToList();
-                    RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, geoMatch, upstream, started, ips, failure: null));
+                    RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, ips, failure: null));
                 }
             }
 
@@ -541,7 +579,7 @@ internal sealed class DnsProxy
             {
                 try
                 {
-                    Track(name!, response);
+                    Track(name!, response, appDns);
                 }
                 catch (Exception ex)
                 {
@@ -1032,11 +1070,11 @@ internal sealed class DnsProxy
     }
 
     // Routing-log line: resolved addresses, upstream, matched rule, round-trip time.
-    private static string FormatRouteQuery(string name, int type, bool isLocal, bool matched, DomainMatcher.GeoMatch? geoMatch, IPAddress upstream, long startedTimestamp, IReadOnlyList<string>? ips, string? failure)
+    private static string FormatRouteQuery(string name, int type, bool isLocal, bool matched, bool appDns, DomainMatcher.GeoMatch? geoMatch, IPAddress upstream, long startedTimestamp, IReadOnlyList<string>? ips, string? failure)
     {
         var ms = (long)System.Diagnostics.Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds;
         var decision = isLocal ? "LAN" : matched ? "TUNNEL" : "LOCAL";
-        var rule = matched && geoMatch is { } gm ? "  rule=" + RuleLabel(gm) : string.Empty;
+        var rule = matched && geoMatch is { } gm ? "  rule=" + RuleLabel(gm) : matched && appDns ? "  rule=app" : string.Empty;
         if (failure is not null)
         {
             return $"{name} {TypeLabel(type)} -> {decision}  FAILED  up={upstream}  {ms}ms{rule}  {failure}";
@@ -1074,7 +1112,7 @@ internal sealed class DnsProxy
         _ => match.Value,
     };
 
-    private void Track(string name, byte[] response)
+    private void Track(string name, byte[] response, bool appDns)
     {
         var ips = new List<string>();
         foreach (var ip in DnsMessage.Addresses(response))
@@ -1083,8 +1121,9 @@ internal sealed class DnsProxy
         }
 
         // Re-check membership at Add time: _matcher may have swapped (a list edit) between the match that
-        // routed this query here and now - do not (re-)route a domain that just left the routing lists.
-        if (ips.Count > 0 && _matcher.IsTunneled(name))
+        // routed this query here and now - do not (re-)route a domain that just left the routing lists. An
+        // app-tunnel name has no geo rule, so it routes on the app decision alone.
+        if (ips.Count > 0 && (appDns || _matcher.IsTunneled(name)))
         {
             // Hot path: add-only union with the cache; a partial answer never drops a working IP.
             _tracker?.Add(name, ips);

@@ -47,8 +47,9 @@ public static class IpcContract
     public const string OpSetGeo = "set-geo";
 
     /// <summary>
-    /// Command to set a config's WebSocket transport and tunnel MTU override. Args: name, on/off, port,
-    /// optional host, optional mtu. Applies on the next connect.
+    /// Command to set a config's WebSocket transport, tunnel MTU override, and IPv6 opt-in. Args: name, on/off,
+    /// port, optional host, optional mtu, optional ipv6 (on/off; absent keeps the stored value). Applies on the
+    /// next connect.
     /// </summary>
     public const string OpSetWebSocket = "set-websocket";
 
@@ -110,14 +111,14 @@ public static class IpcContract
     /// <summary>
     /// Command to set a routing list's traffic settings. Args: routing list id, exclusions (one entry per
     /// line / comma-separated), all-UDP ("on"/"off"), mode ("split"/"full", derived from global-proxy),
-    /// use-IPv6 ("on"/"off"), use-global-proxy ("on"/"off"). An all-default tuple clears the row. Applies on
-    /// the next connect.
+    /// use-global-proxy ("on"/"off"). An all-default tuple clears the row. Applies on the next connect.
+    /// IPv6 is per-config now (set-websocket), no longer carried here.
     /// </summary>
     public const string OpSetRoutingSettings = "set-routing-settings";
 
     /// <summary>
     /// Command to fetch a routing list's traffic settings. Args: routing list id. The ack message holds a
-    /// JSON object { exclusions, allUdp, mode, useIpv6, useGlobalProxy } (defaults when no row is stored).
+    /// JSON object { exclusions, allUdp, mode, useGlobalProxy } (defaults when no row is stored).
     /// </summary>
     public const string OpGetRoutingSettings = "get-routing-settings";
 

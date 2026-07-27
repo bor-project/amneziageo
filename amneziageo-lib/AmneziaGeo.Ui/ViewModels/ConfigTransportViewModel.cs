@@ -23,6 +23,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private string _baseWebSocketPassword = string.Empty;
     private string _baseWebSocketToken = string.Empty;
     private string _baseMtu = string.Empty;
+    private bool _baseUseIpv6;
 
     [ObservableProperty]
     private bool _useWebSocket;
@@ -52,6 +53,9 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private string _mtu = string.Empty;
 
     [ObservableProperty]
+    private bool _useIpv6;
+
+    [ObservableProperty]
     private string _statusMessage = string.Empty;
 
     [ObservableProperty]
@@ -60,12 +64,13 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// <summary>
     /// ctor
     /// </summary>
-    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu)
+    public ConfigTransportViewModel(IAgentConnection connection, string name, string endpoint, bool useWebSocket, string webSocketHost, int webSocketPort, int mtu, bool useIpv6)
     {
         _connection = connection;
         ConfigName = name;
         _endpoint = endpoint;
         _useWebSocket = useWebSocket;
+        _useIpv6 = useIpv6;
         _mtu = mtu > 0 ? mtu.ToString(CultureInfo.InvariantCulture) : "1420";
 
         // Parse the stored address; default the host to the config's Endpoint host.
@@ -117,6 +122,12 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
 
     partial void OnMtuChanged(string value) => MarkDirty();
 
+    partial void OnUseIpv6Changed(bool value)
+    {
+        MarkDirty();
+        FireAutoSave();
+    }
+
     /// <inheritdoc />
     public bool IsDirty { get; private set; }
 
@@ -140,7 +151,8 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             || !string.Equals(WebSocketUser, _baseWebSocketUser, StringComparison.Ordinal)
             || !string.Equals(WebSocketPassword, _baseWebSocketPassword, StringComparison.Ordinal)
             || !string.Equals(WebSocketToken, _baseWebSocketToken, StringComparison.Ordinal)
-            || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal);
+            || !string.Equals(Mtu, _baseMtu, StringComparison.Ordinal)
+            || UseIpv6 != _baseUseIpv6;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -159,6 +171,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
         _baseWebSocketPassword = WebSocketPassword ?? string.Empty;
         _baseWebSocketToken = WebSocketToken ?? string.Empty;
         _baseMtu = Mtu ?? string.Empty;
+        _baseUseIpv6 = UseIpv6;
         if (IsDirty)
         {
             IsDirty = false;
@@ -180,6 +193,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             WebSocketPassword = _baseWebSocketPassword;
             WebSocketToken = _baseWebSocketToken;
             Mtu = _baseMtu;
+            UseIpv6 = _baseUseIpv6;
             StatusMessage = string.Empty;
         }
         finally
@@ -254,7 +268,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
             var composed = ComposeAddress(wsPort);
             var host = string.Equals(composed, EndpointHost(_endpoint), StringComparison.OrdinalIgnoreCase) ? string.Empty : composed;
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetWebSocket,
-                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal]));
+                [ConfigName, UseWebSocket ? "on" : "off", wsPort.ToString(CultureInfo.InvariantCulture), host, mtuVal, UseIpv6 ? "on" : "off"]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
             return ack.Ok;

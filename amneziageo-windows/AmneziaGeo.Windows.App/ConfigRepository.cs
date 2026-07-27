@@ -38,6 +38,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         var text = await File.ReadAllTextAsync(sourcePath, ct);
         EnsureValidConfig(text);
         await store.SaveConfigAsync(name, text, ct);
+        await SeedIpv6DefaultAsync(name, text, ct);
     }
 
     /// <summary>
@@ -62,6 +63,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
 
         EnsureValidConfig(text);
         await store.SaveConfigAsync(name, text, ct);
+        await SeedIpv6DefaultAsync(name, text, ct);
     }
 
     /// <summary>
@@ -317,5 +319,14 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         }
 
         WgConfigValidator.Validate(text);
+    }
+
+    // Defaults IPv6 on when the imported config has an IPv6 interface Address.
+    private async Task SeedIpv6DefaultAsync(string name, string text, CancellationToken ct)
+    {
+        if (WgConfigEditor.GetAddresses(text).Any(a => a.Contains(':')))
+        {
+            await store.SetConfigTransportAsync(new ConfigTransport(name, false, string.Empty, 443, UseIpv6: true), ct);
+        }
     }
 }

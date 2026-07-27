@@ -14,4 +14,5 @@ public sealed record ConfigEntry(
     int WebSocketPort = 443,
     string Dns = "",
     string Exclusions = "",
-    int Mtu = 0);
+    int Mtu = 0,
+    bool UseIpv6 = false);

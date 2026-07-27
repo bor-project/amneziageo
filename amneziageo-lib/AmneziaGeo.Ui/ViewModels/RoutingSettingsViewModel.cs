@@ -6,9 +6,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// The per-routing-list traffic editor shown in the Routing settings section: the global-proxy flag, all-UDP,
-/// and IPv6. Loaded through the agent and saved as a block; the list's rule set (with its Direct bypass bucket)
-/// lives separately in RoutingListEditorViewModel. Applies on the next connect.
+/// The per-routing-list traffic editor shown in the Routing settings section: the global-proxy flag and all-UDP.
+/// Loaded through the agent and saved as a block; the list's rule set (with its Direct bypass bucket) lives
+/// separately in RoutingListEditorViewModel. Applies on the next connect. IPv6 is per-config now (Config screen).
 /// </summary>
 internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditScope
 {
@@ -16,14 +16,10 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
 
     // Baseline captured on load / commit; the fields are dirty when they differ from it (#143).
     private bool _baseAllUdp;
-    private bool _baseUseIpv6;
     private bool _baseUseGlobalProxy;
 
     [ObservableProperty]
     private bool _allUdp;
-
-    [ObservableProperty]
-    private bool _useIpv6;
 
     [ObservableProperty]
     private bool _useGlobalProxy;
@@ -67,7 +63,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     public void Retarget(long id) => ListId = id;
 
     /// <summary>
-    /// True when global-proxy / all-UDP / IPv6 differ from the last loaded or committed values (#143).
+    /// True when global-proxy / all-UDP differ from the last loaded or committed values (#143).
     /// </summary>
     public bool IsDirty { get; private set; }
 
@@ -75,12 +71,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     public event EventHandler? DirtyChanged;
 
     partial void OnAllUdpChanged(bool value)
-    {
-        OnEdited();
-        FireAutoSave();
-    }
-
-    partial void OnUseIpv6Changed(bool value)
     {
         OnEdited();
         FireAutoSave();
@@ -105,7 +95,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         StatusMessage = string.Empty;
 
         var dirty = AllUdp != _baseAllUdp
-            || UseIpv6 != _baseUseIpv6
             || UseGlobalProxy != _baseUseGlobalProxy;
         if (dirty != IsDirty)
         {
@@ -121,7 +110,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     public void CaptureBaseline()
     {
         _baseAllUdp = AllUdp;
-        _baseUseIpv6 = UseIpv6;
         _baseUseGlobalProxy = UseGlobalProxy;
         if (IsDirty)
         {
@@ -137,7 +125,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         try
         {
             AllUdp = _baseAllUdp;
-            UseIpv6 = _baseUseIpv6;
             UseGlobalProxy = _baseUseGlobalProxy;
             StatusMessage = string.Empty;
         }
@@ -172,7 +159,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
                 using var doc = JsonDocument.Parse(ack.Message);
                 var root = doc.RootElement;
                 AllUdp = root.TryGetProperty("allUdp", out var udp) && udp.ValueKind == JsonValueKind.True;
-                UseIpv6 = root.TryGetProperty("useIpv6", out var v6) && v6.ValueKind == JsonValueKind.True;
                 UseGlobalProxy = root.TryGetProperty("useGlobalProxy", out var gp) && gp.ValueKind == JsonValueKind.True;
             }
             catch (JsonException)
@@ -189,7 +175,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     }
 
     /// <summary>
-    /// Persists global-proxy + all-UDP + IPv6 for this list as one block (#143 header Save); applies on reconnect.
+    /// Persists global-proxy + all-UDP for this list as one block (#143 header Save); applies on reconnect.
     /// Returns whether the agent accepted it. Exclusions are no longer edited here (bypass moved to the Direct
     /// bucket), so an empty exclusions arg is always sent.
     /// </summary>
@@ -204,7 +190,6 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
                 string.Empty,
                 AllUdp ? "on" : "off",
                 UseGlobalProxy ? "full" : "split",
-                UseIpv6 ? "on" : "off",
                 UseGlobalProxy ? "on" : "off",
             ]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).

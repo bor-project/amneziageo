@@ -204,9 +204,6 @@
         <controls:SettingSwitchRow Label="{l:Tr Main_AllUdpTitle}" Description="{l:Tr Main_AllUdpHint}"
                                    IsChecked="{Binding AllUdp, Mode=TwoWay}" />
 
-        <controls:SettingSwitchRow Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
-                                   IsChecked="{Binding UseIpv6, Mode=TwoWay}" />
-
         <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                    IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>

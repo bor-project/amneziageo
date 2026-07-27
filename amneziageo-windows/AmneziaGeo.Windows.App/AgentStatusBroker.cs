@@ -576,7 +576,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var tr = await store.GetConfigTransportAsync(name, ct);
             if (tr is not null)
             {
-                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu);
+                transport = new PortableBundle.TransportBlock(tr.UseWebSocket, tr.WebSocketHost, tr.WebSocketPort, tr.Mtu, tr.UseIpv6);
             }
 
             PortableBundle.GeoBlock? geoBlock = null;
@@ -619,7 +619,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 var settings = await store.GetRoutingSettingsAsync(list.Id, ct);
                 if (settings is not null)
                 {
-                    settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp, settings.UseIpv6);
+                    settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp);
                 }
 
                 routingBlocks.Add(new PortableBundle.RoutingBlock(name, rules, settingsBlock));
@@ -734,7 +734,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 await configRepo.EditFromTextAsync(incoming, block.ConfigText, ct);
                 if (block.Transport is { } trE)
                 {
-                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu), ct);
+                    await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu, trE.UseIpv6), ct);
                 }
 
                 if (block.Geo is { } gE)
@@ -766,7 +766,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
             if (block.Transport is { } tr)
             {
-                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu), ct);
+                await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu, tr.UseIpv6), ct);
             }
 
             if (block.Geo is { } g)
@@ -798,7 +798,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, rules, ct);
                 if (block.Settings is { } sE)
                 {
-                    await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.Exclusions, sE.AllUdp, "split", sE.UseIpv6), ct);
+                    await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.Exclusions, sE.AllUdp, "split"), ct);
                 }
 
                 routingMap[block.Name] = (existingList.Name, existingList.Id);
@@ -815,7 +815,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             var newId = await geo.ApplyToRoutingListAsync(0, finalName, block.Rules, ct);
             if (block.Settings is { } s)
             {
-                await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.Exclusions, s.AllUdp, "split", s.UseIpv6), ct);
+                await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.Exclusions, s.AllUdp, "split"), ct);
             }
 
             routingMap[block.Name] = (finalName, newId);
@@ -1054,7 +1054,12 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        await store.SetConfigTransportAsync(new ConfigTransport(args[0], on, host, port, mtu), ct);
+        // Optional 6th arg: route IPv6 for this config; absent keeps the stored value (CLI set-websocket sends none).
+        var useIpv6 = args.Count > 5
+            ? args[5].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes"
+            : (await store.GetConfigTransportAsync(args[0], ct))?.UseIpv6 ?? false;
+
+        await store.SetConfigTransportAsync(new ConfigTransport(args[0], on, host, port, mtu, useIpv6), ct);
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected.
         if (control.Running && await IsRunningMemberAsync(args[0], ct))
@@ -1062,8 +1067,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("config {Name}: transport set - websocket={On}, port={Port}, mtu={Mtu}, host={Host}",
-            args[0], on, port, mtu, host.Length == 0 ? "(endpoint)" : host);
+        logger.LogInformation("config {Name}: transport set - websocket={On}, port={Port}, mtu={Mtu}, ipv6={V6}, host={Host}",
+            args[0], on, port, mtu, useIpv6, host.Length == 0 ? "(endpoint)" : host);
         return new IpcAck(true, on
             ? IpcMessage.Key("Agent_WebSocketEnabled", port)
             : IpcMessage.Key("Agent_WebSocketDisabled"));
@@ -1269,26 +1274,24 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown routing list: {id}");
         }
 
-        // Args after id: exclusions, all-UDP, mode, use-IPv6, use-global-proxy. All optional; all-default clears the row.
+        // Args after id: exclusions, all-UDP, mode, use-global-proxy. All optional; all-default clears the row.
+        // IPv6 is per-config now (set-websocket), no longer carried here.
         var exclusions = args.Count > 1 ? args[1].Trim() : string.Empty;
         var udpArg = args.Count > 2 ? args[2].Trim().ToLowerInvariant() : "off";
         var allUdp = udpArg is "on" or "1" or "true" or "yes";
-        var globalArg = args.Count > 5 ? args[5].Trim().ToLowerInvariant() : "off";
+        var globalArg = args.Count > 4 ? args[4].Trim().ToLowerInvariant() : "off";
         var useGlobalProxy = globalArg is "on" or "1" or "true" or "yes";
-
-        var v6Arg = args.Count > 4 ? args[4].Trim().ToLowerInvariant() : "off";
-        var useIpv6 = v6Arg is "on" or "1" or "true" or "yes";
 
         // Mode mirrors the global-proxy flag: full routes everything minus Direct, split tunnels only Proxy.
         var mode = useGlobalProxy ? "full" : "split";
 
-        if (exclusions.Length == 0 && !allUdp && !useIpv6 && !useGlobalProxy)
+        if (exclusions.Length == 0 && !allUdp && !useGlobalProxy)
         {
             await store.RemoveRoutingSettingsAsync(id, ct);
         }
         else
         {
-            await store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useIpv6, useGlobalProxy), ct);
+            await store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useGlobalProxy), ct);
         }
 
         // Settings apply on a fresh tunnel; flag a reconnect when the running profile routes through this list.
@@ -1301,7 +1304,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             }
         }
 
-        logger.LogInformation("set-routing-settings {Id}: excl={Len} chars, allUdp={Udp}, mode={Mode}, useIpv6={V6}, globalProxy={Global}", id, exclusions.Length, allUdp, mode, useIpv6, useGlobalProxy);
+        logger.LogInformation("set-routing-settings {Id}: excl={Len} chars, allUdp={Udp}, mode={Mode}, globalProxy={Global}", id, exclusions.Length, allUdp, mode, useGlobalProxy);
         return new IpcAck(true, IpcMessage.Key("Agent_RoutingSettingsSaved"));
     }
 
@@ -1323,7 +1326,6 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             exclusions = settings?.Exclusions ?? string.Empty,
             allUdp = settings?.AllUdp ?? false,
             mode = settings?.Mode ?? "split",
-            useIpv6 = settings?.UseIpv6 ?? false,
             useGlobalProxy = settings?.UseGlobalProxy ?? false,
         });
         return new IpcAck(true, json);
@@ -2271,7 +2273,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 ? ProfileDisplayStatus(boundState.Status)
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0));
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false));
         }
 
         var profiles = new List<ProfileEntry>();

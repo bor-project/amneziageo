@@ -83,6 +83,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         ws_host    TEXT NOT NULL DEFAULT '',
                         ws_port    INTEGER NOT NULL DEFAULT 443,
                         mtu        INTEGER NOT NULL DEFAULT 1280,
+                        use_ipv6   INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
 
@@ -207,6 +208,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // "follow the current default" at connect time (TunnelRunner.LegacyDefaultMtu), so existing
             // default-valued configs pick up the lowered MTU without clobbering an explicit user choice.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1280;", ct).ConfigureAwait(false);
+
+            // Per-config IPv6 opt-in; off keeps the tunnel v4-only. Moved off the routing list (was per-list #149).
+            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN use_ipv6 INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
 
             // Generation counter, bumped when the materialized set changes.
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
@@ -566,7 +570,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT use_ws, ws_host, ws_port, mtu FROM config_transport WHERE name = $name;";
+                command.CommandText = "SELECT use_ws, ws_host, ws_port, mtu, use_ipv6 FROM config_transport WHERE name = $name;";
                 command.Parameters.AddWithValue("$name", name);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -577,7 +581,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3));
+                    return new ConfigTransport(name, reader.GetInt32(0) != 0, reader.GetString(1), reader.GetInt32(2), reader.GetInt32(3), reader.GetInt32(4) != 0);
                 }
             }
         }
@@ -596,13 +600,14 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, updated_at)
-                    VALUES ($name, $use, $host, $port, $mtu, $updated)
+                    INSERT INTO config_transport (name, use_ws, ws_host, ws_port, mtu, use_ipv6, updated_at)
+                    VALUES ($name, $use, $host, $port, $mtu, $v6, $updated)
                     ON CONFLICT(name) DO UPDATE SET
                         use_ws     = excluded.use_ws,
                         ws_host    = excluded.ws_host,
                         ws_port    = excluded.ws_port,
                         mtu        = excluded.mtu,
+                        use_ipv6   = excluded.use_ipv6,
                         updated_at = excluded.updated_at;
                     """;
                 command.Parameters.AddWithValue("$name", transport.Name);
@@ -610,6 +615,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$host", transport.WebSocketHost);
                 command.Parameters.AddWithValue("$port", transport.WebSocketPort);
                 command.Parameters.AddWithValue("$mtu", transport.Mtu);
+                command.Parameters.AddWithValue("$v6", transport.UseIpv6 ? 1 : 0);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -1998,7 +2004,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT exclusions, all_udp, mode, use_ipv6, use_global_proxy FROM routing_settings WHERE list_id = $id;";
+                command.CommandText = "SELECT exclusions, all_udp, mode, use_global_proxy FROM routing_settings WHERE list_id = $id;";
                 command.Parameters.AddWithValue("$id", routingListId);
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -2009,7 +2015,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         return null;
                     }
 
-                    return new RoutingSettings(routingListId, reader.GetString(0), reader.GetInt32(1) != 0, reader.GetString(2), reader.GetInt32(3) != 0, reader.GetInt32(4) != 0);
+                    return new RoutingSettings(routingListId, reader.GetString(0), reader.GetInt32(1) != 0, reader.GetString(2), reader.GetInt32(3) != 0);
                 }
             }
         }
@@ -2028,13 +2034,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    INSERT INTO routing_settings (list_id, exclusions, all_udp, mode, use_ipv6, use_global_proxy, updated_at)
-                    VALUES ($id, $excl, $udp, $mode, $v6, $globalProxy, $updated)
+                    INSERT INTO routing_settings (list_id, exclusions, all_udp, mode, use_global_proxy, updated_at)
+                    VALUES ($id, $excl, $udp, $mode, $globalProxy, $updated)
                     ON CONFLICT(list_id) DO UPDATE SET
                         exclusions       = excluded.exclusions,
                         all_udp          = excluded.all_udp,
                         mode             = excluded.mode,
-                        use_ipv6         = excluded.use_ipv6,
                         use_global_proxy = excluded.use_global_proxy,
                         updated_at       = excluded.updated_at;
                     """;
@@ -2042,7 +2047,6 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 command.Parameters.AddWithValue("$excl", settings.Exclusions);
                 command.Parameters.AddWithValue("$udp", settings.AllUdp ? 1 : 0);
                 command.Parameters.AddWithValue("$mode", settings.Mode);
-                command.Parameters.AddWithValue("$v6", settings.UseIpv6 ? 1 : 0);
                 command.Parameters.AddWithValue("$globalProxy", settings.UseGlobalProxy ? 1 : 0);
                 command.Parameters.AddWithValue("$updated", Timestamp());
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);

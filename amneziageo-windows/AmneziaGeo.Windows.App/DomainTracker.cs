@@ -24,7 +24,6 @@ internal sealed class DomainTracker(
     string peerPublicKey,
     IReadOnlyList<string> staticRoutes,
     IReadOnlyList<string> listRoutes,
-    IReadOnlyList<GeoDomain> geoDomains,
     int refreshSeconds,
     bool stripV6)
 {
@@ -34,16 +33,12 @@ internal sealed class DomainTracker(
     private readonly HashSet<string> _appIps = [];
 
     // App-promotion hint cache (non-authoritative): learned name->IPs and its reverse index, plus the set of
-    // app-promoted domains. Feeds route-before-answer for a matched app's sibling CDN IPs; stale entries are
+    // app-promoted domains. Feeds route-before-answer for a matched app's repeat domains; stale entries are
     // harmless (at worst one dead /32), so these are NOT mirrored on Add/Replace/Remove eviction.
     private readonly Dictionary<string, HashSet<string>> _nameToIps = [];
     private readonly Dictionary<string, HashSet<string>> _ipToNames = [];
     private readonly HashSet<string> _promotedApps = new(StringComparer.Ordinal);
     private const int MaxLearnedIps = 8192;
-
-    // App INTERSECT geo gate: an app-touched destination is tunneled only when a domain it resolved to matches
-    // the active list's geosite rules. Rebuilt on materialization generation change, mirroring the DnsProxy matcher.
-    private volatile DomainMatcher? _geoMatcher = geoDomains.Count > 0 ? new DomainMatcher(geoDomains) : null;
 
     // All static geoip CIDRs advertised in allowed-ips: list ranges + connect infrastructure (tunnel-DNS /32s).
     private readonly HashSet<string> _staticRoutes = new(staticRoutes, StringComparer.Ordinal);
@@ -496,8 +491,6 @@ internal sealed class DomainTracker(
                             // Rebuild the matcher and prune domains that left the lists. Newly listed domains are
                             // NOT pre-resolved - they resolve on demand when first queried.
                             _onGeoDomainsChanged?.Invoke(current.Domains, ct);
-                            // Rebuild the app-gate matcher so app INTERSECT geo tracks live list edits, like the proxy matcher.
-                            _geoMatcher = current.Domains.Count > 0 ? new DomainMatcher(current.Domains) : null;
                             _knownGeneration = current.Generation;
                         }
                     }
@@ -537,16 +530,6 @@ internal sealed class DomainTracker(
         return allHandled;
     }
 
-    // Admits an app destination to the tunnel. With a geosite configured, a destination we know a domain for passes
-    // only when that domain matches it (app INTERSECT geo); with none, every app destination passes (route-all
-    // fallback). A destination the DNS proxy never resolved is an IP literal (Telegram MTProto, Discord voice) and
-    // passes: gating it on a name that will never exist keeps such an app off the tunnel forever. Reverse index is
-    // built by NoteResolution; no geo-universe pre-materialization. Assumes _lock held.
-    private bool AppDestAllowed(string ip) =>
-        _geoMatcher is not { } m
-        || !_ipToNames.TryGetValue(ip, out var names)
-        || names.Any(m.IsTunneled);
-
     // Installs /32(/128) routes for app IPs; assumes _lock held. Returns the CIDRs whose routes were installed so
     // the caller advertises them to the engine OFF-lock, plus whether every input IP was handled (else caller retries).
     private (bool AllHandled, List<string> AddedCidrs) RouteAppIpsLocked(IReadOnlyList<string> ips)
@@ -563,12 +546,6 @@ internal sealed class DomainTracker(
         {
             // v4-only tunnel: never route IPv6.
             if (stripV6 && ip.Contains(':'))
-            {
-                continue;
-            }
-
-            // Gate: route an app destination only when it matches a configured geo rule.
-            if (!AppDestAllowed(ip))
             {
                 continue;
             }
@@ -619,6 +596,7 @@ internal sealed class DomainTracker(
             {
                 _ipToNames.Clear();
                 _nameToIps.Clear();
+                _promotedApps.Clear();
             }
 
             var fwd = _nameToIps.TryGetValue(key, out var f) ? f : (_nameToIps[key] = new(StringComparer.Ordinal));
@@ -640,44 +618,32 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// A matched app touched a remote IP: promotes the domain(s) that IP resolved to (only geo-matching ones when a
-    /// geosite is configured) so their future resolutions route before the answer. Without a geosite the whole known
-    /// sibling set is pre-routed (route-all); with one, the gated sink routes just the touched IP.
+    /// A matched app touched a remote IP: routes that destination and promotes the domain(s) it resolved to, so a
+    /// repeat app domain's future resolutions route before the answer (route-before-answer). Only destinations the
+    /// app actually contacts are tunneled - no sibling pre-routing.
     /// </summary>
     public void NoteAppRemote(string ip)
     {
-        var addedCidrs = new List<string>();
+        List<string> addedCidrs;
         lock (_lock)
         {
-            if (!_ipToNames.TryGetValue(ip, out var names))
+            addedCidrs = RouteAppIpsLocked(new[] { ip }).AddedCidrs;
+
+            // Promote only from an IP mapped to a single known domain: a shared anycast edge (Cloudflare) would
+            // otherwise promote unrelated sites that merely share it, routing their process-agnostic traffic too.
+            if (_ipToNames.TryGetValue(ip, out var names) && names.Count == 1)
             {
-                return;
-            }
-
-            var matcher = _geoMatcher;
-            foreach (var name in names)
-            {
-                if (matcher is not null && !matcher.IsTunneled(name))
+                foreach (var name in names)
                 {
-                    continue;
-                }
-
-                if (!_promotedApps.Add(name))
-                {
-                    continue;
-                }
-
-                logger.LogInformation("app promoted domain {Name} via {Ip}", name, ip);
-                if (matcher is null && _nameToIps.TryGetValue(name, out var sib))
-                {
-                    addedCidrs.AddRange(RouteAppIpsLocked(sib.ToList()).AddedCidrs);
+                    if (_promotedApps.Add(name))
+                    {
+                        logger.LogInformation("app promoted domain {Name} via {Ip}", name, ip);
+                    }
                 }
             }
-
-            addedCidrs.AddRange(RouteAppIpsLocked(new[] { ip }).AddedCidrs);
         }
 
-        // One coalesced advertise off-lock for all promoted sibling + touched IPs.
+        // Advertise the touched IP's route off-lock.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
     }
 

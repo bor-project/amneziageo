@@ -40,6 +40,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private int _mtu;
 
     [ObservableProperty]
+    private bool _useIpv6;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private string _status = ConnectionStatus.Idle;

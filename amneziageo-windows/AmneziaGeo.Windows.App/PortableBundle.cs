@@ -45,9 +45,9 @@ internal static class PortableBundle
         GeoBlock? Geo);
 
     /// <summary>
-    /// WebSocket transport and tunnel MTU. Empty Host reuses the config's Endpoint host.
+    /// WebSocket transport, tunnel MTU, and the IPv6 opt-in. Empty Host reuses the config's Endpoint host.
     /// </summary>
-    public sealed record TransportBlock(bool UseWebSocket, string Host, int Port, int Mtu);
+    public sealed record TransportBlock(bool UseWebSocket, string Host, int Port, int Mtu, bool UseIpv6 = false);
 
     /// <summary>
     /// Geo split toggle and rule tokens.
@@ -65,7 +65,7 @@ internal static class PortableBundle
     /// <summary>
     /// A routing list's traffic policy. Mode is always "split" here.
     /// </summary>
-    public sealed record RoutingSettingsBlock(string Exclusions, bool AllUdp, bool UseIpv6 = false);
+    public sealed record RoutingSettingsBlock(string Exclusions, bool AllUdp);
 
     /// <summary>
     /// A thin profile reference: bound config and routing list by name; either may be null.

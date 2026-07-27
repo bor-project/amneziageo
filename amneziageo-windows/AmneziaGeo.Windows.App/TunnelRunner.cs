@@ -149,10 +149,11 @@ internal sealed class TunnelRunner(
         var blockRoutes = activeList?.BlockRoutes ?? [];
         var blockDomains = activeList?.BlockDomains ?? [];
 
-        // Route IPv6 only when the active routing list opts in (#149); otherwise the tunnel stays v4-only:
+        // Route IPv6 only when the config opts in (ConfigTransport.UseIpv6); otherwise the tunnel stays v4-only:
         // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
         // A partial dual stack would open a v6 leak/blackhole, so the whole v6 path is gated on this one flag.
-        var stripV6 = !(routingSettings?.UseIpv6 ?? false);
+        // The config owns this because the server behind it may or may not have an IPv6 address.
+        var stripV6 = !(transport?.UseIpv6 ?? false);
 
         // Domain tracking only in split mode.
         var trackDomains = geoSplit && domains.Count > 0;
@@ -347,11 +348,66 @@ internal sealed class TunnelRunner(
             if (peer is not null)
             {
                 // Started after the geo-domain sink is attached to avoid a rebuild race.
-                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, domains, appSettings.RefreshSeconds, stripV6);
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, appSettings.RefreshSeconds, stripV6);
             }
         }
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker);
+        // App matcher, built before the proxy so per-app DNS can consult it: resolves whether a PID belongs to
+        // the app rules. The DNS-Client tracker marks names queried by matched apps for tunnel resolution.
+        AppMatcher? matcher = null;
+        AppDnsTracker? appDns = null;
+        if (trackApps && tracker is not null)
+        {
+            var candidate = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>());
+            if (candidate.HasMatchers)
+            {
+                matcher = candidate;
+                appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>());
+            }
+        }
+
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker, appDns);
+
+        // Per-app DNS: a name queried by a matched app resolves through the tunnel and routes its answer. On
+        // learn, drop the proxy's pre-mark answer AND flush the OS resolver cache so the app's retry re-queries
+        // through the proxy instead of Dnscache's cached pre-mark result (mirrors the geo live-add flush). The
+        // flush is coalesced because a chatty app learns many names.
+        if (proxy is not null && appDns is not null)
+        {
+            var learnFlush = new SemaphoreSlim(0, 1);
+            appDns.NameLearned += learnedName =>
+            {
+                proxy.InvalidateName(learnedName);
+                try
+                {
+                    learnFlush.Release();
+                }
+                catch (SemaphoreFullException)
+                {
+                }
+            };
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!sessionCts.Token.IsCancellationRequested)
+                    {
+                        await learnFlush.WaitAsync(sessionCts.Token);
+                        // Collapse a burst of newly-learned names into one flush.
+                        await Task.Delay(500, sessionCts.Token);
+                        while (learnFlush.Wait(0))
+                        {
+                        }
+
+                        dns.FlushCache();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+            _ = Task.Run(() => appDns.RunAsync(sessionCts.Token));
+        }
 
         // Rebuild the proxy matcher live on a geosite refresh or list rule edit, even for a list that had no
         // domains at connect. A rebuild that adds domains flushes the OS resolver cache so a name resolved
@@ -437,17 +493,6 @@ internal sealed class TunnelRunner(
             // (DnsProxy.SeedRoutesAsync is kept for easy revert but intentionally not invoked.)
         }
 
-        // App matcher: resolves whether a PID belongs to the app rules; the flow tracker steers matched apps.
-        AppMatcher? matcher = null;
-        if (trackApps && tracker is not null)
-        {
-            var candidate = new AppMatcher(apps, loggerFactory.CreateLogger<AppMatcher>());
-            if (candidate.HasMatchers)
-            {
-                matcher = candidate;
-            }
-        }
-
         // Flow tracker: routes matched apps' TCP+UDP remotes by ETW signaling (not DNS); not a using to avoid racing Task.Run.
         if (tracker is not null && (matcher is not null || allUdp))
         {
@@ -531,7 +576,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, AppDnsTracker? appDns)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
@@ -542,7 +587,7 @@ internal sealed class TunnelRunner(
             .Where(ip => ip is not null)
             .Select(ip => ip!)
             .ToList();
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns);
         if (proxy.BoundV4 is null)
         {
             return null;

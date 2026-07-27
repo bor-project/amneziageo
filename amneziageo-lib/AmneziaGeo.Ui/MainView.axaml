@@ -225,7 +225,7 @@
         </Grid>
       </Border>
 
-    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" Margin="12,0,12,12" RowDefinitions="48,*">
+    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" Margin="12,4,12,12" RowDefinitions="48,*">
       <Grid.ColumnDefinitions>
         <!-- Section rail column, drag-resizable via the GridSplitter.
              MaxWidth capped so that even at the rail's widest the content pane keeps its MinWidth at the

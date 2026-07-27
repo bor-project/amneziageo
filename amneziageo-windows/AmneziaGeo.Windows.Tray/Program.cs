@@ -152,7 +152,8 @@ internal static unsafe class Program
             (available, _) => Native.PostMessageW(_hwnd, Native.WM_UPDATE, (nuint)(available ? 1 : 0), 0),
             () => Native.PostMessageW(_hwnd, Native.WM_UPDATEDOWNLOADED, 0, 0),
             () => Native.PostMessageW(_hwnd, Native.WM_UPDATEFAILED, 0, 0),
-            () => Native.PostMessageW(_hwnd, Native.WM_CHECKDONE, (nuint)(AgentLink.CheckFailed ? 2 : AgentLink.UpdateAvailable ? 1 : 0), 0));
+            () => Native.PostMessageW(_hwnd, Native.WM_CHECKDONE, (nuint)(AgentLink.CheckFailed ? 2 : AgentLink.UpdateAvailable ? 1 : 0), 0),
+            () => Native.PostMessageW(_hwnd, Native.WM_GEOUPDATED, 0, 0));
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
@@ -297,6 +298,12 @@ internal static unsafe class Program
             if (msg == Native.WM_CHECKDONE)
             {
                 OnCheckDoneSignal((int)wParam);
+                return 0;
+            }
+
+            if (msg == Native.WM_GEOUPDATED)
+            {
+                OnGeoUpdatedSignal();
                 return 0;
             }
 
@@ -686,6 +693,17 @@ internal static unsafe class Program
         {
             _lastBalloonAction = BalloonAction.None;
             ShowBalloon("AmneziaGeo", Labels.UpToDateInfo);
+        }
+    }
+
+    // A geo-bases-updated edge from the agent link: announce it when notifications are on and the GUI is not in
+    // front (a visible sources screen already reflects it). No follow-up action, so a click just dismisses.
+    private static void OnGeoUpdatedSignal()
+    {
+        if (NotificationGate.CanNotify() && !IsUiForeground())
+        {
+            _lastBalloonAction = BalloonAction.None;
+            ShowBalloon("AmneziaGeo", Labels.GeoUpdatedInfo);
         }
     }
 

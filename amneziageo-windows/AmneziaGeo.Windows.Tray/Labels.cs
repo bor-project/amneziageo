@@ -129,6 +129,11 @@ internal static class Labels
     public static string UpdateDownloadFailedInfo { get; private set; } = "Could not download the update";
 
     /// <summary>
+    /// «Базы обновлены» / "Geo databases updated": balloon body after a geo auto-update changed the local bases.
+    /// </summary>
+    public static string GeoUpdatedInfo { get; private set; } = "Geo databases updated";
+
+    /// <summary>
     /// «Идёт загрузка обновления. Выйти и отменить её?» / "An update is downloading. Exit and cancel it?": exit
     /// confirmation while a download runs (#21).
     /// </summary>
@@ -184,6 +189,7 @@ internal static class Labels
             UpdateDownloadedInfo = "Обновление {0} скачано. Нажмите, чтобы установить.";
             UpdateInstalledInfo = "Обновление установлено";
             UpdateDownloadFailedInfo = "Не удалось скачать обновление";
+            GeoUpdatedInfo = "Базы обновлены";
             ExitDownloadPrompt = "Идёт загрузка обновления. Выйти и отменить её?";
             StatusConnected = "Подключено";
             StatusDisconnected = "Отключено";

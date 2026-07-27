@@ -29,6 +29,7 @@ internal static class AgentLink
     private static Action? _onDownloaded;
     private static Action? _onDownloadFailed;
     private static Action? _onCheckFinished;
+    private static Action? _onGeoUpdated;
 
     // Persists across pipe reconnects so a still-latched download failure does not re-fire the balloon each time
     // the tray reconnects to the agent (#8).
@@ -96,6 +97,11 @@ internal static class AgentLink
     public static volatile bool HasUpdateUrl;
 
     /// <summary>
+    /// Monotonic counter the agent bumps when a geo refresh changed the local bases; a rise fires the tray balloon.
+    /// </summary>
+    public static volatile int GeoUpdatedTick;
+
+    /// <summary>
     /// Starts the connection loop; <paramref name="onState"/> receives 0 (disconnected) / 1 (transitioning) /
     /// 2 (connected), whether the agent latched a connect failure, whether the transition is a user
     /// disconnect (the agent reports "disconnecting" only for that, not for a re-dial), whether the last
@@ -104,15 +110,17 @@ internal static class AgentLink
     /// receives the update-available flag and version whenever they change; <paramref name="onDownloaded"/> fires
     /// when a download completes (the ready-to-install edge); <paramref name="onDownloadFailed"/> fires on the
     /// download-failure edge; <paramref name="onCheckFinished"/> fires when a manual update check finishes (the
-    /// checking-flag falling edge). All fire off a background thread.
+    /// checking-flag falling edge); <paramref name="onGeoUpdated"/> fires when the agent's geo-updated tick rises
+    /// (the local bases changed). All fire off a background thread.
     /// </summary>
-    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed, Action onCheckFinished)
+    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed, Action onCheckFinished, Action onGeoUpdated)
     {
         _onState = onState;
         _onUpdate = onUpdate;
         _onDownloaded = onDownloaded;
         _onDownloadFailed = onDownloadFailed;
         _onCheckFinished = onCheckFinished;
+        _onGeoUpdated = onGeoUpdated;
         var thread = new Thread(Loop) { IsBackground = true, Name = "agent-link" };
         thread.Start();
     }
@@ -190,6 +198,7 @@ internal static class AgentLink
                 var prevUpdateVer = string.Empty;
                 var prevDownloaded = false;
                 var prevChecking = false;
+                var prevGeoTick = -1;
                 string? line;
                 while ((line = reader.ReadLine()) is not null)
                 {
@@ -231,6 +240,16 @@ internal static class AgentLink
                         }
 
                         prevChecking = CheckInProgress;
+
+                        // Geo-bases-updated edge: the agent bumps a monotonic tick when a refresh changed the local
+                        // bases. The first snapshot of a session seeds the baseline (prevGeoTick stays -1 until then)
+                        // so a reconnect over an already-high tick does not re-announce.
+                        if (prevGeoTick >= 0 && GeoUpdatedTick > prevGeoTick)
+                        {
+                            _onGeoUpdated?.Invoke();
+                        }
+
+                        prevGeoTick = GeoUpdatedTick;
                     }
                 }
             }
@@ -270,6 +289,7 @@ internal static class AgentLink
         var updateFailed = false;
         var updateChecking = false;
         var updateCheckFailed = false;
+        var geoUpdatedTick = 0;
         var updateVer = default(string);
         var updateUrl = default(string);
 
@@ -338,6 +358,10 @@ internal static class AgentLink
             {
                 updateCheckFailed = reader.TokenType == JsonTokenType.True;
             }
+            else if (prop == "geoUpdatedTick" && reader.TokenType == JsonTokenType.Number)
+            {
+                geoUpdatedTick = reader.GetInt32();
+            }
             else if (prop == "updateVersion" && reader.TokenType == JsonTokenType.String)
             {
                 updateVer = reader.GetString();
@@ -365,6 +389,7 @@ internal static class AgentLink
         DownloadFailed = updateFailed;
         CheckInProgress = updateChecking;
         CheckFailed = updateCheckFailed;
+        GeoUpdatedTick = geoUpdatedTick;
         UpdateVersion = updateVer ?? string.Empty;
         HasUpdateUrl = !string.IsNullOrWhiteSpace(updateUrl);
         HasActiveProfile = !string.IsNullOrEmpty(selected) || !string.IsNullOrEmpty(bound);

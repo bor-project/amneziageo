@@ -68,7 +68,7 @@
     <value>Show notifications</value>
   </data>
   <data name="General_ShowNotificationsHint" xml:space="preserve">
-    <value>Show tray notifications when the connection state changes.</value>
+    <value>Show tray notifications: connection, app and database updates.</value>
   </data>
   <data name="General_AllowPrerelease" xml:space="preserve">
     <value>Check for prerelease versions</value>
@@ -120,6 +120,9 @@
   </data>
   <data name="About_Version" xml:space="preserve">
     <value>App version</value>
+  </data>
+  <data name="About_BuildType" xml:space="preserve">
+    <value>Build type</value>
   </data>
   <data name="Tray_Open" xml:space="preserve">
     <value>Open</value>
@@ -278,10 +281,10 @@
     <value>Token</value>
   </data>
   <data name="Main_AutoCheckHint" xml:space="preserve">
-    <value>Periodically check sources for a new version and notify.</value>
+    <value>Periodically update databases and notify.</value>
   </data>
   <data name="Main_AutoCheckTitle" xml:space="preserve">
-    <value>Update check</value>
+    <value>Auto-update</value>
   </data>
   <data name="Main_BackToProfilesTooltip" xml:space="preserve">
     <value>Back to profiles</value>

@@ -44,10 +44,6 @@
             <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
           </StackPanel>
         </Grid>
-        <Button Classes="methodpick" Padding="18,6"
-                Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w170}"
-                HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
-                Command="{Binding CheckSourcesCommand}" Content="{l:Tr Main_CheckUpdatesButton}" />
       </StackPanel>
     </Border>
 

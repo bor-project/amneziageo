@@ -68,7 +68,7 @@
     <value>Показывать оповещения</value>
   </data>
   <data name="General_ShowNotificationsHint" xml:space="preserve">
-    <value>Показывать оповещения в трее при смене состояния подключения.</value>
+    <value>Показывать оповещения в трее: подключение, обновления приложения и баз.</value>
   </data>
   <data name="General_AllowPrerelease" xml:space="preserve">
     <value>Проверять предварительные версии</value>
@@ -120,6 +120,9 @@
   </data>
   <data name="About_Version" xml:space="preserve">
     <value>Версия приложения</value>
+  </data>
+  <data name="About_BuildType" xml:space="preserve">
+    <value>Тип сборки</value>
   </data>
   <data name="Tray_Open" xml:space="preserve">
     <value>Открыть</value>
@@ -278,10 +281,10 @@
     <value>Токен</value>
   </data>
   <data name="Main_AutoCheckHint" xml:space="preserve">
-    <value>Периодически проверять источники на новую версию и уведомлять.</value>
+    <value>Периодически обновлять базы и оповещать об обновлении.</value>
   </data>
   <data name="Main_AutoCheckTitle" xml:space="preserve">
-    <value>Проверка обновлений</value>
+    <value>Автообновление</value>
   </data>
   <data name="Main_BackToProfilesTooltip" xml:space="preserve">
     <value>Назад к профилям</value>

@@ -40,6 +40,9 @@ internal static class Native
     // result (#15). wParam: 0 up to date, 1 update available, 2 check failed.
     public const uint WM_CHECKDONE = 0x0400 + 9;
 
+    // The local geo bases were updated (the agent link reports it), so the tray can announce it.
+    public const uint WM_GEOUPDATED = 0x0400 + 10;
+
     // Menu command ids.
     public const int ID_OPEN = 1;
     public const int ID_CONNECT = 2;

@@ -79,9 +79,9 @@ Requirements: Windows 10 or 11 (x64 or arm64). The installer sets up a per-machi
 
    | Asset | Pick it when |
    |---|---|
-   | `AmneziaGeo-<version>-win-x64-scd.exe` | Ordinary case on an Intel or AMD machine. Self-contained: carries its own .NET runtime, so nothing else is needed. |
+   | `AmneziaGeo-<version>-win-x64.exe` | Ordinary case on an Intel or AMD machine. Self-contained: carries its own .NET runtime, so nothing else is needed. |
    | `AmneziaGeo-<version>-win-x64-fdd.exe` | Same machine, smaller download, but only if the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) is already installed. Framework-dependent: it neither bundles nor installs the runtime. |
-   | `AmneziaGeo-<version>-win-arm64-scd.exe` | Windows on ARM (Snapdragon and similar), self-contained. |
+   | `AmneziaGeo-<version>-win-arm64.exe` | Windows on ARM (Snapdragon and similar), self-contained. |
    | `AmneziaGeo-<version>-win-arm64-fdd.exe` | Windows on ARM, framework-dependent. |
 
 2. Run it. It installs the AmneziaGeo agent service and the app.

@@ -192,9 +192,9 @@ jobs:
           installers_json=$(
             for f in release/AmneziaGeo-*.exe; do
               b=$(basename "$f")
-              rest=${b#AmneziaGeo-${VER}-}; rest=${rest%.exe}   # win-<arch>-<variant>
-              arch=$(echo "$rest" | sed -n 's/^win-\([^-]*\)-.*/\1/p')
-              variant=$(echo "$rest" | sed -n 's/^win-[^-]*-\(.*\)/\1/p')
+              rest=${b#AmneziaGeo-${VER}-}; rest=${rest%.exe}   # win-<arch> (scd) or win-<arch>-<variant> (fdd)
+              arch=$(echo "$rest" | sed -n 's/^win-\([^-]*\).*/\1/p')
+              variant=$(echo "$rest" | sed -n 's/^win-[^-]*-\(.*\)/\1/p'); variant=${variant:-scd}
               # SHA-256 lets the client verify the downloaded installer before it runs it.
               sha=$(sha256sum "$f" | cut -d' ' -f1)
               jq -n --arg name "$b" --arg platform windows --arg arch "$arch" --arg variant "$variant" --arg sha256 "$sha" \

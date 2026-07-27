@@ -62,6 +62,12 @@
                          HorizontalAlignment="Right" VerticalAlignment="Center" TextAlignment="Right" TextWrapping="Wrap" />
             </Grid>
 
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding HasBuildType}">
+              <TextBlock Grid.Column="0" Text="{l:Tr About_BuildType}" FontSize="13.5" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding BuildType}" Classes="muted mono" FontSize="12.5"
+                         HorizontalAlignment="Right" VerticalAlignment="Center" TextAlignment="Right" TextWrapping="Wrap" />
+            </Grid>
+
             <!-- Update sub-block: found -> downloading -> downloaded; installing is an explicit second click (#154). -->
             <StackPanel Spacing="9" IsVisible="{Binding HasUpdateUrl}">
               <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Margin="0,2,0,0" />

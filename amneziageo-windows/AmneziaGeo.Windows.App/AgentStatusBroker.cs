@@ -36,6 +36,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     private bool _geoQueuedForce;
     private readonly HashSet<string> _geoQueuedNames = new(StringComparer.Ordinal);
 
+    // Bumped when a geo refresh session actually changed the local bases; surfaced so the tray can announce it.
+    private int _geoUpdatedTick;
+
     /// <summary>
     /// Profile reflected on the connection card.
     /// </summary>
@@ -1573,6 +1576,20 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return (available, sources.Count);
     }
 
+    /// <summary>
+    /// Downloads every geo source now (the periodic auto-update); a changed base advances the geo-updated tick. Returns the source count.
+    /// </summary>
+    public async Task<int> UpdateAllSourcesAsync(CancellationToken ct)
+    {
+        var sources = await store.ListGeoSourcesAsync(ct);
+        if (sources.Count > 0)
+        {
+            EnqueueGeoRefresh(sources, forceResolve: false);
+        }
+
+        return sources.Count;
+    }
+
     private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
     {
         var (available, total) = await CheckAllSourcesAsync(ct);
@@ -1811,6 +1828,14 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         }
 
         await store.SetSettingAsync("geo-last-refresh", DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+
+        // A real base change advances the geo-updated tick and is pushed so the tray can announce it.
+        if (changed)
+        {
+            Interlocked.Increment(ref _geoUpdatedTick);
+            await BroadcastIfChangedAsync(CancellationToken.None);
+        }
+
         logger.LogDebug("geo refresh session done: changed={Changed}, re-resolve triggered={Bumped} [{Ms} ms]",
             changed, forceResolve || changed, geoSw.ElapsedMilliseconds);
     }
@@ -2329,7 +2354,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             updateState.DownloadFailed,
             updateState.CancelRequested,
             updateState.Checking,
-            updateState.CheckFailed);
+            updateState.CheckFailed,
+            Volatile.Read(ref _geoUpdatedTick),
+            AppSettings.BuildTarget);
     }
 
     private static string ProfileDisplayStatus(string profileStatus)

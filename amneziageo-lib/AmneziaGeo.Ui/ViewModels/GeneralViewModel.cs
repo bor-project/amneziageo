@@ -71,6 +71,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(AmneziaVersion))]
     private string _engineVersion = string.Empty;
 
+    // Baked build target (win-<arch>[-fdd]); empty on a build with none (dev / non-Windows), hiding the row.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BuildType))]
+    [NotifyPropertyChangedFor(nameof(HasBuildType))]
+    private string _buildTarget = string.Empty;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasUpdateUrl))]
     private string _updateUrl = string.Empty;
@@ -181,6 +187,32 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// </summary>
     public string AmneziaVersion => string.IsNullOrEmpty(EngineVersion) ? Loc.Instance.Get("MainVm_NotAvailable") : EngineVersion;
 
+    /// <summary>
+    /// Whether the build carries a baked build target, so the About build-type row is shown.
+    /// </summary>
+    public bool HasBuildType => !string.IsNullOrEmpty(BuildTarget);
+
+    /// <summary>
+    /// Human-readable build type from the baked target: architecture plus payload (e.g. "x64 · SCD").
+    /// </summary>
+    public string BuildType => FormatBuildType(BuildTarget);
+
+    // Turns "win-<arch>" / "win-<arch>-fdd" into "<arch> · SCD" / "<arch> · FDD"; the unmarked payload is
+    // self-contained, so a target with no "-fdd" suffix reads as SCD.
+    private static string FormatBuildType(string target)
+    {
+        if (string.IsNullOrEmpty(target))
+        {
+            return string.Empty;
+        }
+
+        var body = target.StartsWith("win-", StringComparison.OrdinalIgnoreCase) ? target["win-".Length..] : target;
+        var dash = body.IndexOf('-');
+        var arch = dash >= 0 ? body[..dash] : body;
+        var payload = dash >= 0 && body[(dash + 1)..].Equals("fdd", StringComparison.OrdinalIgnoreCase) ? "FDD" : "SCD";
+        return $"{arch} · {payload}";
+    }
+
     public string UpdateVersionBadgeText => Loc.Instance.Get("Main_UpdateAvailableVersion", UpdateVersion);
 
     public string UpdateBannerText => Loc.Instance.Get("Main_UpdateBanner", UpdateVersion);
@@ -241,6 +273,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     {
         AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
         EngineVersion = snapshot.EngineVersion;
+        BuildTarget = snapshot.BuildTarget;
 
         // Seed the connection settings without echoing an autosave push back to the agent.
         _suppressSettingPush = true;

@@ -99,7 +99,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Profile = new ProfileViewModel(this, connection);
         Routing = new RoutingViewModel(this, connection);
         Home = new ConnectionViewModel(this, connection, prefs);
-        Sources = new SourcesViewModel(connection, notice => Home.ShowNotice(notice), () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
+        Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
         // Seed backing field from prefs without echoing OnChanged.
         _settingsSection = prefs.SettingsSection;
         UpdateActiveSection();

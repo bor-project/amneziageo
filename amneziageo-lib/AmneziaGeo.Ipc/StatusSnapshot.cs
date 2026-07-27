@@ -71,4 +71,8 @@ public sealed record StatusSnapshot(
     // Whether a manual update check (tray/console "Check for updates") is currently running.
     bool UpdateChecking = false,
     // Whether the last manual update check failed to complete (server unreachable or unreadable metadata).
-    bool UpdateCheckFailed = false);
+    bool UpdateCheckFailed = false,
+    // Monotonic counter bumped when a geo-source refresh actually changed the local bases; a rise drives the tray balloon.
+    int GeoUpdatedTick = 0,
+    // Build target (win-<arch> for self-contained, win-<arch>-fdd for framework-dependent) baked at build time; drives the About build-type row.
+    string BuildTarget = "");

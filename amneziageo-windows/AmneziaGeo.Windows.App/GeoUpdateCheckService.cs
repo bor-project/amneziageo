@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Periodically checks geo sources for a newer remote file.
+/// Periodically updates geo sources to their newest remote file.
 /// </summary>
 internal sealed class GeoUpdateCheckService(
     SettingsStore settingsStore,
@@ -46,9 +46,8 @@ internal sealed class GeoUpdateCheckService(
                 var settings = await settingsStore.LoadAsync(ct);
                 if (settings.GeoAutoCheck)
                 {
-                    var (available, total) = await broker.CheckAllSourcesAsync(ct);
-                    logger.LogInformation("geo auto-check: {Available}/{Total} sources have updates", available, total);
-                    await broker.RefreshStaleGeoAsync(ct);
+                    var total = await broker.UpdateAllSourcesAsync(ct);
+                    logger.LogInformation("geo auto-update: refreshing {Total} source(s)", total);
                     // Return the materialization transient before the long sleep.
                     MemoryReclaim.Trim();
                     delay = TimeSpan.FromHours(Math.Clamp(settings.GeoCheckIntervalHours, MinIntervalHours, MaxIntervalHours));

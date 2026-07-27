@@ -272,6 +272,11 @@ function Build-Variant {
     $scStr = if ($SelfContained) { 'true' } else { 'false' }
     $tag   = if ($SelfContained) { 'scd' } else { 'fdd' }
     $kind  = if ($SelfContained) { 'self-contained' } else { 'framework-dependent' }
+    # Only the framework-dependent payload is tagged; self-contained is the unmarked default. The file name and
+    # the baked BuildTarget share this suffix so the app self-updater (AmneziaGeo-<version>-<BuildTarget>.exe)
+    # resolves the matching asset.
+    $targetSuffix = if ($SelfContained) { '' } else { '-fdd' }
+    $buildTarget  = "win-$Arch$targetSuffix"
     Write-Host ''
     Write-Host "########## variant win-$Arch ($kind) ##########"
 
@@ -297,7 +302,7 @@ function Build-Variant {
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
     Write-Host "== publish backend (AmneziaGeo.Windows.App, $rid, $kind) =="
-    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version "-p:BuildTarget=win-$Arch-$tag" $updateProps $prereleaseProps $engineProps -o $stage
+    dotnet publish $appProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version "-p:BuildTarget=$buildTarget" $updateProps $prereleaseProps $engineProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "App publish failed ($LASTEXITCODE)" }
 
     Write-Host "== publish GUI (AmneziaGeo.Windows.Ui, $rid, $kind) =="
@@ -368,8 +373,8 @@ function Build-Variant {
     if (-not $setupExe) { throw "AmneziaGeoSetup.exe not found under $bundleBin after build." }
     Invoke-SignBundle $setupExe.FullName
 
-    # ---- collect into dist\ under an arch/payload-tagged, version-stamped name ----
-    $distName = "AmneziaGeo-$version-win-$Arch-$tag.exe"
+    # ---- collect into dist\ under a version-stamped name; only fdd is tagged, scd is unmarked ----
+    $distName = "AmneziaGeo-$version-$buildTarget.exe"
     Copy-Item -Force $setupExe.FullName (Join-Path $dist $distName)
     Write-Host "   -> dist\$distName"
 }

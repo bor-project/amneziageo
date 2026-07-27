@@ -15,14 +15,14 @@
     <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
   </UserControl.Resources>
   <!-- Title, shared segment+source header, then a single content area; only the log body scrolls. -->
-  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
+  <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
 
     <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_AgentLogSection}" />
 
     <!-- Shared header: view/settings segment + source picker, common to both panes. -->
-    <!-- Wide: segment left, source right on one row. -->
+    <!-- Wide: segment left, source right on one row; both centred, the caption floats above the combo. -->
     <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCompact}">
-      <Border Grid.Column="0" VerticalAlignment="Bottom"
+      <Border Grid.Column="0" VerticalAlignment="Center"
               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
               CornerRadius="9" Padding="3" MaxWidth="360">
         <UniformGrid Columns="2">
@@ -36,11 +36,17 @@
           </Button>
         </UniformGrid>
       </Border>
-      <StackPanel Grid.Column="2" Width="200" VerticalAlignment="Bottom" Spacing="6">
-        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" />
-        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+      <!-- Caption floats above the combo (zero layout height) so the combo stays centred against the segment. -->
+      <Panel Grid.Column="2" Width="200" VerticalAlignment="Center" ClipToBounds="False">
+        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5"
+                   VerticalAlignment="Top" HorizontalAlignment="Left">
+          <TextBlock.RenderTransform>
+            <TranslateTransform Y="-18" />
+          </TextBlock.RenderTransform>
+        </TextBlock>
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                   ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
-      </StackPanel>
+      </Panel>
     </Grid>
 
     <!-- Narrow: segment then source stacked. -->
@@ -65,8 +71,11 @@
       </StackPanel>
     </StackPanel>
 
+    <!-- Divider between the header (tabs + picker) and the content. -->
+    <Border Grid.Row="2" Height="1" Background="{DynamicResource AgBorderBrush}" />
+
     <!-- Content: settings pane or viewer pane. -->
-    <Panel Grid.Row="2">
+    <Panel Grid.Row="3">
 
       <!-- Settings pane: capture level (ageo) or on/off (routes), then log actions; stacked under the shared source. -->
       <Border IsVisible="{Binding IsSettingsMode}" VerticalAlignment="Top"

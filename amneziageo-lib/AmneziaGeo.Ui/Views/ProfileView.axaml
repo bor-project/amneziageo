@@ -11,11 +11,11 @@
   <!-- Cards stretch the full pane width. -->
   <StackPanel Spacing="14">
 
-    <!-- Section tabs + profile picker. Wide: tabs left, picker right on the tab row. Compact: tabs full-width,
-         picker full-width on its own row below. -->
-    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*">
+    <!-- Section tabs + profile picker. HeaderReflow keeps them side by side while they fit and drops the picker
+         to its own row when the pane is too narrow (or compact). The caption floats above the combo. -->
+    <Grid x:Name="HeaderGrid" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" Margin="0,12,0,0">
       <!-- Section menu: Settings / Import / Export. -->
-      <controls:SegmentedSelector Grid.Row="0" Grid.Column="0"
+      <controls:SegmentedSelector x:Name="HeaderTabs" Grid.Row="0" Grid.Column="0"
                             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
                             Command="{Binding SelectProfileSectionCommand}" IsCompact="{Binding IsCompact}"
                             Item1Text="{l:Tr Main_SettingsTab}" Item1Param="profile" Item1Active="{Binding SegProfileActive}"
@@ -24,26 +24,31 @@
 
       <!-- Profile picker: combo to set up, centred against the tabs. The «Make active» link floats in the gap
            below via a render transform, so it never lifts the combo off-centre. Shown only on the Profile section. -->
-      <Panel VerticalAlignment="Center" IsVisible="{Binding IsSectionProfile}" ClipToBounds="False"
-             Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-             Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
-             HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
-             MaxWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW260}"
-             Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}">
-        <StackPanel Spacing="6" IsVisible="{Binding HasConfigs}">
-          <TextBlock Classes="label" Text="{l:Tr Main_ChooseProfileToSetup}" IsVisible="{Binding IsCompact}" />
-          <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w160}"
-                    ItemsSource="{Binding ProfileOptions}"
-                    SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
-            <controls:AdaptiveComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:ProfileChoice">
-                <TextBlock Text="{Binding Name}" />
-              </DataTemplate>
-            </controls:AdaptiveComboBox.ItemTemplate>
-          </controls:AdaptiveComboBox>
-        </StackPanel>
+      <Panel x:Name="PickerHost" Grid.Row="0" Grid.Column="1" ClipToBounds="False"
+             VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="260"
+             IsVisible="{Binding IsSectionProfile}">
+        <Panel IsVisible="{Binding HasConfigs}">
+          <!-- Floating caption above the combo (zero layout height) so the combo stays centred against the tabs. -->
+          <TextBlock x:Name="PickerLabelFloat" Classes="label" Text="{l:Tr Main_ProfileLabel}"
+                     VerticalAlignment="Top" HorizontalAlignment="Left">
+            <TextBlock.RenderTransform>
+              <TranslateTransform Y="-17" />
+            </TextBlock.RenderTransform>
+          </TextBlock>
+          <StackPanel Spacing="6">
+            <!-- Inline caption when the combo drops to its own row. -->
+            <TextBlock x:Name="PickerLabelInline" Classes="label" Text="{l:Tr Main_ProfileLabel}" IsVisible="False" />
+            <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch" Width="160"
+                      ItemsSource="{Binding ProfileOptions}"
+                      SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">
+              <controls:AdaptiveComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ProfileChoice">
+                  <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+              </controls:AdaptiveComboBox.ItemTemplate>
+            </controls:AdaptiveComboBox>
+          </StackPanel>
+        </Panel>
         <!-- Make-active link (link style like «Add local networks»); pushed into the gap below the combo with a
              render transform so it consumes no layout height. The command disables it when already active. -->
         <Button Classes="linkbtn" HorizontalAlignment="Right" VerticalAlignment="Bottom"
@@ -55,6 +60,10 @@
         </Button>
       </Panel>
     </Grid>
+
+    <!-- Divider between the header (tabs + picker) and the content. Extra top gap clears the «Установить»
+         link that floats below the combo. -->
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" Margin="0,12,0,0" />
 
     <!-- PROFILE SECTION: catalogue + open-profile editor. -->
     <StackPanel IsVisible="{Binding IsSectionProfile}" Spacing="14">

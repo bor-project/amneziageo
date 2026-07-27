@@ -17,12 +17,17 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class RoutingView : UserControl
 {
+    private readonly HeaderReflow _header;
+
     /// <summary>
     /// ctor
     /// </summary>
     public RoutingView()
     {
         InitializeComponent();
+        _header = new HeaderReflow(HeaderGrid, HeaderTabs, PickerHost, Picker, PickerLabelFloat, PickerLabelInline,
+            () => (DataContext as RoutingViewModel)?.IsCompact ?? false);
+        DataContextChanged += (_, _) => _header.Apply();
     }
 
     // Routing-list export: copy the QR payload / save the raw payload to a file.

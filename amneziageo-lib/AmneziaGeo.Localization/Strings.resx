@@ -313,6 +313,9 @@
   <data name="Main_ChooseProfileToSetup" xml:space="preserve">
     <value>CHOOSE A PROFILE TO SET UP</value>
   </data>
+  <data name="Main_ProfileLabel" xml:space="preserve">
+    <value>PROFILE</value>
+  </data>
   <data name="Main_SetActiveProfile" xml:space="preserve">
     <value>Set active</value>
   </data>

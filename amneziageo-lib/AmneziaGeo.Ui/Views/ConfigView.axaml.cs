@@ -17,12 +17,17 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class ConfigView : UserControl
 {
+    private readonly HeaderReflow _header;
+
     /// <summary>
     /// ctor
     /// </summary>
     public ConfigView()
     {
         InitializeComponent();
+        _header = new HeaderReflow(HeaderGrid, HeaderTabs, PickerHost, Picker, PickerLabelFloat, PickerLabelInline,
+            () => (DataContext as ConfigViewModel)?.IsCompact ?? false);
+        DataContextChanged += (_, _) => _header.Apply();
     }
 
     // Copy the export payload (vpn link or .conf text) to the clipboard.

@@ -18,49 +18,57 @@
     <StreamGeometry x:Key="AgDropGeometry">M2,12H4V17H20V12H22V17A2,2 0 0,1 20,19H4A2,2 0 0,1 2,17V12M12,15L7,10H10V4H14V10H17L12,15Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Cards stretch the full pane width. -->
-  <Grid RowDefinitions="Auto,*">
+  <Grid RowDefinitions="Auto,Auto,*">
 
-    <!-- Section tabs + catalogue combo. Wide: tabs left, combo right on the tab row. Compact: tabs full-width,
-         combo full-width on its own row below. -->
-    <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*">
+    <!-- Section tabs + catalogue combo. HeaderReflow keeps them side by side while they fit and drops the combo
+         to its own row when the pane is too narrow (or compact). The caption floats above the combo. -->
+    <Grid x:Name="HeaderGrid" Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" Margin="0,12,0,0">
       <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. -->
-      <controls:SegmentedSelector Grid.Row="0" Grid.Column="0"
+      <controls:SegmentedSelector x:Name="HeaderTabs" Grid.Row="0" Grid.Column="0"
                             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
                             Command="{Binding SelectRoutingSectionCommand}" IsCompact="{Binding IsCompact}"
                             Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
                             Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
                             Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
 
-      <!-- Catalogue combo: «- не выбрано -» then saved lists. Hidden while importing. -->
-      <StackPanel Spacing="6" VerticalAlignment="Center" IsVisible="{Binding !IsSectionImport}"
-                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                  Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
-                  HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}"
-                  MaxWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW260}"
-                  Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=gapTop14}">
-        <TextBlock Classes="label" Text="{l:Tr Main_ChooseListLabel}" IsVisible="{Binding IsCompact}" />
-        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w160}"
-                  ItemsSource="{Binding RoutingCatalogueOptions}"
-                  SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
-          <controls:AdaptiveComboBox.ItemTemplate>
-            <DataTemplate x:DataType="vm:RoutingListChoice">
-              <!-- «- не выбрано -» for the none sentinel. -->
-              <Panel>
-                <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
-                <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
-              </Panel>
-            </DataTemplate>
-          </controls:AdaptiveComboBox.ItemTemplate>
-        </controls:AdaptiveComboBox>
-        <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                   Text="{l:Tr Main_NoRoutingListsHint}" />
-      </StackPanel>
+      <!-- Catalogue combo: «- не выбрано -» then saved lists. Row/column/width set by HeaderReflow. Hidden while importing. -->
+      <Panel x:Name="PickerHost" Grid.Row="0" Grid.Column="1" ClipToBounds="False"
+             VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="260"
+             IsVisible="{Binding !IsSectionImport}">
+        <!-- Floating caption above the combo (zero layout height) so the combo stays centred against the tabs. -->
+        <TextBlock x:Name="PickerLabelFloat" Classes="label" Text="{l:Tr Main_RoutingLabel}"
+                   VerticalAlignment="Top" HorizontalAlignment="Left">
+          <TextBlock.RenderTransform>
+            <TranslateTransform Y="-17" />
+          </TextBlock.RenderTransform>
+        </TextBlock>
+        <StackPanel Spacing="6">
+          <!-- Inline caption when the combo drops to its own row. -->
+          <TextBlock x:Name="PickerLabelInline" Classes="label" Text="{l:Tr Main_RoutingLabel}" IsVisible="False" />
+          <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch" Width="160"
+                    ItemsSource="{Binding RoutingCatalogueOptions}"
+                    SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
+            <controls:AdaptiveComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:RoutingListChoice">
+                <!-- «- не выбрано -» for the none sentinel. -->
+                <Panel>
+                  <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
+                  <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
+                </Panel>
+              </DataTemplate>
+            </controls:AdaptiveComboBox.ItemTemplate>
+          </controls:AdaptiveComboBox>
+          <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                     Text="{l:Tr Main_NoRoutingListsHint}" />
+        </StackPanel>
+      </Panel>
     </Grid>
 
+    <!-- Divider between the header (tabs + picker) and the content. -->
+    <Border Grid.Row="1" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="0,14,0,0" />
+
     <!-- Content: one section shown at a time. -->
-    <Panel Grid.Row="1" Margin="0,14,0,0">
+    <Panel Grid.Row="2" Margin="0,14,0,0">
 
       <!-- Section loader until an opened list's rules + traffic settings finish (#193). -->
       <StackPanel IsVisible="{Binding ShowSettingsLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">

@@ -37,15 +37,15 @@
              VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="260"
              IsVisible="{Binding !IsSectionImport}">
         <!-- Floating caption above the combo (zero layout height) so the combo stays centred against the tabs. -->
-        <TextBlock x:Name="PickerLabelFloat" Classes="label" Text="{l:Tr Main_ConfigLabel}"
+        <TextBlock x:Name="PickerLabelFloat" Classes="muted" FontSize="11.5" Text="{l:Tr Main_ConfigPickerLabel}"
                    VerticalAlignment="Top" HorizontalAlignment="Left">
           <TextBlock.RenderTransform>
-            <TranslateTransform Y="-17" />
+            <TranslateTransform Y="-18" />
           </TextBlock.RenderTransform>
         </TextBlock>
         <StackPanel Spacing="6">
           <!-- Inline caption when the combo drops to its own row. -->
-          <TextBlock x:Name="PickerLabelInline" Classes="label" Text="{l:Tr Main_ConfigLabel}" IsVisible="False" />
+          <TextBlock x:Name="PickerLabelInline" Classes="muted" FontSize="11.5" Text="{l:Tr Main_ConfigPickerLabel}" IsVisible="False" />
           <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch" Width="160"
                     ItemsSource="{Binding ConfigCatalogueOptions}"
                     SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">

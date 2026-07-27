@@ -314,7 +314,7 @@
     <value>CHOOSE A PROFILE TO SET UP</value>
   </data>
   <data name="Main_ProfileLabel" xml:space="preserve">
-    <value>PROFILE</value>
+    <value>Profile</value>
   </data>
   <data name="Main_SetActiveProfile" xml:space="preserve">
     <value>Set active</value>
@@ -375,6 +375,9 @@
   </data>
   <data name="Main_ConfigLabel" xml:space="preserve">
     <value>CONFIGURATION</value>
+  </data>
+  <data name="Main_ConfigPickerLabel" xml:space="preserve">
+    <value>Configuration</value>
   </data>
   <data name="Main_ConfigNameLabel" xml:space="preserve">
     <value>CONFIGURATION NAME</value>
@@ -738,6 +741,9 @@
   </data>
   <data name="Main_RoutingLabel" xml:space="preserve">
     <value>ROUTING</value>
+  </data>
+  <data name="Main_RoutingPickerLabel" xml:space="preserve">
+    <value>Routing</value>
   </data>
   <data name="Main_RoutingPasteTooltip" xml:space="preserve">
     <value>Import the list from clipboard</value>

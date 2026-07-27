@@ -29,15 +29,15 @@
              IsVisible="{Binding IsSectionProfile}">
         <Panel IsVisible="{Binding HasConfigs}">
           <!-- Floating caption above the combo (zero layout height) so the combo stays centred against the tabs. -->
-          <TextBlock x:Name="PickerLabelFloat" Classes="label" Text="{l:Tr Main_ProfileLabel}"
+          <TextBlock x:Name="PickerLabelFloat" Classes="muted" FontSize="11.5" Text="{l:Tr Main_ProfileLabel}"
                      VerticalAlignment="Top" HorizontalAlignment="Left">
             <TextBlock.RenderTransform>
-              <TranslateTransform Y="-17" />
+              <TranslateTransform Y="-18" />
             </TextBlock.RenderTransform>
           </TextBlock>
           <StackPanel Spacing="6">
             <!-- Inline caption when the combo drops to its own row. -->
-            <TextBlock x:Name="PickerLabelInline" Classes="label" Text="{l:Tr Main_ProfileLabel}" IsVisible="False" />
+            <TextBlock x:Name="PickerLabelInline" Classes="muted" FontSize="11.5" Text="{l:Tr Main_ProfileLabel}" IsVisible="False" />
             <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch" Width="160"
                       ItemsSource="{Binding ProfileOptions}"
                       SelectedItem="{Binding OpenProfileChoice, Mode=TwoWay}">

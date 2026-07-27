@@ -314,7 +314,7 @@
     <value>ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ НАСТРОЙКИ</value>
   </data>
   <data name="Main_ProfileLabel" xml:space="preserve">
-    <value>ПРОФИЛЬ</value>
+    <value>Профиль</value>
   </data>
   <data name="Main_SetActiveProfile" xml:space="preserve">
     <value>Установить</value>
@@ -375,6 +375,9 @@
   </data>
   <data name="Main_ConfigLabel" xml:space="preserve">
     <value>КОНФИГУРАЦИЯ</value>
+  </data>
+  <data name="Main_ConfigPickerLabel" xml:space="preserve">
+    <value>Конфигурация</value>
   </data>
   <data name="Main_ConfigNameLabel" xml:space="preserve">
     <value>ИМЯ КОНФИГУРАЦИИ</value>
@@ -738,6 +741,9 @@
   </data>
   <data name="Main_RoutingLabel" xml:space="preserve">
     <value>МАРШРУТИЗАЦИЯ</value>
+  </data>
+  <data name="Main_RoutingPickerLabel" xml:space="preserve">
+    <value>Маршрутизация</value>
   </data>
   <data name="Main_RoutingPasteTooltip" xml:space="preserve">
     <value>Импортировать список из буфера обмена</value>

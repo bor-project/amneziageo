@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Native engine deps (tunnel.dll/wintun.dll): arch mapping + not-built guard. -->
+  <Import Project="..\Engine.targets" />
+
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
@@ -8,14 +11,7 @@
     <ProjectReference Include="..\AmneziaGeo.Windows.Engine\AmneziaGeo.Windows.Engine.csproj" />
   </ItemGroup>
 
-  <!-- Native deps keyed off the target arch: tunnel.dll (built by amneziawg-windows\build.cmd into
-       x64\ / arm64\) and wintun.dll (from the wintun zip: amd64\ / arm64\). -->
-  <PropertyGroup>
-    <TunnelArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</TunnelArch>
-    <TunnelArch Condition="'$(TunnelArch)' == ''">x64</TunnelArch>
-    <WintunArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</WintunArch>
-    <WintunArch Condition="'$(WintunArch)' == ''">amd64</WintunArch>
-  </PropertyGroup>
+  <!-- tunnel.dll / wintun.dll: $(TunnelArch)/$(WintunArch) mapping and the not-built guard live in Engine.targets. -->
   <ItemGroup>
     <None Include="..\amneziawg-windows\$(TunnelArch)\tunnel.dll" Link="tunnel.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\amneziawg-windows\.deps\wintun\bin\$(WintunArch)\wintun.dll" Link="wintun.dll" CopyToOutputDirectory="PreserveNewest" />

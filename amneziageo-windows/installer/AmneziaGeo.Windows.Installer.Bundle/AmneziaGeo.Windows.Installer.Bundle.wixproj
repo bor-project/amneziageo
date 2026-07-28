@@ -12,7 +12,7 @@
          build-installer.ps1 (installer.config.json): HasIcon=false omits the bundle ARP icon, IconFile
          overrides the source. Defaults keep the bundled UI icon for a plain build. -->
     <HasIcon Condition="'$(HasIcon)' == ''">true</HasIcon>
-    <IconFile Condition="'$(IconFile)' == ''">$(MSBuildProjectDirectory)\..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</IconFile>
+    <IconFile Condition="'$(IconFile)' == ''">$(MSBuildProjectDirectory)\..\..\AmneziaGeo.Windows.Ui\Assets\AmneziaGeo.ico</IconFile>
     <DefineConstants>Version=$(BundleVersion);BaExe=$(BaExe);MsiPath=$(MsiPath);HasIcon=$(HasIcon);IconFile=$(IconFile)</DefineConstants>
   </PropertyGroup>
 

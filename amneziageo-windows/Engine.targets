@@ -1,0 +1,26 @@
+<Project>
+
+  <!-- Native AmneziaWG engine deps, keyed off the target arch. tunnel.dll / wintun.dll are build outputs of
+       the amneziawg-windows submodule (gitignored), produced by tools\build-engine-win7.ps1. Shared by every
+       project that ships them (App, Launcher) so the arch mapping and the not-built guard live in one place. -->
+  <PropertyGroup>
+    <TunnelArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</TunnelArch>
+    <TunnelArch Condition="'$(TunnelArch)' == ''">x64</TunnelArch>
+    <WintunArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</WintunArch>
+    <WintunArch Condition="'$(WintunArch)' == ''">amd64</WintunArch>
+    <_AwgDir>$(MSBuildThisFileDirectory)amneziawg-windows</_AwgDir>
+    <_TunnelDll>$(_AwgDir)\$(TunnelArch)\tunnel.dll</_TunnelDll>
+    <_WintunDll>$(_AwgDir)\.deps\wintun\bin\$(WintunArch)\wintun.dll</_WintunDll>
+  </PropertyGroup>
+
+  <!-- Fail early with actionable guidance instead of a cryptic MSB3030 on the tunnel.dll copy. -->
+  <Target Name="EnsureEngineBuilt" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(_AwgDir)\build.cmd')"
+           Text="AmneziaWG engine submodule is missing at $(_AwgDir).%0aInitialize it and build the engine, then rebuild:%0a  git submodule update --init --recursive%0a  powershell -NoProfile -ExecutionPolicy Bypass -File amneziageo-windows\tools\build-engine-win7.ps1%0aThe script downloads Go + llvm-mingw + wintun and produces $(TunnelArch)\tunnel.dll (Windows 7 compatible)." />
+    <Error Condition="Exists('$(_AwgDir)\build.cmd') and !Exists('$(_TunnelDll)')"
+           Text="AmneziaWG engine for $(TunnelArch) is not built: $(_TunnelDll) not found.%0aBuild it first, then rebuild:%0a  powershell -NoProfile -ExecutionPolicy Bypass -File amneziageo-windows\tools\build-engine-win7.ps1 -Arch $(TunnelArch)%0aFirst run downloads Go + llvm-mingw + wintun, verifies the SHA256, and emits tunnel.dll." />
+    <Error Condition="Exists('$(_AwgDir)\build.cmd') and Exists('$(_TunnelDll)') and !Exists('$(_WintunDll)')"
+           Text="wintun.dll for $(WintunArch) is missing: $(_WintunDll).%0aIt is downloaded while building the engine. Run, then rebuild:%0a  powershell -NoProfile -ExecutionPolicy Bypass -File amneziageo-windows\tools\build-engine-win7.ps1 -Arch $(TunnelArch)" />
+  </Target>
+
+</Project>

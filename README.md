@@ -186,7 +186,7 @@ Requirements: the .NET 10 SDK, Windows, and the WiX toolset for the installer.
 dotnet build amneziageo-windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj -c Release
 
 # Full installer (MSI plus Burn bundle), output to dist\AmneziaGeo-<version>-win-<arch>-<tag>.exe
-amneziageo-windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
+amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
 ```
 
 A local build is versioned `0.0.1.<git-commit-count>`, so every build is strictly newer to Burn; a release build takes its version from the tag. The same version is stamped on the MSI, which combined with its `MajorUpgrade AllowDowngrades` makes a same-version rebuild with different code reinstall cleanly as an update.

@@ -79,7 +79,7 @@ jobs:
         # On a tag push the version comes from the tag (v1.2.3.4 -> 1.2.3.4; use a 4-field tag); otherwise
         # build-installer falls back to 1.0.1.<commit-count>.
         run: |
-          $script = 'amneziageo-windows/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1'
+          $script = 'amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1'
           if ("$env:GITHUB_REF" -like 'refs/tags/v*') {
             # Strip the leading v and any prerelease suffix (v1.2.3.4-beta.1 -> 1.2.3.4): the installer needs a
             # numeric N.N.N.N version; the -beta marker lives on the tag/release, not in the binaries.
@@ -96,7 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-unsigned-${{ matrix.arch }}-${{ matrix.variant }}
-          path: amneziageo-windows/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
+          path: amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
           if-no-files-found: error
 
   sign:

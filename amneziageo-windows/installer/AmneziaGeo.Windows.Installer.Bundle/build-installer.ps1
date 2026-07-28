@@ -84,13 +84,14 @@ if ($Help) {
 }
 
 $bundleDir = $PSScriptRoot
-$win       = Split-Path $bundleDir -Parent                       # ...\amneziageo-windows
+$instDir   = Split-Path $bundleDir -Parent                       # ...\amneziageo-windows\installer
+$win       = Split-Path $instDir -Parent                         # ...\amneziageo-windows
 
 $appProj    = Join-Path $win 'AmneziaGeo.Windows.App\AmneziaGeo.Windows.App.csproj'
 $uiProj     = Join-Path $win 'AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.csproj'
 $trayProj   = Join-Path $win 'AmneziaGeo.Windows.Tray\AmneziaGeo.Windows.Tray.csproj'
-$baProj     = Join-Path $win 'AmneziaGeo.Windows.Installer\AmneziaGeo.Windows.Installer.csproj'
-$msiProj    = Join-Path $win 'AmneziaGeo.Windows.Installer.Package\AmneziaGeo.Windows.Installer.Package.wixproj'
+$baProj     = Join-Path $instDir 'AmneziaGeo.Windows.Installer\AmneziaGeo.Windows.Installer.csproj'
+$msiProj    = Join-Path $instDir 'AmneziaGeo.Windows.Installer.Package\AmneziaGeo.Windows.Installer.Package.wixproj'
 $bundleProj = Join-Path $bundleDir 'AmneziaGeo.Windows.Installer.Bundle.wixproj'
 
 $stage     = Join-Path $bundleDir 'stage'

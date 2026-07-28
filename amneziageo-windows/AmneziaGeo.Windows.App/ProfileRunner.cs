@@ -11,13 +11,15 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class ProfileRunner(
     ServiceManager serviceManager,
     UapiClient uapi,
-    ConfigRepository configRepo,
     NetworkReconciler reconciler,
     SettingsStore settingsStore,
-    IStateStore store,
     AgentControl control,
+    ActiveTunnelScope activeScope,
     ILogger<ProfileRunner> logger)
 {
+    private IStateStore store => activeScope.Store;
+    private ConfigRepository configRepo => activeScope.ConfigRepo;
+
     private static readonly TimeSpan _livenessPoll = TimeSpan.FromSeconds(5);
 
     // No-handshake/no-rx window: data-driven unreachable signal.
@@ -205,6 +207,16 @@ internal sealed class ProfileRunner(
                     _lastRxBytes = -1;
                     await SetStateAsync("connecting");
                     Stop(config);
+
+                    // A live config rename may have moved the config; re-resolve and re-project before re-dialing.
+                    var current = await ReresolveConfigAsync(group, config, ct);
+                    if (!string.Equals(current, config, StringComparison.Ordinal))
+                    {
+                        logger.LogInformation("config renamed live {Old} -> {New}; re-dialing under the new name", config, current);
+                        await ProjectRoutingAsync(group.Name, current, ct);
+                        config = current;
+                    }
+
                     if (!await ConnectWithRetryAsync(config, group.Name, ct))
                     {
                         return;
@@ -317,6 +329,23 @@ internal sealed class ProfileRunner(
         return TimeSpan.FromSeconds(Math.Min(60, 5 * (1 << steps)));
     }
 
+    // The profile's current config (a live rename may have moved it); the retargeted latch for a bare-config target.
+    private async Task<string> ReresolveConfigAsync(Profile group, string current, CancellationToken ct)
+    {
+        if (await store.GetProfileAsync(group.Name, ct) is { Config.Length: > 0 } profile)
+        {
+            return profile.Config;
+        }
+
+        var latched = control.RunningTarget;
+        if (!string.IsNullOrEmpty(latched) && await configRepo.ExistsAsync(latched, ct))
+        {
+            return latched;
+        }
+
+        return current;
+    }
+
     private async Task ProjectRoutingAsync(string profile, string config, CancellationToken ct)
     {
         if (await store.GetProfileAsync(profile, ct) is null)
@@ -404,7 +433,7 @@ internal sealed class ProfileRunner(
         await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(member), string.Empty, ct);
 
         logger.LogInformation("connecting {Member}: creating and starting tunnel service", member);
-        var created = serviceManager.CreateService(member);
+        var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
         var started = serviceManager.StartQuiet(member);
         var startFailed = created != 0 || started != 0;
         if (startFailed)

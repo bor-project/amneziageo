@@ -66,7 +66,7 @@ internal static class TunnelPaths
     /// </summary>
     public static string GeoDataFile(string kind)
     {
-        return Path.Combine(RootDirectory(), "geo", $"{kind}.dat");
+        return Path.Combine(MachineRoot(), "geo", $"{kind}.dat");
     }
 
     /// <summary>
@@ -86,11 +86,27 @@ internal static class TunnelPaths
     }
 
     /// <summary>
+    /// Path to a user's SQLite state database under a resolved data root.
+    /// </summary>
+    public static string StateDbFile(string root)
+    {
+        return Path.Combine(root, "state.db");
+    }
+
+    /// <summary>
+    /// Path to the machine-wide state database (shared geo assets and machine settings).
+    /// </summary>
+    public static string MachineDbFile()
+    {
+        return Path.Combine(AppDataRoot.MachineBase(), "machine.db");
+    }
+
+    /// <summary>
     /// Path to a tunnel's persisted DNS-redirect state used to revert NIC DNS after a stop.
     /// </summary>
     public static string DnsStateFile(string name)
     {
-        return Path.Combine(RootDirectory(), $"dns-state-{Sanitize(name)}.txt");
+        return Path.Combine(MachineRoot(), $"dns-state-{Sanitize(name)}.txt");
     }
 
     /// <summary>
@@ -106,7 +122,7 @@ internal static class TunnelPaths
     /// </summary>
     public static string RouteStateFile(string name)
     {
-        return Path.Combine(RootDirectory(), $"route-state-{Sanitize(name)}.txt");
+        return Path.Combine(MachineRoot(), $"route-state-{Sanitize(name)}.txt");
     }
 
     /// <summary>
@@ -122,7 +138,7 @@ internal static class TunnelPaths
     /// </summary>
     public static string LanStateFile(string name)
     {
-        return Path.Combine(RootDirectory(), $"lan-state-{Sanitize(name)}.txt");
+        return Path.Combine(MachineRoot(), $"lan-state-{Sanitize(name)}.txt");
     }
 
     /// <summary>
@@ -138,7 +154,7 @@ internal static class TunnelPaths
     /// </summary>
     public static string LogDirectory()
     {
-        return Path.Combine(RootDirectory(), "logs");
+        return Path.Combine(MachineRoot(), "logs");
     }
 
     /// <summary>
@@ -170,12 +186,12 @@ internal static class TunnelPaths
     /// </summary>
     public static string DiagnosticsDirectory()
     {
-        return Path.Combine(RootDirectory(), "diagnostics");
+        return Path.Combine(MachineRoot(), "diagnostics");
     }
 
     private static IEnumerable<string> EnumerateState(string pattern)
     {
-        var dir = RootDirectory();
+        var dir = MachineRoot();
         return Directory.Exists(dir) ? Directory.EnumerateFiles(dir, pattern) : [];
     }
 
@@ -187,5 +203,10 @@ internal static class TunnelPaths
     private static string RootDirectory()
     {
         return AppDataRoot.Base();
+    }
+
+    private static string MachineRoot()
+    {
+        return AppDataRoot.MachineBase();
     }
 }

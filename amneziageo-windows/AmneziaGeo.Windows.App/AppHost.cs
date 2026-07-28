@@ -16,7 +16,7 @@ internal static class AppHost
     /// <summary>
     /// Builds a host; when agentTarget is set, adds the Windows-service-hosted agent.
     /// </summary>
-    public static IHost Build(string? agentTarget)
+    public static IHost Build(string? agentTarget, string userRoot)
     {
         Directory.CreateDirectory(TunnelPaths.LogDirectory());
 
@@ -42,7 +42,7 @@ internal static class AppHost
                 .WriteTo.Sink(new LogDbSink(services.GetRequiredService<SqliteLogStore>()));
         });
 
-        RegisterServices(builder.Services);
+        RegisterServices(builder.Services, userRoot);
 
         if (agentTarget is not null)
         {
@@ -63,9 +63,15 @@ internal static class AppHost
         return builder.Build();
     }
 
-    private static void RegisterServices(IServiceCollection services)
+    private static void RegisterServices(IServiceCollection services, string userRoot)
     {
-        services.AddSingleton<IStateStore>(_ => new SqliteStateStore(TunnelPaths.StateDbFile()));
+        services.AddSingleton<UserStoreRegistry>();
+        // Shared machine store: geo sources/files and machine settings.
+        services.AddSingleton(_ => new SqliteStateStore(TunnelPaths.MachineDbFile()));
+        services.AddSingleton(sp => new ScopedStoreFactory(sp.GetRequiredService<SqliteStateStore>(), sp.GetRequiredService<UserStoreRegistry>()));
+        services.AddSingleton<ActiveTunnelScope>();
+        // Default composite store for this process: the machine store paired with this session's user library.
+        services.AddSingleton<IStateStore>(sp => sp.GetRequiredService<ScopedStoreFactory>().For(userRoot));
         services.AddSingleton<AgentControl>();
         services.AddSingleton<HttpClient>();
         services.AddSingleton<ServiceManager>();

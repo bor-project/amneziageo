@@ -105,6 +105,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
     private bool _reconnecting;
 
+    // A connect request was refused because another account owns the tunnel; the banner offers a takeover.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoticeActionText))]
+    private bool _takeoverPending;
+
     // Transient-failure retry count reported by the agent; 0 when not retrying.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRetry))]
@@ -187,9 +192,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
     // The notice banner's action label: retry a stalled disconnect (#14), else reconnect / retry a failed connect.
-    public string NoticeActionText => DisconnectFailed
-        ? Loc.Instance.Get("Main_RetryDisconnectButton")
-        : Loc.Instance.Get("Main_ReconnectButton");
+    public string NoticeActionText => TakeoverPending
+        ? Loc.Instance.Get("Main_TakeoverButton")
+        : DisconnectFailed
+            ? Loc.Instance.Get("Main_RetryDisconnectButton")
+            : Loc.Instance.Get("Main_ReconnectButton");
 
     // The stalled-disconnect banner has no dismiss affordance: its toggle is disabled, so dismissing would strand
     // the user with no in-window retry. It clears on its own once the disconnect completes (#14).
@@ -260,6 +267,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         ReconnectAvailable = false;
         ConnectFailed = false;
         DisconnectFailed = false;
+        TakeoverPending = false;
     }
 
     /// <summary>
@@ -310,6 +318,17 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
         _suppressActivePush = false;
 
+        // Owning the tunnel clears a pending takeover prompt; while it stands, keep it across snapshots.
+        if (snapshot.Active)
+        {
+            TakeoverPending = false;
+        }
+
+        if (TakeoverPending)
+        {
+            return;
+        }
+
         // Top-center notice (auto-hides after 5s, dismissable): a different profile is selected while a
         // tunnel is up (reconnect to apply - no auto-switch), settings changed on a live tunnel, or a
         // connect failure. Shown once per distinct notice, not re-armed while the same one holds.
@@ -329,7 +348,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
         else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
         {
+            // A different profile is selected on the live tunnel: reuse the reconnect banner so its action applies
+            // the switch (Reconnect dials the newly selected ActiveProfile), like the settings-changed case below.
             notice = Loc.Instance.Get("MainVm_NoticeProfileSelected", snapshot.SelectedTarget);
+            reconnect = true;
         }
         else if (snapshot.RestartRequired)
         {
@@ -440,6 +462,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             if (!ack.Ok)
             {
                 IsTunnelActive = !connect;
+                if (connect && OwnedByOtherAck(ack))
+                {
+                    PromptTakeover();
+                }
             }
         }
         finally
@@ -472,6 +498,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 if (!ack.Ok)
                 {
                     IsTunnelActive = false;
+                    if (OwnedByOtherAck(ack))
+                    {
+                        PromptTakeover();
+                    }
                 }
             }
             else
@@ -594,6 +624,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [RelayCommand]
     private void DismissNotice()
     {
+        TakeoverPending = false;
         _noticeTimer.Stop();
         NoticeVisible = false;
     }
@@ -604,6 +635,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [RelayCommand]
     private async Task Reconnect()
     {
+        // A takeover prompt reuses this banner action: switch the tunnel to this account instead of reconnecting.
+        if (TakeoverPending)
+        {
+            TakeoverPending = false;
+            await TakeoverAsync();
+            return;
+        }
+
         // Gate the power toggle for the duration so a mid-wait connect/disconnect can't wedge the teardown wait.
         // The banner is left to clear on its own: RestartRequired drops after the real disconnect, so the notice
         // goes null on the next snapshot; a failed disconnect leaves it standing instead of vanishing silently.
@@ -649,5 +688,54 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             await Task.Delay(200);
         }
+    }
+
+    // Switches the single machine-wide tunnel to this account after the owned-by-other prompt is accepted.
+    private async Task TakeoverAsync()
+    {
+        IsTunnelActive = true;
+        BoundStatus = ConnectionStatus.Connecting;
+        _toggleInFlight = true;
+        try
+        {
+            if (ActiveProfile is not null)
+            {
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [ActiveProfile.Name]));
+            }
+
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["connect", "takeover"]));
+            if (!ack.Ok)
+            {
+                IsTunnelActive = false;
+            }
+        }
+        finally
+        {
+            _toggleInFlight = false;
+        }
+    }
+
+    /// <summary>
+    /// Raises the takeover prompt from outside a live connect attempt (a tray connect the agent already refused as
+    /// a non-owner routed the user here).
+    /// </summary>
+    public void RequestTakeover()
+    {
+        PromptTakeover();
+    }
+
+    // Raises the takeover prompt on the notice banner; its action re-sends connect with the takeover flag.
+    private void PromptTakeover()
+    {
+        TakeoverPending = true;
+        ReconnectAvailable = true;
+        ShowNotice(Loc.Instance.Get("MainVm_NoticeTunnelOwnedByOther"), persistent: true);
+    }
+
+    // True when an ack signals the tunnel is owned by another account.
+    private static bool OwnedByOtherAck(IpcAck ack)
+    {
+        return IpcMessage.TryParse(ack.Message, out var key, out _)
+            && string.Equals(key, "Agent_TunnelOwnedByOther", StringComparison.Ordinal);
     }
 }

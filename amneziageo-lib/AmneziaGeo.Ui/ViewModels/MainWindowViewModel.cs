@@ -359,7 +359,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             var item = ImportDispatcher.Classify(raw);
             if (item.Kind == DroppedKind.VpnConfig)
             {
-                if (await Config.ImportDroppedConfigAsync(item.Config!, configTaken))
+                if (await Config.ImportDroppedConfigAsync(item.Config!, configTaken, Path.GetFileNameWithoutExtension(path)))
                 {
                     configs++;
                 }

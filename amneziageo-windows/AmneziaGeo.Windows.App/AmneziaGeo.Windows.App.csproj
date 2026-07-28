@@ -11,6 +11,10 @@
     <ProjectReference Include="..\AmneziaGeo.Windows.Engine\AmneziaGeo.Windows.Engine.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="AmneziaGeo.Tests" />
+  </ItemGroup>
+
   <!-- tunnel.dll / wintun.dll: $(TunnelArch)/$(WintunArch) mapping and the not-built guard live in Engine.targets. -->
   <ItemGroup>
     <None Include="..\amneziawg-windows\$(TunnelArch)\tunnel.dll" Link="tunnel.dll" CopyToOutputDirectory="PreserveNewest" />

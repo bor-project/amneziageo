@@ -22,6 +22,9 @@ internal static class AgentLink
     private const string CheckUpdateCommand = "{\"type\":\"command\",\"command\":{\"op\":\"check-update\",\"args\":[]}}";
     private const string CancelDownloadCommand = "{\"type\":\"command\",\"command\":{\"op\":\"cancel-download\",\"args\":[]}}";
 
+    // The ack key the agent returns when a connect is refused because another account owns the machine-wide tunnel.
+    private const string OwnedByOtherKey = "Agent_TunnelOwnedByOther";
+
     private static readonly UTF8Encoding _utf8 = new(false);
     private static volatile StreamWriter? _writer;
     private static Action<int, bool, bool, bool, bool>? _onState;
@@ -30,6 +33,7 @@ internal static class AgentLink
     private static Action? _onDownloadFailed;
     private static Action? _onCheckFinished;
     private static Action? _onGeoUpdated;
+    private static Action? _onOwnedByOther;
 
     // Persists across pipe reconnects so a still-latched download failure does not re-fire the balloon each time
     // the tray reconnects to the agent (#8).
@@ -111,9 +115,10 @@ internal static class AgentLink
     /// when a download completes (the ready-to-install edge); <paramref name="onDownloadFailed"/> fires on the
     /// download-failure edge; <paramref name="onCheckFinished"/> fires when a manual update check finishes (the
     /// checking-flag falling edge); <paramref name="onGeoUpdated"/> fires when the agent's geo-updated tick rises
-    /// (the local bases changed). All fire off a background thread.
+    /// (the local bases changed); <paramref name="onOwnedByOther"/> fires when a connect is refused because
+    /// another account owns the tunnel. All fire off a background thread.
     /// </summary>
-    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed, Action onCheckFinished, Action onGeoUpdated)
+    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed, Action onCheckFinished, Action onGeoUpdated, Action onOwnedByOther)
     {
         _onState = onState;
         _onUpdate = onUpdate;
@@ -121,6 +126,7 @@ internal static class AgentLink
         _onDownloadFailed = onDownloadFailed;
         _onCheckFinished = onCheckFinished;
         _onGeoUpdated = onGeoUpdated;
+        _onOwnedByOther = onOwnedByOther;
         var thread = new Thread(Loop) { IsBackground = true, Name = "agent-link" };
         thread.Start();
     }
@@ -250,6 +256,11 @@ internal static class AgentLink
                         }
 
                         prevGeoTick = GeoUpdatedTick;
+                    }
+                    else if (line.Length > 0 && line.Contains(OwnedByOtherKey, StringComparison.Ordinal))
+                    {
+                        // The connect ack refusing us as a non-owner: the tray offers the takeover prompt.
+                        _onOwnedByOther?.Invoke();
                     }
                 }
             }

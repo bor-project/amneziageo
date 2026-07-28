@@ -48,6 +48,7 @@ internal static unsafe class Program
         None,
         Download,
         Install,
+        Takeover,
     }
 
     // Post-update install balloon deferred until the first snapshot reports the notifications flag.
@@ -153,7 +154,8 @@ internal static unsafe class Program
             () => Native.PostMessageW(_hwnd, Native.WM_UPDATEDOWNLOADED, 0, 0),
             () => Native.PostMessageW(_hwnd, Native.WM_UPDATEFAILED, 0, 0),
             () => Native.PostMessageW(_hwnd, Native.WM_CHECKDONE, (nuint)(AgentLink.CheckFailed ? 2 : AgentLink.UpdateAvailable ? 1 : 0), 0),
-            () => Native.PostMessageW(_hwnd, Native.WM_GEOUPDATED, 0, 0));
+            () => Native.PostMessageW(_hwnd, Native.WM_GEOUPDATED, 0, 0),
+            () => Native.PostMessageW(_hwnd, Native.WM_OWNEDBYOTHER, 0, 0));
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
@@ -243,6 +245,9 @@ internal static unsafe class Program
                         case BalloonAction.Install:
                             LaunchInstall();
                             break;
+                        case BalloonAction.Takeover:
+                            LaunchUi("takeover balloon", "--takeover");
+                            break;
                         default:
                             LaunchUi("balloon click");
                             break;
@@ -304,6 +309,12 @@ internal static unsafe class Program
             if (msg == Native.WM_GEOUPDATED)
             {
                 OnGeoUpdatedSignal();
+                return 0;
+            }
+
+            if (msg == Native.WM_OWNEDBYOTHER)
+            {
+                OnTunnelOwnedByOther();
                 return 0;
             }
 
@@ -707,6 +718,20 @@ internal static unsafe class Program
         }
     }
 
+    // A tray connect the agent refused because another account owns the machine-wide tunnel: open the takeover
+    // prompt in the GUI (A) and, unless the GUI is already in front, announce it with a balloon whose click
+    // reopens the prompt (B). The prompt itself carries the confirmation before the switch.
+    private static void OnTunnelOwnedByOther()
+    {
+        if (!IsUiForeground())
+        {
+            _lastBalloonAction = BalloonAction.Takeover;
+            ShowBalloon("AmneziaGeo", Labels.TunnelOwnedByOtherInfo);
+        }
+
+        LaunchUi("takeover", "--takeover");
+    }
+
     // Starts a background download in the GUI process (windowless); the tray announces "ready to install" when
     // it completes.
     private static void LaunchDownload()
@@ -1010,11 +1035,12 @@ internal static unsafe class Program
             {
                 psi.ArgumentList.Add(arg);
             }
-            else
+
+            // Hand the foreground right to launches that open a window (a plain open or the takeover prompt) so it
+            // rises above the current app; a background process cannot claim the foreground on its own. Windowless
+            // (--update/--apply) launches show nothing, so they keep the user's focus.
+            if (string.IsNullOrEmpty(arg) || arg == "--takeover")
             {
-                // Hand the foreground right to the launched UI so its window opens above the current app; a
-                // background process cannot claim the foreground on its own. Windowless (--update/--apply) launches
-                // show no window, so they keep the user's focus.
                 Native.SetForegroundWindow(_hwnd);
                 Native.AllowSetForegroundWindow(Native.ASFW_ANY);
             }

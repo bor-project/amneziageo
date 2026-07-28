@@ -20,11 +20,12 @@ public static partial class Program
         OpenLog();
         ClientLog.Info($"GUI starting: pid {Environment.ProcessId}, args [{string.Join(' ', args)}]");
 
-        // Single-instance: a second launch surfaces the existing window, or asks it to download (--update) or
-        // install (--apply) the update, then exits.
+        // Single-instance: a second launch surfaces the existing window, asks it to download (--update) or
+        // install (--apply) the update, or raises the tunnel-takeover prompt (--takeover), then exits.
         var requestUpdate = Array.IndexOf(args, "--update") >= 0;
         var requestApply = Array.IndexOf(args, "--apply") >= 0;
-        if (!SingleInstance.TryAcquire(requestUpdate, requestApply))
+        var requestTakeover = Array.IndexOf(args, "--takeover") >= 0;
+        if (!SingleInstance.TryAcquire(requestUpdate, requestApply, requestTakeover))
         {
             ClientLog.Flush();
             return;

@@ -26,6 +26,11 @@ internal sealed class PipeConnection : IDisposable
     public NamedPipeServerStream Stream { get; }
 
     /// <summary>
+    /// The connecting user's data scope.
+    /// </summary>
+    public BrokerScope? Scope { get; set; }
+
+    /// <summary>
     /// Writes a line to the client under the write lock.
     /// </summary>
     public async Task SendAsync(string line, CancellationToken ct)

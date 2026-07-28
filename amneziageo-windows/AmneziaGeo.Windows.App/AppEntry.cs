@@ -35,11 +35,26 @@ public static class AppEntry
             ["--agent"] => string.Empty,
             _ => null,
         };
-        using (var host = AppHost.Build(agentTarget))
+
+        // Child tunnel processes carry their owner's data root; everyone else uses this session's user root.
+        var userRoot = args switch
+        {
+            ["--service", _, "--root", var root] => root,
+            _ => AppDataRoot.Base(),
+        };
+
+        var isTunnelProcess = args is ["--service", ..];
+        if (!isTunnelProcess)
+        {
+            // Move machine-wide assets out of the legacy per-user root before any logging opens the shared log db.
+            MachineMigration.SeedMachineFolders();
+        }
+
+        using (var host = AppHost.Build(agentTarget, userRoot))
         {
             // Skip the one-time legacy-config migration on the tunnel connect hot path (--service): the agent /
             // installer already ran it, and a tunnel only reads its config from the DB.
-            await EnsureStoreAsync(host.Services, runMigration: args is not ["--service", _]);
+            await EnsureStoreAsync(host.Services, runMigration: !isTunnelProcess);
             if (agentTarget is not null)
             {
                 // Take over the status pipe before binding: a prior owner's DACL otherwise spins creation on ACCESS_DENIED.
@@ -75,6 +90,11 @@ public static class AppEntry
 
         if (runMigration)
         {
+            // One-time: split shared geo sources/files and machine settings out of the legacy user store.
+            var machineStore = services.GetRequiredService<SqliteStateStore>();
+            var userStore = services.GetRequiredService<UserStoreRegistry>().GetOrOpen(AppDataRoot.Base());
+            await MachineMigration.SplitLegacyAsync(machineStore, userStore, services.GetRequiredService<ILoggerFactory>().CreateLogger("MachineMigration"));
+
             // One-time: pull legacy on-disk wg-quick files into the database.
             await services.GetRequiredService<ConfigRepository>().MigrateLegacyConfigsAsync();
         }

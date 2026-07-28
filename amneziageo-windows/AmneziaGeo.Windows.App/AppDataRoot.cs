@@ -13,6 +13,22 @@ internal static class AppDataRoot
 {
     private const string AppFolder = "AmneziaGeo";
 
+    /// <summary>
+    /// Machine-wide root for shared assets (geo bases, logs, tunnel runtime state); stable across users and sessions.
+    /// </summary>
+    public static string MachineBase()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), AppFolder);
+    }
+
+    /// <summary>
+    /// Per-user data root under a resolved profile's local application data.
+    /// </summary>
+    public static string UserBase(string localAppData)
+    {
+        return Path.Combine(localAppData, AppFolder);
+    }
+
 #if DEBUG
     // Debug: единый машинный каталог для агента и SYSTEM-службы
     /// <summary>
@@ -63,11 +79,62 @@ internal static class AppDataRoot
             {
                 _systemCached = interactive;
                 _systemCachedSession = console;
+                PersistActiveRoot(interactive);
                 return interactive;
             }
         }
 
-        return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        // No interactive session right now (a restart during an RDP-session flip, or before login): reuse the last
+        // resolved user root instead of the SYSTEM profile, which points at a different database and would revert
+        // the active user's edits after every restart.
+        return ReadPersistedRoot() ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    }
+
+    // Machine-wide marker of the last resolved interactive user root, so a session-less restart binds to the same
+    // per-user database instead of the SYSTEM profile.
+    private static string MarkerFile()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), AppFolder, "data-root");
+    }
+
+    private static void PersistActiveRoot(string root)
+    {
+        try
+        {
+            var marker = MarkerFile();
+            Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
+            File.WriteAllText(marker, root);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static string? ReadPersistedRoot()
+    {
+        try
+        {
+            var marker = MarkerFile();
+            if (!File.Exists(marker))
+            {
+                return null;
+            }
+
+            var root = File.ReadAllText(marker).Trim();
+            return root.Length > 0 && Directory.Exists(root) ? root : null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     // Console seat first, then any active session: on a host worked over RDP the console seat is empty, its token

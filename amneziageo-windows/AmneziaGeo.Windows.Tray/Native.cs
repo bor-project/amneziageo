@@ -43,6 +43,10 @@ internal static class Native
     // The local geo bases were updated (the agent link reports it), so the tray can announce it.
     public const uint WM_GEOUPDATED = 0x0400 + 10;
 
+    // A connect the tray issued was refused because another account owns the single machine-wide tunnel, so the
+    // tray offers the takeover prompt.
+    public const uint WM_OWNEDBYOTHER = 0x0400 + 11;
+
     // Menu command ids.
     public const int ID_OPEN = 1;
     public const int ID_CONNECT = 2;

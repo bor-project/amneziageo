@@ -570,11 +570,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// <summary>
     /// Импортирует брошенный драгом конфиг: уникализирует имя, добавляет в каталог и открывает.
     /// </summary>
-    public async Task<bool> ImportDroppedConfigAsync(VpnLinkCodec.Imported imported, ISet<string> reserved)
+    public async Task<bool> ImportDroppedConfigAsync(VpnLinkCodec.Imported imported, ISet<string> reserved, string? fileName = null)
     {
-        var baseName = string.IsNullOrWhiteSpace(imported.Name)
-            ? Loc.Instance.Get("MainVm_NewConfigDefaultName")
-            : imported.Name!;
+        // Name rule mirrors the file picker: the config's own name, else the dropped file name, else the default.
+        var baseName = !string.IsNullOrWhiteSpace(imported.Name)
+            ? imported.Name!
+            : (!string.IsNullOrWhiteSpace(fileName) ? fileName! : Loc.Instance.Get("MainVm_NewConfigDefaultName"));
         var name = UniqueName.Resolve(baseName, reserved);
 
         var ack = await ImportConfigAsync(name, imported.ConfText);
@@ -598,8 +599,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));
     }
 
-    // The config Delete trigger (#147): deletion unbinds the config from any profile that references it; the agent
-    // refuses only when it is the config of the running profile. Arm the inline confirm/cancel pair (#4).
+    // The config Delete trigger (#147): the agent refuses while any profile still binds the config, or while it is
+    // the running target; the refusal reason surfaces on confirm. Arm the inline confirm/cancel pair.
     [RelayCommand]
     private void RequestDeleteOpenConfig()
     {
@@ -620,8 +621,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ConfigDeleteStatus = string.Empty;
     }
 
-    // Inline Confirm: perform the delete. The agent unbinds the config from referencing profiles and refuses only
-    // when it is the running profile's config. On success the next remaining config opens so the section is never left empty.
+    // Inline Confirm: perform the delete. The agent refuses while a profile still binds the config or it is the
+    // running target, surfacing the reason. On success the next remaining config opens so the section is never left empty.
     [RelayCommand]
     private async Task ConfirmDeleteOpenConfig()
     {

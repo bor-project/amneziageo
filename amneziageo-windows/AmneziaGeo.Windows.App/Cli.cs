@@ -31,7 +31,7 @@ internal sealed class Cli(
     {
         switch (args)
         {
-            case ["--service", var name]:
+            case ["--service", var name, ..]:
                 // Per-tunnel service process: apply the persisted level before bring-up, then poll so a live change takes hold without reconnect.
                 await LogLevelWatcher.ApplyAsync(store, logLevel);
                 using (var levelCts = new CancellationTokenSource())

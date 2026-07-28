@@ -1562,4 +1562,13 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_ConfigTextLabel" xml:space="preserve">
     <value>CONFIGURATION TEXT</value>
   </data>
+  <data name="Agent_TunnelOwnedByOther" xml:space="preserve">
+    <value>The VPN is in use by another account.</value>
+  </data>
+  <data name="MainVm_NoticeTunnelOwnedByOther" xml:space="preserve">
+    <value>The VPN is connected under another account. Switch it to yours?</value>
+  </data>
+  <data name="Main_TakeoverButton" xml:space="preserve">
+    <value>Switch to yours</value>
+  </data>
 </root>

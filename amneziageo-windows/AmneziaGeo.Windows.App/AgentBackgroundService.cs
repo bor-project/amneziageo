@@ -9,14 +9,16 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class AgentBackgroundService(
     AgentTarget target,
-    IStateStore store,
-    ConfigRepository configRepo,
     ProfileRunner runner,
     AgentControl control,
     SettingsStore settingsStore,
     NetworkReconciler reconciler,
+    ActiveTunnelScope activeScope,
     ILogger<AgentBackgroundService> logger) : BackgroundService
 {
+    private IStateStore store => activeScope.Store;
+    private ConfigRepository configRepo => activeScope.ConfigRepo;
+
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -33,6 +35,13 @@ internal sealed class AgentBackgroundService(
         // A boot-time DNS restore can fail to take while WMI or the adapter is still initializing; re-run it a
         // few times over the first minute so a leaked loopback redirect cannot strand the box until a manual connect.
         _ = RetryBootReconcileAsync(stoppingToken);
+
+        // Bring the last active user's library forward so boot auto-connect uses their profile.
+        var lastOwnerRoot = await store.GetSettingAsync("last-owner-root", stoppingToken);
+        if (!string.IsNullOrEmpty(lastOwnerRoot))
+        {
+            activeScope.SetOwner(lastOwnerRoot, null);
+        }
 
         // Persisted selection wins over the launch arg; a dangling selection is dropped.
         var stored = await store.GetSettingAsync(AgentControl.SelectedTargetKey, stoppingToken);

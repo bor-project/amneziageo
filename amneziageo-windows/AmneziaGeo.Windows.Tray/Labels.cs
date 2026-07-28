@@ -134,6 +134,12 @@ internal static class Labels
     public static string GeoUpdatedInfo { get; private set; } = "Geo databases updated";
 
     /// <summary>
+    /// Balloon body when a tray connect is refused because another account holds the tunnel; a click opens the
+    /// takeover prompt.
+    /// </summary>
+    public static string TunnelOwnedByOtherInfo { get; private set; } = "The VPN is connected under another account. Click to switch it to yours.";
+
+    /// <summary>
     /// «Идёт загрузка обновления. Выйти и отменить её?» / "An update is downloading. Exit and cancel it?": exit
     /// confirmation while a download runs (#21).
     /// </summary>
@@ -190,6 +196,7 @@ internal static class Labels
             UpdateInstalledInfo = "Обновление установлено";
             UpdateDownloadFailedInfo = "Не удалось скачать обновление";
             GeoUpdatedInfo = "Базы обновлены";
+            TunnelOwnedByOtherInfo = "VPN подключён под другой учётной записью. Нажмите, чтобы переключить на свою.";
             ExitDownloadPrompt = "Идёт загрузка обновления. Выйти и отменить её?";
             StatusConnected = "Подключено";
             StatusDisconnected = "Отключено";

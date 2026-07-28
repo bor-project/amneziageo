@@ -194,17 +194,23 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
-    /// Deletes a configuration, its service, geo settings, resolutions, and profile bindings.
+    /// Deletes a configuration, its service, geo settings, and resolutions. Refuses while a profile still binds it.
     /// </summary>
     public async Task RemoveAsync(string name, CancellationToken ct = default)
     {
+        var referencing = await ListReferencingProfilesAsync(name, ct);
+        if (referencing.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"configuration {name} is used by profile(s) {string.Join(", ", referencing)}; detach them first");
+        }
+
         if (serviceManager.Exists(name))
         {
             serviceManager.Uninstall(name);
         }
 
         await store.RemoveConfigAsync(name, ct);
-
         await store.RemoveTunnelGeoAsync(name, ct);
         await store.RemoveConfigTransportAsync(name, ct);
         await store.RemoveConfigDnsAsync(name, ct);
@@ -212,17 +218,24 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         await store.RemoveDomainResolutionsAsync(name, ct);
 
         RemoveLegacyConfigFile(name);
+    }
 
+    /// <summary>
+    /// Returns the names of profiles that bind the configuration.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListReferencingProfilesAsync(string config, CancellationToken ct = default)
+    {
+        var referencing = new List<string>();
         foreach (var profileName in await store.ListProfileNamesAsync(ct))
         {
             var profile = await store.GetProfileAsync(profileName, ct);
-            if (profile is null || !string.Equals(profile.Config, name, StringComparison.Ordinal))
+            if (profile is not null && string.Equals(profile.Config, config, StringComparison.Ordinal))
             {
-                continue;
+                referencing.Add(profileName);
             }
-
-            await store.SaveProfileAsync(profile with { Config = string.Empty }, ct);
         }
+
+        return referencing;
     }
 
     // Removes the config file from disk; migration would otherwise resurrect a deleted config on the next start.

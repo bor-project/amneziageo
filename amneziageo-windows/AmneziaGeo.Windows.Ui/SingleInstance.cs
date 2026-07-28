@@ -24,6 +24,8 @@ internal static class SingleInstance
     private const string UpdateEventName = @"Local\AmneziaGeo.Ui.Update";
     // Signalled by a later "--apply" launch (tray menu / balloon) so the running instance installs the download.
     private const string ApplyEventName = @"Local\AmneziaGeo.Ui.Apply";
+    // Signalled by a later "--takeover" launch (tray) so the running instance raises the tunnel-takeover prompt.
+    private const string TakeoverEventName = @"Local\AmneziaGeo.Ui.Takeover";
     // Set by the owning instance once an activation has actually surfaced the window.
     private const string ActivatedEventName = @"Local\AmneziaGeo.Ui.Activated";
 
@@ -35,10 +37,12 @@ internal static class SingleInstance
     private static EventWaitHandle? _activate;
     private static EventWaitHandle? _update;
     private static EventWaitHandle? _apply;
+    private static EventWaitHandle? _takeover;
     private static EventWaitHandle? _activated;
     private static RegisteredWaitHandle? _registration;
     private static RegisteredWaitHandle? _updateRegistration;
     private static RegisteredWaitHandle? _applyRegistration;
+    private static RegisteredWaitHandle? _takeoverRegistration;
 
     /// <summary>
     /// Whether this process owns the session mutex. False in an instance the activation watchdog forced up,
@@ -63,11 +67,17 @@ internal static class SingleInstance
     public static Action? ApplyHandler;
 
     /// <summary>
+    /// Invoked on the UI thread when a later "--takeover" launch asks this instance to raise the tunnel-takeover
+    /// prompt.
+    /// </summary>
+    public static Action? TakeoverHandler;
+
+    /// <summary>
     /// Returns true when the caller should continue starting: either as the only instance, or as the second one
     /// the watchdog forced because the running instance never surfaced a window. Returns false when another
     /// instance took the request over (surfaced its window, or was handed an update / install relay).
     /// </summary>
-    public static bool TryAcquire(bool requestUpdate = false, bool requestApply = false)
+    public static bool TryAcquire(bool requestUpdate = false, bool requestApply = false, bool requestTakeover = false)
     {
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (createdNew)
@@ -76,10 +86,11 @@ internal static class SingleInstance
             return true;
         }
 
-        // A relay carries no window, so there is nothing to wait for.
-        if (requestUpdate || requestApply)
+        // A relay hands the running instance the request and exits: the update/install workers are windowless, and
+        // the takeover handler surfaces the window itself, so there is nothing here to wait for.
+        if (requestUpdate || requestApply || requestTakeover)
         {
-            var relay = requestApply ? ApplyEventName : UpdateEventName;
+            var relay = requestApply ? ApplyEventName : requestTakeover ? TakeoverEventName : UpdateEventName;
             ClientLog.Info($"another GUI instance owns the session ({OwnerPids()}): relaying {relay}");
             SignalExistingInstance(relay);
             return false;
@@ -269,6 +280,14 @@ internal static class SingleInstance
         _applyRegistration = ThreadPool.RegisterWaitForSingleObject(
             _apply,
             (_, _) => Dispatcher.UIThread.Post(() => ApplyHandler?.Invoke()),
+            state: null,
+            Timeout.Infinite,
+            executeOnlyOnce: false);
+
+        _takeover = new EventWaitHandle(false, EventResetMode.AutoReset, TakeoverEventName);
+        _takeoverRegistration = ThreadPool.RegisterWaitForSingleObject(
+            _takeover,
+            (_, _) => Dispatcher.UIThread.Post(() => TakeoverHandler?.Invoke()),
             state: null,
             Timeout.Infinite,
             executeOnlyOnce: false);

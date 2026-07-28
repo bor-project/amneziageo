@@ -11,11 +11,46 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore store, GeoConfigurator geo, GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
-    private string? _lastJson;
+    private readonly Dictionary<string, string> _lastJsonByRoot = new(StringComparer.OrdinalIgnoreCase);
+
+    // Per-connection user scope: command handlers read the store/configRepo/geo of the connecting user.
+    private readonly AsyncLocal<BrokerScope?> _connectionScope = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, BrokerScope> _scopes = new(StringComparer.OrdinalIgnoreCase);
+    private BrokerScope? _defaultScope;
+
+    private BrokerScope CurrentScope => _connectionScope.Value ?? (_defaultScope ??= ScopeFor(AppDataRoot.Base()));
+
+    // Resolve the acting user's data surfaces from the current connection scope.
+    private IStateStore store => CurrentScope.Store;
+    private ConfigRepository configRepo => CurrentScope.ConfigRepo;
+    private GeoConfigurator geo => CurrentScope.Geo;
+
+    private BrokerScope ScopeFor(string userRoot, string? sid = null)
+    {
+        var key = Path.TrimEndingDirectorySeparator(Path.GetFullPath(userRoot));
+        var scope = _scopes.GetOrAdd(key, root =>
+        {
+            var scopeStore = storeFactory.For(root);
+            return new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), new GeoConfigurator(scopeStore));
+        });
+        if (sid is not null)
+        {
+            scope.Sid = sid;
+        }
+
+        return scope;
+    }
+
+    // The connecting client's user scope, or the default scope when the identity cannot be resolved.
+    private BrokerScope ResolveScope(NamedPipeServerStream stream)
+    {
+        var resolved = UserContext.ResolveClient(stream);
+        return ScopeFor(resolved?.Root ?? AppDataRoot.Base(), resolved?.Sid);
+    }
 
     // Per-source progress: 0-100 while downloading, -1 while re-materializing. Presence means "updating".
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _updating = new(StringComparer.Ordinal);
@@ -50,15 +85,18 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     public async Task HandleClientAsync(NamedPipeServerStream stream, CancellationToken ct)
     {
         var connection = new PipeConnection(stream);
+        var scope = ResolveScope(stream);
+        connection.Scope = scope;
+        _connectionScope.Value = scope;
         lock (_gate)
         {
             _clients.Add(connection);
         }
 
-        logger.LogInformation("status client connected");
+        logger.LogInformation("status client connected for {Root}", scope.UserRoot);
         try
         {
-            var json = await BuildJsonAsync(ct);
+            var json = await BuildJsonAsync(scope, ct);
             await connection.SendAsync(json, ct);
             using (var reader = new StreamReader(stream, new UTF8Encoding(false), false, 1024, leaveOpen: true))
             {
@@ -103,35 +141,41 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
     /// </summary>
     public async Task BroadcastIfChangedAsync(CancellationToken ct)
     {
+        List<PipeConnection> clients;
         lock (_gate)
         {
             if (_clients.Count == 0)
             {
                 return;
             }
+
+            clients = [.. _clients];
         }
 
-        var json = await BuildJsonAsync(ct);
-        PipeConnection[] targets;
-        lock (_gate)
+        // One snapshot per distinct user: each client sees its own library, over the shared tunnel state.
+        foreach (var group in clients.Where(c => c.Scope is not null).GroupBy(c => c.Scope!.UserRoot, StringComparer.OrdinalIgnoreCase))
         {
-            if (json == _lastJson)
+            var scope = group.First().Scope!;
+            var json = await BuildJsonAsync(scope, ct);
+            lock (_gate)
             {
-                return;
+                if (_lastJsonByRoot.TryGetValue(scope.UserRoot, out var last) && last == json)
+                {
+                    continue;
+                }
+
+                _lastJsonByRoot[scope.UserRoot] = json;
             }
 
-            _lastJson = json;
-            targets = [.. _clients];
-        }
-
-        foreach (var target in targets)
-        {
-            try
+            foreach (var target in group)
             {
-                await target.SendAsync(json, ct);
-            }
-            catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
-            {
+                try
+                {
+                    await target.SendAsync(json, ct);
+                }
+                catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
+                {
+                }
             }
         }
     }
@@ -185,7 +229,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 IpcContract.OpSetRoutingSettings => await SetRoutingSettingsAsync(command.Args, ct),
                 IpcContract.OpGetRoutingSettings => await GetRoutingSettingsAsync(command.Args, ct),
                 IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
-                IpcContract.OpSetConnection => SetConnection(command.Args),
+                IpcContract.OpSetConnection => await SetConnectionAsync(command.Args, ct),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
                 IpcContract.OpSelectProfile => await SelectProfileAsync(command.Args, ct),
                 IpcContract.OpAddSource => await AddSourceAsync(command.Args, ct),
@@ -287,8 +331,14 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown config: {args[0]}");
         }
 
-        // Running members pick up the new text on the next reconnect.
         await configRepo.EditFromTextAsync(args[0], args[1], ct);
+
+        // Config text applies on a fresh tunnel; flag a reconnect when the running target is affected.
+        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        {
+            control.SetRestartRequired();
+        }
+
         logger.LogInformation("edited config {Name}", args[0]);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigSaved", args[0]));
     }
@@ -412,19 +462,16 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
         }
 
-        // Refuse while the config is a live member of the running tunnel.
-        if (control.Running && await IsRunningMemberAsync(oldName, ct))
-        {
-            return new IpcAck(false, $"config {oldName} is in use by the running tunnel; disconnect first");
-        }
-
+        // Rename is allowed while running: the live adapter keeps carrying traffic under its old service name and
+        // the UI reflects the new name at once; a later re-dial re-resolves the current config (ProfileRunner).
         await configRepo.RenameAsync(oldName, newName, ct);
 
-        // A same-named single-config target follows the rename; a profile of that name owns the binding instead.
+        // A same-named single-config target follows the rename, in both the selection and the live latch; a profile
+        // of that name owns the binding instead.
         if (string.Equals(oldName, control.Target, StringComparison.Ordinal)
             && await store.GetProfileAsync(oldName, ct) is null)
         {
-            control.SetTarget(newName);
+            control.RetargetName(oldName, newName);
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, newName, ct);
         }
 
@@ -1375,7 +1422,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         return new IpcAck(true, $"assigned {profile}: list={listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} use={(useRouting ? "on" : "off")} (applies on reconnect)");
     }
 
-    private IpcAck SetConnection(IReadOnlyList<string> args)
+    private async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1)
         {
@@ -1388,9 +1435,37 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown connection state: {args[0]}");
         }
 
-        control.SetRunning(connect);
-        logger.LogInformation("set connection: {State}", connect ? "connect" : "disconnect");
-        return new IpcAck(true, connect ? "connecting" : "disconnecting");
+        var scope = CurrentScope;
+
+        // The single machine-wide tunnel belongs to one user; another user's request needs an explicit takeover.
+        if (control.Running && !activeScope.IsOwnedBy(scope.UserRoot, scope.Sid))
+        {
+            var takeover = connect && args.Any(a => a.Equals("takeover", StringComparison.OrdinalIgnoreCase));
+            if (!takeover)
+            {
+                return new IpcAck(false, IpcMessage.Key("Agent_TunnelOwnedByOther"));
+            }
+        }
+
+        if (connect)
+        {
+            activeScope.SetOwner(scope.UserRoot, scope.Sid);
+            var target = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
+            if (!string.IsNullOrEmpty(target))
+            {
+                control.SetTarget(target);
+            }
+
+            await store.SetSettingAsync("last-owner-root", scope.UserRoot, ct);
+            await store.SetSettingAsync("last-owner-target", target ?? string.Empty, ct);
+            control.SetRunning(true);
+            logger.LogInformation("connect requested by {Root}", scope.UserRoot);
+            return new IpcAck(true, "connecting");
+        }
+
+        control.SetRunning(false);
+        logger.LogInformation("disconnect requested by {Root}", scope.UserRoot);
+        return new IpcAck(true, "disconnecting");
     }
 
     private async Task<IpcAck> SelectProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1406,14 +1481,19 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             return new IpcAck(false, $"unknown profile: {name}");
         }
 
-        if (string.Equals(name, control.Target, StringComparison.Ordinal))
+        var currentSelection = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
+        if (string.Equals(name, currentSelection, StringComparison.Ordinal))
         {
             return new IpcAck(true, $"already active: {name}");
         }
 
-        control.SetTarget(name);
-        // Persist the selection across restarts.
+        // Persist the per-user selection; reflect it on the shared control only when this user owns the tunnel or none runs.
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
+        if (!control.Running || activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid))
+        {
+            control.SetTarget(name);
+        }
+
         logger.LogInformation("selected profile {Profile}", name);
 
         // No auto-switch; the tunnel keeps running. Selection takes effect on the next connect.
@@ -1801,7 +1881,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
                 {
                     using (logger.Step("re-materialize routing lists"))
                     {
-                        await geo.RematerializeAllRoutingListsAsync();
+                        await RematerializeAllUsersAsync();
                     }
                 }
                 catch (Exception ex)
@@ -1848,6 +1928,15 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var current = await store.GetSettingAsync("geo-resolve-epoch");
         var next = (long.TryParse(current, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : 0) + 1;
         await store.SetSettingAsync("geo-resolve-epoch", next.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    // Re-materialize routing lists for every known user against the current geo bases.
+    private async Task RematerializeAllUsersAsync(CancellationToken ct = default)
+    {
+        foreach (var root in registry.OpenedRoots())
+        {
+            await new GeoConfigurator(storeFactory.For(root)).RematerializeAllRoutingListsAsync(ct);
+        }
     }
 
     /// <summary>
@@ -2217,7 +2306,7 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
 
             try
             {
-                await geo.RematerializeAllRoutingListsAsync(ct);
+                await RematerializeAllUsersAsync(ct);
             }
             catch (Exception ex)
             {
@@ -2242,18 +2331,25 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             : new IpcAck(false, IpcMessage.Key("Agent_ListsDownloadedPartial", sources.Count - failed.Count, sources.Count, string.Join(", ", failed)));
     }
 
-    private async Task<string> BuildJsonAsync(CancellationToken ct)
+    private async Task<string> BuildJsonAsync(BrokerScope scope, CancellationToken ct)
     {
-        var snapshot = await BuildSnapshotAsync(ct);
+        var snapshot = await BuildSnapshotAsync(scope, ct);
         return JsonSerializer.Serialize(new IpcEnvelope(IpcContract.SnapshotType, snapshot), IpcJson.Options);
     }
 
-    private async Task<StatusSnapshot> BuildSnapshotAsync(CancellationToken ct)
+    private async Task<StatusSnapshot> BuildSnapshotAsync(BrokerScope scope, CancellationToken ct)
     {
+        var store = scope.Store;
+        var configRepo = scope.ConfigRepo;
         var states = await store.ListProfileStatesAsync(ct);
 
+        // The live connection view belongs to the tunnel owner; other users see their own idle library.
+        var owned = activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
+        var selectedTarget = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        var boundTarget = owned ? BoundTarget : null;
+
         // Derive each config's status from the bound profile's state alone.
-        var boundState = BoundTarget is not null ? states.FirstOrDefault(s => s.Name == BoundTarget) : null;
+        var boundState = boundTarget is not null ? states.FirstOrDefault(s => s.Name == boundTarget) : null;
         var boundConfig = boundState is null
             ? null
             : (await store.GetProfileAsync(boundState.Name, ct))?.Config ?? boundState.Name;
@@ -2324,7 +2420,9 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
         var downloadedForCurrent = updateState.DownloadPhase == UpdateDownloadPhase.Downloaded
             && update is not null
             && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
-        return new StatusSnapshot(Version(), BoundTarget, configs, profiles, routingLists, control.Running, boundStatus, control.RestartRequired, control.Target, sources,
+        var connectFailed = owned && control.ConnectFailed;
+        var disconnectFailed = owned && control.DisconnectFailed;
+        return new StatusSnapshot(Version(), boundTarget, configs, profiles, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,
@@ -2333,14 +2431,14 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             settings.GeoAutoCheck,
             settings.GeoCheckIntervalHours,
             settings.GeoCacheValidityHours,
-            control.ConnectFailed,
+            connectFailed,
             AppSettings.EngineVersion,
             settings.TunnelAllUdp,
             settings.LogLevel,
             settings.RouteLog,
-            control.ConnectFailed ? control.ConnectFailReason.ToString() : string.Empty,
-            control.ConnectFailed ? (control.ConnectFailDetail ?? string.Empty) : string.Empty,
-            control.RetryAttempt,
+            connectFailed ? control.ConnectFailReason.ToString() : string.Empty,
+            connectFailed ? (control.ConnectFailDetail ?? string.Empty) : string.Empty,
+            owned ? control.RetryAttempt : 0,
             settings.SurviveReboot,
             settings.PeriodicReconnect,
             settings.PeriodicReconnectIntervalSeconds,
@@ -2351,8 +2449,8 @@ internal sealed class AgentStatusBroker(ConfigRepository configRepo, IStateStore
             downloadedForCurrent,
             updateState.DownloadPercent,
             downloadedForCurrent ? updateState.DownloadedSetupPath : string.Empty,
-            control.DisconnectFailed,
-            control.DisconnectFailed ? (control.DisconnectFailDetail ?? string.Empty) : string.Empty,
+            disconnectFailed,
+            disconnectFailed ? (control.DisconnectFailDetail ?? string.Empty) : string.Empty,
             updateState.DownloadFailed,
             updateState.CancelRequested,
             updateState.Checking,

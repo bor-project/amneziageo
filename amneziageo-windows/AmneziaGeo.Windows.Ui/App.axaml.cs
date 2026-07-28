@@ -83,6 +83,7 @@ public sealed partial class App : Application
             SingleInstance.ActivationHandler = OnActivation;
             SingleInstance.UpdateHandler = OnDownloadRequested;
             SingleInstance.ApplyHandler = OnApplyRequested;
+            SingleInstance.TakeoverHandler = OnTakeoverRequested;
             SingleInstance.StartListening();
 
             var args = desktop.Args ?? [];
@@ -110,6 +111,11 @@ public sealed partial class App : Application
                 viewModel.Start();
                 // Check for updates on open and once an hour; a found update surfaces as the floating banner (#22).
                 viewModel.General.BeginAutoUpdateChecks();
+                // A tray connect refused as a non-owner opened this window to confirm the takeover.
+                if (Array.IndexOf(args, "--takeover") >= 0)
+                {
+                    viewModel.Home.RequestTakeover();
+                }
             }
         }
 
@@ -141,6 +147,14 @@ public sealed partial class App : Application
     private void OnApplyRequested()
     {
         RunApply();
+    }
+
+    // A running instance was asked (tray) to raise the tunnel-takeover prompt: surface the window on Home and show
+    // the prompt, whose action switches the machine-wide tunnel to this account.
+    private void OnTakeoverRequested()
+    {
+        OnActivation();
+        _viewModel?.Home.RequestTakeover();
     }
 
     // The window closed while an update operation is still running: the user dismissed the UI, so nothing

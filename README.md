@@ -179,17 +179,67 @@ A self-hostable server-side service is planned, so AmneziaGeo is not only a clie
 
 ## Building from source
 
-Requirements: the .NET 10 SDK, Windows, and the WiX toolset for the installer.
+Each platform builds on its own. Windows is the one supported today.
+
+### Windows
+
+Requirements: the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), the [WiX toolset](https://wixtoolset.org) (for the installer), and git. The tunnel engine is built from a submodule, so start there.
+
+#### 1. Fetch the engine submodule
+
+The Windows AmneziaWG engine (`amneziawg-windows`) is a git submodule and is not part of the main checkout. Without it the engine build fails immediately with a hint. Fetch it:
 
 ```powershell
-# UI and agent
+git submodule update --init --recursive
+```
+
+#### 2. Build the tunnel engine
+
+So the tunnel also runs on Windows 7, the engine is built with a Windows 7-capable Go toolchain:
+
+```powershell
+# tunnel engine -> tunnel.dll
+amneziageo-windows/tools/build-engine-win7.ps1
+```
+
+The first run downloads everything it needs — Go, llvm-mingw, and wintun via the submodule's `build.cmd`, plus a separate Windows 7 Go — verifies the downloads by checksum, and drops the finished `tunnel.dll` where the app consumes it. Options:
+
+- `-Arch x64|x86|arm64` — target architecture (default `x64`).
+- `-Upstream` — build with stock Go, without Windows 7 support (for A/B).
+- `-Force` — re-download and rebuild the toolchain.
+
+#### 3. Build the app and installer
+
+```powershell
+# app and service
 dotnet build amneziageo-windows/AmneziaGeo.Windows.Ui/AmneziaGeo.Windows.Ui.csproj -c Release
 
-# Full installer (MSI plus Burn bundle), output to dist\AmneziaGeo-<version>-win-<arch>-<tag>.exe
+# installer -> dist\AmneziaGeo-<version>-win-<arch>-<payload>.exe
 amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/build-installer.ps1
 ```
 
-A local build is versioned `0.0.1.<git-commit-count>`, so every build is strictly newer to Burn; a release build takes its version from the tag. The same version is stamped on the MSI, which combined with its `MajorUpgrade AllowDowngrades` makes a same-version rebuild with different code reinstall cleanly as an update.
+By default this builds a single variant: `x64`, framework-dependent (needs the .NET 10 Desktop Runtime on the target). Builder options (each has a short alias; `-h` lists them all):
+
+- `-v, -Version N.N.N.N` — bundle and binary version (otherwise `0.0.1.<commit-count>`).
+- `-a, -Arch x64,arm64` — architectures, as a list or `all`.
+- `-p, -Payload fdd,scd` — payload kind: `fdd` needs the runtime installed (light), `scd` bundles the runtime (installs anywhere, large).
+- `-c, -Configuration Debug|Release`.
+- `-pre, -Prerelease` — bake the beta update channel.
+- `-r, -Rebuild` — clean before building.
+- `-l, -ListOnly` — print the build matrix and exit.
+
+arm64 is wired end to end, but the native parts (`tunnel.dll`, `wintun.dll`, `wstunnel.exe`) are x64-only for now, so x64 is the working target today. A release build takes its version from the tag; the same version is stamped on the MSI, which combined with its `MajorUpgrade AllowDowngrades` makes a same-version rebuild with different code reinstall cleanly as an update.
+
+#### Running in development
+
+For development there is a launcher that hosts the backend agent and the UI in one process, from a single command. Run it from an elevated console (it installs the service and WFP rules and brings up the tunnel); it needs the `tunnel.dll` from step 2.
+
+```powershell
+# backend + UI in one process
+dotnet run --project amneziageo-windows/tools/AmneziaGeo.Windows.Launcher
+```
+
+With no flags it starts both parts. Flags: `--service` runs the agent only; `--ui` the UI only; `--target <name>` drives a profile or config right away; `--config <path.conf>` registers a wg-quick config and launches on it.
 
 ## Tech stack
 

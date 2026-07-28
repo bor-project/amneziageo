@@ -10,7 +10,7 @@ internal sealed class ServiceManager
     /// <summary>
     /// Creates the tunnel service for an already-stored config, doing nothing if it already exists.
     /// </summary>
-    public int CreateService(string name)
+    public int CreateService(string name, string? ownerRoot = null)
     {
         if (Exists(name))
         {
@@ -18,8 +18,9 @@ internal sealed class ServiceManager
         }
 
         var serviceName = TunnelPaths.ServiceName(name);
-        // Quote the name: it becomes part of the service ImagePath re-parsed into argv.
-        var binPath = $"\"{Environment.ProcessPath}\" --service \"{name}\"";
+        // Quote the name and owner root: they become part of the service ImagePath re-parsed into argv.
+        var root = string.IsNullOrEmpty(ownerRoot) ? string.Empty : $" --root \"{ownerRoot}\"";
+        var binPath = $"\"{Environment.ProcessPath}\" --service \"{name}\"{root}";
         var created = Sc(
             "create",
             serviceName,

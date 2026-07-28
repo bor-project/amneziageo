@@ -1562,4 +1562,13 @@
   <data name="Main_ConfigTextLabel" xml:space="preserve">
     <value>ТЕКСТ КОНФИГУРАЦИИ</value>
   </data>
+  <data name="Agent_TunnelOwnedByOther" xml:space="preserve">
+    <value>VPN используется другой учётной записью.</value>
+  </data>
+  <data name="MainVm_NoticeTunnelOwnedByOther" xml:space="preserve">
+    <value>VPN подключён под другой учётной записью. Переключить на ваш?</value>
+  </data>
+  <data name="Main_TakeoverButton" xml:space="preserve">
+    <value>Переключить на свой</value>
+  </data>
 </root>

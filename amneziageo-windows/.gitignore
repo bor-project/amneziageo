@@ -28,6 +28,3 @@ wintun.dll
 
 # Local dev overrides (not committed)
 appsettings.Development.json
-
-# Local agent instruction folder
-.local/

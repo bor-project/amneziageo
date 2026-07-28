@@ -23,6 +23,3 @@ project.lock.json
 
 # Native engine output
 *.so
-
-# Local agent instruction folder
-.local/

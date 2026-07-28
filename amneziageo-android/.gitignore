@@ -25,6 +25,3 @@ AmneziaGeo.Android.Engine/native/
 *.cache
 *.user
 [Tt]est[Rr]esult*/
-
-# Local agent instruction folder
-.local/

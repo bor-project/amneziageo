@@ -21,6 +21,3 @@ project.lock.json
 *.tmp
 [Tt]est[Rr]esult*/
 *.coverage
-
-# Local agent instruction folder
-.local/

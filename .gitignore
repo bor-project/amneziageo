@@ -18,8 +18,5 @@ desktop.ini
 *.db-shm
 *.db-wal
 
-# Local scratch folders — not committed
-.local/
-
 # Local handoff notes — not committed
 HANDOFF.md

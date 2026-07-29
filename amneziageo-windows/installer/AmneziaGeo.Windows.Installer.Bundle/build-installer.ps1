@@ -34,7 +34,10 @@
   is always overlaid when present. Precedence: CLI flags > env overlay > local overlay > installer.config.json.
 
   Usage (on the build machine):
-    pwsh -File build-installer.ps1 [<env>] [-c Release] [-a x64,arm64] [-p fdd,scd] [-r] [-l]
+    pwsh -File build-installer.ps1 [<env>] [-c Release] [-a x64,arm64] [-p fdd,scd] [-s cert.pfx] [-r] [-l]
+
+  SIGNING: off by default - the outputs are left unsigned. Pass -Sign <path to .pfx> to sign the
+  staged binaries, the MSI and the bundle with that certificate (-SignPassword if it needs one).
   Every flag has a short lowercase alias; -h lists them.
 #>
 param(
@@ -52,6 +55,10 @@ param(
     [string[]]$Payload,
     [Alias('pre', 'AllowPrerelease')]
     [switch]$Prerelease,
+    [Alias('s', 'SigningCert')]
+    [string]$Sign,
+    [Alias('sp')]
+    [string]$SignPassword,
     [Alias('r')]
     [switch]$Rebuild,
     [Alias('l')]
@@ -72,13 +79,16 @@ if ($Help) {
         '  -a,   -Arch x64,arm64     arches to build, or all',
         '  -p,   -Payload fdd,scd    fdd = framework-dependent, scd = self-contained, or all',
         '  -pre, -Prerelease         bake the beta update channel',
+        '  -s,   -Sign <path>        sign with this certificate file (.pfx); omitted = unsigned',
+        '  -sp,  -SignPassword       password for the -Sign certificate',
         '  -r,   -Rebuild            clean before building',
         '  -l,   -ListOnly           print the resolved matrix and exit',
         '  -h,   -Help               this text',
         '',
         'Both axes take a list; every output is named AmneziaGeo-<version>-win-<arch>-<payload>.exe.',
-        'Defaults, icon, update URL and signing come from installer.config.json plus the',
-        '.local and .<env> overlays. Precedence: flags > env > local > installer.config.json.'
+        'Defaults, icon and update URL come from installer.config.json plus the .local and .<env>',
+        'overlays. Precedence: flags > env > local > installer.config.json.',
+        'Signing is off unless -Sign gives a certificate path (or a config overlay sets signingCert).'
     ) | Write-Host
     return
 }
@@ -102,9 +112,25 @@ $baExeName = 'AmneziaGeo.Windows.Installer.exe'
 
 # ---- installer config: base installer.config.json + local/env overlays (installer-config.ps1). Every field
 # is optional - null/empty => that feature is off: no icon => no icon anywhere; no updateUrl => updates
-# disabled (and their UI hidden); no signingCert => the outputs are left unsigned. ----
+# disabled (and their UI hidden). ----
 . (Join-Path $bundleDir 'installer-config.ps1')
 $cfg = Read-InstallerConfig -BundleDir $bundleDir -Environment $Environment
+
+# ---- signing target: -Sign <cert path>, else installer.config.json -> signingCert. Unset => unsigned. ----
+function Resolve-Signing {
+    if ($Sign) {
+        if (-not (Test-Path $Sign)) { throw "-Sign '$Sign' not found." }
+        $ts = if ($cfg -and $cfg.signingCert -and $cfg.signingCert.timestampUrl) { [string]$cfg.signingCert.timestampUrl } else { $null }
+        return [pscustomobject]@{
+            pfxPath      = (Resolve-Path $Sign).Path
+            password     = $SignPassword
+            timestampUrl = $ts
+        }
+    }
+    if ($cfg -and $cfg.signingCert) { return $cfg.signingCert }
+    return $null
+}
+$signing = Resolve-Signing
 
 # ---- configuration (Debug/Release) and rebuild flag: config -> build.{configuration,rebuild},
 # overridden by -Configuration / -Rebuild. ----
@@ -173,10 +199,10 @@ foreach ($v in $variants) {
     Write-Host ("   - win-{0} {1} ({2})" -f $v.Arch, $(if ($v.SelfContained) { 'scd' } else { 'fdd' }), $(if ($v.SelfContained) { 'self-contained' } else { 'framework-dependent' }))
 }
 $hasLocal = Test-Path (Join-Path $bundleDir 'installer.config.local.json')
-Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); allowPrerelease=$allowPre; signing=$(if ($cfg -and $cfg.signingCert) { 'on' } else { 'off' }) =="
+Write-Host "== config: env=$(if ($Environment) { $Environment } else { '(none)' }); local-overlay=$(if ($hasLocal) { 'yes' } else { 'no' }); configuration=$Configuration; rebuild=$rebuild; icon=$(if ($hasIcon -eq 'true') { $iconAbs } else { '(none)' }); updateUrl=$(if ($updateUrl) { $updateUrl } else { '(none)' }); allowPrerelease=$allowPre; signing=$(if ($signing) { 'on' } else { 'off' }) =="
 if ($ListOnly) { return }
 
-# ---- Authenticode signing (installer.config.json -> signingCert). Off unless signingCert is set. ----
+# ---- Authenticode signing. Off unless -Sign (or a config signingCert) resolved a certificate. ----
 # signtool is not on PATH; resolve it once (PATH first, then the newest x64 build under the Windows SDK).
 $script:Signtool = $null
 function Resolve-Signtool {
@@ -192,8 +218,8 @@ function Resolve-Signtool {
 
 # Fail fast (before the long publishes) if signing is configured but the cert is missing.
 function Assert-SigningCert {
-    if (-not ($cfg -and $cfg.signingCert)) { return }
-    $sc = $cfg.signingCert
+    if (-not $signing) { return }
+    $sc = $signing
     if ($sc.pfxPath) {
         if (-not (Test-Path $sc.pfxPath)) { throw "signingCert.pfxPath '$($sc.pfxPath)' not found." }
         return
@@ -203,23 +229,23 @@ function Assert-SigningCert {
              elseif ($sc.subject) { $store | Where-Object { $_.Subject -like "*$($sc.subject)*" -and $_.HasPrivateKey } }
              else { $null }
     if (-not $match) {
-        throw "installer.config.json enables signingCert but no matching code-signing certificate is installed. " +
-              "Run dev-signing-cert.ps1 to create a self-signed dev cert, or point signingCert at a real one."
+        throw "signing is enabled but no matching code-signing certificate is installed. " +
+              "Run dev-signing-cert.ps1 to create a self-signed dev cert, or pass -Sign <path to .pfx>."
     }
 }
 
 # Sign one or more files in a single signtool call (one timestamp round-trip). No-op when signing is off.
 function Invoke-Sign {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Files)
-    if (-not ($cfg -and $cfg.signingCert)) { return }
+    if (-not $signing) { return }
     $Files = @($Files | Where-Object { $_ -and (Test-Path $_) })
     if (-not $Files) { return }
-    $sc = $cfg.signingCert
+    $sc = $signing
     $a = @('sign', '/fd', 'SHA256')
-    if     ($sc.subject)    { $a += @('/n', [string]$sc.subject) }       # pick from the store by subject
+    if     ($sc.pfxPath)    { $a += @('/f', [string]$sc.pfxPath); if ($sc.password) { $a += @('/p', [string]$sc.password) } }
+    elseif ($sc.subject)    { $a += @('/n', [string]$sc.subject) }       # ... or pick from the store by subject
     elseif ($sc.thumbprint) { $a += @('/sha1', [string]$sc.thumbprint) } # ... or by thumbprint
-    elseif ($sc.pfxPath)    { $a += @('/f', [string]$sc.pfxPath); if ($sc.password) { $a += @('/p', [string]$sc.password) } }
-    else   { Write-Host '   signingCert set but none of subject/thumbprint/pfxPath given - skipping signing'; return }
+    else   { Write-Host '   signing set but none of pfxPath/subject/thumbprint given - skipping signing'; return }
     if ($sc.timestampUrl)   { $a += @('/tr', [string]$sc.timestampUrl, '/td', 'SHA256') }
     $a += $Files
     Write-Host "== sign $($Files.Count) file(s): $((($Files | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')) =="
@@ -238,7 +264,7 @@ function Invoke-Sign {
 # Sign OUR OWN binaries (everything named AmneziaGeo.*) under a publish folder. Third-party and .NET
 # runtime assemblies keep their original publisher signatures - we never re-sign them with our cert.
 function Invoke-SignLibraries([string]$dir) {
-    if (-not ($cfg -and $cfg.signingCert)) { return }
+    if (-not $signing) { return }
     $ours = @(Get-ChildItem -Recurse -File $dir -Include 'AmneziaGeo*.dll', 'AmneziaGeo*.exe' -ErrorAction SilentlyContinue |
               Select-Object -ExpandProperty FullName)
     if ($ours) { Invoke-Sign @ours }
@@ -250,7 +276,7 @@ function Invoke-SignLibraries([string]$dir) {
 # WixAttachedContainer", 0x80070002 - the install dies right after the BA appears). detach/reattach
 # rewrites the .wixburn section so the attached container stays locatable after the signature is added.
 function Invoke-SignBundle([string]$bundle) {
-    if (-not ($cfg -and $cfg.signingCert)) { return }
+    if (-not $signing) { return }
     if (-not (Get-Command wix -ErrorAction SilentlyContinue)) { throw 'wix CLI not found - needed to sign the Burn bundle (detach/reattach).' }
     $engine = Join-Path ([System.IO.Path]::GetDirectoryName($bundle)) 'burnengine.exe'
     $out    = "$bundle.signed"

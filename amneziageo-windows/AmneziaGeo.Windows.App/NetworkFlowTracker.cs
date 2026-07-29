@@ -185,8 +185,9 @@ internal sealed class NetworkFlowTracker : IDisposable
                 return;
             }
 
-            // Mark seen only after a successful route; failures retry on the next datagram.
-            if (_tracker.UpdateAppIps([remoteIp.ToString()]))
+            // Mark seen only after a successful route; failures retry on the next datagram. All-UDP tunnels every
+            // destination and must not promote domains off anycast resolvers; an app match promotes.
+            if (RouteUdp(remoteIp))
             {
                 _logger.LogTrace("udp request -> {Remote} (pid {Pid})", remoteIp, pid);
                 if (RouteLog.Enabled)
@@ -248,7 +249,7 @@ internal sealed class NetworkFlowTracker : IDisposable
             }
 
             // Mark seen only after a successful route; failures retry on the next datagram.
-            if (_tracker.UpdateAppIps([key]))
+            if (RouteUdp(remoteIp))
             {
                 _logger.LogTrace("udp request -> {Remote} (pid {Pid})", remoteIp, pid);
                 if (RouteLog.Enabled)
@@ -369,17 +370,21 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
     }
 
+    // Routes a UDP destination: all-UDP routes it plainly, an app match also promotes its domain.
+    private bool RouteUdp(IPAddress remoteIp)
+    {
+        var key = remoteIp.ToString();
+        return _allUdp ? _tracker.UpdateAppIps([key]) : _tracker.NoteAppRemotes([key]);
+    }
+
     // Routes a matched app's TCP remote and promotes the domain(s) it resolved to; true when routed.
     private bool RouteMatched(IPAddress remoteIp, uint pid)
     {
-        var key = remoteIp.ToString();
-        if (!_tracker.UpdateAppIps([key]))
+        if (!_tracker.NoteAppRemotes([remoteIp.ToString()]))
         {
             return false;
         }
 
-        // Teach the tracker which domain this app used; routes the domain's known siblings now.
-        _tracker.NoteAppRemote(key);
         _logger.LogTrace("tcp request -> {Remote} (pid {Pid})", remoteIp, pid);
         if (RouteLog.Enabled)
         {
@@ -455,8 +460,9 @@ internal sealed class NetworkFlowTracker : IDisposable
             return;
         }
 
-        // Mark seen only on a successful route; a failed add retries on the next scan.
-        if (_tracker.UpdateAppIps(batch))
+        // Mark seen only on a successful route; a failed add retries on the next scan. Promotes like the ETW path:
+        // a SYN caught here is the app's first contact with the domain, and its remaining addresses must follow.
+        if (_tracker.NoteAppRemotes(batch))
         {
             foreach (var ip in batch)
             {

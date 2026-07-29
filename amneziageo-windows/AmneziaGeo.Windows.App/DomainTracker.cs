@@ -532,7 +532,7 @@ internal sealed class DomainTracker(
 
     // Installs /32(/128) routes for app IPs; assumes _lock held. Returns the CIDRs whose routes were installed so
     // the caller advertises them to the engine OFF-lock, plus whether every input IP was handled (else caller retries).
-    private (bool AllHandled, List<string> AddedCidrs) RouteAppIpsLocked(IReadOnlyList<string> ips)
+    private (bool AllHandled, List<string> AddedCidrs) RouteAppIpsLocked(IEnumerable<string> ips)
     {
         var addedCidrs = new List<string>();
         var index = EnsureIndex();
@@ -618,33 +618,75 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
-    /// A matched app touched a remote IP: routes that destination and promotes the domain(s) it resolved to, so a
-    /// repeat app domain's future resolutions route before the answer (route-before-answer). Only destinations the
-    /// app actually contacts are tunneled - no sibling pre-routing.
+    /// Raised when an app's traffic promotes a domain, so its later queries resolve through the tunnel resolver
+    /// instead of the local one.
     /// </summary>
-    public void NoteAppRemote(string ip)
+    public event Action<string>? DomainPromoted;
+
+    /// <summary>
+    /// Matched apps touched remote IPs: routes those destinations, promotes the domains they resolved to so future
+    /// resolutions route before the answer, and routes each promoted domain's remaining addresses. One lock and one
+    /// advertisement for the whole batch. Returns false when an IP was left unrouted, so the caller retries.
+    /// </summary>
+    public bool NoteAppRemotes(IReadOnlyList<string> ips)
     {
         List<string> addedCidrs;
+        var promoted = default(List<string>);
+        bool allHandled;
         lock (_lock)
         {
-            addedCidrs = RouteAppIpsLocked(new[] { ip }).AddedCidrs;
-
-            // Promote only from an IP mapped to a single known domain: a shared anycast edge (Cloudflare) would
-            // otherwise promote unrelated sites that merely share it, routing their process-agnostic traffic too.
-            if (_ipToNames.TryGetValue(ip, out var names) && names.Count == 1)
+            (allHandled, addedCidrs) = RouteAppIpsLocked(ips);
+            foreach (var ip in ips)
             {
-                foreach (var name in names)
+                // Promote only from an IP mapped to a single known domain: a shared anycast edge (Cloudflare) would
+                // otherwise promote unrelated sites that merely share it, routing their process-agnostic traffic too.
+                if (!_ipToNames.TryGetValue(ip, out var names) || names.Count != 1)
                 {
-                    if (_promotedApps.Add(name))
-                    {
-                        logger.LogInformation("app promoted domain {Name} via {Ip}", name, ip);
-                    }
+                    continue;
+                }
+
+                var name = Single(names);
+                if (!_promotedApps.Add(name))
+                {
+                    continue;
+                }
+
+                logger.LogInformation("app promoted domain {Name} via {Ip}", name, ip);
+                (promoted ??= []).Add(name);
+
+                // The domain's other addresses serve the same app, and a CDN hands them out in rotation: route them
+                // now, or the app's next attempt picks a sibling that has no route yet and leaves the tunnel.
+                if (_nameToIps.TryGetValue(name, out var siblings))
+                {
+                    var (siblingsHandled, siblingCidrs) = RouteAppIpsLocked(siblings);
+                    allHandled &= siblingsHandled;
+                    addedCidrs.AddRange(siblingCidrs);
                 }
             }
         }
 
-        // Advertise the touched IP's route off-lock.
+        // Advertise off-lock: the pipe round-trip must not hold the resolve path.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        if (promoted is not null)
+        {
+            foreach (var name in promoted)
+            {
+                DomainPromoted?.Invoke(name);
+            }
+        }
+
+        return allHandled;
+    }
+
+    // The element of a one-item set.
+    private static string Single(HashSet<string> set)
+    {
+        foreach (var item in set)
+        {
+            return item;
+        }
+
+        return string.Empty;
     }
 
     // True when an IP is still held by another tracked domain or _appIps, excluding the just-applied set.

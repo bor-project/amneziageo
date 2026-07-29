@@ -374,6 +374,13 @@ internal sealed class TunnelRunner(
         // flush is coalesced because a chatty app learns many names.
         if (proxy is not null && appDns is not null)
         {
+            // A promoted domain takes the same path as an ETW-learned name: apps with their own resolver (Chromium)
+            // never reach DNS-Client, so their domains are learned from the traffic they generate.
+            if (tracker is not null)
+            {
+                tracker.DomainPromoted += appDns.MarkName;
+            }
+
             var learnFlush = new SemaphoreSlim(0, 1);
             appDns.NameLearned += learnedName =>
             {

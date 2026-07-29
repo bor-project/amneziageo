@@ -5,8 +5,9 @@
   .deps\go-win7 (the stock .deps\go stays where build.cmd put it) and the output is the same
   gitignored <arch>\tunnel.dll that App.csproj already consumes. Build flags mirror build.cmd.
 
-  A first run with no .deps present bootstraps them by invoking the submodule's own build.cmd, which
-  downloads Go + llvm-mingw + wintun and produces a stock tunnel.dll; this script then overwrites it.
+  Every run checks the .deps artifacts (stock Go, llvm-mingw, wintun) and re-bootstraps them through
+  the submodule's own build.cmd when anything is missing; the win7 toolchain and the Go caches are
+  carried across that wipe. build.cmd also produces a stock tunnel.dll, which this script overwrites.
 
   Usage (on the build machine):
     powershell -NoProfile -ExecutionPolicy Bypass -File build-engine-win7.ps1
@@ -32,24 +33,69 @@ if (-not (Test-Path (Join-Path $submodule 'build.cmd'))) {
 }
 
 $targets = @{
-    'x64'   = @{ GoArch = 'amd64'; Cc = 'x86_64-w64-mingw32-gcc' }
-    'x86'   = @{ GoArch = '386';   Cc = 'i686-w64-mingw32-gcc' }
-    'arm64' = @{ GoArch = 'arm64'; Cc = 'aarch64-w64-mingw32-gcc' }
+    'x64'   = @{ GoArch = 'amd64'; Cc = 'x86_64-w64-mingw32-gcc';  Wintun = 'amd64' }
+    'x86'   = @{ GoArch = '386';   Cc = 'i686-w64-mingw32-gcc';    Wintun = 'x86' }
+    'arm64' = @{ GoArch = 'arm64'; Cc = 'aarch64-w64-mingw32-gcc'; Wintun = 'arm64' }
 }
 foreach ($a in $Arch) {
     if (-not $targets.ContainsKey($a)) { throw "Invalid -Arch '$a' (expected x64, x86 or arm64)." }
 }
 
 # ---- 1. bootstrap .deps (Go, llvm-mingw, wintun) through the submodule's own build.cmd ----
-$cc = Join-Path $deps 'llvm-mingw\bin\x86_64-w64-mingw32-gcc.exe'
-if (-not (Test-Path $cc)) {
-    Write-Host '== bootstrapping .deps via the submodule build.cmd (downloads Go, llvm-mingw, wintun) =='
-    Push-Location $submodule
+
+# what a completed build.cmd bootstrap leaves behind for the requested arches
+function Get-MissingDeps {
+    $expected = @(Join-Path $deps 'go\bin\go.exe')
+    foreach ($a in $Arch) {
+        $expected += Join-Path $deps "llvm-mingw\bin\$($targets[$a].Cc).exe"
+        $expected += Join-Path $deps "wintun\bin\$($targets[$a].Wintun)\wintun.dll"
+    }
+    # the .deps\prepared marker is deliberately not checked: it only tells build.cmd whether to redownload
+    return @($expected | Where-Object { -not (Test-Path $_) })
+}
+
+$missing = Get-MissingDeps
+if ($missing) {
+    Write-Host '== .deps incomplete - wiping and re-bootstrapping via the submodule build.cmd =='
+    foreach ($m in $missing) {
+        Write-Host "   missing: $m"
+    }
+
+    # build.cmd wipes .deps whole, so park what it never downloads outside of it
+    $keepDir = Join-Path $submodule '.deps-keep'
+    $keep = @('go-win7', 'gocache-win7', 'gocache-upstream', 'gopath')
+    $keep += @(Get-ChildItem -Path $deps -Filter 'go-legacy-win7-*.zip' -ErrorAction SilentlyContinue | ForEach-Object Name)
+
+    if (Test-Path $keepDir) { Remove-Item -Recurse -Force $keepDir }
+    New-Item -ItemType Directory -Force -Path $keepDir | Out-Null
+    foreach ($k in $keep) {
+        $src = Join-Path $deps $k
+        if (Test-Path $src) { Move-Item -Force $src (Join-Path $keepDir $k) }
+    }
+
     try {
-        & cmd.exe /c build.cmd
-        if ($LASTEXITCODE -ne 0) { throw "build.cmd bootstrap failed ($LASTEXITCODE)" }
-    } finally { Pop-Location }
-    if (-not (Test-Path $cc)) { throw "llvm-mingw still missing after bootstrap: $cc" }
+        # drop the marker so build.cmd takes its :installdeps path
+        $marker = Join-Path $deps 'prepared'
+        if (Test-Path $marker) { Remove-Item -Force $marker }
+
+        Push-Location $submodule
+        try {
+            & cmd.exe /c build.cmd
+            if ($LASTEXITCODE -ne 0) { throw "build.cmd bootstrap failed ($LASTEXITCODE)" }
+        } finally { Pop-Location }
+    } finally {
+        New-Item -ItemType Directory -Force -Path $deps | Out-Null
+        foreach ($k in $keep) {
+            $src = Join-Path $keepDir $k
+            if (Test-Path $src) { Move-Item -Force $src (Join-Path $deps $k) }
+        }
+        if (Test-Path $keepDir) { Remove-Item -Recurse -Force $keepDir }
+    }
+
+    $missing = Get-MissingDeps
+    if ($missing) {
+        throw "bootstrap finished but these are still missing:`n  $($missing -join "`n  ")`nA download was rejected - check that go.dev, download.wireguard.com and wintun.net are reachable from here (a captive portal or filter answers with an HTML page, whose SHA256 never matches), or drop the file in by hand."
+    }
 }
 
 # ---- 2. fetch and verify the Windows 7 toolchain ----

@@ -64,6 +64,11 @@ internal sealed class AppDnsTracker : IDisposable
     }
 
     /// <summary>
+    /// Marks a name app-tunneled outside the ETW path, for an app whose own resolver never reaches DNS-Client.
+    /// </summary>
+    public void MarkName(string name) => Mark(name);
+
+    /// <summary>
     /// Reads the DNS-Client provider until the session closes (cancellation).
     /// </summary>
     public async Task RunAsync(CancellationToken ct)

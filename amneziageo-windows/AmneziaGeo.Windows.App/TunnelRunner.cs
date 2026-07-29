@@ -445,19 +445,16 @@ internal sealed class TunnelRunner(
         // Strip DNS from config; we apply it on the adapter ourselves.
         config = WgConfigEditor.RemoveDns(config);
 
+        // Defer the DNS redirect until the peer first answers. The proxy is already bound, but until the tunnel
+        // is up it can only answer tunnel-routed names once the handshake lands; redirecting up front strands the
+        // box's resolver for the whole dial when the endpoint never answers (a censored or unreachable server).
+        // Mirror the kill-switch's deferral so a dial that never handshakes leaves the OS resolver working.
         var applied = false;
+        var dnsApplyTask = Task.CompletedTask;
         if (redirectServers.Count > 0)
         {
-            using (logger.Step("apply DNS + flush cache"))
-            {
-                dns.Apply(name, redirectServers);
-                // Flush so pre-redirect answers are re-queried through the proxy.
-                dns.FlushCache();
-            }
-
             applied = true;
-            logger.LogDebug("connect {Name}: dns redirected to {Servers} [{Elapsed} ms]",
-                name, string.Join(",", redirectServers), connectSw.ElapsedMilliseconds);
+            dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, sessionCts.Token));
         }
 
         if (stripV6 && redirectServers.Count > 0)
@@ -544,6 +541,16 @@ internal sealed class TunnelRunner(
 
             if (applied)
             {
+                // Let a deferred apply that is mid-flight finish (or observe the cancel) before reverting, so it
+                // cannot re-point DNS after the restore. Restore is a no-op when the handshake never landed.
+                try
+                {
+                    await dnsApplyTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
                 dns.Restore();
                 // Flush so cached tunnel-routed IPs don't outlive the tunnel.
                 dns.FlushCache();
@@ -842,6 +849,27 @@ internal sealed class TunnelRunner(
 
                 await Task.Delay(500, ct);
             }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    // Applies the host DNS redirect once the peer first answers, then flushes so pre-redirect answers are
+    // re-queried through the proxy. Before the handshake the OS keeps its own resolvers, so a dial that never
+    // completes cannot strand the machine's DNS; the teardown reverts whatever this applied.
+    private async Task ApplyDnsWhenTunnelUpAsync(string name, IReadOnlyList<string> redirectServers, CancellationToken ct)
+    {
+        try
+        {
+            await WaitForHandshakeAsync(name, ct);
+            using (logger.Step("apply DNS + flush cache"))
+            {
+                dns.Apply(name, redirectServers);
+                dns.FlushCache();
+            }
+
+            logger.LogDebug("connect {Name}: dns redirected to {Servers} after handshake", name, string.Join(",", redirectServers));
         }
         catch (OperationCanceledException)
         {

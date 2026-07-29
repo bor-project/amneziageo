@@ -22,9 +22,16 @@ public static class AppEntry
         {
             case ["--uninstall-cleanup"]:
                 InstallerMaintenance.RemoveTransientServices();
+                // Revert any DNS redirect the agent left on the adapters, so removing the product never strands
+                // the box without a resolver even when the agent died before it could revert.
+                InstallerMaintenance.RestoreDnsRedirect();
                 return 0;
             case ["--wipe-config"]:
                 InstallerMaintenance.WipeRuntimeData();
+                return 0;
+            case ["--heal-dns"]:
+                // Elevated repair (UI button): clear a leftover loopback DNS redirect so the internet works again.
+                InstallerMaintenance.RestoreDnsRedirect();
                 return 0;
         }
 

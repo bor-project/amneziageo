@@ -45,11 +45,14 @@ public sealed class SqliteLogStore : IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _writerLoop;
 
+    private readonly string _databasePath;
+
     /// <summary>
     /// ctor
     /// </summary>
     public SqliteLogStore(string databasePath)
     {
+        _databasePath = databasePath;
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
@@ -57,9 +60,37 @@ public sealed class SqliteLogStore : IDisposable
     }
 
     /// <summary>
-    /// Creates the tables (WAL), seeds the level dictionary, and starts the writer loop.
+    /// Creates the tables (WAL), seeds the level dictionary, and starts the writer loop. Corruption
+    /// self-heals, escalating: first quarantine only the -wal/-shm sidecars (a stale pair fails recovery of
+    /// an intact file - its rows survive), then quarantine the database and recreate it empty - losing old
+    /// log rows must never keep the agent from starting.
     /// </summary>
     public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await InitializeCoreAsync(ct).ConfigureAwait(false);
+        }
+        catch (SqliteException)
+        {
+            SqliteConnection.ClearAllPools();
+            CorruptQuarantine.MoveAsideSidecars(_databasePath);
+            try
+            {
+                await InitializeCoreAsync(ct).ConfigureAwait(false);
+            }
+            catch (SqliteException)
+            {
+                SqliteConnection.ClearAllPools();
+                CorruptQuarantine.MoveAside(_databasePath);
+                await InitializeCoreAsync(ct).ConfigureAwait(false);
+            }
+        }
+
+        _writerLoop = Task.Run(() => WriteLoopAsync(_shutdown.Token));
+    }
+
+    private async Task InitializeCoreAsync(CancellationToken ct)
     {
         var connection = await OpenAsync(ct).ConfigureAwait(false);
         await using (connection.ConfigureAwait(false))
@@ -101,8 +132,6 @@ public sealed class SqliteLogStore : IDisposable
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
         }
-
-        _writerLoop = Task.Run(() => WriteLoopAsync(_shutdown.Token));
     }
 
     /// <summary>

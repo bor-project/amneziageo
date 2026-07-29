@@ -64,6 +64,21 @@
   <data name="General_ConnectionSection" xml:space="preserve">
     <value>Connection</value>
   </data>
+  <data name="General_NetworkRepairSection" xml:space="preserve">
+    <value>Network repair</value>
+  </data>
+  <data name="General_NetworkRepairHint" xml:space="preserve">
+    <value>If the internet stops working after a failed connection or removing the app, reset the DNS it set on your adapters. Profiles, configs, and routes are left untouched.</value>
+  </data>
+  <data name="General_NetworkRepairButton" xml:space="preserve">
+    <value>Repair internet</value>
+  </data>
+  <data name="General_NetworkRepairDone" xml:space="preserve">
+    <value>Repair started — confirm the elevation prompt.</value>
+  </data>
+  <data name="General_NetworkRepairFailed" xml:space="preserve">
+    <value>Could not start the repair.</value>
+  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Show notifications</value>
   </data>

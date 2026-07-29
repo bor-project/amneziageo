@@ -169,6 +169,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool PeriodicReconnectIntervalEnabled => PeriodicReconnect;
 
     /// <summary>
+    /// Whether the network-repair action is offered (Windows only).
+    /// </summary>
+    public bool CanRepairNetwork => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// Transient result line for the network-repair action.
+    /// </summary>
+    [ObservableProperty]
+    private string _networkRepairStatus = string.Empty;
+
+    /// <summary>
     /// ctor
     /// </summary>
     public GeneralViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
@@ -695,6 +706,38 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private void DismissUpdateBanner()
     {
         UpdateBannerVisible = false;
+    }
+
+    /// <summary>
+    /// Elevated one-shot that reverts a leftover DNS redirect so the internet works again after a dead or hung
+    /// agent stranded the resolver. A separate elevated process, so it works even when the agent is unresponsive;
+    /// touches DNS only - not profiles, configs, or routes.
+    /// </summary>
+    [RelayCommand]
+    private void RepairNetwork()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var exe = Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.Windows.App.exe");
+        try
+        {
+            Process.Start(new ProcessStartInfo(exe)
+            {
+                Arguments = "--heal-dns",
+                UseShellExecute = true,
+                Verb = "runas",
+            });
+            NetworkRepairStatus = Loc.Instance.Get("General_NetworkRepairDone");
+        }
+        catch (Exception ex)
+        {
+            // The user declined the elevation prompt, or the helper could not start.
+            _ = LogToAgentAsync($"network repair launch failed: {ex}");
+            NetworkRepairStatus = Loc.Instance.Get("General_NetworkRepairFailed");
+        }
     }
 
     // Open the selective bundle export inline: snapshot the current catalogue into a fresh export view model.

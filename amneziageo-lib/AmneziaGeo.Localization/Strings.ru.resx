@@ -64,6 +64,21 @@
   <data name="General_ConnectionSection" xml:space="preserve">
     <value>Подключение</value>
   </data>
+  <data name="General_NetworkRepairSection" xml:space="preserve">
+    <value>Восстановление сети</value>
+  </data>
+  <data name="General_NetworkRepairHint" xml:space="preserve">
+    <value>Если после неудачного подключения или удаления приложения пропал интернет — сбросьте DNS, который оно прописало адаптерам. Профили, конфиги и маршруты не затрагиваются.</value>
+  </data>
+  <data name="General_NetworkRepairButton" xml:space="preserve">
+    <value>Починить интернет</value>
+  </data>
+  <data name="General_NetworkRepairDone" xml:space="preserve">
+    <value>Сброс запущен — подтвердите запрос прав.</value>
+  </data>
+  <data name="General_NetworkRepairFailed" xml:space="preserve">
+    <value>Не удалось запустить сброс.</value>
+  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Показывать оповещения</value>
   </data>

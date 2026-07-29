@@ -83,10 +83,11 @@
 
     <!-- On full removal (including the remove phase of a major upgrade) mop up any leftover transient
          per-tunnel services. The active tunnel is already torn down by the AmneziaGeoAgent service's
-         own graceful stop (ServiceControl below), which reverts its routes / DNS / firewall; this only
-         catches a per-tunnel service orphaned by an agent crash. Runs the installed agent exe with the
-         uninstall-cleanup verb, which enumerates and deletes the "AmneziaGeo$*" services in-process via the
-         Service Control Manager API (no powershell/sc.exe child, keeping the AV footprint low - #167).
+         own graceful stop (ServiceControl below), which reverts its routes / DNS / firewall; this catches a
+         per-tunnel service orphaned by an agent crash AND reverts any leftover DNS redirect the graceful stop
+         could not (a dead or hung agent), so removal never strands the box without a resolver. Runs the installed
+         agent exe with the uninstall-cleanup verb, which deletes the "AmneziaGeo$*" services and restores adapter
+         DNS in-process via the Service Control Manager and WMI APIs (no powershell/sc.exe child, low AV footprint - #167).
          Sequenced Before RemoveFiles so the exe is still on disk. Fixed verb (no installer properties), so
          the action needs no deferred CustomActionData. DEFERRED + Impersonate="no" runs it as SYSTEM on
          session 0. Best-effort: Return="ignore" so a hiccup never blocks uninstall. -->

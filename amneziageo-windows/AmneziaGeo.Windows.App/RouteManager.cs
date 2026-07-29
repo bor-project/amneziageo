@@ -31,6 +31,15 @@ internal sealed partial class RouteManager
         ("fc00::", 7),
     ];
 
+    // Connected subnets change only with the host's network configuration, while the enumeration behind them costs
+    // hundreds of milliseconds on an adapter- and route-heavy host - and the status snapshot asks every 2 seconds.
+    // The TTL is a backstop for a missed change event, not the refresh path.
+    private const long LocalSubnetsTtlMs = 60_000;
+    private readonly Lock _subnetsLock = new();
+    private IReadOnlyList<string>? _localSubnets;
+    private long _localSubnetsStamp;
+    private int _subnetsWatched;
+
     // Tunnel routes this instance installed, so a delete calls DeleteIpForwardEntry2 on the remembered row (O(1))
     // instead of reading and scanning the whole OS forwarding table. The scan stays the fallback for a route we
     // did not install this session (a previous run's) or one the OS has since altered. Guarded by _addedLock.
@@ -213,6 +222,55 @@ internal sealed partial class RouteManager
     /// Lists connected local IPv4 subnets.
     /// </summary>
     public IReadOnlyList<string> LocalSubnets()
+    {
+        WatchAddressChanges();
+        lock (_subnetsLock)
+        {
+            if (_localSubnets is not null && Environment.TickCount64 - _localSubnetsStamp < LocalSubnetsTtlMs)
+            {
+                return _localSubnets;
+            }
+        }
+
+        // Scanned outside the lock: a concurrent caller repeats the work instead of stalling behind it.
+        var scanned = ScanLocalSubnets();
+        lock (_subnetsLock)
+        {
+            _localSubnets = scanned;
+            _localSubnetsStamp = Environment.TickCount64;
+        }
+
+        return scanned;
+    }
+
+    // Drops the cached subnets on any address or availability change.
+    private void WatchAddressChanges()
+    {
+        if (Interlocked.Exchange(ref _subnetsWatched, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            NetworkChange.NetworkAddressChanged += (_, _) => InvalidateLocalSubnets();
+            NetworkChange.NetworkAvailabilityChanged += (_, _) => InvalidateLocalSubnets();
+        }
+        catch (NetworkInformationException)
+        {
+            // No change notifications: the TTL alone keeps the cache fresh.
+        }
+    }
+
+    private void InvalidateLocalSubnets()
+    {
+        lock (_subnetsLock)
+        {
+            _localSubnets = null;
+        }
+    }
+
+    private static IReadOnlyList<string> ScanLocalSubnets()
     {
         var result = new List<string>();
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())

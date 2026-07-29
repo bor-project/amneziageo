@@ -179,6 +179,29 @@
         </StackPanel>
       </Border>
 
+      <!-- Network repair card: elevated one-shot that clears a leftover DNS redirect so the internet works
+           again after a failed connect or a removal stranded the resolver. Windows only. -->
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              CornerRadius="12" Padding="16" Background="Transparent"
+              IsVisible="{Binding CanRepairNetwork}">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
+          <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"
+                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+            <TextBlock Text="{l:Tr General_NetworkRepairSection}" FontWeight="SemiBold" FontSize="15" />
+            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{l:Tr General_NetworkRepairHint}" />
+            <TextBlock Text="{Binding NetworkRepairStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       IsVisible="{Binding NetworkRepairStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+          <StackPanel VerticalAlignment="Center"
+                      Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                      Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
+            <Button Classes="softbtn" Padding="16,7" HorizontalAlignment="Stretch"
+                    Command="{Binding RepairNetworkCommand}" Content="{l:Tr General_NetworkRepairButton}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
       <!-- Import / export card (full width): hint left, actions right. Opens the bundle sub-views inline. -->
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" Background="Transparent">

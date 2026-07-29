@@ -211,6 +211,37 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
     }
 
+    /// <summary>
+    /// Standalone recovery for the uninstall custom action and the UI repair button: reverts any persisted
+    /// redirect, then forces any adapter still pointing DNS at a loopback proxy back to automatic. Runs without
+    /// the agent, so a dead or hung service can't strand the box without a resolver. Touches DNS only - not
+    /// routes, profiles, or configs.
+    /// </summary>
+    public void RestoreAndHeal()
+    {
+        RestoreSaved();
+
+        foreach (var adapter in Adapters())
+        {
+            using (adapter)
+            {
+                var current = adapter["DNSServerSearchOrder"] as string[] ?? [];
+                if (!current.Any(IsLoopback))
+                {
+                    continue;
+                }
+
+                // A persisted original was missing or the redirect outlived its state file: hand this adapter
+                // back to automatic (DHCP) so a dead loopback proxy stops swallowing every query.
+                var index = Convert.ToUInt32(adapter["InterfaceIndex"]);
+                SetDns(adapter, []);
+                ResetV6Dns(index);
+            }
+        }
+
+        FlushCache();
+    }
+
     // Delete only when every recorded adapter is present AND no longer on our redirect. A not-ready adapter
     // (not yet enumerable at boot, or renumbered) or one still on our redirect keeps the file for a later retry.
     private static bool FullyRestored(DnsState state)

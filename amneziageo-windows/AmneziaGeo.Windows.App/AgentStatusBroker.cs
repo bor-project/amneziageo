@@ -2356,6 +2356,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
 
         var configs = new List<ConfigEntry>();
+        // Computed at most once per snapshot, and only for a config that has no saved exclusions.
+        var defaultExclusions = default(string);
         foreach (var name in await configRepo.ListAsync(ct))
         {
             var configText = await configRepo.ReadTextAsync(name, ct);
@@ -2364,7 +2366,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var configDns = await store.GetConfigDnsAsync(name, ct);
             var configEx = await store.GetConfigExclusionsAsync(name, ct);
             // No row -> show the runtime default LAN bypass; saving freezes it.
-            var exclusions = configEx?.Exclusions ?? string.Join('\n', routes.DefaultExclusionEntries());
+            var exclusions = configEx?.Exclusions ?? (defaultExclusions ??= string.Join('\n', routes.DefaultExclusionEntries()));
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
                 ? ProfileDisplayStatus(boundState.Status)
                 : ConnectionStatus.Idle;

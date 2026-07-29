@@ -20,7 +20,35 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     private const int SchemaVersion = 1;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Corruption self-heal, escalating: first quarantine only the -wal/-shm sidecars (a stale pair from a
+    /// killed process fails recovery of an intact file - its data survives), then quarantine the database
+    /// itself and recreate the default empty schema - the agent starts with defaults rather than not at all.
+    /// </remarks>
     public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await InitializeCoreAsync(ct).ConfigureAwait(false);
+        }
+        catch (SqliteException)
+        {
+            SqliteConnection.ClearAllPools();
+            CorruptQuarantine.MoveAsideSidecars(databasePath);
+            try
+            {
+                await InitializeCoreAsync(ct).ConfigureAwait(false);
+            }
+            catch (SqliteException)
+            {
+                SqliteConnection.ClearAllPools();
+                CorruptQuarantine.MoveAside(databasePath);
+                await InitializeCoreAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task InitializeCoreAsync(CancellationToken ct)
     {
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))

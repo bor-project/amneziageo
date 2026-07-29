@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -18,6 +19,24 @@ internal static class InstallerMaintenance
     public static void RemoveTransientServices()
     {
         ReapTransientServices(null);
+    }
+
+    /// <summary>
+    /// Reverts any DNS redirect this product left on the adapters, from the persisted per-tunnel state, and
+    /// forces any adapter still on the loopback proxy back to automatic. Standalone (no DI host), so removing
+    /// the product or clicking the repair button restores the resolver even when the agent died before it could.
+    /// </summary>
+    public static void RestoreDnsRedirect()
+    {
+        try
+        {
+            new DnsConfigurator(NullLogger<DnsConfigurator>.Instance).RestoreAndHeal();
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: a restore hiccup must never block uninstall or the repair action.
+            Console.Error.WriteLine($"dns restore failed: {ex}");
+        }
     }
 
     /// <summary>

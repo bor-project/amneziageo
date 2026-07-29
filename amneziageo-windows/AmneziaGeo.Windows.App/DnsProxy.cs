@@ -89,13 +89,16 @@ internal sealed class DnsProxy
     private readonly bool _stripV6;
     // Names queried by a matched app resolve through the tunnel and route their answer, even with no geo rule.
     private readonly AppDnsTracker? _appDns;
+    // Direct-verdict addresses get their host route here, before the answer reaches the client.
+    private readonly OnDemandRouter? _onDemand;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, OnDemandRouter? onDemand = null)
     {
         _appDns = appDns;
+        _onDemand = onDemand;
         _domains = domains;
         _matcher = new DomainMatcher(domains);
         _blockMatcher = new DomainMatcher(blockDomains);
@@ -589,6 +592,23 @@ internal sealed class DnsProxy
                     {
                         RouteLog.Note($"route FAILED for {name}: {ex.Message}");
                     }
+                }
+            }
+
+            // Install Direct host routes before the answer leaves, so the client's first packet already egresses the
+            // physical path. Runs for cached answers too: a route reclaimed while idle is restored on the next query.
+            if (_onDemand is not null)
+            {
+                try
+                {
+                    foreach (var address in DnsMessage.Addresses(response))
+                    {
+                        _onDemand.Note(address);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "on-demand routing for {Name} failed", name);
                 }
             }
 

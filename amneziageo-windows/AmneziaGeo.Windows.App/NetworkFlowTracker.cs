@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -33,10 +34,15 @@ internal sealed class NetworkFlowTracker : IDisposable
     private static readonly uint OwnProcessId = (uint)Environment.ProcessId;
 
     private readonly AppMatcher? _matcher;
-    private readonly DomainTracker _tracker;
+    private readonly DomainTracker? _tracker;
     private readonly bool _allUdp;
     private readonly bool _tunnelV6;
     private readonly IPAddress? _excludeEndpoint;
+    // Network-order endpoint address, compared before any allocation on the per-packet path.
+    private readonly uint _excludeEndpointV4;
+    // Every v4 destination is offered here regardless of app rules: it drives the on-demand Direct routes and keeps
+    // a route that is still carrying traffic from being reclaimed.
+    private readonly Action<uint>? _noteV4;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
     // Seen destinations; ETW handler is single-threaded, no lock needed.
@@ -62,13 +68,17 @@ internal sealed class NetworkFlowTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger)
+    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint>? noteV4 = null)
     {
         _matcher = matcher;
         _tracker = tracker;
         _allUdp = allUdp;
         _tunnelV6 = tunnelV6;
         _excludeEndpoint = excludeEndpoint;
+        _excludeEndpointV4 = excludeEndpoint is not null && excludeEndpoint.AddressFamily == AddressFamily.InterNetwork
+            ? BitConverter.ToUInt32(excludeEndpoint.GetAddressBytes(), 0)
+            : 0;
+        _noteV4 = noteV4;
         _logger = logger;
     }
 
@@ -149,6 +159,10 @@ internal sealed class NetworkFlowTracker : IDisposable
 
             // Payload PID (offset 0), not the ETW header PID.
             var pid = BitConverter.ToUInt32(data, PidOffset);
+            // Dedupe by raw daddr before any allocation.
+            var daddr = BitConverter.ToUInt32(data, RemoteAddrOffset);
+            NoteDestination(pid, daddr);
+
             if (_allUdp)
             {
                 // Never tunnel own process: WG underlay and DNS-proxy upstream would loop.
@@ -162,8 +176,6 @@ internal sealed class NetworkFlowTracker : IDisposable
                 return;
             }
 
-            // Dedupe by raw daddr before any allocation.
-            var daddr = BitConverter.ToUInt32(data, RemoteAddrOffset);
             if (_seenUdp.Contains(daddr))
             {
                 return;
@@ -268,12 +280,6 @@ internal sealed class NetworkFlowTracker : IDisposable
 
     private void HandleTcpV4(TraceEvent evt)
     {
-        // TCP is always match-gated; without an app matcher there is nothing to steer.
-        if (_matcher is null)
-        {
-            return;
-        }
-
         try
         {
             var data = evt.EventData();
@@ -283,13 +289,16 @@ internal sealed class NetworkFlowTracker : IDisposable
             }
 
             var pid = BitConverter.ToUInt32(data, PidOffset);
-            if (!MatchesPidCached(pid))
+            // Dedupe by raw daddr before any allocation.
+            var daddr = BitConverter.ToUInt32(data, RemoteAddrOffset);
+            NoteDestination(pid, daddr);
+
+            // Tunnel steering is always match-gated; without an app matcher there is nothing to steer.
+            if (_matcher is null || !MatchesPidCached(pid))
             {
                 return;
             }
 
-            // Dedupe by raw daddr before any allocation.
-            var daddr = BitConverter.ToUInt32(data, RemoteAddrOffset);
             if (_seenTcpV4.Contains(daddr))
             {
                 return;
@@ -370,9 +379,25 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
     }
 
+    // Offers a v4 destination to the on-demand router, ahead of the app-match gate.
+    private void NoteDestination(uint pid, uint networkOrderAddress)
+    {
+        if (_noteV4 is null || pid == OwnProcessId || networkOrderAddress == _excludeEndpointV4)
+        {
+            return;
+        }
+
+        _noteV4(BinaryPrimitives.ReverseEndianness(networkOrderAddress));
+    }
+
     // Routes a UDP destination: all-UDP routes it plainly, an app match also promotes its domain.
     private bool RouteUdp(IPAddress remoteIp)
     {
+        if (_tracker is null)
+        {
+            return false;
+        }
+
         var key = remoteIp.ToString();
         return _allUdp ? _tracker.UpdateAppIps([key]) : _tracker.NoteAppRemotes([key]);
     }
@@ -380,7 +405,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     // Routes a matched app's TCP remote and promotes the domain(s) it resolved to; true when routed.
     private bool RouteMatched(IPAddress remoteIp, uint pid)
     {
-        if (!_tracker.NoteAppRemotes([remoteIp.ToString()]))
+        if (_tracker is null || !_tracker.NoteAppRemotes([remoteIp.ToString()]))
         {
             return false;
         }
@@ -462,7 +487,7 @@ internal sealed class NetworkFlowTracker : IDisposable
 
         // Mark seen only on a successful route; a failed add retries on the next scan. Promotes like the ETW path:
         // a SYN caught here is the app's first contact with the domain, and its remaining addresses must follow.
-        if (_tracker.NoteAppRemotes(batch))
+        if (_tracker is not null && _tracker.NoteAppRemotes(batch))
         {
             foreach (var ip in batch)
             {

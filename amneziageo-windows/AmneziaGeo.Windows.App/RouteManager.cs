@@ -208,6 +208,47 @@ internal sealed partial class RouteManager
     }
 
     /// <summary>
+    /// Adds a host route for one address through the given physical hop.
+    /// </summary>
+    public bool AddDirectHost(IPAddress address, IPAddress? gateway, uint interfaceIndex)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork || interfaceIndex == 0)
+        {
+            return false;
+        }
+
+        var row = NewRow(address, 32, interfaceIndex, gateway);
+        var result = CreateIpForwardEntry2(ref row);
+        var ok = result is NoError or ErrorObjectAlreadyExists;
+        if (ok)
+        {
+            Remember(address, 32, interfaceIndex, row);
+        }
+
+        return ok;
+    }
+
+    /// <summary>
+    /// Removes a host route added by <see cref="AddDirectHost"/>.
+    /// </summary>
+    public void RemoveDirectHost(IPAddress address, uint interfaceIndex)
+    {
+        if (!TryDeleteRemembered(address, 32, interfaceIndex))
+        {
+            DeleteManagedRoutes(address, interfaceIndex, 32);
+        }
+    }
+
+    /// <summary>
+    /// Physical next hop toward a probe address. Probe with a destination that already routes off-tunnel (the
+    /// endpoint), so the answer stays the underlay hop after the tunnel's default halves are installed.
+    /// </summary>
+    public static (IPAddress? Gateway, uint InterfaceIndex) UnderlayHop(IPAddress probe)
+    {
+        return FindPhysicalGateway(probe);
+    }
+
+    /// <summary>
     /// Returns whether the adapter is one of ours.
     /// </summary>
     public static bool IsTunnelAdapter(NetworkInterface ni)

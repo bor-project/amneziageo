@@ -40,6 +40,9 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private readonly object _gate = new();
     private IntPtr _engine = IntPtr.Zero;
+    // A dynamic session drops its filters with the engine handle, and arming rebuilds the set from scratch, so
+    // on-demand permits carry the generation they were installed under and are reinstalled when it moves.
+    private int _generation;
 
     /// <summary>
     /// True while the kill-switch filters are installed.
@@ -51,6 +54,20 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             lock (_gate)
             {
                 return _engine != IntPtr.Zero;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Filter-set generation; moves on every arm.
+    /// </summary>
+    public int Generation
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _generation;
             }
         }
     }
@@ -78,6 +95,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 logger.LogError("firewall: FwpmEngineOpen0 failed 0x{Code:X8}", open);
                 return false;
             }
+
+            // One transaction for the whole set: a bypass list of thousands of CIDRs costs as many engine
+            // rebuilds otherwise, and the stack is unusable while they run.
+            var batched = FwpmTransactionBegin0(engine, 0) == 0;
 
             try
             {
@@ -113,13 +134,28 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     BlockList(engine, blockCidrs);
                 }
 
+                if (batched)
+                {
+                    var commit = FwpmTransactionCommit0(engine);
+                    if (commit != 0)
+                    {
+                        throw new InvalidOperationException($"FwpmTransactionCommit0 failed 0x{commit:X8}");
+                    }
+                }
+
                 _engine = engine;
+                _generation++;
                 logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack}, blocked={Blocked})", tunnelInterfaceIndex, killSwitch, dualStack, blockCidrs?.Count ?? 0);
                 return true;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "firewall: failed to install filters");
+                if (batched)
+                {
+                    FwpmTransactionAbort0(engine);
+                }
+
                 FwpmEngineClose0(engine);
                 return false;
             }
@@ -293,17 +329,31 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             PermitV4Cidr(engine, cidr);
         }
 
-        // A malformed entry skips, never aborts arming.
+        // A bypass list carries the v6 half of a geo database; counting it beats a warning per entry.
+        var permitted = 0;
+        var skipped = 0;
+        var failed = 0;
         foreach (var cidr in extraCidrs)
         {
-            try
+            if (!TryParseV4Cidr(cidr, out var addr, out var mask))
             {
-                PermitV4Cidr(engine, cidr);
+                skipped++;
+                continue;
             }
-            catch (Exception ex)
+
+            if (PermitV4Range(engine, addr, mask))
             {
-                logger.LogWarning(ex, "kill-switch: skipping LAN CIDR {Cidr}", cidr);
+                permitted++;
             }
+            else
+            {
+                failed++;
+            }
+        }
+
+        if (skipped > 0 || failed > 0)
+        {
+            logger.LogInformation("kill-switch: bypass permits {Permitted} installed, {Skipped} non-IPv4 skipped, {Failed} rejected", permitted, skipped, failed);
         }
     }
 
@@ -357,6 +407,15 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             return;
         }
 
+        if (!PermitV4Range(engine, addr, mask))
+        {
+            throw new InvalidOperationException($"kill-switch: could not permit LAN {cidr}");
+        }
+    }
+
+    // Shared display names keep a bypass list of thousands off the per-filter string marshalling.
+    private bool PermitV4Range(IntPtr engine, uint addr, uint mask)
+    {
         var maskPtr = Marshal.AllocHGlobal(2 * sizeof(uint)); // FWP_V4_ADDR_AND_MASK { UINT32 addr; UINT32 mask; }
         try
         {
@@ -367,13 +426,105 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
             };
 
-            Add(engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (out)");
-            Add(engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, $"Permit LAN {cidr} (in)");
+            var rcOut = AddRaw(engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, "Permit bypass (out)");
+            var rcIn = AddRaw(engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, "Permit bypass (in)");
+            return rcOut == 0 && rcIn == 0;
         }
         finally
         {
             Marshal.FreeHGlobal(maskPtr);
         }
+    }
+
+    /// <summary>
+    /// Permits one host address through the physical path, reporting the filter ids and the generation they belong to.
+    /// </summary>
+    public bool TryPermitHost(uint address, out ulong outId, out ulong inId, out int generation)
+    {
+        outId = 0;
+        inId = 0;
+        lock (_gate)
+        {
+            generation = _generation;
+            if (_engine == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            var maskPtr = Marshal.AllocHGlobal(2 * sizeof(uint)); // FWP_V4_ADDR_AND_MASK { UINT32 addr; UINT32 mask; }
+            try
+            {
+                Marshal.WriteInt32(maskPtr, 0, (int)address);
+                Marshal.WriteInt32(maskPtr, sizeof(uint), unchecked((int)uint.MaxValue));
+                var cond = new[]
+                {
+                    Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
+                };
+
+                if (AddRaw(_engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, "Permit direct host (out)", out outId) != 0)
+                {
+                    outId = 0;
+                    return false;
+                }
+
+                if (AddRaw(_engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, "Permit direct host (in)", out inId) != 0)
+                {
+                    DeleteByIdLocked(outId);
+                    outId = 0;
+                    inId = 0;
+                    return false;
+                }
+
+                return true;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(maskPtr);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Deletes host filters installed under <paramref name="generation"/> in one transaction; returns the pairs removed.
+    /// A generation mismatch means an arm already dropped them.
+    /// </summary>
+    public int DeleteHostFilters(IReadOnlyList<(ulong Out, ulong In)> filters, int generation)
+    {
+        if (filters.Count == 0)
+        {
+            return 0;
+        }
+
+        lock (_gate)
+        {
+            if (_engine == IntPtr.Zero || generation != _generation)
+            {
+                return 0;
+            }
+
+            var batched = FwpmTransactionBegin0(_engine, 0) == 0;
+            var removed = 0;
+            foreach (var (outId, inId) in filters)
+            {
+                if (DeleteByIdLocked(outId) && DeleteByIdLocked(inId))
+                {
+                    removed++;
+                }
+            }
+
+            if (batched && FwpmTransactionCommit0(_engine) != 0)
+            {
+                FwpmTransactionAbort0(_engine);
+                return 0;
+            }
+
+            return removed;
+        }
+    }
+
+    private bool DeleteByIdLocked(ulong id)
+    {
+        return id != 0 && FwpmFilterDeleteById0(_engine, id) == 0;
     }
 
     private void PermitLanV6(IntPtr engine)
@@ -459,6 +610,11 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private uint AddRaw(IntPtr engine, Guid layer, byte weight, uint actionType, uint flags, FWPM_FILTER_CONDITION0[] conditions, string name)
     {
+        return AddRaw(engine, layer, weight, actionType, flags, conditions, name, out _);
+    }
+
+    private uint AddRaw(IntPtr engine, Guid layer, byte weight, uint actionType, uint flags, FWPM_FILTER_CONDITION0[] conditions, string name, out ulong id)
+    {
         var namePtr = Marshal.StringToHGlobalUni(name);
         var conditionSize = Marshal.SizeOf<FWPM_FILTER_CONDITION0>();
         var conditionArray = IntPtr.Zero;
@@ -485,7 +641,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 displayData = new FWPM_DISPLAY_DATA0 { name = namePtr },
             };
 
-            return FwpmFilterAdd0(engine, ref filter, IntPtr.Zero, out _);
+            return FwpmFilterAdd0(engine, ref filter, IntPtr.Zero, out id);
         }
         finally
         {
@@ -678,6 +834,18 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     [LibraryImport("fwpuclnt.dll")]
     private static partial uint FwpmFilterAdd0(IntPtr engineHandle, ref FWPM_FILTER0 filter, IntPtr sd, out ulong id);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmFilterDeleteById0(IntPtr engineHandle, ulong id);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmTransactionBegin0(IntPtr engineHandle, uint flags);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmTransactionCommit0(IntPtr engineHandle);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmTransactionAbort0(IntPtr engineHandle);
 
     [LibraryImport("fwpuclnt.dll", EntryPoint = "FwpmGetAppIdFromFileName0", StringMarshalling = StringMarshalling.Utf16)]
     private static partial uint FwpmGetAppIdFromFileName0(string fileName, out IntPtr appId);

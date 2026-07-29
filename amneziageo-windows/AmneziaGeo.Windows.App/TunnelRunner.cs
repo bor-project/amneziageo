@@ -149,6 +149,16 @@ internal sealed class TunnelRunner(
         var blockRoutes = activeList?.BlockRoutes ?? [];
         var blockDomains = activeList?.BlockDomains ?? [];
 
+        // WFP kill-switch: on in full tunnel, off in split. QUIC follows the same routes as TCP. Resolved here
+        // because the on-demand router needs it before the DNS proxy starts.
+        var killSwitch = !geoSplit;
+
+        // A Direct bucket this large is a geo database, not a hand-written list: materializing it costs a route and
+        // a filter pair per prefix, which is the multi-second stall before the engine even starts. Past the
+        // threshold the bucket is resolved per destination instead; smaller lists stay eager and behave as before.
+        var listDirect = activeList?.DirectRoutes ?? [];
+        var resolveDirectOnDemand = listDirect.Count >= OnDemandDirectThreshold;
+
         // Route IPv6 only when the config opts in (ConfigTransport.UseIpv6); otherwise the tunnel stays v4-only:
         // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
         // A partial dual stack would open a v6 leak/blackhole, so the whole v6 path is gated on this one flag.
@@ -307,28 +317,43 @@ internal sealed class TunnelRunner(
                 logger.LogWarning("endpoint {Host} unresolved pre-tunnel; engine resolves it via LAN", endpointParts.Host);
             }
         }
+
+        // Probe for the underlay hop. Read from the endpoint because it keeps an explicit off-tunnel route, so the
+        // lookup still answers with the physical gateway after the tunnel's default halves are installed.
+        var underlayProbe = useWebSocket ? wsServerIp : TunnelEndpoint.Resolve(config);
+
         // Bypass floor = RFC1918 + connected subnets, always: a full tunnel with the kill-switch must never
         // blackhole the local LAN, and a split tunnel honours the same manual list. Stored exclusions add to
         // the floor, they never replace it.
         var exclusionCidrs = new List<string>(routes.DefaultExclusionEntries());
+        // A geoip country rule brings tens of thousands of entries; a scan per entry is quadratic.
+        var seenCidrs = new HashSet<string>(exclusionCidrs, StringComparer.Ordinal);
         foreach (var cidr in parsedCidrs)
         {
-            if (!exclusionCidrs.Contains(cidr))
+            if (seenCidrs.Add(cidr))
             {
                 exclusionCidrs.Add(cidr);
             }
         }
 
-        // Direct bucket (both modes): its CIDRs route out the physical gateway, bypassing the tunnel, overriding a proxy route.
-        if (activeList is not null)
+        // Direct bucket (both modes): its CIDRs route out the physical gateway, bypassing the tunnel, overriding a
+        // proxy route. Skipped when the bucket is resolved on demand - those prefixes become host routes on contact.
+        if (!resolveDirectOnDemand)
         {
-            foreach (var cidr in activeList.DirectRoutes)
+            foreach (var cidr in listDirect)
             {
-                if (!exclusionCidrs.Contains(cidr))
+                if (seenCidrs.Add(cidr))
                 {
                     exclusionCidrs.Add(cidr);
                 }
             }
+        }
+
+        // Adjacent prefixes fold into one another, cutting both the route table and the WFP filter set.
+        var bypassCidrs = CidrAggregator.Aggregate(exclusionCidrs);
+        if (bypassCidrs.Count < exclusionCidrs.Count)
+        {
+            logger.LogInformation("bypass list aggregated: {From} -> {To} prefixes", exclusionCidrs.Count, bypassCidrs.Count);
         }
 
         IReadOnlyList<string> redirectServers = [];
@@ -366,7 +391,24 @@ internal sealed class TunnelRunner(
             }
         }
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker, appDns);
+        // Verdict path for a database-sized Direct bucket: nothing is installed at connect, and a destination earns
+        // its host route on first contact - from a DNS answer, or from an ETW send event when it never resolved.
+        OnDemandRouter? onDemand = null;
+        if (resolveDirectOnDemand)
+        {
+            var verdicts = VerdictResolver.Build(listDirect, blockRoutes);
+            onDemand = new OnDemandRouter(
+                verdicts,
+                routes,
+                firewall,
+                () => underlayProbe is null ? (null, 0u) : RouteManager.UnderlayHop(underlayProbe),
+                killSwitch,
+                loggerFactory.CreateLogger<OnDemandRouter>());
+            _ = Task.Run(() => onDemand.RunAsync(sessionCts.Token));
+            logger.LogInformation("on-demand Direct for {Name}: {Entries} entries -> {Ranges} ranges, resolved per destination", name, listDirect.Count, verdicts.RangeCounts.Direct);
+        }
+
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker, appDns, onDemand);
 
         // Per-app DNS: a name queried by a matched app resolves through the tunnel and routes its answer. On
         // learn, drop the proxy's pre-mark answer AND flush the OS resolver cache so the app's retry re-queries
@@ -471,20 +513,18 @@ internal sealed class TunnelRunner(
         }
 
         // Exclude wstunnel's real server IP, not the loopback endpoint.
-        var endpoint = useWebSocket ? wsServerIp : TunnelEndpoint.Resolve(config);
+        var endpoint = underlayProbe;
         var excluded = endpoint is not null && routes.AddEndpointExclusion(name, endpoint);
 
         // Keep the LAN and any manual exclusions direct in both modes (RFC1918 floor + stored list). In split
         // mode the tunnelled geo routes are more specific, so longest-prefix-match keeps them on the tunnel.
-        var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, exclusionCidrs);
+        var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, bypassCidrs);
         logger.LogDebug("connect {Name}: routes - endpoint {Endpoint} excluded={Excluded}, lan-exclusions={Lan} [{Elapsed} ms]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
-        // WFP kill-switch: on in full tunnel, off in split. QUIC follows the same routes as TCP.
-        var killSwitch = !geoSplit;
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, exclusionCidrs, blockRoutes, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, blockRoutes, onDemand, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -497,10 +537,12 @@ internal sealed class TunnelRunner(
             // (DnsProxy.SeedRoutesAsync is kept for easy revert but intentionally not invoked.)
         }
 
-        // Flow tracker: routes matched apps' TCP+UDP remotes by ETW signaling (not DNS); not a using to avoid racing Task.Run.
-        if (tracker is not null && (matcher is not null || allUdp))
+        // Flow tracker: routes matched apps' TCP+UDP remotes by ETW signaling (not DNS); not a using to avoid racing
+        // Task.Run. It also feeds the on-demand router, which needs no app matcher - that is how an address reached
+        // without a DNS lookup earns its Direct route, and how a route still carrying traffic is kept alive.
+        if ((tracker is not null && (matcher is not null || allUdp)) || onDemand is not null)
         {
-            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>());
+            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), onDemand is null ? null : onDemand.Note);
             _ = Task.Run(() => flowTracker.RunAsync(sessionCts.Token));
         }
 
@@ -539,6 +581,8 @@ internal sealed class TunnelRunner(
             logger.LogInformation("connect {Name}: session ended after {Elapsed} ms, tearing down", name, connectSw.ElapsedMilliseconds);
             // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
             sessionCts.Cancel();
+            // Before the engine closes, so the host routes go away with their permits still known.
+            onDemand?.RemoveAll();
             firewall.Disable();
 
             if (wsTransport is not null)
@@ -590,7 +634,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, AppDnsTracker? appDns)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, AppDnsTracker? appDns, OnDemandRouter? onDemand)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
@@ -601,7 +645,7 @@ internal sealed class TunnelRunner(
             .Where(ip => ip is not null)
             .Select(ip => ip!)
             .ToList();
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, onDemand);
         if (proxy.BoundV4 is null)
         {
             return null;
@@ -886,7 +930,11 @@ internal sealed class TunnelRunner(
     private const int FirewallArmAttempts = 4;
     private static readonly TimeSpan FirewallArmRetryDelay = TimeSpan.FromSeconds(2);
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, CancellationToken ct)
+    // Above this many Direct entries the bucket is a geo database, and installing it up front is what stalls the
+    // connect; below it, a hand-written list stays eager so its first packet is never off-route.
+    private const int OnDemandDirectThreshold = 64;
+
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, OnDemandRouter? onDemand, CancellationToken ct)
     {
         try
         {
@@ -911,7 +959,12 @@ internal sealed class TunnelRunner(
                 await WaitForHandshakeAsync(name, ct);
             }
 
-            if (!await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct), ct))
+            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct), ct))
+            {
+                // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
+                onDemand?.Reinstall();
+            }
+            else
             {
                 logger.LogError("firewall: kill-switch for {Name} did not arm after {Attempts} attempts; tunnel running without WFP protection", name, FirewallArmAttempts);
             }

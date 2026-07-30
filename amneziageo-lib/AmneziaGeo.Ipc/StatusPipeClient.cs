@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 
@@ -151,7 +152,9 @@ public sealed class StatusPipeClient
 
     private async Task ReadLoopAsync(CancellationToken ct)
     {
-        using (var pipe = new NamedPipeClientStream(".", IpcContract.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
+        // Impersonation level: the agent resolves which user's library the connection speaks for from the client token.
+        using (var pipe = new NamedPipeClientStream(
+                   ".", IpcContract.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation))
         {
             await pipe.ConnectAsync(ct).ConfigureAwait(false);
 

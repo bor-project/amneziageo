@@ -3,69 +3,58 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Seeds the per-user data root from the legacy machine-wide ProgramData store.
+/// Migrates the legacy machine-wide library into the per-user data root.
 /// </summary>
 internal static class DataMigration
 {
-    private const string AppFolder = "AmneziaGeo";
+    private const string StateDb = "state.db";
+    private const string RetiredDb = "state.db.legacy";
+
+    private static readonly string[] DbSuffixes = ["", "-wal", "-shm"];
 
     /// <summary>
-    /// Copies the legacy ProgramData data tree into the per-user root when the user root has no database.
+    /// Copies the legacy machine-wide library into an empty per-user root, then retires the legacy file.
     /// </summary>
     public static void SeedFromProgramData(ILogger logger)
     {
         var target = AppDataRoot.Base();
-        var source = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), AppFolder);
-        if (PathsEqual(source, target))
+        if (AppDataRoot.IsMachineRoot(target))
         {
             return;
         }
 
-        if (File.Exists(Path.Combine(target, "state.db")))
-        {
-            return;
-        }
-
-        if (!File.Exists(Path.Combine(source, "state.db")))
+        var source = AppDataRoot.MachineBase();
+        var legacy = Path.Combine(source, StateDb);
+        if (!File.Exists(legacy))
         {
             return;
         }
 
         try
         {
-            CopyTree(new DirectoryInfo(source), new DirectoryInfo(target));
-            logger.LogInformation("seeded user data from legacy store {Source} -> {Target}", source, target);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "seed user data failed: {Source} -> {Target}", source, target);
-        }
-    }
-
-    private static void CopyTree(DirectoryInfo source, DirectoryInfo target)
-    {
-        // Subdirectories before loose files, so the state.db sentinel lands only after the tree it references.
-        Directory.CreateDirectory(target.FullName);
-        foreach (var dir in source.EnumerateDirectories())
-        {
-            CopyTree(dir, new DirectoryInfo(Path.Combine(target.FullName, dir.Name)));
-        }
-
-        foreach (var file in source.EnumerateFiles())
-        {
-            var dest = Path.Combine(target.FullName, file.Name);
-            if (!File.Exists(dest))
+            if (!File.Exists(Path.Combine(target, StateDb)))
             {
-                file.CopyTo(dest);
-            }
-        }
-    }
+                Directory.CreateDirectory(target);
+                foreach (var suffix in DbSuffixes)
+                {
+                    if (File.Exists(legacy + suffix))
+                    {
+                        File.Copy(legacy + suffix, Path.Combine(target, StateDb + suffix));
+                    }
+                }
 
-    private static bool PathsEqual(string a, string b)
-    {
-        return string.Equals(
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
-            StringComparison.OrdinalIgnoreCase);
+                logger.LogInformation("seeded the library of {Target} from the legacy store {Source}", target, source);
+            }
+
+            // Retire the legacy file: the machine root carries shared assets only, and a library left there is picked
+            // up as-is by any root that resolves to it and seeds every profile that logs in later.
+            File.Move(legacy, Path.Combine(source, RetiredDb), overwrite: true);
+            File.Delete(legacy + "-wal");
+            File.Delete(legacy + "-shm");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "legacy store migration failed: {Source} -> {Target}", source, target);
+        }
     }
 }

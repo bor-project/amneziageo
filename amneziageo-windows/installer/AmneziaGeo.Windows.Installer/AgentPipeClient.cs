@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Pipes;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -27,7 +28,8 @@ internal static class AgentPipeClient
         string op, string[] args, TimeSpan connectTimeout, TimeSpan ackTimeout, CancellationToken ct,
         IProgress<int>? progress = null)
     {
-        using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        using var pipe = new NamedPipeClientStream(
+            ".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation);
         await pipe.ConnectAsync((int)connectTimeout.TotalMilliseconds, ct);
 
         var command = new Envelope { Type = "command", Command = new Command { Op = op, Args = args } };
@@ -82,7 +84,8 @@ internal static class AgentPipeClient
     {
         try
         {
-            using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            using var pipe = new NamedPipeClientStream(
+                ".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation);
             await pipe.ConnectAsync((int)connectTimeout.TotalMilliseconds, ct);
 
             var command = new Envelope { Type = "command", Command = new Command { Op = "attach-ui", Args = [] } };

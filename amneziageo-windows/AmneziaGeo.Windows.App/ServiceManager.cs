@@ -8,19 +8,21 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class ServiceManager
 {
     /// <summary>
-    /// Creates the tunnel service for an already-stored config, doing nothing if it already exists.
+    /// Creates the tunnel service for an already-stored config, rebinding an existing one to the owner's data root.
     /// </summary>
     public int CreateService(string name, string? ownerRoot = null)
     {
-        if (Exists(name))
-        {
-            return 0;
-        }
-
         var serviceName = TunnelPaths.ServiceName(name);
         // Quote the name and owner root: they become part of the service ImagePath re-parsed into argv.
         var root = string.IsNullOrEmpty(ownerRoot) ? string.Empty : $" --root \"{ownerRoot}\"";
         var binPath = $"\"{Environment.ProcessPath}\" --service \"{name}\"{root}";
+        if (Exists(name))
+        {
+            // The tunnel reads its library from the root baked into ImagePath, and the owner may have changed
+            // since the service was created.
+            return string.IsNullOrEmpty(ownerRoot) ? 0 : Run("config", serviceName, "binPath=", binPath).Code;
+        }
+
         var created = Sc(
             "create",
             serviceName,

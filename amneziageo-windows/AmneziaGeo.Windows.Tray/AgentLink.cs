@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 
@@ -193,7 +194,9 @@ internal static class AgentLink
         {
             try
             {
-                using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+                // Impersonation level: the agent resolves which user's library the connection speaks for from the client token.
+                using var pipe = new NamedPipeClientStream(
+                    ".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation);
                 pipe.Connect(3000);
                 using var writer = new StreamWriter(pipe, _utf8) { AutoFlush = true };
                 using var reader = new StreamReader(pipe, _utf8);

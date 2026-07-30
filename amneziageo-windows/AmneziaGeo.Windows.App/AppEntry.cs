@@ -43,10 +43,11 @@ public static class AppEntry
             _ => null,
         };
 
-        // Child tunnel processes carry their owner's data root; everyone else uses this session's user root.
+        // Child tunnel processes carry their owner's data root; everyone else uses this session's user root. A machine
+        // root baked in by an older build is dropped - the library never lives there.
         var userRoot = args switch
         {
-            ["--service", _, "--root", var root] => root,
+            ["--service", _, "--root", var root] when !AppDataRoot.IsMachineRoot(root) => root,
             _ => AppDataRoot.Base(),
         };
 

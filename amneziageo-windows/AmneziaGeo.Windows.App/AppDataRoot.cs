@@ -1,8 +1,6 @@
-#if !DEBUG
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
-#endif
 
 namespace AmneziaGeo.Windows.App;
 
@@ -29,16 +27,31 @@ internal static class AppDataRoot
         return Path.Combine(localAppData, AppFolder);
     }
 
-#if DEBUG
-    // Debug: единый машинный каталог для агента и SYSTEM-службы
     /// <summary>
-    /// Path to the data directory.
+    /// Whether the root is the shared machine directory, which carries no user library.
     /// </summary>
-    public static string Base()
+    public static bool IsMachineRoot(string? root)
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), AppFolder);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return false;
+        }
+
+        try
+        {
+            return string.Equals(Normalize(root), Normalize(MachineBase()), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
-#else
+
+    private static string Normalize(string path)
+    {
+        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+    }
+
     private const uint InvalidSession = 0xFFFFFFFF;
 
     private static readonly bool RunningAsSystem = IsSystemAccount();
@@ -256,5 +269,4 @@ internal static class AppDataRoot
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr handle);
-#endif
 }

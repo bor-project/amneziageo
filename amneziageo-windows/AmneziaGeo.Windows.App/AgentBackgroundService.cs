@@ -36,9 +36,10 @@ internal sealed class AgentBackgroundService(
         // few times over the first minute so a leaked loopback redirect cannot strand the box until a manual connect.
         _ = RetryBootReconcileAsync(stoppingToken);
 
-        // Bring the last active user's library forward so boot auto-connect uses their profile.
+        // Bring the last active user's library forward so boot auto-connect uses their profile; a machine root left
+        // by an older build is ignored, it holds no library.
         var lastOwnerRoot = await store.GetSettingAsync("last-owner-root", stoppingToken);
-        if (!string.IsNullOrEmpty(lastOwnerRoot))
+        if (!string.IsNullOrEmpty(lastOwnerRoot) && !AppDataRoot.IsMachineRoot(lastOwnerRoot))
         {
             activeScope.SetOwner(lastOwnerRoot, null);
         }

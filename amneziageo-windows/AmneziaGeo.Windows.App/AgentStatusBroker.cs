@@ -49,6 +49,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     private BrokerScope ResolveScope(NamedPipeServerStream stream)
     {
         var resolved = UserContext.ResolveClient(stream);
+        if (resolved is null)
+        {
+            logger.LogWarning("client identity unresolved; serving the library of {Root}", AppDataRoot.Base());
+        }
+
         return ScopeFor(resolved?.Root ?? AppDataRoot.Base(), resolved?.Sid);
     }
 

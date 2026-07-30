@@ -898,6 +898,14 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         ImportMethod = RoutingImportMethod.Picker;
     }
 
+    /// <summary>
+    /// Drops the geo entries fetched into the open editor when the section is left.
+    /// </summary>
+    public void LeaveSection()
+    {
+        RoutingEditor?.ClearRuleDetails();
+    }
+
     // Discard the import draft when the routing section is left for another one.
     public void AbandonCreate()
     {

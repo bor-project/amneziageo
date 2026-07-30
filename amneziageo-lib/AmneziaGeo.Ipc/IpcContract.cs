@@ -78,6 +78,13 @@ public static class IpcContract
     public const string OpListGeo = "list-geo";
 
     /// <summary>
+    /// Command to read the entries a geo rule expands to. Args: [0] rule token ("geosite:github" / "geoip:ru");
+    /// [1] optional cap on returned entries (default 300, clamped 1..5000). The ack message holds a JSON object
+    /// { total, entries } where total counts the whole category and entries carries the capped preview.
+    /// </summary>
+    public const string OpGetGeoEntries = "get-geo-entries";
+
+    /// <summary>
     /// Command to list running applications and services for the per-app tunneling picker. The ack
     /// message holds newline-separated rows, each tab-separated: kind ("app"/"service"), label, value,
     /// detail.

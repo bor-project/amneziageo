@@ -94,6 +94,43 @@ internal sealed class GeoConfigurator(IStateStore store)
     }
 
     /// <summary>
+    /// Returns every entry a geosite / geoip rule expands to. Any other rule kind carries its own value and has
+    /// nothing to expand.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> EntriesAsync(string token, CancellationToken ct = default)
+    {
+        var rule = ParseRule(token);
+        if (rule is null || rule.Kind is not (GeoRuleKind.GeoSite or GeoRuleKind.GeoIp))
+        {
+            return [];
+        }
+
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
+        var key = StripPrefix(rule.Value);
+        return rule.Kind == GeoRuleKind.GeoIp
+            ? index.Cidrs(key)
+            : [.. index.Domains(key).Select(FormatDomain)];
+    }
+
+    /// <summary>
+    /// Renders a geosite entry in v2ray rule notation: a suffix match is bare, other kinds carry their prefix.
+    /// </summary>
+    public static string FormatDomain(GeoDomain domain) => domain.Kind switch
+    {
+        GeoDomainKind.Full => $"full:{domain.Value}",
+        GeoDomainKind.Regex => $"regexp:{domain.Value}",
+        GeoDomainKind.Plain => $"keyword:{domain.Value}",
+        _ => domain.Value,
+    };
+
+    // Drops a repeated "geosite:" / "geoip:" prefix left inside a rule value.
+    private static string StripPrefix(string value)
+    {
+        var colon = value.IndexOf(':');
+        return colon >= 0 ? value[(colon + 1)..] : value;
+    }
+
+    /// <summary>
     /// Parses a rule token like "geosite:openai" or "domain:example.com" into a typed rule.
     /// </summary>
     public static GeoRule? ParseRule(string text)

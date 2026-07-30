@@ -227,6 +227,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpSetConfigExclusions => await SetConfigExclusionsAsync(command.Args, ct),
                 IpcContract.OpListLocalSubnets => ListLocalSubnets(),
                 IpcContract.OpListGeo => await ListGeoAsync(ct),
+                IpcContract.OpGetGeoEntries => await GetGeoEntriesAsync(command.Args, ct),
                 IpcContract.OpListProcesses => ListProcesses(),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
@@ -1218,6 +1219,19 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     {
         var tokens = await geo.CategoriesAsync(ct);
         return new IpcAck(true, string.Join('\n', tokens));
+    }
+
+    // Every entry a geo rule expands to, as a JSON array.
+    private async Task<IpcAck> GetGeoEntriesAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "get-geo-entries requires a rule token");
+        }
+
+        var entries = await geo.EntriesAsync(args[0], ct);
+        var json = System.Text.Json.JsonSerializer.Serialize(entries);
+        return new IpcAck(true, json);
     }
 
     // Apps + services for per-app tunneling; enumerated as SYSTEM to read restricted paths. Rows are tab-separated: kind, label, value, detail.

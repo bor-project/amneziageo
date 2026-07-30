@@ -343,6 +343,9 @@
   <data name="Main_SortRulesTooltip" xml:space="preserve">
     <value>Сортировать записи по имени</value>
   </data>
+  <data name="Main_RuleEntriesTooltip" xml:space="preserve">
+    <value>Показать содержимое категории</value>
+  </data>
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Закрыть</value>
   </data>
@@ -1131,6 +1134,12 @@
   </data>
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
     <value>Слишком широкий путь - выберите конкретную папку приложения.</value>
+  </data>
+  <data name="RoutingEditor_RuleEntriesCount" xml:space="preserve">
+    <value>Записей: {0}</value>
+  </data>
+  <data name="RoutingEditor_RuleNoEntries" xml:space="preserve">
+    <value>Записей нет: категории нет в загруженных базах</value>
   </data>
   <data name="RoutingEditor_Saved" xml:space="preserve">
     <value>Сохранено</value>

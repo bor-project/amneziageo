@@ -172,20 +172,59 @@
           </Grid>
           <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                   Background="{DynamicResource AgPanelBrush}" CornerRadius="10">
-            <ItemsControl ItemsSource="{Binding Rules}" Margin="8,8">
+            <ItemsControl ItemsSource="{Binding RuleItems}" Margin="8,8">
               <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                  <Border Background="{DynamicResource AgInsetBrush}"
-                          BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                          CornerRadius="8" Padding="10,7" Margin="0,3">
-                    <Grid ColumnDefinitions="*,Auto">
-                      <TextBlock Grid.Column="0" Text="{Binding}" Classes="mono" FontSize="12.5"
-                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                      <Button Grid.Column="1" Classes="icon" Content="✕"
-                              Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).RemoveRuleCommand}"
-                              CommandParameter="{Binding}" />
-                    </Grid>
-                  </Border>
+                <DataTemplate x:DataType="vm:RoutingRuleItemViewModel">
+                  <StackPanel Spacing="0">
+                    <Border Background="{DynamicResource AgInsetBrush}"
+                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="10,7" Margin="0,3">
+                      <Grid ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding Token}" Classes="mono" FontSize="12.5"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <!-- Geo categories only: collapses the entries the rule expands to. -->
+                        <Button Grid.Column="1" Classes="icon"
+                                IsVisible="{Binding CanExpand}"
+                                ToolTip.Tip="{l:Tr Main_RuleEntriesTooltip}"
+                                Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).ToggleRuleDetailsCommand}"
+                                CommandParameter="{Binding}">
+                          <!-- Scaled at render time: the glyph matches the delete cross without growing the row. -->
+                          <TextBlock Text="{Binding Glyph}" RenderTransform="scale(1.5)" />
+                        </Button>
+                        <Button Grid.Column="2" Classes="icon" Content="✕"
+                                Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).RemoveRuleCommand}"
+                                CommandParameter="{Binding Token}" />
+                      </Grid>
+                    </Border>
+
+                    <!-- Expanded entries, indented under their item. -->
+                    <Border IsVisible="{Binding IsExpanded}" Margin="14,0,0,6" Padding="10,7"
+                            Background="{DynamicResource AgPanelBrush}"
+                            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="8">
+                      <StackPanel Spacing="5">
+                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
+                          <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
+                                    Width="12" Height="12" Foreground="{DynamicResource AgMutedBrush}"
+                                    VerticalAlignment="Center" />
+                          <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="12"
+                                     VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding DetailSummary}" Classes="label" TextWrapping="Wrap"
+                                   IsVisible="{Binding DetailSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <!-- Whole category, one entry per line, read-only: selects and copies like any text,
+                             scrolls inside its own box instead of stretching the page. -->
+                        <TextBox Text="{Binding EntriesText, Mode=OneWay}" IsReadOnly="True"
+                                 AcceptsReturn="True" IsUndoEnabled="False" TextWrapping="NoWrap"
+                                 MaxHeight="220" Padding="8,6" CornerRadius="8" FontSize="11.5"
+                                 FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                 Background="{DynamicResource AgInsetBrush}"
+                                 Foreground="{DynamicResource AgMutedBrush}"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 IsVisible="{Binding EntriesText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      </StackPanel>
+                    </Border>
+                  </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

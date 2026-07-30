@@ -234,6 +234,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Profile.OpenProfile = null;
         Config.AbandonCreate();
         Routing.AbandonCreate();
+        Routing.LeaveSection();
         RefreshLogsActive();
     }
 
@@ -452,10 +453,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Config.AbandonCreate();
         }
 
-        // Leaving routing discards an in-progress import draft (and stops its scanner).
+        // Leaving routing discards an in-progress import draft (and stops its scanner) and drops the geo entries
+        // fetched into the rule list.
         if (value != "routing")
         {
             Routing.AbandonCreate();
+            Routing.LeaveSection();
         }
 
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.

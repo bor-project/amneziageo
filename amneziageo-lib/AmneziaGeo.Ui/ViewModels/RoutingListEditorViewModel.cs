@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Text.Json;
 using Avalonia.Media.Imaging;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
@@ -107,6 +108,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     // Any role bucket changed: refresh suggestions/transfer, mark dirty, autosave (suppressed mid-sort or while seeding).
     private void OnRulesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
+        // The shown bucket's projection follows even while seeding; a sort rebuilds it once, after the moves.
+        if (!_reordering && ReferenceEquals(sender, Rules))
+        {
+            RebuildRuleItems();
+        }
+
         if (_reordering || _seeding)
         {
             return;
@@ -178,6 +185,130 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _ => ProxyRules,
     };
 
+    /// <summary>
+    /// The shown bucket as list items, each carrying its own collapse state and geo entry preview.
+    /// </summary>
+    public ObservableCollection<RoutingRuleItemViewModel> RuleItems { get; } = [];
+
+    // Rules left expanded, kept across a projection rebuild.
+    private readonly HashSet<string> _expandedRules = new(StringComparer.Ordinal);
+
+    // Fetched geo entries per rule token, dropped when the screen is left.
+    private readonly Dictionary<string, IReadOnlyList<string>> _detailCache = new(StringComparer.Ordinal);
+
+    // Bumped on every drop, so a fetch in flight cannot land into the cleared state.
+    private int _detailsGeneration;
+
+    /// <summary>
+    /// Drops the fetched entries and collapses every rule.
+    /// </summary>
+    public void ClearRuleDetails()
+    {
+        _detailsGeneration++;
+        _expandedRules.Clear();
+        _detailCache.Clear();
+        foreach (var item in RuleItems)
+        {
+            item.Collapse();
+        }
+    }
+
+    // Rebuilds the shown bucket's projection, carrying expansion state and already-fetched entries over.
+    private void RebuildRuleItems()
+    {
+        RuleItems.Clear();
+        foreach (var token in Rules)
+        {
+            var item = new RoutingRuleItemViewModel(token);
+            if (item.CanExpand && _expandedRules.Contains(token))
+            {
+                item.IsExpanded = true;
+                if (_detailCache.TryGetValue(token, out var cached))
+                {
+                    item.ShowDetails(Summarize(cached.Count), cached);
+                }
+                else
+                {
+                    _ = LoadRuleDetailsAsync(item);
+                }
+            }
+
+            RuleItems.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// Expands or collapses a geo rule's entries, fetching them from the agent on the first expand.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleRuleDetailsAsync(RoutingRuleItemViewModel item)
+    {
+        item.IsExpanded = !item.IsExpanded;
+        if (!item.IsExpanded)
+        {
+            _expandedRules.Remove(item.Token);
+            return;
+        }
+
+        _expandedRules.Add(item.Token);
+        if (!item.HasDetails && !item.IsLoading)
+        {
+            await LoadRuleDetailsAsync(item);
+        }
+    }
+
+    // Fetches a rule's entries through the agent and memoizes them for the session.
+    private async Task LoadRuleDetailsAsync(RoutingRuleItemViewModel item)
+    {
+        if (_detailCache.TryGetValue(item.Token, out var cached))
+        {
+            item.ShowDetails(Summarize(cached.Count), cached);
+            return;
+        }
+
+        item.IsLoading = true;
+        var generation = _detailsGeneration;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetGeoEntries, [item.Token]));
+        if (generation != _detailsGeneration)
+        {
+            return;
+        }
+
+        if (!ack.Ok)
+        {
+            item.ShowError(ack.Message);
+            return;
+        }
+
+        var entries = ParseEntries(ack.Message);
+        _detailCache[item.Token] = entries;
+        item.ShowDetails(Summarize(entries.Count), entries);
+    }
+
+    // Reads the entry array; a malformed ack reads as empty.
+    private static IReadOnlyList<string> ParseEntries(string message)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(message);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            return [.. doc.RootElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty)];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    // Localized line above the entries.
+    private static string Summarize(int count) => count == 0
+        ? Loc.Instance.Get("RoutingEditor_RuleNoEntries")
+        : Loc.Instance.Get("RoutingEditor_RuleEntriesCount", count);
+
     public bool IsProxyRole => SelectedRole == "proxy";
 
     public bool IsDirectRole => SelectedRole == "direct";
@@ -200,8 +331,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         _ => Loc.Instance.Get("Main_RoleProxyHint"),
     };
 
-    // After the active bucket swaps, refresh the suggestion filter for the newly shown bucket.
-    partial void OnSelectedRoleChanged(string value) => _ = ApplySuggestionFilterAsync();
+    // After the active bucket swaps, re-project it and refresh the suggestion filter for the newly shown bucket.
+    partial void OnSelectedRoleChanged(string value)
+    {
+        RebuildRuleItems();
+        _ = ApplySuggestionFilterAsync();
+    }
 
     // Total entries across all buckets.
     private int TotalRules => ProxyRules.Count + DirectRules.Count + BlockRules.Count;
@@ -279,6 +414,9 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     {
         OnPropertyChanged(nameof(AppWatermark));
         OnPropertyChanged(nameof(RoleHint));
+
+        // Entry counts read from the cache carry a localized line; re-project to render it in the new language.
+        RebuildRuleItems();
 
         // App suggestions bake a localized kind prefix at load; rebuild them for the new language.
         if (AppSuggestions.Count > 0)
@@ -685,6 +823,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [RelayCommand]
     private void RemoveRule(string rule)
     {
+        _expandedRules.Remove(rule);
         Rules.Remove(rule);
     }
 
@@ -694,6 +833,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [RelayCommand]
     private void ClearRules()
     {
+        foreach (var rule in Rules)
+        {
+            _expandedRules.Remove(rule);
+        }
+
         Rules.Clear();
     }
 
@@ -732,6 +876,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             _reordering = false;
         }
 
+        RebuildRuleItems();
         MarkDirty();
         FireAutoSave();
     }

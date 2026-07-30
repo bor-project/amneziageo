@@ -343,6 +343,9 @@
   <data name="Main_SortRulesTooltip" xml:space="preserve">
     <value>Sort entries by name</value>
   </data>
+  <data name="Main_RuleEntriesTooltip" xml:space="preserve">
+    <value>Show what the category contains</value>
+  </data>
   <data name="Main_CloseTooltip" xml:space="preserve">
     <value>Close</value>
   </data>
@@ -1131,6 +1134,12 @@
   </data>
   <data name="RoutingEditor_PathTooBroad" xml:space="preserve">
     <value>Path is too broad - select a specific application folder.</value>
+  </data>
+  <data name="RoutingEditor_RuleEntriesCount" xml:space="preserve">
+    <value>Entries: {0}</value>
+  </data>
+  <data name="RoutingEditor_RuleNoEntries" xml:space="preserve">
+    <value>No entries: the category is absent from the downloaded databases</value>
   </data>
   <data name="RoutingEditor_Saved" xml:space="preserve">
     <value>Saved</value>

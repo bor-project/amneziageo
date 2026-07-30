@@ -59,18 +59,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     }
 
     /// <summary>
-    /// Filter-set generation; moves on every arm.
+    /// Filter-set generation; moves on every arm. Read without the gate: the data plane checks it per connection,
+    /// and the gate is held across kernel calls.
     /// </summary>
-    public int Generation
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _generation;
-            }
-        }
-    }
+    public int Generation => Volatile.Read(ref _generation);
 
     /// <summary>
     /// Arms the kill-switch; permits before block. Block-list CIDRs are dropped in both split and full.
@@ -144,7 +136,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 }
 
                 _engine = engine;
-                _generation++;
+                Interlocked.Increment(ref _generation);
                 logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack}, blocked={Blocked})", tunnelInterfaceIndex, killSwitch, dualStack, blockCidrs?.Count ?? 0);
                 return true;
             }

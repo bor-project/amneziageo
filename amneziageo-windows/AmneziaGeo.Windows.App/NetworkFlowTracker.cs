@@ -14,17 +14,19 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class NetworkFlowTracker : IDisposable
 {
-    // Microsoft-Windows-Kernel-Network - per-segment/datagram network events.
+    // Microsoft-Windows-Kernel-Network.
     private static readonly Guid KernelNetworkProvider = new("7DD42A49-5329-4832-8DFD-43D979153A88");
     // KERNEL_NETWORK_KEYWORD_IPV4 (0x10) / _IPV6 (0x20).
     private const ulong IPv4Keyword = 0x10UL;
     private const ulong IPv6Keyword = 0x20UL;
-    // Send-event ids: TCPv4=10, TCPv6=26, UDPv4=42, UDPv6=58.
-    private const int TcpV4SendId = 10;
-    private const int TcpV6SendId = 26;
+    // TCP connection-attempt ids: v4=12, v6=28. The routing decision belongs to the handshake - a transfer emits a
+    // send event per segment and every one of them would repeat the same answer.
+    private const int TcpV4ConnectId = 12;
+    private const int TcpV6ConnectId = 28;
+    // UDP send ids: v4=42, v6=58. UDP has no handshake, so its first datagram to an address is the trigger.
     private const int UdpV4SendId = 42;
     private const int UdpV6SendId = 58;
-    // Send payload (little-endian): PID(4) size(4) daddr saddr dport(2) sport(2); daddr is 4 bytes (v4) or 16 (v6).
+    // Payload (little-endian): PID(4) size(4) daddr saddr dport(2) sport(2); daddr is 4 bytes (v4) or 16 (v6).
     // Payload PID (offset 0) is more reliable than the ETW header PID; daddr at offset 8.
     private const int PidOffset = 0;
     private const int RemoteAddrOffset = 8;
@@ -40,8 +42,8 @@ internal sealed class NetworkFlowTracker : IDisposable
     private readonly IPAddress? _excludeEndpoint;
     // Network-order endpoint address, compared before any allocation on the per-packet path.
     private readonly uint _excludeEndpointV4;
-    // Every v4 destination is offered here regardless of app rules: it drives the on-demand Direct routes and keeps
-    // a route that is still carrying traffic from being reclaimed.
+    // Every v4 destination is offered here regardless of app rules, on connect and on a first datagram: it drives the
+    // on-demand Direct routes for addresses that never went through the resolver.
     private readonly Action<uint>? _noteV4;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
@@ -51,13 +53,13 @@ internal sealed class NetworkFlowTracker : IDisposable
     private readonly HashSet<uint> _seenTcpV4 = [];
     private readonly HashSet<string> _seenTcpV6 = [];
     // Per-pid match decision with a short TTL. MatchesPid does a full process-tree snapshot, and a busy app
-    // emits thousands of segments/datagrams a second - caching the decision for ~1s removes the data plane's
-    // worst CPU sink. Single-threaded handler, no lock.
+    // emits thousands of datagrams a second - caching the decision for ~1s removes the data plane's worst CPU
+    // sink. Single-threaded handler, no lock.
     private const long PidCacheTtlMs = 1000;
     private readonly Dictionary<uint, (long Expiry, bool Match)> _pidMatch = [];
 
-    // Proactive backstop: a matched app's SYN to a direct-blocked, DNS-less destination (Telegram MTProto DC)
-    // never yields an ETW send event, so poll the TCP table for its SYN_SENT remotes and route them. Own thread.
+    // Proactive backstop for a matched app's SYN to a direct-blocked, DNS-less destination (Telegram MTProto DC):
+    // polls the TCP table for its SYN_SENT remotes and routes them, covering a missed connect event. Own thread.
     private const int ScanIntervalMs = 2000;
     private const int AfInet = 2;
     private const int AfInet6 = 23;
@@ -95,7 +97,7 @@ internal sealed class NetworkFlowTracker : IDisposable
 
                 var keywords = _tunnelV6 ? IPv4Keyword | IPv6Keyword : IPv4Keyword;
                 // EnableProvider true means it restarted a leftover session; do not gate on the result.
-                if (_session.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, keywords))
+                if (EnableFiltered(keywords))
                 {
                     _logger.LogDebug("NetworkFlowTracker: restarted a pre-existing ETW session {Name}", sessionName);
                 }
@@ -122,6 +124,29 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
     }
 
+    // Subscribes to the connection-establishment events only, dropping the rest in the kernel. Falls back to the
+    // unfiltered subscription where filtering is unavailable; the handler switch keeps the behaviour identical.
+    private bool EnableFiltered(ulong keywords)
+    {
+        var ids = new List<int> { TcpV4ConnectId, UdpV4SendId };
+        if (_tunnelV6)
+        {
+            ids.Add(TcpV6ConnectId);
+            ids.Add(UdpV6SendId);
+        }
+
+        try
+        {
+            var options = new TraceEventProviderOptions { EventIDsToEnable = ids };
+            return _session!.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, keywords, options);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "NetworkFlowTracker: event-id filtering unavailable, subscribing to the full stream");
+            return _session!.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, keywords);
+        }
+    }
+
     private void Handle(TraceEvent evt, CancellationToken ct)
     {
         if (ct.IsCancellationRequested)
@@ -138,10 +163,10 @@ internal sealed class NetworkFlowTracker : IDisposable
             case UdpV6SendId:
                 HandleUdpV6(evt);
                 break;
-            case TcpV4SendId:
+            case TcpV4ConnectId:
                 HandleTcpV4(evt);
                 break;
-            case TcpV6SendId:
+            case TcpV6ConnectId:
                 HandleTcpV6(evt);
                 break;
         }
@@ -419,8 +444,8 @@ internal sealed class NetworkFlowTracker : IDisposable
         return true;
     }
 
-    // Polls the TCP table for matched apps' SYN_SENT remotes and routes them, covering destinations that never
-    // emit a send event because their handshake is blocked on the direct path. Own task; ends when ct cancels.
+    // Polls the TCP table for matched apps' SYN_SENT remotes and routes them, covering a destination whose connect
+    // event was missed. Own task; ends when ct cancels.
     private async Task ScanLoopAsync(CancellationToken ct)
     {
         try

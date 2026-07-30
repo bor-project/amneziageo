@@ -20,7 +20,9 @@ internal sealed class OnDemandRouter(
     // Idle window before a host route is reclaimed. Long enough that a page still open keeps its route even when
     // the OS resolver cache stops the name from being re-queried.
     private const long IdleTtlMs = 15 * 60 * 1000;
-    private const int SweepIntervalMs = 60_000;
+    private const int ScanIntervalMs = 5_000;
+    // Reclaim every twelfth scan, so a route outlives its idle window by at most one scan.
+    private const int ScansPerSweep = 12;
     // Reclaim in slices: dropping hundreds of filters at once is the storm this design exists to avoid.
     private const int SweepBatch = 64;
     // Backstop against a pathological session; past this the address rides the tunnel instead.
@@ -55,8 +57,8 @@ internal sealed class OnDemandRouter(
     public int Active => Volatile.Read(ref _count);
 
     /// <summary>
-    /// Installs or refreshes the Direct route for a destination, and marks it in use. Called per DNS answer and per
-    /// ETW send event, so the fast path is a single dictionary hit.
+    /// Installs or refreshes the Direct route for a destination, and marks it in use. Called per DNS answer, per
+    /// connect event and per table scan, so the fast path is a single dictionary hit.
     /// </summary>
     public void Note(uint address)
     {
@@ -132,22 +134,32 @@ internal sealed class OnDemandRouter(
     }
 
     /// <summary>
-    /// Reclaims idle routes until cancelled.
+    /// Scans the connection table and reclaims idle routes until cancelled.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
+        var scans = 0;
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                await Task.Delay(SweepIntervalMs, ct).ConfigureAwait(false);
+                await Task.Delay(ScanIntervalMs, ct).ConfigureAwait(false);
                 try
                 {
-                    Sweep();
+                    var active = ActiveRemotes();
+                    foreach (var address in active)
+                    {
+                        Note(address);
+                    }
+
+                    if (++scans % ScansPerSweep == 0)
+                    {
+                        Sweep(active);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    logger.LogDebug(ex, "on-demand: sweep failed");
+                    logger.LogDebug(ex, "on-demand: scan failed");
                 }
             }
         }
@@ -257,7 +269,9 @@ internal sealed class OnDemandRouter(
         }
     }
 
-    private void Sweep()
+    // Reclaims idle entries. The busy set is the scan's own snapshot: a live connection must keep its route, because
+    // moving its egress interface swaps the source address and the peer drops the flow.
+    private void Sweep(HashSet<uint> busy)
     {
         var now = Environment.TickCount64;
         var stale = new List<KeyValuePair<uint, Entry>>();
@@ -280,9 +294,6 @@ internal sealed class OnDemandRouter(
             return;
         }
 
-        // One table snapshot for the whole batch: a live connection must keep its route, because moving its egress
-        // interface swaps the source address and the peer drops the flow.
-        var busy = ActiveRemotes();
         var filters = new List<(ulong Out, ulong In)>();
         var generation = firewall.Generation;
         var kept = 0;
@@ -367,7 +378,8 @@ internal sealed class OnDemandRouter(
         return new IPAddress(new[] { (byte)(address >> 24), (byte)(address >> 16), (byte)(address >> 8), (byte)address });
     }
 
-    // Remote addresses of every current TCP connection, host order.
+    // Remote addresses of every current TCP connection, host order. Feeds both the routing pass - which is how an
+    // inbound connection and one already established at bring-up earn their route - and the reclaim pass.
     private static HashSet<uint> ActiveRemotes()
     {
         var remotes = new HashSet<uint>();
@@ -393,7 +405,11 @@ internal sealed class OnDemandRouter(
                 // MIB_TCPROW_OWNER_PID: state, local addr, local port, remote addr at offset 12, remote port, pid.
                 var addr = new byte[4];
                 Marshal.Copy(basePtr + (i * 24) + 12, addr, 0, 4);
-                remotes.Add(((uint)addr[0] << 24) | ((uint)addr[1] << 16) | ((uint)addr[2] << 8) | addr[3]);
+                var value = ((uint)addr[0] << 24) | ((uint)addr[1] << 16) | ((uint)addr[2] << 8) | addr[3];
+                if (value != 0)
+                {
+                    remotes.Add(value);
+                }
             }
         }
         finally

@@ -39,7 +39,7 @@ internal sealed class RouteApplier(
     }
 
     /// <summary>
-    /// Adds a host route through the physical gateway.
+    /// Adds a host route out the physical path; on-link for an address on the LAN, through the gateway otherwise.
     /// </summary>
     public bool TryAddRoute(IPAddress address, out uint interfaceIndex)
     {
@@ -50,7 +50,10 @@ internal sealed class RouteApplier(
             return false;
         }
 
-        return routes.AddDirectHost(address, hop.Gateway, interfaceIndex);
+        // A /32 through the gateway outranks the on-link subnet route, so a LAN neighbour would be answered at the
+        // router's MAC - and the router does not forward that back into the segment it came from.
+        var gateway = routes.IsOnLocalSubnet(address) ? null : hop.Gateway;
+        return routes.AddDirectHost(address, gateway, interfaceIndex);
     }
 
     /// <summary>

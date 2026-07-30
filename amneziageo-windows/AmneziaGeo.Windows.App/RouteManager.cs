@@ -284,6 +284,45 @@ internal sealed partial class RouteManager
         return scanned;
     }
 
+    /// <summary>
+    /// Whether the address sits on a connected local subnet.
+    /// </summary>
+    public bool IsOnLocalSubnet(IPAddress address)
+    {
+        return IsWithinSubnets(address, LocalSubnets());
+    }
+
+    /// <summary>
+    /// Whether the address falls inside any of the IPv4 CIDRs.
+    /// </summary>
+    public static bool IsWithinSubnets(IPAddress address, IReadOnlyList<string> cidrs)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return false;
+        }
+
+        foreach (var cidr in cidrs)
+        {
+            var slash = cidr.IndexOf('/');
+            if (slash <= 0
+                || !IPAddress.TryParse(cidr[..slash], out var network)
+                || network.AddressFamily != AddressFamily.InterNetwork
+                || !int.TryParse(cidr[(slash + 1)..], out var prefix)
+                || prefix is < 0 or > 32)
+            {
+                continue;
+            }
+
+            if (InRange(address, network, prefix))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     // Drops the cached subnets on any address or availability change.
     private void WatchAddressChanges()
     {

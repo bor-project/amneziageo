@@ -19,7 +19,7 @@ internal interface IRouteApplier
     bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation);
 
     /// <summary>
-    /// Adds a host route through the physical gateway, reporting the interface it landed on.
+    /// Adds a host route out the physical path, reporting the interface it landed on.
     /// </summary>
     bool TryAddRoute(IPAddress address, out uint interfaceIndex);
 

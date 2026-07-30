@@ -365,6 +365,27 @@ internal sealed class TunnelRunner(
         // One tracker shared by DNS and app paths; created before the tracker starts so its loop stops with the session.
         using var sessionCts = new CancellationTokenSource();
 
+        // Verdict path for a database-sized Direct bucket: nothing is installed at connect, and a destination earns
+        // its host route on first contact - from a DNS answer, or from an ETW connect event when it never resolved.
+        // The proxy bucket is passed too: it decides precedence on an overlap, and in split it marks the addresses a
+        // proxy range would otherwise pull into the tunnel. Built before the tracker, which consults it before
+        // routing a resolved name into the tunnel.
+        RoutingCache? routing = null;
+        if (resolveDirectOnDemand)
+        {
+            var applier = new RouteApplier(
+                routes,
+                firewall,
+                () => underlayProbe is null ? (null, 0u) : RouteManager.UnderlayHop(underlayProbe),
+                killSwitch);
+            routing = new RoutingCache(applier, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, loggerFactory.CreateLogger<RoutingCache>());
+            _ = Task.Run(() => routing.RunAsync(sessionCts.Token));
+            _ = Task.Run(() => WatchVerdictsAsync(routing, name, appSettings.RefreshSeconds, sessionCts.Token));
+            var ranges = routing.RangeCounts;
+            logger.LogInformation("routing cache for {Name}: {Entries} direct entries -> {Direct} direct / {Block} block / {Proxy} proxy ranges, resolved per destination",
+                name, listDirect.Count, ranges.Direct, ranges.Block, ranges.Proxy);
+        }
+
         // Tracker when there's live work or a routing list drives the split.
         DomainTracker? tracker = null;
         if (trackDomains || trackApps || allUdp || (geoSplit && activeRoutingListId is not null))
@@ -373,7 +394,7 @@ internal sealed class TunnelRunner(
             if (peer is not null)
             {
                 // Started after the geo-domain sink is attached to avoid a rebuild race.
-                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, appSettings.RefreshSeconds, stripV6);
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, appSettings.RefreshSeconds, stripV6, routing);
             }
         }
 
@@ -391,24 +412,7 @@ internal sealed class TunnelRunner(
             }
         }
 
-        // Verdict path for a database-sized Direct bucket: nothing is installed at connect, and a destination earns
-        // its host route on first contact - from a DNS answer, or from an ETW send event when it never resolved.
-        OnDemandRouter? onDemand = null;
-        if (resolveDirectOnDemand)
-        {
-            var verdicts = VerdictResolver.Build(listDirect, blockRoutes);
-            onDemand = new OnDemandRouter(
-                verdicts,
-                routes,
-                firewall,
-                () => underlayProbe is null ? (null, 0u) : RouteManager.UnderlayHop(underlayProbe),
-                killSwitch,
-                loggerFactory.CreateLogger<OnDemandRouter>());
-            _ = Task.Run(() => onDemand.RunAsync(sessionCts.Token));
-            logger.LogInformation("on-demand Direct for {Name}: {Entries} entries -> {Ranges} ranges, resolved per destination", name, listDirect.Count, verdicts.RangeCounts.Direct);
-        }
-
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker, appDns, onDemand);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker, appDns, routing);
 
         // Per-app DNS: a name queried by a matched app resolves through the tunnel and routes its answer. On
         // learn, drop the proxy's pre-mark answer AND flush the OS resolver cache so the app's retry re-queries
@@ -524,7 +528,7 @@ internal sealed class TunnelRunner(
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, blockRoutes, onDemand, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, blockRoutes, routing, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -538,11 +542,11 @@ internal sealed class TunnelRunner(
         }
 
         // Flow tracker: routes matched apps' TCP+UDP remotes by ETW signaling (not DNS); not a using to avoid racing
-        // Task.Run. It also feeds the on-demand router, which needs no app matcher - that is how an address reached
-        // without a DNS lookup earns its Direct route, and how a route still carrying traffic is kept alive.
-        if ((tracker is not null && (matcher is not null || allUdp)) || onDemand is not null)
+        // Task.Run. It also feeds the routing cache, which needs no app matcher - that is how an address reached
+        // without a DNS lookup earns its Direct route.
+        if ((tracker is not null && (matcher is not null || allUdp)) || routing is not null)
         {
-            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), onDemand is null ? null : onDemand.Note);
+            var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note);
             _ = Task.Run(() => flowTracker.RunAsync(sessionCts.Token));
         }
 
@@ -582,7 +586,7 @@ internal sealed class TunnelRunner(
             // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
             sessionCts.Cancel();
             // Before the engine closes, so the host routes go away with their permits still known.
-            onDemand?.RemoveAll();
+            routing?.RemoveAll();
             firewall.Disable();
 
             if (wsTransport is not null)
@@ -634,7 +638,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, AppDnsTracker? appDns, OnDemandRouter? onDemand)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
@@ -645,7 +649,7 @@ internal sealed class TunnelRunner(
             .Where(ip => ip is not null)
             .Select(ip => ip!)
             .ToList();
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, onDemand);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing);
         if (proxy.BoundV4 is null)
         {
             return null;
@@ -932,9 +936,61 @@ internal sealed class TunnelRunner(
 
     // Above this many Direct entries the bucket is a geo database, and installing it up front is what stalls the
     // connect; below it, a hand-written list stays eager so its first packet is never off-route.
-    private const int OnDemandDirectThreshold = 64;
+    internal const int OnDemandDirectThreshold = 64;
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, OnDemandRouter? onDemand, CancellationToken ct)
+    // Re-decides the routing cache's verdicts after a live list edit. Separate from the domain tracker: that one
+    // only runs in split mode, while the cache owns the Direct and Block buckets in both. The current generation
+    // is seeded first so the freshly built rule set is not dropped and reinstalled on the first tick.
+    private async Task WatchVerdictsAsync(RoutingCache routing, string tunnelName, int refreshSeconds, CancellationToken ct)
+    {
+        var interval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 5), 1, 60));
+        var known = default(long?);
+        try
+        {
+            known = await store.GetActiveRoutingListGenerationAsync(tunnelName, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "routing cache: initial list generation lookup failed for {Tunnel}", tunnelName);
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(interval, ct);
+                var generation = await store.GetActiveRoutingListGenerationAsync(tunnelName, ct);
+                if (generation is null || generation == known)
+                {
+                    continue;
+                }
+
+                var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName, ct);
+                if (current is null)
+                {
+                    continue;
+                }
+
+                var list = await store.GetRoutingListAsync(current.ListId, ct);
+                if (list is not null)
+                {
+                    routing.Rebuild(current.Routes, list.DirectRoutes, list.BlockRoutes);
+                }
+
+                known = current.Generation;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "routing cache: verdict poll failed for {Tunnel}", tunnelName);
+            }
+        }
+    }
+
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, RoutingCache? routing, CancellationToken ct)
     {
         try
         {
@@ -962,7 +1018,7 @@ internal sealed class TunnelRunner(
             if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct), ct))
             {
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
-                onDemand?.Reinstall();
+                routing?.Reinstall();
             }
             else
             {

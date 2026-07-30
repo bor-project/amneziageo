@@ -150,6 +150,9 @@
               <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap" />
             </Button>
           </Grid>
+          <!-- The Proxy bucket is inert while the global proxy is on: everything already goes through the tunnel. -->
+          <TextBlock Text="{l:Tr Main_RoleProxyUnusedWarning}" FontSize="11.5" TextWrapping="Wrap"
+                     Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding IsProxyBucketUnused}" />
         </StackPanel>
 
         <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">

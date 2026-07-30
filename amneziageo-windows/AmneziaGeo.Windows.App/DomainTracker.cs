@@ -25,7 +25,8 @@ internal sealed class DomainTracker(
     IReadOnlyList<string> staticRoutes,
     IReadOnlyList<string> listRoutes,
     int refreshSeconds,
-    bool stripV6)
+    bool stripV6,
+    RoutingCache? routing = null)
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
@@ -154,6 +155,11 @@ internal sealed class DomainTracker(
                 }
 
                 var parsed = IPAddress.Parse(ip);
+                if (KeptOffTunnel(parsed))
+                {
+                    continue;
+                }
+
                 // Record the IP only once its /32 route is actually installed, so routes, allowed-ips and
                 // _current never drift - a failed route must not leave a routeless allowed-ip behind.
                 if (routes.AddTunnelRoute(parsed, index.Value))
@@ -209,6 +215,7 @@ internal sealed class DomainTracker(
     public void Replace(string domain, IReadOnlyList<string> ips)
     {
         var addedCidrs = new List<string>();
+        var staleCidrs = new List<string>();
         lock (_lock)
         {
             var index = EnsureIndex();
@@ -243,6 +250,11 @@ internal sealed class DomainTracker(
                 }
 
                 var parsed = IPAddress.Parse(ip);
+                if (KeptOffTunnel(parsed))
+                {
+                    continue;
+                }
+
                 if (routes.AddTunnelRoute(parsed, index.Value))
                 {
                     next.Add(ip);
@@ -280,6 +292,7 @@ internal sealed class DomainTracker(
             if (stale is not null)
             {
                 routes.RemoveTunnelRoutes(stale, index.Value);
+                staleCidrs.AddRange(stale.Select(Cidr));
             }
 
             logger.LogInformation("re-resolved {Domain} -> {Ips} (evicted {Evicted})", key, string.Join(", ", next), stale?.Count ?? 0);
@@ -297,6 +310,9 @@ internal sealed class DomainTracker(
         // Advertise the delta off-lock (O(new)); evictions already dropped their OS routes, and the pipe round-trip
         // must not block concurrent resolves / serve-known held under _lock.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        // Withdraw the evicted ones too: their routes are gone, and an allowed-ip left behind keeps accepting
+        // inbound packets from that address for the rest of the session.
+        uapi.RemoveAllowedIps(tunnelName, peerPublicKey, staleCidrs);
     }
 
     /// <summary>
@@ -564,6 +580,11 @@ internal sealed class DomainTracker(
 
             // Record the IP only once its /32 route is installed, so routes and allowed-ips stay in sync.
             var parsed = IPAddress.Parse(ip);
+            if (KeptOffTunnel(parsed))
+            {
+                continue;
+            }
+
             var ok = routes.AddTunnelRoute(parsed, index.Value);
             logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
             if (ok)
@@ -709,6 +730,25 @@ internal sealed class DomainTracker(
     }
 
     // /32 for IPv4, /128 for IPv6; single source of truth for the prefix.
+    // A destination the cache classified as Direct or Block must not be pulled into the tunnel: the cache owns that
+    // decision, and two host routes on different interfaces would be settled by metric instead of by the rules.
+    private bool KeptOffTunnel(IPAddress address)
+    {
+        if (routing is null)
+        {
+            return false;
+        }
+
+        var verdict = routing.Classify(address);
+        if (verdict is not (RouteVerdict.Direct or RouteVerdict.Block))
+        {
+            return false;
+        }
+
+        logger.LogDebug("{Address} kept off-tunnel by verdict {Verdict}", address, verdict);
+        return true;
+    }
+
     private static string Cidr(IPAddress ip)
     {
         var prefix = ip.AddressFamily == AddressFamily.InterNetworkV6 ? 128 : 32;

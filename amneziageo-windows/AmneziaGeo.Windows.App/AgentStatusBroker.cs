@@ -1101,15 +1101,19 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
         }
 
+        var previous = await store.GetConfigTransportAsync(args[0], ct);
+
         // Optional 6th arg: route IPv6 for this config; absent keeps the stored value (CLI set-websocket sends none).
         var useIpv6 = args.Count > 5
             ? args[5].Trim().ToLowerInvariant() is "on" or "1" or "true" or "yes"
-            : (await store.GetConfigTransportAsync(args[0], ct))?.UseIpv6 ?? false;
+            : previous?.UseIpv6 ?? false;
 
-        await store.SetConfigTransportAsync(new ConfigTransport(args[0], on, host, port, mtu, useIpv6), ct);
+        var updated = new ConfigTransport(args[0], on, host, port, mtu, useIpv6);
+        await store.SetConfigTransportAsync(updated, ct);
 
-        // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
+        // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
+        if (previous != updated && control.Running && await IsRunningMemberAsync(args[0], ct))
         {
             control.SetRestartRequired();
         }
@@ -1226,9 +1230,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return token.StartsWith("app:", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Rules that only take effect on a fresh tunnel: any app rule, plus the whole Direct/Block/Exclude buckets
-    // (proxy geo is reconciled live by the domain tracker; these are not).
-    private static bool RequiresReconnect(string rule)
+    // Rules that only take effect on a fresh tunnel: any app rule (the ETW matcher is built at bring-up) and the
+    // Block bucket (its WFP drops are armed once and never rebuilt). Proxy geo is reconciled live by the domain
+    // tracker. Direct is reconciled live by the routing cache, but only while the bucket is large enough to be
+    // resolved per destination - a small one is materialized at bring-up, so a change to it needs a fresh tunnel.
+    private static bool RequiresReconnect(string rule, bool directIsEager)
     {
         if (IsAppRule(rule))
         {
@@ -1237,8 +1243,17 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var bar = rule.IndexOf('|');
         var role = bar > 0 ? rule[..bar].ToLowerInvariant() : "proxy";
-        return role is "direct" or "block" or "exclude";
+        return role switch
+        {
+            "block" => true,
+            "direct" or "exclude" => directIsEager,
+            _ => false,
+        };
     }
+
+    // True while the list's Direct bucket is materialized at bring-up rather than resolved per destination.
+    private static bool DirectIsEager(RoutingList? list) =>
+        (list?.DirectRoutes.Count ?? 0) < TunnelRunner.OnDemandDirectThreshold;
 
     private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -1258,10 +1273,16 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, "name is required");
         }
 
-        // Proxy geo (domains/geoip) applies live; app rules and the Direct/Block buckets need a fresh tunnel.
-        var previousReconnect = id > 0 && await store.GetRoutingListAsync(id, ct) is { } previous
-            ? previous.Rules.Select(GeoConfigurator.FormatWithRole).Where(RequiresReconnect).ToHashSet(StringComparer.Ordinal)
-            : new HashSet<string>(StringComparer.Ordinal);
+        // Proxy geo (domains/geoip) applies live; app rules and the Block bucket need a fresh tunnel, and so does
+        // Direct while its bucket is small enough to be materialized at bring-up. The eager flag is read on both
+        // sides: a bucket that crosses the threshold either way leaves stale routes behind or lacks fresh ones.
+        var previous = id > 0 ? await store.GetRoutingListAsync(id, ct) : null;
+        var previousEager = DirectIsEager(previous);
+        var previousReconnect = previous is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : previous.Rules.Select(GeoConfigurator.FormatWithRole)
+                .Where(r => RequiresReconnect(r, previousEager))
+                .ToHashSet(StringComparer.Ordinal);
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
@@ -1269,7 +1290,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         if (control.Running && BoundTarget is not null)
         {
             var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
-            var newReconnect = args.Skip(2).Where(RequiresReconnect).ToHashSet(StringComparer.Ordinal);
+            var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
+            var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
             if (useRouting && listId == resultId && !newReconnect.SetEquals(previousReconnect))
             {
                 control.SetRestartRequired();
@@ -1332,6 +1354,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         // Mode mirrors the global-proxy flag: full routes everything minus Direct, split tunnels only Proxy.
         var mode = useGlobalProxy ? "full" : "split";
 
+        // Every field here is read once at bring-up, so a real change needs a fresh tunnel - but a save that
+        // changes nothing must not light the banner.
+        var previous = await store.GetRoutingSettingsAsync(id, ct);
+        var changed = (previous?.AllUdp ?? false) != allUdp
+            || (previous?.UseGlobalProxy ?? false) != useGlobalProxy
+            || !string.Equals(previous?.Exclusions ?? string.Empty, exclusions, StringComparison.Ordinal);
+
         if (exclusions.Length == 0 && !allUdp && !useGlobalProxy)
         {
             await store.RemoveRoutingSettingsAsync(id, ct);
@@ -1342,7 +1371,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         // Settings apply on a fresh tunnel; flag a reconnect when the running profile routes through this list.
-        if (control.Running && BoundTarget is not null)
+        if (changed && control.Running && BoundTarget is not null)
         {
             var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
             if (useRouting && listId == id)

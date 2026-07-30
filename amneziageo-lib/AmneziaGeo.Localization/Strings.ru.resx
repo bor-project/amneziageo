@@ -571,6 +571,9 @@
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Полностью блокировать.</value>
   </data>
+  <data name="Main_RoleProxyUnusedWarning" xml:space="preserve">
+    <value>Включён глобальный прокси — этот список не применяется: в туннель уходит всё, кроме «Директ» и «Блок».</value>
+  </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Глобальный прокси</value>
   </data>

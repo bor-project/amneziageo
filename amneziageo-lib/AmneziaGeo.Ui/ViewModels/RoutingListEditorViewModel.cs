@@ -160,7 +160,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [NotifyPropertyChangedFor(nameof(IsDirectRole))]
     [NotifyPropertyChangedFor(nameof(IsBlockRole))]
     [NotifyPropertyChangedFor(nameof(RoleHint))]
+    [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
     private string _selectedRole = "proxy";
+
+    // Mirrors the list's global-proxy flag, kept in sync by RoutingViewModel.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
+    private bool _globalProxyActive;
 
     /// <summary>
     /// The active bucket's rule tokens (geosite:openai etc), selected by <see cref="SelectedRole"/>.
@@ -177,6 +183,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsDirectRole => SelectedRole == "direct";
 
     public bool IsBlockRole => SelectedRole == "block";
+
+    /// <summary>
+    /// True while the Proxy bucket is shown and the global proxy is on: everything already rides the tunnel, so
+    /// neither the bucket's geo ranges nor its domains are applied.
+    /// </summary>
+    public bool IsProxyBucketUnused => IsProxyRole && GlobalProxyActive;
 
     /// <summary>
     /// Localized help line for the active role.

@@ -571,6 +571,9 @@
   <data name="Main_RoleBlockHint" xml:space="preserve">
     <value>Block these entirely.</value>
   </data>
+  <data name="Main_RoleProxyUnusedWarning" xml:space="preserve">
+    <value>Global proxy is on, so this list is not applied: everything except Direct and Block goes through the tunnel.</value>
+  </data>
   <data name="Main_GlobalProxyTitle" xml:space="preserve">
     <value>Global proxy</value>
   </data>

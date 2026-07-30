@@ -1,0 +1,319 @@
+using System.Net;
+using AmneziaGeo.Windows.App;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+namespace AmneziaGeo.Tests;
+
+/// <summary>
+/// The cache is what replaces pre-installed routes: it decides per destination, so its precedence must match the
+/// eager path, and it must install a bypass only where the default route would take the address the wrong way.
+/// </summary>
+public sealed class RoutingCacheTests
+{
+    private const string YandexRange = "77.88.32.0/19";
+    private const string YandexAddress = "77.88.55.242";
+
+    private sealed class FakeApplier : IRouteApplier
+    {
+        public int Generation { get; set; }
+
+        public List<uint> Permitted { get; } = [];
+
+        public List<string> Added { get; } = [];
+
+        public List<string> Removed { get; } = [];
+
+        public List<(ulong Out, ulong In)> Deleted { get; } = [];
+
+        public int DeleteCalls { get; private set; }
+
+        public bool RouteFails { get; set; }
+
+        private ulong _nextId = 1;
+
+        public bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation)
+        {
+            Permitted.Add(address);
+            outId = _nextId++;
+            inId = _nextId++;
+            generation = Generation;
+            return true;
+        }
+
+        public bool TryAddRoute(IPAddress address, out uint interfaceIndex)
+        {
+            interfaceIndex = 7;
+            if (RouteFails)
+            {
+                return false;
+            }
+
+            Added.Add(address.ToString());
+            return true;
+        }
+
+        public void RemoveRoute(IPAddress address, uint interfaceIndex)
+        {
+            Removed.Add(address.ToString());
+        }
+
+        public void DeleteFilters(IReadOnlyList<(ulong Out, ulong In)> filters, int generation)
+        {
+            DeleteCalls++;
+            Deleted.AddRange(filters);
+        }
+    }
+
+    private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null)
+    {
+        return new RoutingCache(applier, split, proxy ?? [], direct ?? [], block ?? [], NullLogger<RoutingCache>.Instance);
+    }
+
+    private static uint Numeric(string address)
+    {
+        Assert.True(GeoIpRanges.TryToNumeric(IPAddress.Parse(address), out var value));
+        return value;
+    }
+
+    [Fact]
+    public void AddressInDirectSet_EarnsABypassRouteAndPermit()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        Assert.Equal(RouteVerdict.Direct, cache.Classify(IPAddress.Parse(YandexAddress)));
+        Assert.Equal(new[] { YandexAddress }, applier.Added);
+        Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Permitted);
+        Assert.Equal(1, cache.Active);
+    }
+
+    [Fact]
+    public void AddressOutsideEverySet_IsUnlistedAndInstallsNothing()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+
+        cache.Note(IPAddress.Parse("8.8.8.8"));
+
+        Assert.Equal(RouteVerdict.None, cache.Classify(IPAddress.Parse("8.8.8.8")));
+        Assert.Empty(applier.Added);
+        Assert.Equal(0, cache.Active);
+        Assert.Equal(1, cache.Size);
+    }
+
+    [Fact]
+    public void ProxyAddress_KeepsItsVerdictButInstallsNothing()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, proxy: ["8.8.8.0/24"]);
+
+        cache.Note(IPAddress.Parse("8.8.8.8"));
+
+        Assert.Equal(RouteVerdict.Proxy, cache.Classify(IPAddress.Parse("8.8.8.8")));
+        Assert.Empty(applier.Added);
+    }
+
+    [Fact]
+    public void BlockWinsOverDirect_SoABlockedAddressNeverEarnsABypass()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: ["10.0.0.0/8"], block: ["10.1.2.0/24"]);
+
+        cache.Note(IPAddress.Parse("10.1.2.3"));
+
+        Assert.Equal(RouteVerdict.Block, cache.Classify(IPAddress.Parse("10.1.2.3")));
+        Assert.Equal(RouteVerdict.Direct, cache.Classify(IPAddress.Parse("10.1.3.3")));
+        Assert.Empty(applier.Added);
+    }
+
+    [Fact]
+    public void DirectWinsOverProxy_SoAnOverlapCannotInstallCompetingRoutes()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, proxy: ["77.88.0.0/16"], direct: [YandexRange]);
+
+        Assert.Equal(RouteVerdict.Direct, cache.Classify(IPAddress.Parse(YandexAddress)));
+    }
+
+    [Fact]
+    public void Ipv6_IsUnlisted()
+    {
+        var applier = new FakeApplier();
+        var cache = Cache(applier, split: false, direct: ["10.0.0.0/8"]);
+
+        cache.Note(IPAddress.Parse("2a02:6b8::2:242"));
+
+        Assert.Equal(RouteVerdict.None, cache.Classify(IPAddress.Parse("2a02:6b8::2:242")));
+        Assert.Empty(applier.Added);
+    }
+
+    [Fact]
+    public void InSplit_DirectAddressOutsideEveryProxyRange_NeedsNoBypass()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, direct: [YandexRange]);
+
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        Assert.Equal(RouteVerdict.Direct, cache.Classify(IPAddress.Parse(YandexAddress)));
+        Assert.Empty(applier.Added);
+        Assert.Empty(applier.Permitted);
+    }
+
+    [Fact]
+    public void InSplit_DirectAddressCoveredByAProxyRange_EarnsABypass()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["77.88.0.0/16"], direct: [YandexRange]);
+
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        Assert.Equal(new[] { YandexAddress }, applier.Added);
+    }
+
+    [Fact]
+    public void RepeatContact_InstallsNothingTwice()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+
+        cache.Note(IPAddress.Parse(YandexAddress));
+        cache.Note(IPAddress.Parse(YandexAddress));
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        Assert.Single(applier.Added);
+        Assert.Single(applier.Permitted);
+    }
+
+    [Fact]
+    public void RearmedFilterSet_ReinstallsPermitsWithoutTouchingRoutes()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        applier.Generation = 2;
+        cache.Reinstall();
+
+        Assert.Equal(2, applier.Permitted.Count);
+        Assert.Single(applier.Added);
+    }
+
+    [Fact]
+    public void IdleEntry_IsReclaimed()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Equal(new[] { YandexAddress }, applier.Removed);
+        Assert.Single(applier.Deleted);
+        Assert.Equal(1, applier.DeleteCalls);
+        Assert.Equal(0, cache.Active);
+        Assert.Equal(0, cache.Size);
+    }
+
+    [Fact]
+    public void IdleEntryStillCarryingTraffic_KeepsItsRoute()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+        var address = Numeric(YandexAddress);
+        cache.Note(address);
+
+        cache.Sweep([address], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Empty(applier.Removed);
+        Assert.Equal(1, cache.Active);
+    }
+
+    [Fact]
+    public void Sweep_ReclaimsInSlices()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: ["9.0.0.0/8"]);
+        for (var i = 0u; i < 100; i++)
+        {
+            cache.Note(0x09000000u + i);
+        }
+
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Equal(64, applier.Removed.Count);
+        Assert.Equal(36, cache.Active);
+    }
+
+    [Fact]
+    public void PastTheResourceCeiling_AddressesFollowTheDefaultRoute()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: ["9.0.0.0/8"]);
+
+        for (var i = 0u; i < 8300; i++)
+        {
+            cache.Note(0x09000000u + i);
+        }
+
+        Assert.Equal(8192, cache.Active);
+        Assert.Equal(8192, applier.Added.Count);
+    }
+
+    [Fact]
+    public void RebuiltRules_DropWhatTheOldOnesInstalledAndRedecide()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        cache.Rebuild([], [], [YandexRange]);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Removed);
+        Assert.Equal(0, cache.Size);
+        Assert.Equal(RouteVerdict.Block, cache.Classify(IPAddress.Parse(YandexAddress)));
+    }
+
+    [Fact]
+    public void RemoveAll_DropsEveryRouteAndFilter()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: ["9.0.0.0/8"]);
+        for (var i = 0u; i < 10; i++)
+        {
+            cache.Note(0x09000000u + i);
+        }
+
+        cache.RemoveAll();
+
+        Assert.Equal(10, applier.Removed.Count);
+        Assert.Equal(10, applier.Deleted.Count);
+        Assert.Equal(0, cache.Active);
+        Assert.Equal(0, cache.Size);
+    }
+
+    [Fact]
+    public void FailedRouteInstall_LeavesTheEntryUnapplied()
+    {
+        var applier = new FakeApplier { Generation = 1, RouteFails = true };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        Assert.Equal(0, cache.Active);
+        Assert.Equal(1, cache.Size);
+    }
+
+    [Fact]
+    public void EmptyRules_MatchNothing()
+    {
+        var applier = new FakeApplier();
+        var cache = Cache(applier, split: false);
+
+        Assert.False(cache.HasRules);
+        Assert.Equal(RouteVerdict.None, cache.Classify(IPAddress.Parse("1.2.3.4")));
+    }
+}

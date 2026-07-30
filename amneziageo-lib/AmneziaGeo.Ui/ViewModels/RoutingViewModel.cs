@@ -403,6 +403,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         SyncCatalogueRouting();
+        SyncGlobalProxyFlag();
         RefreshSections();
     }
 
@@ -421,6 +422,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             newValue.DirtyChanged += OnEditScopeDirty;
         }
 
+        SyncGlobalProxyFlag();
         RefreshEditBar();
     }
 
@@ -428,7 +430,18 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private void OnEditPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         RoutingDeleteStatus = string.Empty;
+        SyncGlobalProxyFlag();
         RefreshEditBar();
+    }
+
+    // Feeds the traffic card's global-proxy flag into the rule editor so the Proxy bucket can warn that it is
+    // not applied in that mode.
+    private void SyncGlobalProxyFlag()
+    {
+        if (RoutingEditor is { } editor)
+        {
+            editor.GlobalProxyActive = RoutingSettings?.UseGlobalProxy ?? false;
+        }
     }
 
     private void OnEditCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)

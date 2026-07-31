@@ -11,7 +11,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Downloads geo source files and records their update metadata.
 /// </summary>
-internal sealed class GeoFileUpdater(IStateStore store, HttpClient http)
+internal sealed class GeoFileUpdater(IStateStore store, GeoHttp http)
 {
     /// <summary>
     /// Downloads a source file and records its metadata.

@@ -130,7 +130,8 @@ if (-not $Upstream) {
         Write-Host '== extracting toolchain =='
         $tmp = Join-Path $deps '.go-win7-tmp'
         if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        # PowerShell 7 carries the type already and rejects the name; Windows PowerShell needs the load.
+        try { Add-Type -AssemblyName System.IO.Compression.FileSystem } catch { }
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $tmp)
 
         # the archive's root folder name tracks the fork's version, so locate it by its bin\go.exe
@@ -238,14 +239,23 @@ function Get-ImportedDlls($b) {
 
 Write-Host ''
 Write-Host '== result =='
+$unsafe = @()
 foreach ($a in $Arch) {
     $dll = Join-Path $submodule "$a\tunnel.dll"
     $b = [IO.File]::ReadAllBytes($dll)
     $text = [Text.Encoding]::GetEncoding(28591).GetString($b)
+    $bcrypt = $text.Contains('bcryptprimitives.dll')
+    if ($bcrypt) { $unsafe += $a }
 
     Write-Host ("   {0}  {1:N0} bytes" -f $dll, $b.Length)
-    Write-Host ("   references bcryptprimitives.dll : {0}" -f $(if ($text.Contains('bcryptprimitives.dll')) { 'YES - not Windows 7 safe' } else { 'no' }))
+    Write-Host ("   references bcryptprimitives.dll : {0}" -f $(if ($bcrypt) { 'YES - not Windows 7 safe' } else { 'no' }))
     Write-Host ("   static imports: {0}" -f ((Get-ImportedDlls $b) -join ', '))
 }
+
+# A stock-Go build ships silently otherwise, and Windows 7 only fails at load time on the user's machine.
+if ($unsafe -and -not $Upstream) {
+    throw "not Windows 7 safe: $($unsafe -join ', ') import bcryptprimitives.dll, which Windows 7 does not have. The go-legacy-win7 toolchain was expected to be used - rerun with -Force to rebuild it."
+}
+
 Write-Host ''
 Write-Host 'Now build the installer with build-installer.ps1 - App.csproj picks this tunnel.dll up automatically.'

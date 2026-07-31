@@ -11,7 +11,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Decides whether a geo source's remote file changed without re-fetching it.
 /// </summary>
-internal sealed class GeoUpdateChecker(IStateStore store, HttpClient http)
+internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
 {
     /// <summary>
     /// Update-check outcome for a single source.

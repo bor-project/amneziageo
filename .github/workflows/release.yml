@@ -33,37 +33,16 @@ jobs:
           submodules: recursive
           fetch-depth: 0   # engine version = `git describe --tags` of the amneziawg-windows submodule
 
-      - name: Enable arm64 engine target
-        # The submodule pins upstream amnezia-vpn/amneziawg-windows, whose build.cmd builds x64+x86 only.
-        # For an arm64 build, append the arm64 build_plat call after the x86 one (a fork of the submodule
-        # would make this permanent; patching here keeps the pointer on upstream).
-        if: ${{ matrix.arch == 'arm64' }}
-        shell: pwsh
-        working-directory: amneziageo-windows/amneziawg-windows
-        run: |
-          $f = 'build.cmd'
-          $t = Get-Content $f -Raw
-          if ($t -notmatch 'build_plat arm64') {
-            # No end-anchor: build.cmd ships CRLF, and `$` sits after the \r, so `[ \t]*$` never matches.
-            $pattern = '(?m)^([ \t]*)call :build_plat x86 i686 386 \|\| goto :error'
-            $t = [regex]::Replace($t, $pattern, {
-              param($m)
-              $i = $m.Groups[1].Value
-              "$i" + 'call :build_plat x86 i686 386 || goto :error' + "`r`n" + "$i" + 'call :build_plat arm64 aarch64 arm64 || goto :error'
-            })
-            Set-Content $f $t -NoNewline
-          }
-          if ((Get-Content $f -Raw) -notmatch 'build_plat arm64') { throw 'failed to inject arm64 build target into build.cmd' }
-          Get-Content $f | Select-String build_plat
-
       - name: Build the AmneziaWG engine (tunnel.dll)
-        # build.cmd bootstraps Go + llvm-mingw + wintun into .deps and emits <arch>\tunnel.dll. The DLL is
+        # The submodule's own build.cmd builds with stock Go, which since 1.21 has dropped Windows 7: the
+        # DLL it emits imports bcryptprimitives.dll and never loads there. build-engine-win7.ps1 bootstraps
+        # Go + llvm-mingw + wintun into .deps through that same build.cmd, then rebuilds <arch>\tunnel.dll
+        # with the go-legacy-win7 toolchain and fails if the result is still not Windows 7 safe. It builds
+        # any arch itself, so the arm64 build_plat patch build.cmd used to need is gone. The DLL is
         # gitignored (a build output, not vendored), so it must be built here before the .NET publish
-        # consumes it. A fresh checkout has no .deps\prepared, so the wintun zip is downloaded and SHA
-        # verified in full (all arches) - the arm64 wintun.dll lands under .deps\wintun\bin\arm64\.
-        working-directory: amneziageo-windows/amneziawg-windows
-        shell: cmd
-        run: build.cmd
+        # consumes it.
+        shell: pwsh
+        run: ./amneziageo-windows/tools/build-engine-win7.ps1 -Arch ${{ matrix.arch }}
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4

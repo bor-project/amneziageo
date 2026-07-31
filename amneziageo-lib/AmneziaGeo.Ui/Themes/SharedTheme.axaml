@@ -95,6 +95,20 @@
       <Setter Property="MinHeight" Value="44" />
     </Style>
 
+    <!-- Second-level track: sits under a segmented control, so it drops the track and draws only the selected
+         chip. Content-width and left in both layouts. -->
+    <Style Selector="Border.segtrack.sub">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+    <Style Selector="Border.segtrack.sub Button.seg">
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="18,0" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+    </Style>
+
     <Style Selector="Button.softbtn">
       <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />

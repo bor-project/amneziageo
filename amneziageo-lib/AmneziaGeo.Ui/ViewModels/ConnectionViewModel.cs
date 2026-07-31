@@ -87,6 +87,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [ObservableProperty]
     private bool _reconnectAvailable;
 
+    // Settings changed on the live tunnel: the editable sections offer the reconnect in their footer, the rest
+    // of the app in the notice banner.
+    [ObservableProperty]
+    private bool _restartPending;
+
     // The last dial gave up; keeps a failed trace on the status surfaces until the next connect.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -265,6 +270,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         NoticeVisible = false;
         NoticeText = null;
         ReconnectAvailable = false;
+        RestartPending = false;
         ConnectFailed = false;
         DisconnectFailed = false;
         TakeoverPending = false;
@@ -281,6 +287,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         BoundTarget = snapshot.BoundTarget;
         BoundStatus = snapshot.BoundStatus;
         RetryAttempt = snapshot.RetryAttempt;
+        RestartPending = snapshot.RestartRequired;
         if (!_toggleInFlight)
         {
             IsTunnelActive = snapshot.Active;
@@ -353,9 +360,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             notice = Loc.Instance.Get("MainVm_NoticeProfileSelected", snapshot.SelectedTarget);
             reconnect = true;
         }
-        else if (snapshot.RestartRequired)
+        else if (snapshot.RestartRequired && !_host.ReconnectPromptInSection)
         {
             // Settings changed on the live tunnel: bound == selected, so reconnecting the active profile applies them.
+            // An editable section carries the same offer in its footer, so the banner stays out of its way.
             notice = Loc.Instance.Get("MainVm_NoticeSettingsChanged");
             reconnect = true;
         }
@@ -372,6 +380,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     public void NotifyHostFlagsChanged()
     {
         OnPropertyChanged(nameof(ShowSelectConfigHint));
+    }
+
+    partial void OnRestartPendingChanged(bool value)
+    {
+        _host.NotifyRestartPendingChanged(value);
     }
 
     partial void OnActiveProfileChanged(ProfileItemViewModel? oldValue, ProfileItemViewModel? newValue)

@@ -243,6 +243,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         SyncRoutingLists(snapshot.RoutingLists ?? []);
         HasRoutingLists = RoutingLists.Count > 0;
+        RoutingSettings?.ApplyRouteTtl(snapshot.RouteTtlSeconds);
     }
 
     public void Reset()
@@ -769,6 +770,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [RelayCommand]
     private async Task SaveSection()
     {
+        _host.ArmReconnectPrompt();
         if (IsCreatingSectionRouting)
         {
             await SaveNewList();

@@ -71,20 +71,16 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isCompact;
 
-    // --- Segmented mode: viewer vs settings ---
+    // --- Segmented mode: viewer or capture settings ---
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsViewMode))]
     private bool _isSettingsMode;
 
     /// <summary>
-    /// Whether the viewer pane is showing (the inverse of settings mode).
+    /// Whether the viewer pane is showing.
     /// </summary>
     public bool IsViewMode => !IsSettingsMode;
-
-    partial void OnIsSettingsModeChanged(bool value)
-    {
-        OnPropertyChanged(nameof(IsViewMode));
-    }
 
     [RelayCommand]
     private void ShowView()

@@ -177,6 +177,54 @@ internal sealed class AppMatcher
     }
 
     // Image-path match for path=/dir=/name=; svc= handled by PID.
+    /// <summary>
+    /// Whether an image reported as an NT device path (as the firewall reports it) matches the app rules.
+    /// </summary>
+    public bool MatchesDevicePath(string path)
+    {
+        return MatchesImage(ToDosPath(path));
+    }
+
+    // \device\harddiskvolume3\app\app.exe -> C:\app\app.exe. An unmapped device is left alone; name rules still match it.
+    private static string ToDosPath(string path)
+    {
+        foreach (var (device, drive) in _devices.Value)
+        {
+            if (path.StartsWith(device, StringComparison.OrdinalIgnoreCase) && path.Length > device.Length)
+            {
+                return drive + path[device.Length..];
+            }
+        }
+
+        return path;
+    }
+
+    private static readonly Lazy<List<(string Device, string Drive)>> _devices = new(BuildDeviceMap, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    // Volume device paths per drive letter, resolved once.
+    private static List<(string Device, string Drive)> BuildDeviceMap()
+    {
+        var map = new List<(string, string)>();
+        var buffer = new char[1024];
+        for (var letter = 'A'; letter <= 'Z'; letter++)
+        {
+            var drive = $"{letter}:";
+            var length = QueryDosDevice(drive, buffer, buffer.Length);
+            if (length == 0)
+            {
+                continue;
+            }
+
+            var target = new string(buffer, 0, (int)length).Split('\0')[0];
+            if (target.Length > 0)
+            {
+                map.Add((target, drive));
+            }
+        }
+
+        return map;
+    }
+
     private bool MatchesImage(string? path)
     {
         if (path is null)
@@ -390,4 +438,7 @@ internal sealed class AppMatcher
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry32 entry);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern uint QueryDosDevice(string deviceName, [Out] char[] targetPath, int max);
 }

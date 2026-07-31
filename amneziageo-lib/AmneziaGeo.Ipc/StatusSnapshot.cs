@@ -46,6 +46,8 @@ public sealed record StatusSnapshot(
     bool PeriodicReconnect = false,
     // Interval between periodic auto-reconnect attempts, in seconds.
     int PeriodicReconnectIntervalSeconds = 30,
+    // Idle window a routed destination survives before its route and filters are reclaimed, in seconds.
+    int RouteTtlSeconds = 300,
     // Show tray notifications for connection state changes.
     bool ShowNotifications = true,
     // Whether the update check offers prereleases (user-toggleable, defaults to the baked channel).

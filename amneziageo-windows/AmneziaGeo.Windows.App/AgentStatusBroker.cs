@@ -11,7 +11,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -263,6 +263,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpReadLog => await ReadLogAsync(command.Args, ct),
                 IpcContract.OpClearLog => await ClearLogAsync(command.Args, ct),
                 IpcContract.OpExportLog => await ExportLogAsync(command.Args, ct),
+                IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
+                IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
@@ -1072,6 +1074,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
         var (rules, routes, domains) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
+        AnnounceRules();
         logger.LogInformation("set-geo {Name}: split={On}, {Rules} rules -> {Routes} routes, {Domains} domains", args[0], on, rules, routes, domains);
         return new IpcAck(true, $"saved: {rules} rules, {routes} routes, {domains} domains (applies on reconnect)");
     }
@@ -1234,6 +1237,52 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, json);
     }
 
+    private async Task<IpcAck> GetRuntimeConfigAsync(CancellationToken ct)
+    {
+        var (profile, config, applied) = await InspectTargetAsync(ct);
+        if (string.IsNullOrEmpty(config))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NoProfileSelected"));
+        }
+
+        return new IpcAck(true, await inspector.RenderAsync(store, profile, config, applied, ct));
+    }
+
+    private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
+    {
+        var (_, config, _) = await InspectTargetAsync(ct);
+        if (string.IsNullOrEmpty(config))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NoProfileSelected"));
+        }
+
+        // The tunnel runs in its own service process; without a session here the snapshot comes from there.
+        if (!inspector.HasLiveSession && RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.OpSnapshot, logger) is { Length: > 0 } served)
+        {
+            return new IpcAck(true, served);
+        }
+
+        return new IpcAck(true, System.Text.Json.JsonSerializer.Serialize(inspector.Collect()));
+    }
+
+    // The tunnel the config screen reports on: the running one while this user owns it, otherwise the profile
+    // the next connect would raise.
+    private async Task<(string Profile, string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
+    {
+        var scope = CurrentScope;
+        var applied = control.Running && activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
+        var name = applied
+            ? control.RunningTarget ?? control.Target ?? string.Empty
+            : await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        if (string.IsNullOrEmpty(name))
+        {
+            return (string.Empty, string.Empty, applied);
+        }
+
+        var profile = await store.GetProfileAsync(name, ct);
+        return profile is not null ? (profile.Name, profile.Config, applied) : (name, name, applied);
+    }
+
     // Apps + services for per-app tunneling; enumerated as SYSTEM to read restricted paths. Rows are tab-separated: kind, label, value, detail.
     private static IpcAck ListProcesses()
     {
@@ -1262,17 +1311,16 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var bar = rule.IndexOf('|');
         var role = bar > 0 ? rule[..bar].ToLowerInvariant() : "proxy";
+        // Every bucket is resolved per destination and re-decided live, so only app rules still need a fresh tunnel.
         return role switch
         {
-            "block" => true,
             "direct" or "exclude" => directIsEager,
             _ => false,
         };
     }
 
-    // True while the list's Direct bucket is materialized at bring-up rather than resolved per destination.
-    private static bool DirectIsEager(RoutingList? list) =>
-        (list?.DirectRoutes.Count ?? 0) < TunnelRunner.OnDemandDirectThreshold;
+    // Nothing is materialized at bring-up any more; kept so the reconnect rule reads the same on both sides.
+    private static bool DirectIsEager(RoutingList? list) => false;
 
     private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -1317,8 +1365,23 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
         }
 
+        AnnounceRules();
         logger.LogInformation("saved routing list {Id} '{Name}' ({Rules} rules)", resultId, name, args.Count - 2);
         return new IpcAck(true, resultId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    // The tunnel runs in its own process and polls for nothing: a rule change is announced to it here, and it
+    // drops every verdict taken under the old rules.
+    private void AnnounceRules() => Announce(RuntimeSnapshotPipe.OpRules);
+
+    private void Announce(string op)
+    {
+        if (!control.Running || control.RunningTarget is not { Length: > 0 } tunnel)
+        {
+            return;
+        }
+
+        _ = Task.Run(() => RuntimeSnapshotPipe.Send(tunnel, op, logger));
     }
 
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -2075,6 +2138,14 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(true, RouteLog.Enabled ? "routing log on" : "routing log off");
         }
 
+        // The route lifetime applies live; the running tunnel adopts it for what it already holds.
+        if (key == AppSettings.RouteTtlKey)
+        {
+            Announce(RuntimeSnapshotPipe.OpTtl);
+            logger.LogInformation("route lifetime set to {Value} s", args[1]);
+            return new IpcAck(true, $"route lifetime = {args[1]} s");
+        }
+
         logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
     }
@@ -2492,6 +2563,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             settings.SurviveReboot,
             settings.PeriodicReconnect,
             settings.PeriodicReconnectIntervalSeconds,
+            settings.RouteTtlSeconds,
             settings.ShowNotifications,
             settings.AllowPrerelease,
             update?.Sha256 ?? string.Empty,

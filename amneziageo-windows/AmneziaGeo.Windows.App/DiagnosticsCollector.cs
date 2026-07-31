@@ -102,7 +102,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
         sb.AppendLine("[settings]");
         sb.AppendLine($"log level:       {s.LogLevel}");
         sb.AppendLine($"routing log:     {(s.RouteLog ? "on" : "off")}");
-        sb.AppendLine($"refresh:         {s.RefreshSeconds}s");
+        sb.AppendLine($"route ttl:       {s.RouteTtlSeconds}s");
         sb.AppendLine($"connect timeout: {s.ConnectTimeoutSeconds}s");
         sb.AppendLine($"dead threshold:  {s.DeadThresholdSeconds}s");
         sb.AppendLine($"geo auto-check:  {s.GeoAutoCheck} (interval {s.GeoCheckIntervalHours}h, validity {s.GeoCacheValidityHours}h)");

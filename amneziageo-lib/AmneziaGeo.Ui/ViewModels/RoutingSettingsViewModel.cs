@@ -17,12 +17,29 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     // Baseline captured on load / commit; the fields are dirty when they differ from it (#143).
     private bool _baseAllUdp;
     private bool _baseUseGlobalProxy;
+    private string _baseRouteTtl = "300";
 
     [ObservableProperty]
     private bool _allUdp;
 
     [ObservableProperty]
     private bool _useGlobalProxy;
+
+    // Agent-wide, not per-list: pushed straight through as a setting instead of the routing block. Seconds,
+    // 0 (never held) to int.MaxValue.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RouteTtlInvalid))]
+    private string _routeTtl = "300";
+
+    /// <summary>
+    /// Whether the entered lifetime is not a whole number of seconds in range.
+    /// </summary>
+    public bool RouteTtlInvalid => !TryParseTtl(RouteTtl, out _);
+
+    private static bool TryParseTtl(string text, out int seconds)
+    {
+        return SettingKeys.TryParseRouteTtl(text, out seconds);
+    }
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -82,6 +99,42 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         FireAutoSave();
     }
 
+    // The lifetime takes the same route as the toggles: an edit raises the confirm bar and the value leaves on
+    // Save. It still applies live - the agent hands it to the running tunnel, so no reconnect is needed.
+    partial void OnRouteTtlChanged(string value)
+    {
+        OnEdited();
+        FireAutoSave();
+    }
+
+    /// <summary>
+    /// Seeds the lifetime from the agent snapshot without pushing it back, leaving an uncommitted edit alone.
+    /// </summary>
+    public void ApplyRouteTtl(int seconds)
+    {
+        if (seconds < 0 || RouteTtl != _baseRouteTtl)
+        {
+            return;
+        }
+
+        var text = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _baseRouteTtl = text;
+        if (RouteTtl == text)
+        {
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            RouteTtl = text;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
     private void OnEdited() => RecomputeDirty();
 
     private void RecomputeDirty()
@@ -95,7 +148,8 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         StatusMessage = string.Empty;
 
         var dirty = AllUdp != _baseAllUdp
-            || UseGlobalProxy != _baseUseGlobalProxy;
+            || UseGlobalProxy != _baseUseGlobalProxy
+            || RouteTtl != _baseRouteTtl;
         if (dirty != IsDirty)
         {
             IsDirty = dirty;
@@ -104,13 +158,14 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     }
 
     /// <inheritdoc />
-    public bool CanCommit() => true;
+    public bool CanCommit() => !RouteTtlInvalid;
 
     /// <inheritdoc />
     public void CaptureBaseline()
     {
         _baseAllUdp = AllUdp;
         _baseUseGlobalProxy = UseGlobalProxy;
+        _baseRouteTtl = RouteTtl;
         if (IsDirty)
         {
             IsDirty = false;
@@ -126,6 +181,7 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
         {
             AllUdp = _baseAllUdp;
             UseGlobalProxy = _baseUseGlobalProxy;
+            RouteTtl = _baseRouteTtl;
             StatusMessage = string.Empty;
         }
         finally
@@ -181,6 +237,13 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
     /// </summary>
     public async Task<bool> CommitAsync()
     {
+        // An unparseable lifetime never leaves: the field is already marked, and a rejected block would look like
+        // an agent failure instead of a typo.
+        if (!TryParseTtl(RouteTtl, out var ttl))
+        {
+            return false;
+        }
+
         IsBusy = true;
         try
         {
@@ -194,7 +257,21 @@ internal sealed partial class RoutingSettingsViewModel : ViewModelBase, IEditSco
             ]));
             // Only a failure reason stays inline; a reconnect need shows via the standard banner (RestartRequired).
             StatusMessage = ack.Ok ? string.Empty : ack.Message;
-            return ack.Ok;
+            if (!ack.Ok)
+            {
+                return false;
+            }
+
+            // Agent-wide, and live: the running tunnel adopts it without a reconnect.
+            if (RouteTtl == _baseRouteTtl)
+            {
+                return true;
+            }
+
+            var ttlAck = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
+                [SettingKeys.RouteTtl, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
+            StatusMessage = ttlAck.Ok ? string.Empty : ttlAck.Message;
+            return ttlAck.Ok;
         }
         finally
         {

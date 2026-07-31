@@ -40,6 +40,15 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private readonly object _gate = new();
     private IntPtr _engine = IntPtr.Zero;
+    // Second, non-dynamic handle: only the event options and the subscription live on it.
+    private IntPtr _eventEngine = IntPtr.Zero;
+    private IntPtr _eventSubscription = IntPtr.Zero;
+    private ulong? _collectPrevious;
+    private ulong? _keywordsPrevious;
+    // Held so the thunk the engine calls back into outlives the subscription.
+    private NetEventCallback? _dropCallback;
+    private Action<IPAddress, string?>? _onDrop;
+    private int _dropEvents;
     // A dynamic session drops its filters with the engine handle, and arming rebuilds the set from scratch, so
     // on-demand permits carry the generation they were installed under and are reinstalled when it moves.
     private int _generation;
@@ -65,10 +74,10 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     public int Generation => Volatile.Read(ref _generation);
 
     /// <summary>
-    /// Arms the kill-switch; permits before block. Block-list CIDRs are dropped in both split and full.
-    /// Returns false on failure.
+    /// Arms the kill-switch; permits before block. Block-list destinations are dropped per address on contact,
+    /// not materialized here. Returns false on failure.
     /// </summary>
-    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null, IReadOnlyList<string>? blockCidrs = null)
+    public bool Enable(uint tunnelInterfaceIndex, bool killSwitch, bool dualStack, string? underlayAppPath = null, IReadOnlyList<string>? extraLanCidrs = null)
     {
         lock (_gate)
         {
@@ -120,12 +129,6 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     BlockAll(engine);
                 }
 
-                // Block-list drops apply in both modes; highest weight so they win over any permit.
-                if (blockCidrs is { Count: > 0 })
-                {
-                    BlockList(engine, blockCidrs);
-                }
-
                 if (batched)
                 {
                     var commit = FwpmTransactionCommit0(engine);
@@ -137,7 +140,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
                 _engine = engine;
                 Interlocked.Increment(ref _generation);
-                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack}, blocked={Blocked})", tunnelInterfaceIndex, killSwitch, dualStack, blockCidrs?.Count ?? 0);
+                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack})", tunnelInterfaceIndex, killSwitch, dualStack);
                 return true;
             }
             catch (Exception ex)
@@ -155,6 +158,223 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     }
 
     /// <summary>
+    /// Reports the destination of every packet the filters drop. A destination blocked before its verdict exists
+    /// announces itself here and nowhere else: the send never happens, so no ETW send or connect event follows it.
+    /// Returns false when the platform has no subscription - the tunnel still runs, on-demand just loses this source.
+    /// </summary>
+    public bool WatchDrops(Action<IPAddress, string?> onDrop)
+    {
+        lock (_gate)
+        {
+            if (_engine == IntPtr.Zero || _eventSubscription != IntPtr.Zero)
+            {
+                return false;
+            }
+
+            _onDrop = onDrop;
+            try
+            {
+                if (!OpenEventEngineLocked() || !CollectDropsLocked())
+                {
+                    CloseEventEngineLocked();
+                    return false;
+                }
+
+                _dropCallback = OnNetEvent;
+                var subscription = new FWPM_NET_EVENT_SUBSCRIPTION0();
+                var rc = FwpmNetEventSubscribe4(_eventEngine, ref subscription, Marshal.GetFunctionPointerForDelegate(_dropCallback), IntPtr.Zero, out var handle);
+                if (rc != 0)
+                {
+                    logger.LogWarning("firewall: drop subscription failed 0x{Code:X8}; on-demand routing falls back to connect events", rc);
+                    _dropCallback = null;
+                    CloseEventEngineLocked();
+                    return false;
+                }
+
+                _eventSubscription = handle;
+                logger.LogInformation("firewall: watching classify drops");
+                return true;
+            }
+            catch (EntryPointNotFoundException ex)
+            {
+                logger.LogWarning(ex, "firewall: this platform has no drop subscription; on-demand routing falls back to connect events");
+                CloseEventEngineLocked();
+                return false;
+            }
+        }
+    }
+
+    // Event collection is an engine-wide option, and a dynamic session may not set one (FWP_E_DYNAMIC_SESSION_IN_PROGRESS):
+    // events get a plain session of their own while the filters keep the dynamic one that drops them with the process.
+    private bool OpenEventEngineLocked()
+    {
+        if (_eventEngine != IntPtr.Zero)
+        {
+            return true;
+        }
+
+        var session = new FWPM_SESSION0();
+        var rc = FwpmEngineOpen0(IntPtr.Zero, RpcCAuthnWinnt, IntPtr.Zero, ref session, out var engine);
+        if (rc != 0)
+        {
+            logger.LogWarning("firewall: opening the event session failed 0x{Code:X8}", rc);
+            return false;
+        }
+
+        _eventEngine = engine;
+        return true;
+    }
+
+    // Turns on event collection and narrows it to classify drops, so an allow-heavy host does not pay for events
+    // nobody reads. Prior values are kept and restored on teardown - the options belong to the machine, not to us.
+    private bool CollectDropsLocked()
+    {
+        _collectPrevious = ReadOptionLocked(EngineOptionCollectNetEvents);
+        if (!SetOptionLocked(EngineOptionCollectNetEvents, 1, "enabling net events"))
+        {
+            return false;
+        }
+
+        _keywordsPrevious = ReadOptionLocked(EngineOptionNetEventMatchAnyKeywords);
+        SetOptionLocked(EngineOptionNetEventMatchAnyKeywords, NetEventKeywordClassifyDrop, "narrowing net events");
+        return true;
+    }
+
+    private bool SetOptionLocked(uint option, ulong value, string what)
+    {
+        var wanted = new FWP_VALUE0 { type = FwpUint32, value = value };
+        var rc = FwpmEngineSetOption0(_eventEngine, option, ref wanted);
+        if (rc != 0)
+        {
+            logger.LogWarning("firewall: {What} failed 0x{Code:X8}", what, rc);
+            return false;
+        }
+
+        return true;
+    }
+
+    private ulong? ReadOptionLocked(uint option)
+    {
+        if (FwpmEngineGetOption0(_eventEngine, option, out var value) != 0 || value == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            return Marshal.PtrToStructure<FWP_VALUE0>(value).value;
+        }
+        finally
+        {
+            FwpmFreeMemory0(ref value);
+        }
+    }
+
+    private void CloseEventEngineLocked()
+    {
+        if (_eventEngine == IntPtr.Zero)
+        {
+            return;
+        }
+
+        if (_eventSubscription != IntPtr.Zero)
+        {
+            FwpmNetEventUnsubscribe0(_eventEngine, _eventSubscription);
+            _eventSubscription = IntPtr.Zero;
+        }
+
+        if (_keywordsPrevious is { } keywords)
+        {
+            SetOptionLocked(EngineOptionNetEventMatchAnyKeywords, keywords, "restoring net event keywords");
+            _keywordsPrevious = null;
+        }
+
+        if (_collectPrevious is { } collect)
+        {
+            SetOptionLocked(EngineOptionCollectNetEvents, collect, "restoring net event collection");
+            _collectPrevious = null;
+        }
+
+        FwpmEngineClose0(_eventEngine);
+        _eventEngine = IntPtr.Zero;
+        _dropCallback = null;
+        _onDrop = null;
+    }
+
+    // Engine callback: reads the destination out of the event header and hands it over. Anything unexpected is
+    // dropped silently - this runs on an engine thread, and an exception crossing back into it takes the process.
+    private void OnNetEvent(IntPtr context, IntPtr netEvent)
+    {
+        try
+        {
+            var sink = _onDrop;
+            if (sink is null || netEvent == IntPtr.Zero)
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref _dropEvents);
+            var version = Marshal.ReadInt32(netEvent, HeaderIpVersionOffset);
+            var app = ReadAppId(netEvent);
+            if (version == IpVersionV4)
+            {
+                var value = (uint)Marshal.ReadInt32(netEvent, HeaderRemoteAddressOffset);
+                if (value != 0)
+                {
+                    sink(new IPAddress(new[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value }), app);
+                }
+
+                return;
+            }
+
+            if (version == IpVersionV6)
+            {
+                var raw = new byte[16];
+                Marshal.Copy(netEvent + HeaderRemoteAddressOffset, raw, 0, raw.Length);
+                sink(new IPAddress(raw), app);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "firewall: drop event ignored");
+        }
+    }
+
+    // Image path the dropped packet belonged to, as the NT device path the engine reports. Absent on events the
+    // engine could not attribute.
+    private static string? ReadAppId(IntPtr netEvent)
+    {
+        var flags = (uint)Marshal.ReadInt32(netEvent, HeaderFlagsOffset);
+        if ((flags & HeaderFlagAppIdSet) == 0)
+        {
+            return null;
+        }
+
+        var size = (uint)Marshal.ReadInt32(netEvent, HeaderAppIdSizeOffset);
+        var data = Marshal.ReadIntPtr(netEvent, HeaderAppIdDataOffset);
+        if (data == IntPtr.Zero || size < sizeof(char) || size > MaxAppIdBytes)
+        {
+            return null;
+        }
+
+        return Marshal.PtrToStringUni(data, (int)(size / sizeof(char)))?.TrimEnd('\0');
+    }
+
+    /// <summary>
+    /// Whether classify drops are being reported, and how many arrived.
+    /// </summary>
+    public (bool Watching, int Events) DropWatch
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return (_eventSubscription != IntPtr.Zero, Volatile.Read(ref _dropEvents));
+            }
+        }
+    }
+
+    /// <summary>
     /// Removes all kill-switch filters.
     /// </summary>
     public void Disable()
@@ -167,12 +387,15 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     private void DisableLocked()
     {
-        if (_engine != IntPtr.Zero)
+        if (_engine == IntPtr.Zero)
         {
-            FwpmEngineClose0(_engine);
-            _engine = IntPtr.Zero;
-            logger.LogInformation("kill-switch disabled");
+            return;
         }
+
+        CloseEventEngineLocked();
+        FwpmEngineClose0(_engine);
+        _engine = IntPtr.Zero;
+        logger.LogInformation("kill-switch disabled");
     }
 
     /// <inheritdoc/>
@@ -349,48 +572,6 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
     }
 
-    private void BlockList(IntPtr engine, IReadOnlyList<string> cidrs)
-    {
-        foreach (var cidr in cidrs)
-        {
-            try
-            {
-                BlockV4Cidr(engine, cidr);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "firewall: skipping block CIDR {Cidr}", cidr);
-            }
-        }
-    }
-
-    private void BlockV4Cidr(IntPtr engine, string cidr)
-    {
-        if (!TryParseV4Cidr(cidr, out var addr, out var mask))
-        {
-            logger.LogWarning("firewall: skipping invalid block CIDR {Cidr}", cidr);
-            return;
-        }
-
-        var maskPtr = Marshal.AllocHGlobal(2 * sizeof(uint)); // FWP_V4_ADDR_AND_MASK { UINT32 addr; UINT32 mask; }
-        try
-        {
-            Marshal.WriteInt32(maskPtr, 0, (int)addr);
-            Marshal.WriteInt32(maskPtr, sizeof(uint), (int)mask);
-            var cond = new[]
-            {
-                Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
-            };
-
-            Add(engine, LayerAleAuthConnectV4, WeightBlockList, ActionBlock, 0, cond, $"Block {cidr} (out)");
-            Add(engine, LayerAleAuthRecvAcceptV4, WeightBlockList, ActionBlock, 0, cond, $"Block {cidr} (in)");
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(maskPtr);
-        }
-    }
-
     private void PermitV4Cidr(IntPtr engine, string cidr)
     {
         if (!TryParseV4Cidr(cidr, out var addr, out var mask))
@@ -433,6 +614,19 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     /// </summary>
     public bool TryPermitHost(uint address, out ulong outId, out ulong inId, out int generation)
     {
+        return TryHostFilter(address, ActionPermit, WeightLan, "Permit direct host", out outId, out inId, out generation);
+    }
+
+    /// <summary>
+    /// Drops one host address at block-list weight, so it loses to no permit.
+    /// </summary>
+    public bool TryDropHost(uint address, out ulong outId, out ulong inId, out int generation)
+    {
+        return TryHostFilter(address, ActionBlock, WeightBlockList, "Block host", out outId, out inId, out generation);
+    }
+
+    private bool TryHostFilter(uint address, uint action, byte weight, string label, out ulong outId, out ulong inId, out int generation)
+    {
         outId = 0;
         inId = 0;
         lock (_gate)
@@ -453,13 +647,13 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                     Condition(CondIpRemoteAddress, MatchEqual, FwpV4AddrMask, (ulong)maskPtr),
                 };
 
-                if (AddRaw(_engine, LayerAleAuthConnectV4, WeightLan, ActionPermit, 0, cond, "Permit direct host (out)", out outId) != 0)
+                if (AddRaw(_engine, LayerAleAuthConnectV4, weight, action, 0, cond, $"{label} (out)", out outId) != 0)
                 {
                     outId = 0;
                     return false;
                 }
 
-                if (AddRaw(_engine, LayerAleAuthRecvAcceptV4, WeightLan, ActionPermit, 0, cond, "Permit direct host (in)", out inId) != 0)
+                if (AddRaw(_engine, LayerAleAuthRecvAcceptV4, weight, action, 0, cond, $"{label} (in)", out inId) != 0)
                 {
                     DeleteByIdLocked(outId);
                     outId = 0;
@@ -724,6 +918,23 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     private const uint MatchEqual = 0;
     private const uint MatchFlagsAllSet = 6;
 
+    // FWPM_ENGINE_OPTION: event collection, then the keyword filter that narrows it.
+    private const uint EngineOptionCollectNetEvents = 0;
+    private const uint EngineOptionNetEventMatchAnyKeywords = 1;
+    private const uint NetEventKeywordClassifyDrop = 0x00000001;
+
+    // FWPM_NET_EVENT_HEADER3 (x64): timeStamp 0, flags 8, ipVersion 12, ipProtocol 16, localAddr 20, remoteAddr 36.
+    private const int HeaderIpVersionOffset = 12;
+    private const int HeaderRemoteAddressOffset = 36;
+    private const int HeaderFlagsOffset = 8;
+    private const int HeaderAppIdSizeOffset = 64;
+    private const int HeaderAppIdDataOffset = 72;
+    private const uint HeaderFlagAppIdSet = 0x00000004;
+    // Longest image path accepted from the event; anything above it is a layout mismatch, not a path.
+    private const uint MaxAppIdBytes = 4096;
+    private const int IpVersionV4 = 0;
+    private const int IpVersionV6 = 1;
+
     private const uint FilterFlagClearActionRight = 0x00000008;
     private const uint SessionFlagDynamic = 0x00000001;
     private const uint RpcCAuthnWinnt = 10;
@@ -765,6 +976,17 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         public Guid fieldKey;
         public uint matchType;
         public FWP_VALUE0 conditionValue; // FWP_CONDITION_VALUE0, identical layout
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate void NetEventCallback(IntPtr context, IntPtr netEvent);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FWPM_NET_EVENT_SUBSCRIPTION0
+    {
+        public IntPtr enumTemplate;
+        public uint flags;
+        public Guid sessionKey;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -844,6 +1066,18 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
     [LibraryImport("fwpuclnt.dll")]
     private static partial uint FwpmFreeMemory0(ref IntPtr p);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmEngineSetOption0(IntPtr engineHandle, uint option, ref FWP_VALUE0 newValue);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmEngineGetOption0(IntPtr engineHandle, uint option, out IntPtr value);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmNetEventSubscribe4(IntPtr engineHandle, ref FWPM_NET_EVENT_SUBSCRIPTION0 subscription, IntPtr callback, IntPtr context, out IntPtr eventsHandle);
+
+    [LibraryImport("fwpuclnt.dll")]
+    private static partial uint FwpmNetEventUnsubscribe0(IntPtr engineHandle, IntPtr eventsHandle);
 
     [LibraryImport("iphlpapi.dll")]
     private static partial uint ConvertInterfaceIndexToLuid(uint interfaceIndex, out ulong interfaceLuid);

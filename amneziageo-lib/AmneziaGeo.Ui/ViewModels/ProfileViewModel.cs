@@ -196,8 +196,8 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         }
     }
 
-    // Top menu: Profile / Import / Export. Import / Export open the reused bundle tools; Profile lands on the
-    // open (active / first) profile's editor.
+    // Top menu: Profile / Import / Export / View. Import / Export open the reused bundle tools; View opens the
+    // runtime configuration pane; Profile lands on the open (active / first) profile's editor.
     [RelayCommand]
     private void SelectProfileSection(string target)
     {
@@ -264,6 +264,8 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         {
             return;
         }
+
+        _host.ArmReconnectPrompt();
 
         if (OpenProfile is { IsDirty: true } profile)
         {

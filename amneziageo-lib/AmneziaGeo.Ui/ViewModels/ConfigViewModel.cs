@@ -760,6 +760,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private async Task SaveSection()
     {
+        _host.ArmReconnectPrompt();
         if (IsCreatingSectionConfig)
         {
             await SaveSectionConfig();

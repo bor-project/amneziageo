@@ -7,13 +7,21 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Talks to the AmneziaWG device over its UAPI named pipe.
 /// </summary>
-internal sealed class UapiClient(ILogger<UapiClient> logger)
+internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
 {
     // Documentation-reserved address (RFC 5737) an allowed-ips set never carries, so the probe below removes nothing.
     private const string ProbeCidr = "192.0.2.1/32";
 
+    // Quiet window a withdrawal waits for company, and the size that sends the batch without waiting.
+    private const int WithdrawWindowMs = 750;
+    private const int MaxPendingWithdrawals = 512;
+
     // Per-prefix removal support: 0 unknown, 1 supported, 2 unsupported.
     private int _removalSupport;
+
+    private readonly object _pendingLock = new();
+    private readonly Dictionary<(string Tunnel, string Peer), HashSet<string>> _pending = [];
+    private Timer? _withdrawTimer;
 
     /// <summary>
     /// Adds an allowed IP to the peer identified by its base64 public key.
@@ -53,6 +61,85 @@ internal sealed class UapiClient(ILogger<UapiClient> logger)
         }
 
         return Send(tunnelName, Request(peerPublicKeyBase64, cidrs, remove: true));
+    }
+
+    /// <summary>
+    /// Queues allowed IPs for removal. An eviction pass produces prefixes one at a time and each request is a pipe
+    /// round-trip, so they leave together after a quiet window or once the batch is large enough.
+    /// </summary>
+    public void QueueRemoveAllowedIps(string tunnelName, string peerPublicKeyBase64, IReadOnlyList<string> cidrs)
+    {
+        if (cidrs.Count == 0)
+        {
+            return;
+        }
+
+        var full = false;
+        lock (_pendingLock)
+        {
+            var key = (tunnelName, peerPublicKeyBase64);
+            if (!_pending.TryGetValue(key, out var set))
+            {
+                set = new HashSet<string>(StringComparer.Ordinal);
+                _pending[key] = set;
+            }
+
+            foreach (var cidr in cidrs)
+            {
+                set.Add(cidr);
+            }
+
+            full = set.Count >= MaxPendingWithdrawals;
+            if (!full)
+            {
+                _withdrawTimer ??= new Timer(_ => FlushWithdrawals(), null, Timeout.Infinite, Timeout.Infinite);
+                _withdrawTimer.Change(WithdrawWindowMs, Timeout.Infinite);
+            }
+        }
+
+        if (full)
+        {
+            FlushWithdrawals();
+        }
+    }
+
+    /// <summary>
+    /// Sends every queued removal now; called on teardown so nothing outlives the tunnel it belonged to.
+    /// </summary>
+    public void FlushWithdrawals()
+    {
+        var batches = default(KeyValuePair<(string Tunnel, string Peer), HashSet<string>>[]);
+        lock (_pendingLock)
+        {
+            if (_pending.Count == 0)
+            {
+                return;
+            }
+
+            batches = [.. _pending];
+            _pending.Clear();
+        }
+
+        // Off-lock: the pipe round-trip must not hold the queue a caller writes into.
+        foreach (var (key, set) in batches)
+        {
+            try
+            {
+                RemoveAllowedIps(key.Tunnel, key.Peer, [.. set]);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "uapi: batched allowed-ip removal for {Tunnel} failed", key.Tunnel);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops the withdrawal timer.
+    /// </summary>
+    public void Dispose()
+    {
+        _withdrawTimer?.Dispose();
     }
 
     // The leading minus is an AmneziaWG extension outside the documented protocol: an engine without it rejects the

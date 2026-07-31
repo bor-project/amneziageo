@@ -609,18 +609,13 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         UpdateStatus = Loc.Instance.Get("MainVm_UpdateLaunching");
         try
         {
-            // Full display (no /passive): the installer opens on its options step so the user reviews and
-            // confirms the update before anything is applied, instead of a silent auto-apply. UPDATEFLOW=1
-            // tells the BA this is the in-app update flow, so it lands straight on the update options.
-            // UseShellExecute lets the bundle elevate (UAC) once. LAUNCHAFTER=1 restarts the app once the
-            // update is applied (#155), honoured if the run ever falls back to non-interactive. SHOWCONSOLE=1
-            // reopens the settings console after the restart, since the update was started from there.
-            // UPDATEORIGIN carries the surface to return to; the BA records it only once the update applied, so
-            // a cancelled or declined install leaves no stale resume behind.
+            // Full display (no /passive) so the run shows its progress, but every choice is already made here and
+            // passed on the command line: the BA skips its options step and applies straight away. UseShellExecute
+            // lets the bundle elevate (UAC) once.
             Process.Start(new ProcessStartInfo(_downloadedSetupPath)
             {
                 UseShellExecute = true,
-                Arguments = $"UPDATEFLOW=1 LAUNCHAFTER=1 SHOWCONSOLE=1 UPDATEORIGIN={_host.CurrentSurface}",
+                Arguments = BuildInstallerArguments(),
             });
 
             InstallerLaunched = true;
@@ -634,6 +629,50 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         catch (Exception ex)
         {
             UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
+        }
+    }
+
+    // The installer command line for an in-app update. UPDATEFLOW=1 marks the flow and, with the options
+    // supplied here, tells the BA to run without its options step: the geo bases are left to the app's own
+    // scheduled check, the settings are never reset, each shortcut is asked for only where one already exists,
+    // and the connection is redialled only when the tunnel was up. UPDATEORIGIN / UPDATEVIEW carry where to
+    // return - the window on its current view, or the tray with a notification; the BA records them only once
+    // the update applied, so a cancelled or failed run leaves no stale resume behind.
+    private string BuildInstallerArguments()
+    {
+        var windowed = !string.Equals(_host.CurrentSurface, "none", StringComparison.Ordinal);
+        return string.Join(' ',
+            "UPDATEFLOW=1",
+            "LAUNCHAFTER=1",
+            "DOWNLOADLISTS=0",
+            "DELETECONFIG=0",
+            $"AUTOCONNECT={Flag(_host.Home.IsTunnelActive)}",
+            $"DESKTOPSHORTCUT={Flag(HasShortcut(Environment.SpecialFolder.CommonDesktopDirectory, string.Empty))}",
+            $"STARTMENUSHORTCUT={Flag(HasShortcut(Environment.SpecialFolder.CommonPrograms, "AmneziaGeo"))}",
+            $"SHOWCONSOLE={Flag(windowed)}",
+            $"UPDATEORIGIN={(windowed ? "ui" : "none")}",
+            $"UPDATEVIEW={_host.CurrentView}");
+    }
+
+    private static string Flag(bool value) => value ? "1" : "0";
+
+    // Whether the shortcut the installer lays down is on disk; both live in the all-users locations the MSI
+    // writes them to, so a shortcut the user removed stays removed by the update.
+    private static bool HasShortcut(Environment.SpecialFolder folder, string subFolder)
+    {
+        try
+        {
+            var root = Environment.GetFolderPath(folder);
+            if (string.IsNullOrEmpty(root))
+            {
+                return false;
+            }
+
+            return File.Exists(Path.Combine(root, subFolder, "AmneziaGeo.lnk"));
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
     }
 

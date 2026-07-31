@@ -27,7 +27,7 @@
           IconSourceFile="$(var.IconFile)"
           Compressed="yes">
 
-    <Variable Name="DELETECONFIG" Value="" />
+    <Variable Name="DELETECONFIG" Value="" bal:Overridable="yes" />
     <!-- #155: the in-app updater passes LAUNCHAFTER=1 so the BA restarts the app after a non-interactive
          update. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" bal:Overridable="yes" />
@@ -37,10 +37,16 @@
     <!-- The in-app updater passes SHOWCONSOLE=1 so the post-update launch reopens the settings console the
          update was started from, instead of the launcher. Default 0. -->
     <Variable Name="SHOWCONSOLE" Value="0" bal:Overridable="yes" />
-    <!-- The in-app updater passes UPDATEORIGIN=launcher|settings|none: the surface the update was started from.
-         The BA records it (only once the update actually applied) so the relaunch returns there. Empty by
-         default; an older sending build omits it and the BA falls back to the console. -->
+    <!-- The in-app updater passes UPDATEORIGIN=ui|none: whether the update was started from the window or from
+         the tray. The BA records it, with UPDATEVIEW (the view to reopen), only once the update actually
+         applied, so the relaunch returns there. Empty by default; an older sending build names the surface. -->
     <Variable Name="UPDATEORIGIN" Value="" bal:Overridable="yes" />
+    <Variable Name="UPDATEVIEW" Value="" bal:Overridable="yes" />
+    <!-- The in-app updater passes every option instead of asking: the geo databases and the post-update dial
+         (#188). DOWNLOADLISTS is empty by default, so an interactive run keeps its options step; a value on the
+         command line takes the run straight to applying. -->
+    <Variable Name="DOWNLOADLISTS" Value="" bal:Overridable="yes" />
+    <Variable Name="AUTOCONNECT" Value="0" bal:Overridable="yes" />
     <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
          per-user saved options; a command-line value wins. -->
     <Variable Name="DESKTOPSHORTCUT" Value="" bal:Overridable="yes" />
@@ -71,7 +77,7 @@
           UpgradeCode="A7E1C4F2-9B3D-4E6A-8C15-2F7D9A0B6E34"
           Compressed="yes">
 
-    <Variable Name="DELETECONFIG" Value="" />
+    <Variable Name="DELETECONFIG" Value="" bal:Overridable="yes" />
     <!-- #155: the in-app updater passes LAUNCHAFTER=1 so the BA restarts the app after a non-interactive
          update. Default 0; overridable from the command line. -->
     <Variable Name="LAUNCHAFTER" Value="0" bal:Overridable="yes" />
@@ -81,10 +87,16 @@
     <!-- The in-app updater passes SHOWCONSOLE=1 so the post-update launch reopens the settings console the
          update was started from, instead of the launcher. Default 0. -->
     <Variable Name="SHOWCONSOLE" Value="0" bal:Overridable="yes" />
-    <!-- The in-app updater passes UPDATEORIGIN=launcher|settings|none: the surface the update was started from.
-         The BA records it (only once the update actually applied) so the relaunch returns there. Empty by
-         default; an older sending build omits it and the BA falls back to the console. -->
+    <!-- The in-app updater passes UPDATEORIGIN=ui|none: whether the update was started from the window or from
+         the tray. The BA records it, with UPDATEVIEW (the view to reopen), only once the update actually
+         applied, so the relaunch returns there. Empty by default; an older sending build names the surface. -->
     <Variable Name="UPDATEORIGIN" Value="" bal:Overridable="yes" />
+    <Variable Name="UPDATEVIEW" Value="" bal:Overridable="yes" />
+    <!-- The in-app updater passes every option instead of asking: the geo databases and the post-update dial
+         (#188). DOWNLOADLISTS is empty by default, so an interactive run keeps its options step; a value on the
+         command line takes the run straight to applying. -->
+    <Variable Name="DOWNLOADLISTS" Value="" bal:Overridable="yes" />
+    <Variable Name="AUTOCONNECT" Value="0" bal:Overridable="yes" />
     <!-- #183: optional desktop / Start-menu shortcuts. Empty so the BA fills them from the checkboxes or the
          per-user saved options; a command-line value wins. -->
     <Variable Name="DESKTOPSHORTCUT" Value="" bal:Overridable="yes" />

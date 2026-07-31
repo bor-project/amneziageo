@@ -19,6 +19,11 @@ internal interface IRouteApplier
     bool TryPermit(uint address, out ulong outId, out ulong inId, out int generation);
 
     /// <summary>
+    /// Drops one host address, reporting the filter ids and their generation.
+    /// </summary>
+    bool TryDrop(uint address, out ulong outId, out ulong inId, out int generation);
+
+    /// <summary>
     /// Adds a host route out the physical path, reporting the interface it landed on.
     /// </summary>
     bool TryAddRoute(IPAddress address, out uint interfaceIndex);
@@ -27,6 +32,16 @@ internal interface IRouteApplier
     /// Removes a host route.
     /// </summary>
     void RemoveRoute(IPAddress address, uint interfaceIndex);
+
+    /// <summary>
+    /// Routes one address into the tunnel and advertises it to the peer.
+    /// </summary>
+    bool TryTunnel(IPAddress address);
+
+    /// <summary>
+    /// Withdraws tunnelled addresses in one batch: their routes now, their advertisements with the next batch.
+    /// </summary>
+    void RemoveTunnel(IReadOnlyCollection<IPAddress> addresses);
 
     /// <summary>
     /// Deletes host filters in one batch.

@@ -16,7 +16,7 @@ internal sealed class SettingsStore(IStateStore store)
         var values = await store.GetSettingsAsync(ct);
         return new AppSettings
         {
-            RefreshSeconds = ReadInt(values, "refresh-seconds", defaults.RefreshSeconds),
+            RouteTtlSeconds = ReadInt(values, AppSettings.RouteTtlKey, defaults.RouteTtlSeconds),
             ConnectTimeoutSeconds = ReadInt(values, "connect-timeout-seconds", defaults.ConnectTimeoutSeconds),
             DeadThresholdSeconds = ReadInt(values, "dead-threshold-seconds", defaults.DeadThresholdSeconds),
             // Update URL is baked into the build; a stale persisted row must not shadow it.
@@ -41,9 +41,23 @@ internal sealed class SettingsStore(IStateStore store)
     /// </summary>
     public async Task<bool> SetAsync(string key, string value, CancellationToken ct = default)
     {
+        if (key == AppSettings.RouteTtlKey)
+        {
+            // One rule for the editor and the store: a lifetime the UI accepts is one this persists.
+            if (!AmneziaGeo.Ipc.SettingKeys.TryParseRouteTtl(value, out var ttl))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
+            return true;
+        }
+
         if (IntKeys.Contains(key))
         {
-            if (!int.TryParse(value, out var parsed) || parsed <= 0)
+            // Zero is a real setting only where it means "hold nothing"; elsewhere it would stall a loop.
+            var floor = ZeroableIntKeys.Contains(key) ? 0 : 1;
+            if (!int.TryParse(value, out var parsed) || parsed < floor)
             {
                 return false;
             }
@@ -96,7 +110,10 @@ internal sealed class SettingsStore(IStateStore store)
     }
 
     private static readonly string[] IntKeys =
-        ["refresh-seconds", "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds"];
+        [AppSettings.RouteTtlKey, "connect-timeout-seconds", "dead-threshold-seconds", "geo-check-interval-hours", "geo-cache-validity-hours", "periodic-reconnect-interval-seconds"];
+
+    // Integer settings that accept 0.
+    private static readonly string[] ZeroableIntKeys = [AppSettings.RouteTtlKey];
 
     private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease"];
 

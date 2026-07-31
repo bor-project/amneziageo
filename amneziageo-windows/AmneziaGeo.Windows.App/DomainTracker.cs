@@ -24,14 +24,17 @@ internal sealed class DomainTracker(
     string peerPublicKey,
     IReadOnlyList<string> staticRoutes,
     IReadOnlyList<string> listRoutes,
-    int refreshSeconds,
+    int routeTtlSeconds,
     bool stripV6,
+    bool lazyRanges,
     RoutingCache? routing = null)
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
-    // App-discovered remote IPs, unioned into allowed-ips so the watcher and DNS path share one authority.
-    private readonly HashSet<string> _appIps = [];
+    // App-discovered remote IPs, unioned into allowed-ips so the watcher and DNS path share one authority. Each
+    // carries its last contact and ages on the same idle window as a name: an address nobody talks to is reclaimed
+    // whatever put it here.
+    private readonly Dictionary<string, long> _appIps = [];
 
     // App-promotion hint cache (non-authoritative): learned name->IPs and its reverse index, plus the set of
     // app-promoted domains. Feeds route-before-answer for a matched app's repeat domains; stale entries are
@@ -47,6 +50,27 @@ internal sealed class DomainTracker(
     // The reconcilable subset: ranges that came from the routing list. Only these are removed when a list drops
     // them - infrastructure routes (in _staticRoutes but not here, e.g. the tunnel resolver /32s) are never touched.
     private readonly HashSet<string> _listRoutes = new(stripV6 ? listRoutes.Where(c => !c.Contains(':')) : listRoutes, StringComparer.Ordinal);
+
+    // Last time each tracked domain was resolved or served; drives eviction on the same idle window the address
+    // cache uses, so a name nobody visits stops holding routes.
+    private readonly Dictionary<string, long> _touched = new(StringComparer.Ordinal);
+    private long _idleTtlMs = Math.Max(routeTtlSeconds, 0) * 1000L;
+    // Sweep cadence follows the window: a short lifetime is checked more often so it is actually honoured.
+    private int _evictIntervalMs = EvictInterval(routeTtlSeconds);
+
+    private static int EvictInterval(int seconds)
+    {
+        return (int)Math.Clamp(Math.Max(seconds, 0) * 1000L / 5, 5_000, 30_000);
+    }
+
+    /// <summary>
+    /// Applies an idle window to the domains already tracked; the next sweep drops whatever it now covers.
+    /// </summary>
+    public void SetTtl(int seconds)
+    {
+        Volatile.Write(ref _idleTtlMs, Math.Max(seconds, 0) * 1000L);
+        Volatile.Write(ref _evictIntervalMs, EvictInterval(seconds));
+    }
 
     // Baseline for the poll signal: list materialization generation.
     private long? _knownGeneration;
@@ -82,6 +106,53 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
+    /// Whether any tracked domain still holds this address.
+    /// </summary>
+    public bool Holds(IPAddress address)
+    {
+        var text = address.ToString();
+        lock (_lock)
+        {
+            foreach (var pair in _current)
+            {
+                if (pair.Value.Contains(text))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Domains tracked right now, each with the addresses whose routes are installed for it.
+    /// </summary>
+    public IReadOnlyList<(string Domain, IReadOnlyList<string> Ips, int IdleSeconds, int TtlSeconds)> Snapshot()
+    {
+        var now = Environment.TickCount64;
+        var ttl = (int)(Volatile.Read(ref _idleTtlMs) / 1000);
+        lock (_lock)
+        {
+            var result = new List<(string, IReadOnlyList<string>, int, int)>(_current.Count);
+            foreach (var pair in _current)
+            {
+                var touched = LastContactLocked(pair.Key, _touched.TryGetValue(pair.Key, out var last) ? last : now);
+                var idle = (int)Math.Clamp((now - touched) / 1000, 0, ttl);
+                result.Add((pair.Key, [.. pair.Value], idle, ttl));
+            }
+
+            return result;
+        }
+    }
+
+    // Marks a domain as in use; assumes _lock held.
+    private void TouchLocked(string key)
+    {
+        _touched[key] = Environment.TickCount64;
+    }
+
+    /// <summary>
     /// True when a domain's resolution is already known.
     /// </summary>
     public bool IsTracked(string domain)
@@ -109,6 +180,7 @@ internal sealed class DomainTracker(
                 return null;
             }
 
+            TouchLocked(key);
             var v4 = new List<string>();
             foreach (var ip in set)
             {
@@ -182,6 +254,7 @@ internal sealed class DomainTracker(
             var union = new HashSet<string>(old);
             union.UnionWith(added);
             _current[key] = union;
+            TouchLocked(key);
 
             logger.LogInformation("resolved {Domain} -> {Ips}", key, string.Join(", ", union));
             if (RouteLog.Enabled)
@@ -202,6 +275,58 @@ internal sealed class DomainTracker(
         // Advertise off-lock: the UAPI pipe round-trip must not block concurrent resolves or serve-known lookups.
         // Route-before-answer still holds - the caller waits here before serving, just not while holding _lock.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        Adopt(addedCidrs);
+    }
+
+    // Hands the routed addresses to the cache as its own, so the two never install or reclaim the same address.
+    private void Adopt(IReadOnlyList<string> cidrs)
+    {
+        if (routing is not null && Hosts(cidrs) is { Count: > 0 } addresses)
+        {
+            routing.Adopt(addresses);
+        }
+    }
+
+    // Returns evicted addresses to the cache and to the flow tracker, so a later contact decides and routes them
+    // again instead of being skipped as already handled.
+    private void Forget(IReadOnlyList<string> cidrs)
+    {
+        if (Hosts(cidrs) is not { Count: > 0 } addresses)
+        {
+            return;
+        }
+
+        routing?.Forget(addresses);
+        if (_onForgotten is { } sink)
+        {
+            sink([.. addresses.Select(address => address.ToString())]);
+        }
+    }
+
+    // Drops the flow tracker's record of a destination it already handled.
+    private volatile Action<IReadOnlyList<string>>? _onForgotten;
+
+    /// <summary>
+    /// Attaches the sink told which destinations were released, so their dedupe records go with them.
+    /// </summary>
+    public void SetForgetSink(Action<IReadOnlyList<string>> sink)
+    {
+        _onForgotten = sink;
+    }
+
+    private static List<IPAddress> Hosts(IReadOnlyList<string> cidrs)
+    {
+        var addresses = new List<IPAddress>(cidrs.Count);
+        foreach (var cidr in cidrs)
+        {
+            var slash = cidr.IndexOf('/');
+            if (slash > 0 && IPAddress.TryParse(cidr[..slash], out var parsed))
+            {
+                addresses.Add(parsed);
+            }
+        }
+
+        return addresses;
     }
 
     /// <summary>
@@ -273,6 +398,7 @@ internal sealed class DomainTracker(
             }
 
             _current[key] = next;
+            TouchLocked(key);
 
             // Evict old IPs that dropped out and are no longer referenced by any other domain or the app set.
             List<IPAddress>? stale = null;
@@ -312,7 +438,9 @@ internal sealed class DomainTracker(
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
         // Withdraw the evicted ones too: their routes are gone, and an allowed-ip left behind keeps accepting
         // inbound packets from that address for the rest of the session.
-        uapi.RemoveAllowedIps(tunnelName, peerPublicKey, staleCidrs);
+        uapi.QueueRemoveAllowedIps(tunnelName, peerPublicKey, staleCidrs);
+        Adopt(addedCidrs);
+        Forget(staleCidrs);
     }
 
     /// <summary>
@@ -333,6 +461,7 @@ internal sealed class DomainTracker(
     /// </summary>
     public void Remove(string domain)
     {
+        var staleCidrs = new List<string>();
         lock (_lock)
         {
             var key = domain.TrimEnd('.').ToLowerInvariant();
@@ -352,6 +481,7 @@ internal sealed class DomainTracker(
             }
 
             _current.Remove(key);
+            _touched.Remove(key);
 
             // Forget the persisted resolution too (domain left the routing lists).
             EnqueuePersist(() => store.DeleteDomainResolutionAsync(tunnelName, key));
@@ -359,8 +489,8 @@ internal sealed class DomainTracker(
             var index = EnsureIndex();
             if (index is not null && stale is not null)
             {
-                // Drop only the stale OS routes (O(stale)); the engine allowed-ips is left as a harmless superset.
                 routes.RemoveTunnelRoutes(stale, index.Value);
+                staleCidrs.AddRange(stale.Select(Cidr));
             }
 
             logger.LogInformation("untracked {Domain}: left routing lists (-{Count} route(s))", key, stale?.Count ?? 0);
@@ -369,6 +499,10 @@ internal sealed class DomainTracker(
                 RouteLog.Note($"untrack {key} (-{stale?.Count ?? 0} route(s))");
             }
         }
+
+        // Off-lock, and withdrawn from the engine too: a name that left the lists must not keep an advertisement.
+        uapi.QueueRemoveAllowedIps(tunnelName, peerPublicKey, staleCidrs);
+        Forget(staleCidrs);
     }
 
     /// <summary>
@@ -481,39 +615,18 @@ internal sealed class DomainTracker(
                 logger.LogDebug(ex, "initial active routing list id lookup failed for {Tunnel}", tunnelName);
             }
 
-            // Leave _knownGeneration null so the first poll reconciles geoip deltas and seeds the matcher.
-            // Cap at 5s so a live routing-list edit lands quickly without a reconnect.
-            var pollInterval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 5), 1, 60));
+            // A rule change is announced by the agent over the runtime pipe; the only work left on this loop is
+            // reclaiming names nobody visits.
             while (true)
             {
-                await Task.Delay(pollInterval, ct);
-
+                await Task.Delay(Volatile.Read(ref _evictIntervalMs), ct);
                 try
                 {
-                    // Cheap generation probe first; pull (and deserialize) the full materialization only on change.
-                    var generation = await store.GetActiveRoutingListGenerationAsync(tunnelName);
-                    if (generation is not null && generation != _knownGeneration)
-                    {
-                        var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName);
-                        if (current is not null)
-                        {
-                            ReconcileStaticRoutes(current.Routes);
-                            // Tag persisted rows with the new list id BEFORE the matcher rebuild: a domain newly
-                            // matched under the new list must persist with the correct list_id, not the previous one.
-                            lock (_lock)
-                            {
-                                _activeListId = current.ListId;
-                            }
-                            // Rebuild the matcher and prune domains that left the lists. Newly listed domains are
-                            // NOT pre-resolved - they resolve on demand when first queried.
-                            _onGeoDomainsChanged?.Invoke(current.Domains, ct);
-                            _knownGeneration = current.Generation;
-                        }
-                    }
+                    EvictIdle();
                 }
                 catch (Exception ex)
                 {
-                    logger.LogDebug(ex, "geo list signal poll failed for {Tunnel}", tunnelName);
+                    logger.LogDebug(ex, "domain eviction failed for {Tunnel}", tunnelName);
                 }
             }
         }
@@ -527,6 +640,125 @@ internal sealed class DomainTracker(
             _warmStart.TrySetResult();
             logger.LogError(ex, "domain tracker for {Tunnel} stopped", tunnelName);
         }
+    }
+
+    // Last contact with a name: its own resolutions, or traffic to any address it holds. Without the second the
+    // name would be evicted out from under a live flow whenever the resolver answered from its own cache.
+    private long LastContactLocked(string domain, long resolved)
+    {
+        if (!_current.TryGetValue(domain, out var ips) || routing?.LastContact(ips) is not { } contact)
+        {
+            return resolved;
+        }
+
+        return Math.Max(resolved, contact);
+    }
+
+    // Drops what nobody has touched for the idle window - names and app destinations alike - releasing their /32
+    // routes and allowed-ips, while the persisted resolution stays as the hydration cache the next query reads.
+    private void EvictIdle()
+    {
+        var now = Environment.TickCount64;
+        var idleTtlMs = Volatile.Read(ref _idleTtlMs);
+        var domains = new List<string>();
+        var apps = new List<string>();
+        var released = new HashSet<string>(StringComparer.Ordinal);
+        List<IPAddress>? stale = null;
+        lock (_lock)
+        {
+            foreach (var pair in _touched)
+            {
+                if (now - LastContactLocked(pair.Key, pair.Value) > idleTtlMs)
+                {
+                    domains.Add(pair.Key);
+                }
+            }
+
+            foreach (var key in domains)
+            {
+                _touched.Remove(key);
+                if (_current.Remove(key, out var ips))
+                {
+                    released.UnionWith(ips);
+                }
+            }
+
+            // An app destination ages like a name: its clock is the traffic to it, whatever routed it here.
+            foreach (var pair in _appIps)
+            {
+                if (now - LastTrafficLocked(pair.Key, pair.Value) > idleTtlMs)
+                {
+                    apps.Add(pair.Key);
+                }
+            }
+
+            foreach (var ip in apps)
+            {
+                _appIps.Remove(ip);
+                released.Add(ip);
+            }
+
+            foreach (var ip in released)
+            {
+                if (!IsStillReferenced(ip, string.Empty))
+                {
+                    (stale ??= []).Add(IPAddress.Parse(ip));
+                }
+            }
+        }
+
+        if (stale is null)
+        {
+            return;
+        }
+
+        var index = EnsureIndex();
+        if (index is not null)
+        {
+            routes.RemoveTunnelRoutes(stale, index.Value);
+        }
+
+        var staleCidrs = stale.Select(Cidr).ToList();
+        uapi.QueueRemoveAllowedIps(tunnelName, peerPublicKey, staleCidrs);
+        Forget(staleCidrs);
+        logger.LogInformation("evicted {Domains} idle domain(s), {Apps} idle app destination(s), {Routes} route(s) reclaimed",
+            domains.Count, apps.Count, stale.Count);
+    }
+
+    // Last traffic to a single address, as the routing cache saw it; without it an app destination would age on the
+    // moment it was routed and leave in the middle of a live transfer.
+    private long LastTrafficLocked(string ip, long routed)
+    {
+        return routing?.LastContact([ip]) is { } contact ? Math.Max(routed, contact) : routed;
+    }
+
+    /// <summary>
+    /// Applies a routing list the agent just persisted: retags persisted rows and rebuilds the domain matcher.
+    /// Newly listed domains are not pre-resolved - they resolve when first queried.
+    /// </summary>
+    public void ApplyList(AmneziaGeo.Decl.ActiveRoutingListMaterialization current, CancellationToken ct)
+    {
+        if (current.Generation == _knownGeneration)
+        {
+            return;
+        }
+
+        // With lazy ranges nothing is materialized up front, so there is no static set to reconcile - the routing
+        // cache re-decides each destination against the new rules.
+        if (!lazyRanges)
+        {
+            ReconcileStaticRoutes(current.Routes);
+        }
+
+        // Retag before the matcher rebuild: a domain newly matched under the new list must persist with the
+        // correct list_id, not the previous one.
+        lock (_lock)
+        {
+            _activeListId = current.ListId;
+        }
+
+        _onGeoDomainsChanged?.Invoke(current.Domains, ct);
+        _knownGeneration = current.Generation;
     }
 
     /// <summary>
@@ -543,6 +775,7 @@ internal sealed class DomainTracker(
 
         // Advertise off-lock so the pipe round-trip never blocks the DNS resolve / serve-known path on _lock.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        Adopt(addedCidrs);
         return allHandled;
     }
 
@@ -558,6 +791,7 @@ internal sealed class DomainTracker(
         }
 
         var allHandled = true;
+        var now = Environment.TickCount64;
         foreach (var ip in ips)
         {
             // v4-only tunnel: never route IPv6.
@@ -566,8 +800,9 @@ internal sealed class DomainTracker(
                 continue;
             }
 
-            if (_appIps.Contains(ip))
+            if (_appIps.ContainsKey(ip))
             {
+                _appIps[ip] = now;
                 continue;
             }
 
@@ -589,7 +824,7 @@ internal sealed class DomainTracker(
             logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
             if (ok)
             {
-                _appIps.Add(ip);
+                _appIps[ip] = now;
                 addedCidrs.Add(Cidr(parsed));
             }
             else
@@ -636,6 +871,7 @@ internal sealed class DomainTracker(
 
         // Advertise off-lock (empty no-op unless the domain is app-promoted).
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        Adopt(addedCidrs);
     }
 
     /// <summary>
@@ -688,6 +924,7 @@ internal sealed class DomainTracker(
 
         // Advertise off-lock: the pipe round-trip must not hold the resolve path.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
+        Adopt(addedCidrs);
         if (promoted is not null)
         {
             foreach (var name in promoted)
@@ -713,7 +950,7 @@ internal sealed class DomainTracker(
     // True when an IP is still held by another tracked domain or _appIps, excluding the just-applied set.
     private bool IsStillReferenced(string ip, string excludeKey)
     {
-        if (_appIps.Contains(ip))
+        if (_appIps.ContainsKey(ip))
         {
             return true;
         }

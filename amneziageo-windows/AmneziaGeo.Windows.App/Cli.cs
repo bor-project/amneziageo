@@ -305,7 +305,7 @@ internal sealed class Cli(
     private async Task<int> ShowSettingsAsync()
     {
         var settings = await settingsStore.LoadAsync();
-        Console.WriteLine($"refresh-seconds\t{settings.RefreshSeconds}");
+        Console.WriteLine($"route-ttl-seconds\t{settings.RouteTtlSeconds}");
         Console.WriteLine($"connect-timeout-seconds\t{settings.ConnectTimeoutSeconds}");
         Console.WriteLine($"dead-threshold-seconds\t{settings.DeadThresholdSeconds}");
         return 0;

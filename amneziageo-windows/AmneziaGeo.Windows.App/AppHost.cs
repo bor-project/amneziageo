@@ -88,7 +88,9 @@ internal static class AppHost
         services.AddSingleton<GeoUpdateChecker>();
         services.AddSingleton<UpdateChecker>();
         services.AddSingleton<UpdateState>();
+        services.AddSingleton<LiveSession>();
         services.AddSingleton<TunnelRunner>();
+        services.AddSingleton<RuntimeInspector>();
         services.AddSingleton<ProfileRunner>();
         services.AddSingleton<BackupService>();
         services.AddSingleton<DiagnosticsCollector>();

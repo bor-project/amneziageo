@@ -129,10 +129,10 @@ internal static class DesignData
         });
         vm.Sources.HasSources = true;
 
-        // --- Logs ---
+        // --- Diagnostics ---
         // The viewer text is seeded directly (design time has no agent to read the DB from).
-        vm.Logs.LogText = SampleLog;
-        vm.Logs.HasLogs = true;
+        vm.Diagnostics.Logs.LogText = SampleLog;
+        vm.Diagnostics.Logs.HasLogs = true;
 
         // --- Open the work profile: renders the Profile editor + the Config manage/transport editors. This
         // sets OpenConfig = "de-frankfurt", which builds a live ConfigTransport (from wsConfig) and a stray

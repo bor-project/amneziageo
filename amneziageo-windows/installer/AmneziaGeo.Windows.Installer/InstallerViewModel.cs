@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using System.Windows.Threading;
 using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Windows.Installer;
@@ -12,6 +13,22 @@ public enum Phase
     Ready,
     Applying,
     Done,
+}
+
+/// <summary>
+/// Step of the apply the engine is on. Each one runs the bar from zero and is named on the progress screen.
+/// </summary>
+public enum ApplyStep
+{
+    Preparing,
+    Extracting,
+    RemovingPrevious,
+    Removing,
+    StoppingService,
+    CopyingFiles,
+    StartingService,
+    Registering,
+    Finishing,
 }
 
 /// <summary>
@@ -44,11 +61,32 @@ public sealed class InstallerViewModel : ObservableObject
     private readonly Action<InstallerAction> _invoke;
     private readonly Action _close;
 
+    // One bar, run again for every step of the apply: it fills as the step works, is carried to the end when
+    // the step is done, and starts over from zero on the next one. A step only reports a real percentage while
+    // a package is being unpacked; the rest is a curve that keeps moving and eases off, so a long step reads as
+    // work rather than a stalled bar. A step is held for a moment before giving way, so the run of one-tick MSI
+    // actions collapses into the one that follows instead of flashing past.
+    private const double TickMs = 33;
+    private const int MinStepTicks = 12;
+    private const double TimeWork = 0.016;
+    private const double EngineWork = 0.02;
+
+    private readonly DispatcherTimer _bar = new() { Interval = TimeSpan.FromMilliseconds(TickMs) };
+    private double _shown;
+    private double _work;
+    private int _target = -1;
+    private int _stepTicks;
+    private int _enginePercent;
+    private bool _closing;
+    private ApplyStep _step;
+    private ApplyStep? _nextStep;
+
     private Phase _phase = Phase.Detecting;
     private InstallState _state = InstallState.Unknown;
     private InstallerAction _action;
     private string _subText = Loc.Instance.Get("InstallerVm_CheckingInstall");
     private string _versionText = string.Empty;
+    private string _stepText = string.Empty;
     private int _progress;
     private bool _success;
     private bool _downloadLists = true;
@@ -69,6 +107,7 @@ public sealed class InstallerViewModel : ObservableObject
     {
         _invoke = invoke;
         _close = close;
+        _bar.Tick += (_, _) => DrawBar();
 
         // Seed from the per-user saved options so choices carry across installs (#183).
         var opts = InstallerOptions.Load();
@@ -133,6 +172,23 @@ public sealed class InstallerViewModel : ObservableObject
         get => _progress;
         private set => Set(ref _progress, value);
     }
+
+    /// <summary>
+    /// The step of the apply, under the status line.
+    /// </summary>
+    public string StepText
+    {
+        get => _stepText;
+        private set
+        {
+            if (Set(ref _stepText, value))
+            {
+                Raise(nameof(HasStepText));
+            }
+        }
+    }
+
+    public bool HasStepText => !string.IsNullOrEmpty(StepText);
 
     public Phase Phase
     {
@@ -435,7 +491,7 @@ public sealed class InstallerViewModel : ObservableObject
     public void BeginApply(InstallerAction action)
     {
         _action = action;
-        Progress = 0;
+        Rewind();
         IsIndeterminate = false;
         SubText = action switch
         {
@@ -444,7 +500,10 @@ public sealed class InstallerViewModel : ObservableObject
             InstallerAction.Update => Loc.Instance.Get("InstallerVm_Updating"),
             _ => Loc.Instance.Get("InstallerVm_Installing"),
         };
+        _step = ApplyStep.Preparing;
+        StepText = StepLabel(_step);
         Phase = Phase.Applying;
+        _bar.Start();
     }
 
     /// <summary>
@@ -452,19 +511,65 @@ public sealed class InstallerViewModel : ObservableObject
     /// </summary>
     public void BeginRemoveNewer()
     {
-        Progress = 0;
+        _bar.Stop();
+        Rewind();
+        StepText = string.Empty;
         SubText = Loc.Instance.Get("InstallerVm_RemovingNewer");
         IsIndeterminate = true;
         Phase = Phase.Applying;
     }
 
-    public void ReportProgress(int percent)
+    /// <summary>
+    /// Moves the bar on to a step of the apply. The step in progress is carried to the end first, and one that
+    /// only just started is given its moment before it gives way.
+    /// </summary>
+    public void BeginStep(ApplyStep step)
     {
-        if (percent is >= 0 and <= 100)
+        if (Phase != Phase.Applying)
         {
-            Progress = percent;
+            return;
+        }
+
+        if (step == _step)
+        {
+            _nextStep = null;
+            return;
+        }
+
+        _nextStep = step;
+        CloseStep();
+    }
+
+    /// <summary>
+    /// Reports a step that knows its own size, as a percentage of itself.
+    /// </summary>
+    public void ReportStep(ApplyStep step, int percent)
+    {
+        BeginStep(step);
+        if (step == _step && percent is >= 0 and <= 100)
+        {
+            _target = percent;
         }
     }
+
+    /// <summary>
+    /// Feeds the engine's own percentage for the running package into the current step, so a step that moves
+    /// files fills faster than one that merely takes time.
+    /// </summary>
+    public void ReportEngineProgress(int packagePercent)
+    {
+        var advanced = packagePercent - _enginePercent;
+        _enginePercent = packagePercent;
+        if (advanced > 0)
+        {
+            _work += advanced * EngineWork;
+        }
+    }
+
+    /// <summary>
+    /// Starts the engine percentage over for a new package.
+    /// </summary>
+    public void ResetEngineProgress() => _enginePercent = 0;
 
     /// <summary>
     /// Switch to the checking-for-updates view.
@@ -472,6 +577,7 @@ public sealed class InstallerViewModel : ObservableObject
     public void BeginGeoCheck()
     {
         SubText = Loc.Instance.Get("InstallerVm_CheckingGeoUpdates");
+        StepText = string.Empty;
         IsIndeterminate = true;
     }
 
@@ -481,8 +587,9 @@ public sealed class InstallerViewModel : ObservableObject
     public void BeginGeoDownload()
     {
         SubText = Loc.Instance.Get("InstallerVm_DownloadingGeo");
-        Progress = 0;
+        Rewind();
         IsIndeterminate = true;
+        _bar.Start();
     }
 
     /// <summary>
@@ -490,11 +597,91 @@ public sealed class InstallerViewModel : ObservableObject
     /// </summary>
     public void ReportGeoProgress(int percent)
     {
-        if (percent is >= 0 and <= 100)
+        if (percent is < 0 or > 100)
         {
-            IsIndeterminate = false;
-            Progress = percent;
+            return;
         }
+
+        IsIndeterminate = false;
+        _target = percent;
+        _bar.Start();
+    }
+
+    private static string StepLabel(ApplyStep step) => step switch
+    {
+        ApplyStep.Extracting => Loc.Instance.Get("InstallerVm_StepExtracting"),
+        ApplyStep.RemovingPrevious => Loc.Instance.Get("InstallerVm_StepRemovingPrevious"),
+        ApplyStep.Removing => Loc.Instance.Get("InstallerVm_StepRemoving"),
+        ApplyStep.StoppingService => Loc.Instance.Get("InstallerVm_StepStoppingService"),
+        ApplyStep.CopyingFiles => Loc.Instance.Get("InstallerVm_StepCopyingFiles"),
+        ApplyStep.StartingService => Loc.Instance.Get("InstallerVm_StepStartingService"),
+        ApplyStep.Registering => Loc.Instance.Get("InstallerVm_StepRegistering"),
+        ApplyStep.Finishing => Loc.Instance.Get("InstallerVm_StepFinishing"),
+        _ => Loc.Instance.Get("InstallerVm_StepPreparing"),
+    };
+
+    // Lets the waiting step in once the current one has been shown long enough.
+    private void CloseStep()
+    {
+        if (_nextStep is not null && !_closing && _stepTicks >= MinStepTicks)
+        {
+            _closing = true;
+        }
+    }
+
+    // Hands the bar over to the waiting step, from zero.
+    private void StartStep()
+    {
+        var next = _nextStep;
+        Rewind();
+        if (next is { } step)
+        {
+            _step = step;
+            StepText = StepLabel(step);
+        }
+    }
+
+    private void Rewind()
+    {
+        _shown = 0;
+        _work = 0;
+        _target = -1;
+        _stepTicks = 0;
+        _closing = false;
+        _nextStep = null;
+        Progress = 0;
+    }
+
+    // One frame of the bar: run out a step that is done, close a fifth of the gap to a reported percentage, or
+    // follow the curve where the step reports nothing.
+    private void DrawBar()
+    {
+        _stepTicks++;
+        CloseStep();
+
+        if (_closing)
+        {
+            _shown = Math.Min(100, _shown + Math.Max(4, (100 - _shown) * 0.5));
+            Progress = (int)_shown;
+            if (_shown >= 99.5)
+            {
+                StartStep();
+            }
+
+            return;
+        }
+
+        if (_target >= 0)
+        {
+            _shown = Math.Min(_target, _shown + Math.Max(0.4, (_target - _shown) * 0.18));
+        }
+        else
+        {
+            _work += TimeWork;
+            _shown = 100 * (1 - Math.Exp(-_work));
+        }
+
+        Progress = (int)_shown;
     }
 
     /// <summary>
@@ -502,8 +689,10 @@ public sealed class InstallerViewModel : ObservableObject
     /// </summary>
     public void Complete(bool success, string message)
     {
+        _bar.Stop();
         _success = success;
         SubText = message;
+        StepText = string.Empty;
         IsIndeterminate = false;
         Phase = Phase.Done;
         Raise(nameof(DoneSucceeded));

@@ -17,6 +17,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private readonly IAgentConnection _connection;
     private readonly UiPreferences _prefs;
 
+    // The footer reconnect prompt was put off; a new restart requirement or the next section save brings it back.
+    private bool _reconnectDeferred;
+
     // Below this window width the settings screen drops the side-by-side rail + content for a single-column
     // master-detail drilldown. Above it the columns keep their MinWidth without overflow.
     private const double CompactBreakpoint = 760;
@@ -26,6 +29,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// carried into the installer as UPDATEORIGIN.
     /// </summary>
     public string CurrentSurface { get; set; } = "settings";
+
+    /// <summary>
+    /// The open view as a resume token ("home" or "settings/&lt;section&gt;"), carried into the installer as
+    /// UPDATEVIEW so the relaunch after a self-update lands where the user left off.
+    /// </summary>
+    public string CurrentView => Nav == "settings" ? "settings/" + SettingsSection : "home";
 
     /// <summary>
     /// In-window view: "home" (connect screen) or "settings" (section console). The gear opens settings, the
@@ -38,6 +47,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowContent))]
     [NotifyPropertyChangedFor(nameof(ShowSplitter))]
     [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
+    [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
+    [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private string _nav = "home";
 
     /// <summary>
@@ -50,6 +61,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
     [NotifyPropertyChangedFor(nameof(ShowSplitter))]
+    [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
+    [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private double _windowWidth = 987;
 
     /// <summary>
@@ -66,6 +79,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
+    [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
+    [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private bool _settingsDetailOpen;
 
     [ObservableProperty]
@@ -84,6 +99,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSettingsSources))]
     [NotifyPropertyChangedFor(nameof(IsSettingsLogs))]
     [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
+    [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
+    [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private string _settingsSection = "profile";
 
     /// <summary>
@@ -93,7 +110,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         _connection = connection;
         _prefs = prefs;
-        Logs = new LogsViewModel(connection);
+        Diagnostics = new DiagnosticsViewModel(connection);
         General = new GeneralViewModel(this, connection, prefs);
         Config = new ConfigViewModel(this, connection);
         Profile = new ProfileViewModel(this, connection);
@@ -104,6 +121,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         _settingsSection = prefs.SettingsSection;
         UpdateActiveSection();
         General.PropertyChanged += OnGeneralPropertyChanged;
+        Config.PropertyChanged += OnSectionBarChanged;
+        Profile.PropertyChanged += OnSectionBarChanged;
+        Routing.PropertyChanged += OnSectionBarChanged;
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
         _connection.SnapshotReceived += OnSnapshot;
@@ -120,9 +140,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ConnectionViewModel Home { get; }
 
     /// <summary>
-    /// Logs screen.
+    /// Diagnostics screen: the agent log and the runtime configuration.
     /// </summary>
-    public LogsViewModel Logs { get; }
+    public DiagnosticsViewModel Diagnostics { get; }
 
     /// <summary>
     /// General screen: theme, language, version, and app self-update.
@@ -212,6 +232,53 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool AppUpdateBannerVisible => General.UpdateBannerVisible && !(IsSettings && IsSettingsGeneral);
 
     /// <summary>
+    /// Whether the reconnect offer belongs in the section footer: the editable sections carry it there instead
+    /// of the floating notice.
+    /// </summary>
+    public bool ReconnectPromptInSection => ShowContent && SettingsSection is "profile" or "config" or "routing";
+
+    /// <summary>
+    /// Whether the section footer offers the reconnect that applies the saved settings: it takes the strip once
+    /// the Save bar leaves it, and stays away while another edit is open or the offer was put off.
+    /// </summary>
+    public bool ShowReconnectBar => Home.RestartPending
+        && !_reconnectDeferred
+        && ReconnectPromptInSection
+        && !Config.ShowSaveBar
+        && !Routing.ShowSaveBar
+        && !Profile.ShowSaveBar;
+
+    /// <summary>
+    /// Re-arms the footer reconnect offer, so a save asks again after an earlier one was put off.
+    /// </summary>
+    public void ArmReconnectPrompt()
+    {
+        _reconnectDeferred = false;
+        OnPropertyChanged(nameof(ShowReconnectBar));
+    }
+
+    /// <summary>
+    /// Re-gates the footer reconnect offer after the agent's restart flag changes; a fresh requirement re-arms it.
+    /// </summary>
+    public void NotifyRestartPendingChanged(bool pending)
+    {
+        if (pending)
+        {
+            _reconnectDeferred = false;
+        }
+
+        OnPropertyChanged(nameof(ShowReconnectBar));
+    }
+
+    // Footer offer: put the reconnect off, leaving the settings saved but unapplied.
+    [RelayCommand]
+    private void DismissReconnect()
+    {
+        _reconnectDeferred = true;
+        OnPropertyChanged(nameof(ShowReconnectBar));
+    }
+
+    /// <summary>
     /// Starts the agent connection.
     /// </summary>
     public void Start()
@@ -261,6 +328,30 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SettingsSection = "general";
         SettingsDetailOpen = true;
         Nav = "settings";
+    }
+
+    /// <summary>
+    /// Reopens the view the app was left on before a self-update, from the CurrentView token it handed the
+    /// installer. Home is the default, so only a settings token moves anywhere; an unknown section is ignored.
+    /// </summary>
+    public void RestoreView(string view)
+    {
+        if (!view.StartsWith("settings", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var slash = view.IndexOf('/');
+        var section = slash > 0 ? view[(slash + 1)..] : string.Empty;
+        if (section is "profile" or "config" or "routing" or "general" or "sources" or "logs")
+        {
+            SettingsSection = section;
+        }
+
+        SettingsDetailOpen = true;
+        Nav = "settings";
+        SelectSectionDefault(SettingsSection);
+        RefreshLogsActive();
     }
 
     /// <summary>
@@ -328,7 +419,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // section-change event: a restored section on open, or reselecting the already-selected section.
     private void RefreshLogsActive()
     {
-        Logs.SetActive(Nav == "settings" && SettingsSection == "logs" && (!IsCompact || SettingsDetailOpen));
+        Diagnostics.SetActive(Nav == "settings" && SettingsSection == "logs" && (!IsCompact || SettingsDetailOpen));
     }
 
     // Импорт брошенных драгом файлов: тип определяется по содержимому, конфиги и списки маршрутизации
@@ -493,6 +584,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // Re-gate the footer reconnect offer when a section's Save bar takes or frees the strip.
+    private void OnSectionBarChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ConfigViewModel.ShowSaveBar))
+        {
+            OnPropertyChanged(nameof(ShowReconnectBar));
+        }
+    }
+
     // Push the compact-layout flag to every section screen so their rows restack for the narrow window.
     partial void OnWindowWidthChanged(double value)
     {
@@ -500,7 +600,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Config.IsCompact = compact;
         Routing.IsCompact = compact;
         Sources.IsCompact = compact;
-        Logs.IsCompact = compact;
+        Diagnostics.IsCompact = compact;
         General.IsCompact = compact;
         Profile.IsCompact = compact;
 
@@ -527,7 +627,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             Config.Reset();
             Routing.Reset();
             Sources.Reset();
-            Logs.Reset();
+            Diagnostics.Reset();
             HasConfigs = false;
             HasProfiles = false;
         });
@@ -552,6 +652,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // runs after Profile.Apply.
         Home.Apply(snapshot);
         General.Apply(snapshot);
-        Logs.Apply(snapshot);
+        Diagnostics.Apply(snapshot);
     }
 }

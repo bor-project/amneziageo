@@ -244,8 +244,8 @@
   <data name="Main_AddLocalSubnetsButton" xml:space="preserve">
     <value>Add local networks</value>
   </data>
-  <data name="Main_AgentLogSection" xml:space="preserve">
-    <value>Logs</value>
+  <data name="Main_DiagnosticsSection" xml:space="preserve">
+    <value>Diagnostics</value>
   </data>
   <data name="Main_LogCaptureTitle" xml:space="preserve">
     <value>Log settings</value>
@@ -261,6 +261,12 @@
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>All UDP through the tunnel</value>
+  </data>
+  <data name="Main_RouteTtlTitle" xml:space="preserve">
+    <value>Route lifetime</value>
+  </data>
+  <data name="Main_RouteTtlHint" xml:space="preserve">
+    <value>How long an address stays in the routing cache without traffic. Once it expires the route and its filters are reclaimed, and the next contact decides the address again.</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Sends IPv6 through the tunnel as well. Turn this on only if your server has an IPv6 address, otherwise leave it off. Applies on the next connect.</value>
@@ -722,10 +728,10 @@
     <value>General</value>
   </data>
   <data name="Main_RailLogsSubtitle" xml:space="preserve">
-    <value>Agent activity log</value>
+    <value>Log and current configuration</value>
   </data>
   <data name="Main_RailLogsTitle" xml:space="preserve">
-    <value>Logs</value>
+    <value>Diagnostics</value>
   </data>
   <data name="Main_RailProfileSubtitle" xml:space="preserve">
     <value>Configuration + routing</value>
@@ -837,6 +843,15 @@
   </data>
   <data name="Main_RetryDisconnectButton" xml:space="preserve">
     <value>Retry disconnect</value>
+  </data>
+  <data name="Main_ReconnectApplyButton" xml:space="preserve">
+    <value>Reconnect</value>
+  </data>
+  <data name="Main_ReconnectLaterButton" xml:space="preserve">
+    <value>Later</value>
+  </data>
+  <data name="Main_ReconnectPrompt" xml:space="preserve">
+    <value>Saved - reconnect to apply</value>
   </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>Update</value>
@@ -1466,6 +1481,33 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="InstallerVm_Repairing" xml:space="preserve">
     <value>Repairing…</value>
   </data>
+  <data name="InstallerVm_StepPreparing" xml:space="preserve">
+    <value>Preparing…</value>
+  </data>
+  <data name="InstallerVm_StepExtracting" xml:space="preserve">
+    <value>Unpacking files…</value>
+  </data>
+  <data name="InstallerVm_StepRemovingPrevious" xml:space="preserve">
+    <value>Removing the previous version…</value>
+  </data>
+  <data name="InstallerVm_StepRemoving" xml:space="preserve">
+    <value>Removing files…</value>
+  </data>
+  <data name="InstallerVm_StepStoppingService" xml:space="preserve">
+    <value>Stopping the service…</value>
+  </data>
+  <data name="InstallerVm_StepCopyingFiles" xml:space="preserve">
+    <value>Copying files…</value>
+  </data>
+  <data name="InstallerVm_StepStartingService" xml:space="preserve">
+    <value>Starting the service…</value>
+  </data>
+  <data name="InstallerVm_StepRegistering" xml:space="preserve">
+    <value>Registering components…</value>
+  </data>
+  <data name="InstallerVm_StepFinishing" xml:space="preserve">
+    <value>Finishing up…</value>
+  </data>
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Updating…</value>
   </data>
@@ -1549,6 +1591,36 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Main_LogTabSettings" xml:space="preserve">
     <value>Settings</value>
+  </data>
+  <data name="Main_DiagTabLog" xml:space="preserve">
+    <value>Log</value>
+  </data>
+  <data name="Main_DiagTabConfig" xml:space="preserve">
+    <value>Config</value>
+  </data>
+  <data name="Main_ConfigTabValues" xml:space="preserve">
+    <value>Configuration</value>
+  </data>
+  <data name="Main_ConfigTabCache" xml:space="preserve">
+    <value>Cache</value>
+  </data>
+  <data name="Main_ConfigEmptyTitle" xml:space="preserve">
+    <value>No data</value>
+  </data>
+  <data name="Main_CacheEmptyHint" xml:space="preserve">
+    <value>The cache fills while the tunnel is up: addresses of tracked domains and per-address verdicts. There are no verdicts when the Direct list is installed in full at connect instead of on demand.</value>
+  </data>
+  <data name="Main_CacheFilterWatermark" xml:space="preserve">
+    <value>Filter by text</value>
+  </data>
+  <data name="MainVm_CacheShown" xml:space="preserve">
+    <value>{0} of {1}</value>
+  </data>
+  <data name="MainVm_CacheShownCapped" xml:space="preserve">
+    <value>{0} of {1}, agent returned {2}</value>
+  </data>
+  <data name="Agent_NoProfileSelected" xml:space="preserve">
+    <value>No profile selected.</value>
   </data>
   <data name="Main_LogTypeLabel" xml:space="preserve">
     <value>Log</value>

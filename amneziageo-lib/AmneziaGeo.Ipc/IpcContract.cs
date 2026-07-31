@@ -303,6 +303,19 @@ public static class IpcContract
     public const string OpExportLog = "export-log";
 
     /// <summary>
+    /// Command to render the configuration the agent runs on, or would run on at the next connect. No args.
+    /// The ack message holds the rendered report; keys are masked.
+    /// </summary>
+    public const string OpGetRuntimeConfig = "get-runtime-config";
+
+    /// <summary>
+    /// Command to read the agent's cached values. No args. The ack message holds a JSON object
+    /// { total, capped, entries } where entries carries { kind, key, value } rows and kind is one of
+    /// "resolve" / "allowed-ip" / "route" / "domain".
+    /// </summary>
+    public const string OpGetCacheEntries = "get-cache-entries";
+
+    /// <summary>
     /// Command for the UI to record a diagnostic line in the agent log (the UI process keeps no log of its
     /// own). Args: [0] message. Logged at warning level.
     /// </summary>

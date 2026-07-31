@@ -14,68 +14,46 @@
     <StreamGeometry x:Key="AgSearchGeometry">M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z</StreamGeometry>
     <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
   </UserControl.Resources>
-  <!-- Title, shared segment+source header, then a single content area; only the log body scrolls. -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
-
-    <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_AgentLogSection}" />
+  <!-- Shared segment+source header, then a single content area; only the log body scrolls. -->
+  <Grid RowDefinitions="Auto,*" RowSpacing="14">
 
     <!-- Shared header: view/settings segment + source picker, common to both panes. -->
-    <!-- Wide: segment left, source right on one row; both centred, the caption floats above the combo. -->
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCompact}">
-      <Border Grid.Column="0" VerticalAlignment="Center"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
-              CornerRadius="9" Padding="3" MaxWidth="360">
+    <!-- Wide: segment left, source right on one row; the caption sits ahead of the combo. -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !IsCompact}">
+      <Border Grid.Column="0" Classes="segtrack sub" VerticalAlignment="Center">
         <UniformGrid Columns="2">
           <Button Classes="seg" Classes.active="{Binding IsViewMode}" Command="{Binding ShowViewCommand}"
-                  HorizontalAlignment="Stretch" Padding="20,6">
-            <TextBlock Text="{l:Tr Main_LogTabView}" HorizontalAlignment="Center" />
-          </Button>
+                  Content="{l:Tr Main_LogTabView}" />
           <Button Classes="seg" Classes.active="{Binding IsSettingsMode}" Command="{Binding ShowSettingsCommand}"
-                  HorizontalAlignment="Stretch" Padding="20,6">
-            <TextBlock Text="{l:Tr Main_LogTabSettings}" HorizontalAlignment="Center" />
-          </Button>
+                  Content="{l:Tr Main_LogTabSettings}" />
         </UniformGrid>
       </Border>
-      <!-- Caption floats above the combo (zero layout height) so the combo stays centred against the segment. -->
-      <Panel Grid.Column="2" Width="200" VerticalAlignment="Center" ClipToBounds="False">
-        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5"
-                   VerticalAlignment="Top" HorizontalAlignment="Left">
-          <TextBlock.RenderTransform>
-            <TranslateTransform Y="-18" />
-          </TextBlock.RenderTransform>
-        </TextBlock>
-        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
+        <controls:AdaptiveComboBox Classes="field" Width="140"
                   ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
-      </Panel>
+      </StackPanel>
     </Grid>
 
     <!-- Narrow: segment then source stacked. -->
-    <StackPanel Grid.Row="1" Spacing="10" IsVisible="{Binding IsCompact}">
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" Background="{DynamicResource AgInsetBrush}"
-              CornerRadius="9" Padding="3">
+    <StackPanel Grid.Row="0" Spacing="10" IsVisible="{Binding IsCompact}">
+      <Border Classes="segtrack sub">
         <UniformGrid Columns="2">
           <Button Classes="seg" Classes.active="{Binding IsViewMode}" Command="{Binding ShowViewCommand}"
-                  HorizontalAlignment="Stretch" Padding="20,6">
-            <TextBlock Text="{l:Tr Main_LogTabView}" HorizontalAlignment="Center" />
-          </Button>
+                  Content="{l:Tr Main_LogTabView}" />
           <Button Classes="seg" Classes.active="{Binding IsSettingsMode}" Command="{Binding ShowSettingsCommand}"
-                  HorizontalAlignment="Stretch" Padding="20,6">
-            <TextBlock Text="{l:Tr Main_LogTabSettings}" HorizontalAlignment="Center" />
-          </Button>
+                  Content="{l:Tr Main_LogTabSettings}" />
         </UniformGrid>
       </Border>
-      <StackPanel Spacing="6">
-        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" />
-        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
+        <controls:AdaptiveComboBox Classes="field" Width="140"
                   ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
       </StackPanel>
     </StackPanel>
 
-    <!-- Divider between the header (tabs + picker) and the content. -->
-    <Border Grid.Row="2" Height="1" Background="{DynamicResource AgBorderBrush}" />
-
     <!-- Content: settings pane or viewer pane. -->
-    <Panel Grid.Row="3">
+    <Panel Grid.Row="1">
 
       <!-- Settings pane: capture level (ageo) or on/off (routes), then log actions; stacked under the shared source. -->
       <Border IsVisible="{Binding IsSettingsMode}" VerticalAlignment="Top"

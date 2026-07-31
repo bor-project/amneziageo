@@ -52,9 +52,14 @@ internal sealed record AppSettings
     public bool AllowPrerelease { get; init; } = BakedAllowPrerelease;
 
     /// <summary>
-    /// How often tunneled domains are re-resolved, in seconds.
+    /// Setting key the route lifetime persists under.
     /// </summary>
-    public int RefreshSeconds { get; init; } = 60;
+    public const string RouteTtlKey = AmneziaGeo.Ipc.SettingKeys.RouteTtl;
+
+    /// <summary>
+    /// How long a routed destination survives without traffic before its route and filters are reclaimed, in seconds.
+    /// </summary>
+    public int RouteTtlSeconds { get; init; } = 300;
 
     /// <summary>
     /// How long a connect attempt waits for a handshake before declaring the server unreachable, in seconds.

@@ -8,6 +8,9 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class RouteApplier(
     RouteManager routes,
     WindowsFirewall firewall,
+    UapiClient uapi,
+    string tunnelName,
+    string? peerPublicKey,
     Func<(IPAddress? Gateway, uint InterfaceIndex)> hopProvider,
     bool killSwitch) : IRouteApplier
 {
@@ -16,6 +19,7 @@ internal sealed class RouteApplier(
     private sealed record Hop(IPAddress? Gateway, uint InterfaceIndex, long Stamp);
 
     private Hop? _hop;
+    private uint? _tunnelIndex;
 
     /// <summary>
     /// Filter-set generation; 0 without a kill-switch, so entries never look stale.
@@ -36,6 +40,14 @@ internal sealed class RouteApplier(
         }
 
         return firewall.TryPermitHost(address, out outId, out inId, out generation);
+    }
+
+    /// <summary>
+    /// Drops one host address at the highest weight, so a blocked destination loses to no permit.
+    /// </summary>
+    public bool TryDrop(uint address, out ulong outId, out ulong inId, out int generation)
+    {
+        return firewall.TryDropHost(address, out outId, out inId, out generation);
     }
 
     /// <summary>
@@ -62,6 +74,65 @@ internal sealed class RouteApplier(
     public void RemoveRoute(IPAddress address, uint interfaceIndex)
     {
         routes.RemoveDirectHost(address, interfaceIndex);
+    }
+
+    /// <summary>
+    /// Routes one address into the tunnel and advertises it to the peer. The route goes in first: an advertised
+    /// address with no route accepts inbound packets the host cannot answer.
+    /// </summary>
+    public bool TryTunnel(IPAddress address)
+    {
+        var index = TunnelIndex();
+        if (index is null || peerPublicKey is null)
+        {
+            return false;
+        }
+
+        if (!routes.AddTunnelRoute(address, index.Value))
+        {
+            return false;
+        }
+
+        uapi.AddAllowedIps(tunnelName, peerPublicKey, [Cidr(address)]);
+        return true;
+    }
+
+    /// <summary>
+    /// Withdraws tunnelled addresses: their routes go now, so the traffic falls back to the physical path, and the
+    /// advertisements leave with the next batched request.
+    /// </summary>
+    public void RemoveTunnel(IReadOnlyCollection<IPAddress> addresses)
+    {
+        var index = TunnelIndex();
+        if (addresses.Count == 0 || index is null)
+        {
+            return;
+        }
+
+        routes.RemoveTunnelRoutes(addresses, index.Value);
+        if (peerPublicKey is null)
+        {
+            return;
+        }
+
+        var cidrs = new List<string>(addresses.Count);
+        foreach (var address in addresses)
+        {
+            cidrs.Add(Cidr(address));
+        }
+
+        uapi.QueueRemoveAllowedIps(tunnelName, peerPublicKey, cidrs);
+    }
+
+    private static string Cidr(IPAddress address)
+    {
+        return address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"{address}/128" : $"{address}/32";
+    }
+
+    private uint? TunnelIndex()
+    {
+        _tunnelIndex ??= routes.FindInterfaceIndex(tunnelName);
+        return _tunnelIndex;
     }
 
     /// <summary>

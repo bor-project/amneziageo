@@ -1,9 +1,46 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
+
+/// <summary>
+/// What a verdict asks the system for once the mode is taken into account.
+/// </summary>
+internal enum RoutePlan
+{
+    /// <summary>
+    /// Nothing: the destination already follows the right default.
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// A firewall permit out the physical path.
+    /// </summary>
+    Permit,
+
+    /// <summary>
+    /// A permit plus a host route out the physical path.
+    /// </summary>
+    Bypass,
+
+    /// <summary>
+    /// A firewall drop for this one address.
+    /// </summary>
+    Drop,
+
+    /// <summary>
+    /// A host route into the tunnel plus its advertisement to the peer.
+    /// </summary>
+    Tunnel,
+
+    /// <summary>
+    /// Installed by the domain tracker; the cache tracks the contact and touches nothing.
+    /// </summary>
+    External,
+}
 
 /// <summary>
 /// Classifies destinations against the routing lists and installs a bypass route for those that need one, reclaiming
@@ -12,12 +49,9 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class RoutingCache
 {
-    // Idle window before an entry is reclaimed. Long enough that a page still open keeps its route even when the OS
-    // resolver cache stops the name from being re-queried.
-    private const long IdleTtlMs = 15 * 60 * 1000;
     private const int ScanIntervalMs = 5_000;
-    // Reclaim every twelfth scan, so an entry outlives its idle window by at most one scan.
-    private const int ScansPerSweep = 12;
+    // Upper bound on scans between reclaims; a short idle window reclaims more often so it is actually honoured.
+    private const int MaxScansPerSweep = 12;
     // Reclaim in slices: dropping hundreds of filters at once is the storm this design exists to avoid.
     private const int SweepBatch = 64;
     // Entries holding system resources; past this an address follows the default route instead.
@@ -32,9 +66,10 @@ internal sealed class RoutingCache
         public IPAddress Address = IPAddress.Any;
         public uint Numeric;
         public RouteVerdict Verdict;
-        public bool Bypass;
+        public RoutePlan Plan;
         public long LastTouch;
         public bool Routed;
+        public bool Tunneled;
         public uint InterfaceIndex;
         public ulong FilterOut;
         public ulong FilterIn;
@@ -44,10 +79,24 @@ internal sealed class RoutingCache
     // Swapped as one immutable set, so a live rule edit never leaves a half-applied mix.
     private sealed record RuleSet(GeoIpRanges Proxy, GeoIpRanges Direct, GeoIpRanges Block);
 
+    // A dropped destination and the image it belonged to, as reported by the firewall.
+    private readonly record struct Reported(uint Address, string? App);
+
+    // Destinations reported from a caller that must not block - the firewall's own event thread. Bounded and
+    // drop-on-full: a flood of drops to one address repeats, so losing a report costs a retransmit, not a route.
+    private readonly Channel<Reported> _reported = Channel.CreateBounded<Reported>(
+        new BoundedChannelOptions(4096) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
+
     private readonly ConcurrentDictionary<uint, Entry> _entries = new();
     private readonly IRouteApplier _applier;
     private readonly bool _split;
+    private long _idleTtlMs;
+    private int _scansPerSweep;
     private readonly ILogger<RoutingCache> _logger;
+    // Tells whether a dropped image belongs to the app rules; its destinations then take the tunnel.
+    private Func<string, bool>? _appMatch;
+    // Tells whether an adopted address is still held by a tracked domain.
+    private Func<IPAddress, bool>? _adopted;
     private RuleSet _rules;
     private int _size;
     private int _applied;
@@ -58,12 +107,28 @@ internal sealed class RoutingCache
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingCache(IRouteApplier applier, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, ILogger<RoutingCache> logger)
+    public RoutingCache(IRouteApplier applier, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger)
     {
         _applier = applier;
         _split = split;
+        SetTtl(ttlSeconds);
         _logger = logger;
         _rules = Build(proxy, direct, block);
+    }
+
+    /// <summary>
+    /// Idle window an entry survives without traffic, in seconds.
+    /// </summary>
+    public int TtlSeconds => (int)(Volatile.Read(ref _idleTtlMs) / 1000);
+
+    /// <summary>
+    /// Applies an idle window to the entries already held; the next sweep reclaims whatever it now covers.
+    /// </summary>
+    public void SetTtl(int seconds)
+    {
+        var idle = Math.Max(seconds, 0) * 1000L;
+        Volatile.Write(ref _idleTtlMs, idle);
+        Volatile.Write(ref _scansPerSweep, (int)Math.Clamp(idle / 5 / ScanIntervalMs, 1, MaxScansPerSweep));
     }
 
     /// <summary>
@@ -75,6 +140,30 @@ internal sealed class RoutingCache
     /// Entries held, applied or verdict-only.
     /// </summary>
     public int Size => Volatile.Read(ref _size);
+
+    /// <summary>
+    /// A held destination: its verdict, whether it holds a host route, and the idle time left before reclaim.
+    /// </summary>
+    public sealed record Held(IPAddress Address, RouteVerdict Verdict, bool Routed, bool Adopted, int IdleSeconds, int TtlSeconds);
+
+    /// <summary>
+    /// Destinations held right now, each with the time left on it.
+    /// </summary>
+    public IReadOnlyList<Held> Snapshot()
+    {
+        var now = Environment.TickCount64;
+        var ttl = TtlSeconds;
+        var result = new List<Held>();
+        foreach (var pair in _entries)
+        {
+            var entry = pair.Value;
+            var idle = (int)Math.Clamp((now - Volatile.Read(ref entry.LastTouch)) / 1000, 0, ttl);
+            result.Add(new Held(entry.Address, entry.Verdict, entry.Routed || entry.Tunneled,
+                entry.Plan == RoutePlan.External, idle, ttl));
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// Merged range counts, for logging.
@@ -127,11 +216,24 @@ internal sealed class RoutingCache
     /// </summary>
     public void Note(uint address)
     {
+        Note(address, false);
+    }
+
+    // app: the destination belongs to a process the app rules cover, so in split it rides the tunnel whatever the
+    // ranges say.
+    internal void Note(uint address, bool app)
+    {
         var now = Environment.TickCount64;
         if (_entries.TryGetValue(address, out var existing))
         {
             Volatile.Write(ref existing.LastTouch, now);
-            if (!existing.Bypass || (existing.Routed && existing.Generation == _applier.Generation))
+            if (app)
+            {
+                Promote(existing, now);
+                return;
+            }
+
+            if (Installed(existing))
             {
                 return;
             }
@@ -140,7 +242,7 @@ internal sealed class RoutingCache
             return;
         }
 
-        Admit(address, now);
+        Admit(address, now, app);
     }
 
     /// <summary>
@@ -164,7 +266,7 @@ internal sealed class RoutingCache
         foreach (var pair in _entries)
         {
             var entry = pair.Value;
-            if (!entry.Bypass || entry.Generation == generation)
+            if (entry.Plan is not (RoutePlan.Permit or RoutePlan.Bypass or RoutePlan.Drop) || entry.Generation == generation)
             {
                 continue;
             }
@@ -176,7 +278,10 @@ internal sealed class RoutingCache
                     continue;
                 }
 
-                if (_applier.TryPermit(pair.Key, out var outId, out var inId, out var installed))
+                var filtered = entry.Plan == RoutePlan.Drop
+                    ? _applier.TryDrop(pair.Key, out var outId, out var inId, out var installed)
+                    : _applier.TryPermit(pair.Key, out outId, out inId, out installed);
+                if (filtered)
                 {
                     entry.FilterOut = outId;
                     entry.FilterIn = inId;
@@ -189,6 +294,59 @@ internal sealed class RoutingCache
         if (refreshed > 0)
         {
             _logger.LogDebug("routing cache: reinstalled {Count} host permits after rearm", refreshed);
+        }
+    }
+
+    /// <summary>
+    /// Queues a destination reported from a thread that must not do work: installing a route or a filter from the
+    /// firewall's event callback would re-enter the engine that raised it.
+    /// </summary>
+    public void Report(IPAddress address, string? app)
+    {
+        if (GeoIpRanges.TryToNumeric(address, out var value))
+        {
+            _reported.Writer.TryWrite(new Reported(value, app));
+        }
+    }
+
+    /// <summary>
+    /// Attaches the app-rule test applied to reported drops; without it a dropped destination is decided by ranges alone.
+    /// </summary>
+    public void SetAppMatch(Func<string, bool>? match)
+    {
+        _appMatch = match;
+    }
+
+    /// <summary>
+    /// Attaches the test that says whether an adopted address is still held by a tracked domain; without it an
+    /// adopted address is reclaimed on the ordinary idle clock like any other.
+    /// </summary>
+    public void SetAdoptionCheck(Func<IPAddress, bool>? check)
+    {
+        Volatile.Write(ref _adopted, check);
+    }
+
+    /// <summary>
+    /// Applies reported destinations as they arrive, until cancelled.
+    /// </summary>
+    public async Task PumpAsync(CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var reported in _reported.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                try
+                {
+                    Note(reported.Address, Matches(reported.App));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "routing cache: reported destination failed");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -211,7 +369,7 @@ internal sealed class RoutingCache
                         Note(address);
                     }
 
-                    if (++scans % ScansPerSweep == 0)
+                    if (++scans % Volatile.Read(ref _scansPerSweep) == 0)
                     {
                         Sweep(active, Environment.TickCount64);
                     }
@@ -250,8 +408,55 @@ internal sealed class RoutingCache
             Volatile.Read(ref _installed), Volatile.Read(ref _reclaimed));
     }
 
+    // Whether a dropped image is covered by the app rules.
+    private bool Matches(string? app)
+    {
+        if (app is null || _appMatch is not { } match)
+        {
+            return false;
+        }
+
+        try
+        {
+            return match(app);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "routing cache: app match failed for {App}", app);
+            return false;
+        }
+    }
+
+    // Moves an already-decided destination onto the tunnel once an app rule claims it: what the old plan installed
+    // is released first, so a permit out the physical path never outlives the decision that replaced it.
+    private void Promote(Entry entry, long now)
+    {
+        if (!_split || entry.Plan is RoutePlan.Tunnel or RoutePlan.Drop or RoutePlan.External || entry.Verdict is RouteVerdict.Direct)
+        {
+            if (!Installed(entry))
+            {
+                Install(entry, now);
+            }
+
+            return;
+        }
+
+        var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
+        var generation = _applier.Generation;
+        lock (entry)
+        {
+            Release(entry, generation, filters, withdrawn);
+            entry.Plan = RoutePlan.Tunnel;
+        }
+
+        _applier.RemoveTunnel(withdrawn);
+        _applier.DeleteFilters(filters, generation);
+        Install(entry, now);
+    }
+
     // Creates the entry for an address seen for the first time and applies what its verdict asks for.
-    private void Admit(uint address, long now)
+    private void Admit(uint address, long now, bool app = false)
     {
         var rules = Volatile.Read(ref _rules);
         var verdict = Evaluate(rules, address);
@@ -260,7 +465,7 @@ internal sealed class RoutingCache
             Address = ToAddress(address),
             Numeric = address,
             Verdict = verdict,
-            Bypass = NeedsBypass(verdict, rules, address),
+            Plan = Decide(verdict, app),
             LastTouch = now,
         };
 
@@ -271,7 +476,7 @@ internal sealed class RoutingCache
 
         if (!_entries.TryAdd(address, entry))
         {
-            if (_entries.TryGetValue(address, out var raced) && raced.Bypass)
+            if (_entries.TryGetValue(address, out var raced) && !Installed(raced))
             {
                 Install(raced, now);
             }
@@ -280,10 +485,103 @@ internal sealed class RoutingCache
         }
 
         Interlocked.Increment(ref _size);
-        if (entry.Bypass)
+        if (!Installed(entry))
         {
             Install(entry, now);
         }
+    }
+
+    /// <summary>
+    /// Adopts addresses the domain tracker installed: the cache records the contact but installs and reclaims
+    /// nothing, so the two never fight over one address.
+    /// </summary>
+    public void Adopt(IReadOnlyCollection<IPAddress> addresses)
+    {
+        var now = Environment.TickCount64;
+        foreach (var address in addresses)
+        {
+            if (!GeoIpRanges.TryToNumeric(address, out var value))
+            {
+                continue;
+            }
+
+            if (_entries.TryGetValue(value, out var existing))
+            {
+                Volatile.Write(ref existing.LastTouch, now);
+                continue;
+            }
+
+            var entry = new Entry
+            {
+                Address = address,
+                Numeric = value,
+                Verdict = Evaluate(Volatile.Read(ref _rules), value),
+                Plan = RoutePlan.External,
+                LastTouch = now,
+            };
+
+            if (_entries.TryAdd(value, entry))
+            {
+                Interlocked.Increment(ref _size);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Most recent contact recorded for any of these addresses; null when none of them is held. Lets a name's
+    /// lifetime follow the traffic to its addresses, not only the resolutions of the name itself.
+    /// </summary>
+    public long? LastContact(IReadOnlyCollection<string> addresses)
+    {
+        var last = default(long?);
+        foreach (var address in addresses)
+        {
+            if (!IPAddress.TryParse(address, out var parsed)
+                || !GeoIpRanges.TryToNumeric(parsed, out var value)
+                || !_entries.TryGetValue(value, out var entry))
+            {
+                continue;
+            }
+
+            var touch = Volatile.Read(ref entry.LastTouch);
+            if (last is null || touch > last)
+            {
+                last = touch;
+            }
+        }
+
+        return last;
+    }
+
+    /// <summary>
+    /// Drops adopted addresses the domain tracker evicted.
+    /// </summary>
+    public void Forget(IReadOnlyCollection<IPAddress> addresses)
+    {
+        foreach (var address in addresses)
+        {
+            if (!GeoIpRanges.TryToNumeric(address, out var value))
+            {
+                continue;
+            }
+
+            if (_entries.TryGetValue(value, out var entry) && entry.Plan == RoutePlan.External && _entries.TryRemove(value, out _))
+            {
+                Interlocked.Decrement(ref _size);
+            }
+        }
+    }
+
+    // Whether the entry already holds everything its plan asks for under the current filter set.
+    private bool Installed(Entry entry)
+    {
+        return entry.Plan switch
+        {
+            RoutePlan.Tunnel => entry.Tunneled,
+            RoutePlan.Bypass => entry.Routed && entry.Generation == _applier.Generation,
+            RoutePlan.Permit or RoutePlan.Drop => entry.Generation == _applier.Generation,
+            _ => true,
+        };
     }
 
     private void Install(Entry entry, long now)
@@ -291,13 +589,13 @@ internal sealed class RoutingCache
         lock (entry)
         {
             Volatile.Write(ref entry.LastTouch, now);
-            var generation = _applier.Generation;
-            if (entry.Routed && entry.Generation == generation)
+            if (Installed(entry))
             {
                 return;
             }
 
-            if (!entry.Routed && Volatile.Read(ref _applied) >= MaxApplied)
+            var holds = entry.Plan is RoutePlan.Bypass or RoutePlan.Tunnel;
+            if (holds && !entry.Routed && !entry.Tunneled && Volatile.Read(ref _applied) >= MaxApplied)
             {
                 if (Interlocked.Exchange(ref _capacityWarned, 1) == 0)
                 {
@@ -307,16 +605,35 @@ internal sealed class RoutingCache
                 return;
             }
 
+            // Into the tunnel: the route and the advertisement travel together, and no permit applies - the traffic
+            // leaves through the tunnel interface, which the kill-switch permits wholesale.
+            if (entry.Plan == RoutePlan.Tunnel)
+            {
+                if (_applier.TryTunnel(entry.Address))
+                {
+                    entry.Tunneled = true;
+                    Interlocked.Increment(ref _applied);
+                    Interlocked.Increment(ref _installed);
+                }
+
+                return;
+            }
+
             // Permit first: until the route exists the traffic still rides the tunnel, whereas a route without a
-            // permit hands the packets to a physical path the kill-switch drops.
-            if (entry.Generation != generation && _applier.TryPermit(entry.Numeric, out var outId, out var inId, out var installed))
+            // permit hands the packets to a physical path the kill-switch drops. A blocked address takes the same
+            // path with the opposite action.
+            var generation = _applier.Generation;
+            var filtered = entry.Plan == RoutePlan.Drop
+                ? _applier.TryDrop(entry.Numeric, out var outId, out var inId, out var installed)
+                : _applier.TryPermit(entry.Numeric, out outId, out inId, out installed);
+            if (entry.Generation != generation && filtered)
             {
                 entry.FilterOut = outId;
                 entry.FilterIn = inId;
                 entry.Generation = installed;
             }
 
-            if (entry.Routed)
+            if (entry.Plan != RoutePlan.Bypass || entry.Routed)
             {
                 return;
             }
@@ -337,9 +654,17 @@ internal sealed class RoutingCache
     internal void Sweep(HashSet<uint> busy, long now)
     {
         var stale = new List<KeyValuePair<uint, Entry>>();
+        var idleTtlMs = Volatile.Read(ref _idleTtlMs);
         foreach (var pair in _entries)
         {
-            if (now - Volatile.Read(ref pair.Value.LastTouch) <= IdleTtlMs)
+            if (now - Volatile.Read(ref pair.Value.LastTouch) <= idleTtlMs)
+            {
+                continue;
+            }
+
+            // An adopted address leaves with the name that resolved it; one whose name is already gone belongs to
+            // nobody and goes now, whatever installed it.
+            if (pair.Value.Plan == RoutePlan.External && Volatile.Read(ref _adopted) is { } adopted && adopted(pair.Value.Address))
             {
                 continue;
             }
@@ -357,6 +682,7 @@ internal sealed class RoutingCache
         }
 
         var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
         var generation = _applier.Generation;
         var kept = 0;
         var dropped = 0;
@@ -378,12 +704,13 @@ internal sealed class RoutingCache
             Interlocked.Decrement(ref _size);
             lock (entry)
             {
-                Release(entry, generation, filters);
+                Release(entry, generation, filters, withdrawn);
             }
 
             dropped++;
         }
 
+        _applier.RemoveTunnel(withdrawn);
         _applier.DeleteFilters(filters, generation);
 
         if (dropped > 0)
@@ -401,7 +728,7 @@ internal sealed class RoutingCache
         var dropped = 0;
         foreach (var pair in _entries)
         {
-            if (pair.Value.Bypass || pair.Value.Routed)
+            if (pair.Value.Plan != RoutePlan.None)
             {
                 continue;
             }
@@ -422,6 +749,7 @@ internal sealed class RoutingCache
     private void Drop()
     {
         var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
         var generation = _applier.Generation;
         foreach (var address in _entries.Keys)
         {
@@ -433,18 +761,26 @@ internal sealed class RoutingCache
             Interlocked.Decrement(ref _size);
             lock (entry)
             {
-                Release(entry, generation, filters);
+                Release(entry, generation, filters, withdrawn);
             }
         }
 
+        _applier.RemoveTunnel(withdrawn);
         _applier.DeleteFilters(filters, generation);
         Volatile.Write(ref _capacityWarned, 0);
     }
 
-    // Removes the route now and queues the filter ids for the batched delete: the route goes first so the traffic
-    // falls back to the default path before the permit disappears.
-    private void Release(Entry entry, int generation, List<(ulong Out, ulong In)> filters)
+    // Removes the physical-path route now and queues the tunnelled address and the filter ids for their batched
+    // removal: the route goes first so the traffic falls back to the default path before the permit disappears.
+    private void Release(Entry entry, int generation, List<(ulong Out, ulong In)> filters, List<IPAddress> tunneled)
     {
+        if (entry.Tunneled)
+        {
+            tunneled.Add(entry.Address);
+            entry.Tunneled = false;
+            Interlocked.Decrement(ref _applied);
+        }
+
         if (entry.Routed)
         {
             _applier.RemoveRoute(entry.Address, entry.InterfaceIndex);
@@ -478,17 +814,29 @@ internal sealed class RoutingCache
         return rules.Proxy.Contains(address) ? RouteVerdict.Proxy : RouteVerdict.None;
     }
 
-    // Only Direct installs anything here: Block is already dropped by WFP from connect, Proxy rides the set applied
-    // at bring-up, and None follows the default route. In split the default is physical already, so a bypass is
-    // needed only where a proxy range would otherwise pull the address into the tunnel.
-    private bool NeedsBypass(RouteVerdict verdict, RuleSet rules, uint address)
+    // Full tunnel: the tunnel is the default, so only Direct leaves it and Block is already dropped by WFP.
+    // Split: nothing rides the tunnel until a destination earns it, and the physical path is blocked until a
+    // verdict exists - so Proxy earns the tunnel, Block stays dropped, and everything else earns a permit.
+    // app: claimed by an app rule. Block still wins, and so does an explicit Direct range - the user pinned that
+    // destination to the physical path on purpose.
+    private RoutePlan Decide(RouteVerdict verdict, bool app = false)
     {
-        if (verdict != RouteVerdict.Direct)
+        if (verdict == RouteVerdict.Block)
         {
-            return false;
+            return RoutePlan.Drop;
         }
 
-        return !_split || rules.Proxy.Contains(address);
+        if (!_split)
+        {
+            return verdict == RouteVerdict.Direct ? RoutePlan.Bypass : RoutePlan.None;
+        }
+
+        if (verdict == RouteVerdict.Direct)
+        {
+            return RoutePlan.Permit;
+        }
+
+        return verdict == RouteVerdict.Proxy || app ? RoutePlan.Tunnel : RoutePlan.Permit;
     }
 
     private static RuleSet Build(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block)

@@ -105,8 +105,14 @@ public sealed partial class App : Application
             }
             else
             {
-                // Direct run or a tray open: the single window opens on Home.
+                // Direct run or a tray open: the single window opens on Home, or on the view a relaunch after a
+                // self-update carries, applied before the window shows so it never flashes home first.
                 viewModel.CurrentSurface = "settings";
+                if (ArgValue(args, "--view") is { Length: > 0 } view)
+                {
+                    viewModel.RestoreView(view);
+                }
+
                 ShowMainWindow();
                 viewModel.Start();
                 // Check for updates on open and once an hour; a found update surfaces as the floating banner (#22).
@@ -120,6 +126,13 @@ public sealed partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // The value that follows a switch on the command line, or null when the switch is absent or last.
+    private static string? ArgValue(string[] args, string name)
+    {
+        var index = Array.IndexOf(args, name);
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
     }
 
     // Fresh background-download worker: no window; exits when the download finishes (the tray announces it).

@@ -46,6 +46,13 @@
         <!-- Progress (apply phase) -->
         <StackPanel DockPanel.Dock="Bottom"
                     Visibility="{Binding ShowProgress, Converter={StaticResource B2V}}">
+          <!-- The step the engine is on, so a long one reads as work rather than a stalled bar. -->
+          <TextBlock Text="{Binding StepText}"
+                     Style="{StaticResource MutedTextBlock}"
+                     FontSize="12"
+                     TextTrimming="CharacterEllipsis"
+                     Margin="0,0,0,8"
+                     Visibility="{Binding HasStepText, Converter={StaticResource B2VH}}" />
           <!-- RangeBase.Value binds TwoWay by default; Progress is read-only, so pin OneWay or the binding throws. -->
           <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" IsIndeterminate="{Binding IsIndeterminate}" />
           <TextBlock Text="{Binding Progress, StringFormat={}{0}%}"

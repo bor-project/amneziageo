@@ -54,8 +54,11 @@ internal static unsafe class Program
     // Post-update install balloon deferred until the first snapshot reports the notifications flag.
     private static bool _pendingInstalledBalloon;
 
-    // The post-update origin marker (settings / none), read at startup; null on a plain launch.
+    // The post-update origin marker (ui / none), read at startup; null on a plain launch.
     private static string? _updateOrigin;
+
+    // The view the update was started from, reopened with the window when the origin is the GUI.
+    private static string _updateView = string.Empty;
 
     // Logon autostart: resident tray icon only, no launcher window.
     private static bool _autostart;
@@ -589,12 +592,19 @@ internal static unsafe class Program
             AgentLink.SendConnect();
         }
 
-        // A relaunch right after a self-update carries an origin marker: announce the install and reopen the
-        // window ("settings"); "none" stays windowless. The UI clears the marker on its own read; the windowless
-        // case has no reader, so clear it here.
+        // A relaunch right after a self-update carries an origin marker: an update started from the window
+        // reopens it on the view it was left on, one started from the tray or a balloon stays windowless and
+        // just announces the install. Consumed here either way.
         var origin = _updateOrigin;
         if (origin is not null)
         {
+            DeleteUpdateOrigin();
+            if (origin == "ui")
+            {
+                LaunchUi("post-update relaunch", _updateView.Length == 0 ? [] : ["--view", _updateView]);
+                return;
+            }
+
             // Hold the balloon until a snapshot has told us whether notifications are on: resolving off the
             // fallback timer (agent still starting) would otherwise announce on the default-true flag.
             if (AgentLink.SnapshotSeen)
@@ -604,15 +614,6 @@ internal static unsafe class Program
             else
             {
                 _pendingInstalledBalloon = true;
-            }
-
-            if (origin == "none")
-            {
-                DeleteUpdateOrigin();
-            }
-            else
-            {
-                LaunchUi("post-update relaunch");
             }
 
             return;
@@ -745,8 +746,8 @@ internal static unsafe class Program
         LaunchUi("update install", "--apply");
     }
 
-    // Reads the post-update origin marker (settings / none) without clearing it, so the UI can also consume it
-    // when a stale resident tray surfaces the window instead.
+    // Reads the post-update marker: the origin (ui / none) on the first line, the view to reopen on the second.
+    // A marker from a build that wrote only the surface name maps onto the same two origins.
     private static string? ReadUpdateOrigin()
     {
         try
@@ -755,7 +756,15 @@ internal static unsafe class Program
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "AmneziaGeo",
                 "update-origin");
-            return File.Exists(path) ? File.ReadAllText(path).Trim() : null;
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var lines = File.ReadAllLines(path);
+            var origin = lines.Length > 0 ? lines[0].Trim() : string.Empty;
+            _updateView = lines.Length > 1 ? lines[1].Trim() : string.Empty;
+            return origin == "none" ? "none" : "ui";
         }
         catch
         {
@@ -1020,10 +1029,10 @@ internal static unsafe class Program
     }
 
     // Starts the GUI process; reason names what asked for it, so the journal ties a click to its outcome (#209).
-    private static void LaunchUi(string reason, string? arg = null)
+    private static void LaunchUi(string reason, params string[] args)
     {
         var exe = Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.Windows.Ui.exe");
-        var mode = string.IsNullOrEmpty(arg) ? reason : $"{reason}, {arg}";
+        var mode = args.Length == 0 ? reason : $"{reason}, {string.Join(' ', args)}";
         try
         {
             var psi = new ProcessStartInfo(exe)
@@ -1031,15 +1040,15 @@ internal static unsafe class Program
                 UseShellExecute = false,
                 WorkingDirectory = AppContext.BaseDirectory,
             };
-            if (!string.IsNullOrEmpty(arg))
+            foreach (var arg in args)
             {
                 psi.ArgumentList.Add(arg);
             }
 
-            // Hand the foreground right to launches that open a window (a plain open or the takeover prompt) so it
-            // rises above the current app; a background process cannot claim the foreground on its own. Windowless
-            // (--update/--apply) launches show nothing, so they keep the user's focus.
-            if (string.IsNullOrEmpty(arg) || arg == "--takeover")
+            // Hand the foreground right to launches that open a window (a plain open, the takeover prompt, or a
+            // post-update relaunch) so it rises above the current app; a background process cannot claim the
+            // foreground on its own. Windowless (--update/--apply) launches show nothing, so they keep the focus.
+            if (args.Length == 0 || args[0] is "--takeover" or "--view")
             {
                 Native.SetForegroundWindow(_hwnd);
                 Native.AllowSetForegroundWindow(Native.ASFW_ANY);

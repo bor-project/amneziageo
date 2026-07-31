@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -52,6 +53,9 @@ internal sealed class NetworkFlowTracker : IDisposable
     private readonly HashSet<string> _seenUdpV6 = [];
     private readonly HashSet<uint> _seenTcpV4 = [];
     private readonly HashSet<string> _seenTcpV6 = [];
+    // Released destinations, handed over from the eviction thread and applied on the thread that owns each set.
+    private readonly ConcurrentQueue<string> _forgetFlow = new();
+    private readonly ConcurrentQueue<string> _forgetScan = new();
     // Per-pid match decision with a short TTL. MatchesPid does a full process-tree snapshot, and a busy app
     // emits thousands of datagrams a second - caching the decision for ~1s removes the data plane's worst CPU
     // sink. Single-threaded handler, no lock.
@@ -147,12 +151,66 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
     }
 
+    /// <summary>
+    /// Forgets destinations whose routes were released, so the next packet to one installs them again instead of
+    /// being skipped as already handled.
+    /// </summary>
+    public void Forget(IReadOnlyList<string> addresses)
+    {
+        // A queue nobody drains - no ETW events, no scan loop - is capped: a missed forget costs one repeat route,
+        // an unbounded queue costs the process.
+        Trim(_forgetFlow);
+        foreach (var address in addresses)
+        {
+            _forgetFlow.Enqueue(address);
+        }
+
+        if (_matcher is null)
+        {
+            return;
+        }
+
+        Trim(_forgetScan);
+        foreach (var address in addresses)
+        {
+            _forgetScan.Enqueue(address);
+        }
+    }
+
+    private static void Trim(ConcurrentQueue<string> queue)
+    {
+        while (queue.Count >= 65536 && queue.TryDequeue(out _))
+        {
+        }
+    }
+
+    // Applies the queue on the ETW handler thread, which owns these sets.
+    private void DrainFlowForgets()
+    {
+        while (_forgetFlow.TryDequeue(out var address))
+        {
+            _seenUdpV6.Remove(address);
+            _seenTcpV6.Remove(address);
+            if (IPAddress.TryParse(address, out var parsed) && parsed.AddressFamily == AddressFamily.InterNetwork)
+            {
+                var key = BitConverter.ToUInt32(parsed.GetAddressBytes(), 0);
+                _seenUdp.Remove(key);
+                _seenTcpV4.Remove(key);
+            }
+        }
+    }
+
     private void Handle(TraceEvent evt, CancellationToken ct)
     {
         if (ct.IsCancellationRequested)
         {
             Stop();
             return;
+        }
+
+        if (!_forgetFlow.IsEmpty)
+        {
+            DrainFlowForgets();
         }
 
         switch ((int)evt.ID)
@@ -470,6 +528,11 @@ internal sealed class NetworkFlowTracker : IDisposable
 
     private void ScanConnections()
     {
+        while (_forgetScan.TryDequeue(out var address))
+        {
+            _scanSeen.Remove(address);
+        }
+
         if (_matcher is null)
         {
             return;

@@ -16,6 +16,12 @@ public static class AppEntry
     /// </summary>
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
+        // Verbs started by the installer, the SCM or the tray: no one reads their console, so it only flashes.
+        if (args is [("--service" or "--agent" or "--uninstall-cleanup" or "--wipe-config" or "--heal-dns"), ..])
+        {
+            ConsoleWindow.Hide();
+        }
+
         // Installer maintenance verbs (invoked by the MSI custom actions as SYSTEM) run standalone, before the
         // DI host / DB init, so they never recreate or lock the very data they may be removing (#167).
         switch (args)

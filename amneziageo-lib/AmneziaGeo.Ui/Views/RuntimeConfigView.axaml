@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Views.RuntimeConfigView"
+             x:CompileBindings="True"
+             x:DataType="vm:RuntimeConfigViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgSearchGeometry">M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z</StreamGeometry>
+    <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
+  </UserControl.Resources>
+  <!-- Sub-segment header, then the card; only the body scrolls. -->
+  <Grid RowDefinitions="Auto,*" RowSpacing="14">
+
+    <!-- Header: the pane segment. The values refresh themselves while the pane is on screen. -->
+    <Border Grid.Row="0" Classes="segtrack sub">
+      <UniformGrid Columns="2">
+        <Button Classes="seg" Classes.active="{Binding ShowsConfigValues}" Command="{Binding ShowConfigValuesCommand}"
+                Content="{l:Tr Main_ConfigTabValues}" />
+        <Button Classes="seg" Classes.active="{Binding ShowsCacheValues}" Command="{Binding ShowCacheValuesCommand}"
+                Content="{l:Tr Main_ConfigTabCache}" />
+      </UniformGrid>
+    </Border>
+
+    <!-- Pane card: cache filters over the body. Body fills the rest. -->
+    <Border Grid.Row="1" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+            CornerRadius="12" Padding="16" Background="Transparent">
+      <Grid RowDefinitions="Auto,*">
+
+        <!-- Cache filters: free text plus the record type. -->
+        <Grid Grid.Row="0" Margin="0,0,0,14" ColumnDefinitions="*,Auto" ColumnSpacing="8"
+              IsVisible="{Binding ShowsCacheValues}">
+          <TextBox Grid.Column="0" Classes="field" Text="{Binding CacheFilter, Mode=TwoWay}"
+                   Watermark="{l:Tr Main_CacheFilterWatermark}">
+            <TextBox.InnerLeftContent>
+              <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
+                        Margin="10,0,4,0" Foreground="{DynamicResource AgMuted2Brush}" />
+            </TextBox.InnerLeftContent>
+            <TextBox.InnerRightContent>
+              <TextBlock Text="{Binding CacheSummary}" Classes="muted" FontSize="11.5" Margin="0,0,10,0"
+                         VerticalAlignment="Center"
+                         IsVisible="{Binding CacheSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </TextBox.InnerRightContent>
+          </TextBox>
+          <controls:AdaptiveComboBox Grid.Column="1" Classes="field" Width="140"
+                    ItemsSource="{Binding CacheKinds}" SelectedItem="{Binding SelectedCacheKind, Mode=TwoWay}" />
+        </Grid>
+
+        <!-- Body (shared by both panes): text / empty state / loader. -->
+        <Border Grid.Row="1" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
+          <Panel>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                          IsVisible="{Binding ShowBody}">
+              <SelectableTextBlock Text="{Binding BodyText}"
+                                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                   FontSize="11.5" LineHeight="18"
+                                   Foreground="{DynamicResource AgMutedBrush}"
+                                   TextWrapping="NoWrap" Margin="16,13" />
+            </ScrollViewer>
+            <!-- Empty state. -->
+            <StackPanel IsVisible="{Binding ShowEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="10" Margin="24">
+              <PathIcon Data="{StaticResource AgDocGeometry}" Width="42" Height="42"
+                        Foreground="{DynamicResource AgMuted2Brush}" HorizontalAlignment="Center" />
+              <TextBlock Text="{l:Tr Main_ConfigEmptyTitle}" FontSize="14" FontWeight="SemiBold"
+                         Foreground="{DynamicResource AgMutedBrush}" HorizontalAlignment="Center" />
+              <TextBlock Text="{l:Tr Main_CacheEmptyHint}" Classes="muted" FontSize="12"
+                         IsVisible="{Binding ShowsCacheValues}" HorizontalAlignment="Center"
+                         TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320" />
+            </StackPanel>
+            <!-- Loader while the agent answers. -->
+            <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+              <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+              <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Panel>
+        </Border>
+
+      </Grid>
+    </Border>
+
+  </Grid>
+</UserControl>

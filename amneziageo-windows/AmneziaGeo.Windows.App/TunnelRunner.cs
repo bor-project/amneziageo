@@ -20,6 +20,8 @@ internal sealed class TunnelRunner(
     DnsConfigurator dns,
     NetworkReconciler reconciler,
     WindowsFirewall firewall,
+    LiveSession session,
+    RuntimeInspector inspector,
     ILoggerFactory loggerFactory,
     ILogger<TunnelRunner> logger)
 {
@@ -30,7 +32,51 @@ internal sealed class TunnelRunner(
     private const int LegacyDefaultMtu = 1280;
 
     // Proactively refresh the peer handshake/NAT mapping so a lossy underlay can't let the session age out.
-    private const int DefaultKeepaliveSeconds = 25;
+    internal const int DefaultKeepaliveSeconds = 25;
+
+    /// <summary>
+    /// MTU a stored value resolves to; unset and the former default both follow the current default.
+    /// </summary>
+    public static int EffectiveMtu(int stored)
+    {
+        return stored > 0 && stored != LegacyDefaultMtu ? stored : DefaultMtu;
+    }
+
+    /// <summary>
+    /// Resolvers the config declares, IPv4 only.
+    /// </summary>
+    internal static IReadOnlyList<string> ConfigResolvers(string config)
+    {
+        // The proxy forwards to the tunnel resolver over an IPv4 socket, so an IPv6 resolver (e.g. Cloudflare's
+        // 2606:4700:4700::1111, shipped by many configs alongside 1.1.1.1) is unreachable - every failover to it
+        // fails instantly with "address incompatible with the requested protocol", turning a single dropped
+        // primary datagram into a hard DNS failure.
+        return [.. WgConfigEditor.GetDns(config)
+            .Where(d => IPAddress.TryParse(d, out var dip) && dip.AddressFamily == AddressFamily.InterNetwork)];
+    }
+
+    /// <summary>
+    /// Resolvers reached through the tunnel: the config's own, topped up to a distinct pair so DNS survives a
+    /// blackholed resolver, not just a dropped datagram.
+    /// </summary>
+    internal static IReadOnlyList<string> TunnelResolvers(IReadOnlyList<string> configDns)
+    {
+        var resolvers = configDns.Count > 0 ? new List<string>(configDns) : new List<string> { "1.1.1.1" };
+        foreach (var fallback in new[] { "1.1.1.1", "1.0.0.1" })
+        {
+            if (resolvers.Count >= 2)
+            {
+                break;
+            }
+
+            if (!resolvers.Contains(fallback))
+            {
+                resolvers.Add(fallback);
+            }
+        }
+
+        return resolvers;
+    }
 
     /// <summary>
     /// Runs the native tunnel service loop.
@@ -80,8 +126,7 @@ internal sealed class TunnelRunner(
         var transport = await store.GetConfigTransportAsync(name);
         var useWebSocket = transport?.UseWebSocket == true;
 
-        var storedMtu = transport?.Mtu ?? 0;
-        var effectiveMtu = storedMtu > 0 && storedMtu != LegacyDefaultMtu ? storedMtu : DefaultMtu;
+        var effectiveMtu = EffectiveMtu(transport?.Mtu ?? 0);
         string? wsHost = null;
         var wsPort = 0;
         var wsTargetPort = 0;
@@ -149,15 +194,13 @@ internal sealed class TunnelRunner(
         var blockRoutes = activeList?.BlockRoutes ?? [];
         var blockDomains = activeList?.BlockDomains ?? [];
 
-        // WFP kill-switch: on in full tunnel, off in split. QUIC follows the same routes as TCP. Resolved here
-        // because the on-demand router needs it before the DNS proxy starts.
-        var killSwitch = !geoSplit;
+        // WFP kill-switch: on in both modes. In split it holds a destination off the physical path until its
+        // verdict exists - a packet that leaves earlier carries the real address, which is the leak this prevents.
+        // Resolved here because the on-demand router needs it before the DNS proxy starts.
+        const bool killSwitch = true;
 
-        // A Direct bucket this large is a geo database, not a hand-written list: materializing it costs a route and
-        // a filter pair per prefix, which is the multi-second stall before the engine even starts. Past the
-        // threshold the bucket is resolved per destination instead; smaller lists stay eager and behave as before.
+        // Every bucket is resolved per destination, whatever its size: nothing is materialized at bring-up.
         var listDirect = activeList?.DirectRoutes ?? [];
-        var resolveDirectOnDemand = listDirect.Count >= OnDemandDirectThreshold;
 
         // Route IPv6 only when the config opts in (ConfigTransport.UseIpv6); otherwise the tunnel stays v4-only:
         // AAAA is answered NODATA so clients fall back to A, and the adapter carries no IPv6 address or routes.
@@ -171,37 +214,14 @@ internal sealed class TunnelRunner(
         // App tracking only in split mode.
         var trackApps = geoSplit && apps.Count > 0;
 
-        // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes. The proxy forwards
-        // to the tunnel resolver over an IPv4 socket, so an IPv6 resolver (e.g. Cloudflare's
-        // 2606:4700:4700::1111, shipped by many configs alongside 1.1.1.1) is unreachable - every failover to it
-        // fails instantly with "address incompatible with the requested protocol", turning a single dropped
-        // primary datagram into a hard DNS failure. Keep IPv4 resolvers only; the fallback below tops the list
-        // up to a distinct pair.
-        var configDns = WgConfigEditor.GetDns(config)
-            .Where(d => IPAddress.TryParse(d, out var dip) && dip.AddressFamily == AddressFamily.InterNetwork)
-            .ToList();
-        var resolvers = configDns.Count > 0 ? new List<string>(configDns) : new List<string> { "1.1.1.1" };
-        // Ensure a distinct secondary resolver so DNS survives a resolver blackhole (failover),
-        // not just an occasional dropped datagram (retransmit). Each /32 is routed below.
-        foreach (var fallback in new[] { "1.1.1.1", "1.0.0.1" })
-        {
-            if (resolvers.Count >= 2)
-            {
-                break;
-            }
-
-            if (!resolvers.Contains(fallback))
-            {
-                resolvers.Add(fallback);
-            }
-        }
-
-        IReadOnlyList<string> tunnelResolver = resolvers;
+        // Tunnel resolver = config DNS, reached through the tunnel; add its /32 to routes.
+        var configDns = ConfigResolvers(config);
+        var tunnelResolver = TunnelResolvers(configDns);
         // Resolver /32s are infrastructure: routed through the tunnel so the tunnel DNS stays reachable. Collect
         // them so they can be excluded from the reconcilable list set below - a list range that happens to equal a
         // resolver IP must never be torn down by the live reconcile, or DNS through the tunnel dies.
         var resolverRoutes = new HashSet<string>(StringComparer.Ordinal);
-        if (trackDomains)
+        if (geoSplit)
         {
             foreach (var server in tunnelResolver)
             {
@@ -223,7 +243,10 @@ internal sealed class TunnelRunner(
         // coincides with a tunnel-DNS resolver /32 stays advertised (in _staticRoutes) but is never in _listRoutes.
         var listRoutes = (geo?.Routes ?? []).Where(r => !resolverRoutes.Contains(r)).ToList();
 
-        var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), geoRoutes);
+        // Split starts empty: only the resolver infrastructure is advertised, and a proxy destination earns its
+        // /32 on contact. Materializing a geo database up front is what put thousands of routes on the adapter.
+        var startupRoutes = geoSplit ? resolverRoutes.ToList() : geoRoutes;
+        var allowedIps = AllowedIpsResolver.Build(geoSplit, WgConfigEditor.GetAllowedIps(config), startupRoutes);
         if (stripV6)
         {
             // v4-only tunnel: strip IPv6 routes and the IPv6 interface Address so the adapter is purely v4
@@ -336,18 +359,7 @@ internal sealed class TunnelRunner(
             }
         }
 
-        // Direct bucket (both modes): its CIDRs route out the physical gateway, bypassing the tunnel, overriding a
-        // proxy route. Skipped when the bucket is resolved on demand - those prefixes become host routes on contact.
-        if (!resolveDirectOnDemand)
-        {
-            foreach (var cidr in listDirect)
-            {
-                if (seenCidrs.Add(cidr))
-                {
-                    exclusionCidrs.Add(cidr);
-                }
-            }
-        }
+        // The Direct bucket is not materialized here at all: each of its prefixes becomes a host route on contact.
 
         // Adjacent prefixes fold into one another, cutting both the route table and the WFP filter set.
         var bypassCidrs = CidrAggregator.Aggregate(exclusionCidrs);
@@ -370,21 +382,24 @@ internal sealed class TunnelRunner(
         // The proxy bucket is passed too: it decides precedence on an overlap, and in split it marks the addresses a
         // proxy range would otherwise pull into the tunnel. Built before the tracker, which consults it before
         // routing a resolved name into the tunnel.
-        RoutingCache? routing = null;
-        if (resolveDirectOnDemand)
-        {
-            var applier = new RouteApplier(
-                routes,
-                firewall,
-                () => underlayProbe is null ? (null, 0u) : RouteManager.UnderlayHop(underlayProbe),
-                killSwitch);
-            routing = new RoutingCache(applier, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, loggerFactory.CreateLogger<RoutingCache>());
-            _ = Task.Run(() => routing.RunAsync(sessionCts.Token));
-            _ = Task.Run(() => WatchVerdictsAsync(routing, name, appSettings.RefreshSeconds, sessionCts.Token));
-            var ranges = routing.RangeCounts;
-            logger.LogInformation("routing cache for {Name}: {Entries} direct entries -> {Direct} direct / {Block} block / {Proxy} proxy ranges, resolved per destination",
-                name, listDirect.Count, ranges.Direct, ranges.Block, ranges.Proxy);
-        }
+        var applier = new RouteApplier(
+            routes,
+            firewall,
+            uapi,
+            name,
+            WgConfigEditor.GetPeerPublicKey(config),
+            () => underlayProbe is null ? (null, 0u) : RouteManager.UnderlayHop(underlayProbe),
+            killSwitch);
+        var routing = new RoutingCache(applier, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>());
+        session.SetCache(routing);
+        // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
+        // announced the same way instead of being polled for.
+        _ = Task.Run(() => RuntimeSnapshotPipe.ServeAsync(name, (op, ct) => ServeAsync(op, routing, name, ct), logger, sessionCts.Token));
+        _ = Task.Run(() => routing.RunAsync(sessionCts.Token));
+        _ = Task.Run(() => routing.PumpAsync(sessionCts.Token));
+        var ranges = routing.RangeCounts;
+        logger.LogInformation("routing cache for {Name}: {Entries} direct entries -> {Direct} direct / {Block} block / {Proxy} proxy ranges, resolved per destination, idle ttl {Ttl} s",
+            name, listDirect.Count, ranges.Direct, ranges.Block, ranges.Proxy, routing.TtlSeconds);
 
         // Tracker when there's live work or a routing list drives the split.
         DomainTracker? tracker = null;
@@ -394,7 +409,13 @@ internal sealed class TunnelRunner(
             if (peer is not null)
             {
                 // Started after the geo-domain sink is attached to avoid a rebuild race.
-                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, geoRoutes, listRoutes, appSettings.RefreshSeconds, stripV6, routing);
+                // With lazy ranges the tracker owns only what it installs: the advertised set at bring-up is the
+                // resolver infrastructure, and the list's own ranges are decided per destination by the cache.
+                var trackerStatic = geoSplit ? startupRoutes : geoRoutes;
+                var trackerList = geoSplit ? new List<string>() : listRoutes;
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, trackerStatic, trackerList, appSettings.RouteTtlSeconds, stripV6, geoSplit, routing);
+                session.SetTracker(tracker);
+                routing.SetAdoptionCheck(tracker.Holds);
             }
         }
 
@@ -409,6 +430,9 @@ internal sealed class TunnelRunner(
             {
                 matcher = candidate;
                 appDns = new AppDnsTracker(matcher, loggerFactory.CreateLogger<AppDnsTracker>());
+                // A matched app's destination is dropped before anything observes it, so the drop itself is where
+                // the app rule has to be applied: its remotes take the tunnel instead of a permit.
+                routing.SetAppMatch(matcher.MatchesDevicePath);
             }
         }
 
@@ -528,7 +552,7 @@ internal sealed class TunnelRunner(
 
         // Whitelist wstunnel under the kill-switch.
         var underlayAppPath = useWebSocket ? TunnelPaths.WsTunnelExe() : null;
-        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, blockRoutes, routing, sessionCts.Token));
+        _ = Task.Run(() => ArmFirewallAsync(name, killSwitch, !stripV6, underlayAppPath, bypassCidrs, routing, sessionCts.Token));
 
         // Re-flush after the adapter appears to drop bring-up-window poison.
         if (applied)
@@ -547,6 +571,9 @@ internal sealed class TunnelRunner(
         if ((tracker is not null && (matcher is not null || allUdp)) || routing is not null)
         {
             var flowTracker = new NetworkFlowTracker(matcher, tracker, allUdp, !stripV6, endpoint, loggerFactory.CreateLogger<NetworkFlowTracker>(), routing is null ? null : routing.Note);
+            // A released destination must lose its dedupe record too, or the next packet to it is skipped and the
+            // route never comes back.
+            tracker?.SetForgetSink(flowTracker.Forget);
             _ = Task.Run(() => flowTracker.RunAsync(sessionCts.Token));
         }
 
@@ -585,8 +612,11 @@ internal sealed class TunnelRunner(
             logger.LogInformation("connect {Name}: session ended after {Elapsed} ms, tearing down", name, connectSw.ElapsedMilliseconds);
             // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
             sessionCts.Cancel();
+            session.Clear();
             // Before the engine closes, so the host routes go away with their permits still known.
             routing?.RemoveAll();
+            // The batched withdrawals leave now: the device is about to go, and a queued one would never be sent.
+            uapi.FlushWithdrawals();
             firewall.Disable();
 
             if (wsTransport is not null)
@@ -835,7 +865,7 @@ internal sealed class TunnelRunner(
         return null;
     }
 
-    private static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps)
+    internal static IReadOnlyList<string> SplitDefaultRoutes(IReadOnlyList<string> allowedIps)
     {
         var result = new List<string>();
 
@@ -934,63 +964,76 @@ internal sealed class TunnelRunner(
     private const int FirewallArmAttempts = 4;
     private static readonly TimeSpan FirewallArmRetryDelay = TimeSpan.FromSeconds(2);
 
-    // Above this many Direct entries the bucket is a geo database, and installing it up front is what stalls the
-    // connect; below it, a hand-written list stays eager so its first packet is never off-route.
-    internal const int OnDemandDirectThreshold = 64;
 
     // Re-decides the routing cache's verdicts after a live list edit. Separate from the domain tracker: that one
     // only runs in split mode, while the cache owns the Direct and Block buckets in both. The current generation
     // is seeded first so the freshly built rule set is not dropped and reinstalled on the first tick.
-    private async Task WatchVerdictsAsync(RoutingCache routing, string tunnelName, int refreshSeconds, CancellationToken ct)
+    // Answers the agent: the cache snapshot it renders, or a rule change it just persisted.
+    private async Task<string> ServeAsync(string op, RoutingCache routing, string tunnelName, CancellationToken ct)
     {
-        var interval = TimeSpan.FromSeconds(Math.Clamp(Math.Min(refreshSeconds, 5), 1, 60));
-        var known = default(long?);
+        if (op == RuntimeSnapshotPipe.OpRules)
+        {
+            await ApplyRulesAsync(routing, tunnelName, ct);
+            return "ok";
+        }
+
+        if (op == RuntimeSnapshotPipe.OpTtl)
+        {
+            await ApplyTtlAsync(routing, ct);
+            return "ok";
+        }
+
+        if (op == RuntimeSnapshotPipe.OpCounts)
+        {
+            return System.Text.Json.JsonSerializer.Serialize(inspector.Counts());
+        }
+
+        return System.Text.Json.JsonSerializer.Serialize(inspector.Collect());
+    }
+
+    // Re-reads the stored lifetime and hands it to what already holds routes. The store is the one both processes
+    // share, so the agent persists the value and this only adopts it.
+    private async Task ApplyTtlAsync(RoutingCache routing, CancellationToken ct)
+    {
         try
         {
-            known = await store.GetActiveRoutingListGenerationAsync(tunnelName, ct);
+            var current = await settings.LoadAsync(ct);
+            routing.SetTtl(current.RouteTtlSeconds);
+            session.Tracker?.SetTtl(current.RouteTtlSeconds);
+            logger.LogInformation("routing cache: route lifetime is now {Ttl} s", current.RouteTtlSeconds);
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "routing cache: initial list generation lookup failed for {Tunnel}", tunnelName);
-        }
-
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(interval, ct);
-                var generation = await store.GetActiveRoutingListGenerationAsync(tunnelName, ct);
-                if (generation is null || generation == known)
-                {
-                    continue;
-                }
-
-                var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName, ct);
-                if (current is null)
-                {
-                    continue;
-                }
-
-                var list = await store.GetRoutingListAsync(current.ListId, ct);
-                if (list is not null)
-                {
-                    routing.Rebuild(current.Routes, list.DirectRoutes, list.BlockRoutes);
-                }
-
-                known = current.Generation;
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "routing cache: verdict poll failed for {Tunnel}", tunnelName);
-            }
+            logger.LogWarning(ex, "routing cache: applying the route lifetime failed");
         }
     }
 
-    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, RoutingCache? routing, CancellationToken ct)
+    // Re-reads the active list and drops every verdict taken under the old rules; the next contact decides again.
+    private async Task ApplyRulesAsync(RoutingCache routing, string tunnelName, CancellationToken ct)
+    {
+        try
+        {
+            var current = await store.GetActiveRoutingListMaterializationAsync(tunnelName, ct);
+            if (current is null)
+            {
+                return;
+            }
+
+            var list = await store.GetRoutingListAsync(current.ListId, ct);
+            if (list is not null)
+            {
+                routing.Rebuild(current.Routes, list.DirectRoutes, list.BlockRoutes);
+            }
+
+            session.Tracker?.ApplyList(current, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "routing cache: applying the rule change for {Tunnel} failed", tunnelName);
+        }
+    }
+
+    private async Task ArmFirewallAsync(string name, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, RoutingCache? routing, CancellationToken ct)
     {
         try
         {
@@ -1003,22 +1046,23 @@ internal sealed class TunnelRunner(
 
             if (killSwitch)
             {
-                // Block-list drops are user intent and go up with the adapter; only the kill-switch waits.
-                if (blockCidrs.Count > 0 && !Arm(index.Value, killSwitch: false, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct))
-                {
-                    return;
-                }
-
                 // The kill-switch protects an established tunnel, not the dial: a server that never answers
                 // would otherwise firewall the machine off for the whole attempt (#208).
                 logger.LogDebug("firewall: kill-switch for {Name} deferred until the first handshake", name);
                 await WaitForHandshakeAsync(name, ct);
             }
 
-            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs, ct), ct))
+            if (await ArmWithRetryAsync(() => Arm(index.Value, killSwitch, dualStack, underlayAppPath, extraLanCidrs, ct), ct))
             {
                 // Arming rebuilds the filter set, so host permits from the previous generation are gone with it.
                 routing?.Reinstall();
+
+                // A destination dropped before its verdict exists is announced by the drop itself; nothing else
+                // sees it, because the send that would raise a connect or datagram event never happens.
+                if (routing is not null && !firewall.WatchDrops(routing.Report))
+                {
+                    logger.LogWarning("firewall: no drop subscription for {Name}; destinations without a DNS answer stay blocked", name);
+                }
             }
             else
             {
@@ -1036,10 +1080,10 @@ internal sealed class TunnelRunner(
 
     // Installs the filters and returns whether they survived. The session cancels before the teardown disables,
     // so a set that lands after it undoes itself here.
-    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, IReadOnlyList<string> blockCidrs, CancellationToken ct)
+    private bool Arm(uint index, bool killSwitch, bool dualStack, string? underlayAppPath, IReadOnlyList<string> extraLanCidrs, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs, blockCidrs);
+        var armed = firewall.Enable(index, killSwitch, dualStack, underlayAppPath, extraLanCidrs);
         if (ct.IsCancellationRequested)
         {
             firewall.Disable();

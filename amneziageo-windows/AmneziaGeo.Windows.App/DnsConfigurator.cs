@@ -156,7 +156,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         {
             var state = ReadState(file);
             RestoreState(state.Originals);
-            if (!FullyRestored(state))
+            if (Outcome(state) != RestoreOutcome.Done)
             {
                 return;
             }
@@ -190,14 +190,31 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             {
                 var state = ReadState(file);
                 RestoreState(state.Originals);
-                if (!FullyRestored(state))
+                var outcome = Outcome(state);
+                if (outcome == RestoreOutcome.Done)
+                {
+                    TryDelete(file);
+                    restored = true;
+                    continue;
+                }
+
+                if (outcome == RestoreOutcome.Pending)
                 {
                     logger.LogWarning("dns restore incomplete; keeping {File} for retry", Path.GetFileName(file));
                     continue;
                 }
 
+                // Nothing on our redirect, and an adapter the file names is gone. Kept while it could still come
+                // back, dropped once it has had long enough - otherwise a renumbered adapter keeps the file, and
+                // its retry, alive on every boot from here on.
+                if (!Expired(file))
+                {
+                    logger.LogDebug("dns restore: {File} names an adapter that is not enumerable yet", Path.GetFileName(file));
+                    continue;
+                }
+
+                logger.LogInformation("dns restore: {File} names no adapter that still exists; dropping it", Path.GetFileName(file));
                 TryDelete(file);
-                restored = true;
             }
             catch (Exception ex)
             {
@@ -242,11 +259,48 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         FlushCache();
     }
 
-    // Delete only when every recorded adapter is present AND no longer on our redirect. A not-ready adapter
-    // (not yet enumerable at boot, or renumbered) or one still on our redirect keeps the file for a later retry.
-    private static bool FullyRestored(DnsState state)
+    // What a restore pass leaves behind.
+    private enum RestoreOutcome
     {
-        return state.Originals.Keys.All(index => Probe(index, state.RedirectTargets) == AdapterDns.Clean);
+        Done,    // every recorded adapter is present and off our redirect
+        Pending, // an adapter is still on our redirect
+        Absent,  // nothing to revert, but an adapter is not enumerable
+    }
+
+    private static RestoreOutcome Outcome(DnsState state)
+    {
+        var absent = false;
+        foreach (var index in state.Originals.Keys)
+        {
+            var probed = Probe(index, state.RedirectTargets);
+            if (probed == AdapterDns.Ours)
+            {
+                return RestoreOutcome.Pending;
+            }
+
+            if (probed == AdapterDns.NotReady)
+            {
+                absent = true;
+            }
+        }
+
+        return absent ? RestoreOutcome.Absent : RestoreOutcome.Done;
+    }
+
+    // Time an adapter has to reappear before its state is treated as leftover. Measured from the write, so a
+    // redirect applied by a live connect restarts the clock.
+    private static readonly TimeSpan StateLifetime = TimeSpan.FromHours(24);
+
+    private static bool Expired(string file)
+    {
+        try
+        {
+            return DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > StateLifetime;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     // Per-adapter DNS after a restore attempt.

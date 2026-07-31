@@ -46,6 +46,10 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     private int _result;
     private InstallState _detectedState;
 
+    // Set when the caller supplied every option on the command line: the run applies without the options step
+    // and reads its choices from the engine variables instead of the checkboxes.
+    private bool _presetOptions;
+
     private volatile bool _engineConnected;
 
     /// <summary>
@@ -75,7 +79,15 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         PlanComplete += OnPlanComplete;
         ApplyBegin += OnApplyBegin;
         ElevateComplete += OnElevateComplete;
-        Progress += OnProgress;
+        // The engine's own percentage covers the whole apply and reaches the end well before the run does - the
+        // MSI counts out its script long before it runs it, and a nested uninstall runs the count twice. What
+        // the window shows instead is the step being carried out, from the acquire byte count, the actions the
+        // MSI reports as it executes them, and the packages the engine moves between.
+        CacheAcquireProgress += OnCacheAcquireProgress;
+        ExecutePackageBegin += OnExecutePackageBegin;
+        ExecuteMsiMessage += OnExecuteMsiMessage;
+        ExecuteProgress += OnExecuteProgress;
+        ExecuteComplete += OnExecuteComplete;
         ApplyComplete += OnApplyComplete;
 
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
@@ -155,8 +167,14 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return;
         }
 
+        // An in-app update that carries its options runs straight through: the app resolved every choice before
+        // launching, so there is nothing left to confirm here.
+        var preset = IsUpdateFlow() && state == InstallState.Installed
+            && !string.IsNullOrEmpty(engine.GetVariableString("DOWNLOADLISTS"));
+
         _dispatcher.BeginInvoke(() =>
         {
+            _presetOptions = preset;
             _vm.SetDetected(state, _installedVersion, _myVersion);
 
             if (!_interactive)
@@ -171,6 +189,11 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
                 OnUserAction(mapped);
             }
+            else if (preset)
+            {
+                _vm.DownloadLists = string.Equals(engine.GetVariableString("DOWNLOADLISTS"), "1", StringComparison.Ordinal);
+                OnUserAction(InstallerAction.Update);
+            }
             else if (IsUpdateFlow())
             {
                 _vm.StageUpdate();
@@ -178,8 +201,8 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         });
 
         // A previously-installed machine may have a connectable profile: ask the running agent so the options
-        // step can offer the nested auto-connect checkbox (#188).
-        if (_interactive && state == InstallState.Installed)
+        // step can offer the nested auto-connect checkbox (#188). A preset run has no such step.
+        if (_interactive && !preset && state == InstallState.Installed)
         {
             ProbeAutoConnect();
         }
@@ -506,11 +529,90 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         });
     }
 
-    private void OnProgress(object? sender, ProgressEventArgs e)
+    // The only step with a known size: the payload being unpacked out of the bundle into the package cache.
+    private void OnCacheAcquireProgress(object? sender, CacheAcquireProgressEventArgs e)
     {
-        var percent = e.OverallPercentage;
-        _dispatcher.BeginInvoke(() => _vm.ReportProgress(percent));
+        var percent = e.Total > 0 ? (int)(e.Progress * 100 / e.Total) : 0;
+        _dispatcher.BeginInvoke(() => _vm.ReportStep(ApplyStep.Extracting, percent));
     }
+
+    // A package the engine moved on to. The MSI names its own steps below; a related bundle is retired by its
+    // own setup.exe, which reports nothing, so it is named here.
+    private void OnExecutePackageBegin(object? sender, ExecutePackageBeginEventArgs e)
+    {
+        var msi = string.Equals(e.PackageId, MsiPackageId, StringComparison.Ordinal);
+        _dispatcher.BeginInvoke(() =>
+        {
+            _vm.ResetEngineProgress();
+            if (!msi)
+            {
+                _vm.BeginStep(ApplyStep.RemovingPrevious);
+            }
+        });
+    }
+
+    // The action the MSI is carrying out. The name travels in the record, so it arrives whether or not the
+    // package carries an ActionText table - which this one does not, and whose text would be raw English anyway.
+    private void OnExecuteMsiMessage(object? sender, ExecuteMsiMessageEventArgs e)
+    {
+        if (e.MessageType != InstallMessage.ActionStart || StepForMessage(e.Data) is not { } step)
+        {
+            return;
+        }
+
+        _dispatcher.BeginInvoke(() => _vm.BeginStep(step));
+    }
+
+    private void OnExecuteProgress(object? sender, ExecuteProgressEventArgs e)
+    {
+        var percent = e.ProgressPercentage;
+        _dispatcher.BeginInvoke(() => _vm.ReportEngineProgress(percent));
+    }
+
+    private void OnExecuteComplete(object? sender, ExecuteCompleteEventArgs e)
+    {
+        _dispatcher.BeginInvoke(() => _vm.BeginStep(ApplyStep.Finishing));
+    }
+
+    // Which field of the record holds the action name is not contractual, so every field is offered.
+    private static ApplyStep? StepForMessage(IList<string>? data)
+    {
+        if (data is null)
+        {
+            return null;
+        }
+
+        foreach (var field in data)
+        {
+            if (StepForAction(field) is { } step)
+            {
+                return step;
+            }
+        }
+
+        return null;
+    }
+
+    // The step an MSI action belongs to. Costing and the sequencing that precedes the install script read as
+    // preparation; InstallFinalize is where the script actually runs, and the actions it reports from there are
+    // the ones the window spends its time on.
+    private static ApplyStep? StepForAction(string action) => action switch
+    {
+        "InstallValidate" or "InstallInitialize" or "InstallFinalize" or "CostInitialize" or "FileCost"
+            or "CostFinalize" or "MigrateFeatureStates" or "FindRelatedProducts"
+            or "ValidateProductID" => ApplyStep.Preparing,
+        "RemoveExistingProducts" => ApplyStep.RemovingPrevious,
+        "StopServices" or "DeleteServices" => ApplyStep.StoppingService,
+        "ProcessComponents" or "UnpublishFeatures" or "RemoveRegistryValues" or "RemoveShortcuts"
+            or "RemoveFiles" or "RemoveFolders" or "RemoveDuplicateFiles" or "RemoveIniValues"
+            or "AgCleanup" or "AgWipeConfig" => ApplyStep.Removing,
+        "CreateFolders" or "InstallFiles" or "PatchFiles" or "DuplicateFiles" or "MoveFiles"
+            or "CreateShortcuts" or "WriteRegistryValues" or "WriteIniValues" => ApplyStep.CopyingFiles,
+        "InstallServices" or "StartServices" => ApplyStep.StartingService,
+        "RegisterUser" or "RegisterProduct" or "PublishComponents" or "PublishFeatures"
+            or "PublishProduct" => ApplyStep.Registering,
+        _ => null,
+    };
 
     private void OnApplyComplete(object? sender, ApplyCompleteEventArgs e)
     {
@@ -691,7 +793,8 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
 
     /// <summary>
     /// Whether the post-install launch should immediately dial the existing connection (#188). Interactive runs
-    /// follow the nested checkbox; a non-interactive run reads the AUTOCONNECT variable. Install/update only.
+    /// follow the nested checkbox; a preset or non-interactive run reads the AUTOCONNECT variable, which an
+    /// in-app update sets from whether the tunnel was up. Install/update only.
     /// </summary>
     private bool ShouldAutoConnect()
     {
@@ -700,7 +803,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return false;
         }
 
-        if (_interactive)
+        if (_interactive && !_presetOptions)
         {
             return _vm.EffectiveAutoConnect;
         }
@@ -709,8 +812,9 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     }
 
     /// <summary>
-    /// Whether the post-install launch should reopen the settings console: the in-app updater passes
-    /// SHOWCONSOLE=1 because the update was started from there. Install/update only.
+    /// Whether the post-install launch should reopen the window. An in-app update follows its origin: one
+    /// started from the window returns to it, one started from the tray or a balloon stays resident and is
+    /// announced there instead. Install/update only.
     /// </summary>
     private bool ShouldShowConsole()
     {
@@ -719,10 +823,11 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
             return false;
         }
 
-        // An in-app update was started from the settings console; reopen it. UPDATEFLOW is the reliable signal
-        // even when an older sending build omits SHOWCONSOLE, so it wins over the windowless auto-connect launch.
+        // UPDATEFLOW is the reliable signal even when an older sending build omits SHOWCONSOLE, so it wins over
+        // the windowless auto-connect launch.
         return IsUpdateFlow()
-            || string.Equals(engine.GetVariableString("SHOWCONSOLE"), "1", StringComparison.Ordinal);
+            ? ResumeOrigin() != "none"
+            : string.Equals(engine.GetVariableString("SHOWCONSOLE"), "1", StringComparison.Ordinal);
     }
 
     private static void LaunchApp(bool autoConnect, bool showConsole)
@@ -757,21 +862,22 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
         }
     }
 
-    // Records the surface the in-app update was started from, so the relaunched tray / UI returns there and
-    // announces the install. Written only for an applied in-app update, so a cancelled, declined, or failed run
-    // leaves nothing behind and no later launch is mistaken for a post-update one. An older sending build omits
-    // UPDATEORIGIN; it could only update from the console, so that falls back to "settings".
+    // Where the in-app update was started from: the window ("ui") or the tray / a balloon ("none"). An older
+    // sending build names the surface instead and could only update from the console, so anything else is "ui".
+    private string ResumeOrigin()
+    {
+        return engine.GetVariableString("UPDATEORIGIN") == "none" ? "none" : "ui";
+    }
+
+    // Records where the in-app update was started from and the view it was left on, so the relaunched tray
+    // reopens that view or announces the install instead. Written only for an applied in-app update, so a
+    // cancelled, declined, or failed run leaves nothing behind and no later launch is mistaken for a
+    // post-update one.
     private void WriteResumeOrigin()
     {
         if (!IsUpdateFlow())
         {
             return;
-        }
-
-        var origin = engine.GetVariableString("UPDATEORIGIN");
-        if (origin is not ("launcher" or "settings" or "none"))
-        {
-            origin = "settings";
         }
 
         try
@@ -780,11 +886,32 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "AmneziaGeo");
             Directory.CreateDirectory(dir);
-            File.WriteAllText(Path.Combine(dir, "update-origin"), origin);
+            File.WriteAllLines(Path.Combine(dir, "update-origin"), [ResumeOrigin(), ResumeView()]);
         }
         catch
         {
         }
+    }
+
+    // The view token to reopen, kept to the shape the app sends ("home", "settings/<section>"); anything else
+    // is dropped and the window opens on its default view.
+    private string ResumeView()
+    {
+        var view = engine.GetVariableString("UPDATEVIEW");
+        if (view.Length is 0 or > 40)
+        {
+            return string.Empty;
+        }
+
+        foreach (var c in view)
+        {
+            if (c is not ((>= 'a' and <= 'z') or '/'))
+            {
+                return string.Empty;
+            }
+        }
+
+        return view;
     }
 
     private void Finish(bool ok, string message)

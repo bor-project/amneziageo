@@ -244,8 +244,8 @@
   <data name="Main_AddLocalSubnetsButton" xml:space="preserve">
     <value>Добавить локальные сети</value>
   </data>
-  <data name="Main_AgentLogSection" xml:space="preserve">
-    <value>Журналы</value>
+  <data name="Main_DiagnosticsSection" xml:space="preserve">
+    <value>Диагностика</value>
   </data>
   <data name="Main_LogCaptureTitle" xml:space="preserve">
     <value>Настройки журнала</value>
@@ -261,6 +261,12 @@
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
+  </data>
+  <data name="Main_RouteTtlTitle" xml:space="preserve">
+    <value>Время жизни маршрута</value>
+  </data>
+  <data name="Main_RouteTtlHint" xml:space="preserve">
+    <value>Сколько адрес держится в кеше маршрутизации без обращений. По истечении маршрут и правила снимаются, а при следующем обращении адрес определяется заново.</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Пускает в туннель ещё и IPv6. Включайте, только если у вашего сервера есть IPv6-адрес, иначе оставьте выключенным. Применится при следующем подключении.</value>
@@ -722,10 +728,10 @@
     <value>Общие</value>
   </data>
   <data name="Main_RailLogsSubtitle" xml:space="preserve">
-    <value>Журнал работы агента</value>
+    <value>Журнал и текущая конфигурация</value>
   </data>
   <data name="Main_RailLogsTitle" xml:space="preserve">
-    <value>Логи</value>
+    <value>Диагностика</value>
   </data>
   <data name="Main_RailProfileSubtitle" xml:space="preserve">
     <value>Конфигурация + маршрутизация</value>
@@ -837,6 +843,15 @@
   </data>
   <data name="Main_RetryDisconnectButton" xml:space="preserve">
     <value>Повторить отключение</value>
+  </data>
+  <data name="Main_ReconnectApplyButton" xml:space="preserve">
+    <value>Переподключить</value>
+  </data>
+  <data name="Main_ReconnectLaterButton" xml:space="preserve">
+    <value>Позже</value>
+  </data>
+  <data name="Main_ReconnectPrompt" xml:space="preserve">
+    <value>Сохранено - переподключитесь, чтобы применить</value>
   </data>
   <data name="Main_UpdateSection" xml:space="preserve">
     <value>Обновление</value>
@@ -1466,6 +1481,33 @@
   <data name="InstallerVm_Repairing" xml:space="preserve">
     <value>Восстановление…</value>
   </data>
+  <data name="InstallerVm_StepPreparing" xml:space="preserve">
+    <value>Подготовка…</value>
+  </data>
+  <data name="InstallerVm_StepExtracting" xml:space="preserve">
+    <value>Распаковка файлов…</value>
+  </data>
+  <data name="InstallerVm_StepRemovingPrevious" xml:space="preserve">
+    <value>Удаление предыдущей версии…</value>
+  </data>
+  <data name="InstallerVm_StepRemoving" xml:space="preserve">
+    <value>Удаление файлов…</value>
+  </data>
+  <data name="InstallerVm_StepStoppingService" xml:space="preserve">
+    <value>Остановка службы…</value>
+  </data>
+  <data name="InstallerVm_StepCopyingFiles" xml:space="preserve">
+    <value>Копирование файлов…</value>
+  </data>
+  <data name="InstallerVm_StepStartingService" xml:space="preserve">
+    <value>Запуск службы…</value>
+  </data>
+  <data name="InstallerVm_StepRegistering" xml:space="preserve">
+    <value>Регистрация компонентов…</value>
+  </data>
+  <data name="InstallerVm_StepFinishing" xml:space="preserve">
+    <value>Завершение…</value>
+  </data>
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Обновление…</value>
   </data>
@@ -1549,6 +1591,36 @@
   </data>
   <data name="Main_LogTabSettings" xml:space="preserve">
     <value>Настройки</value>
+  </data>
+  <data name="Main_DiagTabLog" xml:space="preserve">
+    <value>Журнал</value>
+  </data>
+  <data name="Main_DiagTabConfig" xml:space="preserve">
+    <value>Конфиг</value>
+  </data>
+  <data name="Main_ConfigTabValues" xml:space="preserve">
+    <value>Конфигурация</value>
+  </data>
+  <data name="Main_ConfigTabCache" xml:space="preserve">
+    <value>Кеш</value>
+  </data>
+  <data name="Main_ConfigEmptyTitle" xml:space="preserve">
+    <value>Данных нет</value>
+  </data>
+  <data name="Main_CacheEmptyHint" xml:space="preserve">
+    <value>Кеш наполняется, пока туннель поднят: адреса отслеживаемых доменов и вердикты по адресам. Вердиктов не будет, если список Direct ставится целиком при подключении, а не по требованию.</value>
+  </data>
+  <data name="Main_CacheFilterWatermark" xml:space="preserve">
+    <value>Фильтр по тексту</value>
+  </data>
+  <data name="MainVm_CacheShown" xml:space="preserve">
+    <value>{0} из {1}</value>
+  </data>
+  <data name="MainVm_CacheShownCapped" xml:space="preserve">
+    <value>{0} из {1}, агент отдал {2}</value>
+  </data>
+  <data name="Agent_NoProfileSelected" xml:space="preserve">
+    <value>Профиль не выбран.</value>
   </data>
   <data name="Main_LogTypeLabel" xml:space="preserve">
     <value>Журнал</value>

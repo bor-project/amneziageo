@@ -103,11 +103,11 @@ internal sealed class NetworkFlowTracker : IDisposable
                 // EnableProvider true means it restarted a leftover session; do not gate on the result.
                 if (EnableFiltered(keywords))
                 {
-                    _logger.LogDebug("NetworkFlowTracker: restarted a pre-existing ETW session {Name}", sessionName);
+                    _logger.LogDebug("a leftover monitoring session {Name} was found and restarted", sessionName);
                 }
 
                 _session.Source.AllEvents += evt => Handle(evt, ct);
-                _logger.LogInformation("NetworkFlowTracker: ETW session {Name} started (v6={V6})", sessionName, _tunnelV6);
+                _logger.LogInformation("watching app connections (session {Name}, IPv6 {V6}); connections of tunneled apps are routed as they appear", sessionName, _tunnelV6);
 
                 // Backstop scan for matched apps' SYN_SENT remotes; only meaningful with a TCP app matcher.
                 if (_matcher is not null)
@@ -124,7 +124,7 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "NetworkFlowTracker: session ended");
+            _logger.LogDebug(ex, "stopped watching app connections");
         }
     }
 
@@ -146,7 +146,7 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "NetworkFlowTracker: event-id filtering unavailable, subscribing to the full stream");
+            _logger.LogDebug(ex, "this system cannot narrow the network events, so all of them are read - slightly more CPU, same behaviour");
             return _session!.EnableProvider(KernelNetworkProvider, TraceEventLevel.Informational, keywords);
         }
     }
@@ -284,7 +284,7 @@ internal sealed class NetworkFlowTracker : IDisposable
             // destination and must not promote domains off anycast resolvers; an app match promotes.
             if (RouteUdp(remoteIp))
             {
-                _logger.LogTrace("udp request -> {Remote} (pid {Pid})", remoteIp, pid);
+                _logger.LogTrace("{Remote}: an app (pid {Pid}) is sending here, routed into the tunnel", remoteIp, pid);
                 if (RouteLog.Enabled)
                 {
                     RouteLog.Note($"udp request -> {remoteIp} (pid {pid})");
@@ -295,7 +295,7 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "NetworkFlowTracker: udp parse error");
+            _logger.LogDebug(ex, "a UDP event could not be read and was skipped");
         }
     }
 
@@ -346,7 +346,7 @@ internal sealed class NetworkFlowTracker : IDisposable
             // Mark seen only after a successful route; failures retry on the next datagram.
             if (RouteUdp(remoteIp))
             {
-                _logger.LogTrace("udp request -> {Remote} (pid {Pid})", remoteIp, pid);
+                _logger.LogTrace("{Remote}: an app (pid {Pid}) is sending here, routed into the tunnel", remoteIp, pid);
                 if (RouteLog.Enabled)
                 {
                     RouteLog.Note($"udp request -> {remoteIp} (pid {pid})");
@@ -357,7 +357,7 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "NetworkFlowTracker: udp parse error");
+            _logger.LogDebug(ex, "a UDP event could not be read and was skipped");
         }
     }
 
@@ -407,7 +407,7 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "NetworkFlowTracker: tcp parse error");
+            _logger.LogDebug(ex, "a TCP event could not be read and was skipped");
         }
     }
 
@@ -458,7 +458,7 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "NetworkFlowTracker: tcp parse error");
+            _logger.LogDebug(ex, "a TCP event could not be read and was skipped");
         }
     }
 
@@ -493,7 +493,7 @@ internal sealed class NetworkFlowTracker : IDisposable
             return false;
         }
 
-        _logger.LogTrace("tcp request -> {Remote} (pid {Pid})", remoteIp, pid);
+        _logger.LogTrace("{Remote}: an app (pid {Pid}) is connecting, routed into the tunnel", remoteIp, pid);
         if (RouteLog.Enabled)
         {
             RouteLog.Note($"tcp request -> {remoteIp} (pid {pid})");
@@ -517,7 +517,7 @@ internal sealed class NetworkFlowTracker : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "NetworkFlowTracker: connection scan error");
+                    _logger.LogDebug(ex, "the sweep over open connections failed this round");
                 }
             }
         }
@@ -580,7 +580,7 @@ internal sealed class NetworkFlowTracker : IDisposable
             foreach (var ip in batch)
             {
                 _scanSeen.Add(ip);
-                _logger.LogTrace("tcp scan -> {Remote} (matched app, syn-sent)", ip);
+                _logger.LogTrace("{Remote}: a tunneled app was found waiting to connect here, routed into the tunnel", ip);
                 if (RouteLog.Enabled)
                 {
                     RouteLog.Note($"tcp scan -> {ip} (matched app, syn-sent)");

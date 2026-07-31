@@ -76,7 +76,7 @@ internal sealed class NetworkWatcher(AgentControl control, ILogger<NetworkWatche
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "underlay check failed");
+            logger.LogWarning(ex, "this network change could not be examined; a reconnect waiting for the network back may start later than it could");
         }
     }
 

@@ -81,7 +81,7 @@ internal sealed class AppDnsTracker : IDisposable
                 ct.Register(Stop);
                 _session.EnableProvider(DnsClientProvider, TraceEventLevel.Informational, ulong.MaxValue);
                 _session.Source.Dynamic.All += Handle;
-                _logger.LogInformation("AppDnsTracker: ETW session {Name} started", sessionName);
+                _logger.LogInformation("watching which programs look up which names, so an app you route through the tunnel takes its domains with it");
                 await Task.Run(() => _session.Source.Process(), CancellationToken.None).ConfigureAwait(false);
             }
         }
@@ -90,7 +90,7 @@ internal sealed class AppDnsTracker : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "AppDnsTracker: session ended");
+            _logger.LogDebug(ex, "no longer watching which programs look up which names; per-app rules now depend on outgoing connections alone");
         }
     }
 
@@ -129,7 +129,7 @@ internal sealed class AppDnsTracker : IDisposable
 
         if (_names.TryAdd(key, expiry))
         {
-            _logger.LogInformation("app dns: {Name} -> tunnel", key);
+            _logger.LogInformation("{Name} was looked up by an app you route through the tunnel, so this name goes through the tunnel too", key);
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"app dns {key} -> tunnel");

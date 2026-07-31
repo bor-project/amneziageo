@@ -68,7 +68,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(ex, "diagnostics: could not add log {Table}", table);
+                    logger.LogWarning(ex, "the '{Table}' log could not be added to the diagnostics archive; the archive is still written, just without it", table);
                 }
                 finally
                 {
@@ -83,7 +83,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             }
         }
 
-        logger.LogInformation("diagnostics bundle written: {Path}", zipPath);
+        logger.LogInformation("the diagnostics archive is ready at {Path}; keys and addresses in it are masked, so it can be sent for support", zipPath);
         return zipPath;
     }
 

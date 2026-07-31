@@ -70,7 +70,7 @@ internal sealed class AppMatcher
                     break;
                 default:
                     // pkg= (UWP) and unknown kinds: not matched by image path.
-                    _logger.LogInformation("app matcher: matcher kind '{Kind}' is not supported yet; ignored", kind);
+                    _logger.LogInformation("app rules of type '{Kind}' are not supported yet and are ignored; the programs they name will not be routed through the tunnel", kind);
                     break;
             }
         }

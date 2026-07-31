@@ -28,7 +28,7 @@ internal sealed class NetworkReconciler(DnsConfigurator dns, RouteManager routes
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "reconcile step failed: {What}", what);
+            logger.LogWarning(ex, "cleaning up after an earlier session failed at the step '{What}'; leftover routes or DNS settings may remain until the next start", what);
         }
     }
 }

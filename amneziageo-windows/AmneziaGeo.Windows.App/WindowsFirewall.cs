@@ -85,7 +85,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
             if (ConvertInterfaceIndexToLuid(tunnelInterfaceIndex, out var luid) != 0)
             {
-                logger.LogError("firewall: could not resolve LUID for interface index {Index}", tunnelInterfaceIndex);
+                logger.LogError("the tunnel adapter (index {Index}) could not be identified, so no leak protection is installed and traffic may leave past the tunnel", tunnelInterfaceIndex);
                 return false;
             }
 
@@ -93,7 +93,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             var open = FwpmEngineOpen0(IntPtr.Zero, RpcCAuthnWinnt, IntPtr.Zero, ref session, out var engine);
             if (open != 0)
             {
-                logger.LogError("firewall: FwpmEngineOpen0 failed 0x{Code:X8}", open);
+                logger.LogError("the Windows filtering engine refused to open (0x{Code:X8}); no leak protection is installed — check that the Base Filtering Engine service is running", open);
                 return false;
             }
 
@@ -140,12 +140,12 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
                 _engine = engine;
                 Interlocked.Increment(ref _generation);
-                logger.LogInformation("firewall armed on interface {Index} (killSwitch={KillSwitch}, dualStack={DualStack})", tunnelInterfaceIndex, killSwitch, dualStack);
+                logger.LogInformation("leak protection is on for adapter {Index}: anything not going through the tunnel, your own network or the allowed programs is now blocked (IPv6 covered too: {DualStack})", tunnelInterfaceIndex, dualStack);
                 return true;
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "firewall: failed to install filters");
+                logger.LogError(ex, "the leak-protection rules could not be installed; they are rolled back whole, so the tunnel runs without protection rather than half-blocked");
                 if (batched)
                 {
                     FwpmTransactionAbort0(engine);
@@ -185,19 +185,19 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 var rc = FwpmNetEventSubscribe4(_eventEngine, ref subscription, Marshal.GetFunctionPointerForDelegate(_dropCallback), IntPtr.Zero, out var handle);
                 if (rc != 0)
                 {
-                    logger.LogWarning("firewall: drop subscription failed 0x{Code:X8}; on-demand routing falls back to connect events", rc);
+                    logger.LogWarning("the firewall would not report what it blocks (0x{Code:X8}); addresses are learned from outgoing connections only, so an app with a hard-coded address may stay blocked", rc);
                     _dropCallback = null;
                     CloseEventEngineLocked();
                     return false;
                 }
 
                 _eventSubscription = handle;
-                logger.LogInformation("firewall: watching classify drops");
+                logger.LogInformation("blocked destinations are now reported back, so an address an app reaches without a name lookup still gets routed on the next try");
                 return true;
             }
             catch (EntryPointNotFoundException ex)
             {
-                logger.LogWarning(ex, "firewall: this platform has no drop subscription; on-demand routing falls back to connect events");
+                logger.LogWarning(ex, "this version of Windows cannot report blocked destinations; addresses are learned from outgoing connections only, so an app with a hard-coded address may stay blocked");
                 CloseEventEngineLocked();
                 return false;
             }
@@ -217,7 +217,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         var rc = FwpmEngineOpen0(IntPtr.Zero, RpcCAuthnWinnt, IntPtr.Zero, ref session, out var engine);
         if (rc != 0)
         {
-            logger.LogWarning("firewall: opening the event session failed 0x{Code:X8}", rc);
+            logger.LogWarning("a second connection to the filtering engine, the one that reads blocked destinations, failed to open (0x{Code:X8}); blocked addresses will not be learned", rc);
             return false;
         }
 
@@ -246,7 +246,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         var rc = FwpmEngineSetOption0(_eventEngine, option, ref wanted);
         if (rc != 0)
         {
-            logger.LogWarning("firewall: {What} failed 0x{Code:X8}", what, rc);
+            logger.LogWarning("{What} failed (0x{Code:X8}); blocked destinations may not be reported, and an app with a hard-coded address can stay blocked", what, rc);
             return false;
         }
 
@@ -336,7 +336,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "firewall: drop event ignored");
+            logger.LogDebug(ex, "one blocked-destination report could not be read and was skipped; that address is decided on its next attempt");
         }
     }
 
@@ -395,7 +395,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         CloseEventEngineLocked();
         FwpmEngineClose0(_engine);
         _engine = IntPtr.Zero;
-        logger.LogInformation("kill-switch disabled");
+        logger.LogInformation("leak protection is off; traffic is no longer restricted to the tunnel");
     }
 
     /// <inheritdoc/>
@@ -429,7 +429,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
                 if (rc == FwpAlreadyExists)
                 {
-                    logger.LogWarning("firewall: reusing existing kill-switch sublayer (leftover from a prior session)");
+                    logger.LogWarning("the leak-protection group left by a previous session is still held by it, so this session reuses it; its blocking rules stay in force until that session lets go");
                     return;
                 }
             }
@@ -464,7 +464,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
         var rc = FwpmGetAppIdFromFileName0(path, out var appId);
         if (rc != 0 || appId == IntPtr.Zero)
         {
-            logger.LogWarning("kill-switch: FwpmGetAppIdFromFileName0 failed 0x{Code:X8} for {Path}", rc, path);
+            logger.LogWarning("the program {Path} could not be identified to the firewall (0x{Code:X8}), so it gets no exemption and the leak protection will block it", path, rc);
             return false;
         }
 
@@ -568,7 +568,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
 
         if (skipped > 0 || failed > 0)
         {
-            logger.LogInformation("kill-switch: bypass permits {Permitted} installed, {Skipped} non-IPv4 skipped, {Failed} rejected", permitted, skipped, failed);
+            logger.LogInformation("{Permitted} address range(s) are allowed past the leak protection; {Skipped} were IPv6 and this protection covers IPv4 only, {Failed} were refused by the firewall and stay blocked", permitted, skipped, failed);
         }
     }
 
@@ -576,7 +576,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
     {
         if (!TryParseV4Cidr(cidr, out var addr, out var mask))
         {
-            logger.LogWarning("kill-switch: skipping invalid LAN CIDR {Cidr}", cidr);
+            logger.LogWarning("the local range {Cidr} is not a valid IPv4 range and was skipped; traffic to it will be blocked while the tunnel is up", cidr);
             return;
         }
 
@@ -736,7 +736,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
                 var rcIn = AddRaw(engine, LayerAleAuthRecvAcceptV6, WeightLan, ActionPermit, 0, cond, $"Permit LAN v6 {cidr} (in)");
                 if (rcOut != 0 || rcIn != 0)
                 {
-                    logger.LogWarning("kill-switch: v6 LAN permit {Cidr} not fully installed (out=0x{Out:X8}, in=0x{In:X8})", cidr, rcOut, rcIn);
+                    logger.LogWarning("the IPv6 range {Cidr} of your own network was only partly allowed (outgoing 0x{Out:X8}, incoming 0x{In:X8}); IPv6 devices on the LAN may be unreachable while the tunnel is up", cidr, rcOut, rcIn);
                 }
             }
             finally
@@ -758,7 +758,7 @@ internal sealed partial class WindowsFirewall(ILogger<WindowsFirewall> logger) :
             var rc = AddRaw(engine, layer, WeightHyperV, ActionPermit, 0, cond, "Permit Hyper-V");
             if (rc != 0)
             {
-                logger.LogWarning("kill-switch: Hyper-V permit not installed (0x{Code:X8}); continuing", rc);
+                logger.LogWarning("traffic between virtual machines could not be exempted (0x{Code:X8}); if you run Hyper-V, its guests may lose the network while the tunnel is up", rc);
                 return;
             }
         }

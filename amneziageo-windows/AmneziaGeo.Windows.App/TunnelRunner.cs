@@ -89,7 +89,7 @@ internal sealed class TunnelRunner(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "connect {Name}: bring-up failed - {Reason}", name, ex.Message);
+            logger.LogError(ex, "{Name}: setting up the connection failed ({Reason}); the firewall protection is lifted so the machine keeps working, and nothing goes through the tunnel", name, ex.Message);
             // Bring-up can throw past the session teardown; the machine must never keep a kill-switch it can't reach.
             firewall.Disable();
 
@@ -110,7 +110,7 @@ internal sealed class TunnelRunner(
     private async Task RunInnerAsync(string name)
     {
         var connectSw = Stopwatch.StartNew();
-        logger.LogInformation("connect {Name}: bring-up starting", name);
+        logger.LogInformation("{Name}: setting up the connection", name);
 
         using (logger.Step("reconcile leftovers"))
         {
@@ -120,7 +120,7 @@ internal sealed class TunnelRunner(
         var config = await store.GetConfigTextAsync(name)
             ?? throw new ConnectFailureException(ConnectFailureReason.ConfigMissing, $"configuration '{name}' is not stored");
         // Log length only - the config carries private keys.
-        logger.LogTrace("connect {Name}: config loaded ({Length} chars) [{Elapsed} ms]", name, config.Length, connectSw.ElapsedMilliseconds);
+        logger.LogTrace("{Name}: configuration read, {Length} chars [{Elapsed} ms in]", name, config.Length, connectSw.ElapsedMilliseconds);
 
         // Resolve the WS transport up front; start wstunnel last so a setup failure can't orphan it.
         var transport = await store.GetConfigTransportAsync(name);
@@ -138,7 +138,7 @@ internal sealed class TunnelRunner(
             var parsed = ParseEndpoint(WgConfigEditor.GetEndpoint(config));
             if (parsed is null)
             {
-                logger.LogError("websocket transport: config {Name} has no usable Endpoint; using plain UDP", name);
+                logger.LogWarning("{Name} asks for the websocket carrier but its Endpoint is missing or malformed; connecting over plain UDP instead, which a filtering provider may block", name);
                 useWebSocket = false;
             }
             else
@@ -158,7 +158,7 @@ internal sealed class TunnelRunner(
         if (useWebSocket)
         {
             // Log only that a path token is set, never its value - path/credentials are secrets.
-            logger.LogDebug("connect {Name}: websocket underlay -> {Host}:{Port} pathToken={HasPath} targetPort={Target}",
+            logger.LogDebug("{Name}: the tunnel will be carried inside a websocket to {Host}:{Port} (path token set: {HasPath}) and handed to port {Target} on the server",
                 name, wsHost, wsPort, !string.IsNullOrEmpty(wsPathPrefix), wsTargetPort);
         }
 
@@ -187,8 +187,8 @@ internal sealed class TunnelRunner(
             ? !(routingSettings?.UseGlobalProxy ?? false)
             : (geo?.GeoSplit ?? false);
 
-        logger.LogDebug("connect {Name}: geo loaded - split={Split} routes={Routes} domains={Domains} apps={Apps} [{Elapsed} ms]",
-            name, geoSplit, geoRoutes.Count, domains.Count, apps.Count, connectSw.ElapsedMilliseconds);
+        logger.LogDebug("{Name}: rules loaded — {Routes} address range(s), {Domains} domain(s), {Apps} app(s); only what they name goes through the tunnel: {Split} [{Elapsed} ms in]",
+            name, geoRoutes.Count, domains.Count, apps.Count, geoSplit, connectSw.ElapsedMilliseconds);
 
         // Block bucket applies always: WFP drops the CIDRs, the DNS proxy refuses the domains (NXDOMAIN).
         var blockRoutes = activeList?.BlockRoutes ?? [];
@@ -259,7 +259,7 @@ internal sealed class TunnelRunner(
         allowedIps = SplitDefaultRoutes(allowedIps);
 
         config = WgConfigEditor.ApplyAllowedIps(config, allowedIps);
-        logger.LogDebug("connect {Name}: allowed-ips resolved - {Count} entries, mtu={Mtu}, websocket={Ws} [{Elapsed} ms]",
+        logger.LogDebug("{Name}: the tunnel will accept {Count} address range(s), packet size {Mtu}, carried in a websocket: {Ws} [{Elapsed} ms in]",
             name, allowedIps.Count, effectiveMtu, useWebSocket, connectSw.ElapsedMilliseconds);
 
         var appSettings = await settings.LoadAsync();
@@ -309,7 +309,7 @@ internal sealed class TunnelRunner(
 
         if (exclusionDomains.Count > parsedExclusionDomains.Count)
         {
-            logger.LogInformation("local DNS suffixes kept on-LAN: {Suffixes}", string.Join(", ", exclusionDomains.Skip(parsedExclusionDomains.Count)));
+            logger.LogInformation("names ending in {Suffixes} belong to your own network, so they keep resolving there and never go through the tunnel", string.Join(", ", exclusionDomains.Skip(parsedExclusionDomains.Count)));
         }
         // Resolve the wstunnel host via the LAN resolver - the tunnel isn't up yet.
         if (useWebSocket && wsHost is not null && !IPAddress.TryParse(wsHost, out _))
@@ -333,11 +333,11 @@ internal sealed class TunnelRunner(
             if (pinnedIp is not null)
             {
                 config = WgConfigEditor.SetEndpoint(config, $"{pinnedIp}:{endpointParts.Port}");
-                logger.LogInformation("endpoint {Host} pinned to {Ip} (pre-tunnel resolve)", endpointParts.Host, pinnedIp);
+                logger.LogInformation("the server name {Host} was resolved to {Ip} before the tunnel came up and is held there, so it stays reachable once DNS moves into the tunnel", endpointParts.Host, pinnedIp);
             }
             else
             {
-                logger.LogWarning("endpoint {Host} unresolved pre-tunnel; engine resolves it via LAN", endpointParts.Host);
+                logger.LogWarning("the server name {Host} could not be resolved before the tunnel came up; the connection will try to resolve it itself and may fail with 'no such host'", endpointParts.Host);
             }
         }
 
@@ -365,7 +365,7 @@ internal sealed class TunnelRunner(
         var bypassCidrs = CidrAggregator.Aggregate(exclusionCidrs);
         if (bypassCidrs.Count < exclusionCidrs.Count)
         {
-            logger.LogInformation("bypass list aggregated: {From} -> {To} prefixes", exclusionCidrs.Count, bypassCidrs.Count);
+            logger.LogInformation("{From} address ranges kept out of the tunnel were merged into {To}, which shortens the route table and the firewall rules", exclusionCidrs.Count, bypassCidrs.Count);
         }
 
         IReadOnlyList<string> redirectServers = [];
@@ -398,8 +398,8 @@ internal sealed class TunnelRunner(
         _ = Task.Run(() => routing.RunAsync(sessionCts.Token));
         _ = Task.Run(() => routing.PumpAsync(sessionCts.Token));
         var ranges = routing.RangeCounts;
-        logger.LogInformation("routing cache for {Name}: {Entries} direct entries -> {Direct} direct / {Block} block / {Proxy} proxy ranges, resolved per destination, idle ttl {Ttl} s",
-            name, listDirect.Count, ranges.Direct, ranges.Block, ranges.Proxy, routing.TtlSeconds);
+        logger.LogInformation("{Name}: routing rules ready — {Proxy} range(s) go through the tunnel, {Direct} stay outside it, {Block} are refused; each address is decided when it is first used and forgotten after {Ttl} s unused",
+            name, ranges.Proxy, ranges.Direct, ranges.Block, routing.TtlSeconds);
 
         // Tracker when there's live work or a routing list drives the split.
         DomainTracker? tracker = null;
@@ -513,11 +513,11 @@ internal sealed class TunnelRunner(
         {
             // Loopback :53 busy - fall back to direct resolvers.
             redirectServers = configDns.Count > 0 ? configDns : upstream;
-            logger.LogWarning("DNS proxy unavailable (loopback :53 busy); using direct resolvers");
+            logger.LogWarning("port 53 on this machine is taken by another program, so names cannot be handled here; the resolvers are used directly and rules by domain name will not apply — only rules by address will");
         }
 
-        logger.LogDebug("connect {Name}: dns proxy {State}, tracker={Tracker} [{Elapsed} ms]",
-            name, proxy?.BoundV4 is not null ? $"bound {proxy.BoundV4}" : "unavailable", tracker is not null, connectSw.ElapsedMilliseconds);
+        logger.LogDebug("{Name}: name handling {State}, domain tracking {Tracker} [{Elapsed} ms in]",
+            name, proxy?.BoundV4 is not null ? $"listening on {proxy.BoundV4}" : "unavailable", tracker is not null ? "on" : "off", connectSw.ElapsedMilliseconds);
 
         // Strip DNS from config; we apply it on the adapter ourselves.
         config = WgConfigEditor.RemoveDns(config);
@@ -547,7 +547,7 @@ internal sealed class TunnelRunner(
         // Keep the LAN and any manual exclusions direct in both modes (RFC1918 floor + stored list). In split
         // mode the tunnelled geo routes are more specific, so longest-prefix-match keeps them on the tunnel.
         var lanExcluded = routes.AddLanExclusions(name, dualStack: !stripV6, bypassCidrs);
-        logger.LogDebug("connect {Name}: routes - endpoint {Endpoint} excluded={Excluded}, lan-exclusions={Lan} [{Elapsed} ms]",
+        logger.LogDebug("{Name}: routes in place — the server {Endpoint} is kept outside the tunnel: {Excluded}, your own network too: {Lan} [{Elapsed} ms in]",
             name, endpoint?.ToString() ?? "none", excluded, lanExcluded, connectSw.ElapsedMilliseconds);
 
         // Whitelist wstunnel under the kill-switch.
@@ -588,16 +588,16 @@ internal sealed class TunnelRunner(
             }
 
             config = WgConfigEditor.SetEndpoint(config, $"127.0.0.1:{wsTransport.LocalPort}");
-            logger.LogInformation("websocket transport active for {Name}: endpoint -> 127.0.0.1:{Port}", name, wsTransport.LocalPort);
+            logger.LogInformation("{Name}: the websocket carrier is up and the tunnel now dials it locally on port {Port}, so to the provider this looks like ordinary web traffic", name, wsTransport.LocalPort);
         }
 
         config = WgConfigEditor.SetMtu(config, effectiveMtu);
         // Keep the peer handshake/NAT state warm so a lossy underlay doesn't let the session age out into a
         // forced re-dial; only injected when the imported config didn't already specify its own keepalive.
         config = WgConfigEditor.EnsurePersistentKeepalive(config, DefaultKeepaliveSeconds);
-        logger.LogInformation("mtu for {Name}: {Mtu}, keepalive ensured ({Keepalive}s)", name, effectiveMtu, DefaultKeepaliveSeconds);
+        logger.LogInformation("{Name}: packet size set to {Mtu} and a keepalive every {Keepalive}s, so a quiet link is not dropped by the provider", name, effectiveMtu, DefaultKeepaliveSeconds);
 
-        logger.LogInformation("connect {Name}: bring-up complete in {Elapsed} ms, starting engine", name, connectSw.ElapsedMilliseconds);
+        logger.LogInformation("{Name}: everything is prepared in {Elapsed} ms, starting the tunnel", name, connectSw.ElapsedMilliseconds);
 
         try
         {
@@ -609,7 +609,7 @@ internal sealed class TunnelRunner(
         }
         finally
         {
-            logger.LogInformation("connect {Name}: session ended after {Elapsed} ms, tearing down", name, connectSw.ElapsedMilliseconds);
+            logger.LogInformation("{Name}: the session ended after {Elapsed} ms; removing its routes, firewall rules and DNS changes", name, connectSw.ElapsedMilliseconds);
             // Cancel before disabling: arming re-checks the token after Enable, so a late arm undoes itself.
             sessionCts.Cancel();
             session.Clear();
@@ -664,7 +664,7 @@ internal sealed class TunnelRunner(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "recording the transport rejection for {Name} failed", name);
+            logger.LogWarning(ex, "{Name}: the carrier's rejection could not be saved, so the next attempt may be reported as an unreachable server instead of a refusal", name);
         }
     }
 
@@ -822,7 +822,7 @@ internal sealed class TunnelRunner(
         var cached = await ReadCachedEndpointAsync(name);
         if (cached is not null)
         {
-            logger.LogInformation("endpoint {Host} using last-known-good {Ip}", host, cached);
+            logger.LogInformation("the server name {Host} did not resolve now, so the address {Ip} that worked last time is used", host, cached);
         }
 
         return cached;
@@ -954,7 +954,7 @@ internal sealed class TunnelRunner(
                 dns.FlushCache();
             }
 
-            logger.LogDebug("connect {Name}: dns redirected to {Servers} after handshake", name, string.Join(",", redirectServers));
+            logger.LogDebug("{Name}: the server answered, so name lookups now go to {Servers} and the cached ones were cleared", name, string.Join(",", redirectServers));
         }
         catch (OperationCanceledException)
         {
@@ -1000,11 +1000,11 @@ internal sealed class TunnelRunner(
             var current = await settings.LoadAsync(ct);
             routing.SetTtl(current.RouteTtlSeconds);
             session.Tracker?.SetTtl(current.RouteTtlSeconds);
-            logger.LogInformation("routing cache: route lifetime is now {Ttl} s", current.RouteTtlSeconds);
+            logger.LogInformation("an address unused for {Ttl} s is now forgotten and decided again on the next contact", current.RouteTtlSeconds);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "routing cache: applying the route lifetime failed");
+            logger.LogWarning(ex, "the new address lifetime could not be applied; the previous one stays in force until reconnect");
         }
     }
 
@@ -1029,7 +1029,7 @@ internal sealed class TunnelRunner(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "routing cache: applying the rule change for {Tunnel} failed", tunnelName);
+            logger.LogWarning(ex, "{Tunnel}: the edited rules could not be applied to the running tunnel; it keeps working by the previous ones until reconnect", tunnelName);
         }
     }
 
@@ -1040,7 +1040,7 @@ internal sealed class TunnelRunner(
             var index = await WaitForAdapterAsync(name, ct);
             if (index is null)
             {
-                logger.LogWarning("firewall: tunnel adapter {Name} did not appear; not armed", name);
+                logger.LogWarning("{Name}: the tunnel adapter never appeared, so the leak protection could not be set up; if the tunnel does come up, traffic may leave past it", name);
                 return;
             }
 
@@ -1048,7 +1048,7 @@ internal sealed class TunnelRunner(
             {
                 // The kill-switch protects an established tunnel, not the dial: a server that never answers
                 // would otherwise firewall the machine off for the whole attempt (#208).
-                logger.LogDebug("firewall: kill-switch for {Name} deferred until the first handshake", name);
+                logger.LogDebug("{Name}: the leak protection waits for the server's first answer, so a server that never replies cannot cut this machine off the network", name);
                 await WaitForHandshakeAsync(name, ct);
             }
 
@@ -1061,12 +1061,12 @@ internal sealed class TunnelRunner(
                 // sees it, because the send that would raise a connect or datagram event never happens.
                 if (routing is not null && !firewall.WatchDrops(routing.Report))
                 {
-                    logger.LogWarning("firewall: no drop subscription for {Name}; destinations without a DNS answer stay blocked", name);
+                    logger.LogWarning("{Name}: the firewall does not report what it blocks on this system, so an address reached without a name lookup — an app with a hard-coded address — stays blocked instead of being routed", name);
                 }
             }
             else
             {
-                logger.LogError("firewall: kill-switch for {Name} did not arm after {Attempts} attempts; tunnel running without WFP protection", name, FirewallArmAttempts);
+                logger.LogError("{Name}: the leak protection did not take after {Attempts} attempts; the tunnel is running unprotected, so if it drops, traffic goes out in the clear — reconnect to restore it", name, FirewallArmAttempts);
             }
         }
         catch (OperationCanceledException)
@@ -1074,7 +1074,7 @@ internal sealed class TunnelRunner(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "firewall: arming failed for {Name}", name);
+            logger.LogWarning(ex, "{Name}: setting up the leak protection failed; the tunnel runs without it until the next reconnect", name);
         }
     }
 
@@ -1109,7 +1109,7 @@ internal sealed class TunnelRunner(
                 return false;
             }
 
-            logger.LogWarning("firewall: arm attempt {Attempt} did not stick; retrying in {Delay}s", attempt, FirewallArmRetryDelay.TotalSeconds);
+            logger.LogWarning("the leak protection did not take on attempt {Attempt}, usually because a previous session is still letting go of it; retrying in {Delay}s", attempt, FirewallArmRetryDelay.TotalSeconds);
             await Task.Delay(FirewallArmRetryDelay, ct);
         }
     }

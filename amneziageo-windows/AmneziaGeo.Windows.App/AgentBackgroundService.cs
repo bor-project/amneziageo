@@ -26,7 +26,7 @@ internal sealed class AgentBackgroundService(
         var reaped = InstallerMaintenance.ReapTransientServices(null);
         if (reaped.Count > 0)
         {
-            logger.LogInformation("reaped {Count} orphaned tunnel service(s): {Names}", reaped.Count, string.Join(", ", reaped));
+            logger.LogInformation("removed {Count} tunnel(s) left behind by a previous run ({Names}); nothing was connected, so they were strays", reaped.Count, string.Join(", ", reaped));
         }
 
         // Stand the boot cleanup down the moment a connect is requested: its own reconcile then owns adapter state.
@@ -50,7 +50,7 @@ internal sealed class AgentBackgroundService(
         var group = string.IsNullOrWhiteSpace(launch) ? null : await ResolveProfileAsync(launch, stoppingToken);
         if (group is not null)
         {
-            logger.LogInformation("agent starting: profile {Profile} (config '{Config}')", group.Name, group.Config);
+            logger.LogInformation("the background service is up; profile {Profile} is selected, using configuration '{Config}'", group.Name, group.Config);
             control.SetTarget(group.Name);
 
             if (string.IsNullOrWhiteSpace(stored))
@@ -63,7 +63,7 @@ internal sealed class AgentBackgroundService(
             var settings = await settingsStore.LoadAsync(stoppingToken);
             if (settings.SurviveReboot)
             {
-                logger.LogInformation("survive-reboot on: auto-connecting profile {Profile}", group.Name);
+                logger.LogInformation("'stay connected after a restart' is on, so profile {Profile} is being connected without waiting for you", group.Name);
                 control.SetRunning(true);
             }
         }
@@ -74,11 +74,11 @@ internal sealed class AgentBackgroundService(
                 await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, stoppingToken);
             }
 
-            logger.LogInformation("agent starting: no target configured yet; idling");
+            logger.LogInformation("the background service is up, but no profile is selected; nothing will connect until you pick one");
         }
 
         await runner.RunAsync(group ?? new Profile(string.Empty, string.Empty), stoppingToken);
-        logger.LogInformation("agent stopped");
+        logger.LogInformation("the background service is stopping; no tunnel is kept up while it is down");
     }
 
     // Retries the boot reconcile while no tunnel is desired: RestoreSaved is a no-op once the leftover DNS state

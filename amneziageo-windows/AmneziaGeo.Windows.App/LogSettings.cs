@@ -13,10 +13,13 @@ internal sealed class LogSettings
         WriteIndented = true,
     };
 
+    // The cap earlier builds wrote into the file; a stored value equal to it was never a user's choice.
+    private const int SupersededMaxRows = 200_000;
+
     /// <summary>
     /// Maximum rows kept per log table; older rows are pruned past it.
     /// </summary>
-    public int MaxRowsPerTable { get; init; } = 200_000;
+    public int MaxRowsPerTable { get; init; } = 50_000;
 
     /// <summary>
     /// Loads the settings file, writing defaults only when it is absent; a present but unreadable file is kept intact.
@@ -29,9 +32,16 @@ internal sealed class LogSettings
             try
             {
                 var loaded = JsonSerializer.Deserialize<LogSettings>(File.ReadAllText(path), Json);
-                if (loaded is { MaxRowsPerTable: > 0 })
+                if (loaded is { MaxRowsPerTable: > 0 and not SupersededMaxRows })
                 {
                     return loaded;
+                }
+
+                if (loaded is { MaxRowsPerTable: SupersededMaxRows })
+                {
+                    var lowered = new LogSettings();
+                    Save(path, lowered);
+                    return lowered;
                 }
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)

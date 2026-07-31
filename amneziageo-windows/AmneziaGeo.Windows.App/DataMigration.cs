@@ -43,7 +43,7 @@ internal static class DataMigration
                     }
                 }
 
-                logger.LogInformation("seeded the library of {Target} from the legacy store {Source}", target, source);
+                logger.LogInformation("configurations from the older shared storage {Source} were copied into {Target}, so this user keeps them", source, target);
             }
 
             // Retire the legacy file: the machine root carries shared assets only, and a library left there is picked
@@ -54,7 +54,7 @@ internal static class DataMigration
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            logger.LogWarning(ex, "legacy store migration failed: {Source} -> {Target}", source, target);
+            logger.LogWarning(ex, "configurations could not be moved from the older storage {Source} to {Target}; they stay where they are and the move is tried again next start", source, target);
         }
     }
 }

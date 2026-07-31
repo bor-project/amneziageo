@@ -25,6 +25,9 @@ public sealed record LogPage(IReadOnlyList<LogRow> Rows, bool HasOlder);
 /// </summary>
 public sealed class SqliteLogStore : IDisposable
 {
+    // PRAGMA auto_vacuum value for incremental mode.
+    private const long AutoVacuumIncremental = 2;
+
     /// <summary>
     /// Table for the agent log (leveled Serilog events).
     /// </summary>
@@ -101,6 +104,8 @@ public sealed class SqliteLogStore : IDisposable
                 wal.CommandText = "PRAGMA journal_mode=WAL;";
                 await wal.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
+
+            await EnableIncrementalVacuumAsync(connection, ct).ConfigureAwait(false);
 
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
@@ -256,7 +261,61 @@ public sealed class SqliteLogStore : IDisposable
                     );
                     """;
                 command.Parameters.AddWithValue("$keep", maxRows);
-                return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                var removed = await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                if (removed > 0)
+                {
+                    await ReleaseFreePagesAsync(connection, ct).ConfigureAwait(false);
+                }
+
+                return removed;
+            }
+        }
+    }
+
+    // Pages a delete frees are handed back to the file only in this mode, and the mode itself is stored in the
+    // file header: a database created without it keeps growing to its high-water mark until it is rebuilt once.
+    private static async Task EnableIncrementalVacuumAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var read = connection.CreateCommand();
+        await using (read.ConfigureAwait(false))
+        {
+            read.CommandText = "PRAGMA auto_vacuum;";
+            if (await read.ExecuteScalarAsync(ct).ConfigureAwait(false) is long mode && mode == AutoVacuumIncremental)
+            {
+                return;
+            }
+        }
+
+        var rebuild = connection.CreateCommand();
+        await using (rebuild.ConfigureAwait(false))
+        {
+            rebuild.CommandText = "PRAGMA auto_vacuum=incremental; VACUUM;";
+            try
+            {
+                await rebuild.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+            catch (SqliteException)
+            {
+                // Another process holds the file: the rebuild is not worth failing startup over, and a caller
+                // that treats a SqliteException here as corruption would quarantine an intact log.
+            }
+        }
+    }
+
+    // Hands the pages freed by a prune back to the file system.
+    private static async Task ReleaseFreePagesAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var command = connection.CreateCommand();
+        await using (command.ConfigureAwait(false))
+        {
+            command.CommandText = "PRAGMA incremental_vacuum;";
+            try
+            {
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+            catch (SqliteException)
+            {
+                // The rows are already gone; the space returns on the next prune.
             }
         }
     }

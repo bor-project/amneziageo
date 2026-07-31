@@ -47,7 +47,7 @@ internal sealed class GeoUpdateCheckService(
                 if (settings.GeoAutoCheck)
                 {
                     var total = await broker.UpdateAllSourcesAsync(ct);
-                    logger.LogInformation("geo auto-update: refreshing {Total} source(s)", total);
+                    logger.LogInformation("checking {Total} rule database(s) for a newer version; anything downloaded takes effect without reconnecting", total);
                     // Return the materialization transient before the long sleep.
                     MemoryReclaim.Trim();
                     delay = TimeSpan.FromHours(Math.Clamp(settings.GeoCheckIntervalHours, MinIntervalHours, MaxIntervalHours));
@@ -63,7 +63,7 @@ internal sealed class GeoUpdateCheckService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "geo auto-check failed");
+                logger.LogWarning(ex, "the rule databases could not be checked for updates; the ones already downloaded keep working, next attempt in an hour");
                 delay = TimeSpan.FromHours(1);
             }
 

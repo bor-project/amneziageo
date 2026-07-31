@@ -49,7 +49,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         var exe = TunnelPaths.WsTunnelExe();
         if (!File.Exists(exe))
         {
-            logger.LogError("websocket transport requested but {Exe} is missing", exe);
+            logger.LogError("this configuration asks to be carried inside a websocket, but the program that does it is missing ({Exe}); the connection cannot start — reinstall the app", exe);
             return null;
         }
 
@@ -62,7 +62,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
             return transport;
         }
 
-        logger.LogError("wstunnel local UDP :{Port} did not come up", transport.LocalPort);
+        logger.LogError("the websocket carrier never started listening on port {Port}, so the tunnel has nothing to dial; the connect is aborted", transport.LocalPort);
         await transport.DisposeAsync().ConfigureAwait(false);
         return null;
     }
@@ -99,14 +99,14 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "failed to start wstunnel");
+            _logger.LogError(ex, "the websocket carrier could not be launched; this connection cannot be disguised as web traffic and will not come up");
             _process = null;
             return;
         }
 
         if (process is null)
         {
-            _logger.LogError("failed to start wstunnel");
+            _logger.LogError("the websocket carrier did not start and reported no reason; this connection will not come up");
             return;
         }
 
@@ -116,7 +116,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         process.BeginErrorReadLine();
         _process = process;
         _logger.LogInformation(
-            "wstunnel started (pid {Pid}): local udp :{Local} -> wss://{Host}:{Ws} -> 127.0.0.1:{Target}",
+            "the websocket carrier is running (process {Pid}): it takes the tunnel from local port {Local}, wraps it in an encrypted web connection to {Host}:{Ws}, and the server hands it to port {Target}",
             process.Id, LocalPort, _serverHost, _wsPort, _targetPort);
     }
 
@@ -131,18 +131,18 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
         if (IsRejection(line))
         {
-            _logger.LogError("wstunnel: {Line}", line);
+            _logger.LogError("the websocket carrier says: {Line}", line);
             ReportRejection(line);
             return;
         }
 
         if (line.Contains("ERROR", StringComparison.Ordinal) || line.Contains("WARN", StringComparison.Ordinal))
         {
-            _logger.LogWarning("wstunnel: {Line}", line);
+            _logger.LogWarning("the websocket carrier says: {Line}", line);
             return;
         }
 
-        _logger.LogInformation("wstunnel: {Line}", line);
+        _logger.LogInformation("the websocket carrier says: {Line}", line);
     }
 
     // A refused certificate is permanent: an expired or untrusted server cert never clears by re-dialing.
@@ -180,7 +180,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "reporting a rejected wstunnel carrier failed");
+            _logger.LogWarning(ex, "the carrier's refusal could not be recorded, so this attempt may be reported as an unreachable server instead of naming the real cause");
         }
     }
 
@@ -218,7 +218,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
                 return;
             }
 
-            _logger.LogWarning("wstunnel exited (code {Code}); restarting on :{Port}", process.ExitCode, LocalPort);
+            _logger.LogWarning("the websocket carrier stopped (exit code {Code}); traffic is interrupted until it is started again on port {Port}, in a second", process.ExitCode, LocalPort);
             process.Dispose();
             _process = null;
 
@@ -310,6 +310,6 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         }
 
         _cts.Dispose();
-        _logger.LogInformation("wstunnel transport stopped");
+        _logger.LogInformation("the websocket carrier is stopped");
     }
 }

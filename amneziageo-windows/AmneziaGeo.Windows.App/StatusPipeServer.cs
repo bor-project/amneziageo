@@ -43,11 +43,11 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentControl co
                 var taken = ex is UnauthorizedAccessException or IOException;
                 if (taken)
                 {
-                    logger.LogWarning("status pipe is held by another agent ({Reason}); retrying", ex.GetType().Name);
+                    logger.LogWarning("the channel the app talks over is still held by another copy ({Reason}); the window will not show a status until it is free, retrying every 5 s", ex.GetType().Name);
                 }
                 else
                 {
-                    logger.LogError(ex, "failed to create status pipe; retrying");
+                    logger.LogError(ex, "the channel the app talks over could not be opened; the window will show no status until this succeeds, retrying every second");
                 }
 
                 try
@@ -73,7 +73,7 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentControl co
             }
             catch (IOException ex)
             {
-                logger.LogWarning(ex, "status pipe wait failed");
+                logger.LogWarning(ex, "waiting for the app to connect failed; the channel is reopened, the window reconnects by itself");
                 await pipe.DisposeAsync();
                 continue;
             }
@@ -108,7 +108,7 @@ internal sealed class StatusPipeServer(AgentStatusBroker broker, AgentControl co
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "status broadcast failed");
+                logger.LogWarning(ex, "the status could not be sent to the window; it will show the previous one until the next update");
             }
         }
     }

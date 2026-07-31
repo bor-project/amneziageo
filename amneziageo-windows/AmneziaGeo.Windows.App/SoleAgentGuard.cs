@@ -28,14 +28,14 @@ internal static partial class SoleAgentGuard
         if (WindowsServiceHelpers.IsWindowsService())
         {
             // Service yields to an interactive session rather than kill it.
-            logger.LogWarning("status pipe already owned by another agent; service is yielding (no second backend)");
+            logger.LogWarning("another copy of the background service is already running, so this one stops; two of them would fight over the tunnel");
             return;
         }
 
         // Interactive/elevated start: stop the agent service cleanly (no failure-restart ping-pong).
         if (services.AgentState() == "RUNNING")
         {
-            logger.LogInformation("status pipe owned by the AmneziaGeoAgent service; stopping it to take over");
+            logger.LogInformation("the installed background service is running; stopping it so this copy can take over — any tunnel it holds goes down with it");
             services.StopAgentQuiet();
             await WaitUntilFreeAsync(TakeoverWait, ct);
         }
@@ -49,7 +49,7 @@ internal static partial class SoleAgentGuard
 
         if (PipeHeld())
         {
-            logger.LogWarning("status pipe still held after takeover; the host may fail to bind it (run elevated?)");
+            logger.LogWarning("the previous copy still holds the channel the app talks over; this one may fail to start — try running it as administrator");
         }
     }
 
@@ -94,12 +94,12 @@ internal static partial class SoleAgentGuard
         try
         {
             using var process = Process.GetProcessById((int)pid);
-            logger.LogInformation("killing stale status-pipe owner {Process} (pid {Pid})", process.ProcessName, pid);
+            logger.LogInformation("ending the leftover process {Process} ({Pid}) that still holds the channel the app talks over", process.ProcessName, pid);
             process.Kill(entireProcessTree: true);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "could not kill stale status-pipe owner (pid {Pid})", pid);
+            logger.LogWarning(ex, "the leftover process {Pid} could not be ended; this copy may fail to start", pid);
         }
     }
 

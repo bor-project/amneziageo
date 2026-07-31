@@ -81,7 +81,7 @@ internal sealed class ProfileRunner(
                 catch (Exception ex)
                 {
                     // Don't let a transient fault kill the supervisor.
-                    logger.LogError(ex, "tunnel session failed: {Reason}; retrying", ex.Message);
+                    logger.LogError(ex, "the tunnel session stopped with an error ({Reason}); the connection is torn down and dialled again", ex.Message);
                     Stop(group.Config);
                     await SetStateAsync("disconnected");
                     await DelayAsync(_livenessPoll, linked.Token);
@@ -111,7 +111,7 @@ internal sealed class ProfileRunner(
         {
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
             control.ClearTarget();
-            logger.LogInformation("target '{Profile}' does not exist; cleared binding, idling", name);
+            logger.LogInformation("the selected profile '{Profile}' no longer exists; the selection is cleared and nothing will connect until you pick another one", name);
         }
 
         return new Profile(string.Empty, string.Empty);
@@ -138,7 +138,7 @@ internal sealed class ProfileRunner(
             // Named-but-config-less warns; nameless idle stays quiet.
             if (!string.IsNullOrEmpty(group.Name))
             {
-                logger.LogWarning("profile {Profile} has no configuration", group.Name);
+                logger.LogWarning("profile {Profile} holds no configuration, so there is nothing to connect to; add one to it", group.Name);
             }
 
             await SetStateAsync("disconnected");
@@ -155,7 +155,7 @@ internal sealed class ProfileRunner(
 
         if (!await configRepo.ExistsAsync(config, ct))
         {
-            logger.LogError("missing config: {Config}", config);
+            logger.LogError("configuration {Config} is no longer in the library; the connection cannot start until it is imported again", config);
             await SetStateAsync("disconnected");
 
             // Missing .conf: fail the connect.
@@ -178,7 +178,7 @@ internal sealed class ProfileRunner(
             return;
         }
 
-        logger.LogInformation("connected: {Config} ({Profile})", config, group.Name);
+        logger.LogInformation("connected through {Config} of profile {Profile}; traffic now follows the routing rules", config, group.Name);
         await SetStateAsync("connected");
 
         _lastRxBytes = -1;
@@ -198,11 +198,11 @@ internal sealed class ProfileRunner(
                 {
                     if (++_deadStreak < DeadStreakLimit)
                     {
-                        logger.LogDebug("config {Config} liveness miss {Streak}/{Limit}", config, _deadStreak, DeadStreakLimit);
+                        logger.LogDebug("{Config}: nothing received from the server since the last check ({Streak} of {Limit} before reconnecting)", config, _deadStreak, DeadStreakLimit);
                         continue;
                     }
 
-                    logger.LogWarning("config {Config} unreachable ({Streak} consecutive misses); re-dialing", config, _deadStreak);
+                    logger.LogWarning("{Config}: nothing received from the server for {Streak} checks in a row, the tunnel is treated as dead; reconnecting now", config, _deadStreak);
                     _deadStreak = 0;
                     _lastRxBytes = -1;
                     await SetStateAsync("connecting");
@@ -212,7 +212,7 @@ internal sealed class ProfileRunner(
                     var current = await ReresolveConfigAsync(group, config, ct);
                     if (!string.Equals(current, config, StringComparison.Ordinal))
                     {
-                        logger.LogInformation("config renamed live {Old} -> {New}; re-dialing under the new name", config, current);
+                        logger.LogInformation("configuration {Old} was renamed to {New} while connected; reconnecting under the new name", config, current);
                         await ProjectRoutingAsync(group.Name, current, ct);
                         config = current;
                     }
@@ -270,7 +270,7 @@ internal sealed class ProfileRunner(
 
             if (!IsTransient(outcome.Reason))
             {
-                logger.LogWarning("connect failed: {Config} ({Profile}) - {Reason} {Detail}", config, profile, outcome.Reason, outcome.Detail);
+                logger.LogWarning("could not connect through {Config} of profile {Profile}: {Reason} {Detail}; this is not something a retry fixes, so dialling stops here", config, profile, outcome.Reason, outcome.Detail);
                 Stop(config);
                 await SetStateAsync("disconnected");
                 control.FailConnect(outcome.Reason, outcome.Detail);
@@ -279,8 +279,8 @@ internal sealed class ProfileRunner(
 
             var attempt = control.NextRetry();
             var delay = RetryDelay(attempt);
-            logger.LogWarning("connect unreachable: {Config} ({Profile}) - {Reason}; retry #{Attempt} in {Delay}s",
-                config, profile, outcome.Reason, attempt, (int)delay.TotalSeconds);
+            logger.LogWarning("could not reach the server of {Config} ({Profile}): {Reason}; trying again in {Delay}s, attempt {Attempt}",
+                config, profile, outcome.Reason, (int)delay.TotalSeconds, attempt);
             await SetStateAsync("connecting");
             await WaitRetryAsync(delay, ct);
         }
@@ -366,20 +366,20 @@ internal sealed class ProfileRunner(
         var list = await store.GetRoutingListAsync(listId.Value, ct);
         if (list is null)
         {
-            logger.LogWarning("profile {Profile} references missing routing list {Id}", profile, listId.Value);
+            logger.LogWarning("profile {Profile} points at routing list {Id}, which no longer exists; until another list is picked, everything goes through the tunnel", profile, listId.Value);
             await ProjectFullTunnelAsync(config, ct);
             return;
         }
 
         await store.SaveTunnelProjectionAsync(config, true, list.Routes, list.Domains, list.Apps, list.Id, ct);
-        logger.LogInformation("projected routing list '{List}' to {Config}", list.Name, config);
+        logger.LogInformation("routing list '{List}' now applies to {Config}: only what it names goes through the tunnel", list.Name, config);
     }
 
     private async Task ProjectFullTunnelAsync(string config, CancellationToken ct)
     {
         // geoSplit=false -> full tunnel via config AllowedIPs.
         await store.SaveTunnelProjectionAsync(config, false, [], [], [], null, ct);
-        logger.LogInformation("projected full tunnel to {Config} (routing off)", config);
+        logger.LogInformation("routing rules are off for {Config}: all traffic goes through the tunnel", config);
     }
 
     private async Task SetStateAsync(string status)
@@ -391,7 +391,7 @@ internal sealed class ProfileRunner(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "state write failed");
+            logger.LogWarning(ex, "the connection state could not be saved; the app may show an out-of-date state until the next change");
         }
     }
 
@@ -405,7 +405,7 @@ internal sealed class ProfileRunner(
         var state = string.IsNullOrEmpty(config) ? "ABSENT" : serviceManager.QueryState(config);
         if (state == "RUNNING")
         {
-            logger.LogWarning("disconnect incomplete: tunnel service {Config} still {State} after stop; keeping connected", config, state);
+            logger.LogWarning("the tunnel of {Config} is still {State} after being asked to stop, so the disconnect did not finish; it stays shown as connected — try again", config, state);
             control.FailDisconnect(state);
             await SetStateAsync("connected");
             return;
@@ -432,13 +432,13 @@ internal sealed class ProfileRunner(
         await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(member), string.Empty, ct);
         await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(member), string.Empty, ct);
 
-        logger.LogInformation("connecting {Member}: creating and starting tunnel service", member);
+        logger.LogInformation("{Member}: starting the tunnel process", member);
         var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
         var started = serviceManager.StartQuiet(member);
         var startFailed = created != 0 || started != 0;
         if (startFailed)
         {
-            logger.LogWarning("tunnel service {Member} did not start cleanly: sc create={Create} ({CreateMsg}), sc start={Start} ({StartMsg})",
+            logger.LogWarning("{Member}: the tunnel process did not start cleanly (create {Create}: {CreateMsg}; start {Start}: {StartMsg}); waiting for it anyway, the connect fails if it never answers",
                 member, created, ScError(created), started, ScError(started));
         }
 
@@ -458,11 +458,11 @@ internal sealed class ProfileRunner(
             {
                 var elapsed = (int)(DateTimeOffset.UtcNow - start).TotalSeconds;
                 // Per-poll handshake detail for Debug/Trace.
-                logger.LogDebug("{Member}: poll - handshake={Hs}s tx={Tx}B rx={Rx}B elapsed={Sec}s",
+                logger.LogDebug("{Member}: waiting for the server — last handshake {Hs}s ago, sent {Tx} B, received {Rx} B, {Sec}s into this attempt",
                     member, status.HandshakeSec, status.TxBytes, status.RxBytes, elapsed);
                 if (status.HandshakeSec > 0)
                 {
-                    logger.LogInformation("{Member}: handshake received in {Sec}s", member, elapsed);
+                    logger.LogInformation("{Member}: the server answered after {Sec}s, the tunnel is up", member, elapsed);
                     return ConnectOutcome.Success;
                 }
 
@@ -470,20 +470,20 @@ internal sealed class ProfileRunner(
                 if (!sawService)
                 {
                     sawService = true;
-                    logger.LogInformation("{Member}: tunnel service responding over UAPI; waiting for handshake", member);
+                    logger.LogInformation("{Member}: the tunnel process is running; waiting for the server to answer", member);
                 }
 
                 if (DateTimeOffset.UtcNow - lastHeartbeat >= TimeSpan.FromSeconds(4))
                 {
                     lastHeartbeat = DateTimeOffset.UtcNow;
-                    logger.LogInformation("{Member}: no handshake yet (sent {Tx} B, received {Rx} B, {Sec}s)",
+                    logger.LogInformation("{Member}: still no answer from the server — sent {Tx} B, received {Rx} B in {Sec}s",
                         member, status.TxBytes, status.RxBytes, elapsed);
                 }
 
                 // No rx after the window: server silent, give up.
                 if (status is { HandshakeSec: 0, RxBytes: 0 } && DateTimeOffset.UtcNow - start >= _noResponseWindow)
                 {
-                    logger.LogWarning("{Member}: server did not answer - no handshake, 0 bytes received in {Sec}s (sent {Tx} B); unreachable",
+                    logger.LogWarning("{Member}: the server sent nothing back in {Sec}s ({Tx} B went out), so it is unreachable — check the address, the port and whether the server is running",
                         member, (int)_noResponseWindow.TotalSeconds, status.TxBytes);
                     serverSilent = true;
                     break;
@@ -530,7 +530,7 @@ internal sealed class ProfileRunner(
         // server, so the stored reason wins - otherwise a permanent fault is retried forever.
         if (stored == ConnectFailureReason.TransportRejected)
         {
-            logger.LogWarning("{Member}: transport refused the connection: {Message}", member, storedMessage);
+            logger.LogWarning("{Member}: the server's carrier refused the connection ({Message}); retrying will not help until that is fixed on the server", member, storedMessage);
             return new ConnectOutcome(false, stored, TrimDetail(storedMessage));
         }
 
@@ -547,7 +547,7 @@ internal sealed class ProfileRunner(
 
         // Service never answered UAPI: prefer the reason it stored, else infer from the sc codes.
         logger.LogWarning(
-            "{Member}: tunnel service never responded over UAPI within {Sec}s - it likely failed to launch (sc start={Start}: {StartMsg}){Reason}",
+            "{Member}: the tunnel process never came up in {Sec}s, so it most likely failed to launch (start {Start}: {StartMsg}){Reason}",
             member, _settings.ConnectTimeoutSeconds, started, ScError(started),
             string.IsNullOrWhiteSpace(storedMessage) ? string.Empty : $"; reason: {storedMessage}");
 
@@ -621,7 +621,7 @@ internal sealed class ProfileRunner(
         var reaped = InstallerMaintenance.ReapTransientServices(keep);
         if (reaped.Count > 0)
         {
-            logger.LogInformation("reaped {Count} foreign tunnel service(s) before connect: {Names}", reaped.Count, string.Join(", ", reaped));
+            logger.LogInformation("removed {Count} tunnel(s) left over from an earlier run ({Names}), so they cannot fight over the routes", reaped.Count, string.Join(", ", reaped));
             reconciler.Reconcile();
         }
     }
@@ -681,7 +681,7 @@ internal sealed class ProfileRunner(
         var pid = serviceManager.QueryPid(member);
         if (pid == 0)
         {
-            logger.LogWarning("tunnel service {Member} did not stop in {Sec}s and has no process to kill", member, (int)_stopTimeout.TotalSeconds);
+            logger.LogWarning("{Member}: the tunnel did not stop in {Sec}s and its process is already gone; nothing left to end", member, (int)_stopTimeout.TotalSeconds);
             return;
         }
 
@@ -693,18 +693,18 @@ internal sealed class ProfileRunner(
                 // The tunnel service runs our own image; a recycled pid must not have its tree killed.
                 if (!string.Equals(process.ProcessName, self.ProcessName, StringComparison.OrdinalIgnoreCase))
                 {
-                    logger.LogWarning("tunnel service {Member} pid {Pid} belongs to {Name}; not killing", member, pid, process.ProcessName);
+                    logger.LogWarning("{Member}: process {Pid} is now {Name}, not our tunnel, so it is left alone", member, pid, process.ProcessName);
                     return;
                 }
 
-                logger.LogWarning("tunnel service {Member} did not stop in {Sec}s; killing pid {Pid}", member, (int)_stopTimeout.TotalSeconds, pid);
+                logger.LogWarning("{Member}: the tunnel did not stop in {Sec}s, ending process {Pid} by force; this also drops its firewall protection", member, (int)_stopTimeout.TotalSeconds, pid);
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(5000);
             }
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "could not kill tunnel service {Member} (pid {Pid})", member, pid);
+            logger.LogWarning(ex, "{Member}: process {Pid} could not be ended; the next connect may find the old tunnel still there", member, pid);
         }
     }
 

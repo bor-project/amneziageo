@@ -85,11 +85,11 @@ internal static class MachineMigration
             }
 
             await machine.SetSettingAsync(MigratedKey, "1", ct);
-            logger.LogInformation("split {Sources} geo sources and machine settings into the machine store", sources.Count);
+            logger.LogInformation("{Sources} rule database(s) and the machine-wide settings were moved to shared storage, so every user of this computer now uses the same ones", sources.Count);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "machine-store split migration failed");
+            logger.LogWarning(ex, "the rule databases and machine-wide settings could not be moved to shared storage; they stay per-user and the move is tried again next start");
         }
     }
 

@@ -206,9 +206,9 @@ internal sealed class DomainTracker(
         lock (_lock)
         {
             var index = EnsureIndex();
-            logger.LogDebug("DIAG track {Domain} ips=[{Ips}] index={Index} stripV6={StripV6}", domain, string.Join(",", ips), index, stripV6);
             if (index is null)
             {
+                logger.LogDebug("{Domain}: the tunnel adapter is not ready, so its addresses were left outside the tunnel", domain);
                 return;
             }
 
@@ -241,13 +241,13 @@ internal sealed class DomainTracker(
                 }
                 else
                 {
-                    logger.LogDebug("DIAG track add {Ip}/32 -> ifIndex {Index} ok=false (skipped)", ip, index.Value);
+                    logger.LogDebug("{Domain}: no route could be added for {Ip}, so that address stays outside the tunnel", domain, ip);
                 }
             }
 
             if (added.Count == 0)
             {
-                logger.LogDebug("DIAG track {Domain} no new routable ips", domain);
+                logger.LogTrace("{Domain}: already in the tunnel, nothing new to add", domain);
                 return;
             }
 
@@ -256,7 +256,8 @@ internal sealed class DomainTracker(
             _current[key] = union;
             TouchLocked(key);
 
-            logger.LogInformation("resolved {Domain} -> {Ips}", key, string.Join(", ", union));
+            logger.LogInformation("{Domain}: {Added} new address(es) now go through the tunnel, {Total} in total ({Ips})",
+                key, added.Count, union.Count, Brief(union));
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"resolve {key} -> [{string.Join(",", union)}] (+{addedCidrs.Count} route(s))");
@@ -421,7 +422,8 @@ internal sealed class DomainTracker(
                 staleCidrs.AddRange(stale.Select(Cidr));
             }
 
-            logger.LogInformation("re-resolved {Domain} -> {Ips} (evicted {Evicted})", key, string.Join(", ", next), stale?.Count ?? 0);
+            logger.LogInformation("{Domain}: refreshed, {Total} address(es) in the tunnel, {Evicted} dead one(s) dropped ({Ips})",
+                key, next.Count, stale?.Count ?? 0, Brief(next));
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"re-resolve {key} -> [{string.Join(",", next)}] (evicted {stale?.Count ?? 0})");
@@ -493,7 +495,7 @@ internal sealed class DomainTracker(
                 staleCidrs.AddRange(stale.Select(Cidr));
             }
 
-            logger.LogInformation("untracked {Domain}: left routing lists (-{Count} route(s))", key, stale?.Count ?? 0);
+            logger.LogInformation("{Domain}: no longer matches any rule; {Count} route(s) removed, its traffic now leaves directly", key, stale?.Count ?? 0);
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"untrack {key} (-{stale?.Count ?? 0} route(s))");
@@ -721,7 +723,7 @@ internal sealed class DomainTracker(
         var staleCidrs = stale.Select(Cidr).ToList();
         uapi.QueueRemoveAllowedIps(tunnelName, peerPublicKey, staleCidrs);
         Forget(staleCidrs);
-        logger.LogInformation("evicted {Domains} idle domain(s), {Apps} idle app destination(s), {Routes} route(s) reclaimed",
+        logger.LogInformation("{Domains} domain(s) and {Apps} app destination(s) went unused; {Routes} route(s) removed, they return to the tunnel when used again",
             domains.Count, apps.Count, stale.Count);
     }
 
@@ -821,15 +823,16 @@ internal sealed class DomainTracker(
             }
 
             var ok = routes.AddTunnelRoute(parsed, index.Value);
-            logger.LogDebug("DIAG app route add {Ip}/32 -> ifIndex {Index} ok={Ok}", ip, index.Value, ok);
             if (ok)
             {
                 _appIps[ip] = now;
                 addedCidrs.Add(Cidr(parsed));
+                logger.LogTrace("{Ip}: routed into the tunnel for a matched app", ip);
             }
             else
             {
                 allHandled = false; // route add failed; caller retries
+                logger.LogDebug("{Ip}: no route could be added for a matched app; this connection leaves directly, will retry", ip);
             }
         }
 
@@ -908,7 +911,7 @@ internal sealed class DomainTracker(
                     continue;
                 }
 
-                logger.LogInformation("app promoted domain {Name} via {Ip}", name, ip);
+                logger.LogInformation("{Name}: recognised as a domain of a tunneled app (seen at {Ip}); its addresses now go through the tunnel", name, ip);
                 (promoted ??= []).Add(name);
 
                 // The domain's other addresses serve the same app, and a CDN hands them out in rotation: route them
@@ -982,8 +985,15 @@ internal sealed class DomainTracker(
             return false;
         }
 
-        logger.LogDebug("{Address} kept off-tunnel by verdict {Verdict}", address, verdict);
+        logger.LogDebug("{Address}: kept out of the tunnel, the routing rules classify it as {Verdict}", address, verdict);
         return true;
+    }
+
+    // First few addresses, so a CDN answer of twenty does not fill the line.
+    private static string Brief(IReadOnlyCollection<string> ips)
+    {
+        const int shown = 4;
+        return ips.Count <= shown ? string.Join(", ", ips) : string.Join(", ", ips.Take(shown)) + $", +{ips.Count - shown} more";
     }
 
     private static string Cidr(IPAddress ip)
@@ -1044,12 +1054,12 @@ internal sealed class DomainTracker(
 
             if (addedCidrs.Count > 0)
             {
-                logger.LogInformation("geo cache: applied {Count} new range(s) live to {Tunnel}", addedCidrs.Count, tunnelName);
+                logger.LogInformation("{Count} new address range(s) added to the tunnel without reconnecting", addedCidrs.Count);
             }
 
             if (removed > 0)
             {
-                logger.LogInformation("geo cache: removed {Count} departed range(s) live from {Tunnel}", removed, tunnelName);
+                logger.LogInformation("{Count} address range(s) left the rules and were removed from the tunnel", removed);
             }
 
         }

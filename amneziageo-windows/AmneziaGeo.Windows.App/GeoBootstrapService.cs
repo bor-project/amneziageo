@@ -26,7 +26,7 @@ internal sealed class GeoBootstrapService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "geo seed failed");
+            logger.LogWarning(ex, "the standard rule databases could not be registered on first start; rules by country or by service match nothing until they are added and downloaded");
         }
     }
 }

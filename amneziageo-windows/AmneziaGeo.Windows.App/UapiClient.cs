@@ -156,7 +156,7 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
         Interlocked.CompareExchange(ref _removalSupport, supported ? 1 : 2, 0);
         if (!supported)
         {
-            logger.LogWarning("uapi: engine has no per-prefix allowed-ip removal; stale entries stay until reconnect");
+            logger.LogWarning("this tunnel build cannot drop a single address from the running tunnel, so addresses that stop being needed are only cleared on reconnect");
         }
 
         return supported;

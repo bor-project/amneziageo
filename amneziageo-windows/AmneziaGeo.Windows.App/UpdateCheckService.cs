@@ -39,7 +39,7 @@ internal sealed class UpdateCheckService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "update check failed");
+                logger.LogWarning(ex, "could not check whether a newer version of the app exists; the installed one keeps working and the check repeats later");
             }
 
             try

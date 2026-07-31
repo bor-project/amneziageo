@@ -17,6 +17,9 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
     {
         try
         {
+            // One pass before the wait, so a log left oversized by a previous version shrinks without a connect.
+            await PruneAsync(stoppingToken);
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 // Prune only while a tunnel is up: log.db grows during a session; idle, little is written.
@@ -38,7 +41,7 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
             var routes = await store.PruneAsync(SqliteLogStore.RoutesTable, settings.MaxRowsPerTable, ct);
             if (agent + routes > 0)
             {
-                logger.LogDebug("log retention: pruned {Agent} agent, {Routes} route rows", agent, routes);
+                logger.LogDebug("dropped the oldest {Agent} log entries and {Routes} routing entries past the retention limit", agent, routes);
             }
         }
         catch (OperationCanceledException)
@@ -47,7 +50,7 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "log retention prune failed");
+            logger.LogWarning(ex, "old log entries could not be removed; the log file keeps growing until this succeeds");
         }
     }
 }

@@ -40,7 +40,7 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
                 }
             }
 
-            logger.LogInformation("backup written to {Path} ({Count} configs)", path, configs.Count);
+            logger.LogInformation("a backup of {Count} configuration(s) was written to {Path}; it holds real private keys, so keep it safe", configs.Count, path);
             Console.WriteLine($"backup written: {path}");
             Console.WriteLine($"  state.db ({configs.Count} config(s) inside) - a copy of state.db alone is a full backup");
             Console.WriteLine("WARNING: this archive contains real private keys (the configs stored in the database). Store and transfer it securely.");
@@ -153,12 +153,12 @@ internal sealed class BackupService(IStateStore store, ServiceManager serviceMan
             }
             catch (IOException ex)
             {
-                logger.LogError(ex, "restore failed during file replacement");
+                logger.LogError(ex, "the backup could not be put back because the files are in use; nothing was changed — disconnect and close the app, then retry");
                 Console.WriteLine($"restore failed: {ex.Message} - is a tunnel or the agent still running?");
                 return 1;
             }
 
-            logger.LogInformation("restore complete: {Count} configs from {Path}", restored, path);
+            logger.LogInformation("{Count} configuration(s) were restored from {Path}; the previous ones were kept alongside in case you need them back", restored, path);
             Console.WriteLine($"restored {restored} config(s) + state.db");
             if (File.Exists($"{dbPath}.pre-restore-{stamp}"))
             {

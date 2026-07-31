@@ -293,7 +293,7 @@ internal sealed class RoutingCache
 
         if (refreshed > 0)
         {
-            _logger.LogDebug("routing cache: reinstalled {Count} host permits after rearm", refreshed);
+            _logger.LogDebug("the firewall was rearmed: {Count} host permit(s) reinstalled so their traffic keeps flowing", refreshed);
         }
     }
 
@@ -394,8 +394,8 @@ internal sealed class RoutingCache
         var rules = Build(proxy, direct, block);
         Volatile.Write(ref _rules, rules);
         Drop();
-        _logger.LogInformation("routing cache: rules rebuilt - {Direct} direct, {Block} block, {Proxy} proxy ranges",
-            rules.Direct.Count, rules.Block.Count, rules.Proxy.Count);
+        _logger.LogInformation("routing rules reloaded: {Proxy} tunnel, {Direct} direct, {Block} blocked range(s); every destination is decided again from now on",
+            rules.Proxy.Count, rules.Direct.Count, rules.Block.Count);
     }
 
     /// <summary>
@@ -404,7 +404,7 @@ internal sealed class RoutingCache
     public void RemoveAll()
     {
         Drop();
-        _logger.LogInformation("routing cache: {Installed} host routes installed, {Reclaimed} reclaimed this session",
+        _logger.LogInformation("routing cache cleared: {Installed} host route(s) installed and {Reclaimed} released during this session",
             Volatile.Read(ref _installed), Volatile.Read(ref _reclaimed));
     }
 
@@ -599,7 +599,7 @@ internal sealed class RoutingCache
             {
                 if (Interlocked.Exchange(ref _capacityWarned, 1) == 0)
                 {
-                    _logger.LogWarning("routing cache: {Max} host routes in use; further addresses follow the default route", MaxApplied);
+                    _logger.LogWarning("the host-route limit is reached ({Max} in use); further addresses follow the default route instead of their own rule until some are freed", MaxApplied);
                 }
 
                 return;
@@ -717,7 +717,7 @@ internal sealed class RoutingCache
         {
             Interlocked.Add(ref _reclaimed, dropped);
             Volatile.Write(ref _capacityWarned, 0);
-            _logger.LogDebug("routing cache: reclaimed {Dropped} idle entries, {Kept} still carrying traffic, {Active} routed",
+            _logger.LogDebug("{Dropped} unused destination(s) forgotten, {Kept} kept because traffic is still flowing; {Active} host route(s) remain, and a forgotten address is decided again on the next contact",
                 dropped, kept, Volatile.Read(ref _applied));
         }
     }
@@ -742,7 +742,7 @@ internal sealed class RoutingCache
 
         if (dropped > 0)
         {
-            _logger.LogDebug("routing cache: dropped {Count} verdict-only entries at capacity", dropped);
+            _logger.LogDebug("the cache is full: {Count} remembered decision(s) without a route were forgotten to make room", dropped);
         }
     }
 

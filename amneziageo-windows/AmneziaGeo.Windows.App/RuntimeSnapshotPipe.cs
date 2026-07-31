@@ -115,15 +115,15 @@ internal static class RuntimeSnapshotPipe
                     return reply;
                 }
 
-                logger.LogWarning("runtime pipe: {Tunnel} answered {Op} with nothing (attempt {Attempt})", tunnel, op, attempt);
+                logger.LogWarning("the running tunnel {Tunnel} returned nothing for '{Op}' (attempt {Attempt}); the app may show empty or stale routing data", tunnel, op, attempt);
             }
             catch (Exception ex) when (attempt < Attempts)
             {
-                logger.LogDebug(ex, "runtime pipe: {Op} to {Tunnel} failed, retrying", op, tunnel);
+                logger.LogDebug(ex, "'{Op}' did not reach the running tunnel {Tunnel}; retrying", op, tunnel);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "runtime pipe: {Op} to {Tunnel} failed; the UI falls back to this process", op, tunnel);
+                logger.LogWarning(ex, "'{Op}' never reached the running tunnel {Tunnel}; the app shows what this process knows, which is not the live routing data", op, tunnel);
                 return null;
             }
         }

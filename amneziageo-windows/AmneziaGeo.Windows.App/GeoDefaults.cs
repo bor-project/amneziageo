@@ -34,7 +34,7 @@ internal static class GeoDefaults
             position++;
             var name = $"{kind}-{position}";
             await store.SaveGeoSourceAsync(new GeoSource(name, kind, url, position), ct);
-            logger?.LogInformation("seeded default geo source {Name} ({Url})", name, url);
+            logger?.LogInformation("added the standard rule database {Name} from {Url}; country and service rules are matched against it", name, url);
         }
 
         return true;

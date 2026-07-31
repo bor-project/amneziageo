@@ -51,7 +51,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var resolved = UserContext.ResolveClient(stream);
         if (resolved is null)
         {
-            logger.LogWarning("client identity unresolved; serving the library of {Root}", AppDataRoot.Base());
+            logger.LogWarning("could not tell which user the app window belongs to, so the configurations under {Root} are served; a different user may see the wrong library", AppDataRoot.Base());
         }
 
         return ScopeFor(resolved?.Root ?? AppDataRoot.Base(), resolved?.Sid);
@@ -127,7 +127,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "status client handler failed");
+            logger.LogError(ex, "the connection to the app window broke unexpectedly; it is closed and the window reconnects by itself, the tunnel is unaffected");
         }
         finally
         {
@@ -271,7 +271,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "command {Op} failed", command.Op);
+            logger.LogWarning(ex, "the request '{Op}' from the app could not be carried out; nothing was changed", command.Op);
             return new IpcAck(false, ex.Message);
         }
     }
@@ -284,7 +284,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, "log-client requires a message");
         }
 
-        logger.LogWarning("ui: {Detail}", args[0]);
+        logger.LogWarning("reported by the app window: {Detail}", args[0]);
         return new IpcAck(true, "logged");
     }
 
@@ -1075,7 +1075,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
         var (rules, routes, domains) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
         AnnounceRules();
-        logger.LogInformation("set-geo {Name}: split={On}, {Rules} rules -> {Routes} routes, {Domains} domains", args[0], on, rules, routes, domains);
+        logger.LogInformation("{Name}: {Rules} rule(s) saved, giving {Routes} address range(s) and {Domains} domain(s); only the named traffic goes through the tunnel: {On} — takes effect on reconnect", args[0], rules, routes, domains, on);
         return new IpcAck(true, $"saved: {rules} rules, {routes} routes, {domains} domains (applies on reconnect)");
     }
 
@@ -1127,8 +1127,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("config {Name}: transport set - websocket={On}, port={Port}, mtu={Mtu}, ipv6={V6}, host={Host}",
-            args[0], on, port, mtu, useIpv6, host.Length == 0 ? "(endpoint)" : host);
+        logger.LogInformation("{Name}: carried inside a websocket: {On} (server {Host}, port {Port}), packet size {Mtu}, IPv6 allowed: {V6} — takes effect on reconnect",
+            args[0], on, host.Length == 0 ? "from the configuration" : host, port, mtu, useIpv6);
         return new IpcAck(true, on
             ? IpcMessage.Key("Agent_WebSocketEnabled", port)
             : IpcMessage.Key("Agent_WebSocketDisabled"));
@@ -1163,7 +1163,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("set-config-dns {Name}: servers='{Servers}'", args[0], servers);
+        logger.LogInformation("{Name}: names outside the tunnel will be resolved by '{Servers}' (empty means your provider's own servers) — takes effect on reconnect", args[0], servers);
         return new IpcAck(true, servers.Length == 0
             ? IpcMessage.Key("Agent_DnsReset")
             : IpcMessage.Key("Agent_DnsSaved", servers));
@@ -1191,7 +1191,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("set-config-exclusions {Name}: {Len} chars", args[0], exclusions.Length);
+        logger.LogInformation("{Name}: the list of addresses and names kept out of the tunnel was saved ({Len} characters) — takes effect on reconnect", args[0], exclusions.Length);
         return new IpcAck(true, IpcMessage.Key("Agent_ExclusionsSaved"));
     }
 
@@ -1462,7 +1462,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
         }
 
-        logger.LogInformation("set-routing-settings {Id}: excl={Len} chars, allUdp={Udp}, mode={Mode}, globalProxy={Global}", id, exclusions.Length, allUdp, mode, useGlobalProxy);
+        logger.LogInformation("routing list {Id} saved: exclusions {Len} characters, all UDP through the tunnel: {Udp}, mode {Mode}, everything through the tunnel except the direct list: {Global}", id, exclusions.Length, allUdp, mode, useGlobalProxy);
         return new IpcAck(true, IpcMessage.Key("Agent_RoutingSettingsSaved"));
     }
 
@@ -1529,7 +1529,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("assigned profile {Profile}: list={List} use={Use}", profile, listId, useRouting);
+        logger.LogInformation("profile {Profile} now uses routing list {List}; rules on: {Use} — with them off, all traffic goes through the tunnel", profile, listId, useRouting);
         return new IpcAck(true, $"assigned {profile}: list={listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} use={(useRouting ? "on" : "off")} (applies on reconnect)");
     }
 
@@ -1836,7 +1836,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "geo source check failed: {Name}", source.Name);
+            logger.LogWarning(ex, "could not check the rule database {Name} for a newer version; the copy already downloaded stays in use", source.Name);
             return GeoUpdateChecker.Status.Unknown;
         }
 
@@ -1898,7 +1898,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "geo refresh session failed");
+                logger.LogWarning(ex, "refreshing the rule databases failed part-way; the rules already in force keep working and the refresh is tried again");
             }
 
             HashSet<string> queuedNames;
@@ -1928,7 +1928,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "geo refresh: could not re-read sources for queued run");
+                logger.LogWarning(ex, "the list of rule databases could not be re-read, so the queued refresh only re-checks what is already loaded");
                 sources = [];
             }
         }
@@ -1977,7 +1977,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                     }
                     catch (Exception ex)
                     {
-                        logger.LogWarning(ex, "geo source download failed: {Name}", source.Name);
+                        logger.LogWarning(ex, "the rule database {Name} could not be downloaded; the copy already on disk stays in use, rules do not change", source.Name);
                         _lastError[source.Name] = ShortError(ex);
                         _updating.TryRemove(source.Name, out _);
                     }
@@ -1997,7 +1997,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(ex, "geo source re-materialize failed");
+                    logger.LogError(ex, "the routing lists could not be rebuilt from the refreshed databases; they keep the rules they had, so a new database does not take effect until this succeeds");
                 }
             }
             finally
@@ -2096,7 +2096,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "progress broadcast failed");
+                logger.LogWarning(ex, "download progress could not be sent to the window; the download itself continues, only the progress bar stalls");
             }
         }
     }
@@ -2159,7 +2159,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "diagnostics collection failed");
+            logger.LogError(ex, "the diagnostics archive could not be built; nothing was written to disk");
             return new IpcAck(false, IpcMessage.Key("Agent_DiagnosticsFailed", ex.Message));
         }
     }
@@ -2413,7 +2413,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 {
                     failed.Add(source.Name);
                     _lastError[source.Name] = ShortError(ex);
-                    logger.LogWarning(ex, "geo download failed: {Name}", source.Name);
+                    logger.LogWarning(ex, "the rule database {Name} could not be downloaded; the rules stay as they are", source.Name);
                 }
                 finally
                 {
@@ -2429,7 +2429,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "geo re-materialize failed");
+                logger.LogError(ex, "the databases were downloaded but the routing lists could not be rebuilt from them; the previous rules stay in force");
                 return new IpcAck(false, IpcMessage.Key("Agent_ListsDownloadedProcessFailed", ex.Message));
             }
         }

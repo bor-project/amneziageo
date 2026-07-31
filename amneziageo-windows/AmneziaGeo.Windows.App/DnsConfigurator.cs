@@ -107,7 +107,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
 
         WriteState(TunnelPaths.DnsStateFile(name), saved, proxyServers);
-        logger.LogDebug("dns redirect applied via WMI -> {Servers}", string.Join(",", proxyServers));
+        logger.LogDebug("every adapter now sends its name lookups to {Servers}; the servers they used before are saved and put back on disconnect", string.Join(",", proxyServers));
     }
 
     /// <summary>
@@ -138,7 +138,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "dns cache flush failed");
+            logger.LogDebug(ex, "the system's cached name lookups could not be cleared; a site may keep using an address resolved before the tunnel came up");
         }
     }
 
@@ -165,7 +165,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "dns restore failed; keeping state for retry");
+            logger.LogDebug(ex, "the adapters' original DNS servers could not be put back; the record is kept and retried, so lookups are not left pointing at this machine");
         }
     }
 
@@ -200,7 +200,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 
                 if (outcome == RestoreOutcome.Pending)
                 {
-                    logger.LogWarning("dns restore incomplete; keeping {File} for retry", Path.GetFileName(file));
+                    logger.LogWarning("the original DNS servers of one adapter could not all be put back yet; the record ({File}) is kept and tried again, so name lookups are not left pointing at this machine", Path.GetFileName(file));
                     continue;
                 }
 
@@ -209,22 +209,22 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
                 // its retry, alive on every boot from here on.
                 if (!Expired(file))
                 {
-                    logger.LogDebug("dns restore: {File} names an adapter that is not enumerable yet", Path.GetFileName(file));
+                    logger.LogDebug("the DNS record {File} names an adapter Windows does not list yet; it is kept in case the adapter comes back", Path.GetFileName(file));
                     continue;
                 }
 
-                logger.LogInformation("dns restore: {File} names no adapter that still exists; dropping it", Path.GetFileName(file));
+                logger.LogInformation("the DNS record {File} names an adapter that is gone for good; it is discarded, nothing left to put back", Path.GetFileName(file));
                 TryDelete(file);
             }
             catch (Exception ex)
             {
-                logger.LogDebug(ex, "dns restore from {File} failed", file);
+                logger.LogDebug(ex, "the DNS record {File} could not be read; it is left in place and retried, so the adapter's own servers are not lost", file);
             }
         }
 
         if (restored)
         {
-            logger.LogDebug("dns redirect restored from persisted state");
+            logger.LogDebug("the adapters' own DNS servers are back in place");
         }
     }
 

@@ -128,7 +128,7 @@ internal sealed class DnsProxy
             BoundV6 = IPAddress.IPv6Loopback;
         }
 
-        _logger.LogInformation("DIAG dnsproxy started: domains={Domains} tunnelUp={TunnelUp} tunnelUp2={TunnelUp2} localUp={LocalUp} lanUp={LanUp} lanPool={LanPool} localDomains={LocalDomains} v4={V4} v6={V6} stripV6={StripV6}",
+        _logger.LogInformation("DNS is now handled here: {Domains} domain rule(s); tunnel resolver {TunnelUp} (backup {TunnelUp2}), direct resolver {LocalUp}, LAN resolver {LanUp} (pool {LanPool}), {LocalDomains} local suffix(es); listening on {V4} and {V6}, IPv6 answers suppressed: {StripV6}",
             _domains.Count, _tunnelUpstream, _tunnelUpstreamSecondary is null ? "(none)" : _tunnelUpstreamSecondary, _localUpstream, _lanUpstream is null ? "(none)" : _lanUpstream, string.Join(",", _lanPool), _localDomains.Count, BoundV4, BoundV6, _stripV6);
     }
 
@@ -242,7 +242,7 @@ internal sealed class DnsProxy
         // Drop negative-cache entries: a name previously bypassed may now be in a rule (or vice versa).
         _bypass.Clear();
 
-        _logger.LogInformation("geo cache: domain matcher rebuilt live ({Count} rule(s))", domains.Count);
+        _logger.LogInformation("domain rules reloaded without reconnecting: {Count} rule(s) now in effect", domains.Count);
         if (RouteLog.Enabled)
         {
             RouteLog.Note($"matcher rebuilt live: {domains.Count} rule(s)");
@@ -293,7 +293,7 @@ internal sealed class DnsProxy
 
         if (removed > 0)
         {
-            _logger.LogInformation("geo cache: dropped {Count} domain(s) no longer in the routing lists", removed);
+            _logger.LogInformation("{Count} domain(s) left the rules and were taken out of the tunnel", removed);
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"prune: dropped {removed} departed domain(s)");
@@ -325,7 +325,7 @@ internal sealed class DnsProxy
             return;
         }
 
-        _logger.LogInformation("geo cache: pre-resolving {Count} newly added domain(s) live", added.Count);
+        _logger.LogInformation("resolving {Count} newly added domain(s) now, so they work without a first-use delay", added.Count);
         using var gate = new SemaphoreSlim(8);
         try
         {
@@ -337,7 +337,7 @@ internal sealed class DnsProxy
         catch (Exception ex)
         {
             // Fire-and-forget; the matcher is already swapped.
-            _logger.LogDebug(ex, "live pre-resolve of newly added domains failed");
+            _logger.LogDebug(ex, "the newly added domains could not be resolved up front; they resolve when first used");
         }
     }
 
@@ -368,7 +368,7 @@ internal sealed class DnsProxy
         }
         catch (SocketException ex)
         {
-            _logger.LogWarning(ex, "dns proxy could not bind {Address}:53", address);
+            _logger.LogWarning(ex, "DNS on {Address}:53 could not be taken over - another program holds it; names are resolved by the system instead, so rules by domain will not apply", address);
             return false;
         }
     }
@@ -400,7 +400,7 @@ internal sealed class DnsProxy
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "dns proxy stopped on {Address}", anyEndpoint);
+            _logger.LogError(ex, "DNS handling stopped on {Address}; names fall back to the system resolver and rules by domain stop applying", anyEndpoint);
         }
     }
 
@@ -408,6 +408,7 @@ internal sealed class DnsProxy
     {
         try
         {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
             var name = DnsMessage.QuestionName(query);
             var type = DnsMessage.QuestionType(query);
 
@@ -421,10 +422,10 @@ internal sealed class DnsProxy
                     server.Send(blocked, blocked.Length, client);
                 }
 
-                _logger.LogDebug("dns blocked {Name} type={Type} -> NXDOMAIN", name, type);
+                _logger.LogDebug("{Name} {Type}: matches a block rule; the client is told this name does not exist", name, TypeLabel(type));
                 if (RouteLog.Enabled)
                 {
-                    RouteLog.Note($"block {name} type={type} -> NXDOMAIN");
+                    RouteLog.Note($"block {name} {TypeLabel(type)} -> NXDOMAIN");
                 }
 
                 return;
@@ -452,33 +453,32 @@ internal sealed class DnsProxy
                 MarkBypassed(name);
             }
 
-            // Per-request trace; matched subset at debug for diagnosability.
-            if (name is not null)
-            {
-                var route = isLocal ? "lan" : matched ? "tunnel" : "local";
-                _logger.LogTrace("dns query {Name} type={Type} -> {Route}", name, type, route);
-                if (matched)
-                {
-                    _logger.LogDebug("dns matched {Name} type={Type} -> tunnel {Up}", name, type, _tunnelUpstream);
-                }
-            }
+            // Why this name is treated the way it is, spelled out for the log line below.
+            var decision = DecisionLabel(isLocal, appDns, geoMatch);
 
             byte[] response;
             var fromCache = false;
+            // What became of this query, and whether this call is the one that did the work: followers of a
+            // coalesced query repeat the leader's outcome and are not worth a line each.
+            var outcome = default(string);
+            var leader = true;
             if (!isLocal && _stripV6 && type == TypeAaaa)
             {
                 // IPv4-only tunnel: NODATA for AAAA so clients use IPv4.
                 response = DnsMessage.BuildNoData(query);
+                outcome = "answered without an IPv6 address, this tunnel carries IPv4 only, so the client will use IPv4 instead";
             }
             else if (!isLocal && type == TypeHttps)
             {
                 // Deny HTTPS/SVCB records: their hint addresses bypass the tunnel.
                 response = DnsMessage.BuildNoData(query);
+                outcome = "answer withheld, this record carries shortcut addresses that would skip the tunnel, so the client asks again the ordinary way";
             }
             else if (TryGetCached(name, type, query, out var cached))
             {
                 response = cached;
                 fromCache = true;
+                outcome = "answered from cache";
             }
             else if (matched && type == TypeA && _tracker is not null && _tracker.KnownIps(name!) is { Count: > 0 } known)
             {
@@ -493,6 +493,7 @@ internal sealed class DnsProxy
                 fromCache = true;
                 StoreInCache(name, type, response);
                 TriggerReachabilityRefresh(name!, known);
+                outcome = $"answered from its {known.Count} known address(es), already in the tunnel — checking in the background that they still respond";
             }
             else if (matched && type == TypeA && _tracker is not null
                      && await _tracker.TryHydrateFromCacheAsync(name!, n => _matcher.IsTunneled(n)).ConfigureAwait(false) is { Count: > 0 } hydrated)
@@ -504,6 +505,7 @@ internal sealed class DnsProxy
                 fromCache = true;
                 StoreInCache(name, type, response);
                 TriggerReachabilityRefresh(name!, hydrated);
+                outcome = $"restored {hydrated.Count} address(es) saved from an earlier session and put them back in the tunnel";
             }
             else
             {
@@ -511,15 +513,15 @@ internal sealed class DnsProxy
                 var secondary = matched ? _tunnelUpstreamSecondary : null;
                 // LAN-bound names (local, or non-geo in split) race the whole provider pool.
                 var lanRace = _lanPool.Count > 1 && (isLocal || (!matched && _localIsLan));
-                var started = System.Diagnostics.Stopwatch.GetTimestamp();
                 var result = lanRace
                     ? await ForwardCoalescedRacedAsync(name, type, query)
                     : await ForwardCoalescedAsync(name, type, query, upstream, secondary);
+                leader = result.Leader;
                 if (result.Error is not null)
                 {
                     // Upstream unreachable: warn so a 'site won't open' report shows DNS failed.
-                    var route = isLocal ? "lan" : matched ? "tunnel" : "local";
-                    _logger.LogWarning("dns query {Name} type={Type} -> {Route} unreachable: {Reason}", name, type, route, result.Error.Message);
+                    _logger.LogWarning("{Name} {Type}: {Decision}, asked {Resolver} — no answer ({Reason}); the client is told to try again",
+                        name, TypeLabel(type), decision, ResolverLabel(isLocal, matched, lanRace, upstream), result.Error.Message);
                     if (RouteLog.Enabled && name is not null && result.Leader)
                     {
                         RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, ips: null, failure: result.Error.Message));
@@ -557,23 +559,22 @@ internal sealed class DnsProxy
                 // Followers share the leader's buffer; answer each client with its own transaction id.
                 response = ApplyTransactionId(shared, query);
 
+                var addresses = name is null ? [] : DnsMessage.Addresses(shared).Select(a => a.ToString()).ToList();
+
                 // Feed the app-promotion hint cache from every real resolution (matched or not), so an app CDN
                 // domain in no geo rule still populates the reverse map; a promoted name routes its IPs here.
-                if (name is not null && _tracker is not null)
+                if (name is not null && _tracker is not null && addresses.Count > 0)
                 {
-                    var learned = DnsMessage.Addresses(shared).Select(a => a.ToString()).ToList();
-                    if (learned.Count > 0)
-                    {
-                        _tracker.NoteResolution(name, learned);
-                    }
+                    _tracker.NoteResolution(name, addresses);
                 }
 
                 // Routing-log line for a real resolution, written only by the coalescing leader.
                 if (RouteLog.Enabled && name is not null && result.Leader)
                 {
-                    var ips = DnsMessage.Addresses(shared).Select(a => a.ToString()).ToList();
-                    RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, ips, failure: null));
+                    RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, addresses, failure: null));
                 }
+
+                outcome = $"asked {ResolverLabel(isLocal, matched, lanRace, upstream)}, got {addresses.Count} address(es) in {ElapsedMs(started)} ms";
             }
 
             // Route a matched domain before answering, or the client's first SYN egresses off-tunnel.
@@ -587,7 +588,7 @@ internal sealed class DnsProxy
                 catch (Exception ex)
                 {
                     // Route installation failed; the matched domain won't route through the tunnel.
-                    _logger.LogWarning(ex, "routing matched domain {Name} failed (route not installed)", name);
+                    _logger.LogWarning(ex, "{Name}: its addresses could not be put in the tunnel; this traffic leaves directly until the next query", name);
                     if (RouteLog.Enabled)
                     {
                         RouteLog.Note($"route FAILED for {name}: {ex.Message}");
@@ -608,8 +609,16 @@ internal sealed class DnsProxy
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "routing cache note for {Name} failed", name);
+                    _logger.LogDebug(ex, "{Name}: its addresses could not be classified against the routing rules", name);
                 }
+            }
+
+            // One line per query: what was asked, where it goes, what was done. Followers of a coalesced query
+            // repeat the leader's work, so they stay silent.
+            if (name is not null && leader && outcome is not null)
+            {
+                _logger.Log(matched ? LogLevel.Debug : LogLevel.Trace, "{Name} {Type}: {Decision}; {Outcome}",
+                    name, TypeLabel(type), decision, outcome);
             }
 
             lock (server)
@@ -679,7 +688,7 @@ internal sealed class DnsProxy
             }
             catch (Exception ex)
             {
-                _logger.LogDebug("reachability heal {Name}: resolver unreachable ({Reason}) - path down, keeping cached set", name, ex.Message);
+                _logger.LogDebug("{Name}: its addresses could not be rechecked, the tunnel resolver is unreachable ({Reason}); keeping the ones already in use", name, ex.Message);
                 return;
             }
 
@@ -697,7 +706,7 @@ internal sealed class DnsProxy
             // Evicting/rebuilding here would be the erroneous deletion + churn we want to avoid.
             if (SameV4Set(ips, fresh))
             {
-                _logger.LogDebug("reachability heal {Name}: resolver re-confirms same set - transient probe miss, no evict", name);
+                _logger.LogDebug("{Name}: its addresses went quiet, but the resolver returns the same ones; keeping them", name);
                 return;
             }
 
@@ -709,7 +718,7 @@ internal sealed class DnsProxy
             // once instead of the now-dead IP for up to ServeKnownTtlSeconds.
             _cache.TryRemove(CacheKey(name, TypeA), out _);
 
-            _logger.LogInformation("reachability heal {Name}: last-good set unreachable -> re-resolved to {Ips}", name, string.Join(", ", fresh));
+            _logger.LogInformation("{Name}: its addresses stopped responding, so it was resolved again to {Ips}", name, string.Join(", ", fresh));
             if (RouteLog.Enabled)
             {
                 RouteLog.Note($"heal {name.TrimEnd('.').ToLowerInvariant()}: dead set -> [{string.Join(",", fresh)}]");
@@ -1092,7 +1101,7 @@ internal sealed class DnsProxy
     // Routing-log line: resolved addresses, upstream, matched rule, round-trip time.
     private static string FormatRouteQuery(string name, int type, bool isLocal, bool matched, bool appDns, DomainMatcher.GeoMatch? geoMatch, IPAddress upstream, long startedTimestamp, IReadOnlyList<string>? ips, string? failure)
     {
-        var ms = (long)System.Diagnostics.Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds;
+        var ms = ElapsedMs(startedTimestamp);
         var decision = isLocal ? "LAN" : matched ? "TUNNEL" : "LOCAL";
         var rule = matched && geoMatch is { } gm ? "  rule=" + RuleLabel(gm) : matched && appDns ? "  rule=app" : string.Empty;
         if (failure is not null)
@@ -1106,12 +1115,15 @@ internal sealed class DnsProxy
         return $"{name} {TypeLabel(type)} -> {decision}  ip={ipText}  up={upstream}  {ms}ms{rule}";
     }
 
-    // DNS record type -> short label for the routing log; unknown types fall back to "typeNN".
+    // Milliseconds since a Stopwatch timestamp.
+    private static long ElapsedMs(long from) => (long)System.Diagnostics.Stopwatch.GetElapsedTime(from).TotalMilliseconds;
+
+    // DNS record type -> label that says what the client asked for; unknown types fall back to "typeNN".
     private static string TypeLabel(int type) => type switch
     {
-        1 => "A",
-        28 => "AAAA",
-        65 => "HTTPS",
+        1 => "A/IPv4",
+        28 => "AAAA/IPv6",
+        65 => "HTTPS/SVCB",
         5 => "CNAME",
         12 => "PTR",
         15 => "MX",
@@ -1121,6 +1133,34 @@ internal sealed class DnsProxy
         6 => "SOA",
         _ => "type" + type.ToString(System.Globalization.CultureInfo.InvariantCulture),
     };
+
+    // Why this name is sent where it is sent, in words.
+    private static string DecisionLabel(bool isLocal, bool appDns, DomainMatcher.GeoMatch? geoMatch)
+    {
+        if (isLocal)
+        {
+            return "a name of your own network";
+        }
+
+        if (geoMatch is { } match)
+        {
+            return $"matches the tunnel rule {RuleLabel(match)}";
+        }
+
+        return appDns ? "belongs to an app you route through the tunnel" : "matches no rule";
+    }
+
+    // Which resolver the query was sent to, and by which path.
+    private static string ResolverLabel(bool isLocal, bool matched, bool raced, IPAddress upstream)
+    {
+        if (raced)
+        {
+            return "every resolver of your provider at once";
+        }
+
+        var kind = isLocal ? "your network's resolver" : matched ? "the resolver inside the tunnel" : "your provider's resolver";
+        return $"{kind} {upstream}";
+    }
 
     // The matched geo rule as "<kind>:<value>" (e.g. "domain:openai.com").
     private static string RuleLabel(DomainMatcher.GeoMatch match) => match.Kind switch
@@ -1233,7 +1273,7 @@ internal sealed class DnsProxy
             // All attempts exhausted without an answer; the rule host could not be pre-resolved.
             if (!ct.IsCancellationRequested)
             {
-                _logger.LogWarning("seed: rule host {Host} unreachable through the tunnel resolver", host);
+                _logger.LogWarning("{Host}: could not be resolved through the tunnel; it will be tried again when something asks for it", host);
                 if (RouteLog.Enabled)
                 {
                     RouteLog.Note($"seed UNREACHABLE {host}");

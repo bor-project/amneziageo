@@ -26,7 +26,7 @@ public sealed record LogPage(IReadOnlyList<LogRow> Rows, bool HasOlder);
 public sealed class SqliteLogStore : IDisposable
 {
     // PRAGMA auto_vacuum value for incremental mode.
-    private const long AutoVacuumIncremental = 2;
+    public const long AutoVacuumIncremental = 2;
 
     /// <summary>
     /// Table for the agent log (leveled Serilog events).

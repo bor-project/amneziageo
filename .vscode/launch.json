@@ -2,10 +2,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug (Launcher: backend + UI)",
+      "name": "Debug Windows",
       "type": "coreclr",
       "request": "launch",
-      "preLaunchTask": "build",
+      "preLaunchTask": "Build Windows",
       "program": "${workspaceFolder}/amneziageo-windows/tools/AmneziaGeo.Windows.Launcher/bin/Debug/net10.0/AmneziaGeo.dll",
       "cwd": "${workspaceFolder}/amneziageo-windows/tools/AmneziaGeo.Windows.Launcher/bin/Debug/net10.0",
       "console": "internalConsole",
@@ -15,21 +15,21 @@
       }
     },
     {
-      "name": "Attach to process",
+      "name": "Attach Windows",
       "type": "coreclr",
       "request": "attach",
       "processId": "${command:pickProcess}"
     },
     {
-      "name": "Debug Android (Avalonia)",
+      "name": "Debug Android",
       "type": "mono",
       "request": "attach",
-      "preLaunchTask": "android: deploy debug",
+      "preLaunchTask": "Build Android",
       "address": "localhost",
       "port": 10000
     },
     {
-      "name": "Attach Android (Avalonia)",
+      "name": "Attach Android",
       "type": "mono",
       "request": "attach",
       "address": "localhost",

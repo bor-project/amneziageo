@@ -18,5 +18,9 @@ desktop.ini
 *.db-shm
 *.db-wal
 
+# VS Code local debug settings (per-developer)
+.vscode/debug.windows.jsonc
+.vscode/debug.android.jsonc
+
 # Local handoff notes — not committed
 HANDOFF.md

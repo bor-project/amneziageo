@@ -14,7 +14,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args is ["--service", _])
+        if (args is ["--service", ..])
         {
             return AppEntry.RunAsync(args).GetAwaiter().GetResult();
         }

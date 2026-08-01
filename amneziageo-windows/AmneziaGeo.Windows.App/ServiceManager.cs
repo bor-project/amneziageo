@@ -15,7 +15,7 @@ internal sealed class ServiceManager
         var serviceName = TunnelPaths.ServiceName(name);
         // Quote the name and owner root: they become part of the service ImagePath re-parsed into argv.
         var root = string.IsNullOrEmpty(ownerRoot) ? string.Empty : $" --root \"{ownerRoot}\"";
-        var binPath = $"\"{Environment.ProcessPath}\" --service \"{name}\"{root}";
+        var binPath = $"\"{ServiceHost()}\" --service \"{name}\"{root}";
         if (Exists(name))
         {
             // The tunnel reads its library from the root baked into ImagePath, and the owner may have changed
@@ -166,7 +166,7 @@ internal sealed class ServiceManager
     {
         var serviceName = TunnelPaths.AgentServiceName();
         // Quote the target: it is re-parsed from ImagePath into argv.
-        var binPath = $"\"{Environment.ProcessPath}\" --agent \"{target}\"";
+        var binPath = $"\"{ServiceHost()}\" --agent \"{target}\"";
         return Sc(
             "create",
             serviceName,
@@ -221,6 +221,18 @@ internal sealed class ServiceManager
     public int AgentStatus()
     {
         return Sc("query", TunnelPaths.AgentServiceName());
+    }
+
+    // Resolves the service host executable, using the co-located apphost when hosted under dotnet.
+    private static string ServiceHost()
+    {
+        var host = Environment.ProcessPath!;
+        if (!string.Equals(Path.GetFileNameWithoutExtension(host), "dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return host;
+        }
+
+        return Path.Combine(AppContext.BaseDirectory, "AmneziaGeo.exe");
     }
 
     private static int Sc(params string[] arguments)

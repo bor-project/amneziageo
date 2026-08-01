@@ -519,8 +519,8 @@ internal sealed class DnsProxy
                 leader = result.Leader;
                 if (result.Error is not null)
                 {
-                    // Upstream unreachable: warn so a 'site won't open' report shows DNS failed.
-                    _logger.LogWarning("{Name} {Type}: {Decision}, asked {Resolver} — no answer ({Reason}); the client is told to try again",
+                    // Notes an upstream that did not answer.
+                    _logger.LogDebug("{Name} {Type}: {Decision}, asked {Resolver} — no answer ({Reason}); the client is told to try again",
                         name, TypeLabel(type), decision, ResolverLabel(isLocal, matched, lanRace, upstream), result.Error.Message);
                     if (RouteLog.Enabled && name is not null && result.Leader)
                     {

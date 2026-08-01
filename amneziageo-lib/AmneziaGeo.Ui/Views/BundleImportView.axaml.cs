@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -50,20 +51,29 @@ internal sealed partial class BundleImportView : UserControl
             AllowMultiple = false,
             FileTypeFilter = [new FilePickerFileType("JSON") { Patterns = ["*.json"] }],
         });
-        var path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
-        if (path is null)
+        var file = files.Count > 0 ? files[0] : null;
+        if (file is null)
         {
             return;
         }
 
         try
         {
-            vm.Payload = await File.ReadAllTextAsync(path);
+            // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
+            // TryGetLocalPath is null.
+            vm.Payload = await ReadAllTextAsync(file);
             vm.StatusMessage = string.Empty;
         }
         catch (Exception ex)
         {
             vm.StatusMessage = ex.Message;
         }
+    }
+
+    private static async Task<string> ReadAllTextAsync(IStorageFile file)
+    {
+        await using var stream = await file.OpenReadAsync();
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
     }
 }

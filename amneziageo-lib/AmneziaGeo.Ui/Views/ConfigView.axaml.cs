@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -82,28 +83,31 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
-        // One «Файл» picker for both a config text file and a QR image; extension decides which.
-        var path = await PickFileAsync(Loc.Instance.Get("MainCode_ConfigurationTitle"),
+        // One «Файл» picker for both a config text file and a QR image; content sniff decides which.
+        var file = await PickFileAsync(Loc.Instance.Get("MainCode_ConfigurationTitle"),
             "conf", "txt", "vpn", "png", "jpg", "jpeg", "bmp", "gif");
-        if (path is null)
+        if (file is null)
         {
             return;
         }
 
         try
         {
-            var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-            if (ext is "png" or "jpg" or "jpeg" or "bmp" or "gif")
+            // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
+            // TryGetLocalPath is null, so the old path-based read silently dropped every pick on mobile.
+            var raw = await ReadAllBytesAsync(file);
+            if (LooksLikeImage(raw))
             {
-                using var bitmap = new Bitmap(path);
+                using var stream = new MemoryStream(raw);
+                using var bitmap = new Bitmap(stream);
                 ApplyQrToSectionConfig(vm, bitmap);
                 return;
             }
 
-            var raw = File.ReadAllText(path);
-            if (VpnLinkCodec.TryDecode(raw) is not { } imported)
+            var text = new UTF8Encoding(false, false).GetString(raw).TrimStart('﻿');
+            if (VpnLinkCodec.TryDecode(text) is not { } imported)
             {
-                vm.SectionConfigText = raw;
+                vm.SectionConfigText = text;
                 vm.SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNotRecognized");
                 vm.ImportMethod = ConfigImportMethod.Manual;
                 return;
@@ -116,7 +120,7 @@ internal sealed partial class ConfigView : UserControl
             {
                 var name = !string.IsNullOrWhiteSpace(imported.Name)
                     ? imported.Name!
-                    : Path.GetFileNameWithoutExtension(path);
+                    : Path.GetFileNameWithoutExtension(file.Name);
                 if (!string.IsNullOrWhiteSpace(name))
                 {
                     vm.SectionConfigName = name;
@@ -127,6 +131,45 @@ internal sealed partial class ConfigView : UserControl
         {
             vm.SectionConfigStatus = ex.Message;
         }
+    }
+
+    private static async Task<byte[]> ReadAllBytesAsync(IStorageFile file)
+    {
+        await using var stream = await file.OpenReadAsync();
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        return memory.ToArray();
+    }
+
+    // PNG / JPEG / BMP / GIF magic bytes.
+    private static bool LooksLikeImage(byte[] raw)
+    {
+        if (raw.Length < 4)
+        {
+            return false;
+        }
+
+        if (raw[0] == 0x89 && raw[1] == 0x50 && raw[2] == 0x4E && raw[3] == 0x47)
+        {
+            return true;
+        }
+
+        if (raw[0] == 0xFF && raw[1] == 0xD8)
+        {
+            return true;
+        }
+
+        if (raw[0] == 0x42 && raw[1] == 0x4D)
+        {
+            return true;
+        }
+
+        if (raw[0] == 0x47 && raw[1] == 0x49 && raw[2] == 0x46)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static void ApplyQrToSectionConfig(ConfigViewModel vm, Bitmap bitmap)
@@ -155,7 +198,7 @@ internal sealed partial class ConfigView : UserControl
         vm.ImportMethod = ConfigImportMethod.Manual;
     }
 
-    private async Task<string?> PickFileAsync(string title, params string[] extensions)
+    private async Task<IStorageFile?> PickFileAsync(string title, params string[] extensions)
     {
         if (TopLevel.GetTopLevel(this) is not { } top)
         {
@@ -171,6 +214,6 @@ internal sealed partial class ConfigView : UserControl
         };
 
         var files = await top.StorageProvider.OpenFilePickerAsync(options);
-        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        return files.Count > 0 ? files[0] : null;
     }
 }

@@ -1,6 +1,10 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Threading;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui;
@@ -49,6 +53,13 @@ public sealed partial class MainView : UserControl
         }
     }
 
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        FocusCurrentScreen();
+    }
+
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(MainWindowViewModel.IsCompact)
@@ -57,6 +68,42 @@ public sealed partial class MainView : UserControl
         {
             ApplySettingsLayout();
         }
+
+        if (e.PropertyName is nameof(MainWindowViewModel.IsHome)
+            or nameof(MainWindowViewModel.IsSettings))
+        {
+            FocusCurrentScreen();
+        }
+    }
+
+    // Seats initial D-pad focus on each screen so an Android TV remote always has a starting point:
+    // the connect control on home, the active section row in settings.
+    private void FocusCurrentScreen()
+    {
+        var vm = _vm;
+        if (vm is null)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_vm != vm)
+            {
+                return;
+            }
+
+            if (vm.IsHome)
+            {
+                HomePowerButton.Focus(NavigationMethod.Tab);
+            }
+            else if (vm.IsSettings)
+            {
+                var rows = RailMenu.Children.OfType<Button>();
+                var target = rows.FirstOrDefault(b => b.Classes.Contains("active")) ?? rows.FirstOrDefault();
+                target?.Focus(NavigationMethod.Tab);
+            }
+        }, DispatcherPriority.Loaded);
     }
 
     // Sizes the rail / splitter / content columns for the current mode: side by side when wide, a single

@@ -59,6 +59,11 @@ if ($Target -eq "emulator") {
 }
 elseif ($Device) {
   $adbTarget = "-s $Device"
+  if ($Device -match '^\d{1,3}(\.\d{1,3}){3}:\d+$') {
+    $adb = Join-Path $AndroidSdk "platform-tools\adb.exe"
+    Write-Host "Connecting Wi-Fi device $Device"
+    & $adb connect $Device | Write-Host
+  }
 }
 
 $project = Join-Path $root "amneziageo-android\AmneziaGeo.Android.Ui\AmneziaGeo.Android.Ui.csproj"

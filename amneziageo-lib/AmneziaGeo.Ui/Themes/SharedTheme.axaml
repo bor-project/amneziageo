@@ -276,6 +276,32 @@
       <Setter Property="Opacity" Value="0.5" />
     </Style>
 
+    <!-- D-pad / keyboard focus ring: a bright accent outline in the adorner layer (no layout shift), so
+         remote and keyboard focus is always visible on Android TV. -->
+    <Style Selector="Button:focus-visible, ComboBox:focus-visible, ToggleSwitch:focus-visible, CheckBox:focus-visible, TextBox:focus-visible, AutoCompleteBox:focus-visible, GridSplitter:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="9" Margin="-3" />
+        </Template>
+      </Setter>
+    </Style>
+    <!-- Round home connect control: circular ring hugging the outer dial. -->
+    <Style Selector="Button.powerbig:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="130" Margin="-6" />
+        </Template>
+      </Setter>
+    </Style>
+    <!-- Section-rail rows: ring matching their 12px corner. -->
+    <Style Selector="Button.rowselect:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="13" Margin="-2" />
+        </Template>
+      </Setter>
+    </Style>
+
     <!-- Connection controls already express unavailable/disconnected state through their own colours. -->
     <Style Selector="Button.powerbig:disabled, Button.powerctl:disabled">
       <Setter Property="Opacity" Value="1" />

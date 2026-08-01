@@ -12,7 +12,8 @@
         Design.Width="987" Design.Height="610"
         Background="{DynamicResource AgBgBrush}"
         FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
-        Foreground="{DynamicResource AgFgBrush}">
+        Foreground="{DynamicResource AgFgBrush}"
+        XYFocus.NavigationModes="Enabled">
 
   <UserControl.Resources>
     <!-- Refresh glyph. -->
@@ -55,7 +56,7 @@
                     Orientation="{Binding IsHorizontalHome, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=homeOrientation}"
                     Margin="{Binding #HomeScroll.Bounds.Height, Converter={x:Static svc:GoldenTopConverter.Instance}, ConverterParameter=118}"
                     IsVisible="{Binding Home.IsReady}">
-          <Button Classes="powerbig" HorizontalAlignment="Center"
+          <Button x:Name="HomePowerButton" Classes="powerbig" HorizontalAlignment="Center"
                   Command="{Binding Home.ToggleConnectionCommand}"
                   IsEnabled="{Binding Home.CanToggleConnection}"
                   ToolTip.Tip="{Binding Home.ConnectHint}">
@@ -243,8 +244,10 @@
       <Border Grid.Column="0" Grid.Row="1" Classes="card" Margin="0,12,0,0" Padding="0"
               IsVisible="{Binding ShowRail}">
         <ScrollViewer>
-          <StackPanel Classes="railmenu" Classes.compact="{Binding IsCompact}" Margin="12,12">
-              <Button Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
+          <StackPanel x:Name="RailMenu" Classes="railmenu" Classes.compact="{Binding IsCompact}" Margin="12,12"
+                      KeyboardNavigation.TabNavigation="Cycle">
+              <Button x:Name="RailProfile" Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
+                      XYFocus.Up="{Binding ElementName=RailGeneral}"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="profile">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
                   <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
@@ -339,7 +342,8 @@
                 </Grid>
               </Button>
 
-              <Button Classes="rowselect" Classes.active="{Binding IsSettingsGeneral}" Margin="0,3"
+              <Button x:Name="RailGeneral" Classes="rowselect" Classes.active="{Binding IsSettingsGeneral}" Margin="0,3"
+                      XYFocus.Down="{Binding ElementName=RailProfile}"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="general">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
                   <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">

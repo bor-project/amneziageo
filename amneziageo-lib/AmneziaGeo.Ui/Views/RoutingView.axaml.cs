@@ -92,15 +92,17 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
-        var path = await PickFileAsync(Loc.Instance.Get("MainCode_RoutingListTitle"), "txt");
-        if (path is null)
+        var file = await PickFileAsync(Loc.Instance.Get("MainCode_RoutingListTitle"), "txt");
+        if (file is null)
         {
             return;
         }
 
         try
         {
-            vm.ApplyImportText(await File.ReadAllTextAsync(path));
+            // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
+            // TryGetLocalPath is null.
+            vm.ApplyImportText(await ReadAllTextAsync(file));
         }
         catch (Exception ex)
         {
@@ -111,7 +113,7 @@ internal sealed partial class RoutingView : UserControl
         }
     }
 
-    private async Task<string?> PickFileAsync(string title, params string[] extensions)
+    private async Task<IStorageFile?> PickFileAsync(string title, params string[] extensions)
     {
         if (TopLevel.GetTopLevel(this) is not { } top)
         {
@@ -127,6 +129,13 @@ internal sealed partial class RoutingView : UserControl
         };
 
         var files = await top.StorageProvider.OpenFilePickerAsync(options);
-        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        return files.Count > 0 ? files[0] : null;
+    }
+
+    private static async Task<string> ReadAllTextAsync(IStorageFile file)
+    {
+        await using var stream = await file.OpenReadAsync();
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
     }
 }

@@ -10,9 +10,12 @@ namespace AmneziaGeo.Android.Ui;
 /// </summary>
 [Activity(
     Label = "AmneziaGeo",
+    Icon = "@mipmap/appicon",
+    Banner = "@drawable/banner",
     Theme = "@style/AppTheme",
     MainLauncher = true,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
+[IntentFilter(new[] { Intent.ActionMain }, Categories = new[] { "android.intent.category.LEANBACK_LAUNCHER" })]
 public sealed class MainActivity : AvaloniaMainActivity<App>
 {
     private const int VpnRequestCode = 0x7A11;

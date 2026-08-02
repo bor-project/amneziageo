@@ -313,6 +313,12 @@
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
   </data>
+  <data name="Main_AppsLabel" xml:space="preserve">
+    <value>Приложения (раздельный туннель)</value>
+  </data>
+  <data name="Main_AppsButton" xml:space="preserve">
+    <value>Выбрать приложения…</value>
+  </data>
   <data name="Main_CameraButton" xml:space="preserve">
     <value>Сканировать QR-код</value>
   </data>
@@ -642,6 +648,9 @@
   </data>
   <data name="Main_NotSelected" xml:space="preserve">
     <value>- не выбрано -</value>
+  </data>
+  <data name="Main_RoutingNoneHint" xml:space="preserve">
+    <value>Использует адреса из оригинального конфига.</value>
   </data>
   <data name="Main_PasswordLabel" xml:space="preserve">
     <value>ПАРОЛЬ</value>
@@ -1113,6 +1122,9 @@
   </data>
   <data name="QrScanner_CameraNotFound" xml:space="preserve">
     <value>Камера не найдена</value>
+  </data>
+  <data name="QrScanner_CameraPermissionDenied" xml:space="preserve">
+    <value>Доступ к камере запрещён</value>
   </data>
   <data name="RoutingChoice_None" xml:space="preserve">
     <value>- не задан -</value>
@@ -1653,7 +1665,7 @@
     <value>Конфиг</value>
   </data>
   <data name="Main_ImportTab" xml:space="preserve">
-    <value>Импорт</value>
+    <value>Новый</value>
   </data>
   <data name="Main_ExportTab" xml:space="preserve">
     <value>Экспорт</value>

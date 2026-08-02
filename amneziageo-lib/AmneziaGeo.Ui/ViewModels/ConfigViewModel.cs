@@ -137,7 +137,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
 
-    public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [ConfigChoice.None];
+    public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [];
 
     /// <summary>
     /// The names of the configurations currently known.
@@ -186,6 +186,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public bool IsImportManual => ImportMethod == ConfigImportMethod.Manual;
 
     public bool IsImportCamera => ImportMethod == ConfigImportMethod.Camera;
+
+    /// <summary>
+    /// Whether a live camera QR scanner is available on this platform.
+    /// </summary>
+    public bool CameraScanAvailable => QrCameraScannerHost.IsAvailable;
 
     public string SectionMethodLabel => ImportMethod switch
     {
@@ -514,7 +519,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     private void ReconcileConfigCatalogueOptions()
     {
-        const int head = 1; // None occupies [0].
+        const int head = 0;
         var present = _configNames.ToHashSet(StringComparer.Ordinal);
         for (var i = ConfigCatalogueOptions.Count - 1; i >= head; i--)
         {
@@ -729,6 +734,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private void BeginCameraImport()
     {
+        if (!QrCameraScannerHost.IsAvailable)
+        {
+            return;
+        }
+
         SectionScan = new ScanViewModel(TryAcceptScannedConfig);
         ImportMethod = ConfigImportMethod.Camera;
     }

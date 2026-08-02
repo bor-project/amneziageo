@@ -77,7 +77,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<RoutingListSummaryViewModel> RoutingLists { get; } = [];
 
-    public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [RoutingListChoice.None];
+    public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [];
 
     /// <summary>
     /// Имена сохранённых списков маршрутизации.
@@ -162,6 +162,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool IsImportManual => ImportMethod == RoutingImportMethod.Manual;
 
     public bool IsImportCamera => ImportMethod == RoutingImportMethod.Camera;
+
+    /// <summary>
+    /// Whether a live camera QR scanner is available on this platform.
+    /// </summary>
+    public bool CameraScanAvailable => QrCameraScannerHost.IsAvailable;
 
     // ---- Footer Save/Cancel bar (#143): the open-list edits (rules + traffic) are held and committed atomically
     // on the footer Save, reverted on Cancel; the same footer serves the import draft. ----
@@ -462,12 +467,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         _suppressCatalogueRouting = false;
     }
 
-    // Reconcile RoutingCatalogueOptions in place from RoutingLists: keep «— не выбрано —» at [0] and reconcile
-    // the real (id) choices after it - replacing a renamed row so its label updates. A following
-    // SyncCatalogueRouting re-selects by id, so a replace never strands the selection.
+    // Reconcile RoutingCatalogueOptions in place from RoutingLists: reconcile the real (id) choices - replacing a
+    // renamed row so its label updates. A following SyncCatalogueRouting re-selects by id, so a replace never
+    // strands the selection.
     private void ReconcileRoutingCatalogueOptions()
     {
-        const int head = 1; // None occupies [0].
+        const int head = 0;
         var present = RoutingLists.Select(r => r.Id).ToHashSet();
         for (var i = RoutingCatalogueOptions.Count - 1; i >= head; i--)
         {
@@ -687,6 +692,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [RelayCommand]
     private void BeginCameraImport()
     {
+        if (!QrCameraScannerHost.IsAvailable)
+        {
+            return;
+        }
+
         SectionScan = new ScanViewModel(TryAcceptScannedRouting);
         ImportMethod = RoutingImportMethod.Camera;
     }

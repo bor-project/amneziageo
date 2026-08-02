@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -13,7 +14,7 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class ScanView : UserControl
 {
-    private QrCameraScanner? _scanner;
+    private IQrCameraScanner? _scanner;
 
     /// <summary>
     /// ctor
@@ -37,7 +38,7 @@ internal sealed partial class ScanView : UserControl
         _ = StopAsync();
     }
 
-    // Runs the camera while bound to a scan model, stops it otherwise.
+    // Runs the platform camera while bound to a scan model, stops it otherwise.
     private async void Sync()
     {
         if (DataContext is ScanViewModel vm)
@@ -47,9 +48,15 @@ internal sealed partial class ScanView : UserControl
                 return;
             }
 
-            var scanner = new QrCameraScanner(
+            var scanner = QrCameraScannerHost.Create(
                 bitmap => Dispatcher.UIThread.Post(() => vm.Preview = bitmap),
                 text => Dispatcher.UIThread.Post(() => vm.ReportRaw(text)));
+            if (scanner is null)
+            {
+                vm.StatusMessage = Loc.Instance.Get("QrScanner_CameraNotFound");
+                return;
+            }
+
             _scanner = scanner;
             try
             {

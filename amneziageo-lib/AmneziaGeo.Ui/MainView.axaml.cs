@@ -77,7 +77,8 @@ public sealed partial class MainView : UserControl
     }
 
     // Seats initial D-pad focus on each screen so an Android TV remote always has a starting point:
-    // the connect control on home, the active section row in settings.
+    // the connect control on home, the active section row in settings. Uses NavigationMethod.Unspecified so the
+    // focus ring stays hidden on touch and at open, and shows only once the user navigates by remote / keyboard.
     private void FocusCurrentScreen()
     {
         var vm = _vm;
@@ -95,13 +96,13 @@ public sealed partial class MainView : UserControl
 
             if (vm.IsHome)
             {
-                HomePowerButton.Focus(NavigationMethod.Tab);
+                HomePowerButton.Focus(NavigationMethod.Unspecified);
             }
             else if (vm.IsSettings)
             {
                 var rows = RailMenu.Children.OfType<Button>();
                 var target = rows.FirstOrDefault(b => b.Classes.Contains("active")) ?? rows.FirstOrDefault();
-                target?.Focus(NavigationMethod.Tab);
+                target?.Focus(NavigationMethod.Unspecified);
             }
         }, DispatcherPriority.Loaded);
     }

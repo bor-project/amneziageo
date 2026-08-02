@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Desktop;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 using AmneziaGeo.Windows.Ui.Services;
@@ -43,6 +44,9 @@ public sealed partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             _desktop = desktop;
+
+            // Register the desktop (FlashCap) camera scanner so the config/routing import can scan QR codes.
+            DesktopQrScanning.Register();
 
             // Restore UI preferences before any window shows.
             var prefs = UiPreferences.Load();

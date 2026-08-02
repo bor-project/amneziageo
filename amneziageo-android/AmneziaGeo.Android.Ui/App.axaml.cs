@@ -28,6 +28,9 @@ public sealed partial class App : Avalonia.Application
     {
         if (ApplicationLifetime is ISingleViewApplicationLifetime singleView)
         {
+            // Register the CameraX camera scanner so the config/routing import can scan QR codes.
+            AndroidQrScanning.Register();
+
             var prefs = UiPreferences.Load();
             RequestedThemeVariant = prefs.Theme switch
             {

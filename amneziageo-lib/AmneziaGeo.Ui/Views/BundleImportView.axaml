@@ -38,16 +38,16 @@
 
     <!-- Load / import actions. A host may inject a leading action (e.g. «Новый» profile) so all three share
          this wrap row at equal width and reflow to a new line when they don't fit. -->
-    <WrapPanel>
+    <WrapPanel HorizontalAlignment="Center">
       <ContentControl x:CompileBindings="False"
                       Content="{Binding $parent[views:BundleImportView].LeadingAction}" />
-      <Button Classes="methodpick" Width="180" Margin="0,0,8,8" Click="OnLoadFile">
+      <Button Classes="methodpick" Width="160" Margin="4" Click="OnLoadFile">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <PathIcon Data="{StaticResource AgUploadGeometry}" Width="14" Height="14" />
           <TextBlock Text="{l:Tr BundleImport_LoadFileButton}" />
         </StackPanel>
       </Button>
-      <Button Classes="accent" Width="180" Margin="0,0,8,8" Command="{Binding ImportCommand}" IsEnabled="{Binding !IsBusy}">
+      <Button Classes="accent" Width="160" Margin="4" Command="{Binding ImportCommand}" IsEnabled="{Binding !IsBusy}">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <PathIcon Data="{StaticResource AgCheckGeometry}" Width="14" Height="14" />
           <TextBlock Text="{l:Tr BundleImport_ImportButton}" />

@@ -19,6 +19,12 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.17" />
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <PackageReference Include="SkiaSharp.NativeAssets.Android" Version="3.119.4" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Core" Version="1.6.1.1" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2" Version="1.6.1.1" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.6.1.1" />
+    <!-- Align core-ktx with androidx.core (CameraX pulls an older core-ktx that duplicates classes merged
+         into core >= 1.15, breaking dex). -->
+    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.0.1" />
   </ItemGroup>
 
   <ItemGroup>

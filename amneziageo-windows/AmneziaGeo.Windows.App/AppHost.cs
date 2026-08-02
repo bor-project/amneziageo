@@ -1,6 +1,7 @@
 using System.Net.Http;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -83,6 +84,7 @@ internal static class AppHost
         services.AddSingleton<SettingsStore>();
         services.AddSingleton<ConfigRepository>();
         services.AddSingleton<GeoActivator>();
+        services.AddSingleton<IGeoFileStore, WindowsGeoFileStore>();
         services.AddSingleton<GeoConfigurator>();
         services.AddSingleton<GeoHttp>();
         services.AddSingleton<GeoFileUpdater>();

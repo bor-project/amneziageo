@@ -399,6 +399,41 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsAppMethod => AddMethod == "app";
 
     /// <summary>
+    /// True when the per-application entry method is offered (Windows only; app-path matching has no Android equivalent).
+    /// </summary>
+    public bool IsAppMethodAvailable => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// Best-match geo suggestions for the current input, shown inline under the field.
+    /// </summary>
+    public ObservableCollection<string> MatchedSuggestions { get; } = [];
+
+    /// <summary>
+    /// True when the inline suggestion list has entries to show.
+    /// </summary>
+    public bool HasMatchedSuggestions => MatchedSuggestions.Count > 0;
+
+    // Rebuilds the inline pick list: geo suggestions containing the current input, capped to a short list.
+    private void UpdateMatchedSuggestions()
+    {
+        MatchedSuggestions.Clear();
+        var query = RuleInput.Trim();
+        if (query.Length > 0)
+        {
+            foreach (var token in GeoSuggestions.Where(t => t.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(8))
+            {
+                MatchedSuggestions.Add(token);
+            }
+        }
+
+        OnPropertyChanged(nameof(HasMatchedSuggestions));
+    }
+
+    partial void OnRuleInputChanged(string value) => UpdateMatchedSuggestions();
+
+    partial void OnGeoSuggestionsChanged(IReadOnlyList<string> value) => UpdateMatchedSuggestions();
+
+    /// <summary>
     /// Watermark for the app add-row input, reflects the selected source mode.
     /// </summary>
     public string AppWatermark => AppMode switch
@@ -813,6 +848,21 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
         var rule = Normalize(text);
         if (!Rules.Contains(rule))
+        {
+            Rules.Add(rule);
+        }
+
+        RuleInput = string.Empty;
+    }
+
+    /// <summary>
+    /// Adds a suggestion picked from the inline match list to the active bucket and clears the input.
+    /// </summary>
+    [RelayCommand]
+    private void PickSuggestion(string token)
+    {
+        var rule = Normalize(token);
+        if (rule.Length > 0 && !Rules.Contains(rule))
         {
             Rules.Add(rule);
         }

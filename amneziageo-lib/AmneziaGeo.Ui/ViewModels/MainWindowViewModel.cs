@@ -365,6 +365,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Config.EnterImportSection();
     }
 
+    // Home «Добавить профиль»: переход в настройки на секцию профилей.
+    [RelayCommand]
+    private void AddProfile()
+    {
+        Nav = "settings";
+        SettingsSection = "profile";
+        SettingsDetailOpen = true;
+        Profile.EnterSection();
+        RefreshLogsActive();
+    }
+
     [RelayCommand]
     private void NavSettings()
     {

@@ -50,22 +50,35 @@
           <StackPanel Spacing="12">
             <TextBlock Text="{l:Tr About_Section}" FontWeight="SemiBold" FontSize="15" />
 
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-              <TextBlock Grid.Column="0" Text="{l:Tr About_Version}" FontSize="13.5" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5"
-                         HorizontalAlignment="Right" VerticalAlignment="Center" TextAlignment="Right" TextWrapping="Wrap" />
+            <!-- Compact drops each value under its label (left-aligned); wide keeps label-left / value-right. -->
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr About_Version}" FontSize="13.5" VerticalAlignment="Center"
+                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+              <TextBlock Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5"
+                         Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                         Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}"
+                         VerticalAlignment="Center" TextWrapping="Wrap" />
             </Grid>
 
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-              <TextBlock Grid.Column="0" Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5"
-                         HorizontalAlignment="Right" VerticalAlignment="Center" TextAlignment="Right" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" VerticalAlignment="Center"
+                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+              <TextBlock Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5"
+                         Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                         Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}"
+                         VerticalAlignment="Center" TextWrapping="Wrap" />
             </Grid>
 
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding HasBuildType}">
-              <TextBlock Grid.Column="0" Text="{l:Tr About_BuildType}" FontSize="13.5" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Text="{Binding BuildType}" Classes="muted mono" FontSize="12.5"
-                         HorizontalAlignment="Right" VerticalAlignment="Center" TextAlignment="Right" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2" IsVisible="{Binding HasBuildType}">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr About_BuildType}" FontSize="13.5" VerticalAlignment="Center"
+                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+              <TextBlock Text="{Binding BuildType}" Classes="muted mono" FontSize="12.5"
+                         Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                         Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}"
+                         VerticalAlignment="Center" TextWrapping="Wrap" />
             </Grid>
 
             <!-- Update sub-block: found -> downloading -> downloaded; installing is an explicit second click (#154). -->
@@ -113,9 +126,11 @@
         </Border>
       </Grid>
 
-      <!-- Connection resilience card: survive reboot + periodic auto-reconnect (#196, #199). -->
+      <!-- Connection resilience card: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
+           the Android agent does not apply these settings. -->
       <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
+              CornerRadius="12" Padding="16" Background="Transparent"
+              IsVisible="{Binding CanConfigureConnection}">
         <!-- Compact drops each toggle / control under its title + description. -->
         <StackPanel Spacing="12">
           <TextBlock Text="{l:Tr General_ConnectionSection}" FontWeight="SemiBold" FontSize="15" />

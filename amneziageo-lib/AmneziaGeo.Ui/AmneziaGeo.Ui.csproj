@@ -14,7 +14,6 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
-    <PackageReference Include="FlashCap" Version="1.11.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,6 +28,9 @@
     </AssemblyAttribute>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>AmneziaGeo.Android.Ui</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>AmneziaGeo.Ui.Desktop</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 

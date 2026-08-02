@@ -174,6 +174,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool CanRepairNetwork => OperatingSystem.IsWindows();
 
     /// <summary>
+    /// Показывает карточку настроек соединения только на Windows (Android-агент их не применяет).
+    /// </summary>
+    public bool CanConfigureConnection => OperatingSystem.IsWindows();
+
+    /// <summary>
     /// Transient result line for the network-repair action.
     /// </summary>
     [ObservableProperty]

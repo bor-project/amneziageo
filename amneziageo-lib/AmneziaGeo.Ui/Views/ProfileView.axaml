@@ -27,7 +27,7 @@
       <Panel x:Name="PickerHost" Grid.Row="0" Grid.Column="1" ClipToBounds="False"
              VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="260"
              IsVisible="{Binding IsSectionProfile}">
-        <Panel IsVisible="{Binding HasConfigs}">
+        <Panel IsVisible="{Binding HasProfiles}">
           <!-- Floating caption above the combo (zero layout height) so the combo stays centred against the tabs. -->
           <TextBlock x:Name="PickerLabelFloat" Classes="muted" FontSize="11.5" Text="{l:Tr Main_ProfileLabel}"
                      VerticalAlignment="Top" HorizontalAlignment="Left">
@@ -52,7 +52,7 @@
         <!-- Make-active link (link style like «Add local networks»); pushed into the gap below the combo with a
              render transform so it consumes no layout height. The command disables it when already active. -->
         <Button Classes="linkbtn" HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                IsVisible="{Binding HasConfigs}"
+                IsVisible="{Binding HasProfiles}"
                 Command="{Binding SetActiveProfileCommand}" Content="{l:Tr Main_SetActiveProfile}">
           <Button.RenderTransform>
             <TranslateTransform Y="20" />
@@ -144,7 +144,7 @@
                            Text="{l:Tr Main_ProfileNoConfigHint}" />
               </StackPanel>
 
-              <!-- Routing picker: None means «Полный туннель». -->
+              <!-- Routing picker: None means «— не выбрано —» (uses the original config's addresses). -->
               <StackPanel Spacing="6">
                 <TextBlock Classes="label" Text="{l:Tr Main_RoutingLabel}" />
                 <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
@@ -152,14 +152,24 @@
                           SelectedItem="{Binding SelectedRoutingList, Mode=TwoWay}">
                   <controls:AdaptiveComboBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:RoutingListChoice">
-                      <!-- Relabel the "none" sentinel as «Полный туннель». -->
+                      <!-- Relabel the "none" sentinel as «— не выбрано —». -->
                       <Panel>
-                        <TextBlock Text="{l:Tr Main_FullTunnel}" IsVisible="{Binding IsNone}" />
+                        <TextBlock Text="{l:Tr Main_NotSelected}" IsVisible="{Binding IsNone}" />
                         <TextBlock Text="{Binding Name}" IsVisible="{Binding !IsNone}" />
                       </Panel>
                     </DataTemplate>
                   </controls:AdaptiveComboBox.ItemTemplate>
                 </controls:AdaptiveComboBox>
+                <TextBlock IsVisible="{Binding SelectedRoutingList.IsNone}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                           Text="{l:Tr Main_RoutingNoneHint}" />
+              </StackPanel>
+
+              <!-- Per-app split (Android): opens the platform app picker for this profile. -->
+              <StackPanel Spacing="6" x:CompileBindings="False"
+                          IsVisible="{Binding $parent[views:ProfileView].DataContext.AppSplitAvailable}">
+                <TextBlock Classes="label" Text="{l:Tr Main_AppsLabel}" />
+                <Button Classes="methodpick" HorizontalAlignment="Stretch" Click="OnAppSplitClick"
+                        Content="{l:Tr Main_AppsButton}" />
               </StackPanel>
 
               <!-- Agent rejection from the footer Save (config/routing commit), so it is not silently lost (#143). -->
@@ -215,7 +225,7 @@
         <!-- Создание пустого профиля: та же строка кнопок, что «Выбрать файл» / «Импортировать», равный размер.
              Команда живёт на ProfileViewModel, поэтому тянем её через предка. -->
         <views:BundleImportView.LeadingAction>
-          <Button Classes="accent" Width="180" Margin="0,0,8,8" x:CompileBindings="False"
+          <Button Classes="methodpick" Width="160" Margin="4" x:CompileBindings="False"
                   DataContext="{Binding $parent[views:ProfileView].DataContext}"
                   IsVisible="{Binding HasConfigs}" Command="{Binding CreateProfileCommand}">
             <StackPanel Orientation="Horizontal" Spacing="4">

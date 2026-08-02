@@ -22,6 +22,7 @@ internal sealed class Cli(
     ProfileRunner profileRunner,
     BackupService backupService,
     GeoConfigurator geoConfigurator,
+    IGeoFileStore geoFiles,
     LogLevelController logLevel)
 {
     /// <summary>
@@ -254,7 +255,7 @@ internal sealed class Cli(
 
     private async Task<int> GeoQueryAsync(string kind, string key)
     {
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync());
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(), geoFiles);
         if (kind.Equals("ip", StringComparison.OrdinalIgnoreCase))
         {
             var cidrs = index.Cidrs(key);
@@ -290,7 +291,7 @@ internal sealed class Cli(
             }
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync());
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(), geoFiles);
         var (materializedRoutes, domains, apps) = GeoMaterializer.Materialize(rules, index);
         await store.SaveTunnelGeoAsync(new TunnelGeo(name, split, rules, materializedRoutes, domains, apps));
         Console.WriteLine($"set-geo {name}: split={split}, {rules.Count} rules -> {materializedRoutes.Count} routes, {domains.Count} domains, {apps.Count} apps");
@@ -730,7 +731,7 @@ internal sealed class Cli(
 
     private async Task RematerializeAllAsync()
     {
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync());
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(), geoFiles);
         foreach (var name in await store.ListTunnelGeoNamesAsync())
         {
             var geo = await store.GetTunnelGeoAsync(name);

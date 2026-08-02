@@ -51,6 +51,21 @@ public sealed class GeoVpnService : VpnService
     /// </summary>
     public const string ExtraName = "name";
 
+    /// <summary>
+    /// Per-app split mode extra: "include" (only these apps tunneled) or "exclude" (these apps bypass).
+    /// </summary>
+    public const string ExtraAppMode = "app-mode";
+
+    /// <summary>
+    /// Per-app package-name list extra.
+    /// </summary>
+    public const string ExtraAppList = "app-list";
+
+    /// <summary>
+    /// Geo split-route extra: the CIDRs routed through the tunnel; when set only these are tunneled.
+    /// </summary>
+    public const string ExtraRoutes = "routes";
+
     private const string ChannelId = "amneziageo.vpn";
     private const int NotificationId = 1001;
     private const int DefaultMtu = 1420;
@@ -73,6 +88,9 @@ public sealed class GeoVpnService : VpnService
 
         var config = intent?.GetStringExtra(ExtraConfig);
         var name = intent?.GetStringExtra(ExtraName) ?? "AmneziaGeo";
+        var appMode = intent?.GetStringExtra(ExtraAppMode);
+        var appList = intent?.GetStringArrayExtra(ExtraAppList);
+        var routes = intent?.GetStringArrayExtra(ExtraRoutes);
         if (string.IsNullOrEmpty(config))
         {
             Teardown(VpnStage.Failed, "no config");
@@ -81,7 +99,7 @@ public sealed class GeoVpnService : VpnService
 
         StartForegroundNotification(name);
         StateChanged?.Invoke(VpnStage.Connecting, name);
-        Task.Run(() => BringUp(config, name));
+        Task.Run(() => BringUp(config, name, appMode, appList, routes));
         return StartCommandResult.NotSticky;
     }
 
@@ -104,7 +122,7 @@ public sealed class GeoVpnService : VpnService
         base.OnRevoke();
     }
 
-    private void BringUp(string config, string name)
+    private void BringUp(string config, string name, string? appMode, string[]? appList, string[]? routes)
     {
         try
         {
@@ -116,7 +134,7 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
-            var pfd = BuildTunnel(resolved, name);
+            var pfd = BuildTunnel(resolved, name, appMode, appList, routes);
             if (pfd is null)
             {
                 Teardown(VpnStage.Failed, "establish failed");
@@ -148,7 +166,7 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
-    private ParcelFileDescriptor? BuildTunnel(string config, string name)
+    private ParcelFileDescriptor? BuildTunnel(string config, string name, string? appMode, string[]? appList, string[]? routes)
     {
         var builder = new Builder(this);
         builder.SetSession(name);
@@ -159,24 +177,67 @@ public sealed class GeoVpnService : VpnService
             builder.AddAddress(ip, prefix);
         }
 
-        var allowed = WgConfigEditor.GetAllowedIps(config);
-        var routes = allowed.Count > 0 ? allowed : new List<string> { "0.0.0.0/0" };
-        foreach (var route in routes)
+        // Geo split: route only the materialized proxy CIDRs; otherwise the config's AllowedIPs (full tunnel).
+        var geoSplit = routes is { Length: > 0 };
+        IReadOnlyList<string> allowed = geoSplit ? routes! : WgConfigEditor.GetAllowedIps(config);
+        var effective = allowed.Count > 0 ? allowed : new List<string> { "0.0.0.0/0" };
+        foreach (var route in effective)
         {
             var (ip, prefix) = SplitCidr(route);
             builder.AddRoute(ip, prefix);
         }
 
-        foreach (var dns in WgConfigEditor.GetDns(config))
+        // Split-tunnel keeps DNS on the system resolver: the tunnel DNS server would sit outside the routed set.
+        if (!geoSplit)
         {
-            builder.AddDnsServer(dns);
+            foreach (var dns in WgConfigEditor.GetDns(config))
+            {
+                builder.AddDnsServer(dns);
+            }
         }
 
         var mtu = WgConfigEditor.GetMtu(config);
         builder.SetMtu(mtu > 0 ? mtu : DefaultMtu);
+
+        ApplyAppSplit(builder, appMode, appList);
+
         builder.SetBlocking(true);
 
         return builder.Establish();
+    }
+
+    // Restricts the tunnel to (or excludes) the given app packages: "include" = only these apps use the tunnel,
+    // "exclude" = every app but these. A stale/uninstalled package is skipped so it cannot fail establish.
+    private static void ApplyAppSplit(Builder builder, string? mode, string[]? packages)
+    {
+        if (packages is not { Length: > 0 } || string.IsNullOrEmpty(mode))
+        {
+            return;
+        }
+
+        var exclude = string.Equals(mode, "exclude", StringComparison.Ordinal);
+        foreach (var package in packages)
+        {
+            if (string.IsNullOrWhiteSpace(package))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (exclude)
+                {
+                    builder.AddDisallowedApplication(package);
+                }
+                else
+                {
+                    builder.AddAllowedApplication(package);
+                }
+            }
+            catch (global::Android.Content.PM.PackageManager.NameNotFoundException)
+            {
+            }
+        }
     }
 
     private static string ResolveEndpoint(string config)

@@ -313,6 +313,12 @@
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Select profiles, configurations, and routing lists to transfer to another device, or import a previously exported file.</value>
   </data>
+  <data name="Main_AppsLabel" xml:space="preserve">
+    <value>Apps (split tunneling)</value>
+  </data>
+  <data name="Main_AppsButton" xml:space="preserve">
+    <value>Choose apps…</value>
+  </data>
   <data name="Main_CameraButton" xml:space="preserve">
     <value>Scan QR code</value>
   </data>
@@ -642,6 +648,9 @@
   </data>
   <data name="Main_NotSelected" xml:space="preserve">
     <value>- not selected -</value>
+  </data>
+  <data name="Main_RoutingNoneHint" xml:space="preserve">
+    <value>Uses the addresses from the original configuration.</value>
   </data>
   <data name="Main_PasswordLabel" xml:space="preserve">
     <value>PASSWORD</value>
@@ -1113,6 +1122,9 @@
   </data>
   <data name="QrScanner_CameraNotFound" xml:space="preserve">
     <value>Camera not found</value>
+  </data>
+  <data name="QrScanner_CameraPermissionDenied" xml:space="preserve">
+    <value>Camera access denied</value>
   </data>
   <data name="RoutingChoice_None" xml:space="preserve">
     <value>- not set -</value>
@@ -1653,7 +1665,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Config</value>
   </data>
   <data name="Main_ImportTab" xml:space="preserve">
-    <value>Import</value>
+    <value>New</value>
   </data>
   <data name="Main_ExportTab" xml:space="preserve">
     <value>Export</value>

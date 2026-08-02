@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 
 namespace AmneziaGeo.Windows.App;
 

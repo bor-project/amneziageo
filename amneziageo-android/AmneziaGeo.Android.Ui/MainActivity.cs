@@ -2,11 +2,13 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Avalonia.Android;
+using AndroidX.Core.App;
+using AndroidX.Core.Content;
 
 namespace AmneziaGeo.Android.Ui;
 
 /// <summary>
-/// Launcher activity hosting the Avalonia app; also brokers the VpnService consent dialog.
+/// Launcher activity hosting the Avalonia app; also brokers the VpnService consent and camera-permission dialogs.
 /// </summary>
 [Activity(
     Label = "AmneziaGeo",
@@ -19,7 +21,9 @@ namespace AmneziaGeo.Android.Ui;
 public sealed class MainActivity : AvaloniaMainActivity<App>
 {
     private const int VpnRequestCode = 0x7A11;
+    private const int CameraRequestCode = 0x7A12;
     private static TaskCompletionSource<bool>? _vpnPermission;
+    private static TaskCompletionSource<bool>? _cameraPermission;
 
     /// <summary>
     /// The foreground activity, used to launch the VpnService consent dialog.
@@ -34,6 +38,22 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         var tcs = new TaskCompletionSource<bool>();
         _vpnPermission = tcs;
         RunOnUiThread(() => StartActivityForResult(intent, VpnRequestCode));
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Requests the camera permission and completes with whether it was granted.
+    /// </summary>
+    public Task<bool> RequestCameraPermissionAsync()
+    {
+        if (ContextCompat.CheckSelfPermission(this, global::Android.Manifest.Permission.Camera) == Permission.Granted)
+        {
+            return Task.FromResult(true);
+        }
+
+        var tcs = new TaskCompletionSource<bool>();
+        _cameraPermission = tcs;
+        RunOnUiThread(() => ActivityCompat.RequestPermissions(this, [global::Android.Manifest.Permission.Camera], CameraRequestCode));
         return tcs.Task;
     }
 
@@ -52,6 +72,17 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         {
             _vpnPermission?.TrySetResult(resultCode == Result.Ok);
             _vpnPermission = null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
+    {
+        base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CameraRequestCode)
+        {
+            _cameraPermission?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
+            _cameraPermission = null;
         }
     }
 }

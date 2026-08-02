@@ -1,5 +1,5 @@
 using AmneziaGeo.Decl;
-using AmneziaGeo.Windows.App;
+using AmneziaGeo.Geo;
 using Xunit;
 
 namespace AmneziaGeo.Tests;

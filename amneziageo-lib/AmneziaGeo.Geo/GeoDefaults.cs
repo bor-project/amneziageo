@@ -1,14 +1,14 @@
 using AmneziaGeo.Decl;
 using Microsoft.Extensions.Logging;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// The default geo sources seeded for a fresh install (standard v2ray-format geosite/geoip the app
 /// already parses, e.g. geosite:youtube). Shared by the startup seeder and the installer-triggered
 /// download op so both agree on what a fresh install ships.
 /// </summary>
-internal static class GeoDefaults
+public static class GeoDefaults
 {
     public static readonly (string Kind, string Url)[] Sources =
     [

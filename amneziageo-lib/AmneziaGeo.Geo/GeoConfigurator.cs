@@ -1,12 +1,11 @@
-using System.Linq;
 using AmneziaGeo.Decl;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// Applies and enumerates per-config geo split-tunnel settings, shared by the agent command channel.
 /// </summary>
-internal sealed class GeoConfigurator(IStateStore store)
+public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
 {
     /// <summary>
     /// Materializes the rule tokens and persists the geo settings for a config.
@@ -23,7 +22,7 @@ internal sealed class GeoConfigurator(IStateStore store)
             }
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
         var (routes, domains, apps) = GeoMaterializer.Materialize(rules, index);
         await store.SaveTunnelGeoAsync(new TunnelGeo(name, on, rules, routes, domains, apps), ct);
         return (rules.Count, routes.Count, domains.Count);
@@ -45,7 +44,7 @@ internal sealed class GeoConfigurator(IStateStore store)
             }
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
         return await store.SaveRoutingListAsync(MaterializeRoutingList(listId, name, rules, index), ct);
     }
 
@@ -55,7 +54,7 @@ internal sealed class GeoConfigurator(IStateStore store)
     /// </summary>
     public async Task RematerializeAllRoutingListsAsync(CancellationToken ct = default)
     {
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
         var lists = await store.ListRoutingListsAsync(ct);
         foreach (var list in lists)
         {
@@ -78,7 +77,7 @@ internal sealed class GeoConfigurator(IStateStore store)
     /// </summary>
     public async Task<IReadOnlyList<string>> CategoriesAsync(CancellationToken ct = default)
     {
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
         var tokens = new List<string>();
         foreach (var category in index.Categories())
         {
@@ -105,7 +104,7 @@ internal sealed class GeoConfigurator(IStateStore store)
             return [];
         }
 
-        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct));
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
         var key = StripPrefix(rule.Value);
         return rule.Kind == GeoRuleKind.GeoIp
             ? index.Cidrs(key)

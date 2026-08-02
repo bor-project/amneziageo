@@ -114,7 +114,8 @@
                     <TextBlock Text="{l:Tr Main_FileButton}" />
                   </StackPanel>
                 </Button>
-                <Button Classes="methodpick" Margin="4" Command="{Binding BeginCameraImportCommand}" Width="160">
+                <Button Classes="methodpick" Margin="4" Command="{Binding BeginCameraImportCommand}" Width="160"
+                        IsVisible="{Binding CameraScanAvailable}">
                   <StackPanel Orientation="Horizontal" Spacing="6">
                     <PathIcon Data="{StaticResource AgQrGeometry}" Width="15" Height="15" />
                     <TextBlock Text="{l:Tr Main_CameraButton}" />
@@ -127,7 +128,9 @@
                   </StackPanel>
                 </Button>
               </WrapPanel>
-              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" Margin="0,10,0,0">
+              <!-- Drag hint is desktop only: touch platforms have no file drag. -->
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" Margin="0,10,0,0"
+                          IsVisible="{Binding !IsCompact}">
                 <PathIcon Data="{StaticResource AgDropGeometry}" Width="15" Height="15"
                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
                 <TextBlock Text="{l:Tr Main_DropFilesHint}" Classes="muted" FontSize="12" VerticalAlignment="Center" />

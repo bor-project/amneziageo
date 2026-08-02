@@ -33,6 +33,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ui\AmneziaGeo.Ui.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ui.Desktop\AmneziaGeo.Ui.Desktop.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />

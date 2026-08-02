@@ -1,12 +1,11 @@
 using AmneziaGeo.Decl;
-using AmneziaGeo.Geo;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// Merged view over multiple geo source files; later sources override earlier ones per entry.
 /// </summary>
-internal sealed class GeoIndex
+public sealed class GeoIndex
 {
     private readonly List<byte[]> _geoip;
     private readonly List<byte[]> _geosite;
@@ -24,19 +23,18 @@ internal sealed class GeoIndex
     /// <summary>
     /// Loads the downloaded files for the given sources, ordered by position.
     /// </summary>
-    public static GeoIndex Load(IReadOnlyList<GeoSource> sources)
+    public static GeoIndex Load(IReadOnlyList<GeoSource> sources, IGeoFileStore files)
     {
         var geoip = new List<byte[]>();
         var geosite = new List<byte[]>();
         foreach (var source in sources.OrderBy(s => s.Position))
         {
-            var path = TunnelPaths.GeoDataFile(source.Name);
-            if (!File.Exists(path))
+            var bytes = files.Read(source.Name);
+            if (bytes is null)
             {
                 continue;
             }
 
-            var bytes = File.ReadAllBytes(path);
             if (source.Kind.Equals("geoip", StringComparison.OrdinalIgnoreCase))
             {
                 geoip.Add(bytes);

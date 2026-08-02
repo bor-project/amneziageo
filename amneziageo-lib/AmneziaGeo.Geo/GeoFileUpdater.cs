@@ -4,14 +4,13 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using AmneziaGeo.Decl;
-using AmneziaGeo.Geo;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// Downloads geo source files and records their update metadata.
 /// </summary>
-internal sealed class GeoFileUpdater(IStateStore store, GeoHttp http)
+public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStore files)
 {
     /// <summary>
     /// Downloads a source file and records its metadata.
@@ -29,9 +28,7 @@ internal sealed class GeoFileUpdater(IStateStore store, GeoHttp http)
 
         var count = CountEntries(source, data);
 
-        var path = TunnelPaths.GeoDataFile(source.Name);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await File.WriteAllBytesAsync(path, data, ct);
+        await files.WriteAsync(source.Name, data, ct);
 
         var sha = Convert.ToHexStringLower(SHA256.HashData(data));
         var metadata = new GeoFileMetadata(source.Name, source.Url, DateTimeOffset.UtcNow, sha, count, etag, lastModified);

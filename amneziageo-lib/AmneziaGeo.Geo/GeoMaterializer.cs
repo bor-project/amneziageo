@@ -1,11 +1,11 @@
 using AmneziaGeo.Decl;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// Expands geo rules into concrete routes and domains using the merged geo index.
 /// </summary>
-internal static class GeoMaterializer
+public static class GeoMaterializer
 {
     /// <summary>
     /// Materializes routes, domains, and app matchers for a set of rules; app rule values are carried verbatim.

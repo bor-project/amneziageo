@@ -3,6 +3,7 @@
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             xmlns:sys="using:System"
              x:Class="AmneziaGeo.Ui.Views.RoutingEditorView"
              x:CompileBindings="True"
              x:DataType="vm:RoutingViewModel">
@@ -36,7 +37,9 @@
              full-width in compact. -->
         <StackPanel Spacing="6">
 
+          <!-- Per-application entries are Windows-only; on Android the method selector is hidden and entries are address-only. -->
           <controls:SegmentedSelector Label="{l:Tr Main_AddMethodLabel}"
+              IsVisible="{Binding IsAppMethodAvailable}"
               Command="{Binding SelectAddMethodCommand}"
               IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
               Item1Text="{l:Tr Main_AddByAddressTab}" Item1Param="address" Item1Active="{Binding IsAddressMethod}"
@@ -45,12 +48,12 @@
           <!-- Address entry: geo category / domain / cidr. -->
           <StackPanel Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsAddressMethod}">
             <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
-            <Grid ColumnDefinitions="*,Auto">
-              <AutoCompleteBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
-                               Watermark="{l:Tr Main_AddEntryWatermark}"
-                               Text="{Binding RuleInput, Mode=TwoWay}"
-                               ItemsSource="{Binding GeoSuggestions}"
-                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220" />
+            <!-- Wide: input + add button inline. -->
+            <Grid ColumnDefinitions="*,Auto"
+                  IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+              <TextBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
+                       Watermark="{l:Tr Main_AddEntryWatermark}"
+                       Text="{Binding RuleInput, Mode=TwoWay}" />
               <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="+" />
@@ -58,6 +61,36 @@
                 </StackPanel>
               </Button>
             </Grid>
+            <!-- Compact: input full-width, add button drops to its own row. -->
+            <StackPanel Spacing="8"
+                        IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+              <TextBox Classes="field"
+                       Watermark="{l:Tr Main_AddEntryWatermark}"
+                       Text="{Binding RuleInput, Mode=TwoWay}" />
+              <Button Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddRuleCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                  <TextBlock Text="+" />
+                  <TextBlock Text="{l:Tr Main_AddButton}" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+            <!-- Best geo-category matches for what's typed; a tap adds one. Works on touch (no dropdown). -->
+            <Border IsVisible="{Binding HasMatchedSuggestions}"
+                    BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                    Background="{DynamicResource AgPanelBrush}" CornerRadius="10" Padding="6">
+              <ItemsControl ItemsSource="{Binding MatchedSuggestions}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="sys:String">
+                    <Button Classes="softbtn" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                            Margin="0,1"
+                            Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).PickSuggestionCommand}"
+                            CommandParameter="{Binding}">
+                      <TextBlock Text="{Binding}" Classes="mono" FontSize="12.5" />
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Border>
           </StackPanel>
 
           <!-- Per-application entry. -->

@@ -4,14 +4,14 @@ using System.Security.Authentication;
 
 using Microsoft.Extensions.Logging;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// HTTP for geo sources. A request the machine refuses over its certificate is repeated without verifying
 /// the server, so a host whose certificate store or clock is out of date still receives the rule databases.
 /// Downloads of the application setup deliberately do not go through here.
 /// </summary>
-internal sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposable
+public sealed class GeoHttp(HttpClient http, ILogger<GeoHttp> logger) : IDisposable
 {
     private readonly Lazy<HttpClient> _unverified = new(CreateUnverified);
     private readonly ConcurrentDictionary<string, byte> _reported = new(StringComparer.OrdinalIgnoreCase);

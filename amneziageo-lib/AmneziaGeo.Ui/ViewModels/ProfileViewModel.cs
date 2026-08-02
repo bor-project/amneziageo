@@ -97,7 +97,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<ProfileItemViewModel> Profiles { get; } = [];
 
-    public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [ProfileChoice.None];
+    public ObservableCollection<ProfileChoice> ProfileOptions { get; } = [];
 
     public bool IsProfileDetail => OpenProfile is not null;
 
@@ -112,6 +112,16 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     /// Whether the config catalogue is non-empty, surfaced for this screen's hints and the add button.
     /// </summary>
     public bool HasConfigs => _host.HasConfigs;
+
+    /// <summary>
+    /// Есть ли профили в каталоге.
+    /// </summary>
+    public bool HasProfiles => _host.HasProfiles;
+
+    /// <summary>
+    /// Whether a platform per-app split picker is available.
+    /// </summary>
+    public bool AppSplitAvailable => AppSplitBridge.IsAvailable;
 
     public bool ShowNoProfilesYetHint => _host.ShowNoProfilesYetHint;
 
@@ -170,6 +180,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     public void NotifyHostFlagsChanged()
     {
         OnPropertyChanged(nameof(HasConfigs));
+        OnPropertyChanged(nameof(HasProfiles));
         OnPropertyChanged(nameof(ShowNoProfilesYetHint));
         OnPropertyChanged(nameof(ShowAddProfileCta));
         CreateProfileCommand.NotifyCanExecuteChanged();
@@ -427,7 +438,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Tears down the profile catalogue on disconnect, leaving the combos on «— не выбрано —».
+    /// Tears down the profile catalogue on disconnect, clearing the profile combos.
     /// </summary>
     public void Reset()
     {
@@ -554,15 +565,13 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         }
     }
 
-    // Reconcile ProfileOptions in place from Profiles: keep «— не выбрано —» at [0] and reconcile the real
-    // choices after it - dropping removed profiles, adding new ones, and reordering to match. Options are
-    // matched by Identity (the persisted profile name), which stays stable across a live-typed rename, so an
-    // in-progress rename preview (#110) is not clobbered by a snapshot push. Editing in place (rather than
-    // Clear + rebuild) keeps the None / existing choice instances alive so a bound ComboBox's selection is not
-    // reset by the refresh.
+    // Reconcile ProfileOptions in place from Profiles: drop removed profiles, add new ones, and reorder to match.
+    // Options are matched by Identity (the persisted profile name), which stays stable across a live-typed rename,
+    // so an in-progress rename preview (#110) is not clobbered by a snapshot push. Editing in place (rather than
+    // Clear + rebuild) keeps existing choice instances alive so a bound ComboBox's selection is not reset.
     internal void ReconcileProfileOptions()
     {
-        const int head = 1; // None occupies [0].
+        const int head = 0;
         var present = Profiles.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
         for (var i = ProfileOptions.Count - 1; i >= head; i--)
         {
@@ -636,7 +645,7 @@ internal sealed partial class ProfileViewModel : ViewModelBase
             ? active.Config
             : _host.Config.ConfigNames.FirstOrDefault() ?? string.Empty;
 
-        var name = UniqueProfileName();
+        var name = UniqueProfileName(config);
         string[] args = config.Length > 0 ? [name, config] : [name];
         var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAddProfile, args));
         if (ack.Ok)
@@ -650,9 +659,13 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     [RelayCommand]
     private void AddConfiguration() => _host.ShowConfigImport();
 
-    private string UniqueProfileName()
+    // The default name for a new profile is its configuration's name (uniquified against the existing profiles);
+    // a profile created without a configuration falls back to the generic default.
+    private string UniqueProfileName(string config)
     {
-        var baseName = Loc.Instance.Get("MainVm_NewProfileDefaultName");
+        var baseName = string.IsNullOrWhiteSpace(config)
+            ? Loc.Instance.Get("MainVm_NewProfileDefaultName")
+            : config;
         var existing = Profiles.Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
         if (!existing.Contains(baseName))
         {

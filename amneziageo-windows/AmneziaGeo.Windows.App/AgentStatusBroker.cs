@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +12,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -35,7 +36,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var scope = _scopes.GetOrAdd(key, root =>
         {
             var scopeStore = storeFactory.For(root);
-            return new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), new GeoConfigurator(scopeStore));
+            return new BrokerScope(root, scopeStore, new ConfigRepository(scopeStore, serviceManager), new GeoConfigurator(scopeStore, geoFiles));
         });
         if (sid is not null)
         {
@@ -2046,7 +2047,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     {
         foreach (var root in registry.OpenedRoots())
         {
-            await new GeoConfigurator(storeFactory.For(root)).RematerializeAllRoutingListsAsync(ct);
+            await new GeoConfigurator(storeFactory.For(root), geoFiles).RematerializeAllRoutingListsAsync(ct);
         }
     }
 

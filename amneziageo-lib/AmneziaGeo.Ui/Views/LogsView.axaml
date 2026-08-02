@@ -46,9 +46,10 @@
                   Content="{l:Tr Main_LogTabSettings}" />
         </UniformGrid>
       </Border>
-      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-        <controls:AdaptiveComboBox Classes="field" Width="140"
+      <!-- Caption over a full-width picker, capped to match the settings card. -->
+      <StackPanel Spacing="6" MaxWidth="420">
+        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" HorizontalAlignment="Center" />
+        <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                   ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
       </StackPanel>
     </StackPanel>
@@ -61,17 +62,18 @@
               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" Background="Transparent">
         <StackPanel Spacing="18" MaxWidth="420"
-                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}">
+                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
           <Panel>
             <!-- ageo: maximum capture level (incl. none). -->
             <StackPanel Spacing="8" IsVisible="{Binding IsAgentLog}"
-                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}">
+                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
               <StackPanel Spacing="2">
                 <TextBlock Text="{l:Tr Main_LogCaptureLevelTitle}" FontSize="13.5" />
                 <TextBlock Text="{l:Tr Main_LogVerbosityHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
               </StackPanel>
-              <controls:AdaptiveComboBox Classes="field" MinWidth="220"
-                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}"
+              <controls:AdaptiveComboBox Classes="field"
+                        MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW220}"
+                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
                         ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
             </StackPanel>
 
@@ -83,9 +85,8 @@
 
           <Border Height="1" Background="{DynamicResource AgBorderBrush}" Opacity="0.6" />
 
-          <!-- Log actions: clear + export the selected source. -->
-          <StackPanel Orientation="Horizontal" Spacing="10"
-                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}">
+          <!-- Log actions (wide): clear + export at their natural width. -->
+          <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding !IsCompact}">
             <Button Classes="methodpick" Padding="16,8" Command="{Binding ClearLogCommand}">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
@@ -99,6 +100,24 @@
               </StackPanel>
             </Button>
           </StackPanel>
+
+          <!-- Log actions (narrow): equal halves filling the card. -->
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="{Binding IsCompact}">
+            <Button Grid.Column="0" Classes="methodpick" Padding="16,8" HorizontalAlignment="Stretch"
+                    Command="{Binding ClearLogCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_ClearLogButton}" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="1" Classes="methodpick" Padding="16,8" HorizontalAlignment="Stretch"
+                    Click="OnExportLog">
+              <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_ExportLogButton}" />
+              </StackPanel>
+            </Button>
+          </Grid>
         </StackPanel>
       </Border>
 
@@ -150,23 +169,35 @@
               </TextBox.InnerRightContent>
             </TextBox>
 
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
-              <Button Grid.Column="0" Classes="methodpick" Padding="12,7" Command="{Binding PageOlderCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="5">
-                  <PathIcon Data="{StaticResource AgChevronLeftGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
-                  <TextBlock Text="{l:Tr Main_LogOlderShort}" VerticalAlignment="Center" />
-                </StackPanel>
+            <!-- Nav takes star columns so it yields width instead of pushing follow off the row. -->
+            <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
+              <!-- Grid, not StackPanel: the label needs a finite width for trimming to engage. -->
+              <Button Grid.Column="0" Classes="methodpick" Padding="12,7" HorizontalAlignment="Stretch" MaxWidth="180"
+                      Command="{Binding PageOlderCommand}">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="5">
+                  <PathIcon Grid.Column="0" Data="{StaticResource AgChevronLeftGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{l:Tr Main_LogOlderShort}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </Grid>
               </Button>
-              <Button Grid.Column="1" Classes="methodpick" Padding="12,7" Command="{Binding PageNewerCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="5">
-                  <TextBlock Text="{l:Tr Main_LogNewerShort}" VerticalAlignment="Center" />
-                  <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
-                </StackPanel>
+              <Button Grid.Column="1" Classes="methodpick" Padding="12,7" HorizontalAlignment="Stretch" MaxWidth="180"
+                      Command="{Binding PageNewerCommand}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
+                  <TextBlock Grid.Column="0" Text="{l:Tr Main_LogNewerShort}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                             HorizontalAlignment="Right" />
+                  <PathIcon Grid.Column="1" Data="{StaticResource AgChevronRightGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
+                </Grid>
               </Button>
-              <!-- Follow: label over toggle in one narrow column so it never runs off the row. -->
-              <StackPanel Grid.Column="3" Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                <TextBlock Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" HorizontalAlignment="Center" />
-                <ToggleSwitch IsChecked="{Binding LogFollow, Mode=TwoWay}" HorizontalAlignment="Center" />
+              <!-- Follow: caption over the switch. Zeroed padding rows drop the switch to its 20px track
+                   so the pair stays as tall as the nav buttons; -12 absorbs the template's gap column. -->
+              <StackPanel Grid.Column="2" Spacing="0" VerticalAlignment="Center" HorizontalAlignment="Right">
+                <StackPanel.Resources>
+                  <GridLength x:Key="ToggleSwitchPreContentMargin">0</GridLength>
+                  <GridLength x:Key="ToggleSwitchPostContentMargin">0</GridLength>
+                </StackPanel.Resources>
+                <TextBlock Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="10" LineHeight="11"
+                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="72" />
+                <ToggleSwitch IsChecked="{Binding LogFollow, Mode=TwoWay}" HorizontalAlignment="Center"
+                              Margin="0,0,-12,0" />
               </StackPanel>
             </Grid>
           </StackPanel>

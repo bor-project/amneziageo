@@ -97,20 +97,22 @@
                BorderThickness="0" Background="Transparent"
                FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11" />
     </Border>
-    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsExported}">
-      <Button Classes="methodpick" Width="180" Click="OnCopy">
-        <StackPanel Orientation="Horizontal" Spacing="6">
+    <!-- Equal halves capped at the old fixed width, so a narrow screen shrinks them instead of clipping. -->
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="8" MaxWidth="368" HorizontalAlignment="Left"
+          IsVisible="{Binding IsExported}">
+      <Button Grid.Column="0" Classes="methodpick" HorizontalAlignment="Stretch" Click="OnCopy">
+        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
           <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-          <TextBlock Text="{l:Tr BundleExport_CopyButton}" />
+          <TextBlock Text="{l:Tr BundleExport_CopyButton}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </Button>
-      <Button Classes="accent" Width="180" Click="OnSaveFile">
-        <StackPanel Orientation="Horizontal" Spacing="6">
+      <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Click="OnSaveFile">
+        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
           <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
-          <TextBlock Text="{l:Tr BundleExport_SaveToFileButton}" />
+          <TextBlock Text="{l:Tr BundleExport_SaveToFileButton}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
       </Button>
-    </StackPanel>
+    </Grid>
 
     <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AgDownBrush}" FontSize="12"
                TextWrapping="Wrap"

@@ -118,11 +118,6 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     /// </summary>
     public bool HasProfiles => _host.HasProfiles;
 
-    /// <summary>
-    /// Whether a platform per-app split picker is available.
-    /// </summary>
-    public bool AppSplitAvailable => AppSplitBridge.IsAvailable;
-
     public bool ShowNoProfilesYetHint => _host.ShowNoProfilesYetHint;
 
     // ---- Top menu sections (Profile / Import / Export), mirroring the Config screen. ----

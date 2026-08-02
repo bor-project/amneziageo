@@ -164,14 +164,6 @@
                            Text="{l:Tr Main_RoutingNoneHint}" />
               </StackPanel>
 
-              <!-- Per-app split (Android): opens the platform app picker for this profile. -->
-              <StackPanel Spacing="6" x:CompileBindings="False"
-                          IsVisible="{Binding $parent[views:ProfileView].DataContext.AppSplitAvailable}">
-                <TextBlock Classes="label" Text="{l:Tr Main_AppsLabel}" />
-                <Button Classes="methodpick" HorizontalAlignment="Stretch" Click="OnAppSplitClick"
-                        Content="{l:Tr Main_AppsButton}" />
-              </StackPanel>
-
               <!-- Agent rejection from the footer Save (config/routing commit), so it is not silently lost (#143). -->
               <TextBlock Text="{Binding EditStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
                          IsVisible="{Binding EditStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

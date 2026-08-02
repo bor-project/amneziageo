@@ -47,7 +47,7 @@ internal sealed partial class MobileSelectHost : UserControl
         base.OnAttachedToVisualTree(e);
         _topLevel = TopLevel.GetTopLevel(this);
         AdaptiveComboBox.SelectPresenter = _showSelect;
-        AppSplitBridge.Register(ShowAppSplit);
+        AppSplitBridge.Register(ShowAppPicker);
         if (_topLevel is not null)
         {
             _topLevel.BackRequested += OnBackRequested;
@@ -267,50 +267,47 @@ internal sealed partial class MobileSelectHost : UserControl
 
     private Border? _appSplitOverlay;
 
-    // Full-screen per-app split picker for a profile: a mode selector over a checklist of installed apps. Writes
-    // the choice straight to the in-process agent, which reconnects if the profile is live so it applies at once.
-    private void ShowAppSplit(string profile)
+    // Full-screen app picker: a searchable checklist of launchable apps, pre-checked from the current selection.
+    // Enumerates via the launcher intent (no QUERY_ALL_PACKAGES), so only apps with a launcher icon are listed.
+    private void ShowAppPicker(IReadOnlyCollection<string> selected, Action<IReadOnlyCollection<string>> onPicked)
     {
         if (_appSplitOverlay is not null)
         {
             return;
         }
 
-        var agent = Services.AndroidAgentConnection.Current;
-        if (agent is null)
-        {
-            return;
-        }
-
-        var (savedMode, savedPackages) = agent.GetAppSplit(profile);
-        var selected = new HashSet<string>(savedPackages, StringComparer.Ordinal);
-        var mode = string.IsNullOrEmpty(savedMode) ? "off" : savedMode;
+        var chosen = new HashSet<string>(selected, StringComparer.Ordinal);
 
         var pm = global::Android.App.Application.Context.PackageManager!;
         var own = global::Android.App.Application.Context.PackageName;
-        var apps = pm.GetInstalledApplications(global::Android.Content.PM.PackageInfoFlags.MetaData)
-            .Where(a => a.PackageName is not null && a.PackageName != own
-                && ((a.Flags & global::Android.Content.PM.ApplicationInfoFlags.System) == 0
-                    || (a.Flags & global::Android.Content.PM.ApplicationInfoFlags.UpdatedSystemApp) != 0))
-            .Select(a => (Label: a.LoadLabel(pm)?.ToString() ?? a.PackageName!, Pkg: a.PackageName!))
+        var intent = new global::Android.Content.Intent(global::Android.Content.Intent.ActionMain);
+        intent.AddCategory(global::Android.Content.Intent.CategoryLauncher);
+        var apps = pm.QueryIntentActivities(intent, global::Android.Content.PM.PackageInfoFlags.MetaData)
+            .Where(ri => ri.ActivityInfo?.ApplicationInfo?.PackageName is not null
+                && ri.ActivityInfo.ApplicationInfo.PackageName != own)
+            .Select(ri =>
+            {
+                var ai = ri.ActivityInfo!.ApplicationInfo!;
+                return (Label: ri.LoadLabel(pm)?.ToString() ?? ai.PackageName!, Pkg: ai.PackageName!);
+            })
+            .GroupBy(a => a.Pkg, StringComparer.Ordinal)
+            .Select(g => g.First())
             .OrderBy(a => a.Label, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
         var listPanel = new StackPanel { Spacing = 2, Margin = new Thickness(0, 8, 0, 0) };
-        var checks = new List<CheckBox>();
         var rows = new List<(CheckBox Check, string Haystack)>();
         foreach (var app in apps)
         {
-            var check = new CheckBox { Content = app.Label, Tag = app.Pkg, IsChecked = selected.Contains(app.Pkg) };
-            checks.Add(check);
+            var check = new CheckBox { Content = app.Label, Tag = app.Pkg, IsChecked = chosen.Contains(app.Pkg) };
             rows.Add((check, $"{app.Label} {app.Pkg}".ToLowerInvariant()));
             listPanel.Children.Add(check);
         }
 
-        var listScroll = new ScrollViewer { Content = listPanel, IsEnabled = mode != "off" };
+        var listScroll = new ScrollViewer { Content = listPanel };
 
         // Live match filter over the app list.
-        var search = new TextBox { Watermark = "Поиск приложений", Margin = new Thickness(0, 8, 0, 0), IsEnabled = mode != "off" };
+        var search = new TextBox { Watermark = "Поиск приложений", Margin = new Thickness(0, 8, 0, 0) };
         search.Classes.Add("field");
         search.TextChanged += (_, _) =>
         {
@@ -321,43 +318,13 @@ internal sealed partial class MobileSelectHost : UserControl
             }
         };
 
-        var modes = new[] { ("off", "Все приложения"), ("include", "Только выбранные"), ("exclude", "Все, кроме выбранных") };
-        var modePanel = new StackPanel { Spacing = 6 };
-        var modeButtons = new List<Button>();
-        foreach (var (value, label) in modes)
-        {
-            var button = new Button { Content = label, HorizontalAlignment = HorizontalAlignment.Stretch, Tag = value };
-            button.Classes.Add("methodpick");
-            if (value == mode)
-            {
-                button.Classes.Add("active");
-            }
-
-            button.Click += (_, _) =>
-            {
-                mode = value;
-                listScroll.IsEnabled = mode != "off";
-                search.IsEnabled = mode != "off";
-                foreach (var other in modeButtons)
-                {
-                    other.Classes.Remove("active");
-                }
-
-                button.Classes.Add("active");
-            };
-            modeButtons.Add(button);
-            modePanel.Children.Add(button);
-        }
-
         var save = new Button { Content = "Сохранить", HorizontalAlignment = HorizontalAlignment.Stretch };
         save.Classes.Add("accent");
         save.Click += (_, _) =>
         {
-            var packages = mode == "off"
-                ? new List<string>()
-                : checks.Where(c => c.IsChecked == true).Select(c => (string)c.Tag!).ToList();
-            agent.SetAppSplit(profile, mode, packages);
+            var packages = rows.Where(r => r.Check.IsChecked == true).Select(r => (string)r.Check.Tag!).ToList();
             CloseAppSplit();
+            onPicked(packages);
         };
 
         var cancel = new Button { Content = "Отмена", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -370,7 +337,7 @@ internal sealed partial class MobileSelectHost : UserControl
         actions.Children.Add(cancel);
         actions.Children.Add(save);
 
-        var title = new TextBlock { Text = profile, FontWeight = FontWeight.SemiBold, FontSize = 16, Margin = new Thickness(0, 0, 0, 8) };
+        var title = new TextBlock { Text = "Приложения", FontWeight = FontWeight.SemiBold, FontSize = 16, Margin = new Thickness(0, 0, 0, 8) };
         var hint = new TextBlock
         {
             Text = "Изменение применится при следующем подключении.",
@@ -380,7 +347,7 @@ internal sealed partial class MobileSelectHost : UserControl
         };
         hint.Classes.Add("muted");
 
-        var header = new StackPanel { Children = { title, modePanel, hint } };
+        var header = new StackPanel { Children = { title, hint } };
 
         var panel = new DockPanel { LastChildFill = true, Margin = new Thickness(16) };
         DockPanel.SetDock(header, Dock.Top);

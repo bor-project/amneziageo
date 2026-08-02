@@ -314,16 +314,32 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             active = _host.Profile.Profiles.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastProfile, StringComparison.Ordinal));
         }
+
+        // The selected profile lost its row (deleted here or elsewhere).
+        var selectionLost = active is null && ActiveProfile is not null && !_host.Profile.Profiles.Contains(ActiveProfile);
         if (active is not null)
         {
             ActiveProfile = active;
         }
-        else if (ActiveProfile is not null && !_host.Profile.Profiles.Contains(ActiveProfile))
+        else if (selectionLost)
         {
-            // The chosen profile was removed elsewhere: drop the selection so connect re-gates.
             ActiveProfile = null;
         }
         _suppressActivePush = false;
+
+        // Keep a profile selected by default (all platforms): the sole profile becomes the default right after
+        // the first add, and deleting the selected profile hands selection to the next remaining one. Set
+        // outside the echo-suppression so it persists like a manual pick.
+        if (ActiveProfile is null)
+        {
+            var fallback = selectionLost
+                ? _host.Profile.Profiles.FirstOrDefault()
+                : _host.Profile.Profiles.Count == 1 ? _host.Profile.Profiles[0] : null;
+            if (fallback is not null)
+            {
+                ActiveProfile = fallback;
+            }
+        }
 
         // Owning the tunnel clears a pending takeover prompt; while it stands, keep it across snapshots.
         if (snapshot.Active)

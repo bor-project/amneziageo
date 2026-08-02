@@ -15,7 +15,7 @@ internal sealed class AndroidAgentLog : IDisposable
     private const string Tag = "AmneziaGeo";
 
     private readonly SqliteLogStore _store;
-    private volatile int _captureFloor = 3;
+    private volatile int _captureFloor = 5;
     private volatile bool _routeLog;
 
     /// <summary>

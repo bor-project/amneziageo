@@ -97,6 +97,9 @@
           <StackPanel Spacing="8" Margin="0,4,0,0" IsVisible="{Binding IsAppMethod}">
             <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
 
+            <!-- Windows: running / installed / folder / file source picker. -->
+            <StackPanel Spacing="8" IsVisible="{Binding IsAppSourceWindows}">
+
             <!-- Wide: source picker, app input, and add button inline. -->
             <Grid ColumnDefinitions="Auto,*,Auto"
                   IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
@@ -155,6 +158,13 @@
                                ItemsSource="{Binding AppSuggestions}"
                                FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
                                IsEnabled="{Binding IsAppPickerActive}" />
+            </StackPanel>
+            </StackPanel>
+
+            <!-- Android: pick installed apps to route through the tunnel (include). -->
+            <StackPanel Spacing="6" IsVisible="{Binding IsAppSourceAndroid}">
+              <Button Classes="accent" HorizontalAlignment="Stretch" Command="{Binding PickAppsCommand}"
+                      Content="{l:Tr Main_AppsButton}" />
             </StackPanel>
           </StackPanel>
         </StackPanel>

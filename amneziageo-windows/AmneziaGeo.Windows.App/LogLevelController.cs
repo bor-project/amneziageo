@@ -9,9 +9,9 @@ namespace AmneziaGeo.Windows.App;
 internal sealed class LogLevelController
 {
     /// <summary>
-    /// The default verbosity token; matches the routing log so the agent log records activity, not only warnings.
+    /// The default verbosity token.
     /// </summary>
-    public const string DefaultToken = "info";
+    public const string DefaultToken = "error";
 
     // A level above Fatal: the switch drops every event, so "none" disables capture entirely.
     private const LogEventLevel NoneLevel = (LogEventLevel)(LogEventLevel.Fatal + 1);
@@ -19,7 +19,7 @@ internal sealed class LogLevelController
     /// <summary>
     /// The switch Serilog is configured to obey (AppHost binds MinimumLevel.ControlledBy to it).
     /// </summary>
-    public LoggingLevelSwitch Switch { get; } = new(LogEventLevel.Information);
+    public LoggingLevelSwitch Switch { get; } = new(LogEventLevel.Error);
 
     /// <summary>
     /// The current level as a persisted token ("error" / "warning" / "info" / "debug" / "trace").

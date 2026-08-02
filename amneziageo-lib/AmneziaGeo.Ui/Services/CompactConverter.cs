@@ -30,6 +30,7 @@ internal sealed class CompactConverter : IValueConverter
             "span2" => compact ? 2 : 1,
             "span3" => compact ? 3 : 1,
             "alignRL" => compact ? HorizontalAlignment.Left : HorizontalAlignment.Right,
+            "alignLC" => compact ? HorizontalAlignment.Center : HorizontalAlignment.Left,
             "stretchL" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
             "stretchR" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Right,
             "w100" => compact ? double.NaN : 100d,

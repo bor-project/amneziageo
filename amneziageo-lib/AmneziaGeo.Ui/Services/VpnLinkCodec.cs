@@ -137,6 +137,15 @@ internal static class VpnLinkCodec
         return TryDecode(text);
     }
 
+    /// <summary>
+    /// Returns the peer host without its port, or null when the config carries no endpoint.
+    /// </summary>
+    public static string? HostName(string confText)
+    {
+        var (host, _) = ParseEndpoint(confText);
+        return string.IsNullOrWhiteSpace(host) ? null : host;
+    }
+
     private static bool LooksLikeConf(string text)
     {
         return text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)

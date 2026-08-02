@@ -113,19 +113,10 @@ internal sealed partial class ConfigView : UserControl
                 return;
             }
 
+            vm.SeedSectionNameFromConfig(imported, Path.GetFileNameWithoutExtension(file.Name));
             vm.SectionConfigText = imported.ConfText;
             vm.SectionConfigStatus = string.Empty;
             vm.ImportMethod = ConfigImportMethod.Manual;
-            if (vm.SectionConfigNameIsDefault)
-            {
-                var name = !string.IsNullOrWhiteSpace(imported.Name)
-                    ? imported.Name!
-                    : Path.GetFileNameWithoutExtension(file.Name);
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    vm.SectionConfigName = name;
-                }
-            }
         }
         catch (Exception ex)
         {
@@ -188,12 +179,8 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
+        vm.SeedSectionNameFromConfig(imported);
         vm.SectionConfigText = imported.ConfText;
-        if (vm.SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(imported.Name))
-        {
-            vm.SectionConfigName = imported.Name!;
-        }
-
         vm.SectionConfigStatus = string.Empty;
         vm.ImportMethod = ConfigImportMethod.Manual;
     }

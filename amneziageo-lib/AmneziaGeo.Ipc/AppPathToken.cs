@@ -142,6 +142,89 @@ public static class AppPathToken
         return kind + "=" + Tokenize(token[(eq + 1)..]);
     }
 
+    /// <summary>
+    /// Normalizes an app:dir= / app:path= rule to a version-independent app:pkg= matcher for a Store/MSIX app,
+    /// or to a portable %ENV% path otherwise. Other kinds pass through unchanged.
+    /// </summary>
+    public static string NormalizeAppRule(string token)
+    {
+        var eq = token.IndexOf('=');
+        if (eq > 0)
+        {
+            var kind = token[..eq];
+            if (kind.Equals("app:dir", StringComparison.OrdinalIgnoreCase)
+                || kind.Equals("app:path", StringComparison.OrdinalIgnoreCase))
+            {
+                var family = PackageFamilyFromPath(token[(eq + 1)..]);
+                if (family is not null)
+                {
+                    return "app:pkg=" + family;
+                }
+            }
+        }
+
+        return TokenizeRule(token);
+    }
+
+    /// <summary>
+    /// Returns the package family name (Name + PublisherId) for an image path under WindowsApps, dropping the
+    /// version, architecture and resource id, so a rule keeps matching a Store/MSIX app across its auto-updates.
+    /// Null when the path is not a packaged app.
+    /// </summary>
+    public static string? PackageFamilyFromPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        const string marker = "\\WindowsApps\\";
+        var norm = path.Replace('/', '\\');
+        var at = norm.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            return null;
+        }
+
+        var after = norm[(at + marker.Length)..];
+        var slash = after.IndexOf('\\');
+        var fullName = slash >= 0 ? after[..slash] : after;
+        return PackageFamilyFromFullName(fullName);
+    }
+
+    // Package full name "Name_Version_Architecture_ResourceId_PublisherId" -> family "Name_PublisherId".
+    private static string? PackageFamilyFromFullName(string fullName)
+    {
+        var parts = fullName.Split('_');
+        if (parts.Length < 5)
+        {
+            return null;
+        }
+
+        var name = parts[0];
+        var publisher = parts[^1];
+        return name.Length > 0 && IsPublisherId(publisher) ? name + "_" + publisher : null;
+    }
+
+    // A package publisher id: 13 base32 characters.
+    private static bool IsPublisherId(string segment)
+    {
+        if (segment.Length != 13)
+        {
+            return false;
+        }
+
+        foreach (var c in segment)
+        {
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static string UsersRoot()
     {
         var pub = Environment.GetEnvironmentVariable("PUBLIC");

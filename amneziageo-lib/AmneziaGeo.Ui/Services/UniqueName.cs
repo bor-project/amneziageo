@@ -26,4 +26,26 @@ internal static class UniqueName
             }
         }
     }
+
+    /// <summary>
+    /// Уникализация со скобочным суффиксом: базовое, затем "имя (2)", "имя (3)"…
+    /// </summary>
+    public static string ResolveParen(string baseName, IEnumerable<string> taken)
+    {
+        var existing = taken.ToHashSet(System.StringComparer.Ordinal);
+        var trimmed = string.IsNullOrWhiteSpace(baseName) ? baseName : baseName.Trim();
+        if (!existing.Contains(trimmed))
+        {
+            return trimmed;
+        }
+
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{trimmed} ({i})";
+            if (!existing.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
 }

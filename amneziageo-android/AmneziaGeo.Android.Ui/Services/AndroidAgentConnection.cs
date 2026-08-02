@@ -24,8 +24,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 {
     private readonly Dictionary<string, string> _configs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _profiles = new(StringComparer.Ordinal);
-    // Per-profile app split: value = "<mode>|<pkg,pkg,...>", mode in off|include|exclude.
-    private readonly Dictionary<string, string> _appSplit = new(StringComparer.Ordinal);
     // Per-profile routing assignment: value = "<listId>|<1|0>" (1 = use routing).
     private readonly Dictionary<string, string> _routing = new(StringComparer.Ordinal);
     private readonly string _storePath;
@@ -52,7 +50,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _connectFailed;
     private bool _started;
     private bool _disposed;
-    private string _logLevel = "info";
+    private string _logLevel = "error";
     private bool _routeLog;
 
     public event Action? Connected;
@@ -62,7 +60,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     public event Action<StatusSnapshot>? SnapshotReceived;
 
     /// <summary>
-    /// The in-process agent instance, reached by the Android app-split picker.
+    /// The in-process agent instance.
     /// </summary>
     public static AndroidAgentConnection? Current { get; private set; }
 
@@ -163,7 +161,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 if (args.Count > 0)
                 {
                     _profiles.Remove(args[0]);
-                    _appSplit.Remove(args[0]);
                     _routing.Remove(args[0]);
                     Save();
                     PushSnapshot();
@@ -283,7 +280,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _connectFailed = false;
-        var (appMode, appPkgs) = ResolveAppSplit(_selectedTarget);
+        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(_selectedTarget);
         var routes = await ResolveGeoRoutesAsync(_selectedTarget);
         _log.Info("agent", $"connect requested: target '{_selectedTarget}', app-split {appMode}, {routes?.Length ?? 0} routes");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
@@ -924,7 +921,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             using var document = JsonDocument.Parse(System.IO.File.ReadAllText(_storePath));
             LoadMap(document.RootElement, "Configs", _configs);
             LoadMap(document.RootElement, "Profiles", _profiles);
-            LoadMap(document.RootElement, "AppSplit", _appSplit);
             LoadMap(document.RootElement, "Routing", _routing);
             if (document.RootElement.TryGetProperty("LogLevel", out var level) && level.ValueKind == JsonValueKind.String)
             {
@@ -966,8 +962,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             AppendMap(builder, _configs);
             builder.Append(",\"Profiles\":");
             AppendMap(builder, _profiles);
-            builder.Append(",\"AppSplit\":");
-            AppendMap(builder, _appSplit);
             builder.Append(",\"Routing\":");
             AppendMap(builder, _routing);
             builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
@@ -1048,14 +1042,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
-    // Carries a profile's app-split and routing assignment across a rename.
+    // Carries a profile's routing assignment across a rename.
     private void RebindProfileState(string oldName, string newName)
     {
-        if (_appSplit.Remove(oldName, out var split))
-        {
-            _appSplit[newName] = split;
-        }
-
         if (_routing.Remove(oldName, out var routing))
         {
             _routing[newName] = routing;
@@ -1075,47 +1064,42 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // The stored app split for a profile as (mode, packages); ("off", []) when unset or not a known profile.
-    private (string Mode, string[] Packages) ResolveAppSplit(string? profile)
+    // The include app set for a profile from its assigned routing list's app:pkg rules; ("off", []) when none.
+    private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync(string? profile)
     {
-        if (profile is null || !_profiles.ContainsKey(profile) || !_appSplit.TryGetValue(profile, out var raw))
+        if (profile is null || !_routing.TryGetValue(profile, out var raw))
         {
             return ("off", []);
         }
 
-        return ParseAppSplit(raw);
-    }
-
-    private static (string Mode, string[] Packages) ParseAppSplit(string raw)
-    {
-        var bar = raw.IndexOf('|');
-        var mode = bar < 0 ? raw : raw[..bar];
-        var packages = bar < 0 || bar + 1 >= raw.Length
-            ? []
-            : raw[(bar + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return (mode, packages);
-    }
-
-    /// <summary>
-    /// Reads the app split configured for a profile: mode (off/include/exclude) and its packages.
-    /// </summary>
-    public (string Mode, IReadOnlyList<string> Packages) GetAppSplit(string profile)
-    {
-        var (mode, packages) = ResolveAppSplit(profile);
-        return (mode, packages);
-    }
-
-    /// <summary>
-    /// Stores a profile's app split; reconnects when it is the running profile so the change applies.
-    /// </summary>
-    public void SetAppSplit(string profile, string mode, IReadOnlyList<string> packages)
-    {
-        _appSplit[profile] = $"{mode}|{string.Join(',', packages)}";
-        Save();
-        if (_active && string.Equals(_boundTarget, profile, StringComparison.Ordinal))
+        var (listId, useRouting) = ParseRouting(raw);
+        if (!useRouting || listId is null)
         {
-            _ = SetConnectionAsync("connect");
+            return ("off", []);
         }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var settings = await _store.GetRoutingSettingsAsync(listId.Value).ConfigureAwait(false);
+        if (settings is { UseGlobalProxy: true })
+        {
+            return ("off", []);
+        }
+
+        var list = await _store.GetRoutingListAsync(listId.Value).ConfigureAwait(false);
+        if (list?.Apps is not { Count: > 0 })
+        {
+            return ("off", []);
+        }
+
+        const string prefix = "pkg=";
+        var packages = list.Apps
+            .Where(a => a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(a => a[prefix.Length..].Trim())
+            .Where(p => p.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return packages.Length > 0 ? ("include", packages) : ("off", []);
     }
 
     // Reads a window of one log table for the in-app viewer, newest first.
@@ -1227,7 +1211,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             report.Append("endpoint     : ").Append(WgConfigEditor.GetEndpoint(configText) ?? "(none)").Append('\n');
         }
 
-        var (appMode, appPkgs) = ResolveAppSplit(target);
+        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(target);
         report.Append("app split    : ").Append(appMode);
         if (appMode != "off" && appPkgs is { Length: > 0 })
         {

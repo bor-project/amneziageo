@@ -14,11 +14,12 @@ internal sealed class AppMatcher
 
     private readonly ILogger _logger;
 
-    // Parsed matchers. pkg= not matched in v1.
+    // Parsed matchers.
     private readonly HashSet<string> _paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _dirs = [];
     private readonly HashSet<string> _names = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _services = [];
+    private readonly HashSet<string> _packages = new(StringComparer.OrdinalIgnoreCase);
 
     // Stop the ancestry walk at generic hosts so an app rule stays scoped to its own tree.
     private static readonly HashSet<string> _ancestryStops = new(StringComparer.OrdinalIgnoreCase)
@@ -41,7 +42,7 @@ internal sealed class AppMatcher
             if (eq <= 0)
             {
                 // Bare value: treat as a full path.
-                _paths.Add(AmneziaGeo.Ipc.AppPathToken.Tokenize(token));
+                AddPathMatcher(token);
                 continue;
             }
 
@@ -55,12 +56,10 @@ internal sealed class AppMatcher
             switch (kind)
             {
                 case "path":
-                    _paths.Add(AmneziaGeo.Ipc.AppPathToken.Tokenize(value));
+                    AddPathMatcher(value);
                     break;
                 case "dir":
-                    // Hoist a versioned leaf so a rule saved against an old app-<ver> folder still matches after
-                    // the app auto-updates into a new one (#204).
-                    _dirs.Add(AmneziaGeo.Ipc.AppPathToken.StripVersionedLeaf(AmneziaGeo.Ipc.AppPathToken.Tokenize(value.TrimEnd('\\', '/'))));
+                    AddDirMatcher(value);
                     break;
                 case "name":
                     _names.Add(value);
@@ -68,11 +67,43 @@ internal sealed class AppMatcher
                 case "svc":
                     _services.Add(value);
                     break;
+                case "pkg":
+                    _packages.Add(value);
+                    break;
                 default:
-                    // pkg= (UWP) and unknown kinds: not matched by image path.
                     _logger.LogInformation("app rules of type '{Kind}' are not supported yet and are ignored; the programs they name will not be routed through the tunnel", kind);
                     break;
             }
+        }
+    }
+
+    // A Store/MSIX exe path becomes a package match so the rule survives auto-updates into a new version folder.
+    private void AddPathMatcher(string value)
+    {
+        var canon = AmneziaGeo.Ipc.AppPathToken.Tokenize(value);
+        var family = AmneziaGeo.Ipc.AppPathToken.PackageFamilyFromPath(canon);
+        if (family is not null)
+        {
+            _packages.Add(family);
+        }
+        else
+        {
+            _paths.Add(canon);
+        }
+    }
+
+    // A Store/MSIX package folder becomes a package match; a Squirrel app-<ver> leaf is hoisted (#204).
+    private void AddDirMatcher(string value)
+    {
+        var canon = AmneziaGeo.Ipc.AppPathToken.Tokenize(value.TrimEnd('\\', '/'));
+        var family = AmneziaGeo.Ipc.AppPathToken.PackageFamilyFromPath(canon);
+        if (family is not null)
+        {
+            _packages.Add(family);
+        }
+        else
+        {
+            _dirs.Add(AmneziaGeo.Ipc.AppPathToken.StripVersionedLeaf(canon));
         }
     }
 
@@ -109,7 +140,7 @@ internal sealed class AppMatcher
     /// <summary>
     /// Has any matcher.
     /// </summary>
-    public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0;
+    public bool HasMatchers => _paths.Count > 0 || _dirs.Count > 0 || _names.Count > 0 || _services.Count > 0 || _packages.Count > 0;
 
     // Match the owning image, or any ancestor's. WebView2/Electron/UWP apps run their networking in a
     // shared child process whose own image sits outside the app; the rule matches up the parent chain.
@@ -252,6 +283,16 @@ internal sealed class AppMatcher
         {
             // Matches dir prefix, catches versioned subfolders.
             if (canon.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (_packages.Count > 0)
+        {
+            // A Store/MSIX image matches by package family, so the version folder in its path is ignored.
+            var family = AmneziaGeo.Ipc.AppPathToken.PackageFamilyFromPath(path);
+            if (family is not null && _packages.Contains(family))
             {
                 return true;
             }

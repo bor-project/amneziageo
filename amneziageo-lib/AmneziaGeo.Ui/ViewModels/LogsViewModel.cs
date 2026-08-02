@@ -23,7 +23,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private readonly IAgentConnection _connection;
 
     // Verbosity shown for the agent capture level when the agent reports nothing usable.
-    private const string DefaultCaptureLevel = "info";
+    private const string DefaultCaptureLevel = "error";
 
     // Rows requested per window.
     private const int LogLimit = 400;

@@ -3,6 +3,7 @@
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              x:Class="AmneziaGeo.Ui.Views.LogsView"
              x:CompileBindings="True"
              x:DataType="vm:LogsViewModel">
@@ -45,7 +46,7 @@
                   Content="{l:Tr Main_LogTabSettings}" />
         </UniformGrid>
       </Border>
-      <StackPanel Orientation="Horizontal" Spacing="8">
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
         <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
         <controls:AdaptiveComboBox Classes="field" Width="140"
                   ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
@@ -59,15 +60,18 @@
       <Border IsVisible="{Binding IsSettingsMode}" VerticalAlignment="Top"
               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
               CornerRadius="12" Padding="16" Background="Transparent">
-        <StackPanel Spacing="18" HorizontalAlignment="Left" MaxWidth="420">
+        <StackPanel Spacing="18" MaxWidth="420"
+                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}">
           <Panel>
             <!-- ageo: maximum capture level (incl. none). -->
-            <StackPanel HorizontalAlignment="Left" Spacing="8" IsVisible="{Binding IsAgentLog}">
+            <StackPanel Spacing="8" IsVisible="{Binding IsAgentLog}"
+                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}">
               <StackPanel Spacing="2">
                 <TextBlock Text="{l:Tr Main_LogCaptureLevelTitle}" FontSize="13.5" />
                 <TextBlock Text="{l:Tr Main_LogVerbosityHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
               </StackPanel>
-              <controls:AdaptiveComboBox Classes="field" MinWidth="220" HorizontalAlignment="Left"
+              <controls:AdaptiveComboBox Classes="field" MinWidth="220"
+                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}"
                         ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
             </StackPanel>
 
@@ -80,7 +84,8 @@
           <Border Height="1" Background="{DynamicResource AgBorderBrush}" Opacity="0.6" />
 
           <!-- Log actions: clear + export the selected source. -->
-          <StackPanel Orientation="Horizontal" Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="10"
+                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignLC}">
             <Button Classes="methodpick" Padding="16,8" Command="{Binding ClearLogCommand}">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
@@ -158,8 +163,11 @@
                   <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
-              <TextBlock Grid.Column="3" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-              <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
+              <!-- Follow: label over toggle in one narrow column so it never runs off the row. -->
+              <StackPanel Grid.Column="3" Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                <TextBlock Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5" HorizontalAlignment="Center" />
+                <ToggleSwitch IsChecked="{Binding LogFollow, Mode=TwoWay}" HorizontalAlignment="Center" />
+              </StackPanel>
             </Grid>
           </StackPanel>
 

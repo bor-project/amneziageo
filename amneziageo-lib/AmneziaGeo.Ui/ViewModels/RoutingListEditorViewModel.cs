@@ -399,9 +399,19 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public bool IsAppMethod => AddMethod == "app";
 
     /// <summary>
-    /// True when the per-application entry method is offered (Windows only; app-path matching has no Android equivalent).
+    /// True when the per-application entry method is offered (Windows path matching or the Android package picker).
     /// </summary>
-    public bool IsAppMethodAvailable => OperatingSystem.IsWindows();
+    public bool IsAppMethodAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsAndroid();
+
+    /// <summary>
+    /// True when the app source is the Windows running / installed / path picker.
+    /// </summary>
+    public bool IsAppSourceWindows => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// True when the app source is the Android installed-app picker.
+    /// </summary>
+    public bool IsAppSourceAndroid => OperatingSystem.IsAndroid();
 
     /// <summary>
     /// Best-match geo suggestions for the current input, shown inline under the field.
@@ -1033,11 +1043,60 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return;
         }
 
-        // Store a portable %ENV% path so the rule survives export to another machine or user.
-        token = AmneziaGeo.Ipc.AppPathToken.TokenizeRule(token);
+        // Store a version-independent package match for Store apps, else a portable %ENV% path, so the rule
+        // survives the app auto-updating and export to another machine or user.
+        token = AmneziaGeo.Ipc.AppPathToken.NormalizeAppRule(token);
         if (!Rules.Contains(token))
         {
             Rules.Add(token);
+        }
+    }
+
+    /// <summary>
+    /// Opens the platform app picker (Android) and applies the chosen packages to the Proxy bucket (include).
+    /// </summary>
+    [RelayCommand]
+    private void PickApps()
+    {
+        if (!AppSplitBridge.IsAvailable)
+        {
+            return;
+        }
+
+        // App rules are include-only: they route the picked apps through the tunnel, so they live in Proxy.
+        SelectedRole = "proxy";
+        AppSplitBridge.Present(SelectedAppPackages(), ApplyPickedApps);
+    }
+
+    // The package names already in the Proxy bucket as app:pkg rules, for pre-checking the picker.
+    private IReadOnlyList<string> SelectedAppPackages()
+    {
+        const string prefix = "app:pkg=";
+        return [.. ProxyRules
+            .Where(r => r.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Select(r => r[prefix.Length..])];
+    }
+
+    // Replaces the Proxy bucket's app:pkg rules with the picked package set.
+    private void ApplyPickedApps(IReadOnlyCollection<string> packages)
+    {
+        const string prefix = "app:pkg=";
+        for (var i = ProxyRules.Count - 1; i >= 0; i--)
+        {
+            if (ProxyRules[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                _expandedRules.Remove(ProxyRules[i]);
+                ProxyRules.RemoveAt(i);
+            }
+        }
+
+        foreach (var package in packages)
+        {
+            var token = prefix + package;
+            if (!ProxyRules.Contains(token))
+            {
+                ProxyRules.Add(token);
+            }
         }
     }
 

@@ -504,7 +504,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     // Editing the new-config name or text clears a stale validation / status line (#3).
     partial void OnSectionConfigNameChanged(string value) => SectionConfigStatus = string.Empty;
 
-    partial void OnSectionConfigTextChanged(string value) => SectionConfigStatus = string.Empty;
+    partial void OnSectionConfigTextChanged(string value)
+    {
+        SectionConfigStatus = string.Empty;
+        if (VpnLinkCodec.TryDecode(value) is { } imported)
+        {
+            SeedSectionNameFromConfig(imported);
+        }
+    }
 
     // Reflect the open config into the section combo without echoing the pick back: a selected real config
     // shows its row, otherwise «— не выбрано —».
@@ -578,10 +585,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public async Task<bool> ImportDroppedConfigAsync(VpnLinkCodec.Imported imported, ISet<string> reserved, string? fileName = null)
     {
         // Name rule mirrors the file picker: the config's own name, else the dropped file name, else the default.
-        var baseName = !string.IsNullOrWhiteSpace(imported.Name)
-            ? imported.Name!
-            : (!string.IsNullOrWhiteSpace(fileName) ? fileName! : Loc.Instance.Get("MainVm_NewConfigDefaultName"));
-        var name = UniqueName.Resolve(baseName, reserved);
+        var name = !string.IsNullOrWhiteSpace(imported.Name)
+            ? UniqueName.Resolve(imported.Name!, reserved)
+            : !string.IsNullOrWhiteSpace(fileName)
+                ? UniqueName.Resolve(fileName!, reserved)
+                : DefaultConfigName(imported.ConfText, reserved);
 
         var ack = await ImportConfigAsync(name, imported.ConfText);
         if (!ack.Ok)
@@ -855,12 +863,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     // Fill the create form from a scanned QR and show it for review.
     private void ApplyScannedConfig(VpnLinkCodec.Imported imported)
     {
+        SeedSectionNameFromConfig(imported);
         SectionConfigText = imported.ConfText;
-        if (SectionConfigNameIsDefault && !string.IsNullOrWhiteSpace(imported.Name))
-        {
-            SectionConfigName = imported.Name!;
-        }
-
         SectionConfigStatus = string.Empty;
         SectionScan = null;
         ImportMethod = ConfigImportMethod.Manual;
@@ -894,9 +898,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return false;
         }
 
-        var name = !string.IsNullOrWhiteSpace(SectionConfigName)
+        var name = !SectionConfigNameIsDefault
             ? SectionConfigName.Trim()
-            : (string.IsNullOrWhiteSpace(imported.Name) ? "config" : imported.Name!.Trim());
+            : (!string.IsNullOrWhiteSpace(imported.Name) ? imported.Name!.Trim() : DefaultConfigName(imported.ConfText, _configNames));
 
         _sectionConfigSaving = true;
         try
@@ -951,6 +955,44 @@ internal sealed partial class ConfigViewModel : ViewModelBase
                 return candidate;
             }
         }
+    }
+
+    /// <summary>
+    /// Заполняет имя создаваемого конфига из распознанного конфига, пока в поле стоит дефолт: своё имя, иначе
+    /// имя файла, иначе хост без порта (дедуп " (N)").
+    /// </summary>
+    public void SeedSectionNameFromConfig(VpnLinkCodec.Imported imported, string? fileName = null)
+    {
+        if (!SectionConfigNameIsDefault)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(imported.Name))
+        {
+            SectionConfigName = imported.Name!.Trim();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            SectionConfigName = fileName!.Trim();
+            return;
+        }
+
+        var host = VpnLinkCodec.HostName(imported.ConfText);
+        if (!string.IsNullOrWhiteSpace(host))
+        {
+            SectionConfigName = UniqueName.ResolveParen(host!, _configNames);
+        }
+    }
+
+    // Имя по умолчанию для конфига без своего имени и имени файла: хост без порта, иначе локализованный дефолт.
+    private string DefaultConfigName(string confText, IEnumerable<string> taken)
+    {
+        var host = VpnLinkCodec.HostName(confText);
+        var baseName = !string.IsNullOrWhiteSpace(host) ? host! : Loc.Instance.Get("MainVm_NewConfigDefaultName");
+        return UniqueName.ResolveParen(baseName, taken);
     }
 }
 

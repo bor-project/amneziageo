@@ -175,6 +175,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [NotifyPropertyChangedFor(nameof(IsProxyBucketUnused))]
     private bool _globalProxyActive;
 
+    // Mirrors the list's all-UDP flag, kept in sync by RoutingViewModel.
+    [ObservableProperty]
+    private bool _allUdpActive;
+
+    partial void OnGlobalProxyActiveChanged(bool value) => RefreshTransfer();
+
+    partial void OnAllUdpActiveChanged(bool value) => RefreshTransfer();
+
     /// <summary>
     /// The active bucket's rule tokens (geosite:openai etc), selected by <see cref="SelectedRole"/>.
     /// </summary>
@@ -1152,9 +1160,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     public string SuggestedFileName => string.IsNullOrWhiteSpace(Name) ? "routing.txt" : $"{Name.Trim()}-routing.txt";
 
     /// <summary>
-    /// Serialises this list to a portable blob for copy / save / QR (role-tagged, so the buckets round-trip).
+    /// Serialises this list to a portable blob for copy / save / QR (role-tagged, so the buckets round-trip; the
+    /// traffic options travel with it, like they do in a bundle).
     /// </summary>
-    public string BuildTransferPayload() => PortableTransfer.EncodeRouting(Name, AllRoleTokens());
+    public string BuildTransferPayload() =>
+        PortableTransfer.EncodeRouting(Name, AllRoleTokens(), new PortableTransfer.RoutingOptions(AllUdpActive, GlobalProxyActive));
 
     // All buckets as role-tagged tokens ("proxy|geosite:x", "block|domain:y").
     private IReadOnlyList<string> AllRoleTokens()
@@ -1255,9 +1265,15 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// <summary>
     /// Replaces this list's name + rules from an imported blob; the result auto-saves.
     /// </summary>
-    public bool ApplyImport(string text)
+    public bool ApplyImport(string text) => ApplyImport(text, out _);
+
+    /// <summary>
+    /// Replaces this list's name + rules from an imported blob and reports the traffic options it carried; the
+    /// options belong to the sibling settings editor, so the caller applies them.
+    /// </summary>
+    public bool ApplyImport(string text, out PortableTransfer.RoutingOptions? options)
     {
-        if (!PortableTransfer.TryDecodeRouting(text, out var name, out var importedRules))
+        if (!PortableTransfer.TryDecodeRouting(text, out var name, out var importedRules, out options))
         {
             StatusMessage = Loc.Instance.Get("RoutingEditor_NotARoutingList");
             return false;

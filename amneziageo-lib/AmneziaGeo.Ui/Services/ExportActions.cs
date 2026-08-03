@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
@@ -40,9 +41,33 @@ internal static class ExportActions
             return false;
         }
 
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(text);
+        await using (var stream = await file.OpenWriteAsync())
+        {
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(text);
+        }
+
+        RestrictToOwner(file);
         return true;
+    }
+
+    /// <summary>
+    /// Ограничивает доступ к сохранённому файлу владельцем: выгрузки несут приватные ключи.
+    /// </summary>
+    public static void RestrictToOwner(IStorageFile file)
+    {
+        if (OperatingSystem.IsWindows() || file.TryGetLocalPath() is not { } path)
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch (Exception)
+        {
+            // Не всякий выданный пикером путь принадлежит нам.
+        }
     }
 }

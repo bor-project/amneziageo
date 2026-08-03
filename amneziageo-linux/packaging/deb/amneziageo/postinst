@@ -1,0 +1,30 @@
+#!/bin/sh
+set -e
+
+DATA=/var/lib/amneziageo
+UNIT=amneziageo-agent.service
+LEGACY=/etc/systemd/system/amneziageo-agent.service
+
+case "$1" in
+  configure)
+    mkdir -p "$DATA"
+    chmod 700 "$DATA"
+
+    if [ -e "$LEGACY" ]; then
+      echo "amneziageo: $LEGACY shadows the packaged unit; remove it and run 'systemctl daemon-reload'" >&2
+    fi
+
+    if [ -d /run/systemd/system ]; then
+      systemctl daemon-reload || true
+      systemctl enable "$UNIT" >/dev/null 2>&1 || true
+      if [ -n "$2" ]; then
+        echo "amneziageo: restarting the agent drops the tunnel until it dials again"
+        systemctl try-restart "$UNIT" || true
+      else
+        systemctl start "$UNIT" || true
+      fi
+    fi
+    ;;
+esac
+
+exit 0

@@ -13,9 +13,14 @@ internal static class Systemd
     public const string Unit = "amneziageo-agent.service";
 
     /// <summary>
-    /// Where the unit file lives.
+    /// Where 'daemon install' writes the unit file.
     /// </summary>
     public const string UnitPath = "/etc/systemd/system/" + Unit;
+
+    /// <summary>
+    /// Where the package ships the unit file.
+    /// </summary>
+    public const string PackagedUnitPath = "/usr/lib/systemd/system/" + Unit;
 
     /// <summary>
     /// Default library root of a service install.
@@ -28,9 +33,17 @@ internal static class Systemd
     public const string DefaultPrefix = "/opt/amneziageo";
 
     /// <summary>
+    /// Path the installed unit file sits at, or null.
+    /// </summary>
+    public static string? InstalledPath =>
+        File.Exists(UnitPath) ? UnitPath
+        : File.Exists(PackagedUnitPath) ? PackagedUnitPath
+        : null;
+
+    /// <summary>
     /// Whether the unit file is installed.
     /// </summary>
-    public static bool Exists => File.Exists(UnitPath);
+    public static bool Exists => InstalledPath is not null;
 
     /// <summary>
     /// Short state of the unit.
@@ -170,6 +183,11 @@ internal static class DaemonCommands
             return Reply.Usage($"installing the unit needs root: sudo amneziageo daemon install");
         }
 
+        if (File.Exists(Systemd.PackagedUnitPath))
+        {
+            Output.Info($"the package already ships {Systemd.PackagedUnitPath}; the unit written now overrides it");
+        }
+
         await File.WriteAllTextAsync(Systemd.UnitPath, text).ConfigureAwait(false);
         Output.Info($"wrote {Systemd.UnitPath}");
 
@@ -193,6 +211,11 @@ internal static class DaemonCommands
 
     private static int Uninstall()
     {
+        if (!File.Exists(Systemd.UnitPath) && File.Exists(Systemd.PackagedUnitPath))
+        {
+            return Reply.Usage("the unit comes from the amneziageo package: sudo apt remove amneziageo");
+        }
+
         if (!IsRoot())
         {
             return Reply.Usage("removing the unit needs root: sudo amneziageo daemon uninstall");
@@ -242,7 +265,7 @@ internal static class DaemonCommands
         Output.Pairs(
         [
             ("unit", Systemd.Unit),
-            ("installed", installed ? Systemd.UnitPath : "no"),
+            ("installed", Systemd.InstalledPath ?? "no"),
             ("active", active),
             ("at boot", enabled),
             ("control socket", socket ? AgentClient.SocketPath : "missing"),

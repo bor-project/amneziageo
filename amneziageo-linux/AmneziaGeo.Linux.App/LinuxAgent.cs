@@ -391,7 +391,8 @@ internal sealed class LinuxAgent : IDisposable
         _boundStatus = ConnectionStatus.Connecting;
         await PushAsync(ct).ConfigureAwait(false);
 
-        var failure = await _tunnel.UpAsync(config, ct).ConfigureAwait(false);
+        var routing = await TunnelRouting.LoadAsync(_store, _selectedTarget, ct).ConfigureAwait(false);
+        var failure = await _tunnel.UpAsync(config, routing, ct).ConfigureAwait(false);
         if (failure is not null)
         {
             _connectFailed = true;
@@ -430,6 +431,13 @@ internal sealed class LinuxAgent : IDisposable
         if (!VpnLinkCodec.LooksLikeConf(args[1]))
         {
             return new IpcAck(false, "the text is not a WireGuard configuration");
+        }
+
+        // Import creates; replacing the text of an existing configuration is edit-config. Without this an import
+        // under a taken name silently overwrote another configuration's keys.
+        if (await _store.ConfigExistsAsync(args[0], ct).ConfigureAwait(false))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_ConfigNameTaken", args[0]));
         }
 
         return await SaveConfigAsync(args, ct).ConfigureAwait(false);
@@ -742,7 +750,20 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var id = long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
-        var saved = await _geo.ApplyToRoutingListAsync(id, args[1], [.. args.Skip(2)], ct).ConfigureAwait(false);
+        var name = args[1].Trim();
+        if (name.Length == 0)
+        {
+            return Fail();
+        }
+
+        // The name column is unique: a clash used to surface as a raw SQLite error from the insert.
+        var lists = await _store.ListRoutingListsAsync(ct).ConfigureAwait(false);
+        if (lists.Any(l => l.Id != id && string.Equals(l.Name, name, StringComparison.Ordinal)))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_RoutingListNameTaken", name));
+        }
+
+        var saved = await _geo.ApplyToRoutingListAsync(id, name, [.. args.Skip(2)], ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return new IpcAck(true, saved.ToString(CultureInfo.InvariantCulture));
     }
@@ -1016,6 +1037,13 @@ internal sealed class LinuxAgent : IDisposable
             }
         }
 
+        report.Append("mode         : ").Append(_tunnel.Mode).Append('\n');
+        if (_tunnel.Running)
+        {
+            report.Append("advertised   : ").Append(string.Join(", ", _tunnel.Advertised)).Append('\n');
+            report.Append("live routes  : ").Append(_tunnel.Tunneled.Count).Append(" tunneled, ").Append(_tunnel.Bypassed.Count).Append(" bypassed").Append('\n');
+        }
+
         if (_connectFailDetail.Length > 0)
         {
             report.Append("last failure : ").Append(_connectFailDetail).Append('\n');
@@ -1029,6 +1057,8 @@ internal sealed class LinuxAgent : IDisposable
     private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
     {
         var rows = new List<object>();
+        rows.AddRange(_tunnel.Tunneled.Select(host => (object)new { kind = "live", key = host, value = "tunnel" }));
+        rows.AddRange(_tunnel.Bypassed.Select(host => (object)new { kind = "live", key = host, value = "direct" }));
         if (_selectedTarget is not null)
         {
             var (listId, _) = await _store.GetProfileRoutingAsync(_selectedTarget, ct).ConfigureAwait(false);

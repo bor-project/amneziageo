@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
@@ -9,18 +8,25 @@ using AmneziaGeo.Linux.Engine;
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
-/// Brings the amneziawg-go interface up and down over UAPI and iproute2.
+/// Brings the amneziawg-go interface up and down over UAPI and iproute2, and applies the routing rules the
+/// connection runs under.
 /// </summary>
 internal sealed class TunnelController : IDisposable
 {
     private const string TunDevice = "/dev/net/tun";
     private const int DefaultMtu = 1420;
+    private const int HandshakeWaitSeconds = 30;
+    private const int KeepaliveSeconds = 25;
 
     private readonly string _enginePath;
     private readonly string _iface;
     private readonly AgentLog _log;
     private AwgDaemon? _daemon;
+    private DnsRouter? _dns;
+    private LiveRoutes? _routes;
+    private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
+    private bool _resolverApplied;
     private bool _disposed;
 
     /// <summary>
@@ -31,6 +37,7 @@ internal sealed class TunnelController : IDisposable
         _enginePath = enginePath;
         _iface = interfaceName;
         _log = log;
+        ResolvConf.Restore(log);
     }
 
     /// <summary>
@@ -39,9 +46,30 @@ internal sealed class TunnelController : IDisposable
     public bool Running => _daemon is { Running: true };
 
     /// <summary>
-    /// Brings the tunnel up from a wg-quick config; returns null on success or the reason it was refused.
+    /// How the running tunnel routes traffic.
     /// </summary>
-    public async Task<string?> UpAsync(string configText, CancellationToken ct)
+    public string Mode { get; private set; } = "(down)";
+
+    /// <summary>
+    /// Address ranges advertised to the engine when the tunnel came up.
+    /// </summary>
+    public IReadOnlyList<string> Advertised { get; private set; } = [];
+
+    /// <summary>
+    /// Destinations routed into the tunnel since it came up.
+    /// </summary>
+    public IReadOnlyCollection<string> Tunneled => _routes?.Tunneled ?? [];
+
+    /// <summary>
+    /// Destinations pinned to the physical hop since the tunnel came up.
+    /// </summary>
+    public IReadOnlyCollection<string> Bypassed => _routes?.Bypassed ?? [];
+
+    /// <summary>
+    /// Brings the tunnel up from a wg-quick config under the given rules; returns null on success or the reason
+    /// it was refused.
+    /// </summary>
+    public async Task<string?> UpAsync(string configText, TunnelRouting routing, CancellationToken ct)
     {
         var blocker = Preflight();
         if (blocker is not null)
@@ -50,7 +78,15 @@ internal sealed class TunnelController : IDisposable
             return blocker;
         }
 
-        var (config, endpointIp) = await ResolveEndpointAsync(configText, ct).ConfigureAwait(false);
+        var (resolved, endpointIp) = await ResolveEndpointAsync(configText, ct).ConfigureAwait(false);
+        var split = routing.Split && routing.HasRules;
+        var tunnelResolvers = TunnelResolvers(resolved);
+        var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
+        var allowedIps = AllowedIpsResolver.Build(split, WgConfigEditor.GetAllowedIps(resolved), startupRoutes);
+        // Split advertises almost nothing at first, so without a keepalive the peer would only be greeted once
+        // some destination had already earned its route - and the name rules that earn it need the tunnel first.
+        var config = WgConfigEditor.EnsurePersistentKeepalive(WgConfigEditor.ApplyAllowedIps(resolved, allowedIps), KeepaliveSeconds);
+
         var uapi = WgQuickToUapi.Convert(config);
         if (uapi is null)
         {
@@ -58,6 +94,10 @@ internal sealed class TunnelController : IDisposable
         }
 
         await DownAsync(ct).ConfigureAwait(false);
+
+        // Read before the tunnel routes land, while the machine's own path is the only one there is.
+        var hop = await PhysicalHopAsync(ct).ConfigureAwait(false);
+        var lanResolvers = LanResolvers(hop.Via);
 
         var daemon = new AwgDaemon(_enginePath, _iface);
         try
@@ -80,13 +120,18 @@ internal sealed class TunnelController : IDisposable
             return $"engine start failed: {ex.Message}";
         }
 
-        var failure = await ApplyNetworkAsync(config, endpointIp, ct).ConfigureAwait(false);
+        var failure = await ApplyNetworkAsync(config, allowedIps, endpointIp, ct).ConfigureAwait(false);
         if (failure is not null)
         {
             await DownAsync(ct).ConfigureAwait(false);
             return failure;
         }
 
+        Advertised = allowedIps;
+        Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
+        _routes = new LiveRoutes(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, _log);
+        StartNameRouter(routing with { Split = split }, tunnelResolvers, lanResolvers);
+        _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {routing.ProxyRoutes.Count} proxy range(s) and {routing.ProxyDomains.Count} domain(s) decided per destination");
         return null;
     }
 
@@ -95,10 +140,31 @@ internal sealed class TunnelController : IDisposable
     /// </summary>
     public async Task DownAsync(CancellationToken ct = default)
     {
+        if (_sessionCts is { } cts)
+        {
+            _sessionCts = null;
+            await cts.CancelAsync().ConfigureAwait(false);
+            cts.Dispose();
+        }
+
+        _dns?.Dispose();
+        _dns = null;
+        if (_resolverApplied)
+        {
+            _resolverApplied = false;
+            ResolvConf.Restore(_log);
+        }
+
+        if (_routes is { } routes)
+        {
+            _routes = null;
+            await routes.ClearAsync(ct).ConfigureAwait(false);
+        }
+
         if (_pinnedEndpoint is { } pinned)
         {
             _pinnedEndpoint = null;
-            await RunAsync("ip", ct, "route", "del", pinned).ConfigureAwait(false);
+            await Shell.RunAsync("ip", ct, "route", "del", pinned).ConfigureAwait(false);
         }
 
         if (_daemon is { } daemon)
@@ -107,6 +173,75 @@ internal sealed class TunnelController : IDisposable
             daemon.Dispose();
             _log.Info("tunnel", $"{_iface} down");
         }
+
+        Mode = "(down)";
+        Advertised = [];
+    }
+
+    // Binds the name router and points the machine at it once the peer answers, so a dial that never completes
+    // cannot leave the machine without a resolver.
+    private void StartNameRouter(TunnelRouting routing, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers)
+    {
+        var router = new DnsRouter(routing, tunnelResolvers, lanResolvers, _routes!, _log);
+        if (!router.Start())
+        {
+            router.Dispose();
+            _log.Warn("dns", "the name router could not bind, so rules by domain name do not apply; only rules by address do");
+            return;
+        }
+
+        _dns = router;
+        _sessionCts = new CancellationTokenSource();
+        _ = Task.Run(() => ApplyResolverWhenUpAsync(_sessionCts.Token));
+    }
+
+    private async Task ApplyResolverWhenUpAsync(CancellationToken ct)
+    {
+        try
+        {
+            for (var attempt = 0; attempt < HandshakeWaitSeconds * 2; attempt++)
+            {
+                if (await HandshakeSeenAsync(ct).ConfigureAwait(false))
+                {
+                    _resolverApplied = ResolvConf.Apply(DnsRouter.Listen, _log);
+                    _log.Info("dns", $"lookups now go to {DnsRouter.Listen}");
+                    return;
+                }
+
+                await Task.Delay(500, ct).ConfigureAwait(false);
+            }
+
+            _log.Warn("dns", "the server never answered, so the machine keeps its own resolver and rules by domain name do not apply");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    // Whether the peer has answered at least once.
+    private async Task<bool> HandshakeSeenAsync(CancellationToken ct)
+    {
+        if (_daemon is not { } daemon)
+        {
+            return false;
+        }
+
+        try
+        {
+            foreach (var line in (await daemon.GetConfigAsync(ct).ConfigureAwait(false)).Split('\n'))
+            {
+                if (line.StartsWith("last_handshake_time_sec=", StringComparison.Ordinal)
+                    && long.TryParse(line.AsSpan(24), out var seconds) && seconds > 0)
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or SocketException)
+        {
+        }
+
+        return false;
     }
 
     // Refuses the connect with an actionable reason when the host cannot carry a tunnel.
@@ -128,6 +263,33 @@ internal sealed class TunnelController : IDisposable
         }
 
         return null;
+    }
+
+    // The resolvers reached through the tunnel: the config's own IPv4 ones, or Cloudflare when it names none.
+    private static IReadOnlyList<IPAddress> TunnelResolvers(string config)
+    {
+        var servers = new List<IPAddress>();
+        foreach (var entry in WgConfigEditor.GetDns(config))
+        {
+            if (IPAddress.TryParse(entry, out var address) && address.AddressFamily == AddressFamily.InterNetwork)
+            {
+                servers.Add(address);
+            }
+        }
+
+        return servers.Count > 0 ? servers : [IPAddress.Parse("1.1.1.1")];
+    }
+
+    // The resolvers of the machine's own network, falling back to the gateway when the file names none.
+    private static IReadOnlyList<IPAddress> LanResolvers(string? gateway)
+    {
+        var servers = ResolvConf.CaptureUpstream();
+        if (servers.Count > 0)
+        {
+            return servers;
+        }
+
+        return gateway is not null && IPAddress.TryParse(gateway, out var address) ? [address] : [];
     }
 
     // The engine does not resolve names, so a hostname endpoint is rewritten to its address.
@@ -175,13 +337,13 @@ internal sealed class TunnelController : IDisposable
         return false;
     }
 
-    // Addresses, MTU, and the routes the peer AllowedIPs ask for.
-    private async Task<string?> ApplyNetworkAsync(string config, string? endpointIp, CancellationToken ct)
+    // Addresses, MTU, and the routes for the ranges the tunnel starts with.
+    private async Task<string?> ApplyNetworkAsync(string config, IReadOnlyList<string> allowedIps, string? endpointIp, CancellationToken ct)
     {
         foreach (var address in WgConfigEditor.GetAddresses(config))
         {
             var family = address.Contains(':', StringComparison.Ordinal) ? "-6" : "-4";
-            var added = await RunAsync("ip", ct, family, "address", "add", address, "dev", _iface).ConfigureAwait(false);
+            var added = await Shell.RunAsync("ip", ct, family, "address", "add", address, "dev", _iface).ConfigureAwait(false);
             if (added.ExitCode != 0)
             {
                 return $"ip address add {address} failed: {added.Output}";
@@ -189,7 +351,7 @@ internal sealed class TunnelController : IDisposable
         }
 
         var mtu = WgConfigEditor.GetMtu(config);
-        var up = await RunAsync("ip", ct, "link", "set", "dev", _iface, "mtu", (mtu > 0 ? mtu : DefaultMtu).ToString(CultureInfo.InvariantCulture), "up").ConfigureAwait(false);
+        var up = await Shell.RunAsync("ip", ct, "link", "set", "dev", _iface, "mtu", (mtu > 0 ? mtu : DefaultMtu).ToString(CultureInfo.InvariantCulture), "up").ConfigureAwait(false);
         if (up.ExitCode != 0)
         {
             return $"ip link set up failed: {up.Output}";
@@ -200,11 +362,11 @@ internal sealed class TunnelController : IDisposable
             await PinEndpointAsync(endpointIp, ct).ConfigureAwait(false);
         }
 
-        foreach (var allowed in WgConfigEditor.GetAllowedIps(config))
+        foreach (var allowed in allowedIps)
         {
             foreach (var route in ExpandRoute(allowed))
             {
-                var added = await RunAsync("ip", ct, "route", "replace", route, "dev", _iface).ConfigureAwait(false);
+                var added = await Shell.RunAsync("ip", ct, "route", "replace", route, "dev", _iface).ConfigureAwait(false);
                 if (added.ExitCode == 0)
                 {
                     _log.Route($"{route} dev {_iface}");
@@ -230,24 +392,45 @@ internal sealed class TunnelController : IDisposable
         };
     }
 
+    // The hop the machine reaches the internet through, which a bypassed destination is pinned to.
+    private async Task<(string? Via, string? Dev)> PhysicalHopAsync(CancellationToken ct)
+    {
+        var lookup = await Shell.RunAsync("ip", ct, "route", "show", "default").ConfigureAwait(false);
+        if (lookup.ExitCode != 0)
+        {
+            return (null, null);
+        }
+
+        foreach (var line in lookup.Output.Split('\n'))
+        {
+            var via = Shell.Token(line, "via");
+            var dev = Shell.Token(line, "dev");
+            if (via is not null && dev is not null && dev != _iface)
+            {
+                return (via, dev);
+            }
+        }
+
+        return (null, null);
+    }
+
     // Keeps the peer reachable off-tunnel while a default route is in place.
     private async Task PinEndpointAsync(string endpointIp, CancellationToken ct)
     {
-        var lookup = await RunAsync("ip", ct, "route", "get", endpointIp).ConfigureAwait(false);
+        var lookup = await Shell.RunAsync("ip", ct, "route", "get", endpointIp).ConfigureAwait(false);
         if (lookup.ExitCode != 0)
         {
             return;
         }
 
-        var tokens = lookup.Output.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var via = Read(tokens, "via");
-        var dev = Read(tokens, "dev");
+        var via = Shell.Token(lookup.Output, "via");
+        var dev = Shell.Token(lookup.Output, "dev");
         if (via is null || dev is null || dev == _iface)
         {
             return;
         }
 
-        var pinned = await RunAsync("ip", ct, "route", "add", endpointIp, "via", via, "dev", dev).ConfigureAwait(false);
+        var pinned = await Shell.RunAsync("ip", ct, "route", "add", endpointIp, "via", via, "dev", dev).ConfigureAwait(false);
         if (pinned.ExitCode == 0)
         {
             _pinnedEndpoint = endpointIp;
@@ -255,37 +438,24 @@ internal sealed class TunnelController : IDisposable
         }
     }
 
-    // Reads the token following a keyword in `ip route get` output.
-    private static string? Read(string[] tokens, string keyword)
+    // The peer key in the form the engine's control channel takes.
+    private static string? PeerKeyHex(string config)
     {
-        var index = Array.IndexOf(tokens, keyword);
-        return index >= 0 && index + 1 < tokens.Length ? tokens[index + 1] : null;
-    }
-
-    // Runs a command and returns its exit code with the merged output.
-    private static async Task<(int ExitCode, string Output)> RunAsync(string file, CancellationToken ct, params string[] args)
-    {
-        var info = new ProcessStartInfo(file)
+        var key = WgConfigEditor.GetPeerPublicKey(config);
+        if (key is null)
         {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        foreach (var arg in args)
-        {
-            info.ArgumentList.Add(arg);
+            return null;
         }
 
-        using var process = Process.Start(info);
-        if (process is null)
+        try
         {
-            return (-1, $"could not start {file}");
+            var bytes = Convert.FromBase64String(key);
+            return bytes.Length == 32 ? Convert.ToHexStringLower(bytes) : null;
         }
-
-        var stdout = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-        var stderr = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
-        await process.WaitForExitAsync(ct).ConfigureAwait(false);
-        return (process.ExitCode, (stdout + stderr).Trim());
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     [DllImport("libc", SetLastError = true)]

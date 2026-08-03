@@ -71,8 +71,12 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
-        await using var stream = await file.OpenWriteAsync();
-        qr.Save(stream);
+        await using (var stream = await file.OpenWriteAsync())
+        {
+            qr.Save(stream);
+        }
+
+        ExportActions.RestrictToOwner(file);
         vm.StatusMessage = Loc.Instance.Get("QrCode_Saved");
     }
 

@@ -116,22 +116,52 @@ dotnet run --project amneziageo-windows\tools\AmneziaGeo.Windows.Launcher
 
 With no flags both parts start. Flags: `--service` — agent only; `--ui` — UI only; `--target <name>` — drive a profile or config right away; `--config <path.conf>` — register a wg-quick config and launch on it.
 
-## Ubuntu Server (headless)
+## Linux
 
-The Linux head runs without a desktop: the agent is a systemd service and everything the GUI
-configures is reachable from the console client `amneziageo`.
+The Linux head ships as two Debian packages built from one source tree:
+
+- `amneziageo` - the agent that runs as a systemd service, the AmneziaWG engine it drives and the
+  console client `amneziageo` with its full-screen console interface. It pulls in no desktop
+  libraries, so it fits a headless server.
+- `amneziageo-gui` - the desktop interface. It runs as the desktop user and drives the same agent
+  over its control socket, and it needs the matching version of `amneziageo`.
+
+A server takes the first package alone, a desktop takes both. Everything the desktop interface
+configures is also reachable from the console client.
 
 ### Install
 
+Take the packages for your architecture from the [Releases](../../releases) page - there are amd64
+and arm64 builds - and let apt pull in the shared libraries they name:
+
 ```bash
-git submodule update --init --recursive
-amneziageo-linux/tools/install-server.sh
+# server
+sudo apt install ./amneziageo_<version>_amd64.deb
+
+# desktop
+sudo apt install ./amneziageo_<version>_amd64.deb ./amneziageo-gui_<version>_amd64.deb
 ```
 
-Building needs the .NET SDK and the Go toolchain; the published output is self-contained, so the
-server needs neither. The script publishes into `/opt/amneziageo`, keeps the library in
-`/var/lib/amneziageo`, links `amneziageo` into `/usr/local/bin` and installs
-`amneziageo-agent.service`.
+The agent starts and is enabled at boot right away. The binaries live in `/usr/lib/amneziageo`, the
+library in `/var/lib/amneziageo`, the client is `/usr/bin/amneziageo`, and the interface the agent
+creates comes from `/etc/default/amneziageo`. `apt remove` keeps the library, `apt purge` deletes
+it.
+
+### Build the packages
+
+```bash
+git submodule update --init --recursive
+amneziageo-linux/tools/build-deb.sh --arch amd64,arm64
+```
+
+Building needs the .NET SDK and the Go toolchain; the packages are self-contained, so the target
+machine needs neither. They land in `dist/`. Options: `--version N.N.N.N` (otherwise
+`0.0.1.<commit count>`), `--arch amd64,arm64`, `--out <dir>`, `--no-gui`, `--debug`. The `libicu`
+alternatives in the script name the ICU packages a target distribution may carry, so a new
+distribution release adds one entry there.
+
+For a machine that is not Debian-based, `amneziageo-linux/tools/install-server.sh` publishes the
+agent and the console client from the sources straight into `/opt/amneziageo`.
 
 ### First run
 

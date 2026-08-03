@@ -994,6 +994,9 @@
   <data name="MainCode_UpdateDatabase" xml:space="preserve">
     <value>Обновить</value>
   </data>
+  <data name="MainVm_ConfigNameTaken" xml:space="preserve">
+    <value>Конфигурация «{0}» уже есть. Введите другое имя.</value>
+  </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Не распознано (.conf или vpn://)</value>
   </data>
@@ -1156,6 +1159,9 @@
   <data name="RoutingEditor_ImportedRulesNeedName" xml:space="preserve">
     <value>Импортировано правил: {0}. Введите имя, чтобы сохранить.</value>
   </data>
+  <data name="RoutingEditor_ImportedNameTaken" xml:space="preserve">
+    <value>Список «{0}» уже есть - сохраняем как «{1}».</value>
+  </data>
   <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
     <value>Не похоже на список маршрутизации.</value>
   </data>
@@ -1275,8 +1281,14 @@
   <data name="Agent_ConfigImported" xml:space="preserve">
     <value>импортирован {0}</value>
   </data>
+  <data name="Agent_ConfigNameTaken" xml:space="preserve">
+    <value>конфигурация «{0}» уже есть - выберите другое имя</value>
+  </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>сохранён {0}</value>
+  </data>
+  <data name="Agent_RoutingListNameTaken" xml:space="preserve">
+    <value>список маршрутизации «{0}» уже есть - выберите другое имя</value>
   </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Не удалось собрать логи: {0}</value>

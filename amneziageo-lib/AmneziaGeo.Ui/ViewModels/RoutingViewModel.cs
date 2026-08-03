@@ -410,7 +410,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         SyncCatalogueRouting();
-        SyncGlobalProxyFlag();
+        SyncTrafficFlags();
         RefreshSections();
     }
 
@@ -429,7 +429,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             newValue.DirtyChanged += OnEditScopeDirty;
         }
 
-        SyncGlobalProxyFlag();
+        SyncTrafficFlags();
         RefreshEditBar();
     }
 
@@ -437,17 +437,18 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private void OnEditPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         RoutingDeleteStatus = string.Empty;
-        SyncGlobalProxyFlag();
+        SyncTrafficFlags();
         RefreshEditBar();
     }
 
-    // Feeds the traffic card's global-proxy flag into the rule editor so the Proxy bucket can warn that it is
-    // not applied in that mode.
-    private void SyncGlobalProxyFlag()
+    // Feeds the traffic card's flags into the rule editor: the Proxy bucket warns when global proxy makes it
+    // unused, and both flags travel with the exported payload.
+    private void SyncTrafficFlags()
     {
         if (RoutingEditor is { } editor)
         {
             editor.GlobalProxyActive = RoutingSettings?.UseGlobalProxy ?? false;
+            editor.AllUdpActive = RoutingSettings?.AllUdp ?? false;
         }
     }
 
@@ -713,14 +714,38 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     // Applies an imported blob (from file / clipboard / QR) into the draft editor and reveals it for review.
     public void ApplyImportText(string text)
     {
-        if (RoutingEditor is null)
+        if (RoutingEditor is not { } editor)
         {
             return;
         }
 
-        RoutingEditor.ApplyImport(text);
+        if (editor.ApplyImport(text, out var options))
+        {
+            ResolveImportedName(editor);
+            if (options is not null && RoutingSettings is { } settings)
+            {
+                settings.AllUdp = options.AllUdp;
+                settings.UseGlobalProxy = options.UseGlobalProxy;
+            }
+        }
+
         SectionScan = null;
         ImportMethod = RoutingImportMethod.Manual;
+    }
+
+    // The imported name may be taken by another list; the save would be refused, so land on a free one and say so.
+    private void ResolveImportedName(RoutingListEditorViewModel editor)
+    {
+        var taken = RoutingLists.Where(r => r.Id != editor.Id).Select(r => r.Name);
+        var free = UniqueName.Resolve(editor.Name, taken);
+        if (string.Equals(free, editor.Name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var clashed = editor.Name;
+        editor.Name = free;
+        editor.StatusMessage = Loc.Instance.Get("RoutingEditor_ImportedNameTaken", clashed, free);
     }
 
     /// <summary>
@@ -734,7 +759,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         var editor = new RoutingListEditorViewModel(_connection);
-        editor.ApplyImport(text);
+        editor.ApplyImport(text, out var options);
         var baseName = string.IsNullOrWhiteSpace(importedName)
             ? Loc.Instance.Get("MainVm_NewListDefaultName")
             : importedName;
@@ -743,6 +768,16 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         if (!await editor.SaveAsync())
         {
             return false;
+        }
+
+        if (options is not null)
+        {
+            var settings = new RoutingSettingsViewModel(_connection, editor.Id)
+            {
+                AllUdp = options.AllUdp,
+                UseGlobalProxy = options.UseGlobalProxy,
+            };
+            await settings.CommitAsync();
         }
 
         reserved.Add(editor.Name);

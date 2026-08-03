@@ -994,6 +994,9 @@
   <data name="MainCode_UpdateDatabase" xml:space="preserve">
     <value>Update</value>
   </data>
+  <data name="MainVm_ConfigNameTaken" xml:space="preserve">
+    <value>A configuration named «{0}» already exists. Enter another name.</value>
+  </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Not recognized (.conf or vpn://)</value>
   </data>
@@ -1156,6 +1159,9 @@
   <data name="RoutingEditor_ImportedRulesNeedName" xml:space="preserve">
     <value>Imported rules: {0}. Enter a name to save.</value>
   </data>
+  <data name="RoutingEditor_ImportedNameTaken" xml:space="preserve">
+    <value>A routing list named «{0}» already exists - saving as «{1}».</value>
+  </data>
   <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
     <value>This does not look like a routing list.</value>
   </data>
@@ -1247,14 +1253,14 @@
     <value>h</value>
   </data>
   <data name="Agent_BundleImported" xml:space="preserve">
-    <value>Imported: {0} configs, {1} routing lists, {2} profiles.</value>
+    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.</value>
   </data>
   <data name="Agent_BundleImportedRenamed" xml:space="preserve">
-    <value>Imported: {0} configs, {1} routing lists, {2} profiles.
+    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.
 Renamed on import: {3}.</value>
   </data>
   <data name="Agent_BundleImportedRenamedMany" xml:space="preserve">
-    <value>Imported: {0} configs, {1} routing lists, {2} profiles.
+    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.
 Renamed on import: several names clashed with existing ones.</value>
   </data>
   <data name="Agent_BundleParseFailed" xml:space="preserve">
@@ -1275,8 +1281,14 @@ Renamed on import: several names clashed with existing ones.</value>
   <data name="Agent_ConfigImported" xml:space="preserve">
     <value>imported {0}</value>
   </data>
+  <data name="Agent_ConfigNameTaken" xml:space="preserve">
+    <value>a configuration named «{0}» already exists - pick another name</value>
+  </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>saved {0}</value>
+  </data>
+  <data name="Agent_RoutingListNameTaken" xml:space="preserve">
+    <value>a routing list named «{0}» already exists - pick another name</value>
   </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Failed to collect logs: {0}</value>

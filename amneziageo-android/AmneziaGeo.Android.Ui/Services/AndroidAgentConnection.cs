@@ -131,6 +131,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     return Fail();
                 }
 
+                // Import creates; replacing the text of an existing configuration is edit-config.
+                if (command.Op == IpcContract.OpImportConfig && _configs.ContainsKey(args[0]))
+                {
+                    return new IpcAck(false, IpcMessage.Key("Agent_ConfigNameTaken", args[0]));
+                }
+
                 _configs[args[0]] = args[1];
                 Save();
                 PushSnapshot();
@@ -707,7 +713,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var id = long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
-        var savedId = await _geo.ApplyToRoutingListAsync(id, args[1], [.. args.Skip(2)]).ConfigureAwait(false);
+        var name = args[1].Trim();
+        if (name.Length == 0)
+        {
+            return Fail();
+        }
+
+        // The name column is unique: a clash would surface as a raw SQLite error from the insert.
+        var lists = await _store.ListRoutingListsAsync().ConfigureAwait(false);
+        if (lists.Any(l => l.Id != id && string.Equals(l.Name, name, StringComparison.Ordinal)))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_RoutingListNameTaken", name));
+        }
+
+        var savedId = await _geo.ApplyToRoutingListAsync(id, name, [.. args.Skip(2)]).ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, savedId.ToString(CultureInfo.InvariantCulture));

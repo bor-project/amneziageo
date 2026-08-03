@@ -209,6 +209,8 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var routingMap = new Dictionary<string, long>(StringComparer.Ordinal);
         var renames = new List<string>();
+        var importedConfigs = 0;
+        var importedLists = 0;
 
         foreach (var block in bundle.Configs)
         {
@@ -226,6 +228,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                 await store.SaveConfigAsync(incoming, block.ConfigText, ct).ConfigureAwait(false);
                 await ApplyConfigExtrasAsync(incoming, block, policy, ct).ConfigureAwait(false);
                 configNameMap[block.Name] = incoming;
+                importedConfigs++;
                 continue;
             }
 
@@ -239,6 +242,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             await store.SaveConfigAsync(freeName, block.ConfigText, ct).ConfigureAwait(false);
             await ApplyConfigExtrasAsync(freeName, block, "new", ct).ConfigureAwait(false);
             configNameMap[block.Name] = freeName;
+            importedConfigs++;
         }
 
         foreach (var block in bundle.RoutingLists)
@@ -263,6 +267,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                 }
 
                 routingMap[block.Name] = existingList.Id;
+                importedLists++;
                 continue;
             }
 
@@ -280,6 +285,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             }
 
             routingMap[block.Name] = newId;
+            importedLists++;
         }
 
         var importedProfiles = 0;
@@ -313,14 +319,17 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             }
         }
 
-        if (renames.Count == 0)
+        // A config and the profile bound to it clash under the same name and land on the same new one; showing
+        // that pair once reads as one rename instead of a duplicated line.
+        var shown = renames.Distinct(StringComparer.Ordinal).ToList();
+        if (shown.Count == 0)
         {
-            return new IpcAck(true, IpcMessage.Key("Agent_BundleImported", bundle.Configs.Count, bundle.RoutingLists.Count, importedProfiles));
+            return new IpcAck(true, IpcMessage.Key("Agent_BundleImported", importedConfigs, importedLists, importedProfiles));
         }
 
-        return renames.Count <= 5
-            ? new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamed", bundle.Configs.Count, bundle.RoutingLists.Count, importedProfiles, string.Join(", ", renames)))
-            : new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamedMany", bundle.Configs.Count, bundle.RoutingLists.Count, importedProfiles));
+        return shown.Count <= 5
+            ? new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamed", importedConfigs, importedLists, importedProfiles, string.Join(", ", shown)))
+            : new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamedMany", importedConfigs, importedLists, importedProfiles));
     }
 
     // Settings that travel with a config; merge keeps the geo rules already stored.

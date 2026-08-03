@@ -18,6 +18,7 @@ public sealed class AwgDaemon : IDisposable
     private readonly string _binary;
     private readonly string _iface;
     private Process? _process;
+    private bool _owns;
     private bool _disposed;
 
     /// <summary>
@@ -49,6 +50,11 @@ public sealed class AwgDaemon : IDisposable
             return;
         }
 
+        if (SocketAnswers())
+        {
+            throw new InvalidOperationException($"another amneziawg-go already serves {_iface} on {SocketPath}");
+        }
+
         ClearStaleSocket();
 
         var info = new ProcessStartInfo
@@ -59,6 +65,7 @@ public sealed class AwgDaemon : IDisposable
         info.ArgumentList.Add("-f");
         info.ArgumentList.Add(_iface);
         _process = Process.Start(info);
+        _owns = _process is not null;
     }
 
     /// <summary>
@@ -83,6 +90,19 @@ public sealed class AwgDaemon : IDisposable
     }
 
     /// <summary>
+    /// Adds one address range to a peer, keeping the ranges it already carries.
+    /// </summary>
+    public async Task AddAllowedIpAsync(string peerPublicKeyHex, string cidr, CancellationToken ct = default)
+    {
+        var reply = await RoundtripAsync($"set=1\npublic_key={peerPublicKeyHex}\nallowed_ip={cidr}\n\n", ct).ConfigureAwait(false);
+        var errno = ParseErrno(reply);
+        if (errno != 0)
+        {
+            throw new IOException($"amneziawg-go allowed_ip add failed: errno {errno}");
+        }
+    }
+
+    /// <summary>
     /// Reads the running UAPI configuration of the interface.
     /// </summary>
     public Task<string> GetConfigAsync(CancellationToken ct = default) => RoundtripAsync("get=1\n\n", ct);
@@ -102,26 +122,42 @@ public sealed class AwgDaemon : IDisposable
             }
         }
 
-        DeleteSocket();
+        // Only a socket this instance opened is removed: deleting one that belongs to another daemon takes its
+        // live tunnel down with it.
+        if (_owns)
+        {
+            _owns = false;
+            DeleteSocket();
+        }
     }
 
     // A daemon that did not shut down cleanly leaves its control socket behind, and the next start would
     // then reach a socket nothing answers on.
     private void ClearStaleSocket()
     {
+        if (File.Exists(SocketPath) && !SocketAnswers())
+        {
+            DeleteSocket();
+        }
+    }
+
+    // Whether a daemon is listening on the control socket.
+    private bool SocketAnswers()
+    {
         if (!File.Exists(SocketPath))
         {
-            return;
+            return false;
         }
 
         try
         {
             using var probe = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
             probe.Connect(new UnixDomainSocketEndPoint(SocketPath));
+            return true;
         }
         catch (SocketException)
         {
-            DeleteSocket();
+            return false;
         }
     }
 

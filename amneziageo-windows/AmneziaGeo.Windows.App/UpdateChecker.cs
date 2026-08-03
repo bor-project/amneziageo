@@ -54,16 +54,40 @@ internal sealed class UpdateChecker(HttpClient http)
         }
 
         var body = await resp.Content.ReadAsStringAsync(ct);
-        var releases = JsonSerializer.Deserialize<List<GhRelease>>(body, JsonOptions);
-        var release = releases?.FirstOrDefault(r => r is { Draft: false, Assets: not null });
-        var manifest = release?.Assets!.FirstOrDefault(a => string.Equals(a.Name, "update.json", StringComparison.OrdinalIgnoreCase));
-        if (manifest?.Url is null)
+        var manifestUrl = SelectManifestUrl(body);
+        if (manifestUrl is null)
         {
             return null;
         }
 
-        var json = await http.GetStringAsync(manifest.Url, ct);
-        return BuildInfo(json, new Uri(manifest.Url), currentVersion, buildTarget);
+        var json = await http.GetStringAsync(manifestUrl, ct);
+        return BuildInfo(json, new Uri(manifestUrl), currentVersion, buildTarget);
+    }
+
+    // Takes the manifest of the highest released version; a stable release wins over a prerelease of the same version.
+    internal static string? SelectManifestUrl(string releasesJson)
+    {
+        var releases = JsonSerializer.Deserialize<List<GhRelease>>(releasesJson, JsonOptions);
+        return releases?
+            .Where(r => r is { Draft: false, Assets: not null })
+            .OrderByDescending(r => TagVersion(r.TagName))
+            .ThenBy(r => r.Prerelease)
+            .Select(r => r.Assets!
+                .FirstOrDefault(a => string.Equals(a.Name, "update.json", StringComparison.OrdinalIgnoreCase))?.Url)
+            .FirstOrDefault(url => !string.IsNullOrWhiteSpace(url));
+    }
+
+    // Reads the numeric part of a release tag (v1.2.3.4-beta -> 1.2.3.4); an unparsable tag sorts lowest.
+    private static System.Version TagVersion(string? tag)
+    {
+        var text = (tag ?? string.Empty).TrimStart('v', 'V');
+        var suffix = text.IndexOfAny(['-', '+']);
+        if (suffix >= 0)
+        {
+            text = text[..suffix];
+        }
+
+        return System.Version.TryParse(text, out var version) ? version : new System.Version(0, 0);
     }
 
     private static UpdateInfo? BuildInfo(string json, Uri baseUrl, string currentVersion, string buildTarget)

@@ -1,11 +1,9 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
@@ -92,7 +90,7 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
-        var file = await PickFileAsync(Loc.Instance.Get("MainCode_RoutingListTitle"), "txt");
+        var file = await FilePickers.OpenAsync(this, Loc.Instance.Get("MainCode_RoutingListTitle"), "txt");
         if (file is null)
         {
             return;
@@ -113,26 +111,7 @@ internal sealed partial class RoutingView : UserControl
         }
     }
 
-    private async Task<IStorageFile?> PickFileAsync(string title, params string[] extensions)
-    {
-        if (TopLevel.GetTopLevel(this) is not { } top)
-        {
-            return null;
-        }
-
-        var patterns = extensions.Select(ext => $"*.{ext}").ToList();
-        var options = new FilePickerOpenOptions
-        {
-            Title = title,
-            AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType(title) { Patterns = patterns }],
-        };
-
-        var files = await top.StorageProvider.OpenFilePickerAsync(options);
-        return files.Count > 0 ? files[0] : null;
-    }
-
-    private static async Task<string> ReadAllTextAsync(IStorageFile file)
+    private static async Task<string> ReadAllTextAsync(PickedFile file)
     {
         await using var stream = await file.OpenReadAsync();
         using var reader = new StreamReader(stream);

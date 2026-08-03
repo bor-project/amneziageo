@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -16,6 +17,7 @@ namespace AmneziaGeo.Ui;
 public sealed partial class MainView : UserControl
 {
     private MainWindowViewModel? _vm;
+    private TopLevel? _topLevel;
 
     /// <summary>
     /// ctor
@@ -32,6 +34,7 @@ public sealed partial class MainView : UserControl
         if (_vm is not null)
         {
             _vm.PropertyChanged -= OnViewModelPropertyChanged;
+            _vm.Home.PropertyChanged -= OnHomePropertyChanged;
         }
 
         _vm = DataContext as MainWindowViewModel;
@@ -40,7 +43,18 @@ public sealed partial class MainView : UserControl
             _vm.WindowWidth = Bounds.Width > 0 ? Bounds.Width : 987;
             _vm.WindowHeight = Bounds.Height > 0 ? Bounds.Height : 610;
             _vm.PropertyChanged += OnViewModelPropertyChanged;
+            _vm.Home.PropertyChanged += OnHomePropertyChanged;
             ApplySettingsLayout();
+        }
+    }
+
+    // A loader stands in for the home content until the first agent snapshot, so the connect control cannot take
+    // focus at open; seat it once it appears.
+    private void OnHomePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ConnectionViewModel.IsReady) && _vm?.IsHome == true)
+        {
+            FocusCurrentScreen();
         }
     }
 
@@ -57,7 +71,58 @@ public sealed partial class MainView : UserControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        _topLevel = TopLevel.GetTopLevel(this);
+        if (_topLevel is not null)
+        {
+            _topLevel.BackRequested += OnBackRequested;
+            _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Bubble);
+        }
+
         FocusCurrentScreen();
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        if (_topLevel is not null)
+        {
+            _topLevel.BackRequested -= OnBackRequested;
+            _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
+            _topLevel = null;
+        }
+
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    // Escape is taken at the top level: with nothing focused the key event never routes through this view.
+    private void OnTopLevelKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (!e.Handled && e.Key is Key.Escape && NavigateBack())
+        {
+            e.Handled = true;
+        }
+    }
+
+    // Android back button. Unhandled it finishes the activity, so settings would quit the app instead of
+    // stepping back; the system still gets it from home.
+    private void OnBackRequested(object? sender, RoutedEventArgs e)
+    {
+        if (!e.Handled && NavigateBack())
+        {
+            e.Handled = true;
+        }
+    }
+
+    // Escape and the back button take the back arrow's route: section detail first, then home.
+    private bool NavigateBack()
+    {
+        if (_vm is null || !_vm.IsSettings)
+        {
+            return false;
+        }
+
+        _vm.NavBackCommand.Execute(null);
+        return true;
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

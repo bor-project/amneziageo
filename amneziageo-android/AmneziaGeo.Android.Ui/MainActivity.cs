@@ -26,6 +26,12 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     private static TaskCompletionSource<bool>? _cameraPermission;
 
     /// <summary>
+    /// Raised when the activity comes back to the foreground; screens that sent the user to system settings
+    /// re-read what changed.
+    /// </summary>
+    public static event Action? Resumed;
+
+    /// <summary>
     /// The foreground activity, used to launch the VpnService consent dialog.
     /// </summary>
     public static MainActivity? Current { get; private set; }
@@ -62,6 +68,7 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     {
         base.OnResume();
         Current = this;
+        Resumed?.Invoke();
     }
 
     /// <inheritdoc/>

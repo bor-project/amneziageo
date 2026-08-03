@@ -8,11 +8,13 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Ui.Services;
 using Button = Avalonia.Controls.Button;
 using CheckBox = Avalonia.Controls.CheckBox;
+using InputMethod = Avalonia.Input.InputMethod;
 
 namespace AmneziaGeo.Android.Ui;
 
@@ -28,6 +30,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private readonly Action<AdaptiveComboBox> _showSelect;
     private TopLevel? _topLevel;
     private Control? _selectedRow;
+    private TextBox? _keyboardTarget;
     private int _transitionVersion;
 
     public MobileSelectHost(Control content)
@@ -37,6 +40,16 @@ internal sealed partial class MobileSelectHost : UserControl
         _showSelect = Open;
         AdaptiveComboBox.SelectPresenter = _showSelect;
         RootGrid.Children.Insert(0, content);
+
+        // A remote drives focus across the whole screen, so a text field must not summon the keyboard just by
+        // being focused - it would swallow every key, Escape included. The select press raises it instead.
+        if (IsTelevision())
+        {
+            Styles.Add(new Style(x => x.OfType<TextBox>())
+            {
+                Setters = { new Setter(InputMethod.IsInputMethodEnabledProperty, false) },
+            });
+        }
 
         SizeChanged += OnHostSizeChanged;
     }
@@ -48,9 +61,16 @@ internal sealed partial class MobileSelectHost : UserControl
         _topLevel = TopLevel.GetTopLevel(this);
         AdaptiveComboBox.SelectPresenter = _showSelect;
         AppSplitBridge.Register(ShowAppPicker);
+        if (!HasDocumentPicker())
+        {
+            FileBrowserHost.Register((title, extensions) => FileBrowserOverlay.ShowAsync(RootGrid, title, extensions));
+        }
+
         if (_topLevel is not null)
         {
             _topLevel.BackRequested += OnBackRequested;
+            _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Bubble);
+            _topLevel.AddHandler(LostFocusEvent, OnTopLevelLostFocus, RoutingStrategies.Bubble);
         }
     }
 
@@ -65,6 +85,8 @@ internal sealed partial class MobileSelectHost : UserControl
         if (_topLevel is not null)
         {
             _topLevel.BackRequested -= OnBackRequested;
+            _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
+            _topLevel.RemoveHandler(LostFocusEvent, OnTopLevelLostFocus);
             _topLevel = null;
         }
 
@@ -200,20 +222,98 @@ internal sealed partial class MobileSelectHost : UserControl
 
     private void OnBackRequested(object? sender, RoutedEventArgs e)
     {
-        if (_appSplitOverlay is not null)
+        if (!e.Handled && CloseTopOverlay())
         {
             e.Handled = true;
-            CloseAppSplit();
-            return;
         }
+    }
 
-        if (!SelectOverlay.IsVisible)
+    // Escape is taken at the top level, ahead of the shell: an overlay closes before the shell steps back.
+    // The select press on a focused text field is taken here too, since that is what opens the keyboard on TV.
+    private void OnTopLevelKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled)
         {
             return;
         }
 
-        e.Handled = true;
-        Close();
+        if (e.Key is Key.Escape && CloseTopOverlay())
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key is Key.Space or Key.Enter
+            && _topLevel?.FocusManager?.GetFocusedElement() is TextBox box
+            && !InputMethod.GetIsInputMethodEnabled(box))
+        {
+            OpenKeyboard(box);
+            e.Handled = true;
+        }
+    }
+
+    // Hands the field to the input method and re-seats focus, which is what makes the manager open the keyboard.
+    private void OpenKeyboard(TextBox box)
+    {
+        _keyboardTarget = box;
+        InputMethod.SetIsInputMethodEnabled(box, true);
+        _topLevel?.FocusManager?.ClearFocus();
+        box.Focus(NavigationMethod.Directional);
+        _keyboardTarget = null;
+    }
+
+    // Leaving a field puts it back under the style: the next visit needs another select press.
+    private void OnTopLevelLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is TextBox box && !ReferenceEquals(box, _keyboardTarget))
+        {
+            box.ClearValue(InputMethod.IsInputMethodEnabledProperty);
+        }
+    }
+
+    private static bool IsTelevision()
+        => global::Android.App.Application.Context.PackageManager?
+            .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
+
+    // Dismisses the topmost overlay in stacking order.
+    private bool CloseTopOverlay()
+    {
+        if (FileBrowserOverlay.Current is { } browser)
+        {
+            browser.Back();
+            return true;
+        }
+
+        if (_appSplitOverlay is not null)
+        {
+            CloseAppSplit();
+            return true;
+        }
+
+        if (SelectOverlay.IsVisible)
+        {
+            Close();
+            return true;
+        }
+
+        return false;
+    }
+
+    // Whether a real document picker is installed: Android TV images ship only a stub that toasts and returns.
+    private static bool HasDocumentPicker()
+    {
+        var manager = global::Android.App.Application.Context.PackageManager;
+        if (manager is null)
+        {
+            return false;
+        }
+
+        var intent = new global::Android.Content.Intent(global::Android.Content.Intent.ActionOpenDocument);
+        intent.AddCategory(global::Android.Content.Intent.CategoryOpenable);
+        intent.SetType("*/*");
+        return manager.QueryIntentActivities(intent, global::Android.Content.PM.PackageInfoFlags.MetaData)
+            .Any(info => info.ActivityInfo?.PackageName is { } package
+                && !package.Contains("frameworkpackagestubs", StringComparison.Ordinal));
     }
 
     private void Close()

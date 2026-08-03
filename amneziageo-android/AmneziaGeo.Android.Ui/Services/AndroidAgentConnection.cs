@@ -27,6 +27,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Per-profile routing assignment: value = "<listId>|<1|0>" (1 = use routing).
     private readonly Dictionary<string, string> _routing = new(StringComparer.Ordinal);
     private readonly string _storePath;
+    private const int DefaultMtu = 1420;
 
     private readonly SqliteStateStore _store;
     private readonly GeoConfigurator _geo;
@@ -36,6 +37,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
     private IReadOnlyList<RoutingListEntry> _routingSummaries = [];
+    private IReadOnlyDictionary<string, ConfigTransport> _transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
     private IReadOnlyList<GeoSource> _geoSources = [];
     private IReadOnlyList<GeoFileMetadata> _geoFileMeta = [];
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
@@ -226,6 +228,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpSetRoutingSettings:
                 return await SetRoutingSettingsAsync(args);
 
+            case IpcContract.OpSetWebSocket:
+                return await SetWebSocketAsync(args);
+
             case IpcContract.OpReadLog:
                 return await ReadLogAsync(args);
 
@@ -257,7 +262,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (desired == "disconnect")
         {
             _log.Info("agent", "disconnect requested");
-            StartService(GeoVpnService.ActionDisconnect, null, null, null, null, null, foreground: false);
+            StartService(GeoVpnService.ActionDisconnect, null, null, null, null, null, null, foreground: false);
             return Ok();
         }
 
@@ -284,7 +289,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var routes = await ResolveGeoRoutesAsync(_selectedTarget);
         _log.Info("agent", $"connect requested: target '{_selectedTarget}', app-split {appMode}, {routes?.Length ?? 0} routes");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
-            appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs, routes, foreground: true);
+            appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs, routes,
+            _transports.GetValueOrDefault(configName), foreground: true);
         return Ok();
     }
 
@@ -300,7 +306,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return activity is not null && await activity.RequestVpnPermissionAsync(prepare);
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, string[]? routes, bool foreground)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, string[]? routes, ConfigTransport? transport, bool foreground)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -324,6 +330,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (routes is { Length: > 0 })
         {
             intent.PutExtra(GeoVpnService.ExtraRoutes, routes);
+        }
+
+        if (transport is not null)
+        {
+            intent.PutExtra(GeoVpnService.ExtraMtu, transport.Mtu);
+            intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
         }
 
         if (foreground && Build.VERSION.SdkInt >= BuildVersionCodes.O)
@@ -384,9 +396,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private void PushSnapshot()
     {
-        var configs = _configs
-            .Select(kv => new ConfigEntry(kv.Key, WgConfigEditor.GetEndpoint(kv.Value) ?? string.Empty, false, StatusFor(kv.Key), []))
-            .ToList();
+        var configs = _configs.Select(kv => Entry(kv.Key, kv.Value)).ToList();
         var profiles = _profiles
             .Select(kv =>
             {
@@ -411,6 +421,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RouteLog: _routeLog));
     }
 
+    private ConfigEntry Entry(string name, string config)
+    {
+        var transport = _transports.GetValueOrDefault(name);
+        return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
+            WebSocket: false,
+            WebSocketHost: transport?.WebSocketHost ?? string.Empty,
+            WebSocketPort: transport?.WebSocketPort ?? 443,
+            Mtu: transport?.Mtu ?? 0,
+            UseIpv6: transport?.UseIpv6 ?? false);
+    }
+
     private string StatusFor(string target)
     {
         return _active && string.Equals(_boundTarget, target, StringComparison.Ordinal)
@@ -427,6 +448,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("agent", "android agent started");
         await _store.InitializeAsync().ConfigureAwait(false);
         await GeoDefaults.SeedIfEmptyAsync(_store, null, CancellationToken.None).ConfigureAwait(false);
+        await RefreshTransportsAsync().ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
     }
@@ -797,6 +819,61 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         PushSnapshot();
         return Ok();
+    }
+
+    // Stores a config's tunnel MTU and IPv6 opt-in; both reach the tunnel builder on the next connect. The
+    // websocket carrier has no Android engine behind it and is refused rather than saved as a dead setting.
+    private async Task<IpcAck> SetWebSocketAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 3 || !_configs.ContainsKey(args[0]))
+        {
+            return Fail();
+        }
+
+        if (IsOn(args[1]))
+        {
+            return new IpcAck(false, Loc.Instance.Get("Android_WebSocketUnsupported"));
+        }
+
+        if (ParseRange(args[2], 1, 65535) is not { } port)
+        {
+            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidPort"));
+        }
+
+        var mtuText = args.Count > 4 ? args[4].Trim() : string.Empty;
+        if ((mtuText.Length == 0 ? DefaultMtu : ParseRange(mtuText, 576, 1500)) is not { } mtu)
+        {
+            return new IpcAck(false, Loc.Instance.Get("Transport_InvalidMtu"));
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var previous = await _store.GetConfigTransportAsync(args[0]).ConfigureAwait(false);
+        var useIpv6 = args.Count > 5 ? IsOn(args[5]) : previous?.UseIpv6 ?? false;
+        var host = args.Count > 3 ? args[3].Trim() : string.Empty;
+        await _store.SetConfigTransportAsync(new ConfigTransport(args[0], false, host, port, mtu, useIpv6)).ConfigureAwait(false);
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return Ok();
+    }
+
+    private static int? ParseRange(string value, int min, int max) =>
+        int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+        && parsed >= min && parsed <= max
+            ? parsed
+            : null;
+
+    private async Task RefreshTransportsAsync()
+    {
+        var transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
+        foreach (var name in _configs.Keys.ToList())
+        {
+            if (await _store.GetConfigTransportAsync(name).ConfigureAwait(false) is { } transport)
+            {
+                transports[name] = transport;
+            }
+        }
+
+        _transports = transports;
     }
 
     // Assigns or clears a profile's routing list. Args: profile, list id (or "none"), "on"/"off".

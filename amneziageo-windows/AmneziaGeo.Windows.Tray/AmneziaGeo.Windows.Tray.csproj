@@ -17,6 +17,8 @@
     <StackTraceSupport>false</StackTraceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <AssemblyName>AmneziaGeo.Windows.Tray</AssemblyName>
+    <!-- Sets the exe FileDescription the shell shows as the notification sender. -->
+    <AssemblyTitle>AmneziaGeo</AssemblyTitle>
     <!-- Baseline version; the installer build overrides it with -p:Version=1.0.2.<build>. -->
     <Version>0.0.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>

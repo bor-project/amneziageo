@@ -35,6 +35,21 @@ internal static class Labels
     public static string ExitConnected { get; private set; } = "Exit (disconnects VPN)";
 
     /// <summary>
+    /// «Информация» / "Information": balloon title on an informational notice.
+    /// </summary>
+    public static string LevelInfo { get; private set; } = "Information";
+
+    /// <summary>
+    /// «Предупреждение» / "Warning": balloon title on a warning notice.
+    /// </summary>
+    public static string LevelWarning { get; private set; } = "Warning";
+
+    /// <summary>
+    /// «Ошибка» / "Error": balloon title on an error notice.
+    /// </summary>
+    public static string LevelError { get; private set; } = "Error";
+
+    /// <summary>
     /// «Подключение…» / "Connecting…": balloon body when the tunnel starts coming up (#9).
     /// </summary>
     public static string ConnectingInfo { get; private set; } = "Connecting…";
@@ -177,6 +192,9 @@ internal static class Labels
             Disconnect = "Отключить";
             Exit = "Выход";
             ExitConnected = "Выход (отключит VPN)";
+            LevelInfo = "Информация";
+            LevelWarning = "Предупреждение";
+            LevelError = "Ошибка";
             ConnectingInfo = "Подключение…";
             ConnectedInfo = "Подключение установлено";
             ConnectFailedInfo = "Не удалось установить подключение";

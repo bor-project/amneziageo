@@ -11,6 +11,8 @@
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.0.1</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <!-- Narrows the built ABIs to the ones the build script passes. -->
+    <RuntimeIdentifiers Condition="'$(AndroidRuntimeIdentifiers)' != ''">$(AndroidRuntimeIdentifiers)</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>

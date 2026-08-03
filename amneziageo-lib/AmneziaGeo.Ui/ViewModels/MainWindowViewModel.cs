@@ -182,6 +182,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsSettings => Nav == "settings";
 
     /// <summary>
+    /// Whether the shell offers an in-app exit; false where the window frame already closes it.
+    /// </summary>
+    public bool CanExit => AppExitHost.IsAvailable;
+
+    /// <summary>
     /// Whether the window is narrow enough for the compact single-column drilldown.
     /// </summary>
     public bool IsCompact => WindowWidth < CompactBreakpoint;
@@ -363,6 +368,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SettingsSection = "config";
         SettingsDetailOpen = true;
         Config.EnterImportSection();
+    }
+
+    // Закрывает оболочку. Туннель не трогаем: он живёт своим сервисом и переживает закрытие интерфейса.
+    [RelayCommand]
+    private void Exit()
+    {
+        AppExitHost.Exit();
     }
 
     // Home «Добавить профиль»: переход в настройки на секцию профилей.

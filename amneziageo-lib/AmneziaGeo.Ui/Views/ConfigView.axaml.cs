@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -84,7 +83,7 @@ internal sealed partial class ConfigView : UserControl
         }
 
         // One «Файл» picker for both a config text file and a QR image; content sniff decides which.
-        var file = await PickFileAsync(Loc.Instance.Get("MainCode_ConfigurationTitle"),
+        var file = await FilePickers.OpenAsync(this, Loc.Instance.Get("MainCode_ConfigurationTitle"),
             "conf", "txt", "vpn", "png", "jpg", "jpeg", "bmp", "gif");
         if (file is null)
         {
@@ -124,7 +123,7 @@ internal sealed partial class ConfigView : UserControl
         }
     }
 
-    private static async Task<byte[]> ReadAllBytesAsync(IStorageFile file)
+    private static async Task<byte[]> ReadAllBytesAsync(PickedFile file)
     {
         await using var stream = await file.OpenReadAsync();
         using var memory = new MemoryStream();
@@ -183,24 +182,5 @@ internal sealed partial class ConfigView : UserControl
         vm.SectionConfigText = imported.ConfText;
         vm.SectionConfigStatus = string.Empty;
         vm.ImportMethod = ConfigImportMethod.Manual;
-    }
-
-    private async Task<IStorageFile?> PickFileAsync(string title, params string[] extensions)
-    {
-        if (TopLevel.GetTopLevel(this) is not { } top)
-        {
-            return null;
-        }
-
-        var patterns = extensions.Select(ext => $"*.{ext}").ToList();
-        var options = new FilePickerOpenOptions
-        {
-            Title = title,
-            AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType(title) { Patterns = patterns }],
-        };
-
-        var files = await top.StorageProvider.OpenFilePickerAsync(options);
-        return files.Count > 0 ? files[0] : null;
     }
 }

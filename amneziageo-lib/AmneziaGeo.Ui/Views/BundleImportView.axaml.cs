@@ -4,8 +4,8 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
@@ -40,18 +40,12 @@ internal sealed partial class BundleImportView : UserControl
 
     private async void OnLoadFile(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not BundleImportViewModel vm || TopLevel.GetTopLevel(this) is not { } top)
+        if (DataContext is not BundleImportViewModel vm)
         {
             return;
         }
 
-        var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = Loc.Instance.Get("BundleImportCode_BundleFileTitle"),
-            AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType("JSON") { Patterns = ["*.json"] }],
-        });
-        var file = files.Count > 0 ? files[0] : null;
+        var file = await FilePickers.OpenAsync(this, Loc.Instance.Get("BundleImportCode_BundleFileTitle"), "json");
         if (file is null)
         {
             return;
@@ -70,7 +64,7 @@ internal sealed partial class BundleImportView : UserControl
         }
     }
 
-    private static async Task<string> ReadAllTextAsync(IStorageFile file)
+    private static async Task<string> ReadAllTextAsync(PickedFile file)
     {
         await using var stream = await file.OpenReadAsync();
         using var reader = new StreamReader(stream);

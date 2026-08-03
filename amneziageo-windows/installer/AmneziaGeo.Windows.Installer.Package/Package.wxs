@@ -71,6 +71,7 @@
       <ComponentRef Id="AgentServiceExe" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="ToastIdentity" />
     </Feature>
 
     <!-- App icon (same .ico embedded into Ui.exe) for the shortcuts and the Add/Remove Programs entry.
@@ -191,6 +192,14 @@
       </Shortcut>
       <RegistryValue Root="HKCU" Key="Software\AmneziaGeo" Name="desktopshortcut"
                      Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- Names the AppUserModelID both the tray and the GUI set at startup, so the notification platform
+         titles a balloon "AmneziaGeo" instead of falling back to the raising exe. -->
+    <Component Id="ToastIdentity" Directory="INSTALLFOLDER">
+      <RegistryKey Root="HKLM" Key="Software\Classes\AppUserModelId\AmneziaGeo.AmneziaGeo">
+        <RegistryValue Name="DisplayName" Type="string" Value="AmneziaGeo" KeyPath="yes" />
+      </RegistryKey>
     </Component>
   </Fragment>
 

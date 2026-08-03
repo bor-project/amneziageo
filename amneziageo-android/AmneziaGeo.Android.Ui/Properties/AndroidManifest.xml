@@ -5,6 +5,9 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.CAMERA" />
+  <!-- Read configs the user copied into shared storage: a TV has no document picker, and scoped storage
+       hides every file the app does not own. -->
+  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
   <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
   <uses-feature android:name="android.software.leanback" android:required="false" />
   <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -14,8 +17,16 @@
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
+    <!-- Resolve the all-files-access screen before offering it. -->
+    <intent>
+      <action android:name="android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" />
+      <data android:scheme="package" />
+    </intent>
   </queries>
-  <application android:label="AmneziaGeo" android:icon="@mipmap/appicon" android:banner="@drawable/banner" android:allowBackup="false">
+  <!-- Predictive back is off: Avalonia routes the back button through OnBackPressed, which the
+       gesture callback replaces from target SDK 35 on. -->
+  <application android:label="AmneziaGeo" android:icon="@mipmap/appicon" android:banner="@drawable/banner"
+               android:allowBackup="false" android:enableOnBackInvokedCallback="false">
     <service android:name="org.amneziageo.android.GeoVpnService"
              android:permission="android.permission.BIND_VPN_SERVICE"
              android:exported="false"

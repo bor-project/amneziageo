@@ -79,6 +79,15 @@
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Не удалось запустить сброс.</value>
   </data>
+  <data name="General_ExitSection" xml:space="preserve">
+    <value>Приложение</value>
+  </data>
+  <data name="General_ExitHint" xml:space="preserve">
+    <value>Закрывает окно приложения. Запущенный туннель продолжает работать и остаётся в области уведомлений.</value>
+  </data>
+  <data name="General_ExitButton" xml:space="preserve">
+    <value>Закрыть приложение</value>
+  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Показывать оповещения</value>
   </data>
@@ -511,9 +520,6 @@
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
     <value>Выберите удобный способ</value>
   </data>
-  <data name="Main_DropFilesHint" xml:space="preserve">
-    <value>или перетащите файл сюда</value>
-  </data>
   <data name="Main_ChangeMethodButton" xml:space="preserve">
     <value>Изменить способ</value>
   </data>
@@ -807,6 +813,9 @@
   </data>
   <data name="Main_SettingsTooltip" xml:space="preserve">
     <value>Настройки</value>
+  </data>
+  <data name="Main_ExitTooltip" xml:space="preserve">
+    <value>Закрыть приложение</value>
   </data>
   <data name="Main_ShowQrButton" xml:space="preserve">
     <value>Показать QR</value>
@@ -1681,5 +1690,26 @@
   </data>
   <data name="Main_TakeoverButton" xml:space="preserve">
     <value>Переключить на свой</value>
+  </data>
+  <data name="FileBrowser_ScopedHint" xml:space="preserve">
+    <value>Android скрывает файлы, которые не принадлежат приложению. Разрешите доступ ко всем файлам или скопируйте конфигурацию в одну из папок ниже.</value>
+  </data>
+  <data name="FileBrowser_AppFolder" xml:space="preserve">
+    <value>Папка приложения</value>
+  </data>
+  <data name="FileBrowser_AppInternal" xml:space="preserve">
+    <value>Внутренняя память приложения</value>
+  </data>
+  <data name="FileBrowser_SharedStorage" xml:space="preserve">
+    <value>Общее хранилище</value>
+  </data>
+  <data name="FileBrowser_Empty" xml:space="preserve">
+    <value>Подходящих файлов нет</value>
+  </data>
+  <data name="Android_WebSocketUnsupported" xml:space="preserve">
+    <value>WebSocket-прокси пока не реализован на Android.</value>
+  </data>
+  <data name="FileBrowser_AllFilesAccess" xml:space="preserve">
+    <value>Разрешить доступ ко всем файлам…</value>
   </data>
 </root>

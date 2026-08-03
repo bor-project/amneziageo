@@ -51,6 +51,14 @@ internal static unsafe class Program
         Takeover,
     }
 
+    // The balloon severity: picks its title and the glyph the shell draws.
+    private enum BalloonLevel
+    {
+        Info,
+        Warning,
+        Error,
+    }
+
     // Post-update install balloon deferred until the first snapshot reports the notifications flag.
     private static bool _pendingInstalledBalloon;
 
@@ -501,7 +509,7 @@ internal static unsafe class Program
         if (_pendingInstalledBalloon && AgentLink.SnapshotSeen)
         {
             _pendingInstalledBalloon = false;
-            ShowBalloon("AmneziaGeo", Labels.UpdateInstalledInfo);
+            ShowBalloon(Labels.UpdateInstalledInfo);
         }
 
         // A visible window already reflects the change, so surface a connection balloon only when no GUI window
@@ -516,38 +524,38 @@ internal static unsafe class Program
             {
                 _disconnectFailedActive = true;
                 _lastBalloonAction = BalloonAction.None;
-                ShowBalloon("AmneziaGeo", Labels.DisconnectFailedInfo, Native.NIIF_WARNING);
+                ShowBalloon(Labels.DisconnectFailedInfo, BalloonLevel.Error);
             }
             // A connection balloon supersedes the update one, so a later balloon click opens the window.
             else if (justConnected || bootConnected)
             {
                 _lastBalloonAction = BalloonAction.None;
-                ShowBalloon("AmneziaGeo", Labels.ConnectedInfo);
+                ShowBalloon(Labels.ConnectedInfo);
             }
             else if (justConnecting)
             {
                 _lastBalloonAction = BalloonAction.None;
-                ShowBalloon("AmneziaGeo", Labels.ConnectingInfo);
+                ShowBalloon(Labels.ConnectingInfo);
             }
             else if (justDisconnecting)
             {
                 _lastBalloonAction = BalloonAction.None;
-                ShowBalloon("AmneziaGeo", Labels.DisconnectingInfo);
+                ShowBalloon(Labels.DisconnectingInfo);
             }
             else if (justDisconnected)
             {
                 _lastBalloonAction = BalloonAction.None;
-                ShowBalloon("AmneziaGeo", Labels.DisconnectedInfo);
+                ShowBalloon(Labels.DisconnectedInfo);
             }
             else if (justFailed)
             {
                 _lastBalloonAction = BalloonAction.None;
-                ShowBalloon("AmneziaGeo", Labels.ConnectFailedInfo, Native.NIIF_WARNING);
+                ShowBalloon(Labels.ConnectFailedInfo, BalloonLevel.Error);
             }
             else if (justDropped)
             {
                 _lastBalloonAction = BalloonAction.None;
-                ShowBalloon("AmneziaGeo", Labels.ConnectionLostInfo, Native.NIIF_WARNING);
+                ShowBalloon(Labels.ConnectionLostInfo, BalloonLevel.Warning);
             }
         }
     }
@@ -609,7 +617,7 @@ internal static unsafe class Program
             // fallback timer (agent still starting) would otherwise announce on the default-true flag.
             if (AgentLink.SnapshotSeen)
             {
-                ShowBalloon("AmneziaGeo", Labels.UpdateInstalledInfo);
+                ShowBalloon(Labels.UpdateInstalledInfo);
             }
             else
             {
@@ -652,7 +660,7 @@ internal static unsafe class Program
         {
             _lastNotifiedUpdateVersion = version;
             _lastBalloonAction = BalloonAction.Download;
-            ShowBalloon("AmneziaGeo", string.Format(Labels.UpdateFoundInfo, version));
+            ShowBalloon(string.Format(Labels.UpdateFoundInfo, version));
         }
     }
 
@@ -676,7 +684,7 @@ internal static unsafe class Program
         {
             _lastDownloadedNotifiedVersion = version;
             _lastBalloonAction = BalloonAction.Install;
-            ShowBalloon("AmneziaGeo", string.Format(Labels.UpdateDownloadedInfo, version));
+            ShowBalloon(string.Format(Labels.UpdateDownloadedInfo, version));
         }
     }
 
@@ -687,7 +695,7 @@ internal static unsafe class Program
         if (NotificationGate.CanNotify() && !IsUiForeground())
         {
             _lastBalloonAction = BalloonAction.None;
-            ShowBalloon("AmneziaGeo", Labels.UpdateDownloadFailedInfo, Native.NIIF_WARNING);
+            ShowBalloon(Labels.UpdateDownloadFailedInfo, BalloonLevel.Warning);
         }
     }
 
@@ -704,7 +712,7 @@ internal static unsafe class Program
         if (NotificationGate.CanNotify() && !IsUiForeground())
         {
             _lastBalloonAction = BalloonAction.None;
-            ShowBalloon("AmneziaGeo", Labels.UpToDateInfo);
+            ShowBalloon(Labels.UpToDateInfo);
         }
     }
 
@@ -715,7 +723,7 @@ internal static unsafe class Program
         if (NotificationGate.CanNotify() && !IsUiForeground())
         {
             _lastBalloonAction = BalloonAction.None;
-            ShowBalloon("AmneziaGeo", Labels.GeoUpdatedInfo);
+            ShowBalloon(Labels.GeoUpdatedInfo);
         }
     }
 
@@ -727,7 +735,7 @@ internal static unsafe class Program
         if (!IsUiForeground())
         {
             _lastBalloonAction = BalloonAction.Takeover;
-            ShowBalloon("AmneziaGeo", Labels.TunnelOwnedByOtherInfo);
+            ShowBalloon(Labels.TunnelOwnedByOtherInfo);
         }
 
         LaunchUi("takeover", "--takeover");
@@ -911,7 +919,7 @@ internal static unsafe class Program
 
     // Pops a system balloon (a toast on Win10/11) on the existing icon. Gated centrally by the notifications
     // setting and the OS permission; a show failure is swallowed so it never disturbs the underlying operation.
-    private static void ShowBalloon(string title, string text, uint infoFlags = Native.NIIF_INFO)
+    private static void ShowBalloon(string text, BalloonLevel level = BalloonLevel.Info)
     {
         if (!NotificationGate.CanNotify())
         {
@@ -931,9 +939,9 @@ internal static unsafe class Program
                 hWnd = _hwnd,
                 uID = 1,
                 uFlags = Native.NIF_INFO,
-                dwInfoFlags = infoFlags,
+                dwInfoFlags = GlyphForLevel(level),
             };
-            SetInfo(&nid, title, text);
+            SetInfo(&nid, TitleForLevel(level), text);
             Native.Shell_NotifyIconW(Native.NIM_MODIFY, ref nid);
         }
         catch
@@ -958,6 +966,28 @@ internal static unsafe class Program
         }
 
         nid->szInfo[infoCount] = '\0';
+    }
+
+    // Balloon title for a severity.
+    private static string TitleForLevel(BalloonLevel level)
+    {
+        return level switch
+        {
+            BalloonLevel.Warning => Labels.LevelWarning,
+            BalloonLevel.Error => Labels.LevelError,
+            _ => Labels.LevelInfo,
+        };
+    }
+
+    // Balloon glyph for a severity.
+    private static uint GlyphForLevel(BalloonLevel level)
+    {
+        return level switch
+        {
+            BalloonLevel.Warning => Native.NIIF_WARNING,
+            BalloonLevel.Error => Native.NIIF_ERROR,
+            _ => Native.NIIF_INFO,
+        };
     }
 
     // Tooltip tracks the tunnel state; the transitional state names the direction from the edge that opened it.

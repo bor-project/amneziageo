@@ -79,6 +79,15 @@
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Could not start the repair.</value>
   </data>
+  <data name="General_ExitSection" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="General_ExitHint" xml:space="preserve">
+    <value>Closes the app window. A running tunnel keeps working and stays in the notification area.</value>
+  </data>
+  <data name="General_ExitButton" xml:space="preserve">
+    <value>Close app</value>
+  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Show notifications</value>
   </data>
@@ -511,9 +520,6 @@
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
     <value>Choose a method</value>
   </data>
-  <data name="Main_DropFilesHint" xml:space="preserve">
-    <value>or drag a file here</value>
-  </data>
   <data name="Main_ChangeMethodButton" xml:space="preserve">
     <value>Change method</value>
   </data>
@@ -807,6 +813,9 @@
   </data>
   <data name="Main_SettingsTooltip" xml:space="preserve">
     <value>Settings</value>
+  </data>
+  <data name="Main_ExitTooltip" xml:space="preserve">
+    <value>Close app</value>
   </data>
   <data name="Main_ShowQrButton" xml:space="preserve">
     <value>Show QR</value>
@@ -1681,5 +1690,26 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Main_TakeoverButton" xml:space="preserve">
     <value>Switch to yours</value>
+  </data>
+  <data name="FileBrowser_ScopedHint" xml:space="preserve">
+    <value>Android hides files this app does not own. Allow access to all files, or copy the configuration into one of the folders below.</value>
+  </data>
+  <data name="FileBrowser_AppFolder" xml:space="preserve">
+    <value>App folder</value>
+  </data>
+  <data name="FileBrowser_AppInternal" xml:space="preserve">
+    <value>App internal storage</value>
+  </data>
+  <data name="FileBrowser_SharedStorage" xml:space="preserve">
+    <value>Shared storage</value>
+  </data>
+  <data name="FileBrowser_Empty" xml:space="preserve">
+    <value>No matching files here</value>
+  </data>
+  <data name="Android_WebSocketUnsupported" xml:space="preserve">
+    <value>The WebSocket proxy has no Android implementation yet.</value>
+  </data>
+  <data name="FileBrowser_AllFilesAccess" xml:space="preserve">
+    <value>Allow access to all files…</value>
   </data>
 </root>

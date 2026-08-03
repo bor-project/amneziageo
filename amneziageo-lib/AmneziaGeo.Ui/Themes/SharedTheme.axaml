@@ -276,12 +276,12 @@
       <Setter Property="Opacity" Value="0.5" />
     </Style>
 
-    <!-- D-pad / keyboard focus ring: a bright accent outline in the adorner layer (no layout shift), so
-         remote and keyboard focus is always visible on Android TV. -->
-    <Style Selector="Button:focus-visible, ComboBox:focus-visible, ToggleSwitch:focus-visible, CheckBox:focus-visible, TextBox:focus-visible, AutoCompleteBox:focus-visible, GridSplitter:focus-visible">
+    <!-- D-pad / keyboard focus ring: a bright accent outline drawn on the control bounds, so remote and
+         keyboard focus stays visible on Android TV. A ring outside the bounds is clipped by the adorner layer. -->
+    <Style Selector="Button:focus-visible, ComboBox:focus-visible, ToggleSwitch:focus-visible, CheckBox:focus-visible, TextBox:focus-visible, AutoCompleteBox:focus-visible">
       <Setter Property="FocusAdorner">
         <Template>
-          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="9" Margin="-3" />
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="3" CornerRadius="9" />
         </Template>
       </Setter>
     </Style>
@@ -289,7 +289,7 @@
     <Style Selector="Button.powerbig:focus-visible">
       <Setter Property="FocusAdorner">
         <Template>
-          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="130" Margin="-6" />
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="3" CornerRadius="130" />
         </Template>
       </Setter>
     </Style>
@@ -297,7 +297,15 @@
     <Style Selector="Button.rowselect:focus-visible">
       <Setter Property="FocusAdorner">
         <Template>
-          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="2" CornerRadius="13" Margin="-2" />
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="3" CornerRadius="12" />
+        </Template>
+      </Setter>
+    </Style>
+    <!-- Accent-filled buttons: a light ring, an accent one is invisible on their own fill. -->
+    <Style Selector="Button.accent:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="White" BorderThickness="3" CornerRadius="9" />
         </Template>
       </Setter>
     </Style>

@@ -174,6 +174,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool CanRepairNetwork => OperatingSystem.IsWindows();
 
     /// <summary>
+    /// Whether the exit action is offered; false where the window frame already closes the app.
+    /// </summary>
+    public bool CanExitApp => AppExitHost.IsAvailable;
+
+    /// <summary>
     /// Показывает карточку настроек соединения только на Windows (Android-агент их не применяет).
     /// </summary>
     public bool CanConfigureConnection => OperatingSystem.IsWindows();
@@ -782,6 +787,13 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             _ = LogToAgentAsync($"network repair launch failed: {ex}");
             NetworkRepairStatus = Loc.Instance.Get("General_NetworkRepairFailed");
         }
+    }
+
+    // Закрывает оболочку. Туннель не трогаем: он живёт своим сервисом и переживает закрытие интерфейса.
+    [RelayCommand]
+    private void ExitApp()
+    {
+        AppExitHost.Exit();
     }
 
     // Open the selective bundle export inline: snapshot the current catalogue into a fresh export view model.

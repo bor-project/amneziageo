@@ -31,6 +31,10 @@ public sealed partial class App : Avalonia.Application
             // Register the CameraX camera scanner so the config/routing import can scan QR codes.
             AndroidQrScanning.Register();
 
+            // Offer an in-app exit: a TV has no window frame to close. Finish the activity only, so the tunnel
+            // keeps running in its foreground service.
+            AppExitHost.Register(() => MainActivity.Current?.Finish());
+
             var prefs = UiPreferences.Load();
             RequestedThemeVariant = prefs.Theme switch
             {

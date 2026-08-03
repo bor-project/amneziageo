@@ -11,7 +11,7 @@ namespace AmneziaGeo.Ipc;
 public sealed class StatusPipeClient
 {
     private static readonly TimeSpan _reconnectDelay = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _defaultCommandTimeout = TimeSpan.FromSeconds(30);
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     // Serializes the request->ack cycle: only one command may be in flight at a time.
@@ -46,6 +46,11 @@ public sealed class StatusPipeClient
     /// clients leave it false.
     /// </summary>
     public bool AnnounceUi { get; init; }
+
+    /// <summary>
+    /// How long a command waits for its acknowledgement. Geo downloads outlast the default.
+    /// </summary>
+    public TimeSpan CommandTimeout { get; init; } = _defaultCommandTimeout;
 
     /// <summary>
     /// Connects and reads messages until cancellation, reconnecting after drops.
@@ -120,7 +125,7 @@ public sealed class StatusPipeClient
 
             using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
-                timeout.CancelAfter(_commandTimeout);
+                timeout.CancelAfter(CommandTimeout);
                 try
                 {
                     return await tcs.Task.WaitAsync(timeout.Token).ConfigureAwait(false);

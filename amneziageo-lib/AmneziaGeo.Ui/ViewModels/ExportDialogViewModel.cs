@@ -1,4 +1,5 @@
 using Avalonia.Media.Imaging;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using Avalonia.Media.Imaging;
+using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Ui.Services;
 

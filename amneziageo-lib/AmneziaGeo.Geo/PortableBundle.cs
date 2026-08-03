@@ -1,12 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// Selective snapshot of configs, routing lists, profiles. Configs carry keys in clear; only rule tokens travel.
 /// </summary>
-internal static class PortableBundle
+public static class PortableBundle
 {
     /// <summary>
     /// Marker stored in every bundle so import can reject unrelated JSON.
@@ -36,13 +36,15 @@ internal static class PortableBundle
         IReadOnlyList<ProfileBlock> Profiles);
 
     /// <summary>
-    /// A standalone config: wg-quick text, WebSocket transport, geo split.
+    /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries.
     /// </summary>
     public sealed record ConfigBlock(
         string Name,
         string ConfigText,
         TransportBlock? Transport,
-        GeoBlock? Geo);
+        GeoBlock? Geo,
+        string? Dns = null,
+        string? Exclusions = null);
 
     /// <summary>
     /// WebSocket transport, tunnel MTU, and the IPv6 opt-in. Empty Host reuses the config's Endpoint host.
@@ -63,9 +65,9 @@ internal static class PortableBundle
         RoutingSettingsBlock? Settings);
 
     /// <summary>
-    /// A routing list's traffic policy. Mode is always "split" here.
+    /// A routing list's traffic policy: bypass entries, UDP handling, split or full mode.
     /// </summary>
-    public sealed record RoutingSettingsBlock(string Exclusions, bool AllUdp);
+    public sealed record RoutingSettingsBlock(string Exclusions, bool AllUdp, string Mode = "split", bool UseGlobalProxy = false);
 
     /// <summary>
     /// A thin profile reference: bound config and routing list by name; either may be null.

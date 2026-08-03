@@ -116,6 +116,61 @@ dotnet run --project amneziageo-windows\tools\AmneziaGeo.Windows.Launcher
 
 With no flags both parts start. Flags: `--service` — agent only; `--ui` — UI only; `--target <name>` — drive a profile or config right away; `--config <path.conf>` — register a wg-quick config and launch on it.
 
+## Ubuntu Server (headless)
+
+The Linux head runs without a desktop: the agent is a systemd service and everything the GUI
+configures is reachable from the console client `amneziageo`.
+
+### Install
+
+```bash
+git submodule update --init --recursive
+amneziageo-linux/tools/install-server.sh
+```
+
+Building needs the .NET SDK and the Go toolchain; the published output is self-contained, so the
+server needs neither. The script publishes into `/opt/amneziageo`, keeps the library in
+`/var/lib/amneziageo`, links `amneziageo` into `/usr/local/bin` and installs
+`amneziageo-agent.service`.
+
+### First run
+
+```bash
+sudo amneziageo geo download
+sudo amneziageo config import work --file work.conf     # or --link 'vpn://…' or --stdin
+sudo amneziageo profile add work work
+sudo amneziageo up work
+sudo amneziageo settings set survive-reboot on
+sudo amneziageo settings set periodic-reconnect-enabled on
+```
+
+`survive-reboot` dials at agent start, `periodic-reconnect-enabled` redials when the tunnel dies.
+Without them a reboot or a crashed engine leaves the server without a tunnel.
+
+### Day to day
+
+```bash
+amneziageo status                  # what runs, and what the next connect would use
+amneziageo doctor                  # the checks a headless install usually fails
+amneziageo --json profile list     # script-friendly output
+amneziageo log tail --level info
+amneziageo tui                     # full-screen console over SSH
+```
+
+`amneziageo help` lists every command. Exit codes: 0 done, 1 the agent refused, 2 wrong usage,
+3 agent unreachable, 5 not implemented by the Linux agent.
+
+### Notes
+
+- The agent runs as root: it creates the tunnel device and rewrites routes, and `CAP_NET_ADMIN`
+  alone does not satisfy its preflight.
+- The control socket is `/tmp/CoreFxPipe_AmneziaGeo.Agent`, so the unit must not set `PrivateTmp`.
+  Every local account that can reach the socket can drive the agent, including reading a
+  configuration's keys.
+- The Linux tunnel applies the configuration's own addresses, MTU and `AllowedIPs`. Routing lists,
+  per-config DNS, exclusions and the WebSocket transport are stored and reported, but not yet
+  enforced by the Linux data plane.
+
 ## License
 
 GPL-3.0 or later, see [LICENSE](LICENSE). Uses the AmneziaWG engine under its authors' license.

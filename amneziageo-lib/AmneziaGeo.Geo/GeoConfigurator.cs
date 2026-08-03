@@ -8,24 +8,28 @@ namespace AmneziaGeo.Geo;
 public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
 {
     /// <summary>
-    /// Materializes the rule tokens and persists the geo settings for a config.
+    /// Materializes the rule tokens and persists the geo settings for a config. Counts the tokens it cannot parse.
     /// </summary>
-    public async Task<(int Rules, int Routes, int Domains)> ApplyAsync(string name, bool on, IReadOnlyList<string> ruleTokens, CancellationToken ct = default)
+    public async Task<(int Rules, int Routes, int Domains, int Skipped)> ApplyAsync(string name, bool on, IReadOnlyList<string> ruleTokens, CancellationToken ct = default)
     {
         var rules = new List<GeoRule>();
+        var skipped = 0;
         foreach (var token in ruleTokens)
         {
             var rule = ParseRule(token);
-            if (rule is not null)
+            if (rule is null)
             {
-                rules.Add(rule);
+                skipped++;
+                continue;
             }
+
+            rules.Add(rule);
         }
 
         var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
         var (routes, domains, apps) = GeoMaterializer.Materialize(rules, index);
         await store.SaveTunnelGeoAsync(new TunnelGeo(name, on, rules, routes, domains, apps), ct);
-        return (rules.Count, routes.Count, domains.Count);
+        return (rules.Count, routes.Count, domains.Count, skipped);
     }
 
     /// <summary>

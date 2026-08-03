@@ -116,6 +116,60 @@ dotnet run --project amneziageo-windows\tools\AmneziaGeo.Windows.Launcher
 
 Без флагов поднимаются обе части. Флаги: `--service` — только агент; `--ui` — только интерфейс; `--target <имя>` — сразу вести профиль или конфиг; `--config <путь.conf>` — зарегистрировать wg-quick конфиг и запуститься на нём.
 
+## Ubuntu Server (без графики)
+
+Linux-голова работает без рабочего стола: агент - служба systemd, а всё, что настраивается в
+графическом интерфейсе, доступно из консольного клиента `amneziageo`.
+
+### Установка
+
+```bash
+git submodule update --init --recursive
+amneziageo-linux/tools/install-server.sh
+```
+
+Для сборки нужны .NET SDK и Go, самому серверу - ничего: публикуется self-contained сборка.
+Скрипт кладёт бинарники в `/opt/amneziageo`, библиотеку - в `/var/lib/amneziageo`, делает ссылку
+`amneziageo` в `/usr/local/bin` и ставит `amneziageo-agent.service`.
+
+### Первый запуск
+
+```bash
+sudo amneziageo geo download
+sudo amneziageo config import work --file work.conf     # либо --link 'vpn://…', либо --stdin
+sudo amneziageo profile add work work
+sudo amneziageo up work
+sudo amneziageo settings set survive-reboot on
+sudo amneziageo settings set periodic-reconnect-enabled on
+```
+
+`survive-reboot` поднимает туннель при старте агента, `periodic-reconnect-enabled` переподнимает
+его, если туннель упал. Без них перезагрузка или падение движка оставляют сервер без туннеля.
+
+### Повседневное
+
+```bash
+amneziageo status                  # что работает и что возьмёт следующее подключение
+amneziageo doctor                  # проверки, на которых обычно спотыкается серверная установка
+amneziageo --json profile list     # вывод для скриптов
+amneziageo log tail --level info
+amneziageo tui                     # полноэкранная консоль по SSH
+```
+
+`amneziageo help` перечисляет все команды. Коды возврата: 0 - готово, 1 - агент отказал,
+2 - ошибка в команде, 3 - агент недоступен, 5 - операция не реализована в Linux-агенте.
+
+### Оговорки
+
+- Агент работает от root: он создаёт устройство туннеля и правит маршруты, одного `CAP_NET_ADMIN`
+  его проверке недостаточно.
+- Управляющий сокет - `/tmp/CoreFxPipe_AmneziaGeo.Agent`, поэтому в юните нельзя включать
+  `PrivateTmp`. Любая локальная учётная запись, дотянувшаяся до сокета, управляет агентом, в том
+  числе читает ключи конфигураций.
+- Linux-туннель применяет адреса, MTU и `AllowedIPs` самой конфигурации. Списки маршрутизации,
+  DNS конфигурации, исключения и транспорт WebSocket сохраняются и показываются, но пока не
+  применяются в Linux.
+
 ## Лицензия
 
 GPL-3.0 или новее, см. [LICENSE](LICENSE). Использует движок AmneziaWG под лицензией его авторов.

@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace AmneziaGeo.Ui.Services;
+namespace AmneziaGeo.Decl;
 
 /// <summary>
 /// Уникализация имени: базовое, затем "&lt;base&gt; 2", "&lt;base&gt; 3"…
 /// </summary>
-internal static class UniqueName
+public static class UniqueName
 {
     public static string Resolve(string baseName, IEnumerable<string> taken)
     {

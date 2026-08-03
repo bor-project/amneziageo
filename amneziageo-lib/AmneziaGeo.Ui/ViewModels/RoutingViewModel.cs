@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;

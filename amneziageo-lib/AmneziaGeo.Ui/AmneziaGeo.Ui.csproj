@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Localization\AmneziaGeo.Localization.csproj" />

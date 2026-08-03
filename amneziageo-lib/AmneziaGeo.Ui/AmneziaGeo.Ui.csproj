@@ -32,6 +32,9 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>AmneziaGeo.Ui.Desktop</_Parameter1>
     </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>AmneziaGeo.Linux.Ui</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AmneziaGeo
+GenericName=VPN client
+GenericName[ru]=VPN-клиент
+Comment=Send only the traffic named by geo rules through the tunnel
+Comment[ru]=Пропускает через туннель только трафик, названный гео-правилами
+Exec=amneziageo-gui
+Icon=amneziageo
+Terminal=false
+Categories=Network;Security;
+Keywords=VPN;AmneziaWG;WireGuard;geo;
+StartupNotify=true
+StartupWMClass=AmneziaGeo.Linux.Ui

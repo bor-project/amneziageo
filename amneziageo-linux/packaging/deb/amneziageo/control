@@ -1,0 +1,18 @@
+Package: amneziageo
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: AmneziaGeo <bor-project@users.noreply.github.com>
+Section: net
+Priority: optional
+Homepage: https://github.com/bor-project/amneziageo
+Installed-Size: @SIZE@
+Depends: libc6, libgcc-s1, libstdc++6, ca-certificates, iproute2, systemd, @ICU@, libssl3t64 | libssl3 | libssl1.1
+Suggests: amneziageo-gui
+Description: geo-aware VPN client - agent and console client
+ AmneziaGeo sends only the traffic named by geo rules through an AmneziaWG
+ tunnel and leaves the rest on the direct link.
+ .
+ This package carries the privileged agent that runs as a systemd service, the
+ AmneziaWG engine it drives and the amneziageo console client with its
+ full-screen console interface. It pulls in no desktop libraries, so it fits a
+ headless server.

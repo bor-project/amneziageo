@@ -1,5 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Globalization;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -378,12 +378,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         // A config just imported in the Config section: open it once its row arrives so OnOpenConfigChanged
         // seeds the transport editor from the real snapshot row instead of all-defaults.
-        if (_pendingOpenConfig is not null && present.Contains(_pendingOpenConfig))
-        {
-            var name = _pendingOpenConfig;
-            _pendingOpenConfig = null;
-            OpenConfig = name;
-        }
+        ResolvePendingOpenConfig();
 
         // Re-select the section combo now that the option list is current: an OpenConfig set above (or a
         // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
@@ -408,6 +403,20 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ReconcileConfigCatalogueOptions();
         SyncCatalogueConfig();
         NotifyHasConfigsChanged();
+    }
+
+    // Opens the config an import pinned, as soon as the catalogue holds it. Called after the import too: the
+    // snapshot carrying the new row can land while the import is still in flight, and waiting for the next push
+    // would leave the section on an empty picker.
+    private void ResolvePendingOpenConfig()
+    {
+        if (_pendingOpenConfig is not { } pending || !_configNames.Contains(pending, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        _pendingOpenConfig = null;
+        OpenConfig = pending;
     }
 
     private void NotifyHasConfigsChanged()
@@ -603,6 +612,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         {
             _pendingOpenConfig = name;
             _host.Profile.AdoptConfig(name);
+            ResolvePendingOpenConfig();
         }
 
         return true;
@@ -790,19 +800,27 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
     }
 
-    // Footer Cancel: an import draft returns to the method picker in place (discards the drafted text, no
+    // Footer Cancel: an import draft returns to the method picker in place (discards the drafted text and name, no
     // navigation); an open-config edit reverts to its baseline. Leaving the import section fully is the top tabs.
     [RelayCommand]
     private void CancelSection()
     {
         if (IsCreatingSectionConfig)
         {
-            ChangeMethod();
+            ResetImportDraft();
         }
         else
         {
             CancelConfigEdit();
         }
+    }
+
+    // Discards the whole draft - text and name - and returns to the method picker (mirrors the Routing screen).
+    private void ResetImportDraft()
+    {
+        _sectionConfigDefaultName = UniqueConfigName();
+        SectionConfigName = _sectionConfigDefaultName;
+        ChangeMethod();
     }
 
     // Footer Save (open config): commit the dirty .conf text, transport, and rename atomically. A rejected step
@@ -901,12 +919,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         var name = !SectionConfigNameIsDefault
             ? SectionConfigName.Trim()
-            : (!string.IsNullOrWhiteSpace(imported.Name) ? imported.Name!.Trim() : DefaultConfigName(imported.ConfText, _configNames));
+            : (!string.IsNullOrWhiteSpace(imported.Name) ? UniqueName.ResolveParen(imported.Name!.Trim(), _configNames) : DefaultConfigName(imported.ConfText, _configNames));
 
-        // The create form must never land on an existing row: the agent stores by name and would replace it.
+        // A taken name is refused, never overwritten: the configuration behind it holds its own keys.
         if (_configNames.Contains(name, StringComparer.Ordinal))
         {
-            SectionConfigStatus = string.Format(CultureInfo.CurrentCulture, Loc.Instance.Get("Agent_NameTaken"), name);
+            SectionConfigStatus = Loc.Instance.Get("MainVm_ConfigNameTaken", name);
             return false;
         }
 
@@ -928,6 +946,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
             _host.Profile.AdoptConfig(name);
+            ResolvePendingOpenConfig();
             return true;
         }
         finally

@@ -9,15 +9,29 @@ namespace AmneziaGeo.Ui.Services;
 internal static class PortableTransfer
 {
     private const string RoutingHeader = "#ageo-routing v1";
+    private const string NameTag = "#name:";
+    private const string AllUdpTag = "#all-udp:";
+    private const string GlobalProxyTag = "#global-proxy:";
+
+    /// <summary>
+    /// Traffic options of a routing list, carried alongside its rules.
+    /// </summary>
+    public sealed record RoutingOptions(bool AllUdp, bool UseGlobalProxy);
 
     /// <summary>
     /// Serialises a routing list.
     /// </summary>
-    public static string EncodeRouting(string name, IReadOnlyList<string> rules)
+    public static string EncodeRouting(string name, IReadOnlyList<string> rules, RoutingOptions? options = null)
     {
         var sb = new StringBuilder();
         sb.Append(RoutingHeader).Append('\n');
-        sb.Append("#name: ").Append(name ?? string.Empty).Append('\n');
+        sb.Append(NameTag).Append(' ').Append(name ?? string.Empty).Append('\n');
+        if (options is not null)
+        {
+            sb.Append(AllUdpTag).Append(' ').Append(options.AllUdp ? '1' : '0').Append('\n');
+            sb.Append(GlobalProxyTag).Append(' ').Append(options.UseGlobalProxy ? '1' : '0').Append('\n');
+        }
+
         foreach (var rule in rules)
         {
             var trimmed = rule?.Trim();
@@ -35,7 +49,16 @@ internal static class PortableTransfer
     /// </summary>
     public static bool TryDecodeRouting(string? text, out string name, out IReadOnlyList<string> rules)
     {
+        return TryDecodeRouting(text, out name, out rules, out _);
+    }
+
+    /// <summary>
+    /// Parses a routing-list blob together with its traffic options; the options are null when the blob carries none.
+    /// </summary>
+    public static bool TryDecodeRouting(string? text, out string name, out IReadOnlyList<string> rules, out RoutingOptions? options)
+    {
         name = string.Empty;
+        options = null;
         var list = new List<string>();
         var seen = new HashSet<string>();
         rules = list;
@@ -44,6 +67,9 @@ internal static class PortableTransfer
             return false;
         }
 
+        var allUdp = false;
+        var globalProxy = false;
+        var hasOptions = false;
         foreach (var raw in text.Split('\n'))
         {
             var line = raw.Trim();
@@ -54,11 +80,19 @@ internal static class PortableTransfer
 
             if (line.StartsWith('#'))
             {
-                // Only #name: is read.
-                const string nameTag = "#name:";
-                if (line.StartsWith(nameTag, System.StringComparison.OrdinalIgnoreCase))
+                if (line.StartsWith(NameTag, System.StringComparison.OrdinalIgnoreCase))
                 {
-                    name = line[nameTag.Length..].Trim();
+                    name = line[NameTag.Length..].Trim();
+                }
+                else if (line.StartsWith(AllUdpTag, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    allUdp = IsOn(line[AllUdpTag.Length..]);
+                    hasOptions = true;
+                }
+                else if (line.StartsWith(GlobalProxyTag, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    globalProxy = IsOn(line[GlobalProxyTag.Length..]);
+                    hasOptions = true;
                 }
 
                 continue;
@@ -70,6 +104,13 @@ internal static class PortableTransfer
             }
         }
 
+        options = hasOptions ? new RoutingOptions(allUdp, globalProxy) : null;
         return true;
+    }
+
+    private static bool IsOn(string value)
+    {
+        var trimmed = value.Trim().ToLowerInvariant();
+        return trimmed is "1" or "on" or "true" or "yes";
     }
 }

@@ -13,6 +13,9 @@ desktop.ini
 [Bb]in/
 [Oo]bj/
 
+# Installers and packages
+dist/
+
 # SQLite runtime
 *.db
 *.db-shm
@@ -21,6 +24,7 @@ desktop.ini
 # VS Code local debug settings (per-developer)
 .vscode/debug.windows.jsonc
 .vscode/debug.android.jsonc
+.vscode/debug.linux.jsonc
 
 # Local handoff notes — not committed
 HANDOFF.md

@@ -1,0 +1,7 @@
+# Settings the amneziageo-agent service reads at start.
+
+# Tunnel interface the agent creates.
+AMNEZIAGEO_IFACE=awg0
+
+# Library holding state.db, the logs and the geo bases.
+AMNEZIAGEO_DATA=/var/lib/amneziageo

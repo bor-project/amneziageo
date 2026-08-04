@@ -116,6 +116,90 @@ dotnet run --project amneziageo-windows\tools\AmneziaGeo.Windows.Launcher
 
 Без флагов поднимаются обе части. Флаги: `--service` — только агент; `--ui` — только интерфейс; `--target <имя>` — сразу вести профиль или конфиг; `--config <путь.conf>` — зарегистрировать wg-quick конфиг и запуститься на нём.
 
+## Linux
+
+Linux-голова выходит двумя deb-пакетами из одного дерева исходников:
+
+- `amneziageo` - агент, который работает службой systemd, движок AmneziaWG, которым он управляет, и
+  консольный клиент `amneziageo` с полноэкранным интерфейсом. Пакет не тянет графических
+  библиотек, поэтому годится серверу без рабочего стола.
+- `amneziageo-gui` - графический интерфейс. Работает от пользователя рабочего стола и управляет тем
+  же агентом через его контрольный сокет, поэтому требует `amneziageo` той же версии.
+
+Серверу нужен только первый пакет, рабочему столу - оба. Всё, что настраивается в графическом
+интерфейсе, доступно и из консольного клиента.
+
+### Установка
+
+Возьмите пакеты своей архитектуры со страницы [Releases](../../releases) - собираются amd64 и
+arm64 - и поставьте через apt, он подтянет названные ими библиотеки:
+
+```bash
+# сервер
+sudo apt install ./amneziageo_<версия>_amd64.deb
+
+# рабочий стол
+sudo apt install ./amneziageo_<версия>_amd64.deb ./amneziageo-gui_<версия>_amd64.deb
+```
+
+Агент сразу запускается и включается в автозагрузку. Бинарники лежат в `/usr/lib/amneziageo`,
+библиотека - в `/var/lib/amneziageo`, клиент - `/usr/bin/amneziageo`, имя интерфейса агент берёт из
+`/etc/default/amneziageo`. `apt remove` библиотеку оставляет, `apt purge` - удаляет.
+
+### Сборка пакетов
+
+```bash
+git submodule update --init --recursive
+amneziageo-linux/tools/build-deb.sh --arch amd64,arm64
+```
+
+Для сборки нужны .NET SDK и Go, целевой машине - ничего: пакеты self-contained. Результат кладётся
+в `dist/`. Ключи: `--version N.N.N.N` (иначе `0.0.1.<число коммитов>`), `--arch amd64,arm64`,
+`--out <каталог>`, `--no-gui`, `--debug`. Список альтернатив `libicu` в скрипте перечисляет
+ICU-пакеты, которые могут оказаться в целевом дистрибутиве, - новый выпуск дистрибутива добавляет
+туда одну запись.
+
+Для машины не на Debian `amneziageo-linux/tools/install-server.sh` публикует агент и консольный
+клиент из исходников прямо в `/opt/amneziageo`.
+
+### Первый запуск
+
+```bash
+sudo amneziageo geo download
+sudo amneziageo config import work --file work.conf     # либо --link 'vpn://…', либо --stdin
+sudo amneziageo profile add work work
+sudo amneziageo up work
+sudo amneziageo settings set survive-reboot on
+sudo amneziageo settings set periodic-reconnect-enabled on
+```
+
+`survive-reboot` поднимает туннель при старте агента, `periodic-reconnect-enabled` переподнимает
+его, если туннель упал. Без них перезагрузка или падение движка оставляют сервер без туннеля.
+
+### Повседневное
+
+```bash
+amneziageo status                  # что работает и что возьмёт следующее подключение
+amneziageo doctor                  # проверки, на которых обычно спотыкается серверная установка
+amneziageo --json profile list     # вывод для скриптов
+amneziageo log tail --level info
+amneziageo tui                     # полноэкранная консоль по SSH
+```
+
+`amneziageo help` перечисляет все команды. Коды возврата: 0 - готово, 1 - агент отказал,
+2 - ошибка в команде, 3 - агент недоступен, 5 - операция не реализована в Linux-агенте.
+
+### Оговорки
+
+- Агент работает от root: он создаёт устройство туннеля и правит маршруты, одного `CAP_NET_ADMIN`
+  его проверке недостаточно.
+- Управляющий сокет - `/tmp/CoreFxPipe_AmneziaGeo.Agent`, поэтому в юните нельзя включать
+  `PrivateTmp`. Любая локальная учётная запись, дотянувшаяся до сокета, управляет агентом, в том
+  числе читает ключи конфигураций.
+- Linux-туннель применяет адреса, MTU и `AllowedIPs` самой конфигурации. Списки маршрутизации,
+  DNS конфигурации, исключения и транспорт WebSocket сохраняются и показываются, но пока не
+  применяются в Linux.
+
 ## Лицензия
 
 GPL-3.0 или новее, см. [LICENSE](LICENSE). Использует движок AmneziaWG под лицензией его авторов.

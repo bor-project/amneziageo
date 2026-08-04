@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+UNIT=amneziageo-agent.service
+
+case "$1" in
+  remove|deconfigure)
+    if [ -d /run/systemd/system ]; then
+      systemctl stop "$UNIT" || true
+      systemctl disable "$UNIT" >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+exit 0

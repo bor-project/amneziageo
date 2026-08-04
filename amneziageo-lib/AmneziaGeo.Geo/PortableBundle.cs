@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AmneziaGeo.Ipc;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// Selective snapshot of configs, routing lists, profiles. Configs carry keys in clear; only rule tokens travel.
@@ -36,13 +36,15 @@ public static class PortableBundle
         IReadOnlyList<ProfileBlock> Profiles);
 
     /// <summary>
-    /// A standalone config: wg-quick text, WebSocket transport, geo split.
+    /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries.
     /// </summary>
     public sealed record ConfigBlock(
         string Name,
         string ConfigText,
         TransportBlock? Transport,
-        GeoBlock? Geo);
+        GeoBlock? Geo,
+        string? Dns = null,
+        string? Exclusions = null);
 
     /// <summary>
     /// WebSocket transport, tunnel MTU, and the IPv6 opt-in. Empty Host reuses the config's Endpoint host.
@@ -63,9 +65,9 @@ public static class PortableBundle
         RoutingSettingsBlock? Settings);
 
     /// <summary>
-    /// A routing list's traffic policy. Mode is always "split" here.
+    /// A routing list's traffic policy: bypass entries, UDP handling, split or full mode.
     /// </summary>
-    public sealed record RoutingSettingsBlock(string Exclusions, bool AllUdp);
+    public sealed record RoutingSettingsBlock(string Exclusions, bool AllUdp, string Mode = "split", bool UseGlobalProxy = false);
 
     /// <summary>
     /// A thin profile reference: bound config and routing list by name; either may be null.
@@ -90,33 +92,5 @@ public static class PortableBundle
     public static Bundle? Deserialize(string json)
     {
         return JsonSerializer.Deserialize<Bundle>(json, _options);
-    }
-
-    /// <summary>
-    /// Picks a name not yet taken, appending a counter on collision.
-    /// </summary>
-    public static string FreeName(string desired, HashSet<string> taken, string fallback)
-    {
-        var baseName = desired.Trim();
-        if (baseName.Length == 0)
-        {
-            baseName = fallback;
-        }
-
-        if (!taken.Contains(baseName))
-        {
-            return baseName;
-        }
-
-        for (var i = 2; i < 10000; i++)
-        {
-            var candidate = $"{baseName} ({i})";
-            if (!taken.Contains(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return $"{baseName} ({Guid.NewGuid():N})";
     }
 }

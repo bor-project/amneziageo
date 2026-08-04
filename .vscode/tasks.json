@@ -42,6 +42,60 @@
           "${workspaceFolder}/.vscode/build-android.sh"
         ]
       }
+    },
+    {
+      "label": "Build Linux",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/.vscode/build-linux.sh"
+      ],
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Build Engine (Linux)",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/amneziageo-linux/tools/build-engine-linux.sh"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Linux agent (sudo)",
+      "detail": "Runs the built agent elevated so it can create the tunnel interface; the UI attaches over the status pipe.",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/.vscode/run-linux-agent.sh"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Run Linux console (attachable)",
+      "detail": "Runs the built console client and holds it until \"Attach Linux (console)\" connects. SUDO=1 runs it elevated.",
+      "type": "shell",
+      "command": "bash \"${workspaceFolder}/.vscode/run-linux-console.sh\" ${input:consoleArgs}",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "consoleArgs",
+      "type": "promptString",
+      "description": "Arguments for amneziageo (empty prints the help).",
+      "default": "status"
     }
   ]
 }

@@ -5,12 +5,12 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 
-namespace AmneziaGeo.Ui.Services;
+namespace AmneziaGeo.Decl;
 
 /// <summary>
 /// Converts between a wg-quick .conf and an Amnezia vpn:// share link.
 /// </summary>
-internal static class VpnLinkCodec
+public static class VpnLinkCodec
 {
     private const string _scheme = "vpn://";
     private const short _qrMagic = 1984;
@@ -146,7 +146,10 @@ internal static class VpnLinkCodec
         return string.IsNullOrWhiteSpace(host) ? null : host;
     }
 
-    private static bool LooksLikeConf(string text)
+    /// <summary>
+    /// Whether the text is a wg-quick configuration.
+    /// </summary>
+    public static bool LooksLikeConf(string text)
     {
         return text.Contains("[Interface]", StringComparison.OrdinalIgnoreCase)
             && text.Contains("[Peer]", StringComparison.OrdinalIgnoreCase);

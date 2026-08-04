@@ -1003,6 +1003,9 @@
   <data name="MainCode_UpdateDatabase" xml:space="preserve">
     <value>Update</value>
   </data>
+  <data name="MainVm_ConfigNameTaken" xml:space="preserve">
+    <value>A configuration named «{0}» already exists. Enter another name.</value>
+  </data>
   <data name="MainVm_ConfigNotRecognized" xml:space="preserve">
     <value>Not recognized (.conf or vpn://)</value>
   </data>
@@ -1165,6 +1168,9 @@
   <data name="RoutingEditor_ImportedRulesNeedName" xml:space="preserve">
     <value>Imported rules: {0}. Enter a name to save.</value>
   </data>
+  <data name="RoutingEditor_ImportedNameTaken" xml:space="preserve">
+    <value>A routing list named «{0}» already exists - saving as «{1}».</value>
+  </data>
   <data name="RoutingEditor_NotARoutingList" xml:space="preserve">
     <value>This does not look like a routing list.</value>
   </data>
@@ -1256,14 +1262,14 @@
     <value>h</value>
   </data>
   <data name="Agent_BundleImported" xml:space="preserve">
-    <value>Imported: {0} configs, {1} routing lists, {2} profiles.</value>
+    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.</value>
   </data>
   <data name="Agent_BundleImportedRenamed" xml:space="preserve">
-    <value>Imported: {0} configs, {1} routing lists, {2} profiles.
+    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.
 Renamed on import: {3}.</value>
   </data>
   <data name="Agent_BundleImportedRenamedMany" xml:space="preserve">
-    <value>Imported: {0} configs, {1} routing lists, {2} profiles.
+    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.
 Renamed on import: several names clashed with existing ones.</value>
   </data>
   <data name="Agent_BundleParseFailed" xml:space="preserve">
@@ -1284,8 +1290,14 @@ Renamed on import: several names clashed with existing ones.</value>
   <data name="Agent_ConfigImported" xml:space="preserve">
     <value>imported {0}</value>
   </data>
+  <data name="Agent_ConfigNameTaken" xml:space="preserve">
+    <value>a configuration named «{0}» already exists - pick another name</value>
+  </data>
   <data name="Agent_ConfigSaved" xml:space="preserve">
     <value>saved {0}</value>
+  </data>
+  <data name="Agent_RoutingListNameTaken" xml:space="preserve">
+    <value>a routing list named «{0}» already exists - pick another name</value>
   </data>
   <data name="Agent_DiagnosticsFailed" xml:space="preserve">
     <value>Failed to collect logs: {0}</value>
@@ -1655,6 +1667,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Android_EngineNotReady" xml:space="preserve">
     <value>The Android VPN engine is not connected yet.</value>
   </data>
+  <data name="Linux_OpNotWired" xml:space="preserve">
+    <value>The Linux agent does not handle "{0}" yet.</value>
+  </data>
   <data name="Main_SettingsTab" xml:space="preserve">
     <value>Settings</value>
   </data>
@@ -1711,5 +1726,92 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="FileBrowser_AllFilesAccess" xml:space="preserve">
     <value>Allow access to all files…</value>
+  </data>
+  <data name="Tui_Title" xml:space="preserve">
+    <value>AmneziaGeo console</value>
+  </data>
+  <data name="Tui_SectionStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Tui_Hint" xml:space="preserve">
+    <value>Tab moves between panes, F10 quits</value>
+  </data>
+  <data name="Tui_Tunnel" xml:space="preserve">
+    <value>Tunnel</value>
+  </data>
+  <data name="Tui_Up" xml:space="preserve">
+    <value>up</value>
+  </data>
+  <data name="Tui_Down" xml:space="preserve">
+    <value>down</value>
+  </data>
+  <data name="Tui_Agent" xml:space="preserve">
+    <value>Agent</value>
+  </data>
+  <data name="Tui_LastFailure" xml:space="preserve">
+    <value>Last failure</value>
+  </data>
+  <data name="Tui_Connect" xml:space="preserve">
+    <value>Connect</value>
+  </data>
+  <data name="Tui_Disconnect" xml:space="preserve">
+    <value>Disconnect</value>
+  </data>
+  <data name="Tui_Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="Tui_Select" xml:space="preserve">
+    <value>Select</value>
+  </data>
+  <data name="Tui_Assign" xml:space="preserve">
+    <value>Routing…</value>
+  </data>
+  <data name="Tui_Show" xml:space="preserve">
+    <value>Show</value>
+  </data>
+  <data name="Tui_ShareLink" xml:space="preserve">
+    <value>Link</value>
+  </data>
+  <data name="Tui_Rules" xml:space="preserve">
+    <value>Rules…</value>
+  </data>
+  <data name="Tui_Settings" xml:space="preserve">
+    <value>Options…</value>
+  </data>
+  <data name="Tui_UpdateAll" xml:space="preserve">
+    <value>Update all</value>
+  </data>
+  <data name="Tui_Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Tui_Saved" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="Tui_Ok" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Tui_On" xml:space="preserve">
+    <value>on</value>
+  </data>
+  <data name="Tui_Off" xml:space="preserve">
+    <value>off</value>
+  </data>
+  <data name="Tui_ConfirmDelete" xml:space="preserve">
+    <value>Delete «{0}»?</value>
+  </data>
+  <data name="Tui_ImportHint" xml:space="preserve">
+    <value>Paste a wg-quick configuration or a vpn:// link</value>
+  </data>
+  <data name="Tui_RulesHint" xml:space="preserve">
+    <value>One rule per line: proxy|geosite:x, direct|geoip:ru, block|domain:y</value>
+  </data>
+  <data name="Tui_BadRule" xml:space="preserve">
+    <value>«{0}» is not a rule</value>
+  </data>
+  <data name="Tui_Downloading" xml:space="preserve">
+    <value>Downloading the bases; this takes a while</value>
+  </data>
+  <data name="Tui_LogEmpty" xml:space="preserve">
+    <value>The log is empty: raise the level on the Общие screen</value>
   </data>
 </root>

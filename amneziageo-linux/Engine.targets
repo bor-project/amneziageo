@@ -1,0 +1,43 @@
+<Project>
+
+  <!-- amneziawg-go daemon: gitignored build output of the submodule shared with the Android head. -->
+  <PropertyGroup>
+    <_AwgGoDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'amneziageo-android', 'amneziawg-go'))</_AwgGoDir>
+    <_AwgGoBin>$([MSBuild]::NormalizePath('$(_AwgGoDir)', 'amneziawg-go'))</_AwgGoBin>
+  </PropertyGroup>
+
+  <!-- Fails early with actionable guidance instead of staging an agent that cannot start a tunnel. -->
+  <Target Name="EnsureEngineBuilt" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+
+    <Error Condition="!Exists('$(_AwgGoDir)go.mod')"
+           Text="AmneziaWG engine submodule is missing at $(_AwgGoDir).%0aThe Linux agent uses the same amneziawg-go checkout as the Android head - there is no separate submodule under amneziageo-linux.%0aInitialize it and build the daemon, then rebuild:%0a  git submodule update --init --recursive%0a  amneziageo-linux/tools/build-engine-linux.sh%0aThe script runs make in the submodule and emits the amneziawg-go binary." />
+
+    <!-- Probed only when the daemon has to be built. -->
+    <Exec Condition="!Exists('$(_AwgGoBin)')"
+          Command="command -v go"
+          IgnoreExitCode="true"
+          EchoOff="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="_AwgGoProbe" />
+    </Exec>
+
+    <Error Condition="!Exists('$(_AwgGoBin)') and '$(_AwgGoProbe)' != '0'"
+           Text="Go toolchain not found in PATH, so the AmneziaWG engine cannot be built.%0aamneziawg-go needs the Go version pinned in $(_AwgGoDir)go.mod (1.25 or newer, pure Go - no cgo).%0aInstall Go, build the daemon, then rebuild:%0a  sudo snap install go --classic        # or: sudo apt install golang-go%0a  amneziageo-linux/tools/build-engine-linux.sh%0aFor a Go unpacked outside PATH: export PATH=&quot;$GOROOT/bin:$PATH&quot;" />
+
+    <Error Condition="!Exists('$(_AwgGoBin)')"
+           Text="amneziawg-go daemon is not built: $(_AwgGoBin) not found (gitignored artifact).%0aBuild it first, then rebuild:%0a  amneziageo-linux/tools/build-engine-linux.sh%0aIt runs make in $(_AwgGoDir) and emits the daemon that the agent spawns per interface and drives over its UAPI socket." />
+
+  </Target>
+
+  <!-- Stages the daemon next to the agent output. -->
+  <Target Name="StageEngine" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and Exists('$(_AwgGoBin)')">
+    <Copy SourceFiles="$(_AwgGoBin)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Stages the daemon next to the published agent, which a server install runs from. -->
+  <Target Name="StageEnginePublish" AfterTargets="Publish" Condition="'$(DesignTimeBuild)' != 'true' and Exists('$(_AwgGoBin)')">
+    <Copy SourceFiles="$(_AwgGoBin)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

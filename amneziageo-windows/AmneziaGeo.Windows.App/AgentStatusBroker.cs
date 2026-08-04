@@ -323,6 +323,12 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, "import-config requires a name and config text");
         }
 
+        // Import creates; replacing the text of an existing configuration is edit-config.
+        if (await configRepo.ExistsAsync(args[0], ct))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_ConfigNameTaken", args[0]));
+        }
+
         await configRepo.AddFromTextAsync(args[0], args[1], ct);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigImported", args[0]));
@@ -642,7 +648,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 geoBlock = new PortableBundle.GeoBlock(ownGeo.GeoSplit, ownGeo.Rules.Select(GeoConfigurator.Format).ToList());
             }
 
-            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock));
+            var dns = await store.GetConfigDnsAsync(name, ct);
+            var exclusions = await store.GetConfigExclusionsAsync(name, ct);
+            configBlocks.Add(new PortableBundle.ConfigBlock(name, configText, transport, geoBlock, dns?.Servers, exclusions?.Exclusions));
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
@@ -675,7 +683,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 var settings = await store.GetRoutingSettingsAsync(list.Id, ct);
                 if (settings is not null)
                 {
-                    settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp);
+                    settingsBlock = new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp, settings.Mode, settings.UseGlobalProxy);
                 }
 
                 routingBlocks.Add(new PortableBundle.RoutingBlock(name, rules, settingsBlock));
@@ -687,12 +695,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         {
             var profile = await store.GetProfileAsync(name, ct);
             if (profile is null)
-            {
-                continue;
-            }
-
-            // Профиль без конфигурации не экспортируется.
-            if (string.IsNullOrEmpty(profile.Config))
             {
                 continue;
             }
@@ -772,6 +774,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
         var routingMap = new Dictionary<string, (string Name, long Id)>(StringComparer.Ordinal);
         var renames = new List<string>();
+        var importedConfigs = 0;
+        var importedLists = 0;
 
         foreach (var block in bundle.Configs)
         {
@@ -793,6 +797,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                     await store.SetConfigTransportAsync(new ConfigTransport(incoming, trE.UseWebSocket, trE.Host, trE.Port, trE.Mtu, trE.UseIpv6), ct);
                 }
 
+                await ApplyConfigDataAsync(incoming, block, ct);
+
                 if (block.Geo is { } gE)
                 {
                     var rules = gE.Rules;
@@ -807,6 +813,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 }
 
                 configNameMap[block.Name] = incoming;
+                importedConfigs++;
                 continue;
             }
 
@@ -825,6 +832,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 await store.SetConfigTransportAsync(new ConfigTransport(finalName, tr.UseWebSocket, tr.Host, tr.Port, tr.Mtu, tr.UseIpv6), ct);
             }
 
+            await ApplyConfigDataAsync(finalName, block, ct);
+
             if (block.Geo is { } g)
             {
                 // Re-materialize rule tokens against local geo data.
@@ -832,6 +841,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
 
             configNameMap[block.Name] = finalName;
+            importedConfigs++;
         }
 
         foreach (var block in bundle.RoutingLists)
@@ -854,10 +864,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 await geo.ApplyToRoutingListAsync(existingList.Id, existingList.Name, rules, ct);
                 if (block.Settings is { } sE)
                 {
-                    await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.Exclusions, sE.AllUdp, "split"), ct);
+                    await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, sE.Exclusions, sE.AllUdp, sE.Mode, sE.UseGlobalProxy), ct);
                 }
 
                 routingMap[block.Name] = (existingList.Name, existingList.Id);
+                importedLists++;
                 continue;
             }
 
@@ -871,10 +882,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var newId = await geo.ApplyToRoutingListAsync(0, finalName, block.Rules, ct);
             if (block.Settings is { } s)
             {
-                await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.Exclusions, s.AllUdp, "split"), ct);
+                await store.SetRoutingSettingsAsync(new RoutingSettings(newId, s.Exclusions, s.AllUdp, s.Mode, s.UseGlobalProxy), ct);
             }
 
             routingMap[block.Name] = (finalName, newId);
+            importedLists++;
         }
 
         var importedProfiles = 0;
@@ -885,14 +897,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 ? rl.Id
                 : null;
 
-            // Профиль без выбранной конфигурации в метаданных импорта пропускается.
-            if (config.Length == 0)
-            {
-                continue;
-            }
-
-            importedProfiles++;
-
             // Same-name profile already here and a non-default policy.
             if (existingProfiles.Contains(block.Name) && policy != "new")
             {
@@ -901,6 +905,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                     continue;
                 }
 
+                importedProfiles++;
                 await store.SaveProfileAsync(new Profile(block.Name, config), ct);
 
                 // No auto-target here: bulk import must not steal the selection.
@@ -919,6 +924,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 renames.Add($"«{block.Name}» → «{finalName}»");
             }
 
+            importedProfiles++;
             await store.SaveProfileAsync(new Profile(finalName, config), ct);
 
             // No auto-target here: bulk import must not steal the selection.
@@ -930,34 +936,65 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         logger.LogInformation(
             "imported bundle: {Configs} configs, {Routing} routing lists, {Profiles} profiles",
-            bundle.Configs.Count,
-            bundle.RoutingLists.Count,
+            importedConfigs,
+            importedLists,
             importedProfiles);
 
-        if (renames.Count == 0)
+        // A config and the profile bound to it clash under the same name and land on the same new one; showing
+        // that pair once reads as one rename instead of a duplicated line.
+        var shown = renames.Distinct(StringComparer.Ordinal).ToList();
+        if (shown.Count == 0)
         {
             return new IpcAck(true, IpcMessage.Key(
                 "Agent_BundleImported",
-                bundle.Configs.Count,
-                bundle.RoutingLists.Count,
+                importedConfigs,
+                importedLists,
                 importedProfiles));
         }
 
-        if (renames.Count <= 5)
+        if (shown.Count <= 5)
         {
             return new IpcAck(true, IpcMessage.Key(
                 "Agent_BundleImportedRenamed",
-                bundle.Configs.Count,
-                bundle.RoutingLists.Count,
+                importedConfigs,
+                importedLists,
                 importedProfiles,
-                string.Join(", ", renames)));
+                string.Join(", ", shown)));
         }
 
         return new IpcAck(true, IpcMessage.Key(
             "Agent_BundleImportedRenamedMany",
-            bundle.Configs.Count,
-            bundle.RoutingLists.Count,
+            importedConfigs,
+            importedLists,
             importedProfiles));
+    }
+
+    // DNS and bypass entries a bundle carries for a config.
+    private async Task ApplyConfigDataAsync(string name, PortableBundle.ConfigBlock block, CancellationToken ct)
+    {
+        if (block.Dns is { } dns)
+        {
+            if (dns.Trim().Length == 0)
+            {
+                await store.RemoveConfigDnsAsync(name, ct);
+            }
+            else
+            {
+                await store.SetConfigDnsAsync(new ConfigDns(name, dns), ct);
+            }
+        }
+
+        if (block.Exclusions is { } exclusions)
+        {
+            if (exclusions.Trim().Length == 0)
+            {
+                await store.RemoveConfigExclusionsAsync(name, ct);
+            }
+            else
+            {
+                await store.SetConfigExclusionsAsync(new ConfigExclusions(name, exclusions), ct);
+            }
+        }
     }
 
     // True when a profile still binds the config.
@@ -1074,10 +1111,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var on = args[1].Equals("on", StringComparison.OrdinalIgnoreCase);
-        var (rules, routes, domains) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
+        var (rules, routes, domains, skipped) = await geo.ApplyAsync(args[0], on, args.Skip(2).ToList(), ct);
         AnnounceRules();
         logger.LogInformation("{Name}: {Rules} rule(s) saved, giving {Routes} address range(s) and {Domains} domain(s); only the named traffic goes through the tunnel: {On} — takes effect on reconnect", args[0], rules, routes, domains, on);
-        return new IpcAck(true, $"saved: {rules} rules, {routes} routes, {domains} domains (applies on reconnect)");
+        var summary = $"saved: {rules} rules, {routes} routes, {domains} domains";
+        return new IpcAck(true, skipped > 0 ? $"{summary}, {skipped} tokens ignored (applies on reconnect)" : $"{summary} (applies on reconnect)");
     }
 
     private async Task<IpcAck> SetWebSocketAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1339,6 +1377,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         if (name.Length == 0)
         {
             return new IpcAck(false, "name is required");
+        }
+
+        // The name column is unique: a clash would surface as a raw SQLite error from the insert.
+        var lists = await store.ListRoutingListsAsync(ct);
+        if (lists.Any(l => l.Id != id && string.Equals(l.Name, name, StringComparison.Ordinal)))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_RoutingListNameTaken", name));
         }
 
         // Proxy geo (domains/geoip) applies live; app rules and the Block bucket need a fresh tunnel, and so does

@@ -35,6 +35,7 @@ internal static class ExportActions
             }
 
             await File.WriteAllTextAsync(picked, text);
+            RestrictToOwner(picked);
             return true;
         }
 
@@ -53,9 +54,13 @@ internal static class ExportActions
             return false;
         }
 
-        await using var stream = await file.OpenWriteAsync();
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(text);
+        await using (var stream = await file.OpenWriteAsync())
+        {
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(text);
+        }
+
+        RestrictToOwner(file);
         return true;
     }
 
@@ -78,8 +83,12 @@ internal static class ExportActions
                 return false;
             }
 
-            await using var target = File.Create(picked);
-            write(target);
+            await using (var target = File.Create(picked))
+            {
+                write(target);
+            }
+
+            RestrictToOwner(picked);
             return true;
         }
 
@@ -133,5 +142,36 @@ internal static class ExportActions
             FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = [$"*.{extension}"] }],
         });
         return file?.TryGetLocalPath();
+    }
+
+    /// <summary>
+    /// Ограничивает доступ к сохранённому файлу владельцем: выгрузки несут приватные ключи.
+    /// </summary>
+    public static void RestrictToOwner(IStorageFile file)
+    {
+        if (file.TryGetLocalPath() is { } path)
+        {
+            RestrictToOwner(path);
+        }
+    }
+
+    /// <summary>
+    /// Ограничивает доступ к файлу по пути владельцем.
+    /// </summary>
+    public static void RestrictToOwner(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch (Exception)
+        {
+            // Не всякий выданный пикером путь принадлежит нам.
+        }
     }
 }

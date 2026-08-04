@@ -1,0 +1,16 @@
+Package: amneziageo-gui
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: AmneziaGeo <bor-project@users.noreply.github.com>
+Section: net
+Priority: optional
+Homepage: https://github.com/bor-project/amneziageo
+Installed-Size: @SIZE@
+Depends: amneziageo (= @VERSION@), libc6, libgcc-s1, libstdc++6, libx11-6, libice6, libsm6, libfontconfig1, @ICU@, libssl3t64 | libssl3 | libssl1.1
+Description: geo-aware VPN client - desktop interface
+ AmneziaGeo sends only the traffic named by geo rules through an AmneziaWG
+ tunnel and leaves the rest on the direct link.
+ .
+ This package carries the desktop interface. It runs as the desktop user and
+ drives the agent from the amneziageo package over its control socket, so a
+ server without a graphical session does not need it.

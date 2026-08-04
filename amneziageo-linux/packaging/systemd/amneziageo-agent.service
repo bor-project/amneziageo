@@ -1,0 +1,24 @@
+[Unit]
+Description=AmneziaGeo agent
+Documentation=https://github.com/bor-project/amneziageo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=AMNEZIAGEO_IFACE=awg0
+Environment=AMNEZIAGEO_DATA=/var/lib/amneziageo
+EnvironmentFile=-/etc/default/amneziageo
+ExecStart=/usr/lib/amneziageo/AmneziaGeo.Linux.App --iface ${AMNEZIAGEO_IFACE}
+# The control socket is /tmp/CoreFxPipe_AmneziaGeo.Agent: a private /tmp hides it from every client.
+PrivateTmp=no
+# The agent creates the tunnel device and rewrites routes.
+User=root
+RuntimeDirectory=amneziawg
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

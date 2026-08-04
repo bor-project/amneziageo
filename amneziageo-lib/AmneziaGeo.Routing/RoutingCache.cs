@@ -1,15 +1,14 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Routing;
 
 /// <summary>
 /// What a verdict asks the system for once the mode is taken into account.
 /// </summary>
-internal enum RoutePlan
+public enum RoutePlan
 {
     /// <summary>
     /// Nothing: the destination already follows the right default.
@@ -47,7 +46,7 @@ internal enum RoutePlan
 /// it once idle. One entry per address carries both the verdict and what the verdict installed, so a repeat
 /// destination costs a single dictionary hit.
 /// </summary>
-internal sealed class RoutingCache
+public sealed class RoutingCache
 {
     private const int ScanIntervalMs = 5_000;
     // Upper bound on scans between reclaims; a short idle window reclaims more often so it is actually honoured.
@@ -58,8 +57,6 @@ internal sealed class RoutingCache
     private const int MaxApplied = 8192;
     // Entries overall. A verdict without resources costs a dictionary slot, so it gets a wider ceiling.
     private const int MaxEntries = 65536;
-    private const int AfInet = 2;
-    private const int TcpTableOwnerPidAll = 5;
 
     private sealed class Entry
     {
@@ -89,6 +86,7 @@ internal sealed class RoutingCache
 
     private readonly ConcurrentDictionary<uint, Entry> _entries = new();
     private readonly IRouteApplier _applier;
+    private readonly ILiveDestinations _live;
     private readonly bool _split;
     private long _idleTtlMs;
     private int _scansPerSweep;
@@ -107,9 +105,10 @@ internal sealed class RoutingCache
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingCache(IRouteApplier applier, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger)
+    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger)
     {
         _applier = applier;
+        _live = live;
         _split = split;
         SetTtl(ttlSeconds);
         _logger = logger;
@@ -246,6 +245,33 @@ internal sealed class RoutingCache
     }
 
     /// <summary>
+    /// Records contact with a destination whose verdict something outside the ranges already settled - a name, not
+    /// an address. A verdict that differs from the one in force releases what the old one installed first.
+    /// </summary>
+    public void Note(uint address, RouteVerdict verdict)
+    {
+        var now = Environment.TickCount64;
+        if (!_entries.TryGetValue(address, out var existing))
+        {
+            Admit(address, now, false, verdict);
+            return;
+        }
+
+        Volatile.Write(ref existing.LastTouch, now);
+        if (existing.Verdict == verdict)
+        {
+            if (!Installed(existing))
+            {
+                Install(existing, now);
+            }
+
+            return;
+        }
+
+        Reclassify(existing, verdict, now);
+    }
+
+    /// <summary>
     /// Records contact with an address; non-IPv4 is ignored.
     /// </summary>
     public void Note(IPAddress address)
@@ -351,7 +377,7 @@ internal sealed class RoutingCache
     }
 
     /// <summary>
-    /// Scans the connection table and reclaims idle entries until cancelled.
+    /// Scans the live destinations and reclaims idle entries until cancelled.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
@@ -363,7 +389,7 @@ internal sealed class RoutingCache
                 await Task.Delay(ScanIntervalMs, ct).ConfigureAwait(false);
                 try
                 {
-                    var active = ActiveRemotes();
+                    var active = _live.Snapshot();
                     foreach (var address in active)
                     {
                         Note(address);
@@ -455,11 +481,30 @@ internal sealed class RoutingCache
         Install(entry, now);
     }
 
+    // Swaps a held destination onto another verdict: what the old plan installed is released first, so a bypass
+    // never outlives the decision that replaced it.
+    private void Reclassify(Entry entry, RouteVerdict verdict, long now)
+    {
+        var filters = new List<(ulong Out, ulong In)>();
+        var withdrawn = new List<IPAddress>();
+        var generation = _applier.Generation;
+        lock (entry)
+        {
+            Release(entry, generation, filters, withdrawn);
+            entry.Verdict = verdict;
+            entry.Plan = Decide(verdict);
+        }
+
+        _applier.RemoveTunnel(withdrawn);
+        _applier.DeleteFilters(filters, generation);
+        Install(entry, now);
+    }
+
     // Creates the entry for an address seen for the first time and applies what its verdict asks for.
-    private void Admit(uint address, long now, bool app = false)
+    private void Admit(uint address, long now, bool app = false, RouteVerdict? forced = null)
     {
         var rules = Volatile.Read(ref _rules);
-        var verdict = Evaluate(rules, address);
+        var verdict = forced ?? Evaluate(rules, address);
         var entry = new Entry
         {
             Address = ToAddress(address),
@@ -848,49 +893,4 @@ internal sealed class RoutingCache
     {
         return new IPAddress(new[] { (byte)(address >> 24), (byte)(address >> 16), (byte)(address >> 8), (byte)address });
     }
-
-    // Remote addresses of every current TCP connection, host order. Feeds both the routing pass - which is how an
-    // inbound connection and one already established at bring-up earn their route - and the reclaim pass.
-    private static HashSet<uint> ActiveRemotes()
-    {
-        var remotes = new HashSet<uint>();
-        var size = 0;
-        GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
-        if (size <= 0)
-        {
-            return remotes;
-        }
-
-        var buffer = Marshal.AllocHGlobal(size);
-        try
-        {
-            if (GetExtendedTcpTable(buffer, ref size, false, AfInet, TcpTableOwnerPidAll, 0) != 0)
-            {
-                return remotes;
-            }
-
-            var count = Marshal.ReadInt32(buffer);
-            var basePtr = buffer + 4;
-            for (var i = 0; i < count; i++)
-            {
-                // MIB_TCPROW_OWNER_PID: state, local addr, local port, remote addr at offset 12, remote port, pid.
-                var addr = new byte[4];
-                Marshal.Copy(basePtr + (i * 24) + 12, addr, 0, 4);
-                var value = ((uint)addr[0] << 24) | ((uint)addr[1] << 16) | ((uint)addr[2] << 8) | addr[3];
-                if (value != 0)
-                {
-                    remotes.Add(value);
-                }
-            }
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
-
-        return remotes;
-    }
-
-    [DllImport("iphlpapi.dll", SetLastError = true)]
-    private static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int pdwSize, [MarshalAs(UnmanagedType.Bool)] bool bOrder, int ulAf, int tableClass, int reserved);
 }

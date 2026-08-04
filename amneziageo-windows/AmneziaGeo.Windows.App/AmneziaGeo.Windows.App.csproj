@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Routing\AmneziaGeo.Routing.csproj" />
     <ProjectReference Include="..\AmneziaGeo.Windows.Engine\AmneziaGeo.Windows.Engine.csproj" />
   </ItemGroup>
 

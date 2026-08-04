@@ -84,7 +84,7 @@
               </Button>
             </StackPanel>
           </WrapPanel>
-          <TextBox Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
+          <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
                    Text="{Binding SectionConfigName, Mode=TwoWay}"
                    Watermark="{l:Tr Main_ConfigNameWatermark}" />
           <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
@@ -134,7 +134,7 @@
                   BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
                   CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
             <TextBox Text="{Binding SectionConfigText, Mode=TwoWay}"
-                     AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                     AcceptsReturn="True" TextWrapping="NoWrap"
                      VerticalContentAlignment="Top" MinHeight="200"
                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -171,7 +171,7 @@
                 CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
                 IsEnabled="{Binding ConfigExport.IsReady}">
           <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
-                   AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                   AcceptsReturn="True" TextWrapping="NoWrap"
                    VerticalContentAlignment="Top" Height="240"
                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
                    ScrollViewer.VerticalScrollBarVisibility="Auto"

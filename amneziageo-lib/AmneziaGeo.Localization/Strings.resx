@@ -1692,7 +1692,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Switch to yours</value>
   </data>
   <data name="FileBrowser_ScopedHint" xml:space="preserve">
-    <value>Android hides files this app does not own. Allow access to all files, or copy the configuration into one of the folders below.</value>
+    <value>Android hides files this app does not own. Allow access to all files, or copy the configuration into the app folder:</value>
   </data>
   <data name="FileBrowser_AppFolder" xml:space="preserve">
     <value>App folder</value>

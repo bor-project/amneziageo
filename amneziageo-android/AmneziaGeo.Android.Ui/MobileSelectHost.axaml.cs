@@ -10,6 +10,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Ui.Services;
 using Button = Avalonia.Controls.Button;
@@ -31,6 +32,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private TopLevel? _topLevel;
     private Control? _selectedRow;
     private TextBox? _keyboardTarget;
+    private Control? _lastFocus;
     private int _transitionVersion;
 
     public MobileSelectHost(Control content)
@@ -61,17 +63,30 @@ internal sealed partial class MobileSelectHost : UserControl
         _topLevel = TopLevel.GetTopLevel(this);
         AdaptiveComboBox.SelectPresenter = _showSelect;
         AppSplitBridge.Register(ShowAppPicker);
-        if (!HasDocumentPicker())
+        // TV file managers answer the single-file picker with a multi-select payload it never reads, so the pick
+        // comes back empty; the built-in browser owns opening there.
+        if (IsTelevision() || !HasHandler(global::Android.Content.Intent.ActionOpenDocument))
         {
             FileBrowserHost.Register((title, extensions) => FileBrowserOverlay.ShowAsync(RootGrid, title, extensions));
+        }
+
+        // Opening and saving resolve separately: a phone may carry a third-party picker for open and still have
+        // nothing but the stub for create, which accepts the intent and writes nothing.
+        if (IsTelevision() || !HasHandler(global::Android.Content.Intent.ActionCreateDocument))
+        {
+            FileSaverHost.Register((title, name) => FileBrowserOverlay.SaveAsync(RootGrid, title, name));
         }
 
         if (_topLevel is not null)
         {
             _topLevel.BackRequested += OnBackRequested;
+            _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyPreview, RoutingStrategies.Tunnel);
             _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Bubble);
+            _topLevel.AddHandler(GotFocusEvent, OnTopLevelGotFocus, RoutingStrategies.Bubble);
             _topLevel.AddHandler(LostFocusEvent, OnTopLevelLostFocus, RoutingStrategies.Bubble);
         }
+
+        MainActivity.Resumed += OnActivityResumed;
     }
 
     /// <inheritdoc/>
@@ -85,10 +100,14 @@ internal sealed partial class MobileSelectHost : UserControl
         if (_topLevel is not null)
         {
             _topLevel.BackRequested -= OnBackRequested;
+            _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyPreview);
             _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
+            _topLevel.RemoveHandler(GotFocusEvent, OnTopLevelGotFocus);
             _topLevel.RemoveHandler(LostFocusEvent, OnTopLevelLostFocus);
             _topLevel = null;
         }
+
+        MainActivity.Resumed -= OnActivityResumed;
 
         CloseImmediately();
         base.OnDetachedFromVisualTree(e);
@@ -228,6 +247,22 @@ internal sealed partial class MobileSelectHost : UserControl
         }
     }
 
+    // Arrows on a field that is not being edited must move focus, not the caret: a multiline config would
+    // otherwise cost a dozen presses to cross. Parking the caret on the edge makes the field release the key
+    // to directional navigation on the first press.
+    private void OnTopLevelKeyPreview(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled
+            || e.Key is not (Key.Up or Key.Down or Key.Left or Key.Right)
+            || _topLevel?.FocusManager?.GetFocusedElement() is not TextBox box
+            || InputMethod.GetIsInputMethodEnabled(box))
+        {
+            return;
+        }
+
+        box.CaretIndex = e.Key is Key.Up or Key.Left ? 0 : box.Text?.Length ?? 0;
+    }
+
     // Escape is taken at the top level, ahead of the shell: an overlay closes before the shell steps back.
     // The select press on a focused text field is taken here too, since that is what opens the keyboard on TV.
     private void OnTopLevelKeyDown(object? sender, KeyEventArgs e)
@@ -262,6 +297,38 @@ internal sealed partial class MobileSelectHost : UserControl
         _keyboardTarget = null;
     }
 
+    private void OnTopLevelGotFocus(object? sender, GotFocusEventArgs e)
+    {
+        if (e.Source is Control control and not TopLevel)
+        {
+            _lastFocus = control;
+        }
+    }
+
+    // A system picker drops focus on the way back, leaving the remote to start over from the header. Puts it
+    // where the user left it, or on the first control the screen offers.
+    private void OnActivityResumed()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_topLevel?.FocusManager?.GetFocusedElement() is Control and not TopLevel)
+            {
+                return;
+            }
+
+            if (_lastFocus is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } && _lastFocus.GetVisualRoot() is not null)
+            {
+                _lastFocus.Focus(NavigationMethod.Directional);
+                return;
+            }
+
+            if (KeyboardNavigationHandler.GetNext(RootGrid, NavigationDirection.Next) is { } first)
+            {
+                first.Focus(NavigationMethod.Directional);
+            }
+        });
+    }
+
     // Leaving a field puts it back under the style: the next visit needs another select press.
     private void OnTopLevelLostFocus(object? sender, RoutedEventArgs e)
     {
@@ -269,6 +336,39 @@ internal sealed partial class MobileSelectHost : UserControl
         {
             box.ClearValue(InputMethod.IsInputMethodEnabledProperty);
         }
+
+        if (e.Source is Control control && (!control.IsEffectivelyVisible || control.GetVisualRoot() is null))
+        {
+            RecoverFocus(control);
+        }
+    }
+
+    // A control that hides itself - a delete trigger swapped for its confirm pair, an import picker replaced by
+    // the editor - takes the focus ring with it and strands the remote on the header. Puts the ring on whatever
+    // took its place.
+    private void RecoverFocus(Control lost)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_topLevel?.FocusManager?.GetFocusedElement() is Control and not TopLevel)
+            {
+                return;
+            }
+
+            for (var scope = lost.GetVisualParent() as Control; scope is not null; scope = scope.GetVisualParent() as Control)
+            {
+                if (!scope.IsEffectivelyVisible || scope.GetVisualRoot() is null)
+                {
+                    continue;
+                }
+
+                if (KeyboardNavigationHandler.GetNext(scope, NavigationDirection.Next) is { } next)
+                {
+                    next.Focus(NavigationMethod.Directional);
+                    return;
+                }
+            }
+        });
     }
 
     private static bool IsTelevision()
@@ -299,8 +399,8 @@ internal sealed partial class MobileSelectHost : UserControl
         return false;
     }
 
-    // Whether a real document picker is installed: Android TV images ship only a stub that toasts and returns.
-    private static bool HasDocumentPicker()
+    // Whether a real activity handles the intent: Android TV images ship only a stub that toasts and returns.
+    private static bool HasHandler(string action)
     {
         var manager = global::Android.App.Application.Context.PackageManager;
         if (manager is null)
@@ -308,7 +408,7 @@ internal sealed partial class MobileSelectHost : UserControl
             return false;
         }
 
-        var intent = new global::Android.Content.Intent(global::Android.Content.Intent.ActionOpenDocument);
+        var intent = new global::Android.Content.Intent(action);
         intent.AddCategory(global::Android.Content.Intent.CategoryOpenable);
         intent.SetType("*/*");
         return manager.QueryIntentActivities(intent, global::Android.Content.PM.PackageInfoFlags.MetaData)

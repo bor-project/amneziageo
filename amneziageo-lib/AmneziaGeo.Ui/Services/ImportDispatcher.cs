@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Text;
-using Avalonia.Media.Imaging;
 
 namespace AmneziaGeo.Ui.Services;
 
@@ -107,8 +106,7 @@ internal static class ImportDispatcher
         try
         {
             using var stream = new MemoryStream(raw);
-            using var bitmap = new Bitmap(stream);
-            var text = QrCodec.Decode(bitmap);
+            var text = QrCodec.Decode(stream);
             return text is null ? null : VpnLinkCodec.TryDecodeQr(text);
         }
         catch (Exception)

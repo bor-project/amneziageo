@@ -15,6 +15,14 @@
     <RuntimeIdentifiers Condition="'$(AndroidRuntimeIdentifiers)' != ''">$(AndroidRuntimeIdentifiers)</RuntimeIdentifiers>
   </PropertyGroup>
 
+  <!-- Compiles every assembly ahead of time: the stock profile covers none of the Avalonia startup path, and
+       a TV box spends about twenty seconds jitting it. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <AndroidStripILAfterAOT>true</AndroidStripILAfterAOT>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.17" />
     <PackageReference Include="Avalonia.Android" Version="11.3.17" />

@@ -309,6 +309,16 @@
         </Template>
       </Setter>
     </Style>
+    <!-- Switch: the ring is drawn on the template focus target, which carries a 12px spacer column for the
+         (empty) on/off labels and a 1px band above and below the knob. The margin trims it onto the knob. -->
+    <Style Selector="ToggleSwitch:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="3" CornerRadius="10"
+                  Margin="0,1,12,1" />
+        </Template>
+      </Setter>
+    </Style>
 
     <!-- Connection controls already express unavailable/disconnected state through their own colours. -->
     <Style Selector="Button.powerbig:disabled, Button.powerctl:disabled">
@@ -447,6 +457,12 @@
     </Style>
     <Style Selector="ToggleSwitch:disabled">
       <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
+    <!-- Drop the WinUI-inherited 120px MinWidth: the focus ring is drawn on the control bounds, and a short
+         label left it framing empty space next to the box. -->
+    <Style Selector="CheckBox">
+      <Setter Property="MinWidth" Value="0" />
     </Style>
 
     <!-- Checkbox flags follow the same interaction rule while preserving checked/unchecked semantics. -->

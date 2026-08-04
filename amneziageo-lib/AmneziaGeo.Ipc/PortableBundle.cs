@@ -1,12 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Ipc;
 
 /// <summary>
 /// Selective snapshot of configs, routing lists, profiles. Configs carry keys in clear; only rule tokens travel.
 /// </summary>
-internal static class PortableBundle
+public static class PortableBundle
 {
     /// <summary>
     /// Marker stored in every bundle so import can reject unrelated JSON.
@@ -90,5 +90,33 @@ internal static class PortableBundle
     public static Bundle? Deserialize(string json)
     {
         return JsonSerializer.Deserialize<Bundle>(json, _options);
+    }
+
+    /// <summary>
+    /// Picks a name not yet taken, appending a counter on collision.
+    /// </summary>
+    public static string FreeName(string desired, HashSet<string> taken, string fallback)
+    {
+        var baseName = desired.Trim();
+        if (baseName.Length == 0)
+        {
+            baseName = fallback;
+        }
+
+        if (!taken.Contains(baseName))
+        {
+            return baseName;
+        }
+
+        for (var i = 2; i < 10000; i++)
+        {
+            var candidate = $"{baseName} ({i})";
+            if (!taken.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return $"{baseName} ({Guid.NewGuid():N})";
     }
 }

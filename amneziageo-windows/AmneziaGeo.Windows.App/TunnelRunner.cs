@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Routing;
 using AmneziaGeo.Windows.Engine;
 using Microsoft.Extensions.Logging;
 
@@ -390,7 +391,7 @@ internal sealed class TunnelRunner(
             WgConfigEditor.GetPeerPublicKey(config),
             () => underlayProbe is null ? (null, 0u) : RouteManager.UnderlayHop(underlayProbe),
             killSwitch);
-        var routing = new RoutingCache(applier, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>());
+        var routing = new RoutingCache(applier, new TcpTableProbe(), geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>());
         session.SetCache(routing);
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
         // announced the same way instead of being polled for.

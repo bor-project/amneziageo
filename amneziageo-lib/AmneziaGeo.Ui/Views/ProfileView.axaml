@@ -15,7 +15,10 @@
          to its own row when the pane is too narrow (or compact). The caption floats above the combo. -->
     <Grid x:Name="HeaderGrid" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" Margin="0,12,0,0">
       <!-- Section menu: Settings / Import / Export. -->
+      <!-- The catalogue CTA sits centred far to the right, so directional focus picks the left rail instead;
+           naming it as the down target keeps the only button on the screen reachable from the remote. -->
       <controls:SegmentedSelector x:Name="HeaderTabs" Grid.Row="0" Grid.Column="0"
+                            XYFocus.Down="{Binding #AddProfileCta}"
                             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
                             Command="{Binding SelectProfileSectionCommand}" IsCompact="{Binding IsCompact}"
                             Item1Text="{l:Tr Main_SettingsTab}" Item1Param="profile" Item1Active="{Binding SegProfileActive}"
@@ -86,7 +89,7 @@
            что «Новый»), в том же месте и стиле, что и CTA добавления конфигурации. -->
       <StackPanel IsVisible="{Binding ShowAddProfileCta}" HorizontalAlignment="Center" Spacing="10"
                   Margin="0,24,0,8" MaxWidth="360">
-        <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
+        <Button x:Name="AddProfileCta" Classes="accent" HorizontalAlignment="Center" Padding="20,7"
                 Command="{Binding CreateProfileCommand}">
           <StackPanel Orientation="Horizontal" Spacing="4">
             <TextBlock Text="+" />

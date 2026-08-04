@@ -32,7 +32,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly SqliteStateStore _store;
     private readonly GeoConfigurator _geo;
     private readonly GeoFileUpdater _geoUpdater;
-    private readonly GeoDomainRouteResolver _domainResolver = new();
     private readonly AndroidAgentLog _log;
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
@@ -93,6 +92,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         Load();
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
+        GeoVpnService.Trace = line => _log.Route(line);
         GeoVpnService.StateChanged += OnVpnStateChanged;
         Connected?.Invoke();
         PushSnapshot();
@@ -252,6 +252,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpGetCacheEntries:
                 return await GetCacheEntriesAsync();
 
+            case IpcContract.OpExportBundle:
+                return await ExportBundleAsync(args);
+
+            case IpcContract.OpImportBundle:
+                return await ImportBundleAsync(args);
+
             default:
                 return new IpcAck(false, Loc.Instance.Get("Android_EngineNotReady"));
         }
@@ -262,7 +268,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (desired == "disconnect")
         {
             _log.Info("agent", "disconnect requested");
-            StartService(GeoVpnService.ActionDisconnect, null, null, null, null, null, null, foreground: false);
+            StartService(GeoVpnService.ActionDisconnect, null, null, null, null, null, foreground: false);
             return Ok();
         }
 
@@ -286,10 +292,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         _connectFailed = false;
         var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(_selectedTarget);
-        var routes = await ResolveGeoRoutesAsync(_selectedTarget);
-        _log.Info("agent", $"connect requested: target '{_selectedTarget}', app-split {appMode}, {routes?.Length ?? 0} routes");
+        GeoVpnService.Plan = await BuildPlanAsync(_selectedTarget).ConfigureAwait(false);
+        _log.Info("agent", $"connect requested: target '{_selectedTarget}', app-split {appMode}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
-            appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs, routes,
+            appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
             _transports.GetValueOrDefault(configName), foreground: true);
         return Ok();
     }
@@ -306,7 +312,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return activity is not null && await activity.RequestVpnPermissionAsync(prepare);
     }
 
-    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, string[]? routes, ConfigTransport? transport, bool foreground)
+    private static void StartService(string action, string? config, string? name, string? appMode, string[]? appPkgs, ConfigTransport? transport, bool foreground)
     {
         var context = Application.Context;
         var intent = new Intent(context, typeof(GeoVpnService));
@@ -325,11 +331,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             intent.PutExtra(GeoVpnService.ExtraAppMode, appMode);
             intent.PutExtra(GeoVpnService.ExtraAppList, appPkgs);
-        }
-
-        if (routes is { Length: > 0 })
-        {
-            intent.PutExtra(GeoVpnService.ExtraRoutes, routes);
         }
 
         if (transport is not null)
@@ -821,6 +822,365 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
+    // Export selection from OpExportBundle's arg0 json; all arrays optional. RoutingRules maps a routing list
+    // name to the rule tokens to keep; an absent list keeps all its rules.
+    private sealed record BundleSelection(
+        string[]? Profiles,
+        string[]? Configs,
+        string[]? RoutingLists,
+        Dictionary<string, string[]>? RoutingRules);
+
+    // Packs the picked configs, routing lists and profiles into a portable bundle.
+    private async Task<IpcAck> ExportBundleAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return Fail();
+        }
+
+        var selection = ParseSelection(args[0]);
+        if (selection is null)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_ExportSelectionParseFailed"));
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+
+        var configNames = new HashSet<string>(selection.Configs ?? [], StringComparer.Ordinal);
+        var routingNames = new HashSet<string>(selection.RoutingLists ?? [], StringComparer.Ordinal);
+        var profileNames = new HashSet<string>(selection.Profiles ?? [], StringComparer.Ordinal);
+
+        // Профиль тянет за собой свою конфигурацию и свой список маршрутизации.
+        foreach (var profile in profileNames)
+        {
+            if (_profiles.TryGetValue(profile, out var boundConfig) && boundConfig.Length > 0)
+            {
+                configNames.Add(boundConfig);
+            }
+
+            if (_routing.TryGetValue(profile, out var raw)
+                && ParseRouting(raw).ListId is { } boundId
+                && await _store.GetRoutingListAsync(boundId).ConfigureAwait(false) is { } boundList)
+            {
+                routingNames.Add(boundList.Name);
+            }
+        }
+
+        if (configNames.Count == 0 && routingNames.Count == 0 && profileNames.Count == 0)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NothingSelectedForExport"));
+        }
+
+        var configBlocks = new List<PortableBundle.ConfigBlock>();
+        foreach (var name in configNames)
+        {
+            if (!_configs.TryGetValue(name, out var text))
+            {
+                continue;
+            }
+
+            var transport = await _store.GetConfigTransportAsync(name).ConfigureAwait(false);
+            configBlocks.Add(new PortableBundle.ConfigBlock(
+                name,
+                text,
+                transport is null
+                    ? null
+                    : new PortableBundle.TransportBlock(
+                        transport.UseWebSocket,
+                        transport.WebSocketHost,
+                        transport.WebSocketPort,
+                        transport.Mtu,
+                        transport.UseIpv6),
+                null));
+        }
+
+        var routingBlocks = new List<PortableBundle.RoutingBlock>();
+        if (routingNames.Count > 0)
+        {
+            var all = await _store.ListRoutingListsAsync().ConfigureAwait(false);
+            foreach (var name in routingNames)
+            {
+                var list = all.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.Ordinal));
+                if (list is null)
+                {
+                    continue;
+                }
+
+                // Role-tagged tokens: bare ones would re-import every rule as Proxy.
+                var rules = list.Rules.Select(GeoConfigurator.FormatWithRole).ToList();
+                if (selection.RoutingRules is not null && selection.RoutingRules.TryGetValue(name, out var kept))
+                {
+                    var keep = new HashSet<string>(kept, StringComparer.Ordinal);
+                    rules = rules.Where(keep.Contains).ToList();
+                }
+
+                var settings = await _store.GetRoutingSettingsAsync(list.Id).ConfigureAwait(false);
+                routingBlocks.Add(new PortableBundle.RoutingBlock(
+                    name,
+                    rules,
+                    settings is null ? null : new PortableBundle.RoutingSettingsBlock(settings.Exclusions, settings.AllUdp)));
+            }
+        }
+
+        var profileBlocks = new List<PortableBundle.ProfileBlock>();
+        foreach (var name in profileNames)
+        {
+            // Профиль без конфигурации не экспортируется.
+            if (!_profiles.TryGetValue(name, out var config) || config.Length == 0)
+            {
+                continue;
+            }
+
+            var routingName = default(string);
+            var useRouting = false;
+            if (_routing.TryGetValue(name, out var raw))
+            {
+                var parsed = ParseRouting(raw);
+                useRouting = parsed.UseRouting;
+                if (parsed.ListId is { } id && await _store.GetRoutingListAsync(id).ConfigureAwait(false) is { } list)
+                {
+                    routingName = list.Name;
+                }
+            }
+
+            profileBlocks.Add(new PortableBundle.ProfileBlock(name, config, routingName, useRouting));
+        }
+
+        var bundle = new PortableBundle.Bundle(
+            PortableBundle.FormatTag,
+            PortableBundle.CurrentVersion,
+            configBlocks,
+            routingBlocks,
+            profileBlocks);
+        _log.Info("agent", $"exported bundle: {configBlocks.Count} configs, {routingBlocks.Count} routing lists, {profileBlocks.Count} profiles");
+        return new IpcAck(true, PortableBundle.Serialize(bundle));
+    }
+
+    // Recreates the bundle's configs, routing lists and profiles; policy picks what to do on a name clash.
+    private async Task<IpcAck> ImportBundleAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return Fail();
+        }
+
+        var policy = args.Count > 1 ? args[1] : "new";
+
+        PortableBundle.Bundle? bundle;
+        try
+        {
+            bundle = PortableBundle.Deserialize(args[0]);
+        }
+        catch (JsonException ex)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_BundleParseFailed", ex.Message));
+        }
+
+        if (bundle is null || !string.Equals(bundle.Format, PortableBundle.FormatTag, StringComparison.Ordinal))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NotAnAmneziaGeoFile"));
+        }
+
+        if (bundle.Version > PortableBundle.CurrentVersion)
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_BundleTooNew", bundle.Version));
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        try
+        {
+            await EnsureGeoFilesAsync().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+        }
+
+        var existingLists = (await _store.ListRoutingListsAsync().ConfigureAwait(false))
+            .GroupBy(l => l.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var configNames = new HashSet<string>(_configs.Keys, StringComparer.Ordinal);
+        var profileNames = new HashSet<string>(_profiles.Keys, StringComparer.Ordinal);
+        var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
+
+        var configMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var routingMap = new Dictionary<string, long>(StringComparer.Ordinal);
+        var renames = new List<string>();
+
+        foreach (var block in bundle.Configs)
+        {
+            if (_configs.ContainsKey(block.Name) && policy != "new")
+            {
+                if (policy != "skip")
+                {
+                    _configs[block.Name] = block.ConfigText;
+                    await ApplyTransportAsync(block.Name, block.Transport).ConfigureAwait(false);
+                }
+
+                configMap[block.Name] = block.Name;
+                continue;
+            }
+
+            var finalName = PortableBundle.FreeName(block.Name, configNames, "Конфигурация");
+            configNames.Add(finalName);
+            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
+            {
+                renames.Add($"«{block.Name}» → «{finalName}»");
+            }
+
+            _configs[finalName] = block.ConfigText;
+            await ApplyTransportAsync(finalName, block.Transport).ConfigureAwait(false);
+            configMap[block.Name] = finalName;
+        }
+
+        foreach (var block in bundle.RoutingLists)
+        {
+            if (existingLists.TryGetValue(block.Name, out var existing) && policy != "new")
+            {
+                if (policy != "skip")
+                {
+                    var merged = policy == "merge"
+                        ? existing.Rules.Select(GeoConfigurator.FormatWithRole).Concat(block.Rules).Distinct(StringComparer.Ordinal).ToList()
+                        : block.Rules.ToList();
+                    await _geo.ApplyToRoutingListAsync(existing.Id, existing.Name, merged).ConfigureAwait(false);
+                    await ApplyRoutingSettingsAsync(existing.Id, block.Settings).ConfigureAwait(false);
+                }
+
+                routingMap[block.Name] = existing.Id;
+                continue;
+            }
+
+            var finalName = PortableBundle.FreeName(block.Name, listNames, "Список");
+            listNames.Add(finalName);
+            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
+            {
+                renames.Add($"«{block.Name}» → «{finalName}»");
+            }
+
+            var newId = await _geo.ApplyToRoutingListAsync(0, finalName, block.Rules).ConfigureAwait(false);
+            await ApplyRoutingSettingsAsync(newId, block.Settings).ConfigureAwait(false);
+            routingMap[block.Name] = newId;
+        }
+
+        var importedProfiles = 0;
+        foreach (var block in bundle.Profiles)
+        {
+            var config = block.Config is not null && configMap.TryGetValue(block.Config, out var mapped)
+                ? mapped
+                : string.Empty;
+
+            // Профиль без конфигурации пропускается.
+            if (config.Length == 0)
+            {
+                continue;
+            }
+
+            var routingId = block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rid)
+                ? rid
+                : default(long?);
+            importedProfiles++;
+
+            if (_profiles.ContainsKey(block.Name) && policy != "new")
+            {
+                if (policy != "skip")
+                {
+                    _profiles[block.Name] = config;
+                    BindRouting(block.Name, routingId, block.UseRouting);
+                }
+
+                continue;
+            }
+
+            var finalName = PortableBundle.FreeName(block.Name, profileNames, "Профиль");
+            profileNames.Add(finalName);
+            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
+            {
+                renames.Add($"«{block.Name}» → «{finalName}»");
+            }
+
+            _profiles[finalName] = config;
+            BindRouting(finalName, routingId, block.UseRouting);
+        }
+
+        Save();
+        await RefreshRoutingSummariesAsync().ConfigureAwait(false);
+        PushSnapshot();
+        _log.Info("agent", $"imported bundle: {bundle.Configs.Count} configs, {bundle.RoutingLists.Count} routing lists, {importedProfiles} profiles");
+
+        if (renames.Count == 0)
+        {
+            return new IpcAck(true, IpcMessage.Key(
+                "Agent_BundleImported",
+                bundle.Configs.Count,
+                bundle.RoutingLists.Count,
+                importedProfiles));
+        }
+
+        if (renames.Count <= 5)
+        {
+            return new IpcAck(true, IpcMessage.Key(
+                "Agent_BundleImportedRenamed",
+                bundle.Configs.Count,
+                bundle.RoutingLists.Count,
+                importedProfiles,
+                string.Join(", ", renames)));
+        }
+
+        return new IpcAck(true, IpcMessage.Key(
+            "Agent_BundleImportedRenamedMany",
+            bundle.Configs.Count,
+            bundle.RoutingLists.Count,
+            importedProfiles));
+    }
+
+    private static BundleSelection? ParseSelection(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<BundleSelection>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    // Stores the bundle's transport for a config; the websocket carrier stays off on Android.
+    private async Task ApplyTransportAsync(string config, PortableBundle.TransportBlock? transport)
+    {
+        if (transport is null)
+        {
+            return;
+        }
+
+        await _store.SetConfigTransportAsync(
+            new ConfigTransport(config, false, transport.Host, transport.Port, transport.Mtu, transport.UseIpv6)).ConfigureAwait(false);
+    }
+
+    private async Task ApplyRoutingSettingsAsync(long listId, PortableBundle.RoutingSettingsBlock? settings)
+    {
+        if (settings is null)
+        {
+            return;
+        }
+
+        await _store.SetRoutingSettingsAsync(
+            new RoutingSettings(listId, settings.Exclusions, settings.AllUdp, "split")).ConfigureAwait(false);
+    }
+
+    // Points a profile at a routing list, or clears the binding.
+    private void BindRouting(string profile, long? listId, bool useRouting)
+    {
+        if (listId is null)
+        {
+            _routing.Remove(profile);
+            return;
+        }
+
+        _routing[profile] = $"{listId.Value.ToString(CultureInfo.InvariantCulture)}|{(useRouting ? "1" : "0")}";
+    }
+
     // Stores a config's tunnel MTU and IPv6 opt-in; both reach the tunnel builder on the next connect. The
     // websocket carrier has no Android engine behind it and is refused rather than saved as a dead setting.
     private async Task<IpcAck> SetWebSocketAsync(IReadOnlyList<string> args)
@@ -907,68 +1267,79 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
-    // The materialized proxy CIDRs the tunnel should route for the profile's assigned list, or null for full tunnel.
-    private async Task<string[]?> ResolveGeoRoutesAsync(string? profile)
+    // The rules the session routes by. Addresses stay ranges and names stay names: a name resolved to a fresh
+    // address keeps its verdict, which a set of host routes fixed at connect never could.
+    private async Task<GeoRoutingPlan> BuildPlanAsync(string? profile)
     {
         if (profile is null || !_routing.TryGetValue(profile, out var raw))
         {
-            return null;
+            return GeoRoutingPlan.Full;
         }
 
         var (listId, useRouting) = ParseRouting(raw);
         if (!useRouting || listId is null)
         {
-            return null;
+            return GeoRoutingPlan.Full;
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var settings = await _store.GetRoutingSettingsAsync(listId.Value).ConfigureAwait(false);
-        if (settings is { UseGlobalProxy: true })
-        {
-            return null;
-        }
-
         var list = await _store.GetRoutingListAsync(listId.Value).ConfigureAwait(false);
         if (list is null)
         {
-            return null;
+            return GeoRoutingPlan.Full;
         }
 
-        var routes = new List<string>(list.Routes);
-        if (list.Domains is { Count: > 0 })
+        var settings = await _store.GetRoutingSettingsAsync(listId.Value).ConfigureAwait(false);
+        var directRoutes = new List<string>(list.DirectRoutes);
+        var directDomains = new List<GeoDomain>(list.DirectDomains);
+        SplitExclusions(settings?.Exclusions, directRoutes, directDomains);
+
+        var plan = new GeoRoutingPlan(
+            list.Routes,
+            directRoutes,
+            list.BlockRoutes,
+            list.Domains,
+            directDomains,
+            list.BlockDomains,
+            settings is { UseGlobalProxy: true },
+            settings is { AllUdp: true });
+
+        // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
+        if (!plan.HasRules)
         {
-            routes.AddRange(await ResolveDomainRoutesAsync(list.Domains).ConfigureAwait(false));
+            _log.Warn("geo", $"routing '{profile}': the list decides nothing, running the full tunnel instead");
+            return GeoRoutingPlan.Full;
         }
 
-        if (routes.Count == 0)
-        {
-            return null;
-        }
-
-        var final = routes.Distinct(StringComparer.Ordinal).ToArray();
-        _log.Info("geo", $"routing '{profile}': {final.Length} routes ({list.Routes.Count} geoip + {list.Domains?.Count ?? 0} geosite domains)");
-        foreach (var route in final)
-        {
-            _log.Route(route);
-        }
-
-        return final;
+        _log.Info("geo", $"routing '{profile}': {plan.ProxyRoutes.Count}/{plan.DirectRoutes.Count}/{plan.BlockRoutes.Count} ranges, "
+            + $"{plan.ProxyDomains.Count}/{plan.DirectDomains.Count}/{plan.BlockDomains.Count} names, "
+            + (plan.FullTunnel ? "full tunnel" : "split")
+            + (plan.AllUdp ? ", all udp tunneled" : string.Empty));
+        return plan;
     }
 
-    // Resolves the proxy bucket's geosite domains to host routes so the IP-only tunnel carries them; bounded so connect stays responsive.
-    private async Task<IReadOnlyList<string>> ResolveDomainRoutesAsync(IReadOnlyList<GeoDomain> domains)
+    // Splits the free-text exclusions into what the router classifies: an address becomes a direct range, anything
+    // else a direct name.
+    private static void SplitExclusions(string? text, List<string> routes, List<GeoDomain> domains)
     {
-        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        try
+        if (string.IsNullOrWhiteSpace(text))
         {
-            var routes = await _domainResolver.ResolveAsync(domains, budget.Token).ConfigureAwait(false);
-            _log.Info("geo", $"geosite resolve: {domains.Count} domains -> {routes.Count} routes");
-            return routes;
+            return;
         }
-        catch (Exception ex)
+
+        var separators = new[] { ',', ';', '\n', '\r', ' ', '\t' };
+        foreach (var token in text.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            _log.Warn("geo", "geosite resolve failed: " + ex);
-            return [];
+            var slash = token.IndexOf('/');
+            var head = slash < 0 ? token : token[..slash];
+            if (System.Net.IPAddress.TryParse(head, out _))
+            {
+                routes.Add(token);
+            }
+            else
+            {
+                domains.Add(new GeoDomain(GeoDomainKind.Domain, token));
+            }
         }
     }
 
@@ -1325,7 +1696,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         report.Append("  geosite domains: ").Append(summary?.DomainCount ?? 0).Append('\n');
     }
 
-    // Returns the target routing list's routes and geosite domains as cache rows for the diagnostics config pane.
+    // Returns the routing list's own rules; on Android a verdict lives in the tun's route table, not in a cache.
     private async Task<IpcAck> GetCacheEntriesAsync()
     {
         await EnsureInitAsync().ConfigureAwait(false);
@@ -1355,6 +1726,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
         }
 
+        return Rows(rows);
+    }
+
+    private static IpcAck Rows(List<object> rows)
+    {
         const int cap = 1000;
         var total = rows.Count;
         var capped = total > cap;

@@ -1,12 +1,12 @@
 using System.Net;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Routing;
 
 /// <summary>
 /// The system calls a routing verdict needs. Separated from the cache so the cache's own logic - precedence, idle
 /// reclaim, limits - is testable without a tunnel.
 /// </summary>
-internal interface IRouteApplier
+public interface IRouteApplier
 {
     /// <summary>
     /// Filter-set generation; 0 when no kill-switch is armed, so entries never look stale.

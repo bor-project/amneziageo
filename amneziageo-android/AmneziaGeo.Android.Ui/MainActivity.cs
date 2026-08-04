@@ -1,6 +1,7 @@
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
+using Avalonia;
 using Avalonia.Android;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
@@ -8,7 +9,8 @@ using AndroidX.Core.Content;
 namespace AmneziaGeo.Android.Ui;
 
 /// <summary>
-/// Launcher activity hosting the Avalonia app; also brokers the VpnService consent and camera-permission dialogs.
+/// Launcher activity hosting the Avalonia app; also brokers the VpnService consent and the camera and
+/// storage permission dialogs.
 /// </summary>
 [Activity(
     Label = "AmneziaGeo",
@@ -22,8 +24,10 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
 {
     private const int VpnRequestCode = 0x7A11;
     private const int CameraRequestCode = 0x7A12;
+    private const int StorageRequestCode = 0x7A13;
     private static TaskCompletionSource<bool>? _vpnPermission;
     private static TaskCompletionSource<bool>? _cameraPermission;
+    private static TaskCompletionSource<bool>? _storagePermission;
 
     /// <summary>
     /// Raised when the activity comes back to the foreground; screens that sent the user to system settings
@@ -35,6 +39,55 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     /// The foreground activity, used to launch the VpnService consent dialog.
     /// </summary>
     public static MainActivity? Current { get; private set; }
+
+    /// <summary>
+    /// Picks the drawing path, overridable by a `render` file holding software or vulkan next to the app data:
+    /// the Mali blobs in TV boxes leave stale pixels on screen, and only the device shows which path draws right.
+    /// </summary>
+    protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
+    {
+        return base.CustomizeAppBuilder(builder)
+            .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() });
+    }
+
+    private static IReadOnlyList<AndroidRenderingMode> RenderingModes()
+    {
+        var requested = ReadRenderOverride();
+        if (string.Equals(requested, "software", StringComparison.OrdinalIgnoreCase))
+        {
+            return [AndroidRenderingMode.Software];
+        }
+
+        if (string.Equals(requested, "vulkan", StringComparison.OrdinalIgnoreCase))
+        {
+            return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+        }
+
+        return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+    }
+
+    private static string ReadRenderOverride()
+    {
+        try
+        {
+            var folder = global::Android.App.Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
+            if (folder is null)
+            {
+                return string.Empty;
+            }
+
+            var path = Path.Combine(folder, "render");
+            return File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+        }
+        catch (IOException)
+        {
+            return string.Empty;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
+    }
 
     /// <summary>
     /// Launches the VpnService consent dialog and completes when the user answers.
@@ -60,6 +113,25 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         var tcs = new TaskCompletionSource<bool>();
         _cameraPermission = tcs;
         RunOnUiThread(() => ActivityCompat.RequestPermissions(this, [global::Android.Manifest.Permission.Camera], CameraRequestCode));
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Requests read access to shared storage and completes with whether it was granted.
+    /// </summary>
+    public Task<bool> RequestStoragePermissionAsync()
+    {
+        if (ContextCompat.CheckSelfPermission(this, global::Android.Manifest.Permission.ReadExternalStorage) == Permission.Granted)
+        {
+            return Task.FromResult(true);
+        }
+
+        var tcs = new TaskCompletionSource<bool>();
+        _storagePermission = tcs;
+        RunOnUiThread(() => ActivityCompat.RequestPermissions(
+            this,
+            [global::Android.Manifest.Permission.ReadExternalStorage, global::Android.Manifest.Permission.WriteExternalStorage],
+            StorageRequestCode));
         return tcs.Task;
     }
 
@@ -90,6 +162,12 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         {
             _cameraPermission?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
             _cameraPermission = null;
+        }
+
+        if (requestCode == StorageRequestCode)
+        {
+            _storagePermission?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
+            _storagePermission = null;
         }
     }
 }

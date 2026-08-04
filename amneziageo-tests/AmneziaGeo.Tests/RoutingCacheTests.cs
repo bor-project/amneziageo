@@ -1,5 +1,5 @@
 using System.Net;
-using AmneziaGeo.Windows.App;
+using AmneziaGeo.Routing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -109,9 +109,15 @@ public sealed class RoutingCacheTests
         }
     }
 
+    // The tests drive Sweep directly, so nothing is ever live.
+    private sealed class IdleLive : ILiveDestinations
+    {
+        public HashSet<uint> Snapshot() => [];
+    }
+
     private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300)
     {
-        return new RoutingCache(applier, split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance);
+        return new RoutingCache(applier, new IdleLive(), split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance);
     }
 
     private static uint Numeric(string address)

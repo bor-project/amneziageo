@@ -12,7 +12,7 @@
 #>
 param(
     [ValidateSet('arm64-v8a', 'x86_64', 'armeabi-v7a', 'x86')]
-    [string[]]$Abi = @('arm64-v8a', 'x86_64'),
+    [string[]]$Abi = @('arm64-v8a', 'armeabi-v7a', 'x86_64'),
     [int]$ApiLevel = 24,
     [string]$NdkRoot
 )

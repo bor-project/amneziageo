@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
@@ -27,23 +28,12 @@ internal sealed partial class LogsView : UserControl
             return;
         }
 
-        if (TopLevel.GetTopLevel(this) is not { } top)
-        {
-            return;
-        }
-
-        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            SuggestedFileName = vm.SelectedLogType + ".log",
-            DefaultExtension = "log",
-            FileTypeChoices = [new FilePickerFileType("Log") { Patterns = ["*.log", "*.txt"] }],
-        });
-        if (file is null)
-        {
-            return;
-        }
-
-        var path = file.TryGetLocalPath();
+        var path = await ExportActions.PickSavePathAsync(
+            this,
+            string.Empty,
+            vm.SelectedLogType + ".log",
+            "log",
+            "Log");
         if (string.IsNullOrEmpty(path))
         {
             return;

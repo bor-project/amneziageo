@@ -10,6 +10,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AmneziaGeo.Localization;
 using Button = Avalonia.Controls.Button;
 
@@ -28,12 +29,16 @@ internal sealed class FileBrowserOverlay
     private readonly TextBlock _location;
     private readonly Border _overlay;
     private readonly List<Control> _suspended = [];
+    private readonly string? _saveName;
+    private readonly Control? _caller;
     private string? _folder;
 
-    private FileBrowserOverlay(Panel host, string title, IReadOnlyList<string> extensions)
+    private FileBrowserOverlay(Panel host, string title, IReadOnlyList<string> extensions, string? saveName)
     {
         _host = host;
         _extensions = extensions.Select(ext => "." + ext.TrimStart('.')).ToArray();
+        _saveName = saveName;
+        _caller = TopLevel.GetTopLevel(host)?.FocusManager?.GetFocusedElement() as Control;
 
         var caption = new TextBlock { Text = title, FontWeight = FontWeight.SemiBold, FontSize = 16 };
         _location = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 8) };
@@ -86,7 +91,18 @@ internal sealed class FileBrowserOverlay
     public static Task<string?> ShowAsync(Panel host, string title, IReadOnlyList<string> extensions)
     {
         Current?.Finish(null);
-        var browser = new FileBrowserOverlay(host, title, extensions);
+        var browser = new FileBrowserOverlay(host, title, extensions, null);
+        Current = browser;
+        return browser._result.Task;
+    }
+
+    /// <summary>
+    /// Shows the browser as a save picker and completes with the chosen full path or null.
+    /// </summary>
+    public static Task<string?> SaveAsync(Panel host, string title, string suggestedName)
+    {
+        Current?.Finish(null);
+        var browser = new FileBrowserOverlay(host, title, [], suggestedName);
         Current = browser;
         return browser._result.Task;
     }
@@ -112,11 +128,19 @@ internal sealed class FileBrowserOverlay
 
         if (_folder is null)
         {
-            _location.Text = Loc.Instance.Get("FileBrowser_ScopedHint");
+            _location.Text = Loc.Instance.Get("FileBrowser_ScopedHint") + "\n" + AppFolderHint();
             _location.IsVisible = !HasAllFiles();
-            if (!HasAllFiles() && AllFilesIntent() is { } grant)
+            if (!HasAllFiles())
             {
-                _list.Children.Add(Row(Loc.Instance.Get("FileBrowser_AllFilesAccess"), null, () => Launch(grant)));
+                if (AllFilesIntent() is { } grant)
+                {
+                    _list.Children.Add(Row(Loc.Instance.Get("FileBrowser_AllFilesAccess"), null, () => Launch(grant)));
+                }
+                else if (!HasReadAccess())
+                {
+                    // TV boxes ship no all-files screen even on API 30+, so the read permission is all that is left to ask for.
+                    _list.Children.Add(Row(Loc.Instance.Get("FileBrowser_AllFilesAccess"), null, RequestReadAccess));
+                }
             }
 
             foreach (var (label, path) in Roots())
@@ -130,6 +154,14 @@ internal sealed class FileBrowserOverlay
             _location.IsVisible = true;
             _list.Children.Add(Row("..", null, Back));
 
+            if (_saveName is not null)
+            {
+                _list.Children.Add(Row(
+                    Loc.Instance.Get("Main_SaveButton") + ": " + _saveName,
+                    _folder,
+                    () => SaveHere(_folder)));
+            }
+
             var (folders, files) = Read(_folder, _extensions);
             foreach (var folder in folders)
             {
@@ -141,7 +173,7 @@ internal sealed class FileBrowserOverlay
                 _list.Children.Add(Row(Path.GetFileName(file), null, () => Finish(file)));
             }
 
-            if (folders.Length == 0 && files.Length == 0)
+            if (_saveName is null && folders.Length == 0 && files.Length == 0)
             {
                 var empty = new TextBlock { Text = Loc.Instance.Get("FileBrowser_Empty"), Margin = new Thickness(4, 10, 0, 0) };
                 empty.Classes.Add("muted");
@@ -185,6 +217,27 @@ internal sealed class FileBrowserOverlay
         Populate();
     }
 
+    // Hands back the target path, but only after proving this folder really takes a write: shared storage
+    // often refuses, and a caller has no way to tell a refusal from a cancel.
+    private void SaveHere(string folder)
+    {
+        var path = Path.Combine(folder, _saveName!);
+        try
+        {
+            using (File.Create(path))
+            {
+            }
+        }
+        catch (Exception ex)
+        {
+            _location.Text = ex.Message;
+            _location.IsVisible = true;
+            return;
+        }
+
+        Finish(path);
+    }
+
     private static Button Row(string label, string? detail, Action activate)
     {
         var caption = new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -215,19 +268,40 @@ internal sealed class FileBrowserOverlay
 
         Add(roots, context.FilesDir?.AbsolutePath, Loc.Instance.Get("FileBrowser_AppInternal"));
 
-        // Shared folders list nothing without all-files access: scoped storage hides every file the app does not own.
-        if (HasAllFiles())
-        {
-            Add(roots, global::Android.OS.Environment.ExternalStorageDirectory?.AbsolutePath, Loc.Instance.Get("FileBrowser_SharedStorage"));
-            Add(roots, global::Android.OS.Environment
-                .GetExternalStoragePublicDirectory(global::Android.OS.Environment.DirectoryDownloads)?.AbsolutePath, "Download");
-        }
+        // Offered whatever the granted access: how much of shared storage opens up varies by release and by
+        // vendor, and Add keeps a root only when this app really lists it.
+        Add(roots, global::Android.OS.Environment.ExternalStorageDirectory?.AbsolutePath, Loc.Instance.Get("FileBrowser_SharedStorage"));
+        Add(roots, global::Android.OS.Environment
+            .GetExternalStoragePublicDirectory(global::Android.OS.Environment.DirectoryDownloads)?.AbsolutePath, "Download");
 
         return roots;
     }
 
+    // The folder to copy files into when shared storage stays closed.
+    private static string AppFolderHint()
+        => global::Android.App.Application.Context.GetExternalFilesDir(null)?.AbsolutePath ?? string.Empty;
+
     private static bool HasAllFiles()
-        => !OperatingSystem.IsAndroidVersionAtLeast(30) || global::Android.OS.Environment.IsExternalStorageManager;
+        => OperatingSystem.IsAndroidVersionAtLeast(30)
+            ? global::Android.OS.Environment.IsExternalStorageManager
+            : HasReadAccess();
+
+    private static bool HasReadAccess()
+        => global::Android.App.Application.Context.CheckSelfPermission(
+            global::Android.Manifest.Permission.ReadExternalStorage) == global::Android.Content.PM.Permission.Granted;
+
+    // Asks for read access on releases without the all-files screen, then re-reads the roots.
+    private void RequestReadAccess()
+    {
+        if (MainActivity.Current is not { } activity)
+        {
+            return;
+        }
+
+        _ = activity.RequestStoragePermissionAsync().ContinueWith(
+            _ => Dispatcher.UIThread.Post(Populate),
+            TaskScheduler.Default);
+    }
 
     // The system screen that grants all-files access, when this device has one.
     private static global::Android.Content.Intent? AllFilesIntent()
@@ -327,6 +401,12 @@ internal sealed class FileBrowserOverlay
         if (ReferenceEquals(Current, this))
         {
             Current = null;
+        }
+
+        // Hands focus back to whatever opened the browser, otherwise the remote has nothing to move from.
+        if (_caller is { IsEffectivelyVisible: true, IsEffectivelyEnabled: true } && _caller.GetVisualRoot() is not null)
+        {
+            _caller.Focus(NavigationMethod.Directional);
         }
 
         _result.TrySetResult(path);

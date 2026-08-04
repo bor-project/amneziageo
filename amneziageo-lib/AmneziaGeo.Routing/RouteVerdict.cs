@@ -1,9 +1,9 @@
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Routing;
 
 /// <summary>
 /// What a routing decision does with a destination address.
 /// </summary>
-internal enum RouteVerdict
+public enum RouteVerdict
 {
     /// <summary>
     /// In no list; follows the default route, which is the tunnel in full-tunnel mode and the physical path in split.

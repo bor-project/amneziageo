@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -902,6 +903,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             ? SectionConfigName.Trim()
             : (!string.IsNullOrWhiteSpace(imported.Name) ? imported.Name!.Trim() : DefaultConfigName(imported.ConfText, _configNames));
 
+        // The create form must never land on an existing row: the agent stores by name and would replace it.
+        if (_configNames.Contains(name, StringComparer.Ordinal))
+        {
+            SectionConfigStatus = string.Format(CultureInfo.CurrentCulture, Loc.Instance.Get("Agent_NameTaken"), name);
+            return false;
+        }
+
         _sectionConfigSaving = true;
         try
         {
@@ -970,13 +978,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         if (!string.IsNullOrWhiteSpace(imported.Name))
         {
-            SectionConfigName = imported.Name!.Trim();
+            SectionConfigName = UniqueName.ResolveParen(imported.Name!.Trim(), _configNames);
             return;
         }
 
         if (!string.IsNullOrWhiteSpace(fileName))
         {
-            SectionConfigName = fileName!.Trim();
+            SectionConfigName = UniqueName.ResolveParen(fileName!.Trim(), _configNames);
             return;
         }
 

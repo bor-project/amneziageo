@@ -8,6 +8,9 @@
   <!-- Read configs the user copied into shared storage: a TV has no document picker, and scoped storage
        hides every file the app does not own. -->
   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+  <!-- The all-files permission starts at API 30; older releases read shared storage through this one. -->
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
   <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
   <uses-feature android:name="android.software.leanback" android:required="false" />
   <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -25,8 +28,10 @@
   </queries>
   <!-- Predictive back is off: Avalonia routes the back button through OnBackPressed, which the
        gesture callback replaces from target SDK 35 on. -->
+  <!-- Opts out of scoped storage up to API 29, where READ_EXTERNAL_STORAGE alone still hides other apps' files. -->
   <application android:label="AmneziaGeo" android:icon="@mipmap/appicon" android:banner="@drawable/banner"
-               android:allowBackup="false" android:enableOnBackInvokedCallback="false">
+               android:allowBackup="false" android:enableOnBackInvokedCallback="false"
+               android:requestLegacyExternalStorage="true">
     <service android:name="org.amneziageo.android.GeoVpnService"
              android:permission="android.permission.BIND_VPN_SERVICE"
              android:exported="false"

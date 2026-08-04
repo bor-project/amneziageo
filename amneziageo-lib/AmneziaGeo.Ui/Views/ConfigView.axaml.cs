@@ -3,8 +3,8 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -52,26 +52,17 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
-        if (TopLevel.GetTopLevel(this) is not { } top)
+        var saved = await ExportActions.SaveBinaryAsync(
+            this,
+            stream => qr.Save(stream),
+            Loc.Instance.Get("QrCode_SaveTitle"),
+            vm.ConfigName + ".png",
+            "png",
+            "PNG");
+        if (saved)
         {
-            return;
+            vm.StatusMessage = Loc.Instance.Get("QrCode_Saved");
         }
-
-        var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = Loc.Instance.Get("QrCode_SaveTitle"),
-            SuggestedFileName = vm.ConfigName + ".png",
-            DefaultExtension = "png",
-            FileTypeChoices = [new FilePickerFileType("PNG") { Patterns = ["*.png"] }],
-        });
-        if (file is null)
-        {
-            return;
-        }
-
-        await using var stream = await file.OpenWriteAsync();
-        qr.Save(stream);
-        vm.StatusMessage = Loc.Instance.Get("QrCode_Saved");
     }
 
     // Standalone config-import: adds a config to the shared catalogue without a profile.
@@ -90,6 +81,13 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
+        await ReadIntoSectionConfigAsync(vm, file);
+        // A system picker drops focus on the way back; the name is what the user checks first.
+        SectionConfigNameBox.Focus(NavigationMethod.Directional);
+    }
+
+    private async Task ReadIntoSectionConfigAsync(ConfigViewModel vm, PickedFile file)
+    {
         try
         {
             // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
@@ -97,9 +95,7 @@ internal sealed partial class ConfigView : UserControl
             var raw = await ReadAllBytesAsync(file);
             if (LooksLikeImage(raw))
             {
-                using var stream = new MemoryStream(raw);
-                using var bitmap = new Bitmap(stream);
-                ApplyQrToSectionConfig(vm, bitmap);
+                ApplyQrToSectionConfig(vm, raw);
                 return;
             }
 
@@ -162,9 +158,10 @@ internal sealed partial class ConfigView : UserControl
         return false;
     }
 
-    private static void ApplyQrToSectionConfig(ConfigViewModel vm, Bitmap bitmap)
+    private static void ApplyQrToSectionConfig(ConfigViewModel vm, byte[] image)
     {
-        var text = QrCodec.Decode(bitmap);
+        using var stream = new MemoryStream(image);
+        var text = QrCodec.Decode(stream);
         if (text is null)
         {
             vm.SectionConfigStatus = Loc.Instance.Get("MainCode_QrNotFound");

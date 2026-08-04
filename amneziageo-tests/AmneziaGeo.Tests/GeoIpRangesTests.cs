@@ -1,5 +1,5 @@
 using System.Net;
-using AmneziaGeo.Windows.App;
+using AmneziaGeo.Routing;
 using Xunit;
 
 namespace AmneziaGeo.Tests;

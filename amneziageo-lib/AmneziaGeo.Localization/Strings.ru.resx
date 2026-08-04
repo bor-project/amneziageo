@@ -1692,7 +1692,7 @@
     <value>Переключить на свой</value>
   </data>
   <data name="FileBrowser_ScopedHint" xml:space="preserve">
-    <value>Android скрывает файлы, которые не принадлежат приложению. Разрешите доступ ко всем файлам или скопируйте конфигурацию в одну из папок ниже.</value>
+    <value>Android скрывает файлы, которые не принадлежат приложению. Разрешите доступ ко всем файлам или скопируйте конфигурацию в папку приложения:</value>
   </data>
   <data name="FileBrowser_AppFolder" xml:space="preserve">
     <value>Папка приложения</value>

@@ -1,12 +1,12 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Routing;
 
 /// <summary>
 /// Sorted IPv4 range set over a geo rule set; answers membership by binary search instead of materializing routes.
 /// </summary>
-internal sealed class GeoIpRanges
+public sealed class GeoIpRanges
 {
     private readonly uint[] _starts;
     private readonly uint[] _ends;
@@ -26,6 +26,20 @@ internal sealed class GeoIpRanges
     /// Range count after merging.
     /// </summary>
     public int Count => _starts.Length;
+
+    /// <summary>
+    /// Merged ranges, low to high.
+    /// </summary>
+    public IEnumerable<(uint Start, uint End)> Spans
+    {
+        get
+        {
+            for (var i = 0; i < _starts.Length; i++)
+            {
+                yield return (_starts[i], _ends[i]);
+            }
+        }
+    }
 
     /// <summary>
     /// Builds the set from CIDRs or bare addresses, merging overlapping and adjacent ranges. Non-IPv4 entries are skipped.

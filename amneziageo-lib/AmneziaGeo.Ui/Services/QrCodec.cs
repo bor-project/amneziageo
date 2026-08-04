@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -23,6 +22,27 @@ internal static class QrCodec
         using var data = generator.CreateQrCode(text, QRCodeGenerator.ECCLevel.M);
         var png = new PngByteQRCode(data).GetGraphic(pixelsPerModule);
         return new Bitmap(new MemoryStream(png));
+    }
+
+    /// <summary>
+    /// Decodes the first QR code found in an encoded image, or null if none is readable.
+    /// </summary>
+    public static string? Decode(Stream image)
+    {
+        using var source = new Bitmap(image);
+        if (source.PixelSize.Width <= 0 || source.PixelSize.Height <= 0)
+        {
+            return null;
+        }
+
+        // Redraws into a render target: a grayscale photo decodes to a format the backend refuses to read.
+        using var target = new RenderTargetBitmap(source.PixelSize);
+        using (var context = target.CreateDrawingContext())
+        {
+            context.DrawImage(source, new Rect(source.Size));
+        }
+
+        return Decode(target);
     }
 
     /// <summary>

@@ -32,3 +32,32 @@ internal static class FileBrowserHost
     public static Task<string?>? BrowseAsync(string title, IReadOnlyList<string> extensions)
         => _browser?.Invoke(title, extensions);
 }
+
+/// <summary>
+/// Picks a save target with the built-in browser and reports the full path, or null when the user backs out.
+/// </summary>
+internal delegate Task<string?> FileSaveRequest(string title, string suggestedName);
+
+/// <summary>
+/// Runtime registry of the built-in save picker. A host registers one when the platform has no working save
+/// dialog (Android TV ships a stub that silently does nothing); screens then save through it.
+/// </summary>
+internal static class FileSaverHost
+{
+    private static FileSaveRequest? _saver;
+
+    /// <summary>
+    /// Whether this platform supplies a built-in save picker.
+    /// </summary>
+    public static bool IsAvailable => _saver is not null;
+
+    /// <summary>
+    /// Registers the platform save picker.
+    /// </summary>
+    public static void Register(FileSaveRequest saver) => _saver = saver;
+
+    /// <summary>
+    /// Asks for a save path, or returns null when the platform has no built-in picker.
+    /// </summary>
+    public static Task<string?>? SaveAsync(string title, string suggestedName) => _saver?.Invoke(title, suggestedName);
+}

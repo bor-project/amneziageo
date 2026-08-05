@@ -100,6 +100,7 @@ $win       = Split-Path $instDir -Parent                         # ...\amneziage
 $appProj    = Join-Path $win 'AmneziaGeo.Windows.App\AmneziaGeo.Windows.App.csproj'
 $uiProj     = Join-Path $win 'AmneziaGeo.Windows.Ui\AmneziaGeo.Windows.Ui.csproj'
 $trayProj   = Join-Path $win 'AmneziaGeo.Windows.Tray\AmneziaGeo.Windows.Tray.csproj'
+$cliProj    = Join-Path $win 'tools\AmneziaGeo.Windows.Cli\AmneziaGeo.Windows.Cli.csproj'
 $baProj     = Join-Path $instDir 'AmneziaGeo.Windows.Installer\AmneziaGeo.Windows.Installer.csproj'
 $msiProj    = Join-Path $instDir 'AmneziaGeo.Windows.Installer.Package\AmneziaGeo.Windows.Installer.Package.wixproj'
 $bundleProj = Join-Path $bundleDir 'AmneziaGeo.Windows.Installer.Bundle.wixproj'
@@ -314,7 +315,7 @@ function Build-Variant {
         Write-Host "== clean projects (rebuild) =="
         # SDK projects: clean, then drop obj so each per-arch variant restores fresh. Switching arch between
         # variants otherwise leaves a stale project.assets.json -> spurious NETSDK1047/1032 on the next clean.
-        foreach ($p in @($appProj, $uiProj, $trayProj, $baProj)) {
+        foreach ($p in @($appProj, $uiProj, $trayProj, $cliProj, $baProj)) {
             dotnet clean $p -c $Configuration -v q -nologo 2>$null
             $objDir = Join-Path (Split-Path $p -Parent) 'obj'
             if (Test-Path $objDir) { Remove-Item -Recurse -Force $objDir -ErrorAction SilentlyContinue }
@@ -341,6 +342,11 @@ function Build-Variant {
     Write-Host "== publish tray (AmneziaGeo.Windows.Tray, $rid, NativeAOT) =="
     dotnet publish $trayProj -c $Configuration -r $rid -p:Version=$version $iconProps -o $stage
     if ($LASTEXITCODE -ne 0) { throw "Tray publish failed ($LASTEXITCODE)" }
+
+    # The console client, into the same stage: it talks to the agent over the pipe and ships beside it.
+    Write-Host "== publish console (AmneziaGeo.Windows.Cli, $rid) =="
+    dotnet publish $cliProj -c $Configuration -r $rid --self-contained $scStr -p:PublishTrimmed=false -p:PublishSingleFile=false -p:Version=$version -o $stage
+    if ($LASTEXITCODE -ne 0) { throw "Console publish failed ($LASTEXITCODE)" }
 
     # Sign our libraries/exes in the stage BEFORE the MSI packs them, so the installed files are signed.
     Invoke-SignLibraries $stage

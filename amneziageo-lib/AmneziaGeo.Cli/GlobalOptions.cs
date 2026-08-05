@@ -1,9 +1,9 @@
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Options that apply to every command, wherever they appear on the line.
 /// </summary>
-internal sealed class GlobalOptions
+public sealed class GlobalOptions
 {
     private static readonly string[] _switches = ["--json", "--quiet", "--help", "-h", "--version"];
     private static readonly string[] _valued = ["--lang", "--timeout"];

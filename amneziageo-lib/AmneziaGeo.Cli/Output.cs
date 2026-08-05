@@ -1,12 +1,12 @@
 using System.Text;
 using System.Text.Json;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Process exit codes.
 /// </summary>
-internal static class Exit
+public static class Exit
 {
     /// <summary>
     /// The command succeeded.
@@ -35,15 +35,82 @@ internal static class Exit
 }
 
 /// <summary>
+/// Where rendered lines go.
+/// </summary>
+public interface IConsoleSink
+{
+    /// <summary>
+    /// Writes a line of results.
+    /// </summary>
+    void Out(string text);
+
+    /// <summary>
+    /// Writes a line of diagnostics.
+    /// </summary>
+    void Error(string text);
+}
+
+/// <summary>
+/// Writes to the process console.
+/// </summary>
+public sealed class SystemConsoleSink : IConsoleSink
+{
+    /// <inheritdoc/>
+    public void Out(string text) => Console.Out.WriteLine(text);
+
+    /// <inheritdoc/>
+    public void Error(string text) => Console.Error.WriteLine(text);
+}
+
+/// <summary>
+/// Collects lines instead of printing them, for platforms that hand the text back to the caller.
+/// </summary>
+public sealed class BufferConsoleSink : IConsoleSink
+{
+    private readonly StringBuilder _text = new();
+    private readonly Lock _gate = new();
+
+    /// <inheritdoc/>
+    public void Out(string text) => Append(text);
+
+    /// <inheritdoc/>
+    public void Error(string text) => Append(text);
+
+    /// <summary>
+    /// Everything written so far.
+    /// </summary>
+    public override string ToString()
+    {
+        lock (_gate)
+        {
+            return _text.ToString();
+        }
+    }
+
+    private void Append(string text)
+    {
+        lock (_gate)
+        {
+            _text.Append(text).Append('\n');
+        }
+    }
+}
+
+/// <summary>
 /// Console rendering: aligned tables, JSON, and messages.
 /// </summary>
-internal static class Output
+public static class Output
 {
     private static readonly JsonSerializerOptions _json = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
+
+    /// <summary>
+    /// Where rendered lines go.
+    /// </summary>
+    public static IConsoleSink Sink { get; set; } = new SystemConsoleSink();
 
     /// <summary>
     /// Whether commands print JSON instead of tables.
@@ -58,7 +125,7 @@ internal static class Output
     /// <summary>
     /// Writes a line to stdout.
     /// </summary>
-    public static void Line(string text = "") => Console.Out.WriteLine(text);
+    public static void Line(string text = "") => Sink.Out(text);
 
     /// <summary>
     /// Writes a line unless output is quiet.
@@ -67,19 +134,19 @@ internal static class Output
     {
         if (!Quiet)
         {
-            Console.Out.WriteLine(text);
+            Sink.Out(text);
         }
     }
 
     /// <summary>
     /// Writes a line to stderr.
     /// </summary>
-    public static void Error(string text) => Console.Error.WriteLine(text);
+    public static void Error(string text) => Sink.Error(text);
 
     /// <summary>
     /// Serializes a value as JSON.
     /// </summary>
-    public static void AsJson(object value) => Console.Out.WriteLine(JsonSerializer.Serialize(value, _json));
+    public static void AsJson(object value) => Sink.Out(JsonSerializer.Serialize(value, _json));
 
     /// <summary>
     /// Prints an aligned table; an empty body prints nothing but the note.

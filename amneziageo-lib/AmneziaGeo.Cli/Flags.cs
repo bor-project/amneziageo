@@ -1,9 +1,9 @@
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Named options and leftover positional arguments of one leaf command.
 /// </summary>
-internal sealed class Flags
+public sealed class Flags
 {
     private readonly Dictionary<string, List<string>> _named = new(StringComparer.Ordinal);
     private readonly List<string> _positional = [];

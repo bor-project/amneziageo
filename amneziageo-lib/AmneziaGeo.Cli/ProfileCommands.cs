@@ -1,7 +1,7 @@
 using System.Globalization;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Profiles: the configuration a connect binds to, and its routing assignment.
@@ -11,7 +11,7 @@ internal static class ProfileCommands
     /// <summary>
     /// Runs one profile command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count == 0)
         {
@@ -36,7 +36,7 @@ internal static class ProfileCommands
         };
     }
 
-    private static int List(AgentClient agent)
+    private static int List(IAgentLink agent)
     {
         var snapshot = agent.Snapshot;
         if (Output.Json)
@@ -72,7 +72,7 @@ internal static class ProfileCommands
         return profile.UseRouting ? name : $"{name} off";
     }
 
-    private static async Task<int> RoutingAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> RoutingAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count is < 2 or > 3)
         {

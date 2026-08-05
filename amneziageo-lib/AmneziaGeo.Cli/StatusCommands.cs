@@ -1,7 +1,7 @@
 using System.Globalization;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Connection state: what the agent runs, what it would run, and switching between the two.
@@ -11,7 +11,7 @@ internal static class StatusCommands
     /// <summary>
     /// Runs one connection command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, string command, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, string command, IReadOnlyList<string> args, CancellationToken ct)
     {
         switch (command)
         {
@@ -20,7 +20,7 @@ internal static class StatusCommands
                 return Exit.Ok;
 
             case "watch":
-                return await WatchAsync(agent).ConfigureAwait(false);
+                return await WatchAsync(agent, ct).ConfigureAwait(false);
 
             case "select" when args.Count == 1:
                 return Reply.Report(await agent.SendAsync(IpcContract.OpSelectProfile, args[0]).ConfigureAwait(false), $"selected {args[0]}");
@@ -100,7 +100,7 @@ internal static class StatusCommands
         return profile.UseRouting ? name : $"{name} (off)";
     }
 
-    private static async Task<int> UpAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> UpAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count > 1)
         {
@@ -119,15 +119,8 @@ internal static class StatusCommands
         return Reply.Report(await agent.SendAsync(IpcContract.OpSetConnection, "connect").ConfigureAwait(false), "connected");
     }
 
-    private static async Task<int> WatchAsync(AgentClient agent)
+    private static async Task<int> WatchAsync(IAgentLink agent, CancellationToken ct)
     {
-        using var stop = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            stop.Cancel();
-        };
-
         var last = string.Empty;
         void OnSnapshot(StatusSnapshot snapshot)
         {
@@ -145,7 +138,7 @@ internal static class StatusCommands
         OnSnapshot(agent.Snapshot);
         try
         {
-            await Task.Delay(Timeout.Infinite, stop.Token).ConfigureAwait(false);
+            await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

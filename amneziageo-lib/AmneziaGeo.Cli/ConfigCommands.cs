@@ -2,7 +2,7 @@ using System.Globalization;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Configuration catalogue: import, edit, export and the per-config transport, DNS and geo settings.
@@ -12,7 +12,7 @@ internal static class ConfigCommands
     /// <summary>
     /// Runs one config command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count == 0)
         {
@@ -44,7 +44,7 @@ internal static class ConfigCommands
         };
     }
 
-    private static int List(AgentClient agent)
+    private static int List(IAgentLink agent)
     {
         var configs = agent.Snapshot.Configs;
         if (Output.Json)
@@ -69,7 +69,7 @@ internal static class ConfigCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> ShowAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count != 1)
         {
@@ -79,7 +79,7 @@ internal static class ConfigCommands
         return Reply.Payload(await agent.SendAsync(IpcContract.OpGetConfig, args[0]).ConfigureAwait(false));
     }
 
-    private static async Task<int> LinkAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> LinkAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count != 1)
         {
@@ -96,7 +96,7 @@ internal static class ConfigCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> ImportAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ImportAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args, "stdin");
         if (!flags.Allowed("file", "link", "text", "stdin"))
@@ -134,7 +134,7 @@ internal static class ConfigCommands
         return Reply.Report(ack, $"imported {name}");
     }
 
-    private static async Task<int> EditAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> EditAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args, "stdin");
         if (!flags.Allowed("file", "text", "stdin"))
@@ -156,7 +156,7 @@ internal static class ConfigCommands
         return Reply.Report(await agent.SendAsync(IpcContract.OpEditConfig, flags.Positional[0], confText).ConfigureAwait(false), $"saved {flags.Positional[0]}");
     }
 
-    private static async Task<int> DnsAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> DnsAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count is < 1 or > 2)
         {
@@ -167,7 +167,7 @@ internal static class ConfigCommands
         return Reply.Report(await agent.SendAsync(IpcContract.OpSetConfigDns, args[0], servers).ConfigureAwait(false));
     }
 
-    private static async Task<int> ExclusionsAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ExclusionsAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args, "stdin", "clear");
         if (!flags.Allowed("file", "stdin", "list", "clear"))
@@ -189,7 +189,7 @@ internal static class ConfigCommands
         return Reply.Report(await agent.SendAsync(IpcContract.OpSetConfigExclusions, flags.Positional[0], text ?? string.Empty).ConfigureAwait(false));
     }
 
-    private static async Task<int> WebSocketAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> WebSocketAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
         if (!flags.Allowed("host", "port", "mtu", "ipv6"))
@@ -222,7 +222,7 @@ internal static class ConfigCommands
             Toggle.Text(useIpv6)).ConfigureAwait(false));
     }
 
-    private static async Task<int> GeoAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> GeoAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count < 2 || !Toggle.TryParse(args[1], out var on))
         {
@@ -240,7 +240,7 @@ internal static class ConfigCommands
     }
 
     // A free name derived from the imported link, so an unnamed import still lands somewhere sensible.
-    private static string? Suggest(AgentClient agent, string? candidate)
+    private static string? Suggest(IAgentLink agent, string? candidate)
     {
         if (candidate is not { Length: > 0 })
         {

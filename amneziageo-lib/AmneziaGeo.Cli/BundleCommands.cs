@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Portable bundles: moving configurations, routing lists and profiles between machines.
@@ -13,7 +13,7 @@ internal static class BundleCommands
     /// <summary>
     /// Runs one bundle command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count == 0)
         {
@@ -29,7 +29,7 @@ internal static class BundleCommands
         };
     }
 
-    private static async Task<int> ExportAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ExportAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args, "all");
         if (!flags.Allowed("all", "profile", "config", "list", "out"))
@@ -65,12 +65,18 @@ internal static class BundleCommands
         await File.WriteAllTextAsync(path, ack.Message).ConfigureAwait(false);
 
         // The bundle carries private keys in the clear.
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        Output.Info($"wrote {path} (mode 600: it holds private keys)");
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            Output.Info($"wrote {path} (mode 600: it holds private keys)");
+            return Exit.Ok;
+        }
+
+        Output.Info($"wrote {path}: it holds private keys, keep it out of shared folders");
         return Exit.Ok;
     }
 
-    private static async Task<int> ImportAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ImportAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args, "stdin");
         if (!flags.Allowed("file", "stdin", "policy"))

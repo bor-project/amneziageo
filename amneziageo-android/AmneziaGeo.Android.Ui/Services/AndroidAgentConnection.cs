@@ -68,6 +68,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     public static AndroidAgentConnection? Current { get; private set; }
 
     /// <summary>
+    /// Latest snapshot pushed to the listeners.
+    /// </summary>
+    public StatusSnapshot? Latest { get; private set; }
+
+    /// <summary>
     /// ctor
     /// </summary>
     public AndroidAgentConnection()
@@ -278,7 +283,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await ImportBundleAsync(args);
 
             default:
-                return new IpcAck(false, Loc.Instance.Get("Android_EngineNotReady"));
+                _log.Warn("agent", $"command '{command.Op}' is not wired in the Android agent");
+                return new IpcAck(false, IpcMessage.Key("Android_OpNotWired", command.Op));
         }
     }
 
@@ -468,7 +474,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             })
             .ToList();
 
-        SnapshotReceived?.Invoke(new StatusSnapshot(
+        Latest = new StatusSnapshot(
             AgentVersion: "Android preview",
             BoundTarget: _boundTarget,
             Configs: configs,
@@ -482,7 +488,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             EngineVersion: string.Empty,
             LogLevel: _logLevel,
             RouteLog: _routeLog,
-            RouteTtlSeconds: _routeTtl));
+            RouteTtlSeconds: _routeTtl);
+
+        SnapshotReceived?.Invoke(Latest);
     }
 
     private ConfigEntry Entry(string name, string config)

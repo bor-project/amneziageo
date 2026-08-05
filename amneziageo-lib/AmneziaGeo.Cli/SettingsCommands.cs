@@ -1,7 +1,7 @@
 using System.Globalization;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Agent settings the headless install depends on.
@@ -19,7 +19,7 @@ internal static class SettingsCommands
     /// <summary>
     /// Runs one settings command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count == 0)
         {
@@ -34,7 +34,7 @@ internal static class SettingsCommands
         };
     }
 
-    private static int Show(AgentClient agent)
+    private static int Show(IAgentLink agent)
     {
         var snapshot = agent.Snapshot;
         var values = new (string Key, string Value)[]
@@ -58,7 +58,7 @@ internal static class SettingsCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> SetAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> SetAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count != 2)
         {

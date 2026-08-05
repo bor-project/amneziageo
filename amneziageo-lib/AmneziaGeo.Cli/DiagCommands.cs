@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Logs, runtime state and the checks a headless install needs.
@@ -14,24 +14,32 @@ internal static class DiagCommands
     /// <summary>
     /// Runs one diagnostics command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, string group, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, ICliHost host, string group, IReadOnlyList<string> args, CancellationToken ct)
     {
         return group switch
         {
-            "log" => await LogAsync(agent, args).ConfigureAwait(false),
+            "log" => await LogAsync(agent, host, args, ct).ConfigureAwait(false),
             "runtime" => Reply.Payload(await agent.SendAsync(IpcContract.OpGetRuntimeConfig).ConfigureAwait(false)),
             "cache" => await CacheAsync(agent, args).ConfigureAwait(false),
             "subnets" => Reply.Payload(await agent.SendAsync(IpcContract.OpListLocalSubnets).ConfigureAwait(false)),
-            "doctor" => Doctor(agent),
+            "doctor" => Doctor(agent, host),
+            "diag" => await DiagAsync(agent, args).ConfigureAwait(false),
             _ => Reply.Usage($"unknown command '{group}'"),
         };
     }
 
-    private static async Task<int> LogAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> LogAsync(IAgentLink agent, ICliHost host, IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo log <tail|follow|clear|export>");
+            return Reply.Usage($"usage: {host.ExeName} log <tail|follow|clear|export|say>");
+        }
+
+        if (args[0] == "say")
+        {
+            return args.Count == 2
+                ? Reply.Report(await agent.SendAsync(IpcContract.OpLogClient, args[1]).ConfigureAwait(false), "written to the agent log")
+                : Reply.Usage($"usage: {host.ExeName} log say <text>");
         }
 
         var flags = Flags.Parse([.. args.Skip(1)]);
@@ -48,15 +56,26 @@ internal static class DiagCommands
 
         return args[0] switch
         {
-            "tail" => await TailAsync(agent, table, flags).ConfigureAwait(false),
-            "follow" => await FollowAsync(agent, table, flags).ConfigureAwait(false),
+            "tail" => await TailAsync(agent, host, table, flags).ConfigureAwait(false),
+            "follow" => await FollowAsync(agent, table, flags, ct).ConfigureAwait(false),
             "clear" => Reply.Report(await agent.SendAsync(IpcContract.OpClearLog, table).ConfigureAwait(false), $"cleared {table}"),
             "export" => await ExportAsync(agent, table, flags).ConfigureAwait(false),
             _ => Reply.Usage($"unknown log command '{args[0]}'"),
         };
     }
 
-    private static async Task<int> TailAsync(AgentClient agent, string table, Flags flags)
+    private static async Task<int> DiagAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count == 0 || args[0] != "collect")
+        {
+            return Reply.Usage("usage: diag collect");
+        }
+
+        var ack = await agent.SendAsync(IpcContract.OpCollectDiagnostics).ConfigureAwait(false);
+        return ack.Ok ? Reply.Payload(ack) : Reply.Report(ack);
+    }
+
+    private static async Task<int> TailAsync(IAgentLink agent, ICliHost host, string table, Flags flags)
     {
         var page = await ReadAsync(agent, table, flags).ConfigureAwait(false);
         if (page.Ack is { Ok: false })
@@ -77,29 +96,22 @@ internal static class DiagCommands
 
         if (page.Lines.Count == 0)
         {
-            Output.Info($"the {table} log is empty; raise the level with 'amneziageo settings set log-level info'");
+            Output.Info($"the {table} log is empty; raise the level with '{host.ExeName} settings set log-level info'");
         }
 
         return Exit.Ok;
     }
 
-    private static async Task<int> FollowAsync(AgentClient agent, string table, Flags flags)
+    private static async Task<int> FollowAsync(IAgentLink agent, string table, Flags flags, CancellationToken ct)
     {
         var interval = int.TryParse(flags.Value("interval"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? Math.Clamp(parsed, 1, 60)
             : 2;
 
-        using var stop = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            stop.Cancel();
-        };
-
         var newest = default(string);
         try
         {
-            while (!stop.IsCancellationRequested)
+            while (!ct.IsCancellationRequested)
             {
                 var page = await ReadAsync(agent, table, flags).ConfigureAwait(false);
                 if (page.Ack is { Ok: false })
@@ -118,7 +130,7 @@ internal static class DiagCommands
                     newest = page.Lines[0];
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(interval), stop.Token).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(interval), ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -128,7 +140,7 @@ internal static class DiagCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> ExportAsync(AgentClient agent, string table, Flags flags)
+    private static async Task<int> ExportAsync(IAgentLink agent, string table, Flags flags)
     {
         var ack = await agent.SendAsync(IpcContract.OpExportLog, table).ConfigureAwait(false);
         if (!ack.Ok)
@@ -147,7 +159,7 @@ internal static class DiagCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> CacheAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> CacheAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
         if (!flags.Allowed("filter"))
@@ -181,25 +193,28 @@ internal static class DiagCommands
         return Exit.Ok;
     }
 
-    private static int Doctor(AgentClient agent)
+    private static int Doctor(IAgentLink agent, ICliHost host)
     {
         var snapshot = agent.Snapshot;
         var categories = snapshot.Sources?.Sum(source => source.CategoryCount) ?? 0;
-        var checks = new List<(string Name, bool Ok, string Detail)>
+        var checks = new List<DoctorCheck>
         {
-            ("control socket", File.Exists(AgentClient.SocketPath), AgentClient.SocketPath),
-            ("agent", true, snapshot.AgentVersion),
-            ("tun device", File.Exists("/dev/net/tun"), "/dev/net/tun"),
-            ("iproute2", Which("ip") is not null, Which("ip") ?? "ip not found in PATH"),
-            ("systemd unit", Systemd.Exists, Systemd.Exists ? Systemd.State() : $"{Systemd.UnitPath} not installed"),
-            ("profile selected", snapshot.SelectedTarget is { Length: > 0 }, snapshot.SelectedTarget ?? "nothing selected"),
-            ("survive reboot", snapshot.SurviveReboot, snapshot.SurviveReboot ? "on" : "off: the agent will not connect after a reboot"),
-            ("auto reconnect", snapshot.PeriodicReconnect, snapshot.PeriodicReconnect ? $"every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s" : "off: a dropped tunnel stays down"),
-            ("geo sources", (snapshot.Sources?.Count ?? 0) > 0, $"{(snapshot.Sources?.Count ?? 0).ToString(CultureInfo.InvariantCulture)} configured"),
-            ("geo categories", categories > 0, categories > 0
-                ? categories.ToString(CultureInfo.InvariantCulture)
-                : "none loaded: run 'amneziageo geo download'"),
+            new("agent", true, snapshot.AgentVersion),
         };
+
+        checks.AddRange(host.DoctorChecks(snapshot));
+        checks.AddRange(
+        [
+            new("profile selected", snapshot.SelectedTarget is { Length: > 0 }, snapshot.SelectedTarget ?? "nothing selected"),
+            new("survive reboot", snapshot.SurviveReboot, snapshot.SurviveReboot ? "on" : "off: the agent will not connect after a reboot"),
+            new("auto reconnect", snapshot.PeriodicReconnect, snapshot.PeriodicReconnect
+                ? $"every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s"
+                : "off: a dropped tunnel stays down"),
+            new("geo sources", (snapshot.Sources?.Count ?? 0) > 0, $"{(snapshot.Sources?.Count ?? 0).ToString(CultureInfo.InvariantCulture)} configured"),
+            new("geo categories", categories > 0, categories > 0
+                ? categories.ToString(CultureInfo.InvariantCulture)
+                : $"none loaded: run '{host.ExeName} geo download'"),
+        ]);
 
         if (Output.Json)
         {
@@ -212,21 +227,7 @@ internal static class DiagCommands
         return checks.All(check => check.Ok) ? Exit.Ok : Exit.Failed;
     }
 
-    private static string? Which(string binary)
-    {
-        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "/usr/sbin:/usr/bin:/sbin:/bin").Split(':', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var candidate = Path.Combine(directory, binary);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
-    private static async Task<(IpcAck? Ack, IReadOnlyList<string> Lines)> ReadAsync(AgentClient agent, string table, Flags flags)
+    private static async Task<(IpcAck? Ack, IReadOnlyList<string> Lines)> ReadAsync(IAgentLink agent, string table, Flags flags)
     {
         var ack = await agent.SendAsync(
             IpcContract.OpReadLog,

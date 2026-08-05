@@ -7,6 +7,8 @@ using Terminal.Gui.App;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
+using AmneziaGeo.Cli;
+
 namespace AmneziaGeo.Linux.Cli.Tui;
 
 /// <summary>
@@ -14,7 +16,7 @@ namespace AmneziaGeo.Linux.Cli.Tui;
 /// </summary>
 internal sealed class Shell : Window
 {
-    private readonly AgentClient _agent;
+    private readonly IAgentLink _agent;
     private readonly Label _state;
     private readonly ListView _rail;
     private readonly FrameView _content;
@@ -23,7 +25,7 @@ internal sealed class Shell : Window
     /// <summary>
     /// ctor
     /// </summary>
-    public Shell(AgentClient agent)
+    public Shell(IAgentLink agent)
     {
         _agent = agent;
         Title = Localized("Tui_Title");
@@ -113,7 +115,7 @@ internal sealed class Shell : Window
     {
         if (!ack.Ok)
         {
-            Prompt.Error(AgentClient.Localize(ack.Message));
+            Prompt.Error(AckText.Localize(ack.Message));
             return false;
         }
 
@@ -259,7 +261,7 @@ internal sealed class Shell : Window
                     }
                     else
                     {
-                        Prompt.Error(AgentClient.Localize(ack.Message));
+                        Prompt.Error(AckText.Localize(ack.Message));
                     }
                 }
             }),
@@ -275,7 +277,7 @@ internal sealed class Shell : Window
                     }
                     else
                     {
-                        Prompt.Error(AgentClient.Localize(ack.Message));
+                        Prompt.Error(AckText.Localize(ack.Message));
                     }
                 }
             }),
@@ -346,7 +348,7 @@ internal sealed class Shell : Window
         var current = Send(IpcContract.OpGetRoutingList, id);
         if (!current.Ok)
         {
-            Prompt.Error(AgentClient.Localize(current.Message));
+            Prompt.Error(AckText.Localize(current.Message));
             return;
         }
 
@@ -371,7 +373,7 @@ internal sealed class Shell : Window
         var stored = Send(IpcContract.OpGetRoutingSettings, id);
         if (!stored.Ok)
         {
-            Prompt.Error(AgentClient.Localize(stored.Message));
+            Prompt.Error(AckText.Localize(stored.Message));
             return;
         }
 
@@ -520,7 +522,7 @@ internal sealed class Shell : Window
             var ack = Send(IpcContract.OpReadLog, "ageo", "300", "0", string.Empty, search.Text ?? string.Empty);
             if (!ack.Ok)
             {
-                Prompt.Error(AgentClient.Localize(ack.Message));
+                Prompt.Error(AckText.Localize(ack.Message));
                 return;
             }
 

@@ -1,5 +1,7 @@
 using Terminal.Gui.App;
 
+using AmneziaGeo.Cli;
+
 namespace AmneziaGeo.Linux.Cli.Tui;
 
 /// <summary>
@@ -10,7 +12,7 @@ internal static class TuiApp
     /// <summary>
     /// Runs the console UI until the user quits.
     /// </summary>
-    public static Task<int> RunAsync(AgentClient agent)
+    public static Task<int> RunAsync(IAgentLink agent)
     {
         if (Console.IsInputRedirected || Console.IsOutputRedirected)
         {

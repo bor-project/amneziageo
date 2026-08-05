@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Shared routing lists: their rules and their traffic settings.
@@ -12,7 +12,7 @@ internal static class RoutingCommands
     /// <summary>
     /// Runs one routing command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count == 0)
         {
@@ -38,7 +38,7 @@ internal static class RoutingCommands
     /// <summary>
     /// Finds a routing list by id or by name.
     /// </summary>
-    public static RoutingListEntry? Resolve(AgentClient agent, string key)
+    public static RoutingListEntry? Resolve(IAgentLink agent, string key)
     {
         var lists = agent.Snapshot.RoutingLists ?? [];
         if (long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
@@ -53,7 +53,7 @@ internal static class RoutingCommands
         return lists.FirstOrDefault(list => string.Equals(list.Name, key, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static int List(AgentClient agent)
+    private static int List(IAgentLink agent)
     {
         var lists = agent.Snapshot.RoutingLists ?? [];
         if (Output.Json)
@@ -77,7 +77,7 @@ internal static class RoutingCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> ShowAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
         {
@@ -106,7 +106,7 @@ internal static class RoutingCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> CreateAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> CreateAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count < 1)
         {
@@ -123,7 +123,7 @@ internal static class RoutingCommands
         return ack.Ok ? Created(ack.Message, args[0]) : Reply.Report(ack);
     }
 
-    private static async Task<int> SetAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> SetAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count < 1 || Resolve(agent, args[0]) is not { } list)
         {
@@ -140,7 +140,7 @@ internal static class RoutingCommands
         return ack.Ok ? Reply.Report(ack with { Message = $"{list.Name}: {rules.Length.ToString(CultureInfo.InvariantCulture)} rules" }) : Reply.Report(ack);
     }
 
-    private static async Task<int> AmendAsync(AgentClient agent, IReadOnlyList<string> args, bool add)
+    private static async Task<int> AmendAsync(IAgentLink agent, IReadOnlyList<string> args, bool add)
     {
         var verb = add ? "add" : "delete-rule";
         if (args.Count < 2 || Resolve(agent, args[0]) is not { } list)
@@ -180,7 +180,7 @@ internal static class RoutingCommands
         return ack.Ok ? Reply.Report(ack with { Message = $"{list.Name}: {rules.Count.ToString(CultureInfo.InvariantCulture)} rules" }) : Reply.Report(ack);
     }
 
-    private static async Task<int> RemoveAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> RemoveAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
         {
@@ -196,7 +196,7 @@ internal static class RoutingCommands
         return Reply.Report(await agent.SendAsync(IpcContract.OpRemoveRoutingList, list.Id.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false), $"removed {list.Name}");
     }
 
-    private static async Task<int> SettingsAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> SettingsAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count != 1 || Resolve(agent, args[0]) is not { } list)
         {
@@ -227,7 +227,7 @@ internal static class RoutingCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> ConfigureAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ConfigureAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
         if (!flags.Allowed("exclusions", "exclusions-file", "all-udp", "global-proxy"))
@@ -285,7 +285,7 @@ internal static class RoutingCommands
             Toggle.Text(globalProxy)).ConfigureAwait(false));
     }
 
-    private static Task<IpcAck> RulesAsync(AgentClient agent, long id) =>
+    private static Task<IpcAck> RulesAsync(IAgentLink agent, long id) =>
         agent.SendAsync(IpcContract.OpGetRoutingList, id.ToString(CultureInfo.InvariantCulture));
 
     private static string[] Split(string payload) =>

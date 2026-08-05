@@ -1,5 +1,7 @@
 using System.Diagnostics;
 
+using AmneziaGeo.Cli;
+
 namespace AmneziaGeo.Linux.Cli;
 
 /// <summary>
@@ -252,7 +254,7 @@ internal static class DaemonCommands
     private static int Status()
     {
         var installed = Systemd.Exists;
-        var socket = File.Exists(AgentClient.SocketPath);
+        var socket = File.Exists(LinuxCliHost.SocketPath);
         var active = installed ? Systemd.Run("systemctl", ["is-active", Systemd.Unit]).Output.Trim() : "not installed";
         var enabled = installed ? Systemd.Run("systemctl", ["is-enabled", Systemd.Unit]).Output.Trim() : "-";
 
@@ -268,7 +270,7 @@ internal static class DaemonCommands
             ("installed", Systemd.InstalledPath ?? "no"),
             ("active", active),
             ("at boot", enabled),
-            ("control socket", socket ? AgentClient.SocketPath : "missing"),
+            ("control socket", socket ? LinuxCliHost.SocketPath : "missing"),
         ]);
 
         if (installed && active == "active" && !socket)

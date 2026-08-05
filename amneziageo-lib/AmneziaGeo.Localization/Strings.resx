@@ -1670,6 +1670,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Android_EngineNotReady" xml:space="preserve">
     <value>The Android VPN engine is not connected yet.</value>
   </data>
+  <data name="Android_OpNotWired" xml:space="preserve">
+    <value>The Android agent does not handle "{0}" yet.</value>
+  </data>
   <data name="Linux_OpNotWired" xml:space="preserve">
     <value>The Linux agent does not handle "{0}" yet.</value>
   </data>

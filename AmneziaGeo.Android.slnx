@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/Shared/">
+    <Project Path="amneziageo-lib\AmneziaGeo.Cli\AmneziaGeo.Cli.csproj" />
     <Project Path="amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
     <Project Path="amneziageo-lib\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
     <Project Path="amneziageo-lib\AmneziaGeo.Dal\AmneziaGeo.Dal.csproj" />

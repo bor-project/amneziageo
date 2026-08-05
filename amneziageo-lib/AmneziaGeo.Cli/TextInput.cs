@@ -1,10 +1,15 @@
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Reads a text payload from a file, standard input, a literal or a share link.
 /// </summary>
-internal static class TextInput
+public static class TextInput
 {
+    /// <summary>
+    /// Where --stdin reads from; the host sets it, and it stays null where the platform has no standard input.
+    /// </summary>
+    public static TextReader? StandardInput { get; set; }
+
     /// <summary>
     /// Reads the payload the flags point at.
     /// </summary>
@@ -70,7 +75,13 @@ internal static class TextInput
             return true;
         }
 
-        text = Console.In.ReadToEnd();
+        if (StandardInput is null)
+        {
+            error = "--stdin is not available here; pass --file, --text or --link";
+            return false;
+        }
+
+        text = StandardInput.ReadToEnd();
         if (text.Length == 0)
         {
             error = "standard input was empty";
@@ -84,7 +95,7 @@ internal static class TextInput
 /// <summary>
 /// on/off arguments.
 /// </summary>
-internal static class Toggle
+public static class Toggle
 {
     /// <summary>
     /// Parses an on/off argument, accepting the usual spellings.
@@ -114,7 +125,7 @@ internal static class Toggle
 /// <summary>
 /// Routing rule tokens.
 /// </summary>
-internal static class Rules
+public static class Rules
 {
     private const string _proxyRole = "proxy|";
     private static readonly string[] _roles = ["proxy", "direct", "block"];

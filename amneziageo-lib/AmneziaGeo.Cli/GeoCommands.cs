@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Geo databases: the categories they expose and the sources they come from.
@@ -12,12 +12,12 @@ internal static class GeoCommands
     /// <summary>
     /// Runs one geo or source command.
     /// </summary>
-    public static async Task<int> RunAsync(AgentClient agent, string group, IReadOnlyList<string> args)
+    public static async Task<int> RunAsync(IAgentLink agent, string group, IReadOnlyList<string> args)
     {
         if (args.Count == 0)
         {
             return Reply.Usage(group == "geo"
-                ? "usage: amneziageo geo <list|show|update|download>"
+                ? "usage: amneziageo geo <list|show|update|download|check>"
                 : "usage: amneziageo source <list|add|edit|remove>");
         }
 
@@ -51,11 +51,17 @@ internal static class GeoCommands
                 _ => Reply.Usage("usage: amneziageo geo update [<source>]"),
             },
             "download" => Reply.Report(await agent.SendAsync(IpcContract.OpDownloadGeo).ConfigureAwait(false)),
+            "check" => rest.Count switch
+            {
+                0 => Reply.Report(await agent.SendAsync(IpcContract.OpCheckSources).ConfigureAwait(false)),
+                1 => Reply.Report(await agent.SendAsync(IpcContract.OpCheckSource, rest[0]).ConfigureAwait(false)),
+                _ => Reply.Usage("usage: amneziageo geo check [<source>]"),
+            },
             _ => Reply.Usage($"unknown geo command '{args[0]}'"),
         };
     }
 
-    private static int Sources(AgentClient agent)
+    private static int Sources(IAgentLink agent)
     {
         var sources = agent.Snapshot.Sources ?? [];
         if (Output.Json)
@@ -80,7 +86,7 @@ internal static class GeoCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> ListAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ListAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
         if (!flags.Allowed("filter"))
@@ -115,7 +121,7 @@ internal static class GeoCommands
         return Exit.Ok;
     }
 
-    private static async Task<int> ShowAsync(AgentClient agent, IReadOnlyList<string> args)
+    private static async Task<int> ShowAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args);
         if (!flags.Allowed("limit"))

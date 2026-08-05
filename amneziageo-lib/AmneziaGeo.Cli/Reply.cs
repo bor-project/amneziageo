@@ -1,11 +1,11 @@
 using AmneziaGeo.Ipc;
 
-namespace AmneziaGeo.Linux.Cli;
+namespace AmneziaGeo.Cli;
 
 /// <summary>
 /// Turns an agent reply into console output and an exit code.
 /// </summary>
-internal static class Reply
+public static class Reply
 {
     /// <summary>
     /// Resource key the agent answers with for a command it does not implement.
@@ -18,7 +18,7 @@ internal static class Reply
     public static int Report(IpcAck ack, string? done = null)
     {
         var unsupported = IpcMessage.TryParse(ack.Message, out var key, out _) && key == _notWiredKey;
-        var text = AgentClient.Localize(ack.Message);
+        var text = AckText.Localize(ack.Message);
 
         if (Output.Json)
         {

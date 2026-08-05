@@ -202,7 +202,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private readonly HashSet<string> _expandedRules = new(StringComparer.Ordinal);
 
     // Fetched geo entries per rule token, dropped when the screen is left.
-    private readonly Dictionary<string, IReadOnlyList<string>> _detailCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, GeoEntries> _detailCache = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// What a geo rule expands to: everything it covers, and the page the agent handed over.
+    /// </summary>
+    private sealed record GeoEntries(int Total, IReadOnlyList<string> Entries);
 
     // Bumped on every drop, so a fetch in flight cannot land into the cleared state.
     private int _detailsGeneration;
@@ -233,7 +238,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                 item.IsExpanded = true;
                 if (_detailCache.TryGetValue(token, out var cached))
                 {
-                    item.ShowDetails(Summarize(cached.Count), cached);
+                    item.ShowDetails(Summarize(cached.Total, cached.Entries.Count), cached.Entries);
                 }
                 else
                 {
@@ -255,6 +260,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         if (!item.IsExpanded)
         {
             _expandedRules.Remove(item.Token);
+            item.Collapse();
             return;
         }
 
@@ -270,7 +276,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     {
         if (_detailCache.TryGetValue(item.Token, out var cached))
         {
-            item.ShowDetails(Summarize(cached.Count), cached);
+            item.ShowDetails(Summarize(cached.Total, cached.Entries.Count), cached.Entries);
             return;
         }
 
@@ -288,34 +294,57 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return;
         }
 
-        var entries = ParseEntries(ack.Message);
-        _detailCache[item.Token] = entries;
-        item.ShowDetails(Summarize(entries.Count), entries);
+        var preview = ParseEntries(ack.Message);
+        _detailCache[item.Token] = preview;
+        item.ShowDetails(Summarize(preview.Total, preview.Entries.Count), preview.Entries);
     }
 
-    // Reads the entry array; a malformed ack reads as empty.
-    private static IReadOnlyList<string> ParseEntries(string message)
+    // Reads the preview the agent hands over: what the rule covers in full, and the page of it that came along. An
+    // older agent answers with the page alone, so a bare array counts as the whole set. A malformed ack reads as empty.
+    private static GeoEntries ParseEntries(string message)
     {
         try
         {
             using var doc = JsonDocument.Parse(message);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
             {
-                return [];
+                var flat = Read(doc.RootElement);
+                return new GeoEntries(flat.Count, flat);
             }
 
-            return [.. doc.RootElement.EnumerateArray().Select(e => e.GetString() ?? string.Empty)];
+            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("entries", out var array))
+            {
+                return new GeoEntries(0, []);
+            }
+
+            var entries = Read(array);
+            var total = doc.RootElement.TryGetProperty("total", out var count) && count.TryGetInt32(out var value)
+                ? value
+                : entries.Count;
+            return new GeoEntries(total, entries);
         }
         catch (JsonException)
         {
-            return [];
+            return new GeoEntries(0, []);
         }
     }
 
-    // Localized line above the entries.
-    private static string Summarize(int count) => count == 0
-        ? Loc.Instance.Get("RoutingEditor_RuleNoEntries")
-        : Loc.Instance.Get("RoutingEditor_RuleEntriesCount", count);
+    private static IReadOnlyList<string> Read(JsonElement array)
+    {
+        return array.ValueKind == JsonValueKind.Array
+            ? [.. array.EnumerateArray().Select(e => e.GetString() ?? string.Empty)]
+            : [];
+    }
+
+    // Localized line above the entries; a rule bigger than the page says how much of it is shown.
+    private static string Summarize(int total, int shown) => total switch
+    {
+        0 => Loc.Instance.Get("RoutingEditor_RuleNoEntries"),
+        _ when shown < total => Loc.Instance.Get("RoutingEditor_RuleEntriesShown", Math.Min(shown, RoutingRuleItemViewModel.PreviewLines), total),
+        _ when total > RoutingRuleItemViewModel.PreviewLines =>
+            Loc.Instance.Get("RoutingEditor_RuleEntriesShown", RoutingRuleItemViewModel.PreviewLines, total),
+        _ => Loc.Instance.Get("RoutingEditor_RuleEntriesCount", total),
+    };
 
     public bool IsProxyRole => SelectedRole == "proxy";
 

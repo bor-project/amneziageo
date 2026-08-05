@@ -1180,6 +1180,9 @@
   <data name="RoutingEditor_RuleEntriesCount" xml:space="preserve">
     <value>Записей: {0}</value>
   </data>
+  <data name="RoutingEditor_RuleEntriesShown" xml:space="preserve">
+    <value>Показаны первые {0} из {1} записей</value>
+  </data>
   <data name="RoutingEditor_RuleNoEntries" xml:space="preserve">
     <value>Записей нет: категории нет в загруженных базах</value>
   </data>

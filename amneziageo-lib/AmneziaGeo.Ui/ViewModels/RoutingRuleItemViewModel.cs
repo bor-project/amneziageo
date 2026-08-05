@@ -8,6 +8,12 @@ namespace AmneziaGeo.Ui.ViewModels;
 internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
 {
     /// <summary>
+    /// Lines the preview box renders. A country runs to tens of thousands of entries and the box lays out every
+    /// line it holds, which costs more than the entries themselves.
+    /// </summary>
+    public const int PreviewLines = 500;
+
+    /// <summary>
     /// ctor
     /// </summary>
     public RoutingRuleItemViewModel(string token)
@@ -56,7 +62,7 @@ internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
     public void ShowDetails(string summary, IReadOnlyList<string> entries)
     {
         DetailSummary = summary;
-        EntriesText = string.Join(Environment.NewLine, entries);
+        EntriesText = string.Join(Environment.NewLine, entries.Count > PreviewLines ? entries.Take(PreviewLines) : entries);
         IsLoading = false;
         HasDetails = true;
     }

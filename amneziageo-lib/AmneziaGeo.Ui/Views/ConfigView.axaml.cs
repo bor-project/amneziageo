@@ -84,7 +84,7 @@ internal sealed partial class ConfigView : UserControl
 
         await ReadIntoSectionConfigAsync(vm, file);
         // A system picker drops focus on the way back; the name is what the user checks first.
-        SectionConfigNameBox.Focus(NavigationMethod.Directional);
+        SectionConfigNameBox.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
     }
 
     private async Task ReadIntoSectionConfigAsync(ConfigViewModel vm, PickedFile file)

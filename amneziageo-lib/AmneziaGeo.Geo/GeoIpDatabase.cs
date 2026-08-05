@@ -7,6 +7,9 @@ namespace AmneziaGeo.Geo;
 /// </summary>
 public static class GeoIpDatabase
 {
+    // An entry opens with its country code, so this much of its head decides whether the body is worth reading.
+    private const int CodeProbe = 64;
+
     /// <summary>
     /// Returns all country codes contained in the file.
     /// </summary>
@@ -25,6 +28,30 @@ public static class GeoIpDatabase
             {
                 reader.Skip(wireType);
             }
+        }
+
+        return countries;
+    }
+
+    /// <summary>
+    /// Returns all country codes contained in the file, holding one entry at a time.
+    /// </summary>
+    public static IReadOnlyList<string> Countries(Stream stream)
+    {
+        var countries = new List<string>();
+        var reader = new ProtoStream(stream);
+        while (reader.TryReadTag(out var field, out var wireType))
+        {
+            if (field != 1 || wireType != 2)
+            {
+                reader.Skip(wireType);
+                continue;
+            }
+
+            var length = reader.ReadLength();
+            var start = reader.Position;
+            countries.Add(Code(reader, length));
+            reader.Seek(start + length);
         }
 
         return countries;
@@ -55,6 +82,64 @@ public static class GeoIpDatabase
         }
 
         return [];
+    }
+
+    /// <summary>
+    /// Returns the CIDR entries for a country, holding one entry at a time.
+    /// </summary>
+    public static IReadOnlyList<string> Cidrs(Stream stream, string country)
+    {
+        var target = country.ToUpperInvariant();
+        var reader = new ProtoStream(stream);
+        while (reader.TryReadTag(out var field, out var wireType))
+        {
+            if (field != 1 || wireType != 2)
+            {
+                reader.Skip(wireType);
+                continue;
+            }
+
+            var length = reader.ReadLength();
+            var start = reader.Position;
+            var match = Code(reader, length) == target;
+            reader.Seek(start);
+            if (!match)
+            {
+                reader.Advance(length);
+                continue;
+            }
+
+            var entry = reader.Rent(length);
+            try
+            {
+                return ReadCidrs(entry.AsSpan(0, length));
+            }
+            finally
+            {
+                ProtoStream.Return(entry);
+            }
+        }
+
+        return [];
+    }
+
+    // Takes an entry's code out of its head; a head too short to hold it yields nothing.
+    private static string Code(ProtoStream reader, int length)
+    {
+        var probe = Math.Min(length, CodeProbe);
+        var buffer = reader.Rent(probe);
+        try
+        {
+            return ReadCountryCode(buffer.AsSpan(0, probe));
+        }
+        catch (InvalidDataException)
+        {
+            return string.Empty;
+        }
+        finally
+        {
+            ProtoStream.Return(buffer);
+        }
     }
 
     private static string ReadCountryCode(ReadOnlySpan<byte> entry)

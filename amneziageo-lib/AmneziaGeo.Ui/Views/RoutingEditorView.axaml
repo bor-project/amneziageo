@@ -177,8 +177,11 @@
 
         <!-- Role segment [Прокси | Директ | Блок]: which bucket the add rows target and the list below shows. -->
         <StackPanel Spacing="6">
+          <!-- The link below sits far to the right, so directional focus walks past it down the left edge;
+               naming it as the down target puts it on the way. -->
           <controls:SegmentedSelector Label="{l:Tr Main_RoleLabel}"
               Command="{Binding SelectRoleCommand}"
+              XYFocus.Down="{Binding #AddLocalSubnetsLink}"
               IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
               Item1Text="{l:Tr Main_RoleProxy}" Item1Param="proxy" Item1Active="{Binding IsProxyRole}"
               Item2Text="{l:Tr Main_RoleDirect}" Item2Param="direct" Item2Active="{Binding IsDirectRole}"
@@ -187,10 +190,11 @@
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Grid.Column="0" Text="{Binding RoleHint}" Classes="muted" FontSize="11.5"
                        TextWrapping="Wrap" VerticalAlignment="Top" />
-            <Button Grid.Column="1" Classes="linkbtn" IsVisible="{Binding IsDirectRole}" Margin="12,0,0,0"
+            <Button x:Name="AddLocalSubnetsLink" Grid.Column="1" Classes="linkbtn"
+                    IsVisible="{Binding IsDirectRole}" Margin="12,0,0,0"
                     Command="{Binding AddLocalSubnetsCommand}" IsEnabled="{Binding !IsBusy}"
                     VerticalAlignment="Top" HorizontalAlignment="Right">
-              <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" FontSize="11.5" TextWrapping="Wrap" />
+              <TextBlock Text="{l:Tr Main_AddLocalSubnetsButton}" TextWrapping="Wrap" />
             </Button>
           </Grid>
           <!-- The Proxy bucket is inert while the global proxy is on: everything already goes through the tunnel. -->
@@ -205,12 +209,10 @@
                     VerticalAlignment="Center"
                     Command="{Binding SortRulesCommand}"
                     ToolTip.Tip="{l:Tr Main_SortRulesTooltip}" />
-            <Button Grid.Column="3" Command="{Binding ClearRulesCommand}"
-                    Background="Transparent" BorderThickness="0" Padding="0"
-                    Cursor="Hand" VerticalAlignment="Center" HorizontalAlignment="Right"
+            <Button Grid.Column="3" Classes="linkbtn" Command="{Binding ClearRulesCommand}"
+                    VerticalAlignment="Center" HorizontalAlignment="Right"
                     ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}">
-              <TextBlock Text="{l:Tr Main_ClearButton}" FontSize="11.5"
-                         Foreground="{DynamicResource AgAccentBrush}" />
+              <TextBlock Text="{l:Tr Main_ClearButton}" />
             </Button>
           </Grid>
           <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"

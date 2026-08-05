@@ -27,10 +27,8 @@ public static class GeoMaterializer
                     domains.Add(new GeoDomain(GeoDomainKind.Domain, rule.Value));
                     break;
                 case GeoRuleKind.GeoIp:
-                    routes.AddRange(index.Cidrs(StripPrefix(rule.Value)));
-                    break;
                 case GeoRuleKind.GeoSite:
-                    domains.AddRange(index.Domains(StripPrefix(rule.Value)));
+                    Expand(StripPrefix(rule.Value), index, routes, domains);
                     break;
                 case GeoRuleKind.App:
                     apps.Add(rule.Value);
@@ -39,6 +37,20 @@ public static class GeoMaterializer
         }
 
         return (routes, domains, apps);
+    }
+
+    /// <summary>
+    /// Expands one geo key into both facets: the addresses the databases give it and the names, including the
+    /// domain suffixes a country owns.
+    /// </summary>
+    public static void Expand(string key, GeoIndex index, List<string> routes, List<GeoDomain> domains)
+    {
+        routes.AddRange(index.Cidrs(key));
+        domains.AddRange(index.Domains(key));
+        foreach (var suffix in CountryDomains.Suffixes(key))
+        {
+            domains.Add(new GeoDomain(GeoDomainKind.Domain, suffix));
+        }
     }
 
     private static string StripPrefix(string value)

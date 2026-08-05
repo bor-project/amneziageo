@@ -15,6 +15,13 @@ internal sealed class WindowsGeoFileStore : IGeoFileStore
     }
 
     /// <inheritdoc/>
+    public Stream? OpenRead(string name)
+    {
+        var path = TunnelPaths.GeoDataFile(name);
+        return File.Exists(path) ? File.OpenRead(path) : null;
+    }
+
+    /// <inheritdoc/>
     public async Task WriteAsync(string name, byte[] data, CancellationToken ct = default)
     {
         var path = TunnelPaths.GeoDataFile(name);

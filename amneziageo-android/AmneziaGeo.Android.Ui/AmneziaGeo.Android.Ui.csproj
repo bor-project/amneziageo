@@ -11,6 +11,8 @@
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.0.1</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <!-- Ships the ABIs the native engine is built for; the Debug default leaves out 32-bit ARM. -->
+    <RuntimeIdentifiers>android-arm;android-arm64;android-x64</RuntimeIdentifiers>
     <!-- Narrows the built ABIs to the ones the build script passes. -->
     <RuntimeIdentifiers Condition="'$(AndroidRuntimeIdentifiers)' != ''">$(AndroidRuntimeIdentifiers)</RuntimeIdentifiers>
   </PropertyGroup>

@@ -145,52 +145,7 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
         }
 
         await store.RenameConfigAsync(oldName, newName, ct);
-
-        var geo = await store.GetTunnelGeoAsync(oldName, ct);
-        if (geo is not null)
-        {
-            await store.SaveTunnelGeoAsync(geo with { Name = newName }, ct);
-            await store.RemoveTunnelGeoAsync(oldName, ct);
-        }
-
-        var transport = await store.GetConfigTransportAsync(oldName, ct);
-        if (transport is not null)
-        {
-            await store.SetConfigTransportAsync(transport with { Name = newName }, ct);
-            await store.RemoveConfigTransportAsync(oldName, ct);
-        }
-
-        var dns = await store.GetConfigDnsAsync(oldName, ct);
-        if (dns is not null)
-        {
-            await store.SetConfigDnsAsync(dns with { Name = newName }, ct);
-            await store.RemoveConfigDnsAsync(oldName, ct);
-        }
-
-        var exclusions = await store.GetConfigExclusionsAsync(oldName, ct);
-        if (exclusions is not null)
-        {
-            await store.SetConfigExclusionsAsync(exclusions with { Name = newName }, ct);
-            await store.RemoveConfigExclusionsAsync(oldName, ct);
-        }
-
-        foreach (var resolution in await store.ListDomainResolutionsAsync(oldName, ct))
-        {
-            await store.SaveDomainResolutionAsync(newName, resolution, 0, ct);
-        }
-
-        await store.RemoveDomainResolutionsAsync(oldName, ct);
-
-        foreach (var profileName in await store.ListProfileNamesAsync(ct))
-        {
-            var profile = await store.GetProfileAsync(profileName, ct);
-            if (profile is null || !string.Equals(profile.Config, oldName, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            await store.SaveProfileAsync(profile with { Config = newName }, ct);
-        }
+        await ConfigRename.CarryAsync(store, oldName, newName, ct);
     }
 
     /// <summary>

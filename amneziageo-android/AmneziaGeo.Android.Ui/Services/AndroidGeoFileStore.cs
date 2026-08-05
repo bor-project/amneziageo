@@ -15,6 +15,13 @@ internal sealed class AndroidGeoFileStore(string directory) : IGeoFileStore
     }
 
     /// <inheritdoc/>
+    public Stream? OpenRead(string name)
+    {
+        var path = PathFor(name);
+        return System.IO.File.Exists(path) ? System.IO.File.OpenRead(path) : null;
+    }
+
+    /// <inheritdoc/>
     public async Task WriteAsync(string name, byte[] data, CancellationToken ct = default)
     {
         System.IO.Directory.CreateDirectory(directory);

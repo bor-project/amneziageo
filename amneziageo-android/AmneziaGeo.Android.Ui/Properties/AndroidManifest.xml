@@ -32,9 +32,12 @@
   <application android:label="AmneziaGeo" android:icon="@mipmap/appicon" android:banner="@drawable/banner"
                android:allowBackup="false" android:enableOnBackInvokedCallback="false"
                android:requestLegacyExternalStorage="true">
+    <!-- The tunnel runs in a process of its own: closing the window then unloads the head and leaves the
+         tunnel alone in memory. -->
     <service android:name="org.amneziageo.android.GeoVpnService"
              android:permission="android.permission.BIND_VPN_SERVICE"
              android:exported="false"
+             android:process=":vpn"
              android:foregroundServiceType="specialUse">
       <intent-filter>
         <action android:name="android.net.VpnService" />

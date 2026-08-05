@@ -7,45 +7,42 @@ namespace AmneziaGeo.Geo;
 /// </summary>
 public sealed class GeoIndex
 {
-    private readonly List<byte[]> _geoip;
-    private readonly List<byte[]> _geosite;
+    private readonly IGeoFileStore _files;
+    private readonly List<string> _geoip;
+    private readonly List<string> _geosite;
     // Per-key parse memo: each Cidrs/Domains lookup re-scans the whole protobuf, and RematerializeAll queries the
     // same country/category across many lists on one shared index, so caching the result avoids the repeat scans.
     private readonly Dictionary<string, IReadOnlyList<string>> _cidrCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<GeoDomain>> _domainCache = new(StringComparer.OrdinalIgnoreCase);
 
-    private GeoIndex(List<byte[]> geoip, List<byte[]> geosite)
+    private GeoIndex(IGeoFileStore files, List<string> geoip, List<string> geosite)
     {
+        _files = files;
         _geoip = geoip;
         _geosite = geosite;
     }
 
     /// <summary>
-    /// Loads the downloaded files for the given sources, ordered by position.
+    /// Takes the source names for the given sources, ordered by position. The files stay on disk and are scanned
+    /// per query - a geo database runs to tens of megabytes and holding one costs more than re-reading it.
     /// </summary>
     public static GeoIndex Load(IReadOnlyList<GeoSource> sources, IGeoFileStore files)
     {
-        var geoip = new List<byte[]>();
-        var geosite = new List<byte[]>();
+        var geoip = new List<string>();
+        var geosite = new List<string>();
         foreach (var source in sources.OrderBy(s => s.Position))
         {
-            var bytes = files.Read(source.Name);
-            if (bytes is null)
-            {
-                continue;
-            }
-
             if (source.Kind.Equals("geoip", StringComparison.OrdinalIgnoreCase))
             {
-                geoip.Add(bytes);
+                geoip.Add(source.Name);
             }
             else
             {
-                geosite.Add(bytes);
+                geosite.Add(source.Name);
             }
         }
 
-        return new GeoIndex(geoip, geosite);
+        return new GeoIndex(files, geoip, geosite);
     }
 
     /// <summary>
@@ -59,9 +56,9 @@ public sealed class GeoIndex
         }
 
         IReadOnlyList<string> result = [];
-        foreach (var bytes in _geoip)
+        foreach (var name in _geoip)
         {
-            var cidrs = Safe(() => GeoIpDatabase.Cidrs(bytes, country), []);
+            var cidrs = Scan(name, stream => GeoIpDatabase.Cidrs(stream, country));
             if (cidrs.Count > 0)
             {
                 result = cidrs;
@@ -83,9 +80,9 @@ public sealed class GeoIndex
         }
 
         IReadOnlyList<GeoDomain> result = [];
-        foreach (var bytes in _geosite)
+        foreach (var name in _geosite)
         {
-            var domains = Safe(() => GeoSiteDatabase.Domains(bytes, category), []);
+            var domains = Scan(name, stream => GeoSiteDatabase.Domains(stream, category));
             if (domains.Count > 0)
             {
                 result = domains;
@@ -102,9 +99,9 @@ public sealed class GeoIndex
     public IReadOnlyList<string> Categories()
     {
         var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var bytes in _geosite)
+        foreach (var name in _geosite)
         {
-            foreach (var category in Safe(() => GeoSiteDatabase.Categories(bytes), []))
+            foreach (var category in Scan(name, GeoSiteDatabase.Categories))
             {
                 set.Add(category);
             }
@@ -119,9 +116,9 @@ public sealed class GeoIndex
     public IReadOnlyList<string> Countries()
     {
         var set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var bytes in _geoip)
+        foreach (var name in _geoip)
         {
-            foreach (var country in Safe(() => GeoIpDatabase.Countries(bytes), []))
+            foreach (var country in Scan(name, GeoIpDatabase.Countries))
             {
                 set.Add(country);
             }
@@ -130,16 +127,23 @@ public sealed class GeoIndex
         return [.. set];
     }
 
-    // Tolerate a single unparseable file so a corrupt or legacy source does not break index-wide queries.
-    private static T Safe<T>(Func<T> parse, T fallback)
+    // Runs one scan over a source file. A missing file yields nothing, and a single unparseable one does not break
+    // index-wide queries.
+    private IReadOnlyList<T> Scan<T>(string name, Func<Stream, IReadOnlyList<T>> parse)
     {
+        using var stream = _files.OpenRead(name);
+        if (stream is null)
+        {
+            return [];
+        }
+
         try
         {
-            return parse();
+            return parse(stream);
         }
-        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException)
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or FormatException or EndOfStreamException or NotSupportedException or IOException)
         {
-            return fallback;
+            return [];
         }
     }
 }

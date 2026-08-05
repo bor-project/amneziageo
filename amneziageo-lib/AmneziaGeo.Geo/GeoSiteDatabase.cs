@@ -7,6 +7,9 @@ namespace AmneziaGeo.Geo;
 /// </summary>
 public static class GeoSiteDatabase
 {
+    // An entry opens with its category code, so this much of its head decides whether the body is worth reading.
+    private const int CodeProbe = 64;
+
     /// <summary>
     /// Returns all category codes contained in the file.
     /// </summary>
@@ -25,6 +28,30 @@ public static class GeoSiteDatabase
             {
                 reader.Skip(wireType);
             }
+        }
+
+        return categories;
+    }
+
+    /// <summary>
+    /// Returns all category codes contained in the file, holding one entry at a time.
+    /// </summary>
+    public static IReadOnlyList<string> Categories(Stream stream)
+    {
+        var categories = new List<string>();
+        var reader = new ProtoStream(stream);
+        while (reader.TryReadTag(out var field, out var wireType))
+        {
+            if (field != 1 || wireType != 2)
+            {
+                reader.Skip(wireType);
+                continue;
+            }
+
+            var length = reader.ReadLength();
+            var start = reader.Position;
+            categories.Add(Code(reader, length));
+            reader.Seek(start + length);
         }
 
         return categories;
@@ -55,6 +82,64 @@ public static class GeoSiteDatabase
         }
 
         return [];
+    }
+
+    /// <summary>
+    /// Returns the domain rules for a category, holding one entry at a time.
+    /// </summary>
+    public static IReadOnlyList<GeoDomain> Domains(Stream stream, string category)
+    {
+        var target = category.ToUpperInvariant();
+        var reader = new ProtoStream(stream);
+        while (reader.TryReadTag(out var field, out var wireType))
+        {
+            if (field != 1 || wireType != 2)
+            {
+                reader.Skip(wireType);
+                continue;
+            }
+
+            var length = reader.ReadLength();
+            var start = reader.Position;
+            var match = Code(reader, length) == target;
+            reader.Seek(start);
+            if (!match)
+            {
+                reader.Advance(length);
+                continue;
+            }
+
+            var entry = reader.Rent(length);
+            try
+            {
+                return ReadDomains(entry.AsSpan(0, length));
+            }
+            finally
+            {
+                ProtoStream.Return(entry);
+            }
+        }
+
+        return [];
+    }
+
+    // Takes an entry's code out of its head; a head too short to hold it yields nothing.
+    private static string Code(ProtoStream reader, int length)
+    {
+        var probe = Math.Min(length, CodeProbe);
+        var buffer = reader.Rent(probe);
+        try
+        {
+            return ReadCountryCode(buffer.AsSpan(0, probe));
+        }
+        catch (InvalidDataException)
+        {
+            return string.Empty;
+        }
+        finally
+        {
+            ProtoStream.Return(buffer);
+        }
     }
 
     private static string ReadCountryCode(ReadOnlySpan<byte> entry)

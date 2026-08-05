@@ -43,6 +43,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
     private Task? _initTask;
     private Task? _geoFilesTask;
+    private VpnBridge.Listener? _events;
 
     private string? _selectedTarget;
     private string? _boundTarget;
@@ -53,6 +54,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _disposed;
     private string _logLevel = "error";
     private bool _routeLog;
+    private int _routeTtl = 300;
 
     public event Action? Connected;
 
@@ -92,10 +94,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         Load();
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
-        GeoVpnService.Trace = line => _log.Route(line);
-        GeoVpnService.StateChanged += OnVpnStateChanged;
+        _events = new VpnBridge.Listener { Handler = OnVpnEvent };
+        VpnBridge.Listen(Application.Context, _events, VpnBridge.ActionEvent);
+        MainActivity.Resumed += SyncTunnelState;
         Connected?.Invoke();
         PushSnapshot();
+        SyncTunnelState();
         _ = EnsureInitAsync().ContinueWith(_ => PushSnapshot(), TaskScheduler.Default);
     }
 
@@ -111,7 +115,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _disposed = true;
-        GeoVpnService.StateChanged -= OnVpnStateChanged;
+        MainActivity.Resumed -= SyncTunnelState;
+        if (_events is not null)
+        {
+            Application.Context.UnregisterReceiver(_events);
+            _events = null;
+        }
+
         _geoHttp.Dispose();
         _httpClient.Dispose();
         _log.Dispose();
@@ -213,6 +223,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpUpdateSources:
                 return await UpdateAllSourcesAsync();
 
+            case IpcContract.OpListLocalSubnets:
+                return new IpcAck(true, string.Join('\n', GeoVpnService.LocalSubnets()));
+
             case IpcContract.OpListGeo:
                 return await ListGeoAsync();
 
@@ -298,7 +311,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         _connectFailed = false;
         var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(_selectedTarget);
-        GeoVpnService.Plan = await BuildPlanAsync(_selectedTarget).ConfigureAwait(false);
+        VpnBridge.WritePlan(await BuildPlanAsync(_selectedTarget).ConfigureAwait(false));
         _log.Info("agent", $"connect requested: target '{_selectedTarget}', app-split {appMode}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
@@ -355,19 +368,62 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // Reads what is running: the tunnel lives in another process and can be gone without a word, so the window
+    // asks again whenever it comes up.
+    private void SyncTunnelState()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (VpnBridge.IsRunning(Application.Context))
+        {
+            VpnBridge.RequestState(Application.Context);
+        }
+        else if (_active)
+        {
+            OnVpnStateChanged(VpnStage.Disconnected, null);
+        }
+    }
+
+    // Takes what the tunnel process reports: a stage change or a line for the routing log.
+    private void OnVpnEvent(Intent intent)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var trace = intent.GetStringExtra(VpnBridge.ExtraTrace);
+        if (trace is not null)
+        {
+            _log.Route(trace);
+            return;
+        }
+
+        var stage = intent.GetIntExtra(VpnBridge.ExtraStage, -1);
+        if (stage >= 0)
+        {
+            OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail));
+        }
+    }
+
     private void OnVpnStateChanged(VpnStage stage, string? detail)
     {
+        // The session name comes back from the tunnel, so a head that started after it still names what runs.
+        var session = string.IsNullOrEmpty(detail) ? _selectedTarget : detail;
         switch (stage)
         {
             case VpnStage.Connecting:
                 _active = true;
                 _boundStatus = ConnectionStatus.Connecting;
-                _boundTarget = _selectedTarget;
+                _boundTarget = session;
                 break;
             case VpnStage.Connected:
                 _active = true;
                 _boundStatus = ConnectionStatus.Connected;
-                _boundTarget = _selectedTarget;
+                _boundTarget = session;
                 _connectFailed = false;
                 break;
             case VpnStage.Disconnected:
@@ -425,7 +481,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ConnectFailed: _connectFailed,
             EngineVersion: string.Empty,
             LogLevel: _logLevel,
-            RouteLog: _routeLog));
+            RouteLog: _routeLog,
+            RouteTtlSeconds: _routeTtl));
     }
 
     private ConfigEntry Entry(string name, string config)
@@ -455,9 +512,26 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _log.Info("agent", "android agent started");
         await _store.InitializeAsync().ConfigureAwait(false);
         await GeoDefaults.SeedIfEmptyAsync(_store, null, CancellationToken.None).ConfigureAwait(false);
+        await RematerializeIfStaleAsync().ConfigureAwait(false);
         await RefreshTransportsAsync().ConfigureAwait(false);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
+    }
+
+    // Rebuilds the stored lists when the app started covering a rule token differently than the run that wrote them.
+    private async Task RematerializeIfStaleAsync()
+    {
+        try
+        {
+            if (await _geo.RematerializeIfStaleAsync().ConfigureAwait(false))
+            {
+                _log.Info("geo", "rule expansion changed, the stored routing lists were rebuilt");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("geo", "the routing lists could not be rebuilt: " + ex);
+        }
     }
 
     private async Task RefreshGeoSourcesAsync()
@@ -716,7 +790,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var cap = args.Count > 1 && int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var c)
             ? Math.Clamp(c, 1, 5000)
             : 300;
-        return new IpcAck(true, JsonSerializer.Serialize(entries.Take(cap).ToArray()));
+        return new IpcAck(true, JsonSerializer.Serialize(new { total = entries.Count, entries = entries.Take(cap).ToArray() }));
     }
 
     private async Task<IpcAck> SaveRoutingListAsync(IReadOnlyList<string> args)
@@ -1325,7 +1399,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             directDomains,
             list.BlockDomains,
             settings is { UseGlobalProxy: true },
-            settings is { AllUdp: true });
+            settings is { AllUdp: true },
+            _routeTtl);
 
         // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
         if (!plan.HasRules)
@@ -1402,6 +1477,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             {
                 _routeLog = route.ValueKind == JsonValueKind.True;
             }
+
+            if (document.RootElement.TryGetProperty("RouteTtl", out var ttl)
+                && ttl.ValueKind == JsonValueKind.Number
+                && SettingKeys.TryParseRouteTtl(ttl.GetRawText(), out var seconds))
+            {
+                _routeTtl = seconds;
+            }
         }
         catch (Exception)
         {
@@ -1437,6 +1519,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             AppendMap(builder, _routing);
             builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
+            builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append('}');
             System.IO.File.WriteAllText(_storePath, builder.ToString());
         }
@@ -1505,9 +1588,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         else
         {
             RebindProfileState(oldName, newName);
+            // Selection and the live latch name a profile: a config of the same name must not move them.
+            RetargetSelection(oldName, newName);
         }
 
-        RetargetSelection(oldName, newName);
         Save();
         PushSnapshot();
         return Ok();
@@ -1647,6 +1731,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case "route-log":
                 _routeLog = IsOn(args[1]);
                 _log.SetRouteLog(_routeLog);
+                Save();
+                PushSnapshot();
+                return Ok();
+            case SettingKeys.RouteTtl:
+                if (!SettingKeys.TryParseRouteTtl(args[1], out var ttl))
+                {
+                    return Fail();
+                }
+
+                _routeTtl = ttl;
                 Save();
                 PushSnapshot();
                 return Ok();

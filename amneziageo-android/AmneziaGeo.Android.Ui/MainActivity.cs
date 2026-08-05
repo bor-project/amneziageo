@@ -136,11 +136,32 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     }
 
     /// <inheritdoc/>
+    protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        base.OnCreate(savedInstanceState);
+        App.Stage("activity", clock);
+    }
+
+    /// <inheritdoc/>
     protected override void OnResume()
     {
         base.OnResume();
         Current = this;
         Resumed?.Invoke();
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDestroy()
+    {
+        base.OnDestroy();
+
+        // Unloads the head: the tunnel runs in a process of its own, so nothing here has to be kept around after
+        // the user has closed the window. A system-driven restart (a configuration change) is left alone.
+        if (IsFinishing)
+        {
+            global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
+        }
     }
 
     /// <inheritdoc/>

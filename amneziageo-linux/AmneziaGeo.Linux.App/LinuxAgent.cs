@@ -79,6 +79,7 @@ internal sealed class LinuxAgent : IDisposable
     {
         await _store.InitializeAsync(ct).ConfigureAwait(false);
         await GeoDefaults.SeedIfEmptyAsync(_store, null, ct).ConfigureAwait(false);
+        await _geo.RematerializeIfStaleAsync(ct).ConfigureAwait(false);
 
         var settings = await _store.GetSettingsAsync(ct).ConfigureAwait(false);
         _selectedTarget = settings.TryGetValue(SelectedTargetKey, out var target) && target.Length > 0 ? target : null;
@@ -513,6 +514,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         await _store.RenameConfigAsync(args[0], args[1], ct).ConfigureAwait(false);
+        await ConfigRename.CarryAsync(_store, args[0], args[1], ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }

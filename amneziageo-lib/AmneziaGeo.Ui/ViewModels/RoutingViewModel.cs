@@ -563,8 +563,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             _ = settings.LoadAsync();
         }
 
-        _host.Profile.AdoptRoutingList(id);
-
         var created = RoutingLists.FirstOrDefault(r => r.Id == id);
         if (created is not null)
         {
@@ -781,7 +779,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         reserved.Add(editor.Name);
-        _host.Profile.AdoptRoutingList(editor.Id);
 
         if (!IsCreatingSectionRouting && !IsEditDirty)
         {

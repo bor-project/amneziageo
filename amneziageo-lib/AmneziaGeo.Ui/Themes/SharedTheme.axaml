@@ -186,14 +186,15 @@
       <Setter Property="Padding" Value="5,3,11,3" />
     </Style>
 
-    <!-- Inline text link: transparent, accent text, no chrome; shared by "Add local networks" and "Hide settings". -->
+    <!-- Inline text link: transparent, accent text, no chrome; shared by "Add local networks" and "Hide settings".
+         The padding carries the focus ring, which is drawn on the bounds and would otherwise lie on the glyphs. -->
     <Style Selector="Button.linkbtn">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="FontSize" Value="11.5" />
       <Setter Property="FontWeight" Value="Medium" />
-      <Setter Property="Padding" Value="0" />
+      <Setter Property="Padding" Value="7,4" />
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="Cursor" Value="Hand" />
     </Style>
@@ -285,13 +286,13 @@
         </Template>
       </Setter>
     </Style>
-    <!-- Round home connect control: circular ring hugging the outer dial. -->
-    <Style Selector="Button.powerbig:focus-visible">
-      <Setter Property="FocusAdorner">
-        <Template>
-          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="3" CornerRadius="130" />
-        </Template>
-      </Setter>
+    <!-- Round home connect control: the ring lives in the button content and takes the current status colour,
+         so it is shown and hidden by these rules instead of by an adorner. -->
+    <Style Selector="Button.powerbig Ellipse.focusring">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.powerbig:focus-visible Ellipse.focusring">
+      <Setter Property="IsVisible" Value="True" />
     </Style>
     <!-- Section-rail rows: ring matching their 12px corner. -->
     <Style Selector="Button.rowselect:focus-visible">

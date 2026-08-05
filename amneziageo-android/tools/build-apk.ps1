@@ -10,11 +10,14 @@
   build stops with the submodule/build-engine instructions.
 
   Usage (on the build machine):
-    pwsh -File build-apk.ps1 [-c Debug|Release] [-v N.N.N.N]
-  Release needs a signing keystore; Debug is signed with the SDK debug key and installs as-is.
+    pwsh -File build-apk.ps1 [-c Release|Debug] [-v N.N.N.N]
+  Both configurations are signed with the SDK debug key and install as-is; Release is AOT-compiled and starts
+  about twice as fast on a weak TV, so it is the default. Release is not debuggable: run-as cannot reach the
+  application's private files, so set the device up through the interface and read results from logcat.
+  Set AndroidRuntimeIdentifiers to one ABI (e.g. android-arm) to cut the Release build to about a minute.
 #>
 param(
-  [Alias('c')][ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
+  [Alias('c')][ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
   [Alias('v')][string]$Version
 )
 

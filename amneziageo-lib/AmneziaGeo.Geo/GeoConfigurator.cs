@@ -52,6 +52,41 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
         return await store.SaveRoutingListAsync(MaterializeRoutingList(listId, name, rules, index), ct);
     }
 
+    // Bumped whenever a rule token starts covering something else, so stored lists are rebuilt against the new
+    // expansion instead of keeping what an older version wrote.
+    private const string MaterializerVersion = "2";
+
+    private const string MaterializerVersionKey = "geo-materializer";
+
+    /// <summary>
+    /// Rebuilds every stored list when the expansion changed since they were materialized. Returns whether
+    /// anything was rebuilt; a run with no readable geo database is skipped, or the lists would come back empty.
+    /// </summary>
+    public async Task<bool> RematerializeIfStaleAsync(CancellationToken ct = default)
+    {
+        var stored = await store.GetSettingAsync(MaterializerVersionKey, ct).ConfigureAwait(false);
+        if (string.Equals(stored, MaterializerVersion, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var sources = await store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
+        if (!sources.Any(HasFile))
+        {
+            return false;
+        }
+
+        await RematerializeAllRoutingListsAsync(ct).ConfigureAwait(false);
+        await store.SetSettingAsync(MaterializerVersionKey, MaterializerVersion, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    private bool HasFile(GeoSource source)
+    {
+        using var stream = files.OpenRead(source.Name);
+        return stream is not null;
+    }
+
     /// <summary>
     /// Re-materializes every stored routing list against the current geo sources. Called after
     /// geo sources are added, removed, or refreshed.
@@ -109,10 +144,11 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
         }
 
         var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
-        var key = StripPrefix(rule.Value);
-        return rule.Kind == GeoRuleKind.GeoIp
-            ? index.Cidrs(key)
-            : [.. index.Domains(key).Select(FormatDomain)];
+        var routes = new List<string>();
+        var domains = new List<GeoDomain>();
+        GeoMaterializer.Expand(StripPrefix(rule.Value), index, routes, domains);
+        routes.AddRange(domains.Select(FormatDomain));
+        return routes;
     }
 
     /// <summary>

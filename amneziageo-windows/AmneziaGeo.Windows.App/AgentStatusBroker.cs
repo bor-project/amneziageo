@@ -1272,7 +1272,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var entries = await geo.EntriesAsync(args[0], ct);
-        var json = System.Text.Json.JsonSerializer.Serialize(entries);
+        var cap = args.Count > 1 && int.TryParse(args[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? Math.Clamp(parsed, 1, 5000)
+            : 300;
+        var json = System.Text.Json.JsonSerializer.Serialize(new { total = entries.Count, entries = entries.Take(cap).ToArray() });
         return new IpcAck(true, json);
     }
 

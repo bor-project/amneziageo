@@ -15,6 +15,13 @@ internal sealed class LinuxGeoFileStore(string directory) : IGeoFileStore
     }
 
     /// <inheritdoc/>
+    public Stream? OpenRead(string name)
+    {
+        var path = PathFor(name);
+        return File.Exists(path) ? File.OpenRead(path) : null;
+    }
+
+    /// <inheritdoc/>
     public async Task WriteAsync(string name, byte[] data, CancellationToken ct = default)
     {
         Directory.CreateDirectory(directory);

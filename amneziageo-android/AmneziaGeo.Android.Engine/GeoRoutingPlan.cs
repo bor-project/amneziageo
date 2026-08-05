@@ -14,7 +14,8 @@ public sealed record GeoRoutingPlan(
     IReadOnlyList<GeoDomain> DirectDomains,
     IReadOnlyList<GeoDomain> BlockDomains,
     bool FullTunnel,
-    bool AllUdp)
+    bool AllUdp,
+    int TtlSeconds = 300)
 {
     /// <summary>
     /// Everything through the tunnel, nothing listed.

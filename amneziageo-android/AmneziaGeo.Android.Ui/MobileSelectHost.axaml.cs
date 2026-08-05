@@ -33,6 +33,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private Control? _selectedRow;
     private TextBox? _keyboardTarget;
     private Control? _lastFocus;
+    private Control? _disabledFocus;
     private int _transitionVersion;
 
     public MobileSelectHost(Control content)
@@ -45,7 +46,7 @@ internal sealed partial class MobileSelectHost : UserControl
 
         // A remote drives focus across the whole screen, so a text field must not summon the keyboard just by
         // being focused - it would swallow every key, Escape included. The select press raises it instead.
-        if (IsTelevision())
+        if (UiPlatform.IsTelevision)
         {
             Styles.Add(new Style(x => x.OfType<TextBox>())
             {
@@ -65,14 +66,14 @@ internal sealed partial class MobileSelectHost : UserControl
         AppSplitBridge.Register(ShowAppPicker);
         // TV file managers answer the single-file picker with a multi-select payload it never reads, so the pick
         // comes back empty; the built-in browser owns opening there.
-        if (IsTelevision() || !HasHandler(global::Android.Content.Intent.ActionOpenDocument))
+        if (UiPlatform.IsTelevision || !HasHandler(global::Android.Content.Intent.ActionOpenDocument))
         {
             FileBrowserHost.Register((title, extensions) => FileBrowserOverlay.ShowAsync(RootGrid, title, extensions));
         }
 
         // Opening and saving resolve separately: a phone may carry a third-party picker for open and still have
         // nothing but the stub for create, which accepts the intent and writes nothing.
-        if (IsTelevision() || !HasHandler(global::Android.Content.Intent.ActionCreateDocument))
+        if (UiPlatform.IsTelevision || !HasHandler(global::Android.Content.Intent.ActionCreateDocument))
         {
             FileSaverHost.Register((title, name) => FileBrowserOverlay.SaveAsync(RootGrid, title, name));
         }
@@ -337,9 +338,54 @@ internal sealed partial class MobileSelectHost : UserControl
             box.ClearValue(InputMethod.IsInputMethodEnabledProperty);
         }
 
-        if (e.Source is Control control && (!control.IsEffectivelyVisible || control.GetVisualRoot() is null))
+        if (e.Source is not Control control)
+        {
+            return;
+        }
+
+        if (!control.IsEffectivelyVisible || control.GetVisualRoot() is null)
         {
             RecoverFocus(control);
+        }
+        else if (!control.IsEffectivelyEnabled)
+        {
+            HoldFocus(control);
+        }
+    }
+
+    // A command that switches its own button off for the run - a busy flag on the entry just pressed - takes the
+    // focus ring with it, and the next remote press starts over from the header. Waits for the button to come
+    // round and puts the ring back on it.
+    private void HoldFocus(Control lost)
+    {
+        if (_disabledFocus is not null)
+        {
+            _disabledFocus.PropertyChanged -= OnDisabledFocusChanged;
+        }
+
+        _disabledFocus = lost;
+        lost.PropertyChanged += OnDisabledFocusChanged;
+    }
+
+    private void OnDisabledFocusChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property != InputElement.IsEffectivelyEnabledProperty
+            || sender is not Control control || !control.IsEffectivelyEnabled)
+        {
+            return;
+        }
+
+        control.PropertyChanged -= OnDisabledFocusChanged;
+        _disabledFocus = null;
+
+        if (_topLevel?.FocusManager?.GetFocusedElement() is Control and not TopLevel)
+        {
+            return;
+        }
+
+        if (control.IsEffectivelyVisible && control.GetVisualRoot() is not null)
+        {
+            control.Focus(NavigationMethod.Directional);
         }
     }
 
@@ -370,10 +416,6 @@ internal sealed partial class MobileSelectHost : UserControl
             }
         });
     }
-
-    private static bool IsTelevision()
-        => global::Android.App.Application.Context.PackageManager?
-            .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
 
     // Dismisses the topmost overlay in stacking order.
     private bool CloseTopOverlay()

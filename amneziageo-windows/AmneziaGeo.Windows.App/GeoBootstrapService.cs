@@ -10,6 +10,7 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class GeoBootstrapService(
     IStateStore store,
+    IGeoFileStore geoFiles,
     AgentStatusBroker broker,
     ILogger<GeoBootstrapService> logger) : BackgroundService
 {
@@ -17,7 +18,14 @@ internal sealed class GeoBootstrapService(
     {
         try
         {
-            if (await GeoDefaults.SeedIfEmptyAsync(store, logger, ct))
+            var seeded = await GeoDefaults.SeedIfEmptyAsync(store, logger, ct);
+            var rebuilt = await new GeoConfigurator(store, geoFiles).RematerializeIfStaleAsync(ct);
+            if (rebuilt)
+            {
+                logger.LogInformation("the rule expansion changed, the stored routing lists were rebuilt against it");
+            }
+
+            if (seeded || rebuilt)
             {
                 await broker.BroadcastIfChangedAsync(ct);
             }

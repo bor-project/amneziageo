@@ -21,7 +21,6 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     private string? _pendingOpenProfile;
     private ProfileItemViewModel? _adoptTarget;
     private string? _pendingAdoptConfig;
-    private long? _pendingAdoptRoutingList;
     private bool _suppressOpenChoice;
 
     // Rename baseline: the open profile's persisted name; a differing ProfileRename saves on the section Save.
@@ -371,34 +370,23 @@ internal sealed partial class ProfileViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Selects a just-added config in the open profile once its row lands in the next snapshot.
+    /// Selects a just-added config in the open profile once its row lands in the next snapshot. A profile that
+    /// already holds a configuration keeps it - a new one fills an empty slot, it never replaces a choice.
     /// </summary>
     internal void AdoptConfig(string name)
     {
-        if (OpenProfile is { } profile)
+        if (OpenProfile is { SelectedConfig.IsReal: false } profile)
         {
             _adoptTarget = profile;
             _pendingAdoptConfig = name;
         }
     }
 
-    /// <summary>
-    /// Selects a just-created routing list in the open profile once its row lands in the next snapshot.
-    /// </summary>
-    internal void AdoptRoutingList(long id)
-    {
-        if (OpenProfile is { } profile)
-        {
-            _adoptTarget = profile;
-            _pendingAdoptRoutingList = id;
-        }
-    }
-
-    // Picks a pending config / routing list in the profile it was armed for, staging it like a manual pick.
-    // Applies at most once - a differing open profile drops it, an unresolved option is not retried.
+    // Picks a pending config in the profile it was armed for, staging it like a manual pick. Applies at most
+    // once - a differing open profile drops it, an unresolved option is not retried.
     private void AdoptPending()
     {
-        if (_pendingAdoptConfig is null && _pendingAdoptRoutingList is null)
+        if (_pendingAdoptConfig is null)
         {
             return;
         }
@@ -407,26 +395,14 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         {
             _adoptTarget = null;
             _pendingAdoptConfig = null;
-            _pendingAdoptRoutingList = null;
             return;
         }
 
-        if (_pendingAdoptConfig is { } configName)
+        var configName = _pendingAdoptConfig;
+        _pendingAdoptConfig = null;
+        if (profile.ConfigOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, configName, StringComparison.Ordinal)) is { } config)
         {
-            _pendingAdoptConfig = null;
-            if (profile.ConfigOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, configName, StringComparison.Ordinal)) is { } config)
-            {
-                profile.SelectedConfig = config;
-            }
-        }
-
-        if (_pendingAdoptRoutingList is { } listId)
-        {
-            _pendingAdoptRoutingList = null;
-            if (profile.RoutingListOptions.FirstOrDefault(o => o.IsReal && o.Id == listId) is { } list)
-            {
-                profile.SelectedRoutingList = list;
-            }
+            profile.SelectedConfig = config;
         }
 
         _adoptTarget = null;
@@ -441,7 +417,6 @@ internal sealed partial class ProfileViewModel : ViewModelBase
         OpenProfile = null;
         _adoptTarget = null;
         _pendingAdoptConfig = null;
-        _pendingAdoptRoutingList = null;
         _baseProfileName = string.Empty;
         ScreenSection = ProfileScreenSection.Profile;
         BundleImport = null;

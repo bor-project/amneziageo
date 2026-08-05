@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui;
@@ -142,8 +143,9 @@ public sealed partial class MainView : UserControl
     }
 
     // Seats initial D-pad focus on each screen so an Android TV remote always has a starting point:
-    // the connect control on home, the active section row in settings. Uses NavigationMethod.Unspecified so the
-    // focus ring stays hidden on touch and at open, and shows only once the user navigates by remote / keyboard.
+    // the connect control on home, the active section row in settings. On a television home takes
+    // NavigationMethod.Directional so the connect control shows its ring as soon as the screen appears;
+    // everywhere else the focus is seated silently, without a ring.
     private void FocusCurrentScreen()
     {
         var vm = _vm;
@@ -161,7 +163,7 @@ public sealed partial class MainView : UserControl
 
             if (vm.IsHome)
             {
-                HomePowerButton.Focus(NavigationMethod.Unspecified);
+                HomePowerButton.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
             }
             else if (vm.IsSettings)
             {

@@ -11,6 +11,11 @@ public interface IGeoFileStore
     byte[]? Read(string name);
 
     /// <summary>
+    /// Opens the stored file for a source name, or null when absent.
+    /// </summary>
+    Stream? OpenRead(string name);
+
+    /// <summary>
     /// Writes downloaded file bytes for a source name.
     /// </summary>
     Task WriteAsync(string name, byte[] data, CancellationToken ct = default);

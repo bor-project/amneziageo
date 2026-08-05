@@ -1,0 +1,19 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Everything but a television: a pointer or a touch screen picks the control, so the D-pad rings that
+       SharedTheme draws are dropped. Included after SharedTheme, so these setters win. -->
+    <Style Selector="Button:focus-visible, ComboBox:focus-visible, ToggleSwitch:focus-visible, CheckBox:focus-visible, TextBox:focus-visible, AutoCompleteBox:focus-visible">
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.rowselect:focus-visible, Button.accent:focus-visible">
+      <Setter Property="FocusAdorner" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.powerbig:focus-visible Ellipse.focusring">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="ComboBox.field:focus-visible /template/ Border#HighlightBackground">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+</Styles>

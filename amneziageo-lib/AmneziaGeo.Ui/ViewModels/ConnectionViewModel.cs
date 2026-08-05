@@ -341,6 +341,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             }
         }
 
+        // A rename moves the selection under the UI, and the assignment above is echo-suppressed, so the
+        // preference that restores it on the next start would keep the old name and open with none selected.
+        if (ActiveProfile is { } current && !string.Equals(_prefs.LastProfile, current.Name, StringComparison.Ordinal))
+        {
+            _prefs.LastProfile = current.Name;
+            _prefs.Save();
+        }
+
         // Owning the tunnel clears a pending takeover prompt; while it stands, keep it across snapshots.
         if (snapshot.Active)
         {

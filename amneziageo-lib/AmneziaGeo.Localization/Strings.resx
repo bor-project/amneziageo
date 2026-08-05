@@ -1180,6 +1180,9 @@
   <data name="RoutingEditor_RuleEntriesCount" xml:space="preserve">
     <value>Entries: {0}</value>
   </data>
+  <data name="RoutingEditor_RuleEntriesShown" xml:space="preserve">
+    <value>First {0} of {1} entries</value>
+  </data>
   <data name="RoutingEditor_RuleNoEntries" xml:space="preserve">
     <value>No entries: the category is absent from the downloaded databases</value>
   </data>

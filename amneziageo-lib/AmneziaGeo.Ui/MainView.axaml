@@ -66,6 +66,7 @@
                     Margin="{Binding #HomeScroll.Bounds.Height, Converter={x:Static svc:GoldenTopConverter.Instance}, ConverterParameter=118}"
                     IsVisible="{Binding Home.IsReady}">
           <Button x:Name="HomePowerButton" Classes="powerbig" HorizontalAlignment="Center"
+                  FocusAdorner="{x:Null}"
                   Command="{Binding Home.ToggleConnectionCommand}"
                   IsEnabled="{Binding Home.CanToggleConnection}"
                   ToolTip.Tip="{Binding Home.ConnectHint}">
@@ -104,6 +105,10 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Panel>
               </Border>
+              <!-- Focus ring in the current status colour. -->
+              <Ellipse Classes="focusring" Width="236" Height="236" StrokeThickness="3"
+                       Stroke="{Binding Home.ConnectStatusBrush}"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Grid>
           </Button>
 
@@ -408,37 +413,73 @@
         <ScrollViewer Grid.Row="0" x:Name="ContentScroll" HorizontalScrollBarVisibility="Disabled">
           <Grid Margin="18,16">
 
+            <!-- Each section is built when it is first opened, not when the shell loads: six section trees cost
+                 seconds on a TV and a session opens one or two. A hidden control is never measured, so the
+                 template stays unrealized until the section is shown; the built view is kept afterwards, so
+                 switching back is free. The viewport-derived sizes stay outside the templates: an element-name
+                 binding does not cross a template's name scope. -->
+
             <!-- PROFILE SECTION -->
-            <Panel IsVisible="{Binding IsSettingsProfile}">
-              <views:ProfileView DataContext="{Binding Profile}" />
-            </Panel>
+            <ContentControl IsVisible="{Binding IsSettingsProfile}" Content="{Binding Profile}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:ProfileViewModel">
+                  <views:ProfileView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
             <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 32px inset. -->
-            <Panel IsVisible="{Binding IsSettingsConfig}">
-              <views:ConfigView DataContext="{Binding Config}"
-                                MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}" />
-            </Panel>
+            <ContentControl IsVisible="{Binding IsSettingsConfig}" Content="{Binding Config}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:ConfigViewModel">
+                  <views:ConfigView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
             <!-- ROUTING SECTION -->
-            <Panel IsVisible="{Binding IsSettingsRouting}">
-              <views:RoutingView DataContext="{Binding Routing}" />
-            </Panel>
+            <ContentControl IsVisible="{Binding IsSettingsRouting}" Content="{Binding Routing}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:RoutingViewModel">
+                  <views:RoutingView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
             <!-- SOURCES SECTION -->
-            <Panel IsVisible="{Binding IsSettingsSources}">
-              <views:SourcesView DataContext="{Binding Sources}" />
-            </Panel>
+            <ContentControl IsVisible="{Binding IsSettingsSources}" Content="{Binding Sources}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:SourcesViewModel">
+                  <views:SourcesView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
             <!-- DIAGNOSTICS SECTION: fixed to the viewport (minus the Grid's 32px inset) so only the pane body scrolls. -->
-            <Panel IsVisible="{Binding IsSettingsLogs}">
-              <views:DiagnosticsView DataContext="{Binding Diagnostics}"
-                              Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}" />
-            </Panel>
+            <ContentControl IsVisible="{Binding IsSettingsLogs}" Content="{Binding Diagnostics}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                            Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:DiagnosticsViewModel">
+                  <views:DiagnosticsView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
             <!-- GENERAL SECTION -->
-            <Panel IsVisible="{Binding IsSettingsGeneral}">
-              <views:GeneralView DataContext="{Binding General}" />
-            </Panel>
+            <ContentControl IsVisible="{Binding IsSettingsGeneral}" Content="{Binding General}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:GeneralViewModel">
+                  <views:GeneralView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
           </Grid>
         </ScrollViewer>

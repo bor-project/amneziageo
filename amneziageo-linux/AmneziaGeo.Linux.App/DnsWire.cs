@@ -10,21 +10,34 @@ internal static class DnsWire
 {
     private const int HeaderLength = 12;
     private const int TypeA = 1;
-    private const int TypeAaaa = 28;
+    private const int NoError = 0;
+    private const int NameError = 3;
 
     /// <summary>
-    /// Reads the queried name; false when the message carries no readable question.
+    /// Record type of an address record over IPv6.
     /// </summary>
-    public static bool TryReadQuestion(byte[] buffer, int length, out string name)
+    public const int TypeAaaa = 28;
+
+    /// <summary>
+    /// Reads the queried name and record type; false when the message carries no readable question.
+    /// </summary>
+    public static bool TryReadQuestion(byte[] buffer, int length, out string name, out int type)
     {
         name = string.Empty;
+        type = 0;
         if (length < HeaderLength || ReadUInt16(buffer, 4) == 0)
         {
             return false;
         }
 
         var offset = HeaderLength;
-        return TryReadName(buffer, length, ref offset, out name) && name.Length > 0;
+        if (!TryReadName(buffer, length, ref offset, out name) || name.Length == 0 || offset + 4 > length)
+        {
+            return false;
+        }
+
+        type = ReadUInt16(buffer, offset);
+        return true;
     }
 
     /// <summary>
@@ -74,7 +87,15 @@ internal static class DnsWire
     /// <summary>
     /// Builds the "no such name" answer to a query.
     /// </summary>
-    public static byte[]? BuildRefusal(byte[] query, int length)
+    public static byte[]? BuildRefusal(byte[] query, int length) => BuildAnswerless(query, length, NameError);
+
+    /// <summary>
+    /// Builds the "the name is fine, it just carries no such record" answer to a query.
+    /// </summary>
+    public static byte[]? BuildEmpty(byte[] query, int length) => BuildAnswerless(query, length, NoError);
+
+    // An answer that repeats the question and carries no records.
+    private static byte[]? BuildAnswerless(byte[] query, int length, int code)
     {
         if (length < HeaderLength)
         {
@@ -90,7 +111,7 @@ internal static class DnsWire
         var answer = new byte[offset];
         Array.Copy(query, answer, offset);
         answer[2] = (byte)((query[2] & 0x01) | 0x80);
-        answer[3] = 0x83;
+        answer[3] = (byte)(0x80 | code);
         WriteUInt16(answer, 6, 0);
         WriteUInt16(answer, 8, 0);
         WriteUInt16(answer, 10, 0);

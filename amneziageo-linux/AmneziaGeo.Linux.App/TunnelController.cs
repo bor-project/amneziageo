@@ -69,7 +69,7 @@ internal sealed class TunnelController : IDisposable
     /// Brings the tunnel up from a wg-quick config under the given rules; returns null on success or the reason
     /// it was refused.
     /// </summary>
-    public async Task<string?> UpAsync(string configText, TunnelRouting routing, CancellationToken ct)
+    public async Task<string?> UpAsync(string configText, TunnelRouting routing, TunnelOptions options, CancellationToken ct)
     {
         var blocker = Preflight();
         if (blocker is not null)
@@ -97,12 +97,17 @@ internal sealed class TunnelController : IDisposable
 
         // Read before the tunnel routes land, while the machine's own path is the only one there is.
         var hop = await PhysicalHopAsync(ct).ConfigureAwait(false);
-        var lanResolvers = LanResolvers(hop.Via);
+        var lanResolvers = options.LocalResolvers.Count > 0 ? options.LocalResolvers : LanResolvers(hop.Via);
 
         var daemon = new AwgDaemon(_enginePath, _iface);
         try
         {
             daemon.Start();
+            if (daemon.ReclaimedOrphan)
+            {
+                _log.Warn("tunnel", $"{_iface} was still held by the engine of a run that was killed; it is taken back");
+            }
+
             if (!await WaitForSocketAsync(daemon, ct).ConfigureAwait(false))
             {
                 daemon.Dispose();
@@ -129,11 +134,18 @@ internal sealed class TunnelController : IDisposable
 
         Advertised = allowedIps;
         Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
-        _routes = new LiveRoutes(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, _log);
-        StartNameRouter(routing with { Split = split }, tunnelResolvers, lanResolvers);
-        _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {routing.ProxyRoutes.Count} proxy range(s) and {routing.ProxyDomains.Count} domain(s) decided per destination");
+        _routes = new LiveRoutes(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, options.RouteTtlSeconds, _log);
+        _sessionCts = new CancellationTokenSource();
+        _routes.StartExpiry(_sessionCts.Token);
+        StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers);
+        _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {routing.ProxyRoutes.Count} proxy range(s) and {routing.ProxyDomains.Count} domain(s) decided per destination, route kept {options.RouteTtlSeconds} s past its last use");
         return null;
     }
+
+    /// <summary>
+    /// Sets how long a destination keeps its route on the running connection.
+    /// </summary>
+    public void SetRouteTtl(int seconds) => _routes?.SetTtl(seconds);
 
     /// <summary>
     /// Tears the tunnel down; the interface goes with the daemon process.
@@ -180,9 +192,10 @@ internal sealed class TunnelController : IDisposable
 
     // Binds the name router and points the machine at it once the peer answers, so a dial that never completes
     // cannot leave the machine without a resolver.
-    private void StartNameRouter(TunnelRouting routing, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers)
+    private void StartNameRouter(TunnelRouting routing, IReadOnlyList<string> allowedIps, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers)
     {
-        var router = new DnsRouter(routing, tunnelResolvers, lanResolvers, _routes!, _log);
+        var stripV6 = !allowedIps.Any(range => range.Contains(':', StringComparison.Ordinal));
+        var router = new DnsRouter(routing, stripV6, tunnelResolvers, lanResolvers, _routes!, _log);
         if (!router.Start())
         {
             router.Dispose();
@@ -191,8 +204,7 @@ internal sealed class TunnelController : IDisposable
         }
 
         _dns = router;
-        _sessionCts = new CancellationTokenSource();
-        _ = Task.Run(() => ApplyResolverWhenUpAsync(_sessionCts.Token));
+        _ = Task.Run(() => ApplyResolverWhenUpAsync(_sessionCts!.Token));
     }
 
     private async Task ApplyResolverWhenUpAsync(CancellationToken ct)

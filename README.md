@@ -197,9 +197,15 @@ amneziageo tui                     # full-screen console over SSH
 - The control socket is `/tmp/CoreFxPipe_AmneziaGeo.Agent`, so the unit must not set `PrivateTmp`.
   Every local account that can reach the socket can drive the agent, including reading a
   configuration's keys.
-- The Linux tunnel applies the configuration's own addresses, MTU and `AllowedIPs`. Routing lists,
-  per-config DNS, exclusions and the WebSocket transport are stored and reported, but not yet
-  enforced by the Linux data plane.
+- The Linux tunnel applies the configuration's own addresses, MTU and `AllowedIPs`, the routing list
+  bound to the profile, and the resolvers stored for the configuration. A split routing list starts
+  with nothing but the resolver routed, and every destination earns a host route on first contact;
+  `route-ttl-seconds` decides how long one outlives its traffic. Exclusions, rules by application and
+  the WebSocket transport are stored and reported, but not yet enforced by the Linux data plane.
+- Destinations are decided by the names the machine looks up, so an application that resolves on its
+  own, over DoH, is decided by address alone. While the tunnel carries no IPv6, an address over it is
+  withheld from the names the rules send through the tunnel, which would otherwise leave by the
+  physical path.
 
 ## License
 

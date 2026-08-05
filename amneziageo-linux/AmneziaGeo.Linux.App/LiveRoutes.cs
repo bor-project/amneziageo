@@ -6,30 +6,36 @@ namespace AmneziaGeo.Linux.App;
 
 /// <summary>
 /// Installs host routes for destinations as they are first used: a tunneled address is advertised to the engine
-/// and pointed at the interface, a bypassed one is pinned to the physical hop.
+/// and pointed at the interface, a bypassed one is pinned to the physical hop. An address nothing has touched
+/// for the route lifetime loses its route and is decided again on the next contact.
 /// </summary>
 internal sealed class LiveRoutes
 {
+    private const int MinSweepSeconds = 15;
+    private const int MaxSweepSeconds = 120;
+
     private readonly string _iface;
     private readonly string? _peerKey;
     private readonly AwgDaemon _daemon;
     private readonly string? _gateway;
     private readonly string? _device;
     private readonly AgentLog _log;
-    private readonly ConcurrentDictionary<string, byte> _tunneled = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _tunneled = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _bypassed = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _uapiGate = new(1, 1);
+    private int _ttlSeconds;
 
     /// <summary>
     /// ctor
     /// </summary>
-    public LiveRoutes(string interfaceName, string? peerPublicKeyHex, AwgDaemon daemon, string? gateway, string? device, AgentLog log)
+    public LiveRoutes(string interfaceName, string? peerPublicKeyHex, AwgDaemon daemon, string? gateway, string? device, int ttlSeconds, AgentLog log)
     {
         _iface = interfaceName;
         _peerKey = peerPublicKeyHex;
         _daemon = daemon;
         _gateway = gateway;
         _device = device;
+        _ttlSeconds = ttlSeconds;
         _log = log;
     }
 
@@ -44,13 +50,34 @@ internal sealed class LiveRoutes
     public IReadOnlyCollection<string> Bypassed => _bypassed.Keys.ToList();
 
     /// <summary>
+    /// Idle window a route survives without traffic; zero keeps only what a live socket holds.
+    /// </summary>
+    public int TtlSeconds => _ttlSeconds;
+
+    /// <summary>
+    /// Sets the route lifetime for the running connection.
+    /// </summary>
+    public void SetTtl(int seconds) => _ttlSeconds = seconds;
+
+    /// <summary>
+    /// Starts dropping routes nothing has used for the route lifetime.
+    /// </summary>
+    public void StartExpiry(CancellationToken ct) => _ = Task.Run(() => ExpireAsync(ct), ct);
+
+    /// <summary>
     /// Routes an address into the tunnel, advertising it to the engine first.
     /// </summary>
     public async Task<bool> TunnelAsync(IPAddress address, string reason, CancellationToken ct)
     {
         var host = $"{address}/{Prefix(address)}";
-        if (_bypassed.ContainsKey(host) || !_tunneled.TryAdd(host, 0))
+        if (_bypassed.ContainsKey(host))
         {
+            return false;
+        }
+
+        if (!_tunneled.TryAdd(host, Environment.TickCount64))
+        {
+            _tunneled[host] = Environment.TickCount64;
             return false;
         }
 
@@ -125,6 +152,51 @@ internal sealed class LiveRoutes
 
         _bypassed.Clear();
         _tunneled.Clear();
+    }
+
+    private async Task ExpireAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(_ttlSeconds / 4, MinSweepSeconds, MaxSweepSeconds)), ct).ConfigureAwait(false);
+                await SweepAsync(_ttlSeconds, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    // Drops the routes nothing has resolved or connected to within the lifetime. The range stays with the peer:
+    // the route is what picks the path, and the address earns it again on the next lookup.
+    private async Task SweepAsync(int ttlSeconds, CancellationToken ct)
+    {
+        var deadline = Environment.TickCount64 - (ttlSeconds * 1000L);
+        var idle = _tunneled.Where(entry => entry.Value < deadline).Select(entry => entry.Key).ToList();
+        if (idle.Count == 0)
+        {
+            return;
+        }
+
+        var active = ProcNet.ActivePeers();
+        foreach (var host in idle)
+        {
+            if (active.Contains(host[..host.IndexOf('/', StringComparison.Ordinal)]))
+            {
+                _tunneled[host] = Environment.TickCount64;
+                continue;
+            }
+
+            if (!_tunneled.TryRemove(host, out _))
+            {
+                continue;
+            }
+
+            await Shell.RunAsync("ip", ct, "route", "del", host, "dev", _iface).ConfigureAwait(false);
+            _log.Route($"{host} forgotten after {ttlSeconds} s unused");
+        }
     }
 
     private static int Prefix(IPAddress address) =>

@@ -22,6 +22,7 @@ internal sealed class LinuxAgent : IDisposable
     private const string SurviveRebootKey = "survive-reboot";
     private const string PeriodicReconnectKey = "periodic-reconnect-enabled";
     private const string ReconnectIntervalKey = "periodic-reconnect-interval-seconds";
+    private const string RouteTtlKey = SettingKeys.RouteTtl;
     private const int SupervisorTickSeconds = 5;
 
     private readonly SqliteStateStore _store;
@@ -45,6 +46,7 @@ internal sealed class LinuxAgent : IDisposable
     private bool _surviveReboot;
     private bool _periodicReconnect;
     private int _reconnectIntervalSeconds = 30;
+    private int _routeTtlSeconds = TunnelOptions.DefaultRouteTtlSeconds;
     private bool _desiredConnected;
     private DateTime _nextRetryUtc = DateTime.MinValue;
     private bool _connectFailed;
@@ -88,6 +90,7 @@ internal sealed class LinuxAgent : IDisposable
         _surviveReboot = settings.TryGetValue(SurviveRebootKey, out var survive) && IsOn(survive);
         _periodicReconnect = settings.TryGetValue(PeriodicReconnectKey, out var periodic) && IsOn(periodic);
         _reconnectIntervalSeconds = ReconnectInterval(settings.TryGetValue(ReconnectIntervalKey, out var interval) ? interval : null);
+        _routeTtlSeconds = settings.TryGetValue(RouteTtlKey, out var ttl) && SettingKeys.TryParseRouteTtl(ttl, out var seconds) ? seconds : TunnelOptions.DefaultRouteTtlSeconds;
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
         _log.Info("agent", $"library {AgentPaths.Root}, target '{_selectedTarget ?? "(none)"}'");
@@ -374,7 +377,7 @@ internal sealed class LinuxAgent : IDisposable
 
         var configName = await ResolveConfigNameAsync(_selectedTarget, ct).ConfigureAwait(false);
         var config = configName is null ? null : await _store.GetConfigTextAsync(configName, ct).ConfigureAwait(false);
-        if (config is null)
+        if (configName is null || config is null)
         {
             _connectFailed = true;
             _connectFailReason = ConnectFailureReason.ConfigMissing.ToString();
@@ -393,7 +396,9 @@ internal sealed class LinuxAgent : IDisposable
         await PushAsync(ct).ConfigureAwait(false);
 
         var routing = await TunnelRouting.LoadAsync(_store, _selectedTarget, ct).ConfigureAwait(false);
-        var failure = await _tunnel.UpAsync(config, routing, ct).ConfigureAwait(false);
+        var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
+        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds);
+        var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is not null)
         {
             _connectFailed = true;
@@ -958,6 +963,16 @@ internal sealed class LinuxAgent : IDisposable
                 _reconnectIntervalSeconds = ReconnectInterval(args[1]);
                 await _store.SetSettingAsync(ReconnectIntervalKey, _reconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
                 break;
+            case RouteTtlKey:
+                if (!SettingKeys.TryParseRouteTtl(args[1], out var ttlSeconds))
+                {
+                    return Fail();
+                }
+
+                _routeTtlSeconds = ttlSeconds;
+                _tunnel.SetRouteTtl(ttlSeconds);
+                await _store.SetSettingAsync(RouteTtlKey, _routeTtlSeconds.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
+                break;
             default:
                 await _store.SetSettingAsync(args[0], args[1], ct).ConfigureAwait(false);
                 break;
@@ -1044,6 +1059,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             report.Append("advertised   : ").Append(string.Join(", ", _tunnel.Advertised)).Append('\n');
             report.Append("live routes  : ").Append(_tunnel.Tunneled.Count).Append(" tunneled, ").Append(_tunnel.Bypassed.Count).Append(" bypassed").Append('\n');
+            report.Append("route ttl    : ").Append(_routeTtlSeconds).Append(" s idle").Append('\n');
         }
 
         if (_connectFailDetail.Length > 0)

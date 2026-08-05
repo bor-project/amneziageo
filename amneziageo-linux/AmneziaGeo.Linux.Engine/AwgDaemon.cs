@@ -12,8 +12,11 @@ public sealed class AwgDaemon : IDisposable
 {
     // amneziawg-go control-socket directory (ipc/uapi_unix.go).
     private const string SocketDirectory = "/var/run/amneziawg";
+    private const string EngineName = "amneziawg-go";
     private const int Sigterm = 15;
     private const int ShutdownGraceMs = 3000;
+    private const int ReclaimAttempts = 30;
+    private const int ReclaimPollMs = 100;
 
     private readonly string _binary;
     private readonly string _iface;
@@ -41,6 +44,11 @@ public sealed class AwgDaemon : IDisposable
     public bool Running => _process is { HasExited: false };
 
     /// <summary>
+    /// Whether the start took the interface back from an engine a killed run had left behind.
+    /// </summary>
+    public bool ReclaimedOrphan { get; private set; }
+
+    /// <summary>
     /// Launches the daemon in the foreground for the interface.
     /// </summary>
     public void Start()
@@ -50,7 +58,7 @@ public sealed class AwgDaemon : IDisposable
             return;
         }
 
-        if (SocketAnswers())
+        if (SocketAnswers() && !ReclaimOrphan())
         {
             throw new InvalidOperationException($"another amneziawg-go already serves {_iface} on {SocketPath}");
         }
@@ -128,6 +136,79 @@ public sealed class AwgDaemon : IDisposable
         {
             _owns = false;
             DeleteSocket();
+        }
+    }
+
+    // A run that was killed outright leaves its engine holding the interface, and nobody is left to stop it. Such
+    // an engine is taken over; one whose agent is still alive is not, because that agent's tunnel is in use.
+    private bool ReclaimOrphan()
+    {
+        var reclaimed = false;
+        foreach (var pid in EngineProcesses())
+        {
+            if (ParentPid(pid) != 1)
+            {
+                return false;
+            }
+
+            kill(pid, Sigterm);
+            reclaimed = true;
+        }
+
+        if (!reclaimed)
+        {
+            return false;
+        }
+
+        for (var attempt = 0; attempt < ReclaimAttempts && SocketAnswers(); attempt++)
+        {
+            Thread.Sleep(ReclaimPollMs);
+        }
+
+        ReclaimedOrphan = !SocketAnswers();
+        return ReclaimedOrphan;
+    }
+
+    // The engine processes serving this interface.
+    private IEnumerable<int> EngineProcesses()
+    {
+        foreach (var directory in Directory.EnumerateDirectories("/proc"))
+        {
+            var pid = 0;
+            var arguments = Array.Empty<string>();
+            try
+            {
+                if (!int.TryParse(System.IO.Path.GetFileName(directory), out pid))
+                {
+                    continue;
+                }
+
+                arguments = File.ReadAllText($"{directory}/cmdline").Split('\0', StringSplitOptions.RemoveEmptyEntries);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            if (arguments.Length > 1 && arguments[0].EndsWith(EngineName, StringComparison.Ordinal) && Array.IndexOf(arguments, _iface) > 0)
+            {
+                yield return pid;
+            }
+        }
+    }
+
+    // The process a running one was left to; 1 once the one that started it is gone.
+    private static int ParentPid(int pid)
+    {
+        try
+        {
+            var stat = File.ReadAllText($"/proc/{pid}/stat");
+            var fields = stat[(stat.LastIndexOf(')') + 1)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return fields.Length > 1 && int.TryParse(fields[1], out var parent) ? parent : 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentOutOfRangeException)
+        {
+            return 0;
         }
     }
 

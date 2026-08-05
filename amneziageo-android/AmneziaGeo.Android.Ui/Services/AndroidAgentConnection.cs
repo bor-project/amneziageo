@@ -294,7 +294,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (desired == "disconnect")
         {
             _log.Info("agent", "disconnect requested");
-            StartService(GeoVpnService.ActionDisconnect, null, null, null, null, null, foreground: false);
+
+            // Stops through a broadcast: a head in the background is barred from starting the service.
+            if (VpnBridge.IsRunning(Application.Context))
+            {
+                VpnBridge.RequestStop(Application.Context);
+            }
+            else
+            {
+                OnVpnStateChanged(VpnStage.Disconnected, null);
+            }
+
             return Ok();
         }
 
@@ -324,6 +334,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _connectFailed = false;
+        // Reports the connecting stage from the request: the tunnel process speaks only once it is up, and until
+        // then a snapshot would pull the card back to disconnected.
+        _active = true;
+        _boundStatus = ConnectionStatus.Connecting;
+        _boundTarget = _selectedTarget;
+        PushSnapshot();
         var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(_selectedTarget);
         VpnBridge.WritePlan(await BuildPlanAsync(_selectedTarget).ConfigureAwait(false));
         _log.Info("agent", $"connect requested: target '{_selectedTarget}', app-split {appMode}");
@@ -515,7 +531,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string StatusFor(string target)
     {
         return _active && string.Equals(_boundTarget, target, StringComparison.Ordinal)
-            ? ConnectionStatus.Connected
+            ? _boundStatus
             : ConnectionStatus.Disconnected;
     }
 

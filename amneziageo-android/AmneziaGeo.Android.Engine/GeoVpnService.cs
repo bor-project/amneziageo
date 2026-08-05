@@ -96,6 +96,7 @@ public sealed class GeoVpnService : VpnService
     private ProxyRelay? _relay;
     private CancellationTokenSource? _reports;
     private VpnBridge.Listener? _queries;
+    private VpnBridge.Listener? _stops;
     private VpnStage _stage = VpnStage.Disconnected;
     private string? _detail;
 
@@ -105,6 +106,8 @@ public sealed class GeoVpnService : VpnService
         base.OnCreate();
         _queries = new VpnBridge.Listener { Handler = _ => Publish(_stage, _detail) };
         VpnBridge.Listen(this, _queries, VpnBridge.ActionQuery);
+        _stops = new VpnBridge.Listener { Handler = _ => Teardown(VpnStage.Disconnected, null) };
+        VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
     }
 
     /// <inheritdoc/>
@@ -152,6 +155,12 @@ public sealed class GeoVpnService : VpnService
         {
             UnregisterReceiver(_queries);
             _queries = null;
+        }
+
+        if (_stops is not null)
+        {
+            UnregisterReceiver(_stops);
+            _stops = null;
         }
 
         base.OnDestroy();

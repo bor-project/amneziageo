@@ -22,6 +22,11 @@ public static class VpnBridge
     public const string ActionQuery = "org.amneziageo.android.VPN_QUERY";
 
     /// <summary>
+    /// Broadcast that stops a running tunnel.
+    /// </summary>
+    public const string ActionStop = "org.amneziageo.android.VPN_STOP";
+
+    /// <summary>
     /// Stage extra, a <see cref="VpnStage"/> value.
     /// </summary>
     public const string ExtraStage = "stage";
@@ -70,6 +75,11 @@ public static class VpnBridge
     public static void RequestState(Context context) => context.SendBroadcast(Broadcast(context, ActionQuery));
 
     /// <summary>
+    /// Asks a running tunnel to stop; a service the head could start instead is barred from the background.
+    /// </summary>
+    public static void RequestStop(Context context) => context.SendBroadcast(Broadcast(context, ActionStop));
+
+    /// <summary>
     /// Whether the tunnel process is alive; a tunnel the system has killed answers no query.
     /// </summary>
     public static bool IsRunning(Context context)
@@ -109,7 +119,8 @@ public static class VpnBridge
     {
         try
         {
-            File.WriteAllText(PlanPath(), JsonSerializer.Serialize(plan));
+            using var stream = File.Create(PlanPath());
+            JsonSerializer.Serialize(stream, plan);
         }
         catch (Exception ex)
         {
@@ -125,10 +136,13 @@ public static class VpnBridge
         try
         {
             var path = PlanPath();
-            var plan = File.Exists(path)
-                ? JsonSerializer.Deserialize<GeoRoutingPlan>(File.ReadAllText(path))
-                : null;
-            return plan ?? GeoRoutingPlan.Full;
+            if (!File.Exists(path))
+            {
+                return GeoRoutingPlan.Full;
+            }
+
+            using var stream = File.OpenRead(path);
+            return JsonSerializer.Deserialize<GeoRoutingPlan>(stream) ?? GeoRoutingPlan.Full;
         }
         catch (Exception ex)
         {

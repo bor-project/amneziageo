@@ -23,7 +23,25 @@
     <RunAOTCompilation>true</RunAOTCompilation>
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <AndroidStripILAfterAOT>true</AndroidStripILAfterAOT>
+    <TrimMode>full</TrimMode>
+    <!-- Keeps the reflection path of the serializer: full trimming turns it off. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
+
+  <!-- Keeps whole every assembly of this application: XAML binds through reflection, resources resolve by key
+       and the serializer builds records from constructor parameter names. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <TrimmerRootAssembly Include="AmneziaGeo.Android.Ui" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Android.Engine" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Ui" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Decl" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Dal" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Geo" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Routing" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Cli" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Ipc" RootMode="All" />
+    <TrimmerRootAssembly Include="AmneziaGeo.Localization" RootMode="All" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.17" />

@@ -198,6 +198,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpSelectProfile:
                 _selectedTarget = args.Count > 0 ? args[0] : null;
+                Save();
                 PushSnapshot();
                 return Ok();
 
@@ -297,15 +298,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Ok();
         }
 
-        var configName = _selectedTarget is not null && _profiles.TryGetValue(_selectedTarget, out var bound) && bound.Length > 0
-            ? bound
-            : _selectedTarget;
-        if (configName is null || !_configs.TryGetValue(configName, out var configText))
+        // Two different refusals: nothing to connect to, and a target whose config is gone.
+        if (_selectedTarget is not { Length: > 0 })
+        {
+            _connectFailed = true;
+            _log.Error("agent", "connect refused: no profile selected");
+            PushSnapshot();
+            return new IpcAck(false, "nothing selected");
+        }
+
+        var configName = _profiles.TryGetValue(_selectedTarget, out var bound) && bound.Length > 0 ? bound : _selectedTarget;
+        if (!_configs.TryGetValue(configName, out var configText))
         {
             _connectFailed = true;
             _log.Error("agent", $"connect refused: no config for target '{_selectedTarget}'");
             PushSnapshot();
-            return new IpcAck(false, "config missing");
+            return new IpcAck(false, $"no config bound to '{_selectedTarget}'");
         }
 
         var granted = await EnsureVpnPermissionAsync();
@@ -1492,6 +1500,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             {
                 _routeTtl = seconds;
             }
+
+            // A selection outliving the profile it names would refuse every connect with nothing to point at.
+            if (document.RootElement.TryGetProperty("Selected", out var selected)
+                && selected.ValueKind == JsonValueKind.String
+                && selected.GetString() is { Length: > 0 } target
+                && _profiles.ContainsKey(target))
+            {
+                _selectedTarget = target;
+            }
         }
         catch (Exception)
         {
@@ -1528,6 +1545,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
+            builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append('}');
             System.IO.File.WriteAllText(_storePath, builder.ToString());
         }

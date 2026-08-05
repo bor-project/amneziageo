@@ -44,6 +44,7 @@ internal static class SettingsCommands
             (_surviveRebootKey, snapshot.SurviveReboot ? "on" : "off"),
             (_periodicReconnectKey, snapshot.PeriodicReconnect ? "on" : "off"),
             (_reconnectIntervalKey, snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)),
+            (SettingKeys.RouteTtl, snapshot.RouteTtlSeconds.ToString(CultureInfo.InvariantCulture)),
         };
 
         if (Output.Json)

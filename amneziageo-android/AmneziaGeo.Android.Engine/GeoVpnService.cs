@@ -85,6 +85,11 @@ public sealed class GeoVpnService : VpnService
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
     private const int TcpProtocol = 6;
+    private const int ExitDelayMs = 1_000;
+
+    // Ends the process after the service is gone. An empty cached process keeps the whole runtime resident, and the
+    // head reads a live tunnel off the process list.
+    private static readonly Handler _exit = new(Looper.MainLooper!);
 
     private int _handle = -1;
     private int _proxyPort;
@@ -105,6 +110,8 @@ public sealed class GeoVpnService : VpnService
     /// <inheritdoc/>
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
+        // A connect that lands inside the exit window keeps the process.
+        _exit.RemoveCallbacksAndMessages(null);
         if (intent?.Action == ActionDisconnect)
         {
             Teardown(VpnStage.Disconnected, null);
@@ -148,6 +155,7 @@ public sealed class GeoVpnService : VpnService
         }
 
         base.OnDestroy();
+        _exit.PostDelayed(Exit, ExitDelayMs);
     }
 
     /// <inheritdoc/>
@@ -699,6 +707,12 @@ public sealed class GeoVpnService : VpnService
         Publish(stage, detail);
         StopForeground(StopForegroundFlags.Remove);
         StopSelf();
+    }
+
+    private static void Exit()
+    {
+        global::Android.Util.Log.Info("GeoVpnService", "tunnel process exits, its memory goes back to the system");
+        global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
     }
 
     private void Release()

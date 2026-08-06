@@ -552,7 +552,7 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
-    // Picks the routing list every config uses; a missing or unparsable id means a full tunnel.
+    // Picks the routing list every config uses; a missing or unparsable id turns routing off.
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var listId = args.Count > 0 && long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
@@ -961,7 +961,7 @@ internal sealed class LinuxAgent : IDisposable
         var selectedList = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } selectedId
             ? await _store.GetRoutingListAsync(selectedId, ct).ConfigureAwait(false)
             : null;
-        report.Append("routing list : ").Append(selectedList?.Name ?? "(full tunnel)").Append('\n');
+        report.Append("routing list : ").Append(selectedList?.Name ?? "(off)").Append('\n');
         if (selectedList is not null)
         {
             report.Append("  geoip routes   : ").Append(selectedList.Routes.Count).Append('\n');

@@ -14,7 +14,7 @@ internal static class Labels
     public static string Open { get; private set; } = "Open";
 
     /// <summary>
-    /// «Подключить» / "Connect": brings the tunnel up (enabled only with an active profile).
+    /// «Подключить» / "Connect": brings the tunnel up (enabled only with a selected configuration).
     /// </summary>
     public static string Connect { get; private set; } = "Connect";
 

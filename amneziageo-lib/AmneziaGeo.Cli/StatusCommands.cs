@@ -92,7 +92,7 @@ internal static class StatusCommands
     {
         if (snapshot.SelectedRoutingList is not { } id)
         {
-            return "full tunnel";
+            return "off";
         }
 
         var list = snapshot.RoutingLists?.FirstOrDefault(entry => entry.Id == id);

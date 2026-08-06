@@ -68,7 +68,7 @@
     <value>Network repair</value>
   </data>
   <data name="General_NetworkRepairHint" xml:space="preserve">
-    <value>If the internet stops working after a failed connection or removing the app, reset the DNS it set on your adapters. Profiles, configs, and routes are left untouched.</value>
+    <value>If the internet stops working after a failed connection or removing the app, reset the DNS it set on your adapters. Configurations and routes are left untouched.</value>
   </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
     <value>Repair internet</value>
@@ -104,7 +104,7 @@
     <value>Reconnect after reboot</value>
   </data>
   <data name="General_SurviveRebootHint" xml:space="preserve">
-    <value>Auto-connect the selected profile when the computer starts.</value>
+    <value>Auto-connect the selected configuration when the computer starts.</value>
   </data>
   <data name="General_PeriodicReconnect" xml:space="preserve">
     <value>Periodic auto-reconnect</value>
@@ -170,7 +170,7 @@
     <value>Export</value>
   </data>
   <data name="BundleExport_Heading" xml:space="preserve">
-    <value>Export profiles, configurations and routing lists</value>
+    <value>Export configurations and routing lists</value>
   </data>
   <data name="BundleExport_RoutingSection" xml:space="preserve">
     <value>ROUTING</value>
@@ -188,7 +188,7 @@
     <value>Close</value>
   </data>
   <data name="BundleImport_Heading" xml:space="preserve">
-    <value>Import profiles, configurations and routing lists</value>
+    <value>Import configurations and routing lists</value>
   </data>
   <data name="BundleImport_ConflictLabel" xml:space="preserve">
     <value>On name conflict:</value>
@@ -317,7 +317,7 @@
     <value>Back</value>
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
-    <value>Select profiles, configurations, and routing lists to transfer to another device, or import a previously exported file.</value>
+    <value>Select configurations and routing lists to transfer to another device, or import a previously exported file.</value>
   </data>
   <data name="Main_AppsLabel" xml:space="preserve">
     <value>Apps (split tunneling)</value>
@@ -437,7 +437,7 @@
     <value>Remove this routing list from the catalogue. This cannot be undone.</value>
   </data>
   <data name="Main_DeleteListHint" xml:space="preserve">
-    <value>A list assigned to profiles cannot be deleted.</value>
+    <value>Deleting the selected list turns routing off.</value>
   </data>
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Routing list</value>
@@ -1503,7 +1503,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Quick launch</value>
   </data>
   <data name="Launcher_Loading" xml:space="preserve">
-    <value>Loading profiles…</value>
+    <value>Loading configurations…</value>
   </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
     <value>Open settings</value>

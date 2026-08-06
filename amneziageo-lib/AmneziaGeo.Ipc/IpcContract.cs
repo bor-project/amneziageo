@@ -111,7 +111,7 @@ public static class IpcContract
     public const string OpCountRoutes = "count-routes";
 
     /// <summary>
-    /// Command to pick the routing list every config uses. Args: list id, or "none" for a full tunnel.
+    /// Command to pick the routing list every config uses. Args: list id, or "none" to turn routing off.
     /// </summary>
     public const string OpAssignRouting = "assign-routing";
 

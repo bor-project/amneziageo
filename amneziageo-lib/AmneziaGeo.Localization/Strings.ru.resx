@@ -68,7 +68,7 @@
     <value>Восстановление сети</value>
   </data>
   <data name="General_NetworkRepairHint" xml:space="preserve">
-    <value>Если после неудачного подключения или удаления приложения пропал интернет — сбросьте DNS, который оно прописало адаптерам. Профили, конфиги и маршруты не затрагиваются.</value>
+    <value>Если после неудачного подключения или удаления приложения пропал интернет — сбросьте DNS, который оно прописало адаптерам. Конфигурации и маршруты не затрагиваются.</value>
   </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
     <value>Починить интернет</value>
@@ -104,7 +104,7 @@
     <value>Восстанавливать после перезагрузки</value>
   </data>
   <data name="General_SurviveRebootHint" xml:space="preserve">
-    <value>Автоподключение выбранного профиля при запуске компьютера.</value>
+    <value>Автоподключение выбранной конфигурации при запуске компьютера.</value>
   </data>
   <data name="General_PeriodicReconnect" xml:space="preserve">
     <value>Периодическое авто-переподключение</value>
@@ -170,7 +170,7 @@
     <value>Экспортировать</value>
   </data>
   <data name="BundleExport_Heading" xml:space="preserve">
-    <value>Экспорт профилей, конфигураций и списков маршрутизации</value>
+    <value>Экспорт конфигураций и списков маршрутизации</value>
   </data>
   <data name="BundleExport_RoutingSection" xml:space="preserve">
     <value>МАРШРУТИЗАЦИЯ</value>
@@ -188,7 +188,7 @@
     <value>Закрыть</value>
   </data>
   <data name="BundleImport_Heading" xml:space="preserve">
-    <value>Импорт профилей, конфигураций и списков маршрутизации</value>
+    <value>Импорт конфигураций и списков маршрутизации</value>
   </data>
   <data name="BundleImport_ConflictLabel" xml:space="preserve">
     <value>При совпадении имён:</value>
@@ -317,7 +317,7 @@
     <value>Назад</value>
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
-    <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
+    <value>Выберите конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
   </data>
   <data name="Main_AppsLabel" xml:space="preserve">
     <value>Приложения (раздельный туннель)</value>
@@ -437,7 +437,7 @@
     <value>Удалить этот список маршрутизации из каталога. Это действие нельзя отменить.</value>
   </data>
   <data name="Main_DeleteListHint" xml:space="preserve">
-    <value>Список, привязанный к профилям, удалить нельзя.</value>
+    <value>Если удалить выбранный список, маршрутизация выключится.</value>
   </data>
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
@@ -1503,7 +1503,7 @@
     <value>Быстрый запуск</value>
   </data>
   <data name="Launcher_Loading" xml:space="preserve">
-    <value>Загрузка профилей…</value>
+    <value>Загрузка конфигураций…</value>
   </data>
   <data name="Launcher_OpenApp" xml:space="preserve">
     <value>Открыть настройки</value>

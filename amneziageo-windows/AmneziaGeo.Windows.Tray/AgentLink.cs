@@ -41,7 +41,7 @@ internal static class AgentLink
     private static bool _prevDownloadFailed;
 
     /// <summary>
-    /// Whether the agent has an active profile selected/bound, so a connect can be issued from the tray.
+    /// Whether the agent has a configuration selected/bound, so a connect can be issued from the tray.
     /// </summary>
     public static volatile bool HasActiveConfig;
 

@@ -12,7 +12,7 @@ namespace AmneziaGeo.Windows.Tray;
 /// completion, and failure while the GUI is not in front. A left click (or the menu's Open) surfaces the
 /// main window on its home connect screen; the menu also connects, disconnects, or exits. A cold launch
 /// opens the window; the right-click menu is never auto-shown (#187). Launched with --connect (post-install
-/// auto-connect), it dials the active profile straight away and stays resident, no window (#188).
+/// auto-connect), it dials the selected configuration straight away and stays resident, no window (#188).
 /// </summary>
 internal static unsafe class Program
 {
@@ -92,7 +92,7 @@ internal static unsafe class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // Post-install auto-connect (#188): dial the active profile on cold launch instead of showing the window.
+        // Post-install auto-connect (#188): dial the selected configuration on cold launch instead of showing the window.
         _autoConnect = Array.IndexOf(args, "--connect") >= 0;
 
         // After an in-app update the installer passes --settings so the cold launch reopens the window the
@@ -587,8 +587,8 @@ internal static unsafe class Program
         }
     }
 
-    // Cold launch, once: open the main window on its home connect screen. Post-install auto-connect with an
-    // active profile dials straight away and stays resident, no window (#188).
+    // Cold launch, once: open the main window on its home connect screen. Post-install auto-connect with a
+    // selected configuration dials straight away and stays resident, no window (#188).
     private static void ResolveColdLaunch()
     {
         _popupPending = false;
@@ -812,7 +812,7 @@ internal static unsafe class Program
         Native.DestroyMenu(menu);
     }
 
-    // Builds the menu for the current state: Open (window) always; Connect (grey without an active profile)
+    // Builds the menu for the current state: Open (window) always; Connect (grey without a selected configuration)
     // when down, Disconnect when up, an inactive "Connecting…/Disconnecting…" while a transition runs
     // (#18/#19); Exit always.
     private static nint BuildMenu()

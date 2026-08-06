@@ -169,7 +169,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
 
         var selected = await store.GetSelectedRoutingListAsync(ct);
         sb.AppendLine();
-        sb.AppendLine($"[routing] {(selected is null ? "full tunnel (no list)" : $"list {selected}")}");
+        sb.AppendLine($"[routing] {(selected is null ? "off (no list)" : $"list {selected}")}");
 
         return sb.ToString();
     }

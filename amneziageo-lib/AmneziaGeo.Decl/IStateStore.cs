@@ -226,12 +226,12 @@ public interface IStateStore
     Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the globally selected routing list id, or null for a full tunnel.
+    /// Returns the globally selected routing list id, or null when routing is off.
     /// </summary>
     Task<long?> GetSelectedRoutingListAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Sets the globally selected routing list id, or null for a full tunnel.
+    /// Sets the globally selected routing list id, or null to turn routing off.
     /// </summary>
     Task SetSelectedRoutingListAsync(long? routingListId, CancellationToken ct = default);
 

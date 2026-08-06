@@ -114,7 +114,7 @@ arm64 собирается сквозным конвейером, но нати�
 dotnet run --project amneziageo-windows\tools\AmneziaGeo.Windows.Launcher
 ```
 
-Без флагов поднимаются обе части. Флаги: `--service` — только агент; `--ui` — только интерфейс; `--target <имя>` — сразу вести профиль или конфиг; `--config <путь.conf>` — зарегистрировать wg-quick конфиг и запуститься на нём.
+Без флагов поднимаются обе части. Флаги: `--service` — только агент; `--ui` — только интерфейс; `--target <имя>` — сразу выбрать конфигурацию; `--config <путь.conf>` — зарегистрировать wg-quick конфиг и запуститься на нём.
 
 ## Linux
 
@@ -167,11 +167,15 @@ ICU-пакеты, которые могут оказаться в целевом
 ```bash
 sudo amneziageo geo download
 sudo amneziageo config import work --file work.conf     # либо --link 'vpn://…', либо --stdin
-sudo amneziageo profile add work work
 sudo amneziageo up work
 sudo amneziageo settings set survive-reboot on
 sudo amneziageo settings set periodic-reconnect-enabled on
 ```
+
+`up <конфиг>` выбирает конфигурацию и подключается на ней, `select <конфиг>` только запоминает её
+для следующего подключения. Список маршрутизации - одна настройка на всю машину, а не привязка к
+конфигурации: `routing use <имя>` выбирает список, `routing use none` оставляет решение за
+собственными `AllowedIPs` конфигурации.
 
 `survive-reboot` поднимает туннель при старте агента, `periodic-reconnect-enabled` переподнимает
 его, если туннель упал. Без них перезагрузка или падение движка оставляют сервер без туннеля.
@@ -181,7 +185,7 @@ sudo amneziageo settings set periodic-reconnect-enabled on
 ```bash
 amneziageo status                  # что работает и что возьмёт следующее подключение
 amneziageo doctor                  # проверки, на которых обычно спотыкается серверная установка
-amneziageo --json profile list     # вывод для скриптов
+amneziageo --json config list      # вывод для скриптов
 amneziageo log tail --level info
 amneziageo tui                     # полноэкранная консоль по SSH
 ```
@@ -196,8 +200,8 @@ amneziageo tui                     # полноэкранная консоль �
 - Управляющий сокет - `/tmp/CoreFxPipe_AmneziaGeo.Agent`, поэтому в юните нельзя включать
   `PrivateTmp`. Любая локальная учётная запись, дотянувшаяся до сокета, управляет агентом, в том
   числе читает ключи конфигураций.
-- Linux-туннель применяет адреса, MTU и `AllowedIPs` самой конфигурации, список маршрутизации,
-  привязанный к профилю, и резолверы, сохранённые для конфигурации. В режиме split туннель
+- Linux-туннель применяет адреса, MTU и `AllowedIPs` самой конфигурации, выбранный список
+  маршрутизации и резолверы, сохранённые для конфигурации. В режиме split туннель
   начинает с одного маршрута до резолвера, а дальше каждое назначение получает свой маршрут при
   первом обращении; `route-ttl-seconds` задаёт, сколько он живёт после последнего использования.
   Исключения, правила по приложениям и транспорт WebSocket сохраняются и показываются, но пока не
@@ -227,7 +231,7 @@ amneziageo tui                     # полноэкранная консоль �
 Что чаще всего нужно при отладке:
 
 ```bash
-amneziageo status                   # состояние и таблица профилей
+amneziageo status                   # состояние и таблица конфигураций
 amneziageo --json status            # то же для скриптов
 amneziageo doctor                   # проверки, на которых спотыкается установка
 amneziageo runtime                  # конфигурация, которую возьмёт следующее подключение

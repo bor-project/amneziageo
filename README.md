@@ -114,7 +114,7 @@ For development there is a launcher: with one command it brings up the backend a
 dotnet run --project amneziageo-windows\tools\AmneziaGeo.Windows.Launcher
 ```
 
-With no flags both parts start. Flags: `--service` — agent only; `--ui` — UI only; `--target <name>` — drive a profile or config right away; `--config <path.conf>` — register a wg-quick config and launch on it.
+With no flags both parts start. Flags: `--service` — agent only; `--ui` — UI only; `--target <name>` — select a configuration right away; `--config <path.conf>` — register a wg-quick config and launch on it.
 
 ## Linux
 
@@ -168,11 +168,15 @@ agent and the console client from the sources straight into `/opt/amneziageo`.
 ```bash
 sudo amneziageo geo download
 sudo amneziageo config import work --file work.conf     # or --link 'vpn://…' or --stdin
-sudo amneziageo profile add work work
 sudo amneziageo up work
 sudo amneziageo settings set survive-reboot on
 sudo amneziageo settings set periodic-reconnect-enabled on
 ```
+
+`up <config>` selects the configuration and connects on it; `select <config>` only remembers it for
+the next connect. The routing list is one setting for the whole machine, not a per-configuration
+pairing: `routing use <name>` picks it, `routing use none` leaves the configuration's own
+`AllowedIPs` to decide what the tunnel carries.
 
 `survive-reboot` dials at agent start, `periodic-reconnect-enabled` redials when the tunnel dies.
 Without them a reboot or a crashed engine leaves the server without a tunnel.
@@ -182,7 +186,7 @@ Without them a reboot or a crashed engine leaves the server without a tunnel.
 ```bash
 amneziageo status                  # what runs, and what the next connect would use
 amneziageo doctor                  # the checks a headless install usually fails
-amneziageo --json profile list     # script-friendly output
+amneziageo --json config list      # script-friendly output
 amneziageo log tail --level info
 amneziageo tui                     # full-screen console over SSH
 ```
@@ -197,8 +201,8 @@ amneziageo tui                     # full-screen console over SSH
 - The control socket is `/tmp/CoreFxPipe_AmneziaGeo.Agent`, so the unit must not set `PrivateTmp`.
   Every local account that can reach the socket can drive the agent, including reading a
   configuration's keys.
-- The Linux tunnel applies the configuration's own addresses, MTU and `AllowedIPs`, the routing list
-  bound to the profile, and the resolvers stored for the configuration. A split routing list starts
+- The Linux tunnel applies the configuration's own addresses, MTU and `AllowedIPs`, the selected
+  routing list, and the resolvers stored for the configuration. A split routing list starts
   with nothing but the resolver routed, and every destination earns a host route on first contact;
   `route-ttl-seconds` decides how long one outlives its traffic. Exclusions, rules by application and
   the WebSocket transport are stored and reported, but not yet enforced by the Linux data plane.
@@ -228,7 +232,7 @@ does not have to be up - the receiver starts the agent in its own process.
 What debugging usually needs:
 
 ```bash
-amneziageo status                   # state and the profile table
+amneziageo status                   # state and the configuration table
 amneziageo --json status            # the same for scripts
 amneziageo doctor                   # the checks an install trips over
 amneziageo runtime                  # the configuration the next connect would use

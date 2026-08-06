@@ -1902,7 +1902,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 var clearSelection = connection.CreateCommand();
                 await using (clearSelection.ConfigureAwait(false))
                 {
-                    // Falls back to a full tunnel when the removed list was the selected one.
+                    // Turns routing off when the removed list was the selected one.
                     clearSelection.Transaction = transaction;
                     clearSelection.CommandText = "UPDATE settings SET value = '', updated_at = $updated WHERE key = $key AND value = $id;";
                     clearSelection.Parameters.AddWithValue("$key", StateKeys.SelectedRoutingList);

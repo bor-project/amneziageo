@@ -11,7 +11,7 @@ public static class StateKeys
     public const string SelectedTarget = "selected-target";
 
     /// <summary>
-    /// Id of the globally selected routing list; empty means a full tunnel.
+    /// Id of the globally selected routing list; empty turns routing off and leaves the config's own AllowedIPs.
     /// </summary>
     public const string SelectedRoutingList = "selected-routing-list";
 }

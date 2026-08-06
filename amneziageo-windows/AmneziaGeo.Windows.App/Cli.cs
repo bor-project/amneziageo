@@ -626,7 +626,7 @@ internal sealed class Cli(
         }
 
         await store.SetSelectedRoutingListAsync(listId);
-        Console.WriteLine($"routing: {(listId is null ? "full tunnel" : list)}");
+        Console.WriteLine($"routing: {(listId is null ? "off" : list)}");
         return 0;
     }
 

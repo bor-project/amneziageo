@@ -844,7 +844,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
                 var psi = new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = dir };
                 if (autoConnect)
                 {
-                    // The tray dials the active profile straight away, skipping the launcher window (#188).
+                    // The tray dials the selected configuration straight away, skipping the launcher window (#188).
                     psi.ArgumentList.Add("--connect");
                 }
 

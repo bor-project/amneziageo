@@ -1,12 +1,13 @@
+using System.Buffers.Binary;
 using System.Globalization;
-using System.Net;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
-/// Reads the addresses the machine currently holds sockets to.
+/// Reads the destinations the machine currently holds sockets to off the kernel's socket tables.
 /// </summary>
-internal static class ProcNet
+internal sealed class ProcNet : ILiveDestinations
 {
     private static readonly string[] Tables =
     [
@@ -21,11 +22,11 @@ internal static class ProcNet
     private const int V6HexLength = 32;
 
     /// <summary>
-    /// The IPv4 addresses a socket is currently pointed at.
+    /// Remote addresses of every current connection, host order.
     /// </summary>
-    public static HashSet<string> ActivePeers()
+    public HashSet<uint> Snapshot()
     {
-        var peers = new HashSet<string>(StringComparer.Ordinal);
+        var peers = new HashSet<uint>();
         foreach (var table in Tables)
         {
             Read(table, peers);
@@ -34,7 +35,7 @@ internal static class ProcNet
         return peers;
     }
 
-    private static void Read(string path, HashSet<string> peers)
+    private static void Read(string path, HashSet<uint> peers)
     {
         try
         {
@@ -59,7 +60,7 @@ internal static class ProcNet
     }
 
     // Each address is printed as host-order words, and an IPv4 socket on a dual-stack listener shows up mapped.
-    private static string? Parse(string hex)
+    private static uint? Parse(string hex)
     {
         if (hex.Length == V6HexLength)
         {
@@ -72,6 +73,6 @@ internal static class ProcNet
             return null;
         }
 
-        return new IPAddress([(byte)word, (byte)(word >> 8), (byte)(word >> 16), (byte)(word >> 24)]).ToString();
+        return BinaryPrimitives.ReverseEndianness(word);
     }
 }

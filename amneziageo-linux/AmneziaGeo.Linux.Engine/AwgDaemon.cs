@@ -111,6 +111,26 @@ public sealed class AwgDaemon : IDisposable
     }
 
     /// <summary>
+    /// Replaces the ranges a peer carries with the ones given; the control channel takes a whole set.
+    /// </summary>
+    public async Task ReplaceAllowedIpsAsync(string peerPublicKeyHex, IEnumerable<string> cidrs, CancellationToken ct = default)
+    {
+        var request = new StringBuilder("set=1\npublic_key=").Append(peerPublicKeyHex).Append("\nreplace_allowed_ips=true\n");
+        foreach (var cidr in cidrs)
+        {
+            request.Append("allowed_ip=").Append(cidr).Append('\n');
+        }
+
+        request.Append('\n');
+        var reply = await RoundtripAsync(request.ToString(), ct).ConfigureAwait(false);
+        var errno = ParseErrno(reply);
+        if (errno != 0)
+        {
+            throw new IOException($"amneziawg-go allowed_ips replace failed: errno {errno}");
+        }
+    }
+
+    /// <summary>
     /// Reads the running UAPI configuration of the interface.
     /// </summary>
     public Task<string> GetConfigAsync(CancellationToken ct = default) => RoundtripAsync("get=1\n\n", ct);

@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Linux.Engine;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Linux.App;
 
@@ -23,9 +24,10 @@ internal sealed class TunnelController : IDisposable
     private readonly AgentLog _log;
     private AwgDaemon? _daemon;
     private DnsRouter? _dns;
-    private LiveRoutes? _routes;
+    private RoutingCache? _cache;
     private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
+    private bool _split;
     private bool _resolverApplied;
     private bool _disposed;
 
@@ -56,14 +58,14 @@ internal sealed class TunnelController : IDisposable
     public IReadOnlyList<string> Advertised { get; private set; } = [];
 
     /// <summary>
-    /// Destinations routed into the tunnel since it came up.
+    /// Destinations routed into the tunnel right now; in a full tunnel nothing has to earn a route into it.
     /// </summary>
-    public IReadOnlyCollection<string> Tunneled => _routes?.Tunneled ?? [];
+    public IReadOnlyCollection<string> Tunneled => _split ? Routed() : [];
 
     /// <summary>
-    /// Destinations pinned to the physical hop since the tunnel came up.
+    /// Destinations pinned to the physical hop right now; in a split they follow it without a route.
     /// </summary>
-    public IReadOnlyCollection<string> Bypassed => _routes?.Bypassed ?? [];
+    public IReadOnlyCollection<string> Bypassed => _split ? [] : Routed();
 
     /// <summary>
     /// Brings the tunnel up from a wg-quick config under the given rules; returns null on success or the reason
@@ -134,18 +136,22 @@ internal sealed class TunnelController : IDisposable
 
         Advertised = allowedIps;
         Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
-        _routes = new LiveRoutes(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, options.RouteTtlSeconds, _log);
+        _split = split;
+        var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
+        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"));
+        _cache = cache;
         _sessionCts = new CancellationTokenSource();
-        _routes.StartExpiry(_sessionCts.Token);
+        _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));
         StartNameRouter(routing with { Split = split }, allowedIps, tunnelResolvers, lanResolvers);
-        _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {routing.ProxyRoutes.Count} proxy range(s) and {routing.ProxyDomains.Count} domain(s) decided per destination, route kept {options.RouteTtlSeconds} s past its last use");
+        var ranges = cache.RangeCounts;
+        _log.Info("tunnel", $"routing {Mode}: {allowedIps.Count} range(s) advertised, {ranges.Proxy} range(s) go through the tunnel, {ranges.Direct} stay outside it, {ranges.Block} are refused; each address is decided on first contact and forgotten after {options.RouteTtlSeconds} s unused");
         return null;
     }
 
     /// <summary>
     /// Sets how long a destination keeps its route on the running connection.
     /// </summary>
-    public void SetRouteTtl(int seconds) => _routes?.SetTtl(seconds);
+    public void SetRouteTtl(int seconds) => _cache?.SetTtl(seconds);
 
     /// <summary>
     /// Tears the tunnel down; the interface goes with the daemon process.
@@ -167,10 +173,10 @@ internal sealed class TunnelController : IDisposable
             ResolvConf.Restore(_log);
         }
 
-        if (_routes is { } routes)
+        if (_cache is { } cache)
         {
-            _routes = null;
-            await routes.ClearAsync(ct).ConfigureAwait(false);
+            _cache = null;
+            cache.RemoveAll();
         }
 
         if (_pinnedEndpoint is { } pinned)
@@ -188,6 +194,22 @@ internal sealed class TunnelController : IDisposable
 
         Mode = "(down)";
         Advertised = [];
+        _split = false;
+    }
+
+    // The addresses holding a host route: into the tunnel in a split, out the physical hop in a full tunnel.
+    private IReadOnlyCollection<string> Routed()
+    {
+        var routed = new List<string>();
+        foreach (var entry in _cache?.Snapshot() ?? [])
+        {
+            if (entry.Routed)
+            {
+                routed.Add(entry.Address.ToString());
+            }
+        }
+
+        return routed;
     }
 
     // Binds the name router and points the machine at it once the peer answers, so a dial that never completes
@@ -195,7 +217,7 @@ internal sealed class TunnelController : IDisposable
     private void StartNameRouter(TunnelRouting routing, IReadOnlyList<string> allowedIps, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers)
     {
         var stripV6 = !allowedIps.Any(range => range.Contains(':', StringComparison.Ordinal));
-        var router = new DnsRouter(routing, stripV6, tunnelResolvers, lanResolvers, _routes!, _log);
+        var router = new DnsRouter(routing, stripV6, tunnelResolvers, lanResolvers, _cache!, _log);
         if (!router.Start())
         {
             router.Dispose();

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Linux.App;
 
@@ -22,12 +23,9 @@ internal sealed class DnsRouter : IDisposable
     private readonly DomainMatcher _proxyDomains;
     private readonly DomainMatcher _directDomains;
     private readonly DomainMatcher _blockDomains;
-    private readonly IpRangeSet _proxyRanges;
-    private readonly IpRangeSet _directRanges;
-    private readonly IpRangeSet _blockRanges;
     private readonly IReadOnlyList<IPAddress> _tunnelResolvers;
     private readonly IReadOnlyList<IPAddress> _lanResolvers;
-    private readonly LiveRoutes _routes;
+    private readonly RoutingCache _routes;
     private readonly AgentLog _log;
     private readonly CancellationTokenSource _cts = new();
     private Socket? _udp;
@@ -37,16 +35,13 @@ internal sealed class DnsRouter : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsRouter(TunnelRouting routing, bool stripV6, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, LiveRoutes routes, AgentLog log)
+    public DnsRouter(TunnelRouting routing, bool stripV6, IReadOnlyList<IPAddress> tunnelResolvers, IReadOnlyList<IPAddress> lanResolvers, RoutingCache routes, AgentLog log)
     {
         _split = routing.Split;
         _stripV6 = stripV6;
         _proxyDomains = new DomainMatcher(routing.ProxyDomains);
         _directDomains = new DomainMatcher(routing.DirectDomains);
         _blockDomains = new DomainMatcher(routing.BlockDomains);
-        _proxyRanges = new IpRangeSet(routing.ProxyRoutes);
-        _directRanges = new IpRangeSet(routing.DirectRoutes);
-        _blockRanges = new IpRangeSet(routing.BlockRoutes);
         _tunnelResolvers = tunnelResolvers;
         _lanResolvers = lanResolvers;
         _routes = routes;
@@ -90,7 +85,8 @@ internal sealed class DnsRouter : IDisposable
         }
 
         _ = Task.Run(() => ServeUdpAsync(_cts.Token));
-        _log.Info("dns", $"name router on {Listen}:{Port}, {_proxyRanges.Count} proxy range(s), {_directRanges.Count} direct range(s){(_stripV6 ? ", addresses over IPv6 withheld from tunneled names" : string.Empty)}");
+        var ranges = _routes.RangeCounts;
+        _log.Info("dns", $"name router on {Listen}:{Port}, {ranges.Proxy} proxy range(s), {ranges.Direct} direct range(s), {ranges.Block} blocked range(s){(_stripV6 ? ", addresses over IPv6 withheld from tunneled names" : string.Empty)}");
         return true;
     }
 
@@ -223,7 +219,7 @@ internal sealed class DnsRouter : IDisposable
         }
 
         var verdict = Decide(name);
-        if (verdict == Verdict.Block)
+        if (verdict == RouteVerdict.Block)
         {
             return DnsWire.BuildRefusal(query, length);
         }
@@ -237,8 +233,8 @@ internal sealed class DnsRouter : IDisposable
 
         var upstream = verdict switch
         {
-            Verdict.Tunnel => _tunnelResolvers,
-            Verdict.Direct => _lanResolvers,
+            RouteVerdict.Proxy => _tunnelResolvers,
+            RouteVerdict.Direct => _lanResolvers,
             _ => _split ? _lanResolvers : _tunnelResolvers,
         };
 
@@ -248,64 +244,62 @@ internal sealed class DnsRouter : IDisposable
             return null;
         }
 
-        return await ApplyAnswerAsync(name, verdict, answer, ct).ConfigureAwait(false)
-            ? DnsWire.BuildRefusal(query, length)
-            : answer;
+        return ApplyAnswer(name, verdict, answer) ? DnsWire.BuildRefusal(query, length) : answer;
     }
 
     // Everything but a direct destination leaves the rules behind over IPv6 in a full tunnel; in a split only a
     // tunneled one does.
-    private bool WithholdsV6(Verdict verdict) =>
-        _stripV6 && (verdict == Verdict.Tunnel || (!_split && verdict != Verdict.Direct));
+    private bool WithholdsV6(RouteVerdict verdict) =>
+        _stripV6 && (verdict == RouteVerdict.Proxy || (!_split && verdict != RouteVerdict.Direct));
 
-    // Installs the routes the answer earns; true when the destination is blocked and must not be answered.
-    private async Task<bool> ApplyAnswerAsync(string name, Verdict verdict, byte[] answer, CancellationToken ct)
+    // Hands the addresses the answer carries to the cache, which installs what each one's verdict asks for; true
+    // when the destination is blocked and must not be answered. A name that matched a rule decides for its
+    // addresses, and the rest are left to the ranges.
+    private bool ApplyAnswer(string name, RouteVerdict verdict, byte[] answer)
     {
         foreach (var address in DnsWire.ReadAddresses(answer, answer.Length))
         {
-            if (address.AddressFamily != AddressFamily.InterNetwork)
+            if (address.AddressFamily != AddressFamily.InterNetwork
+                || !GeoIpRanges.TryToNumeric(address, out var value))
             {
                 continue;
             }
 
-            if (_blockRanges.Contains(address))
+            if (_routes.Classify(value) == RouteVerdict.Block)
             {
+                _log.Route($"{name} -> {address} blocked");
                 return true;
             }
 
-            if (_directRanges.Contains(address) || verdict == Verdict.Direct)
+            if (verdict == RouteVerdict.None)
             {
-                if (!_split)
-                {
-                    await _routes.BypassAsync(address, name, ct).ConfigureAwait(false);
-                }
-
-                continue;
+                _routes.Note(value);
+            }
+            else
+            {
+                _routes.Note(value, verdict);
             }
 
-            if (_split && (verdict == Verdict.Tunnel || _proxyRanges.Contains(address)))
-            {
-                await _routes.TunnelAsync(address, name, ct).ConfigureAwait(false);
-            }
+            _log.Route($"{name} -> {address} {verdict.ToString().ToLowerInvariant()}");
         }
 
         return false;
     }
 
     // Direct wins over proxy on an overlap, and a blocked name is refused before either.
-    private Verdict Decide(string name)
+    private RouteVerdict Decide(string name)
     {
         if (_blockDomains.IsTunneled(name))
         {
-            return Verdict.Block;
+            return RouteVerdict.Block;
         }
 
         if (_directDomains.IsTunneled(name))
         {
-            return Verdict.Direct;
+            return RouteVerdict.Direct;
         }
 
-        return _proxyDomains.IsTunneled(name) ? Verdict.Tunnel : Verdict.Default;
+        return _proxyDomains.IsTunneled(name) ? RouteVerdict.Proxy : RouteVerdict.None;
     }
 
     // Asks each resolver in turn and returns the first answer.
@@ -417,14 +411,6 @@ internal sealed class DnsRouter : IDisposable
         framed[1] = (byte)message.Length;
         message.CopyTo(framed, 2);
         await socket.SendAsync(framed, SocketFlags.None, ct).ConfigureAwait(false);
-    }
-
-    private enum Verdict
-    {
-        Default,
-        Tunnel,
-        Direct,
-        Block,
     }
 
     /// <inheritdoc/>

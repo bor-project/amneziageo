@@ -7,12 +7,12 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// <summary>
 /// Design-time-only data for the Avalonia previewer. Referenced from XAML via <c>Design.DataContext</c> so
 /// the previewer renders a fully-populated screen — the real <see cref="MainWindowViewModel"/> backed by a
-/// mocked, never-started <see cref="IAgentConnection"/> — instead of the empty first-run state (no profile,
-/// no config, "нет связи с агентом") that shows when nothing has been loaded from the agent yet.
+/// mocked, never-started <see cref="IAgentConnection"/> — instead of the empty first-run state (no config,
+/// "нет связи с агентом") that shows when nothing has been loaded from the agent yet.
 /// <para>
 /// Every settings section is seeded, so switching <see cref="MainWindowViewModel.SettingsSection"/> below
-/// (profile / config / routing / sources / logs / general) previews a different, still-populated screen. The
-/// work profile is opened, so the Profile and Config detail editors render with content too.
+/// (config / routing / sources / logs / general) previews a different, still-populated screen. The work
+/// config is opened, so the Config detail editors render with content too.
 /// </para>
 /// <para>
 /// Not constructed at runtime: Avalonia strips <c>Design.*</c> assignments outside design mode, so the
@@ -25,18 +25,13 @@ namespace AmneziaGeo.Ui.ViewModels;
 internal static class DesignData
 {
     /// <summary>
-    /// A fully-populated <see cref="MainWindowViewModel"/> parked on the Profile settings page with the work
-    /// profile opened. Point <c>Design.DataContext</c> at this; change <c>SettingsSection</c> in the factory
+    /// A fully-populated <see cref="MainWindowViewModel"/> parked on the Config settings page with the work
+    /// config opened. Point <c>Design.DataContext</c> at this; change <c>SettingsSection</c> in the factory
     /// to preview a different screen (all sections carry sample data).
     /// </summary>
     public static MainWindowViewModel MainWindow { get; } = CreateMainWindow();
 
     // No-op agent delegates: the sub-view-models never talk to a live agent at design time.
-    private static Task<IpcAck> NoProfileSave(string _, string __) => Task.FromResult(new IpcAck(true, string.Empty));
-    private static Task<IpcAck> NoAssignRouting(string _, long? __, bool ___) => Task.FromResult(new IpcAck(true, string.Empty));
-    private static Task NoSelectProfile(string _) => Task.CompletedTask;
-    private static Task NoSetConnection(string _, bool __) => Task.CompletedTask;
-    private static Task<IpcAck> NoRemoveConfig(string _) => Task.FromResult(new IpcAck(true, string.Empty));
     private static Task NoSourceOp(SourceItemViewModel _) => Task.CompletedTask;
 
     private static MainWindowViewModel CreateMainWindow()
@@ -44,7 +39,7 @@ internal static class DesignData
         var connection = new NullAgentConnection();
         var vm = new MainWindowViewModel(connection, new UiPreferences())
         {
-            SettingsSection = "profile",
+            SettingsSection = "config",
         };
 
         // A live, connected session so the header + power control render "connected" instead of the
@@ -82,9 +77,6 @@ internal static class DesignData
         vm.Config.ConfigCatalogueOptions.Add(new ConfigChoice("nl-amsterdam"));
         vm.HasConfigs = true;
 
-        // Shared option lists for the per-profile config / routing combos.
-        ConfigChoice[] configChoices = [ConfigChoice.None, new ConfigChoice("de-frankfurt"), new ConfigChoice("nl-amsterdam")];
-
         // --- Routing-list catalogue ---
         var rknList = new RoutingListSummaryViewModel { Id = 1, Name = "Обход РКН", RuleCount = 42, RouteCount = 131, DomainCount = 517 };
         var mediaList = new RoutingListSummaryViewModel { Id = 2, Name = "YouTube + Discord", RuleCount = 6, RouteCount = 74, DomainCount = 39 };
@@ -93,24 +85,6 @@ internal static class DesignData
         vm.Routing.RoutingCatalogueOptions.Add(new RoutingListChoice(rknList.Id, rknList.Name));
         vm.Routing.RoutingCatalogueOptions.Add(new RoutingListChoice(mediaList.Id, mediaList.Name));
         vm.Routing.HasRoutingLists = true;
-
-        RoutingListChoice[] routingChoices =
-        [
-            RoutingListChoice.None,
-            new RoutingListChoice(rknList.Id, rknList.Name),
-            new RoutingListChoice(mediaList.Id, mediaList.Name),
-        ];
-
-        // --- Profiles (config × routing) ---
-        var workProfile = NewProfile("Новый профиль", "de-frankfurt", ConnectionStatus.Connected,
-            configChoices, routingChoices, RoutingListChoice.None);
-        var homeProfile = NewProfile("Дом (RU)", "nl-amsterdam", ConnectionStatus.Disconnected,
-            configChoices, routingChoices, new RoutingListChoice(mediaList.Id, mediaList.Name));
-        vm.Profile.Profiles.Add(workProfile);
-        vm.Profile.Profiles.Add(homeProfile);
-        vm.Profile.ProfileOptions.Add(new ProfileChoice(workProfile.Name));
-        vm.Profile.ProfileOptions.Add(new ProfileChoice(homeProfile.Name));
-        vm.HasProfiles = true;
 
         // --- Geo sources ---
         vm.Sources.Sources.Add(new SourceItemViewModel(NoSourceOp, NoSourceOp, NoSourceOp)
@@ -134,10 +108,10 @@ internal static class DesignData
         vm.Diagnostics.Logs.LogText = SampleLog;
         vm.Diagnostics.Logs.HasLogs = true;
 
-        // --- Open the work profile: renders the Profile editor + the Config manage/transport editors. This
-        // sets OpenConfig = "de-frankfurt", which builds a live ConfigTransport (from wsConfig) and a stray
-        // ExportDialog whose LoadAsync cannot reach the mock agent; the ready replacement below supersedes it.
-        vm.Profile.OpenProfile = workProfile;
+        // --- Open the work config: renders the Config manage/transport editors. Building it makes a live
+        // ConfigTransport (from wsConfig) and a stray ExportDialog whose LoadAsync cannot reach the mock
+        // agent; the ready replacement below supersedes it.
+        vm.Config.OpenConfig = "de-frankfurt";
         vm.Config.ConfigExport = ReadyExport(connection, "de-frankfurt", SampleConf);
 
         // --- Routing section editor: hand-built so it carries sample rules without an agent round-trip.
@@ -163,35 +137,6 @@ internal static class DesignData
         vm.Routing.EditRoutingList = rknList;
 
         return vm;
-    }
-
-    private static ProfileItemViewModel NewProfile(
-        string name,
-        string config,
-        string status,
-        ConfigChoice[] configChoices,
-        RoutingListChoice[] routingChoices,
-        RoutingListChoice routing)
-    {
-        var profile = new ProfileItemViewModel(NoProfileSave, NoAssignRouting, NoSelectProfile, NoSetConnection, NoRemoveConfig)
-        {
-            Name = name,
-            Config = config,
-            Status = status,
-        };
-        foreach (var choice in configChoices)
-        {
-            profile.ConfigOptions.Add(choice);
-        }
-
-        foreach (var choice in routingChoices)
-        {
-            profile.RoutingListOptions.Add(choice);
-        }
-
-        profile.SelectedConfig = configChoices.FirstOrDefault(c => c.IsReal && c.Name == config) ?? ConfigChoice.None;
-        profile.SelectedRoutingList = routing;
-        return profile;
     }
 
     // A ready-to-display config area: the .conf text pre-loaded and its QR rendered, so no agent load is needed.

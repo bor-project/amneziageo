@@ -23,10 +23,10 @@ internal static class StatusCommands
                 return await WatchAsync(agent, ct).ConfigureAwait(false);
 
             case "select" when args.Count == 1:
-                return Reply.Report(await agent.SendAsync(IpcContract.OpSelectProfile, args[0]).ConfigureAwait(false), $"selected {args[0]}");
+                return Reply.Report(await agent.SendAsync(IpcContract.OpSelectConfig, args[0]).ConfigureAwait(false), $"selected {args[0]}");
 
             case "select":
-                return Reply.Usage("usage: amneziageo select <profile|config>");
+                return Reply.Usage("usage: amneziageo select <config>");
 
             case "up":
                 return await UpAsync(agent, args).ConfigureAwait(false);
@@ -40,7 +40,7 @@ internal static class StatusCommands
     }
 
     /// <summary>
-    /// Prints a snapshot as a status block plus the profile table.
+    /// Prints a snapshot as a status block plus the config table.
     /// </summary>
     public static void Print(StatusSnapshot snapshot)
     {
@@ -61,6 +61,7 @@ internal static class StatusCommands
             ("tunnel", snapshot.Active ? "up" : "down"),
             ("bound to", snapshot.BoundTarget ?? "-"),
             ("selected", snapshot.SelectedTarget ?? "-"),
+            ("routing", RoutingLabel(snapshot)),
             ("survive reboot", snapshot.SurviveReboot ? "on" : "off"),
             ("auto reconnect", reconnect),
             ("log level", snapshot.LogLevel),
@@ -73,43 +74,41 @@ internal static class StatusCommands
 
         Output.Pairs(pairs);
 
-        var rows = snapshot.Profiles
-            .Select(profile => (IReadOnlyList<string>)
+        var rows = snapshot.Configs
+            .Select(config => (IReadOnlyList<string>)
             [
-                profile.Name == snapshot.SelectedTarget ? "*" : " ",
-                profile.Name,
-                profile.Config.Length > 0 ? profile.Config : "-",
-                RoutingLabel(snapshot, profile),
-                profile.Status,
+                config.Name == snapshot.SelectedTarget ? "*" : " ",
+                config.Name,
+                config.Endpoint,
+                config.Status,
             ])
             .ToList();
 
         Output.Line();
-        Output.Table([" ", "PROFILE", "CONFIG", "ROUTING", "STATE"], rows, "no profiles yet");
+        Output.Table([" ", "CONFIG", "ENDPOINT", "STATE"], rows, "no configurations yet");
     }
 
-    private static string RoutingLabel(StatusSnapshot snapshot, ProfileEntry profile)
+    private static string RoutingLabel(StatusSnapshot snapshot)
     {
-        if (profile.RoutingListId is not { } id)
+        if (snapshot.SelectedRoutingList is not { } id)
         {
-            return "-";
+            return "full tunnel";
         }
 
         var list = snapshot.RoutingLists?.FirstOrDefault(entry => entry.Id == id);
-        var name = list?.Name ?? id.ToString(CultureInfo.InvariantCulture);
-        return profile.UseRouting ? name : $"{name} (off)";
+        return list?.Name ?? id.ToString(CultureInfo.InvariantCulture);
     }
 
     private static async Task<int> UpAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         if (args.Count > 1)
         {
-            return Reply.Usage("usage: amneziageo up [<profile|config>]");
+            return Reply.Usage("usage: amneziageo up [<config>]");
         }
 
         if (args.Count == 1)
         {
-            var selected = await agent.SendAsync(IpcContract.OpSelectProfile, args[0]).ConfigureAwait(false);
+            var selected = await agent.SendAsync(IpcContract.OpSelectConfig, args[0]).ConfigureAwait(false);
             if (!selected.Ok)
             {
                 return Reply.Report(selected);

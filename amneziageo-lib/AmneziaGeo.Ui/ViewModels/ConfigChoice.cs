@@ -3,7 +3,7 @@ using AmneziaGeo.Localization;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// The kind of a ConfigChoice exposed to the profile's config combo.
+/// The kind of a ConfigChoice exposed to the home config combo.
 /// </summary>
 internal enum ConfigChoiceKind
 {
@@ -13,13 +13,13 @@ internal enum ConfigChoiceKind
     Real,
 
     /// <summary>
-    /// The synthetic "no config" choice (the profile has none yet).
+    /// The synthetic "no config" choice (nothing selected yet).
     /// </summary>
     None,
 }
 
 /// <summary>
-/// A config pick for the profile's config combo box. A config's identity is its name; the synthetic "none" choice is distinguished by Kind.
+/// A config pick for the home config combo box. A config's identity is its name; the synthetic "none" choice is distinguished by Kind.
 /// </summary>
 internal sealed record ConfigChoice(string Name, ConfigChoiceKind Kind = ConfigChoiceKind.Real)
 {
@@ -34,7 +34,7 @@ internal sealed record ConfigChoice(string Name, ConfigChoiceKind Kind = ConfigC
     public bool IsNone => Kind == ConfigChoiceKind.None;
 
     /// <summary>
-    /// True for a real, persisted config (selectable / reusable across profiles).
+    /// True for a real, persisted config.
     /// </summary>
     public bool IsReal => Kind == ConfigChoiceKind.Real;
 }

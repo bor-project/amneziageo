@@ -9,9 +9,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Home screen: the connection card (power control, status, active-profile picker), the tray-icon colour, and
-/// the top-center notice banner. The profile catalogue and the config-completeness flags live on the shell,
-/// reached through <c>_host</c>.
+/// Home screen: the connection card (power control, status, active-config picker), the tray-icon colour, and
+/// the top-center notice banner. The config catalogue lives on the shell, reached through <c>_host</c>.
 /// </summary>
 internal sealed partial class ConnectionViewModel : ViewModelBase
 {
@@ -69,10 +68,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
-    private ProfileItemViewModel? _activeProfile;
+    private ConfigItemViewModel? _ActiveConfig;
 
     [ObservableProperty]
-    private ProfileChoice? _activeProfileChoice = ProfileChoice.None;
+    private ConfigChoice? _ActiveConfigChoice = ConfigChoice.None;
 
     // False until the first snapshot lands, so the card shows a loader instead of the indeterminate button.
     [ObservableProperty]
@@ -153,7 +152,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     // Disabled in the stalled-disconnect half-state (tunnel still up but Active=false): the header power toggle
     // would otherwise send connect and reverse the disconnect - the retry is offered on the banner instead (#14).
-    public bool CanToggleConnection => !Reconnecting && !DisconnectFailed && IsConnected && (IsTunnelActive || (ActiveProfile is { IsComplete: true }));
+    public bool CanToggleConnection => !Reconnecting && !DisconnectFailed && IsConnected && (IsTunnelActive || ActiveConfig is not null);
 
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
@@ -181,8 +180,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     {
         1 => Loc.Instance.Get(ShowRetry ? "MainVm_ConnectHintRetrying" : "MainVm_ConnectHintConnecting"),
         2 => Loc.Instance.Get("MainVm_ConnectHintClickToDisconnect"),
-        _ when ActiveProfile is null => Loc.Instance.Get("MainVm_ConnectHintSelectProfile"),
-        _ when ActiveProfile is { IsComplete: false } => Loc.Instance.Get("MainVm_ConnectHintNoConfig"),
+        _ when ActiveConfig is null => Loc.Instance.Get("MainVm_ConnectHintSelectConfig"),
         _ => Loc.Instance.Get("MainVm_ConnectHintClickToConnect"),
     };
 
@@ -192,7 +190,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // "Attempt N" label; N counts the attempt now in flight (retries past the first).
     public string RetryText => ShowRetry ? Loc.Instance.Get("MainVm_ConnectAttempt", RetryAttempt + 1) : string.Empty;
 
-    public bool ShowSelectConfigHint => ConnState == 0 && _host.HasProfiles && ActiveProfile is not { IsComplete: true };
+    public bool ShowSelectConfigHint => ConnState == 0 && _host.HasConfigs && ActiveConfig is null;
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
@@ -255,15 +253,15 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Tears down the connection card on disconnect: clears the live state, the active profile, and the notice.
+    /// Tears down the connection card on disconnect: clears the live state, the active config, and the notice.
     /// </summary>
     public void Reset()
     {
         IsConnected = false;
         BoundStatus = ConnectionStatus.Disconnected;
-        // The active profile's rows were dropped by Profile.Reset, so its combo re-mirrors to «— не выбрано —»
-        // and connect re-gates until the next reconnect snapshot.
-        ActiveProfile = null;
+        // The catalogue rows were dropped by Config.Reset, so the combo re-mirrors to «— не выбрано —» and
+        // connect re-gates until the next reconnect snapshot.
+        ActiveConfig = null;
         BoundTarget = null;
         _noticeTimer.Stop();
         _lastNotice = null;
@@ -277,8 +275,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Applies the connection state, active-profile matching, and top-center notice from the snapshot. Runs
-    /// after the profile catalogue is reconciled, so the matching reads the fresh rows.
+    /// Applies the connection state, active-config matching, and top-center notice from the snapshot. Runs
+    /// after the config catalogue is reconciled, so the matching reads the fresh rows.
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
     {
@@ -293,59 +291,49 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             IsTunnelActive = snapshot.Active;
         }
 
-        // The agent stores the selected/bound target as EITHER a profile name or the bare config name the
-        // profile wraps (a legacy `set-profile <config>`, a preconfigured "main" seed, or a target set out
-        // of band). A profile's name and its config name never coincide - they share one namespace - so we
-        // match on either; otherwise the current target lights up no row at all (the reported bug).
         var selected = snapshot.SelectedTarget ?? snapshot.BoundTarget;
-        foreach (var item in _host.Profile.Profiles)
-        {
-            item.IsActive = ProfileMatchesTarget(item, selected);
-            // A DIFFERENT profile is the live tunnel: this profile's connect button reads "Переключить".
-            item.OtherActive = snapshot.Active && !ProfileMatchesTarget(item, snapshot.BoundTarget);
-        }
 
-        // Mirror the agent's selected target into the connection-card profile combo without echoing a select
-        // back. Prefer the agent's active/selected target; fall back to the last profile the user had
+        // Mirror the agent's selected target into the connection-card config combo without echoing a select
+        // back. Prefer the agent's active/selected target; fall back to the last config the user had
         // chosen (restored from prefs) so the window opens on it with connect still gated until present.
         _suppressActivePush = true;
-        var active = _host.Profile.Profiles.FirstOrDefault(b => ProfileMatchesTarget(b, selected));
-        if (active is null && !string.IsNullOrEmpty(_prefs.LastProfile))
+        var active = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, selected, StringComparison.Ordinal));
+        if (active is null && !string.IsNullOrEmpty(_prefs.LastConfig))
         {
-            active = _host.Profile.Profiles.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastProfile, StringComparison.Ordinal));
+            active = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastConfig, StringComparison.Ordinal));
         }
 
-        // The selected profile lost its row (deleted here or elsewhere).
-        var selectionLost = active is null && ActiveProfile is not null && !_host.Profile.Profiles.Contains(ActiveProfile);
+        // The selected config lost its row (deleted here or elsewhere).
+        var selectionLost = active is null && ActiveConfig is not null && !_host.Config.Configs.Contains(ActiveConfig);
         if (active is not null)
         {
-            ActiveProfile = active;
+            ActiveConfig = active;
         }
         else if (selectionLost)
         {
-            ActiveProfile = null;
+            ActiveConfig = null;
         }
         _suppressActivePush = false;
 
-        // Keep a profile selected by default (all platforms): the sole profile becomes the default right after
-        // the first add, and deleting the selected profile hands selection to the next remaining one. Set
+        // Keep a config selected by default (all platforms): the sole config becomes the default right after
+        // the first import, and deleting the selected config hands selection to the next remaining one. Set
         // outside the echo-suppression so it persists like a manual pick.
-        if (ActiveProfile is null)
+        if (ActiveConfig is null)
         {
             var fallback = selectionLost
-                ? _host.Profile.Profiles.FirstOrDefault()
-                : _host.Profile.Profiles.Count == 1 ? _host.Profile.Profiles[0] : null;
+                ? _host.Config.Configs.FirstOrDefault()
+                : _host.Config.Configs.Count == 1 ? _host.Config.Configs[0] : null;
             if (fallback is not null)
             {
-                ActiveProfile = fallback;
+                ActiveConfig = fallback;
             }
         }
 
         // A rename moves the selection under the UI, and the assignment above is echo-suppressed, so the
         // preference that restores it on the next start would keep the old name and open with none selected.
-        if (ActiveProfile is { } current && !string.Equals(_prefs.LastProfile, current.Name, StringComparison.Ordinal))
+        if (ActiveConfig is { } current && !string.Equals(_prefs.LastConfig, current.Name, StringComparison.Ordinal))
         {
-            _prefs.LastProfile = current.Name;
+            _prefs.LastConfig = current.Name;
             _prefs.Save();
         }
 
@@ -360,7 +348,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             return;
         }
 
-        // Top-center notice (auto-hides after 5s, dismissable): a different profile is selected while a
+        // Top-center notice (auto-hides after 5s, dismissable): a different config is selected while a
         // tunnel is up (reconnect to apply - no auto-switch), settings changed on a live tunnel, or a
         // connect failure. Shown once per distinct notice, not re-armed while the same one holds.
         string? notice = null;
@@ -379,14 +367,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
         else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
         {
-            // A different profile is selected on the live tunnel: reuse the reconnect banner so its action applies
-            // the switch (Reconnect dials the newly selected ActiveProfile), like the settings-changed case below.
-            notice = Loc.Instance.Get("MainVm_NoticeProfileSelected", snapshot.SelectedTarget);
+            // A different config is selected on the live tunnel: reuse the reconnect banner so its action applies
+            // the switch (Reconnect dials the newly selected ActiveConfig), like the settings-changed case below.
+            notice = Loc.Instance.Get("MainVm_NoticeConfigSelected", snapshot.SelectedTarget);
             reconnect = true;
         }
         else if (snapshot.RestartRequired && !_host.ReconnectPromptInSection)
         {
-            // Settings changed on the live tunnel: bound == selected, so reconnecting the active profile applies them.
+            // Settings changed on the live tunnel: bound == selected, so reconnecting the active config applies them.
             // An editable section carries the same offer in its footer, so the banner stays out of its way.
             notice = Loc.Instance.Get("MainVm_NoticeSettingsChanged");
             reconnect = true;
@@ -400,7 +388,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         ShowNotice(notice, snapshot.ConnectFailed || snapshot.DisconnectFailed);
     }
 
-    // Re-raise the host-derived hint after the shell recomputes HasProfiles on a snapshot.
+    // Re-raise the host-derived hint after the shell recomputes HasConfigs on a snapshot.
     public void NotifyHostFlagsChanged()
     {
         OnPropertyChanged(nameof(ShowSelectConfigHint));
@@ -411,39 +399,20 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _host.NotifyRestartPendingChanged(value);
     }
 
-    partial void OnActiveProfileChanged(ProfileItemViewModel? oldValue, ProfileItemViewModel? newValue)
+    partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
     {
-        // Track the active profile's completeness.
-        if (oldValue is not null)
-        {
-            oldValue.PropertyChanged -= OnActiveProfilePropertyChanged;
-        }
-
-        if (newValue is not null)
-        {
-            newValue.PropertyChanged += OnActiveProfilePropertyChanged;
-        }
-
-        SyncActiveProfileChoice();
+        SyncActiveConfigChoice();
         NotifyCanToggleConnection();
-        _host.Profile.NotifyActiveProfileChanged();
+        _host.Config.NotifyActiveConfigChanged();
 
         if (_suppressActivePush || newValue is null)
         {
             return;
         }
 
-        _ = SelectProfileAsync(newValue.Name);
-        _prefs.LastProfile = newValue.Name;
+        _ = SelectConfigAsync(newValue.Name);
+        _prefs.LastConfig = newValue.Name;
         _prefs.Save();
-    }
-
-    private void OnActiveProfilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is nameof(ProfileItemViewModel.Config) or nameof(ProfileItemViewModel.IsComplete))
-        {
-            NotifyCanToggleConnection();
-        }
     }
 
     private void NotifyCanToggleConnection()
@@ -454,26 +423,26 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         ToggleConnectionCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnActiveProfileChoiceChanged(ProfileChoice? value)
+    partial void OnActiveConfigChoiceChanged(ConfigChoice? value)
     {
         if (_suppressActiveChoice || value is null)
         {
             return;
         }
 
-        ActiveProfile = value.IsReal
-            ? _host.Profile.Profiles.FirstOrDefault(b => string.Equals(b.Name, value.Identity, StringComparison.Ordinal))
+        ActiveConfig = value.IsReal
+            ? _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal))
             : null;
     }
 
-    // Mirror the connection card's active profile into its combo without echoing the pick back. Called by the
-    // profile screen after its snapshot reconcile, so the choice tracks a renamed/removed active profile.
-    public void SyncActiveProfileChoice()
+    // Mirror the connection card's active config into its combo without echoing the pick back. Called by the
+    // config screen after its snapshot reconcile, so the choice tracks a renamed/removed active config.
+    public void SyncActiveConfigChoice()
     {
         _suppressActiveChoice = true;
-        ActiveProfileChoice = ActiveProfile is null
-            ? ProfileChoice.None
-            : _host.Profile.ProfileOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Identity, ActiveProfile.Name, StringComparison.Ordinal)) ?? ProfileChoice.None;
+        ActiveConfigChoice = ActiveConfig is null
+            ? ConfigChoice.None
+            : _host.Config.ConfigCatalogueOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, ActiveConfig.Name, StringComparison.Ordinal)) ?? ConfigChoice.None;
         _suppressActiveChoice = false;
     }
 
@@ -486,12 +455,12 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _toggleInFlight = true;
         try
         {
-            // Select the profile shown in the combo BEFORE dialing, so the agent's target is the one the user
-            // sees - not its previously-latched/persisted target (which may be empty, a different profile, or
-            // a deleted one). Idempotent if already selected. Mirrors ToggleProfileConnectionAsync.
-            if (connect && ActiveProfile is not null)
+            // Select the config shown in the combo BEFORE dialing, so the agent's target is the one the user
+            // sees - not its previously-latched/persisted target (which may be empty, a different config, or
+            // a deleted one). Idempotent if already selected. Mirrors ToggleConfigConnectionAsync.
+            if (connect && ActiveConfig is not null)
             {
-                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [ActiveProfile.Name]));
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
             }
 
             var ack = await _connection.SendCommandAsync(
@@ -511,16 +480,16 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
     }
 
-    internal async Task SelectProfileAsync(string profile)
+    internal async Task SelectConfigAsync(string config)
     {
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [profile]));
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
     }
 
-    // Per-profile connect/disconnect from a profile's detail. Connecting first selects the profile, then
+    // Per-config connect/disconnect from a config's detail. Connecting first selects the config, then
     // connects: the agent latches the new target on connect and the supervisor switches a live tunnel to
     // it (tears the old one down, brings this one up). Optimistic state mirrors ToggleConnection so the
     // header power control does not flicker while the switch is in flight.
-    internal async Task ToggleProfileConnectionAsync(string profile, bool connect)
+    internal async Task ToggleConfigConnectionAsync(string config, bool connect)
     {
         IsTunnelActive = connect;
         BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;
@@ -529,7 +498,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             if (connect)
             {
-                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [profile]));
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
                 var ack = await _connection.SendCommandAsync(
                     new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
                 if (!ack.Ok)
@@ -557,47 +526,15 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
     }
 
-    // A profile "is" the given target when the target equals its name or the config it wraps. The agent's
-    // selected/bound target can be stored as either form, so the UI resolves both to the same profile row.
-    private static bool ProfileMatchesTarget(ProfileItemViewModel item, string? target)
-    {
-        if (string.IsNullOrEmpty(target))
-        {
-            return false;
-        }
+    // True when the selected config and the running (bound) one differ, so the live tunnel does not match
+    // what the card shows.
+    private static bool SelectedDiffersFromBound(StatusSnapshot snapshot) =>
+        snapshot.SelectedTarget is not null
+        && !string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal);
 
-        return string.Equals(item.Name, target, StringComparison.Ordinal)
-            || (item.Config.Length > 0 && string.Equals(item.Config, target, StringComparison.Ordinal));
-    }
-
-    // True only when the selected target and the running (bound) target denote DIFFERENT profiles. When one
-    // is a profile name and the other is that same profile's config name they resolve to the same row, so
-    // selecting the profile that is already live raises no stray "reconnect to apply" notice.
-    private bool SelectedDiffersFromBound(StatusSnapshot snapshot)
-    {
-        if (snapshot.SelectedTarget is null
-            || string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var selectedProfile = _host.Profile.Profiles.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.SelectedTarget));
-        var boundProfile = _host.Profile.Profiles.FirstOrDefault(b => ProfileMatchesTarget(b, snapshot.BoundTarget));
-        return !(selectedProfile is not null && ReferenceEquals(selectedProfile, boundProfile));
-    }
-
-    // Maps the agent's classified failure reason to a localized notice; a memberless profile keeps its own
-    // actionable message regardless of the reason.
+    // Maps the agent's classified failure reason to a localized notice.
     private static string ConnectFailureNotice(StatusSnapshot snapshot)
     {
-        var emptyProfile = snapshot.SelectedTarget is not null
-            && snapshot.Profiles.FirstOrDefault(b =>
-                   string.Equals(b.Name, snapshot.SelectedTarget, StringComparison.Ordinal)) is { Config.Length: 0 };
-        if (emptyProfile)
-        {
-            return Loc.Instance.Get("MainVm_NoticeProfileEmpty", snapshot.SelectedTarget);
-        }
-
         var key = ConnectFailureKey(snapshot.ConnectFailReason);
         return NoticeUsesDetail(key)
             ? Loc.Instance.Get(key, snapshot.ConnectFailDetail)
@@ -667,7 +604,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Reconnects the tunnel from the notice banner: disconnect, wait for teardown, then connect the active profile.
+    /// Reconnects the tunnel from the notice banner: disconnect, wait for teardown, then connect the active config.
     /// </summary>
     [RelayCommand]
     private async Task Reconnect()
@@ -705,9 +642,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 await WaitForDisconnectAsync();
             }
 
-            if (ActiveProfile is not null)
+            if (ActiveConfig is not null)
             {
-                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [ActiveProfile.Name]));
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
             }
 
             await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
@@ -735,9 +672,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _toggleInFlight = true;
         try
         {
-            if (ActiveProfile is not null)
+            if (ActiveConfig is not null)
             {
-                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectProfile, [ActiveProfile.Name]));
+                await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
             }
 
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["connect", "takeover"]));

@@ -37,7 +37,6 @@ internal sealed class Shell : Window
         _sections =
         [
             Localized("Tui_SectionStatus"),
-            Localized("Main_RailProfileTitle"),
             Localized("Main_RailConfigTitle"),
             Localized("Main_RailRoutingTitle"),
             Localized("Main_RailSourcesTitle"),
@@ -95,12 +94,11 @@ internal sealed class Shell : Window
         _content.Title = _sections[Math.Clamp(index, 0, _sections.Length - 1)];
         var view = index switch
         {
-            1 => Profiles(),
-            2 => Configs(),
-            3 => Routing(),
-            4 => Sources(),
-            5 => Settings(),
-            6 => Log(),
+            1 => Configs(),
+            2 => Routing(),
+            3 => Sources(),
+            4 => Settings(),
+            5 => Log(),
             _ => Status(),
         };
 
@@ -164,7 +162,8 @@ internal sealed class Shell : Window
         var lines = new List<string>
         {
             $"{Localized("Tui_SectionStatus")}: {snapshot.BoundStatus}",
-            $"{Localized("Main_RailProfileTitle")}: {snapshot.SelectedTarget ?? Localized("Main_NotSelected")}",
+            $"{Localized("Main_RailConfigTitle")}: {snapshot.SelectedTarget ?? Localized("Main_NotSelected")}",
+            $"{Localized("Main_RailRoutingTitle")}: {RoutingLabel(snapshot)}",
             $"{Localized("Tui_Tunnel")}: {(snapshot.Active ? Localized("Tui_Up") : Localized("Tui_Down"))}",
             $"{Localized("General_SurviveReboot")}: {OnOff(snapshot.SurviveReboot)}",
             $"{Localized("General_PeriodicReconnect")}: {OnOff(snapshot.PeriodicReconnect)} ({snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)})",
@@ -184,72 +183,36 @@ internal sealed class Shell : Window
             Action(Localized("Tui_Refresh"), Refresh));
     }
 
-    private View Profiles()
+    // The globally selected routing list, or the off label when none is picked.
+    private string RoutingLabel(StatusSnapshot snapshot)
     {
-        var snapshot = _agent.Snapshot;
-        var profiles = snapshot.Profiles;
-        var list = Rows([.. profiles.Select(profile =>
-            $"{(profile.Name == snapshot.SelectedTarget ? "*" : " ")} {profile.Name}  [{(profile.Config.Length > 0 ? profile.Config : "-")}]  {profile.Status}")]);
-
-        ProfileEntry? Current() => Pick(list, profiles);
-
-        return Panel(
-            list,
-            Action(Localized("Tui_Select"), () =>
-            {
-                if (Current() is { } profile)
-                {
-                    Apply(Send(IpcContract.OpSelectProfile, profile.Name));
-                }
-            }),
-            Action(Localized("Tui_Connect"), () =>
-            {
-                if (Current() is { } profile && Send(IpcContract.OpSelectProfile, profile.Name).Ok)
-                {
-                    Apply(Send(IpcContract.OpSetConnection, "connect"));
-                }
-            }),
-            Action(Localized("Tui_Assign"), () =>
-            {
-                if (Current() is { } profile)
-                {
-                    Assign(profile);
-                }
-            }),
-            Action(Localized("Main_ConfirmDeleteButton"), () =>
-            {
-                if (Current() is { } profile && Prompt.Confirm(Localized("Main_RailProfileTitle"), Confirm(profile.Name)))
-                {
-                    Apply(Send(IpcContract.OpRemoveProfile, profile.Name));
-                }
-            }));
-    }
-
-    private void Assign(ProfileEntry profile)
-    {
-        var lists = _agent.Snapshot.RoutingLists ?? [];
-        var labels = new List<string> { Localized("Main_NotSelected") };
-        labels.AddRange(lists.Select(list => $"{list.Name} ({list.RuleCount.ToString(CultureInfo.InvariantCulture)})"));
-        if (Prompt.Pick(Localized("Main_RailRoutingTitle"), labels) is not { } chosen)
+        if (snapshot.SelectedRoutingList is not { } id)
         {
-            return;
+            return Localized("Main_RoutingOffState");
         }
 
-        var (id, use) = chosen == 0
-            ? ("none", "off")
-            : (lists[chosen - 1].Id.ToString(CultureInfo.InvariantCulture), "on");
-        Apply(Send(IpcContract.OpAssignRouting, profile.Name, id, use));
+        var list = snapshot.RoutingLists?.FirstOrDefault(entry => entry.Id == id);
+        return list?.Name ?? id.ToString(CultureInfo.InvariantCulture);
     }
 
     private View Configs()
     {
-        var configs = _agent.Snapshot.Configs;
-        var list = Rows([.. configs.Select(config => $"{config.Name}  {(config.Endpoint.Length > 0 ? config.Endpoint : "-")}  {config.Status}")]);
+        var snapshot = _agent.Snapshot;
+        var configs = snapshot.Configs;
+        var list = Rows([.. configs.Select(config =>
+            $"{(config.Name == snapshot.SelectedTarget ? "*" : " ")} {config.Name}  {(config.Endpoint.Length > 0 ? config.Endpoint : "-")}  {config.Status}")]);
 
         ConfigEntry? Current() => Pick(list, configs);
 
         return Panel(
             list,
+            Action(Localized("Tui_Select"), () =>
+            {
+                if (Current() is { } config)
+                {
+                    Apply(Send(IpcContract.OpSelectConfig, config.Name));
+                }
+            }),
             Action(Localized("Tui_Show"), () =>
             {
                 if (Current() is { } config)
@@ -311,14 +274,23 @@ internal sealed class Shell : Window
 
     private View Routing()
     {
-        var lists = _agent.Snapshot.RoutingLists ?? [];
+        var snapshot = _agent.Snapshot;
+        var lists = snapshot.RoutingLists ?? [];
         var list = Rows([.. lists.Select(entry =>
-            $"#{entry.Id.ToString(CultureInfo.InvariantCulture)} {entry.Name}  {entry.RuleCount.ToString(CultureInfo.InvariantCulture)} / {entry.RouteCount.ToString(CultureInfo.InvariantCulture)} / {entry.DomainCount.ToString(CultureInfo.InvariantCulture)}")]);
+            $"{(entry.Id == snapshot.SelectedRoutingList ? "*" : " ")} #{entry.Id.ToString(CultureInfo.InvariantCulture)} {entry.Name}  {entry.RuleCount.ToString(CultureInfo.InvariantCulture)} / {entry.RouteCount.ToString(CultureInfo.InvariantCulture)} / {entry.DomainCount.ToString(CultureInfo.InvariantCulture)}")]);
 
         RoutingListEntry? Current() => Pick(list, lists);
 
         return Panel(
             list,
+            Action(Localized("Tui_Select"), () =>
+            {
+                if (Current() is { } entry)
+                {
+                    Apply(Send(IpcContract.OpAssignRouting, entry.Id.ToString(CultureInfo.InvariantCulture)));
+                }
+            }),
+            Action(Localized("Main_RoutingOffButton"), () => Apply(Send(IpcContract.OpAssignRouting, "none"))),
             Action(Localized("Tui_Rules"), () =>
             {
                 if (Current() is { } entry)

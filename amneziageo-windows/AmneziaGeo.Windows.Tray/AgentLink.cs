@@ -43,7 +43,7 @@ internal static class AgentLink
     /// <summary>
     /// Whether the agent has an active profile selected/bound, so a connect can be issued from the tray.
     /// </summary>
-    public static volatile bool HasActiveProfile;
+    public static volatile bool HasActiveConfig;
 
     /// <summary>
     /// Whether tray notifications are enabled. Defaults to true so an older agent still notifies.
@@ -273,7 +273,7 @@ internal static class AgentLink
             }
 
             _writer = null;
-            HasActiveProfile = false;
+            HasActiveConfig = false;
             DownloadInProgress = false;
             DownloadPercent = 0;
             CheckInProgress = false;
@@ -406,7 +406,7 @@ internal static class AgentLink
         GeoUpdatedTick = geoUpdatedTick;
         UpdateVersion = updateVer ?? string.Empty;
         HasUpdateUrl = !string.IsNullOrWhiteSpace(updateUrl);
-        HasActiveProfile = !string.IsNullOrEmpty(selected) || !string.IsNullOrEmpty(bound);
+        HasActiveConfig = !string.IsNullOrEmpty(selected) || !string.IsNullOrEmpty(bound);
         state = status switch
         {
             "connected" => active ? 2 : 1,

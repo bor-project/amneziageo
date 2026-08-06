@@ -43,7 +43,6 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
     /// </summary>
     public BundleExportViewModel(
         IAgentConnection connection,
-        IReadOnlyList<ProfileItemViewModel> profiles,
         IReadOnlyList<ConfigItemViewModel> configs,
         IReadOnlyList<RoutingListSummaryViewModel> routingLists)
     {
@@ -62,57 +61,7 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
             Wire(item);
             RoutingItems.Add(item);
         }
-
-        foreach (var profile in profiles)
-        {
-            // Профиль без конфигурации экспортировать нельзя - чекбокс недоступен.
-            var item = new BundleItem { Name = profile.Name, Detail = ProfileDetail(profile), IsDisabled = profile.Config.Length == 0 };
-
-            // Resolved once, by name, from the collections just built above - the profile's checkbox then
-            // drives these two dependents directly (cascade described on BundleItem.CheckedChanged).
-            var dependentConfig = profile.Config.Length > 0
-                ? ConfigItems.FirstOrDefault(c => string.Equals(c.Name, profile.Config, StringComparison.Ordinal))
-                : null;
-            var dependentRouting = profile.SelectedRoutingList.IsReal
-                ? RoutingItems.FirstOrDefault(r => string.Equals(r.Name, profile.SelectedRoutingList.Name, StringComparison.Ordinal))
-                : null;
-
-            Wire(item, isChecked =>
-            {
-                if (isChecked)
-                {
-                    if (dependentConfig is not null)
-                    {
-                        dependentConfig.IsChecked = true;
-                        dependentConfig.IsLocked = true;
-                    }
-
-                    if (dependentRouting is not null)
-                    {
-                        dependentRouting.IsChecked = true;
-                        dependentRouting.IsLocked = true;
-                    }
-                }
-                else
-                {
-                    // Unlock without forcing unchecked - the user may still want the standalone object.
-                    if (dependentConfig is not null)
-                    {
-                        dependentConfig.IsLocked = false;
-                    }
-
-                    if (dependentRouting is not null)
-                    {
-                        dependentRouting.IsLocked = false;
-                    }
-                }
-            });
-
-            ProfileItems.Add(item);
-        }
     }
-
-    public ObservableCollection<BundleItem> ProfileItems { get; } = [];
 
     public ObservableCollection<BundleItem> ConfigItems { get; } = [];
 
@@ -162,23 +111,7 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
 
     private void RecomputeCanExport()
     {
-        CanExport = ProfileItems.Any(i => i.IsChecked) || ConfigItems.Any(i => i.IsChecked) || RoutingItems.Any(i => i.IsChecked);
-    }
-
-    private static string ProfileDetail(ProfileItemViewModel profile)
-    {
-        var parts = new List<string>();
-        if (profile.Config.Length > 0)
-        {
-            parts.Add(profile.Config);
-        }
-
-        if (profile.SelectedRoutingList.IsReal)
-        {
-            parts.Add(profile.SelectedRoutingList.Name);
-        }
-
-        return parts.Count > 0 ? string.Join(" · ", parts) : Loc.Instance.Get("BundleExportVm_NoConfiguration");
+        CanExport = ConfigItems.Any(i => i.IsChecked) || RoutingItems.Any(i => i.IsChecked);
     }
 
     [RelayCommand(CanExecute = nameof(CanExport))]
@@ -192,9 +125,8 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
             var routingRules = new Dictionary<string, string[]>(StringComparer.Ordinal);
             foreach (var item in RoutingItems)
             {
-                // Emit the keep-list for any list with an excluded rule - including one pulled in only by a
-                // checked profile. The agent applies it solely to lists it actually exports, so a spare
-                // entry is harmless, and a profile-bound list never loses its filter.
+                // Emit the keep-list for any list with an excluded rule. The agent applies it solely to lists it
+                // actually exports, so a spare entry is harmless.
                 if (item.Rules.Any(r => !r.IsChecked))
                 {
                     routingRules[item.Name] = [.. item.Rules.Where(r => r.IsChecked).Select(r => r.Token)];
@@ -202,7 +134,6 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
             }
 
             var selection = new SelectionPayload(
-                [.. ProfileItems.Where(i => i.IsChecked).Select(i => i.Name)],
                 [.. ConfigItems.Where(i => i.IsChecked).Select(i => i.Name)],
                 [.. RoutingItems.Where(i => i.IsChecked).Select(i => i.Name)],
                 routingRules.Count > 0 ? routingRules : null);
@@ -228,7 +159,6 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
     // Selection JSON sent to the agent (camelCase). RoutingRules maps a routing list name to the rule
     // tokens to KEEP; absent list = keep all its rules.
     private sealed record SelectionPayload(
-        string[] Profiles,
         string[] Configs,
         string[] RoutingLists,
         Dictionary<string, string[]>? RoutingRules);

@@ -205,7 +205,7 @@ internal static class DiagCommands
         checks.AddRange(host.DoctorChecks(snapshot));
         checks.AddRange(
         [
-            new("profile selected", snapshot.SelectedTarget is { Length: > 0 }, snapshot.SelectedTarget ?? "nothing selected"),
+            new("config selected", snapshot.SelectedTarget is { Length: > 0 }, snapshot.SelectedTarget ?? "nothing selected"),
             new("survive reboot", snapshot.SurviveReboot, snapshot.SurviveReboot ? "on" : "off: the agent will not connect after a reboot"),
             new("auto reconnect", snapshot.PeriodicReconnect, snapshot.PeriodicReconnect
                 ? $"every {snapshot.PeriodicReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture)}s"

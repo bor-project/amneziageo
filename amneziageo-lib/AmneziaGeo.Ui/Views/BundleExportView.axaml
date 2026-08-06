@@ -19,22 +19,6 @@
         <StackPanel Spacing="16">
 
           <StackPanel Spacing="6">
-            <TextBlock Text="{l:Tr BundleExport_ProfilesSection}" Classes="label" />
-            <ItemsControl ItemsSource="{Binding ProfileItems}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:BundleItem">
-                  <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding CanCheck}" Margin="0,3">
-                    <StackPanel>
-                      <TextBlock Text="{Binding Name}" FontSize="13.5" />
-                      <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11.5" />
-                    </StackPanel>
-                  </CheckBox>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-
-          <StackPanel Spacing="6">
             <TextBlock Text="{l:Tr BundleExport_ConfigsSection}" Classes="label" />
             <ItemsControl ItemsSource="{Binding ConfigItems}">
               <ItemsControl.ItemTemplate>

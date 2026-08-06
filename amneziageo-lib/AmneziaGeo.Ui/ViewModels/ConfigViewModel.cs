@@ -46,6 +46,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSectionConfig))]
     [NotifyPropertyChangedFor(nameof(IsSectionExport))]
     [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
+    [NotifyPropertyChangedFor(nameof(IsOpenConfigActive))]
+    [NotifyCanExecuteChangedFor(nameof(SetActiveConfigCommand))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -239,7 +241,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
 
-    // Landing on the Config section with nothing open: open the active profile's config, or the first one, so it
+    // Landing on the Config section with nothing open: open the active config, or the first one, so it
     // never opens empty. A create-form draft in progress is left alone.
     public void SelectFirstIfNone()
     {
@@ -251,16 +253,51 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         OpenConfig = PreferredDefaultConfig();
     }
 
-    // The active profile's config when it is one of ours, else the first in the catalogue.
+    // The active config when it is one of ours, else the first in the catalogue.
     private string PreferredDefaultConfig()
     {
-        var active = _host.Home.ActiveProfile;
-        if (active is { Config.Length: > 0 } && Configs.Any(c => string.Equals(c.Name, active.Config, StringComparison.Ordinal)))
+        var active = _host.Home.ActiveConfig;
+        if (active is not null && Configs.Any(c => string.Equals(c.Name, active.Name, StringComparison.Ordinal)))
         {
-            return active.Config;
+            return active.Name;
         }
 
         return Configs[0].Name;
+    }
+
+    // Re-raise the host-derived flags after the shell recomputes them on a snapshot.
+    public void NotifyHostFlagsChanged()
+    {
+        SetActiveConfigCommand.NotifyCanExecuteChanged();
+    }
+
+    // Re-gate the "Set active" button after the connection card's active config changes.
+    public void NotifyActiveConfigChanged()
+    {
+        SetActiveConfigCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(IsOpenConfigActive));
+    }
+
+    /// <summary>
+    /// Whether the open config is the one the next connect binds to.
+    /// </summary>
+    public bool IsOpenConfigActive =>
+        OpenConfig is { Length: > 0 } && string.Equals(OpenConfig, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
+
+    // The open config can be made active unless it already is.
+    private bool CanSetActiveConfig =>
+        OpenConfig is { Length: > 0 } name && !string.Equals(name, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
+
+    // Makes the open config the active one (the agent's target), without connecting.
+    [RelayCommand(CanExecute = nameof(CanSetActiveConfig))]
+    private void SetActiveConfig()
+    {
+        if (OpenConfig is not { Length: > 0 } name)
+        {
+            return;
+        }
+
+        _host.Home.ActiveConfig = Configs.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal));
     }
 
     // Entering the config settings section: keep an in-progress draft, land on the active / first config, or fall
@@ -565,9 +602,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
     }
 
-    // The config catalogue for a profile's combo. Order: «— не выбрано —» (None) then every config (shared /
-    // reusable across profiles). Creating a config is the «+ Новая конфигурация» button in the Config section,
-    // not a combo entry (#111).
+    // The config catalogue for the home combo. Order: «— не выбрано —» (None) then every config. Creating a
+    // config is the «+ Новая конфигурация» button in the Config section, not a combo entry (#111).
     public IReadOnlyList<ConfigChoice> BuildConfigOptions()
     {
         var options = new List<ConfigChoice> { ConfigChoice.None };
@@ -611,7 +647,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         if (!IsCreatingSectionConfig && !IsEditDirty)
         {
             _pendingOpenConfig = name;
-            _host.Profile.AdoptConfig(name);
             ResolvePendingOpenConfig();
         }
 
@@ -623,8 +658,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));
     }
 
-    // The config Delete trigger (#147): the agent refuses while any profile still binds the config, or while it is
-    // the running target; the refusal reason surfaces on confirm. Arm the inline confirm/cancel pair.
+    // The config Delete trigger (#147): the agent refuses while the config is the running target; the refusal
+    // reason surfaces on confirm. Arm the inline confirm/cancel pair.
     [RelayCommand]
     private void RequestDeleteOpenConfig()
     {
@@ -645,8 +680,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ConfigDeleteStatus = string.Empty;
     }
 
-    // Inline Confirm: perform the delete. The agent refuses while a profile still binds the config or it is the
-    // running target, surfacing the reason. On success the next remaining config opens so the section is never left empty.
+    // Inline Confirm: perform the delete. The agent refuses while the config is the running target, surfacing the
+    // reason. On success the next remaining config opens so the section is never left empty.
     [RelayCommand]
     private async Task ConfirmDeleteOpenConfig()
     {
@@ -719,7 +754,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         OpenConfig = null;
         // Drop any just-saved pending open so a re-opened form does not resolve it into the manage panel.
         _pendingOpenConfig = null;
-        // Pre-fill a unique default name (like a new profile, #117) so the required-name field is never empty
+        // Pre-fill a unique default name (#117) so the required-name field is never empty
         // on open; the user can accept it or type over it. Clearing it turns the box red and blocks the save.
         // Remember the default so an import can still overwrite it with the config's own name (SectionConfigNameIsDefault).
         _sectionConfigDefaultName = UniqueConfigName();
@@ -945,7 +980,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             // Open the just-imported config once its row lands in the next snapshot, so the transport editor
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
-            _host.Profile.AdoptConfig(name);
             ResolvePendingOpenConfig();
             return true;
         }
@@ -964,7 +998,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         return UniqueDefaultName(Loc.Instance.Get("MainVm_NewConfigDefaultName"), taken);
     }
 
-    // A unique default name for a new config, mirroring UniqueProfileName (#117): a new item is pre-named so the
+    // A unique default name for a new config (#117): a new item is pre-named so the
     // required-name field is never empty on open; "<base>", then "<base> 2", "<base> 3"…
     private static string UniqueDefaultName(string baseName, IEnumerable<string> taken)
     {

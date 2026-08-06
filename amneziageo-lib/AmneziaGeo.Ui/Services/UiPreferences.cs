@@ -48,7 +48,7 @@ internal sealed class UiPreferences
     /// <summary>
     /// The selected settings section.
     /// </summary>
-    public string SettingsSection { get; set; } = "profile";
+    public string SettingsSection { get; set; } = "config";
 
     /// <summary>
     /// The UI language token; empty follows the system language.
@@ -56,9 +56,9 @@ internal sealed class UiPreferences
     public string Language { get; set; } = string.Empty;
 
     /// <summary>
-    /// The last active profile name.
+    /// The last active config name.
     /// </summary>
-    public string LastProfile { get; set; } = string.Empty;
+    public string LastConfig { get; set; } = string.Empty;
 
     private static string DbPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -127,7 +127,7 @@ internal sealed class UiPreferences
             ["maximized"] = Maximized ? "1" : "0",
             ["settings-section"] = SettingsSection,
             ["language"] = Language,
-            ["last-profile"] = LastProfile,
+            ["last-config"] = LastConfig,
         };
     }
 
@@ -174,9 +174,9 @@ internal sealed class UiPreferences
             prefs.Language = language;
         }
 
-        if (values.TryGetValue("last-profile", out var lastProfile))
+        if (values.TryGetValue("last-config", out var lastConfig))
         {
-            prefs.LastProfile = lastProfile;
+            prefs.LastConfig = lastConfig;
         }
 
         return prefs;
@@ -205,7 +205,6 @@ internal sealed class UiPreferences
             prefs.Height = legacy.Height > 0 ? legacy.Height : prefs.Height;
             prefs.SettingsSection = string.IsNullOrEmpty(legacy.SettingsSection) ? prefs.SettingsSection : legacy.SettingsSection;
             prefs.Language = legacy.Language ?? string.Empty;
-            prefs.LastProfile = legacy.LastProfile ?? string.Empty;
 
             store.Save(Scope, prefs.ToValues());
             TryDelete(path);

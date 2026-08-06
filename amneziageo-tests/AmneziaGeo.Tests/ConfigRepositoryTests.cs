@@ -1,5 +1,6 @@
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Windows.App;
 using Xunit;
 
@@ -33,34 +34,9 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ListReferencingProfiles_ReturnsProfilesBoundToConfig()
+    public async Task Remove_DropsTheConfig()
     {
         await _store.SaveConfigAsync("srv", "conf");
-        await _store.SaveProfileAsync(new Profile("home", "srv"));
-        await _store.SaveProfileAsync(new Profile("work", "srv"));
-        await _store.SaveProfileAsync(new Profile("other", "elsewhere"));
-
-        var referencing = await _repo.ListReferencingProfilesAsync("srv");
-
-        Assert.Equal(new[] { "home", "work" }, referencing);
-    }
-
-    [Fact]
-    public async Task Remove_Throws_WhenConfigStillBoundToAProfile()
-    {
-        await _store.SaveConfigAsync("srv", "conf");
-        await _store.SaveProfileAsync(new Profile("home", "srv"));
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _repo.RemoveAsync("srv"));
-
-        Assert.True(await _store.ConfigExistsAsync("srv"));
-    }
-
-    [Fact]
-    public async Task Remove_Succeeds_WhenNoProfileReferencesConfig()
-    {
-        await _store.SaveConfigAsync("srv", "conf");
-        await _store.SaveProfileAsync(new Profile("home", "other"));
 
         await _repo.RemoveAsync("srv");
 
@@ -68,20 +44,18 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Rename_CascadesConfigNameToReferencingProfiles()
+    public async Task Rename_CarriesTheSelectionAndTheTunnelState()
     {
         await _store.SaveConfigAsync("old", "conf");
-        await _store.SaveProfileAsync(new Profile("home", "old"));
-        await _store.SaveProfileAsync(new Profile("work", "old"));
-        await _store.SaveProfileAsync(new Profile("other", "keep"));
+        await _store.SetSettingAsync(StateKeys.SelectedTarget, "old");
+        await _store.SaveTunnelStateAsync(new TunnelState("old", ConnectionStatus.Connected, DateTimeOffset.UtcNow));
 
         await _repo.RenameAsync("old", "new");
+        await ConfigRename.CarryAsync(_store, "old", "new");
 
-        Assert.Equal("new", (await _store.GetProfileAsync("home"))!.Config);
-        Assert.Equal("new", (await _store.GetProfileAsync("work"))!.Config);
-        Assert.Equal("keep", (await _store.GetProfileAsync("other"))!.Config);
-        Assert.True(await _store.ConfigExistsAsync("new"));
-        Assert.False(await _store.ConfigExistsAsync("old"));
+        Assert.Equal("new", await _store.GetSettingAsync(StateKeys.SelectedTarget));
+        Assert.NotNull(await _store.GetTunnelStateAsync("new"));
+        Assert.Null(await _store.GetTunnelStateAsync("old"));
     }
 
     [Fact]
@@ -102,6 +76,17 @@ public sealed class ConfigRepositoryTests : IAsyncLifetime
         var dns = await _store.GetConfigDnsAsync("new");
         Assert.NotNull(dns);
         Assert.Equal("1.1.1.1", dns!.Servers);
+    }
+
+    [Fact]
+    public async Task RemoveRoutingList_ClearsTheSelectionThatPointedAtIt()
+    {
+        var id = await _store.SaveRoutingListAsync(new RoutingList(0, "list", [], [], [], [], [], [], [], []));
+        await _store.SetSelectedRoutingListAsync(id);
+
+        await _store.RemoveRoutingListAsync(id);
+
+        Assert.Null(await _store.GetSelectedRoutingListAsync());
     }
 
     private static void TryDelete(string path)

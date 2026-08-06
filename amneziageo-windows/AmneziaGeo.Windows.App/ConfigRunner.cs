@@ -6,16 +6,16 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Runs the profile config and re-runs on each change.
+/// Runs the selected config and re-runs on each change.
 /// </summary>
-internal sealed class ProfileRunner(
+internal sealed class ConfigRunner(
     ServiceManager serviceManager,
     UapiClient uapi,
     NetworkReconciler reconciler,
     SettingsStore settingsStore,
     AgentControl control,
     ActiveTunnelScope activeScope,
-    ILogger<ProfileRunner> logger)
+    ILogger<ConfigRunner> logger)
 {
     private IStateStore store => activeScope.Store;
     private ConfigRepository configRepo => activeScope.ConfigRepo;
@@ -31,7 +31,7 @@ internal sealed class ProfileRunner(
     // Interval between re-issued stop requests.
     private static readonly TimeSpan _stopRetry = TimeSpan.FromSeconds(1);
 
-    private Profile _group = null!;
+    private string _config = string.Empty;
     private AppSettings _settings = new();
 
     // Liveness tracking. rx progress proves the tunnel is carrying data even mid-rekey; a re-dial only fires
@@ -44,31 +44,26 @@ internal sealed class ProfileRunner(
     /// <summary>
     /// Runs sessions per target change.
     /// </summary>
-    public async Task RunAsync(Profile initial, CancellationToken ct)
+    public async Task RunAsync(string initial, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             var changeToken = control.ChangeToken;
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, changeToken))
             {
-                var group = await ResolveAsync(initial, ct);
-                if (group is null)
-                {
-                    return;
-                }
-
-                _group = group;
+                var config = await ResolveAsync(initial, ct);
+                _config = config;
 
                 if (!control.Running)
                 {
-                    await TeardownForDisconnectAsync(group.Config);
+                    await TeardownForDisconnectAsync(config);
                     await IdleAsync(linked.Token);
                     continue;
                 }
 
                 try
                 {
-                    await RunSessionAsync(group, linked.Token);
+                    await RunSessionAsync(config, linked.Token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -82,7 +77,7 @@ internal sealed class ProfileRunner(
                 {
                     // Don't let a transient fault kill the supervisor.
                     logger.LogError(ex, "the tunnel session stopped with an error ({Reason}); the connection is torn down and dialled again", ex.Message);
-                    Stop(group.Config);
+                    Stop(config);
                     await SetStateAsync("disconnected");
                     await DelayAsync(_livenessPoll, linked.Token);
                 }
@@ -90,20 +85,14 @@ internal sealed class ProfileRunner(
         }
     }
 
-    private async Task<Profile?> ResolveAsync(Profile initial, CancellationToken ct)
+    private async Task<string> ResolveAsync(string initial, CancellationToken ct)
     {
         // Latch the running target so a new selection doesn't switch until reconnect; teardown follows the same
         // latch, otherwise a disconnect after a mid-session switch stops the service of the wrong config.
-        var name = control.RunningTarget ?? control.Target ?? initial.Name;
-        var profile = await store.GetProfileAsync(name, ct);
-        if (profile is not null)
-        {
-            return profile;
-        }
-
+        var name = control.RunningTarget ?? control.Target ?? initial;
         if (await configRepo.ExistsAsync(name, ct))
         {
-            return new Profile(name, name);
+            return name;
         }
 
         // Broken binding: clear the dangling selection and idle.
@@ -111,10 +100,10 @@ internal sealed class ProfileRunner(
         {
             await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
             control.ClearTarget();
-            logger.LogInformation("the selected profile '{Profile}' no longer exists; the selection is cleared and nothing will connect until you pick another one", name);
+            logger.LogInformation("the selected configuration '{Config}' no longer exists; the selection is cleared and nothing will connect until you pick another one", name);
         }
 
-        return new Profile(string.Empty, string.Empty);
+        return string.Empty;
     }
 
     private static async Task IdleAsync(CancellationToken token)
@@ -128,25 +117,18 @@ internal sealed class ProfileRunner(
         }
     }
 
-    private async Task RunSessionAsync(Profile group, CancellationToken ct)
+    private async Task RunSessionAsync(string config, CancellationToken ct)
     {
         _settings = await settingsStore.LoadAsync(ct);
-        var config = group.Config;
 
         if (string.IsNullOrEmpty(config))
         {
-            // Named-but-config-less warns; nameless idle stays quiet.
-            if (!string.IsNullOrEmpty(group.Name))
-            {
-                logger.LogWarning("profile {Profile} holds no configuration, so there is nothing to connect to; add one to it", group.Name);
-            }
-
             await SetStateAsync("disconnected");
 
             // Fail the connect instead of perpetual "connecting…".
             if (control.Running)
             {
-                control.FailConnect(ConnectFailureReason.ProfileEmpty, string.Empty);
+                control.FailConnect(ConnectFailureReason.NoTargetSelected, string.Empty);
             }
 
             await IdleAsync(ct);
@@ -168,17 +150,17 @@ internal sealed class ProfileRunner(
             return;
         }
 
-        await ProjectRoutingAsync(group.Name, config, ct);
+        await ProjectRoutingAsync(config, ct);
         ReapForeignTunnels(config);
         Stop(config);
 
         await SetStateAsync("connecting");
-        if (!await ConnectWithRetryAsync(config, group.Name, ct))
+        if (!await ConnectWithRetryAsync(config, ct))
         {
             return;
         }
 
-        logger.LogInformation("connected through {Config} of profile {Profile}; traffic now follows the routing rules", config, group.Name);
+        logger.LogInformation("connected through {Config}; traffic now follows the routing rules", config);
         await SetStateAsync("connected");
 
         _lastRxBytes = -1;
@@ -209,15 +191,15 @@ internal sealed class ProfileRunner(
                     Stop(config);
 
                     // A live config rename may have moved the config; re-resolve and re-project before re-dialing.
-                    var current = await ReresolveConfigAsync(group, config, ct);
+                    var current = await ReresolveConfigAsync(config, ct);
                     if (!string.Equals(current, config, StringComparison.Ordinal))
                     {
                         logger.LogInformation("configuration {Old} was renamed to {New} while connected; reconnecting under the new name", config, current);
-                        await ProjectRoutingAsync(group.Name, current, ct);
+                        await ProjectRoutingAsync(current, ct);
                         config = current;
                     }
 
-                    if (!await ConnectWithRetryAsync(config, group.Name, ct))
+                    if (!await ConnectWithRetryAsync(config, ct))
                     {
                         return;
                     }
@@ -252,7 +234,7 @@ internal sealed class ProfileRunner(
     // default, the configured interval when periodic reconnect is on - while local/config failures latch and
     // stop. Returns true on handshake, false on a fatal failure or a change signal (disconnect/reconfigure).
     // The attempt counter lives on the control so it survives a signal-driven supervisor re-entry.
-    private async Task<bool> ConnectWithRetryAsync(string config, string profile, CancellationToken ct)
+    private async Task<bool> ConnectWithRetryAsync(string config, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -270,7 +252,7 @@ internal sealed class ProfileRunner(
 
             if (!IsTransient(outcome.Reason))
             {
-                logger.LogWarning("could not connect through {Config} of profile {Profile}: {Reason} {Detail}; this is not something a retry fixes, so dialling stops here", config, profile, outcome.Reason, outcome.Detail);
+                logger.LogWarning("could not connect through {Config}: {Reason} {Detail}; this is not something a retry fixes, so dialling stops here", config, outcome.Reason, outcome.Detail);
                 Stop(config);
                 await SetStateAsync("disconnected");
                 control.FailConnect(outcome.Reason, outcome.Detail);
@@ -279,8 +261,8 @@ internal sealed class ProfileRunner(
 
             var attempt = control.NextRetry();
             var delay = RetryDelay(attempt);
-            logger.LogWarning("could not reach the server of {Config} ({Profile}): {Reason}; trying again in {Delay}s, attempt {Attempt}",
-                config, profile, outcome.Reason, (int)delay.TotalSeconds, attempt);
+            logger.LogWarning("could not reach the server of {Config}: {Reason}; trying again in {Delay}s, attempt {Attempt}",
+                config, outcome.Reason, (int)delay.TotalSeconds, attempt);
             await SetStateAsync("connecting");
             await WaitRetryAsync(delay, ct);
         }
@@ -329,14 +311,9 @@ internal sealed class ProfileRunner(
         return TimeSpan.FromSeconds(Math.Min(60, 5 * (1 << steps)));
     }
 
-    // The profile's current config (a live rename may have moved it); the retargeted latch for a bare-config target.
-    private async Task<string> ReresolveConfigAsync(Profile group, string current, CancellationToken ct)
+    // The retargeted latch after a live rename moved the config.
+    private async Task<string> ReresolveConfigAsync(string current, CancellationToken ct)
     {
-        if (await store.GetProfileAsync(group.Name, ct) is { Config.Length: > 0 } profile)
-        {
-            return profile.Config;
-        }
-
         var latched = control.RunningTarget;
         if (!string.IsNullOrEmpty(latched) && await configRepo.ExistsAsync(latched, ct))
         {
@@ -346,19 +323,12 @@ internal sealed class ProfileRunner(
         return current;
     }
 
-    private async Task ProjectRoutingAsync(string profile, string config, CancellationToken ct)
+    private async Task ProjectRoutingAsync(string config, CancellationToken ct)
     {
-        if (await store.GetProfileAsync(profile, ct) is null)
+        var listId = await store.GetSelectedRoutingListAsync(ct);
+        if (listId is null)
         {
-            // Clear stale projection so a dead routing list doesn't leak into this tunnel.
-            await store.ClearTunnelProjectionAsync(config, ct);
-            return;
-        }
-
-        var (listId, useRouting) = await store.GetProfileRoutingAsync(profile, ct);
-        if (!useRouting || listId is null)
-        {
-            // Routing off: project full tunnel, override config set-geo.
+            // No list picked: project full tunnel, override config set-geo.
             await ProjectFullTunnelAsync(config, ct);
             return;
         }
@@ -366,7 +336,7 @@ internal sealed class ProfileRunner(
         var list = await store.GetRoutingListAsync(listId.Value, ct);
         if (list is null)
         {
-            logger.LogWarning("profile {Profile} points at routing list {Id}, which no longer exists; until another list is picked, everything goes through the tunnel", profile, listId.Value);
+            logger.LogWarning("routing list {Id} no longer exists; until another list is picked, everything goes through the tunnel", listId.Value);
             await ProjectFullTunnelAsync(config, ct);
             return;
         }
@@ -386,7 +356,7 @@ internal sealed class ProfileRunner(
     {
         try
         {
-            await store.SaveProfileStateAsync(new ProfileState(_group.Name, status, DateTimeOffset.UtcNow));
+            await store.SaveTunnelStateAsync(new TunnelState(_config, status, DateTimeOffset.UtcNow));
             control.SignalStatus();
         }
         catch (Exception ex)

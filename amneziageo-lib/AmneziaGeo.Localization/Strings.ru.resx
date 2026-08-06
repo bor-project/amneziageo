@@ -172,9 +172,6 @@
   <data name="BundleExport_Heading" xml:space="preserve">
     <value>Экспорт профилей, конфигураций и списков маршрутизации</value>
   </data>
-  <data name="BundleExport_ProfilesSection" xml:space="preserve">
-    <value>ПРОФИЛИ</value>
-  </data>
   <data name="BundleExport_RoutingSection" xml:space="preserve">
     <value>МАРШРУТИЗАЦИЯ</value>
   </data>
@@ -316,8 +313,8 @@
   <data name="Main_AutoCheckTitle" xml:space="preserve">
     <value>Автообновление</value>
   </data>
-  <data name="Main_BackToProfilesTooltip" xml:space="preserve">
-    <value>Назад к профилям</value>
+  <data name="Main_BackTooltip" xml:space="preserve">
+    <value>Назад</value>
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Выберите профили, конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
@@ -339,21 +336,6 @@
   </data>
   <data name="Main_CheckUpdatesButton" xml:space="preserve">
     <value>Проверить обновления</value>
-  </data>
-  <data name="Main_ChooseConfigLabel" xml:space="preserve">
-    <value>ВЫБЕРИТЕ КОНФИГУРАЦИЮ</value>
-  </data>
-  <data name="Main_ChooseListLabel" xml:space="preserve">
-    <value>ВЫБЕРИТЕ СПИСОК</value>
-  </data>
-  <data name="Main_ChooseProfileToSetup" xml:space="preserve">
-    <value>ВЫБЕРИТЕ ПРОФИЛЬ ДЛЯ НАСТРОЙКИ</value>
-  </data>
-  <data name="Main_ProfileLabel" xml:space="preserve">
-    <value>Профиль</value>
-  </data>
-  <data name="Main_SetActiveProfile" xml:space="preserve">
-    <value>Установить</value>
   </data>
   <data name="Main_ClearButton" xml:space="preserve">
     <value>Очистить</value>
@@ -437,7 +419,7 @@
     <value>Удалить конфигурацию</value>
   </data>
   <data name="Main_DeleteConfigHint" xml:space="preserve">
-    <value>Сначала отвяжите её от профилей и остановите использующий её туннель.</value>
+    <value>Сначала остановите использующий её туннель.</value>
   </data>
   <data name="Main_DeleteConfigTitle" xml:space="preserve">
     <value>Удаление конфигурации</value>
@@ -463,35 +445,11 @@
   <data name="Main_RoutingLoading" xml:space="preserve">
     <value>Загрузка…</value>
   </data>
-  <data name="Main_DeleteProfileButton" xml:space="preserve">
-    <value>Удалить профиль</value>
-  </data>
-  <data name="Main_DeleteProfileTitle" xml:space="preserve">
-    <value>Удаление профиля</value>
-  </data>
-  <data name="Main_DeleteProfilePrompt" xml:space="preserve">
-    <value>Удалить этот профиль из каталога. Это действие нельзя отменить.</value>
-  </data>
-  <data name="Main_ProfileSettingsTitle" xml:space="preserve">
-    <value>Настройки профиля</value>
-  </data>
-  <data name="Main_DeleteProfileHint" xml:space="preserve">
-    <value>Профиль удалится вместе со своими настройками. Запущенный профиль нужно сначала отключить.</value>
-  </data>
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Удалить</value>
   </data>
   <data name="Main_PendingDeleteHint" xml:space="preserve">
     <value>Помечено на удаление. Нажмите «Сохранить», чтобы удалить, или «Отмена», чтобы оставить.</value>
-  </data>
-  <data name="Main_ConfigInUse" xml:space="preserve">
-    <value>Нельзя удалить: конфигурация используется в профилях:</value>
-  </data>
-  <data name="Main_RoutingInUse" xml:space="preserve">
-    <value>Нельзя удалить: список маршрутизации используется в профилях:</value>
-  </data>
-  <data name="Main_ProfileInUse" xml:space="preserve">
-    <value>Нельзя удалить: профиль подключён. Сначала отключите его.</value>
   </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>УДАЛЕНИЕ</value>
@@ -535,8 +493,11 @@
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Есть несохранённые изменения</value>
   </data>
-  <data name="Main_FullTunnel" xml:space="preserve">
-    <value>Полный туннель</value>
+  <data name="Main_RoutingOffButton" xml:space="preserve">
+    <value>Отключить</value>
+  </data>
+  <data name="Main_RoutingOffState" xml:space="preserve">
+    <value>выключена</value>
   </data>
   <data name="Main_GeoDismissTooltip" xml:space="preserve">
     <value>Позже - можно обновить в настройках</value>
@@ -640,9 +601,6 @@
   <data name="Main_NewListButton" xml:space="preserve">
     <value>Новый список</value>
   </data>
-  <data name="Main_NoProfilesHint" xml:space="preserve">
-    <value>Добавьте профиль и конфигурацию в настройках.</value>
-  </data>
   <data name="Main_AddConfigButton" xml:space="preserve">
     <value>Добавить конфигурацию</value>
   </data>
@@ -681,24 +639,6 @@
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
     <value>ПРАВИЛА</value>
-  </data>
-  <data name="Main_ProfileAddButton" xml:space="preserve">
-    <value>Новый</value>
-  </data>
-  <data name="Main_AddProfileButton" xml:space="preserve">
-    <value>Добавить профиль</value>
-  </data>
-  <data name="Main_NoProfileYetHint" xml:space="preserve">
-    <value>Создайте профиль, чтобы связать конфигурацию с маршрутизацией.</value>
-  </data>
-  <data name="Main_ProfileNoConfigHint" xml:space="preserve">
-    <value>У профиля пока нет конфигурации. Выберите её из списка или добавьте в разделе «Конфигурации».</value>
-  </data>
-  <data name="Main_ProfileRenameHint" xml:space="preserve">
-    <value>Новое имя для этого профиля. Запущенный профиль переименовать нельзя.</value>
-  </data>
-  <data name="Main_ProfileSection" xml:space="preserve">
-    <value>Профиль</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
     <value>WebSocket-прокси</value>
@@ -748,12 +688,6 @@
   <data name="Main_RailLogsTitle" xml:space="preserve">
     <value>Диагностика</value>
   </data>
-  <data name="Main_RailProfileSubtitle" xml:space="preserve">
-    <value>Конфигурация + маршрутизация</value>
-  </data>
-  <data name="Main_RailProfileTitle" xml:space="preserve">
-    <value>Профиль</value>
-  </data>
   <data name="Main_RailRoutingSubtitle" xml:space="preserve">
     <value>Списки правил и трафик</value>
   </data>
@@ -765,9 +699,6 @@
   </data>
   <data name="Main_RailSourcesTitle" xml:space="preserve">
     <value>Источники geo</value>
-  </data>
-  <data name="Main_RenameProfileTooltip" xml:space="preserve">
-    <value>Переименовать профиль</value>
   </data>
   <data name="Main_RenameTooltip" xml:space="preserve">
     <value>Переименовать</value>
@@ -898,18 +829,6 @@
   <data name="Scan_Title" xml:space="preserve">
     <value>Сканировать QR с камеры</value>
   </data>
-  <data name="Profile_ConnectAction" xml:space="preserve">
-    <value>Подключить</value>
-  </data>
-  <data name="Profile_NoConfig" xml:space="preserve">
-    <value>нет конфигурации</value>
-  </data>
-  <data name="Profile_ConfigRequired" xml:space="preserve">
-    <value>Выберите конфигурацию — без неё профиль не сохранится.</value>
-  </data>
-  <data name="Profile_SwitchAction" xml:space="preserve">
-    <value>Переключить</value>
-  </data>
   <data name="BundleExportCode_CopiedToClipboard" xml:space="preserve">
     <value>Скопировано в буфер обмена.</value>
   </data>
@@ -918,9 +837,6 @@
   </data>
   <data name="BundleExportCode_Saved" xml:space="preserve">
     <value>Сохранено.</value>
-  </data>
-  <data name="BundleExportVm_NoConfiguration" xml:space="preserve">
-    <value>нет конфигурации</value>
   </data>
   <data name="BundleImportCode_BundleFileTitle" xml:space="preserve">
     <value>Файл бандла</value>
@@ -1027,20 +943,11 @@
   <data name="MainVm_ConnectAttempt" xml:space="preserve">
     <value>Попытка {0}</value>
   </data>
-  <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
-    <value>У профиля нет конфигурации - задайте её в настройках</value>
-  </data>
-  <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
-    <value>Выберите профиль</value>
-  </data>
   <data name="MainVm_Disconnect" xml:space="preserve">
     <value>Отключить</value>
   </data>
   <data name="MainVm_LogSearchMatches" xml:space="preserve">
     <value>совпадений: {0}</value>
-  </data>
-  <data name="MainVm_NewProfileDefaultName" xml:space="preserve">
-    <value>Новый профиль</value>
   </data>
   <data name="MainVm_NoAgentConnection" xml:space="preserve">
     <value>Нет связи с агентом</value>
@@ -1078,12 +985,6 @@
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>Время ожидания подключения истекло.</value>
   </data>
-  <data name="MainVm_NoticeProfileEmpty" xml:space="preserve">
-    <value>Профиль «{0}» пуст - добавьте конфигурацию.</value>
-  </data>
-  <data name="MainVm_NoticeProfileSelected" xml:space="preserve">
-    <value>Выбран профиль «{0}». Переподключитесь, чтобы применить.</value>
-  </data>
   <data name="MainVm_NoticeSettingsChanged" xml:space="preserve">
     <value>Настройки изменены. Переподключитесь, чтобы применить.</value>
   </data>
@@ -1119,9 +1020,6 @@
   </data>
   <data name="Update_Close" xml:space="preserve">
     <value>Закрыть</value>
-  </data>
-  <data name="ProfileChoice_NoneLabel" xml:space="preserve">
-    <value>- не выбрано -</value>
   </data>
   <data name="QrCode_CopiedToClipboard" xml:space="preserve">
     <value>Скопировано в буфер обмена.</value>
@@ -1268,14 +1166,14 @@
     <value>ч</value>
   </data>
   <data name="Agent_BundleImported" xml:space="preserve">
-    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.</value>
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}.</value>
   </data>
   <data name="Agent_BundleImportedRenamed" xml:space="preserve">
-    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.
-Переименовано при импорте: {3}.</value>
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}.
+Переименовано при импорте: {2}.</value>
   </data>
   <data name="Agent_BundleImportedRenamedMany" xml:space="preserve">
-    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}, профилей {2}.
+    <value>Импортировано: конфигураций {0}, списков маршрутизации {1}.
 Переименовано при импорте: несколько имён совпали с уже существующими.</value>
   </data>
   <data name="Agent_BundleParseFailed" xml:space="preserve">
@@ -1553,9 +1451,6 @@
   <data name="Main_HomeSelectConfigHint" xml:space="preserve">
     <value>Выберите конфигурацию для подключения.</value>
   </data>
-  <data name="Main_ProfileNeedsConfigHint" xml:space="preserve">
-    <value>Чтобы добавить профиль, сначала добавьте конфигурацию.</value>
-  </data>
   <data name="InstallerVm_ResetSettings" xml:space="preserve">
     <value>Сбросить настройки</value>
   </data>
@@ -1607,9 +1502,6 @@
   <data name="Launcher_Title" xml:space="preserve">
     <value>Быстрый запуск</value>
   </data>
-  <data name="Launcher_ActiveProfile" xml:space="preserve">
-    <value>Активный профиль</value>
-  </data>
   <data name="Launcher_Loading" xml:space="preserve">
     <value>Загрузка профилей…</value>
   </data>
@@ -1657,9 +1549,6 @@
   </data>
   <data name="MainVm_CacheShownCapped" xml:space="preserve">
     <value>{0} из {1}, агент отдал {2}</value>
-  </data>
-  <data name="Agent_NoProfileSelected" xml:space="preserve">
-    <value>Профиль не выбран.</value>
   </data>
   <data name="Main_LogTypeLabel" xml:space="preserve">
     <value>Журнал</value>
@@ -1772,9 +1661,6 @@
   <data name="Tui_Select" xml:space="preserve">
     <value>Выбрать</value>
   </data>
-  <data name="Tui_Assign" xml:space="preserve">
-    <value>Маршрутизация…</value>
-  </data>
   <data name="Tui_Show" xml:space="preserve">
     <value>Показать</value>
   </data>
@@ -1822,5 +1708,41 @@
   </data>
   <data name="Tui_LogEmpty" xml:space="preserve">
     <value>Журнал пуст: поднимите уровень на экране Общие</value>
+  </data>
+  <data name="Agent_NoConfigSelected" xml:space="preserve">
+    <value>Конфигурация не выбрана.</value>
+  </data>
+  <data name="Main_NoConfigsHint" xml:space="preserve">
+    <value>Добавьте конфигурацию в настройках.</value>
+  </data>
+  <data name="Main_SetActiveTitle" xml:space="preserve">
+    <value>Активная конфигурация</value>
+  </data>
+  <data name="Main_SetActiveHint" xml:space="preserve">
+    <value>Следующее подключение поднимет эту конфигурацию.</value>
+  </data>
+  <data name="Main_SetActiveConfig" xml:space="preserve">
+    <value>Сделать активной</value>
+  </data>
+  <data name="Main_IsActiveBadge" xml:space="preserve">
+    <value>Активна сейчас</value>
+  </data>
+  <data name="Main_ApplyRoutingTitle" xml:space="preserve">
+    <value>Список маршрутизации</value>
+  </data>
+  <data name="Main_ApplyRoutingHint" xml:space="preserve">
+    <value>По применённому списку ходят все конфигурации.</value>
+  </data>
+  <data name="Main_ApplyRoutingButton" xml:space="preserve">
+    <value>Применить</value>
+  </data>
+  <data name="Main_RoutingOffNotice" xml:space="preserve">
+    <value>Маршрутизация выключена - каждая конфигурация работает со своими настройками.</value>
+  </data>
+  <data name="MainVm_ConnectHintSelectConfig" xml:space="preserve">
+    <value>Выберите конфигурацию</value>
+  </data>
+  <data name="MainVm_NoticeConfigSelected" xml:space="preserve">
+    <value>Выбрана конфигурация «{0}». Переподключитесь, чтобы применить.</value>
   </data>
 </root>

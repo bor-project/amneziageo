@@ -16,13 +16,14 @@ internal static class RoutingCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo routing <list|show|create|set|add|delete-rule|remove|settings|configure>");
+            return Reply.Usage("usage: amneziageo routing <list|use|show|create|set|add|delete-rule|remove|settings|configure>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
         return args[0] switch
         {
             "list" => List(agent),
+            "use" => await UseAsync(agent, rest).ConfigureAwait(false),
             "show" => await ShowAsync(agent, rest).ConfigureAwait(false),
             "create" => await CreateAsync(agent, rest).ConfigureAwait(false),
             "set" => await SetAsync(agent, rest).ConfigureAwait(false),
@@ -33,6 +34,28 @@ internal static class RoutingCommands
             "configure" => await ConfigureAsync(agent, rest).ConfigureAwait(false),
             _ => Reply.Usage($"unknown routing command '{args[0]}'"),
         };
+    }
+
+    // Picks the routing list every config uses; "none" routes everything through the tunnel.
+    private static async Task<int> UseAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        if (args.Count != 1)
+        {
+            return Reply.Usage("usage: amneziageo routing use <id|name|none>");
+        }
+
+        var listId = "none";
+        if (args[0] != "none" && args[0] != "0")
+        {
+            if (Resolve(agent, args[0]) is not { } list)
+            {
+                return Reply.Usage($"routing list '{args[0]}' not found");
+            }
+
+            listId = list.Id.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return Reply.Report(await agent.SendAsync(IpcContract.OpAssignRouting, listId).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -187,10 +210,9 @@ internal static class RoutingCommands
             return Reply.Usage("usage: amneziageo routing remove <id|name>");
         }
 
-        var bound = agent.Snapshot.Profiles.Where(profile => profile.RoutingListId == list.Id).Select(profile => profile.Name).ToArray();
-        if (bound.Length > 0)
+        if (agent.Snapshot.SelectedRoutingList == list.Id)
         {
-            return Reply.Usage($"'{list.Name}' is assigned to {string.Join(", ", bound)}; unassign it first");
+            return Reply.Usage($"'{list.Name}' is the one in use; pick another with 'routing use' first");
         }
 
         return Reply.Report(await agent.SendAsync(IpcContract.OpRemoveRoutingList, list.Id.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false), $"removed {list.Name}");

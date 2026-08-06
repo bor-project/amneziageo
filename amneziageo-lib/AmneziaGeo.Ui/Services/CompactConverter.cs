@@ -39,6 +39,7 @@ internal sealed class CompactConverter : IValueConverter
             "w160" => compact ? double.NaN : 160d,
             "w170" => compact ? double.NaN : 170d,
             "w180" => compact ? double.NaN : 180d,
+            "w240" => compact ? double.NaN : 240d,
             // Width floor that lifts in compact so a narrow card cannot be overflowed.
             "minW220" => compact ? 0d : 220d,
             // Width caps that lift in compact so the segment track / catalogue combo fills the row.
@@ -48,7 +49,7 @@ internal sealed class CompactConverter : IValueConverter
             "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
             "homeOrientation" => compact ? Orientation.Horizontal : Orientation.Vertical,
-            // Home status/hint column: matches the profile picker when stacked, free-width when the row is
+            // Home status/hint column: matches the config picker when stacked, free-width when the row is
             // horizontal and the width is shared with the power button and the picker.
             "homeStatusWidth" => compact ? double.NaN : 300d,
             // Column widths for an even-split row: a fixed control becomes a star column in compact so it

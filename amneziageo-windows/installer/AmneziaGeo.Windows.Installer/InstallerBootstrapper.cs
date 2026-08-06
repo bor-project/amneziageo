@@ -217,7 +217,7 @@ public sealed class InstallerBootstrapper : BootstrapperApplication
     {
         _ = Task.Run(async () =>
         {
-            var connectable = await AgentPipeClient.HasConnectableProfileAsync(
+            var connectable = await AgentPipeClient.HasConnectableConfigAsync(
                 TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3), CancellationToken.None);
             if (connectable)
             {

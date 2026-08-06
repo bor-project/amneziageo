@@ -81,7 +81,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     private int _geoUpdatedTick;
 
     /// <summary>
-    /// Profile reflected on the connection card.
+    /// Config reflected on the connection card.
     /// </summary>
     public string? BoundTarget => control.Running ? (control.RunningTarget ?? control.Target) : control.Target;
 
@@ -221,7 +221,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return command.Op switch
             {
                 IpcContract.OpAddConfig => await AddConfigAsync(command.Args, ct),
-                IpcContract.OpAddProfile => await AddProfileAsync(command.Args, ct),
                 IpcContract.OpSetGeo => await SetGeoAsync(command.Args, ct),
                 IpcContract.OpSetWebSocket => await SetWebSocketAsync(command.Args, ct),
                 IpcContract.OpSetConfigDns => await SetConfigDnsAsync(command.Args, ct),
@@ -238,7 +237,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
                 IpcContract.OpSetConnection => await SetConnectionAsync(command.Args, ct),
                 IpcContract.OpSetSetting => await SetSettingAsync(command.Args, ct),
-                IpcContract.OpSelectProfile => await SelectProfileAsync(command.Args, ct),
+                IpcContract.OpSelectConfig => await SelectConfigAsync(command.Args, ct),
                 IpcContract.OpAddSource => await AddSourceAsync(command.Args, ct),
                 IpcContract.OpRemoveSource => await RemoveSourceAsync(command.Args, ct),
                 IpcContract.OpEditSource => await EditSourceAsync(command.Args, ct),
@@ -250,10 +249,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpImportConfig => await ImportConfigAsync(command.Args, ct),
                 IpcContract.OpEditConfig => await EditConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
-                IpcContract.OpRemoveProfile => await RemoveProfileAsync(command.Args, ct),
                 IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
                 IpcContract.OpCopyConfig => await CopyConfigAsync(command.Args, ct),
-                IpcContract.OpRenameProfile => await RenameProfileAsync(command.Args, ct),
                 IpcContract.OpExportBundle => await ExportBundleAsync(command.Args, ct),
                 IpcContract.OpImportBundle => await ImportBundleAsync(command.Args, ct),
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(command.Args, ct),
@@ -349,7 +346,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         await configRepo.EditFromTextAsync(args[0], args[1], ct);
 
         // Config text applies on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        if (control.Running && IsRunningMember(args[0]))
         {
             control.SetRestartRequired();
         }
@@ -371,55 +368,21 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, $"unknown config: {name}");
         }
 
-        // Refuse while the config is a live member of the running target.
-        var bound = BoundTarget;
-        if (control.Running && bound is not null)
+        // Refuse while the config is the running target.
+        if (control.Running && string.Equals(name, BoundTarget, StringComparison.Ordinal))
         {
-            var boundProfile = await store.GetProfileAsync(bound, ct);
-            if (boundProfile is not null && string.Equals(boundProfile.Config, name, StringComparison.Ordinal))
-            {
-                return new IpcAck(false, $"config {name} is in use by the running profile {bound}; disconnect first");
-            }
+            return new IpcAck(false, $"config {name} is running; disconnect first");
         }
 
         await configRepo.RemoveAsync(name, ct);
-
-        // A profile of the same name keeps its own binding.
-        if (await store.GetProfileAsync(name, ct) is null)
-        {
-            await ClearBindingIfTargetAsync(name, ct);
-        }
+        await store.RemoveTunnelStateAsync(name, ct);
+        await ClearBindingIfTargetAsync(name, ct);
 
         logger.LogInformation("removed config {Name}", name);
         return new IpcAck(true, $"removed config {name}");
     }
 
-    private async Task<IpcAck> RemoveProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
-        {
-            return new IpcAck(false, "remove-profile requires a name");
-        }
-
-        var name = args[0];
-        if (await store.GetProfileAsync(name, ct) is null)
-        {
-            return new IpcAck(false, $"unknown profile: {name}");
-        }
-
-        // Refuse while the profile is running.
-        if (control.Running && string.Equals(name, BoundTarget, StringComparison.Ordinal))
-        {
-            return new IpcAck(false, $"profile {name} is running; disconnect first");
-        }
-
-        await store.RemoveProfileAsync(name, ct);
-        await ClearBindingIfTargetAsync(name, ct);
-        logger.LogInformation("removed profile {Name}", name);
-        return new IpcAck(true, $"removed profile {name}");
-    }
-
-    // Clear target binding when the removed profile/config was selected.
+    // Clear target binding when the removed config was selected.
     private async Task ClearBindingIfTargetAsync(string name, CancellationToken ct)
     {
         if (string.Equals(name, control.Target, StringComparison.Ordinal))
@@ -478,95 +441,25 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         // Rename is allowed while running: the live adapter keeps carrying traffic under its old service name and
-        // the UI reflects the new name at once; a later re-dial re-resolves the current config (ProfileRunner).
+        // the UI reflects the new name at once; a later re-dial re-resolves the current config (ConfigRunner).
         await configRepo.RenameAsync(oldName, newName, ct);
 
-        // A same-named single-config target follows the rename, in both the selection and the live latch; a profile
-        // of that name owns the binding instead.
-        if (string.Equals(oldName, control.Target, StringComparison.Ordinal)
-            && await store.GetProfileAsync(oldName, ct) is null)
-        {
-            control.RetargetName(oldName, newName);
-            await store.SetSettingAsync(AgentControl.SelectedTargetKey, newName, ct);
-        }
-
-        logger.LogInformation("renamed config {Old} -> {New}", oldName, newName);
-        return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));
-    }
-
-    private async Task<IpcAck> RenameProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
-        {
-            return new IpcAck(false, "rename-profile requires the current and new name");
-        }
-
-        var oldName = args[0];
-        var newName = args[1].Trim();
-        if (string.Equals(oldName, newName, StringComparison.Ordinal))
-        {
-            return new IpcAck(true, IpcMessage.Key("Agent_NameUnchanged"));
-        }
-
-        var profile = await store.GetProfileAsync(oldName, ct);
-        if (profile is null)
-        {
-            return new IpcAck(false, $"unknown profile: {oldName}");
-        }
-
-        if (await store.GetProfileAsync(newName, ct) is not null)
-        {
-            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", newName));
-        }
-
-        // Renaming the running profile is allowed: the live tunnel keeps running under its old in-memory
-        // binding and the UI raises a "reconnect to apply" banner, as for any change to a live tunnel.
-        var wasLiveTarget = control.Running && string.Equals(oldName, BoundTarget, StringComparison.Ordinal);
-
-        // Carry routing assignment and selection across to the new name.
-        await store.SaveProfileAsync(profile with { Name = newName }, ct);
-        await store.RemoveProfileAsync(oldName, ct);
-
-        var (listId, useRouting) = await store.GetProfileRoutingAsync(oldName, ct);
-        if (listId is not null || useRouting)
-        {
-            await store.SetProfileRoutingAsync(newName, listId, useRouting, ct);
-            await store.SetProfileRoutingAsync(oldName, null, false, ct);
-        }
-
-        // Carry the live status row so the renamed profile keeps showing its real state; without it the
-        // bound status reads Disconnected (state is still keyed under the old name) until a reconnect.
-        if (await store.GetProfileStateAsync(oldName, ct) is { } liveState)
-        {
-            await store.SaveProfileStateAsync(liveState with { Name = newName }, ct);
-        }
-
-        // Follow the rename in the live binding so the supervisor keeps resolving the profile: a stale
+        // Follow the rename in the live binding so the supervisor keeps resolving the config: a stale
         // running target would look like a broken binding on the next re-dial and drop the tunnel.
         control.RetargetName(oldName, newName);
-        if (string.Equals(newName, control.Target, StringComparison.Ordinal))
-        {
-            await store.SetSettingAsync(AgentControl.SelectedTargetKey, newName, ct);
-        }
 
-        if (wasLiveTarget)
-        {
-            control.SetRestartRequired();
-        }
-
-        logger.LogInformation("renamed profile {Old} -> {New}", oldName, newName);
+        logger.LogInformation("renamed config {Old} -> {New}", oldName, newName);
         return new IpcAck(true, IpcMessage.Key("Agent_RenamedTo", newName));
     }
 
     // Export selection from OpExportBundle's arg0 JSON; all arrays optional. RoutingRules maps a routing
     // list name to the rule tokens to KEEP; an absent list keeps all its rules.
     private sealed record SelectionRequest(
-        string[]? Profiles,
         string[]? Configs,
         string[]? RoutingLists,
         Dictionary<string, string[]>? RoutingRules);
 
-    // Export a selective bundle: caller picks configs, routing lists, and profiles by name.
+    // Export a selective bundle: caller picks configs and routing lists by name.
     private async Task<IpcAck> ExportBundleAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -591,34 +484,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, IpcMessage.Key("Agent_ExportSelectionParseFailed"));
         }
 
-        // Resolve the EFFECTIVE set of config/routing-list names: the explicitly picked entries, plus
-        // (for every selected profile) the config and routing list it binds - so picking a profile travels
-        // with what it needs to reconnect, without the caller having to also tick its dependencies by hand.
         var configNames = new HashSet<string>(selection.Configs ?? [], StringComparer.Ordinal);
         var routingNames = new HashSet<string>(selection.RoutingLists ?? [], StringComparer.Ordinal);
-        var profileNames = new HashSet<string>(selection.Profiles ?? [], StringComparer.Ordinal);
 
-        foreach (var profileName in profileNames)
-        {
-            var profile = await store.GetProfileAsync(profileName, ct);
-            if (profile is null)
-            {
-                continue;
-            }
-
-            if (!string.IsNullOrEmpty(profile.Config))
-            {
-                configNames.Add(profile.Config);
-            }
-
-            var (listId, _) = await store.GetProfileRoutingAsync(profileName, ct);
-            if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct) is { } boundList)
-            {
-                routingNames.Add(boundList.Name);
-            }
-        }
-
-        if (configNames.Count == 0 && routingNames.Count == 0 && profileNames.Count == 0)
+        if (configNames.Count == 0 && routingNames.Count == 0)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NothingSelectedForExport"));
         }
@@ -690,45 +559,20 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             }
         }
 
-        var profileBlocks = new List<PortableBundle.ProfileBlock>();
-        foreach (var name in profileNames)
-        {
-            var profile = await store.GetProfileAsync(name, ct);
-            if (profile is null)
-            {
-                continue;
-            }
-
-            var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
-            string? routingListName = null;
-            if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct) is { } list)
-            {
-                routingListName = list.Name;
-            }
-
-            profileBlocks.Add(new PortableBundle.ProfileBlock(
-                name,
-                string.IsNullOrEmpty(profile.Config) ? null : profile.Config,
-                routingListName,
-                useRouting));
-        }
-
         var bundle = new PortableBundle.Bundle(
             PortableBundle.FormatTag,
             PortableBundle.CurrentVersion,
             configBlocks,
-            routingBlocks,
-            profileBlocks);
+            routingBlocks);
 
         logger.LogInformation(
-            "exported bundle: {Configs} configs, {Routing} routing lists, {Profiles} profiles",
+            "exported bundle: {Configs} configs, {Routing} routing lists",
             configBlocks.Count,
-            routingBlocks.Count,
-            profileBlocks.Count);
+            routingBlocks.Count);
         return new IpcAck(true, PortableBundle.Serialize(bundle));
     }
 
-    // Import a selective bundle: recreates configs, routing lists, and profiles under fresh names. All-or-nothing; no rollback of rows already written.
+    // Import a selective bundle: recreates configs and routing lists under fresh names. All-or-nothing; no rollback of rows already written.
     private async Task<IpcAck> ImportBundleAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -759,16 +603,14 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(false, IpcMessage.Key("Agent_BundleTooNew", bundle.Version));
         }
 
-        // Configs, profiles and routing lists each own a separate name space. Snapshots taken before import
+        // Configs and routing lists each own a separate name space. Snapshots taken before import
         // drive collision detection.
         var existingConfigs = new HashSet<string>(await configRepo.ListAsync(ct), StringComparer.Ordinal);
-        var existingProfiles = new HashSet<string>(await store.ListProfileNamesAsync(ct), StringComparer.Ordinal);
         var existingLists = (await store.ListRoutingListsAsync(ct))
             .ToDictionary(l => l.Name, l => l, StringComparer.Ordinal);
 
         // Growing name spaces so the add-as-new path never reuses a name taken earlier in THIS import.
         var configNames = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
-        var profileNames = new HashSet<string>(existingProfiles, StringComparer.Ordinal);
         var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
 
         var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -847,7 +689,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         foreach (var block in bundle.RoutingLists)
         {
             // Same-name list already here and a non-default policy: act on the existing row (id kept, so
-            // profiles bound to it stay bound).
+            // the selection keeps pointing at it).
             if (existingLists.TryGetValue(block.Name, out var existingList) && policy != "new")
             {
                 if (policy == "skip")
@@ -889,67 +731,23 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             importedLists++;
         }
 
-        var importedProfiles = 0;
-        foreach (var block in bundle.Profiles)
+        if (bundle.Profiles is { Count: > 0 } legacy)
         {
-            var config = block.Config is not null && configNameMap.TryGetValue(block.Config, out var cn) ? cn : string.Empty;
-            long? routingId = block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rl)
-                ? rl.Id
-                : null;
-
-            // Same-name profile already here and a non-default policy.
-            if (existingProfiles.Contains(block.Name) && policy != "new")
-            {
-                if (policy == "skip")
-                {
-                    continue;
-                }
-
-                importedProfiles++;
-                await store.SaveProfileAsync(new Profile(block.Name, config), ct);
-
-                // No auto-target here: bulk import must not steal the selection.
-                if (routingId is not null)
-                {
-                    await store.SetProfileRoutingAsync(block.Name, routingId.Value, block.UseRouting, ct);
-                }
-
-                continue;
-            }
-
-            var finalName = FreeName(block.Name, profileNames);
-            profileNames.Add(finalName);
-            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
-            {
-                renames.Add($"«{block.Name}» → «{finalName}»");
-            }
-
-            importedProfiles++;
-            await store.SaveProfileAsync(new Profile(finalName, config), ct);
-
-            // No auto-target here: bulk import must not steal the selection.
-            if (routingId is not null)
-            {
-                await store.SetProfileRoutingAsync(finalName, routingId.Value, block.UseRouting, ct);
-            }
+            logger.LogInformation("the bundle carries {Count} profile(s) from an older build; their pairings are dropped, the configs and routing lists above came through", legacy.Count);
         }
 
         logger.LogInformation(
-            "imported bundle: {Configs} configs, {Routing} routing lists, {Profiles} profiles",
+            "imported bundle: {Configs} configs, {Routing} routing lists",
             importedConfigs,
-            importedLists,
-            importedProfiles);
+            importedLists);
 
-        // A config and the profile bound to it clash under the same name and land on the same new one; showing
-        // that pair once reads as one rename instead of a duplicated line.
         var shown = renames.Distinct(StringComparer.Ordinal).ToList();
         if (shown.Count == 0)
         {
             return new IpcAck(true, IpcMessage.Key(
                 "Agent_BundleImported",
                 importedConfigs,
-                importedLists,
-                importedProfiles));
+                importedLists));
         }
 
         if (shown.Count <= 5)
@@ -958,15 +756,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 "Agent_BundleImportedRenamed",
                 importedConfigs,
                 importedLists,
-                importedProfiles,
                 string.Join(", ", shown)));
         }
 
         return new IpcAck(true, IpcMessage.Key(
             "Agent_BundleImportedRenamedMany",
             importedConfigs,
-            importedLists,
-            importedProfiles));
+            importedLists));
     }
 
     // DNS and bypass entries a bundle carries for a config.
@@ -997,21 +793,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
     }
 
-    // True when a profile still binds the config.
-    private async Task<bool> ConfigInUseAsync(string config, CancellationToken ct)
-    {
-        foreach (var profileName in await store.ListProfileNamesAsync(ct))
-        {
-            var profile = await store.GetProfileAsync(profileName, ct);
-            if (profile is not null && string.Equals(profile.Config, config, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     // Returns the desired name if free, otherwise appends " (2)", " (3)", … until one is not taken.
     private static string FreeName(string desired, HashSet<string> taken)
     {
@@ -1038,7 +819,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return $"{baseName} ({Guid.NewGuid():N})";
     }
 
-    // Config/profile names must be valid file names; replace invalid chars.
+    // Config names must be valid file names; replace invalid chars.
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
@@ -1047,7 +828,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return clean.Length == 0 ? "config" : clean;
     }
 
-    // Set the profile as target when none is set; idempotent.
+    // Set the config as target when none is set; idempotent.
     private async Task EnsureDefaultTargetAsync(string name, CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(control.Target))
@@ -1057,45 +838,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         control.SetTarget(name);
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
-        logger.LogInformation("auto-selected profile {Profile} as connection target (none was set)", name);
-    }
-
-    private async Task<IpcAck> AddProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
-        {
-            return new IpcAck(false, "add-profile requires a profile name");
-        }
-
-        var name = args[0];
-        var config = args.Count > 1 ? args[1] : string.Empty;
-        if (!string.IsNullOrEmpty(config) && !await configRepo.ExistsAsync(config, ct))
-        {
-            return new IpcAck(false, $"unknown config: {config}");
-        }
-
-        var existing = await store.GetProfileAsync(name, ct);
-        var updated = new Profile(name, config);
-        await store.SaveProfileAsync(updated, ct);
-        await EnsureDefaultTargetAsync(name, ct);
-        var changed = existing is null || !string.Equals(existing.Config, updated.Config, StringComparison.Ordinal);
-
-        // The active profile's config changed: a running tunnel needs a reconnect (flag the banner), a stopped
-        // one just re-reads on the next connect.
-        if (changed && string.Equals(name, BoundTarget, StringComparison.Ordinal))
-        {
-            if (control.Running)
-            {
-                control.SetRestartRequired();
-            }
-            else
-            {
-                control.Invalidate();
-            }
-        }
-
-        logger.LogInformation("saved profile {Name} (config '{Config}')", name, config);
-        return new IpcAck(true, $"saved profile {name}");
+        logger.LogInformation("auto-selected configuration '{Config}' as connection target (none was set)", name);
     }
 
     private async Task<IpcAck> SetGeoAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1161,7 +904,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         // Transport applies on a fresh tunnel; flag a reconnect when the running target is affected and something
         // actually changed - IPv6 also swaps the adapter address, so a real edit here always needs a fresh tunnel.
-        if (previous != updated && control.Running && await IsRunningMemberAsync(args[0], ct))
+        if (previous != updated && control.Running && IsRunningMember(args[0]))
         {
             control.SetRestartRequired();
         }
@@ -1197,7 +940,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         // DNS applies on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        if (control.Running && IsRunningMember(args[0]))
         {
             control.SetRestartRequired();
         }
@@ -1225,7 +968,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         await store.SetConfigExclusionsAsync(new ConfigExclusions(args[0], exclusions), ct);
 
         // Exclusions apply on a fresh tunnel; flag a reconnect when the running target is affected.
-        if (control.Running && await IsRunningMemberAsync(args[0], ct))
+        if (control.Running && IsRunningMember(args[0]))
         {
             control.SetRestartRequired();
         }
@@ -1240,21 +983,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, string.Join('\n', routes.DefaultExclusionEntries()));
     }
 
-    private async Task<bool> IsRunningMemberAsync(string config, CancellationToken ct)
+    private bool IsRunningMember(string config)
     {
-        var bound = BoundTarget;
-        if (bound is null)
-        {
-            return false;
-        }
-
-        if (string.Equals(bound, config, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        var profile = await store.GetProfileAsync(bound, ct);
-        return profile is not null && string.Equals(profile.Config, config, StringComparison.Ordinal);
+        return string.Equals(BoundTarget, config, StringComparison.Ordinal);
     }
 
     private async Task<IpcAck> ListGeoAsync(CancellationToken ct)
@@ -1281,21 +1012,21 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private async Task<IpcAck> GetRuntimeConfigAsync(CancellationToken ct)
     {
-        var (profile, config, applied) = await InspectTargetAsync(ct);
+        var (config, applied) = await InspectTargetAsync(ct);
         if (string.IsNullOrEmpty(config))
         {
-            return new IpcAck(false, IpcMessage.Key("Agent_NoProfileSelected"));
+            return new IpcAck(false, IpcMessage.Key("Agent_NoConfigSelected"));
         }
 
-        return new IpcAck(true, await inspector.RenderAsync(store, profile, config, applied, ct));
+        return new IpcAck(true, await inspector.RenderAsync(store, config, applied, ct));
     }
 
     private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
     {
-        var (_, config, _) = await InspectTargetAsync(ct);
+        var (config, _) = await InspectTargetAsync(ct);
         if (string.IsNullOrEmpty(config))
         {
-            return new IpcAck(false, IpcMessage.Key("Agent_NoProfileSelected"));
+            return new IpcAck(false, IpcMessage.Key("Agent_NoConfigSelected"));
         }
 
         // The tunnel runs in its own service process; without a session here the snapshot comes from there.
@@ -1307,22 +1038,16 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, System.Text.Json.JsonSerializer.Serialize(inspector.Collect()));
     }
 
-    // The tunnel the config screen reports on: the running one while this user owns it, otherwise the profile
+    // The tunnel the config screen reports on: the running one while this user owns it, otherwise the config
     // the next connect would raise.
-    private async Task<(string Profile, string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
+    private async Task<(string Config, bool Applied)> InspectTargetAsync(CancellationToken ct)
     {
         var scope = CurrentScope;
         var applied = control.Running && activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
         var name = applied
             ? control.RunningTarget ?? control.Target ?? string.Empty
             : await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
-        if (string.IsNullOrEmpty(name))
-        {
-            return (string.Empty, string.Empty, applied);
-        }
-
-        var profile = await store.GetProfileAsync(name, ct);
-        return profile is not null ? (profile.Name, profile.Config, applied) : (name, name, applied);
+        return (name, applied);
     }
 
     // Apps + services for per-app tunneling; enumerated as SYSTEM to read restricted paths. Rows are tab-separated: kind, label, value, detail.
@@ -1402,13 +1127,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var resultId = await geo.ApplyToRoutingListAsync(id, name, args.Skip(2).ToList(), ct);
 
-        // Flag a reconnect only when the running profile routes through this list and a connect-time rule changed.
+        // Flag a reconnect only when the running tunnel routes through this list and a connect-time rule changed.
         if (control.Running && BoundTarget is not null)
         {
-            var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
+            var listId = await store.GetSelectedRoutingListAsync(ct);
             var eager = DirectIsEager(await store.GetRoutingListAsync(resultId, ct));
             var newReconnect = args.Skip(2).Where(r => RequiresReconnect(r, eager)).ToHashSet(StringComparer.Ordinal);
-            if (useRouting && listId == resultId && !newReconnect.SetEquals(previousReconnect))
+            if (listId == resultId && !newReconnect.SetEquals(previousReconnect))
             {
                 control.SetRestartRequired();
             }
@@ -1501,11 +1226,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             await store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useGlobalProxy), ct);
         }
 
-        // Settings apply on a fresh tunnel; flag a reconnect when the running profile routes through this list.
+        // Settings apply on a fresh tunnel; flag a reconnect when the running tunnel routes through this list.
         if (changed && control.Running && BoundTarget is not null)
         {
-            var (listId, useRouting) = await store.GetProfileRoutingAsync(BoundTarget, ct);
-            if (useRouting && listId == id)
+            if (await store.GetSelectedRoutingListAsync(ct) == id)
             {
                 control.SetRestartRequired();
             }
@@ -1540,21 +1264,15 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        if (args.Count < 3)
+        if (args.Count < 1)
         {
-            return new IpcAck(false, "assign-routing requires profile, list id (or 'none'), and on/off");
-        }
-
-        var profile = args[0];
-        if (await store.GetProfileAsync(profile, ct) is null)
-        {
-            return new IpcAck(false, $"unknown profile: {profile}");
+            return new IpcAck(false, "assign-routing requires a list id (or 'none')");
         }
 
         long? listId = null;
-        if (!args[1].Equals("none", StringComparison.OrdinalIgnoreCase))
+        if (!args[0].Equals("none", StringComparison.OrdinalIgnoreCase))
         {
-            if (!long.TryParse(args[1], out var id) || id <= 0)
+            if (!long.TryParse(args[0], out var id) || id <= 0)
             {
                 return new IpcAck(false, "invalid routing list id");
             }
@@ -1567,19 +1285,16 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             listId = id;
         }
 
-        var useRouting = args[2].Equals("on", StringComparison.OrdinalIgnoreCase);
-        var (currentList, currentUse) = await store.GetProfileRoutingAsync(profile, ct);
-        await store.SetProfileRoutingAsync(profile, listId, useRouting, ct);
-        if ((currentList != listId || currentUse != useRouting)
-            && control.Running
-            && string.Equals(profile, BoundTarget, StringComparison.Ordinal))
+        var currentList = await store.GetSelectedRoutingListAsync(ct);
+        await store.SetSelectedRoutingListAsync(listId, ct);
+        if (currentList != listId && control.Running)
         {
             // Routing applies on a fresh tunnel; flag a restart instead of re-applying live.
             control.SetRestartRequired();
         }
 
-        logger.LogInformation("profile {Profile} now uses routing list {List}; rules on: {Use} — with them off, all traffic goes through the tunnel", profile, listId, useRouting);
-        return new IpcAck(true, $"assigned {profile}: list={listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} use={(useRouting ? "on" : "off")} (applies on reconnect)");
+        logger.LogInformation("routing list {List} now applies to every configuration; with none picked, all traffic goes through the tunnel", listId);
+        return new IpcAck(true, $"routing: {listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} (applies on reconnect)");
     }
 
     private async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1628,17 +1343,17 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, "disconnecting");
     }
 
-    private async Task<IpcAck> SelectProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
+    private async Task<IpcAck> SelectConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
-            return new IpcAck(false, "set-profile requires a profile name");
+            return new IpcAck(false, "set-config requires a config name");
         }
 
         var name = args[0];
-        if (await store.GetProfileAsync(name, ct) is null && !await configRepo.ExistsAsync(name, ct))
+        if (!await configRepo.ExistsAsync(name, ct))
         {
-            return new IpcAck(false, $"unknown profile: {name}");
+            return new IpcAck(false, $"unknown config: {name}");
         }
 
         var currentSelection = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
@@ -1654,7 +1369,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             control.SetTarget(name);
         }
 
-        logger.LogInformation("selected profile {Profile}", name);
+        logger.LogInformation("selected configuration '{Config}'", name);
 
         // No auto-switch; the tunnel keeps running. Selection takes effect on the next connect.
         return new IpcAck(true, control.Running ? $"selected {name} (reconnect to apply)" : $"selected {name}");
@@ -2111,8 +1826,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         // Only refresh when something consumes geo routing.
-        var assigned = await store.ListAssignedRoutingListIdsAsync(ct);
-        if (assigned.Count == 0 && !control.Running)
+        if (await store.GetSelectedRoutingListAsync(ct) is null && !control.Running)
         {
             return;
         }
@@ -2509,18 +2223,17 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     {
         var store = scope.Store;
         var configRepo = scope.ConfigRepo;
-        var states = await store.ListProfileStatesAsync(ct);
+        var states = await store.ListTunnelStatesAsync(ct);
 
         // The live connection view belongs to the tunnel owner; other users see their own idle library.
         var owned = activeScope.IsOwnedBy(scope.UserRoot, scope.Sid);
         var selectedTarget = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct) ?? string.Empty;
+        var selectedRouting = await store.GetSelectedRoutingListAsync(ct);
         var boundTarget = owned ? BoundTarget : null;
 
-        // Derive each config's status from the bound profile's state alone.
+        // Derive each config's status from the bound tunnel's state alone.
         var boundState = boundTarget is not null ? states.FirstOrDefault(s => s.Name == boundTarget) : null;
-        var boundConfig = boundState is null
-            ? null
-            : (await store.GetProfileAsync(boundState.Name, ct))?.Config ?? boundState.Name;
+        var boundConfig = boundState?.Name;
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
 
         var configs = new List<ConfigEntry>();
@@ -2536,29 +2249,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             // No row -> show the runtime default LAN bypass; saving freezes it.
             var exclusions = configEx?.Exclusions ?? (defaultExclusions ??= string.Join('\n', routes.DefaultExclusionEntries()));
             var status = boundState is not null && string.Equals(name, boundConfig, StringComparison.Ordinal)
-                ? ProfileDisplayStatus(boundState.Status)
+                ? DisplayStatus(boundState.Status)
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
             configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false));
-        }
-
-        var profiles = new List<ProfileEntry>();
-        foreach (var name in await store.ListProfileNamesAsync(ct))
-        {
-            var profile = await store.GetProfileAsync(name, ct);
-            if (profile is null)
-            {
-                continue;
-            }
-
-            var state = states.FirstOrDefault(item => item.Name == name);
-            var (routingListId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
-            profiles.Add(new ProfileEntry(
-                name,
-                state?.Status ?? ConnectionStatus.Disconnected,
-                profile.Config,
-                routingListId,
-                useRouting));
         }
 
         var routingLists = new List<RoutingListEntry>();
@@ -2592,7 +2286,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             && string.Equals(updateState.DownloadedVersion, update.Version, StringComparison.Ordinal);
         var connectFailed = owned && control.ConnectFailed;
         var disconnectFailed = owned && control.DisconnectFailed;
-        return new StatusSnapshot(Version(), boundTarget, configs, profiles, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, sources,
+        return new StatusSnapshot(Version(), boundTarget, configs, routingLists, owned && control.Running, boundStatus, owned && control.RestartRequired, selectedTarget, selectedRouting, sources,
             settings.UpdateUrl,
             update?.Available ?? false,
             update?.Version ?? string.Empty,
@@ -2630,7 +2324,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             AppSettings.BuildTarget);
     }
 
-    private static string ProfileDisplayStatus(string profileStatus)
+    private static string DisplayStatus(string profileStatus)
     {
         return profileStatus switch
         {

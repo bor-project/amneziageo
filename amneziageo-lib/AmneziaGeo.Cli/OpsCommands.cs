@@ -14,7 +14,7 @@ internal static class OpsCommands
     private static readonly Dictionary<string, string> _owners = new(StringComparer.Ordinal)
     {
         [IpcContract.OpSetConnection] = "up / down",
-        [IpcContract.OpSelectProfile] = "select",
+        [IpcContract.OpSelectConfig] = "select",
         [IpcContract.OpGetConfig] = "config show / config link",
         [IpcContract.OpImportConfig] = "config import",
         [IpcContract.OpEditConfig] = "config edit",
@@ -25,10 +25,7 @@ internal static class OpsCommands
         [IpcContract.OpSetConfigExclusions] = "config exclusions",
         [IpcContract.OpSetWebSocket] = "config websocket",
         [IpcContract.OpSetGeo] = "config geo",
-        [IpcContract.OpAddProfile] = "profile add",
-        [IpcContract.OpRenameProfile] = "profile rename",
-        [IpcContract.OpRemoveProfile] = "profile remove",
-        [IpcContract.OpAssignRouting] = "profile routing",
+        [IpcContract.OpAssignRouting] = "routing use",
         [IpcContract.OpSaveRoutingList] = "routing create / set / add",
         [IpcContract.OpGetRoutingList] = "routing show",
         [IpcContract.OpRemoveRoutingList] = "routing remove",
@@ -248,11 +245,11 @@ internal static class OpsCommands
 
     // Operations that need no arguments to do their work: sending them is not a probe but the act itself.
     private static bool Skipped(string op) =>
-        op is IpcContract.OpSetConnection or IpcContract.OpSelectProfile or IpcContract.OpLogClient
+        op is IpcContract.OpSetConnection or IpcContract.OpSelectConfig or IpcContract.OpLogClient
             or IpcContract.OpUpdateSources or IpcContract.OpUpdateSource
             or IpcContract.OpDownloadGeo or IpcContract.OpCollectDiagnostics or IpcContract.OpClearLog
             or IpcContract.OpAddConfig or IpcContract.OpImportConfig or IpcContract.OpEditConfig
-            or IpcContract.OpImportBundle or IpcContract.OpRemoveConfig or IpcContract.OpRemoveProfile
+            or IpcContract.OpImportBundle or IpcContract.OpRemoveConfig
             or IpcContract.OpRemoveRoutingList or IpcContract.OpRemoveSource
             or IpcContract.OpReportUpdateDownload or IpcContract.OpCancelUpdateDownload;
 

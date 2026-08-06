@@ -71,8 +71,38 @@
         <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
       </StackPanel>
 
-      <!-- Settings section: the shared editor + delete card. -->
+      <!-- Settings section: the apply card + the shared editor + delete card. -->
       <StackPanel IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
+        <!-- Apply card: makes this list the one every config routes by, or turns routing off. -->
+        <Border Background="Transparent"
+                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                CornerRadius="12" Padding="16">
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
+                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+              <TextBlock Text="{l:Tr Main_ApplyRoutingTitle}" FontWeight="SemiBold" FontSize="13.5" TextWrapping="Wrap" />
+              <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_ApplyRoutingHint}" />
+              <TextBlock FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
+                         Foreground="{DynamicResource AgAccentBrush}"
+                         IsVisible="{Binding IsOpenListActive}" Text="{l:Tr Main_IsActiveBadge}" />
+              <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                         IsVisible="{Binding IsRoutingOff}" Text="{l:Tr Main_RoutingOffNotice}" />
+            </StackPanel>
+            <Grid VerticalAlignment="Center"
+                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w240}"
+                  ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_ApplyRoutingButton}"
+                      Command="{Binding ApplyRoutingListCommand}" />
+              <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                      Content="{l:Tr Main_RoutingOffButton}"
+                      Command="{Binding TurnOffRoutingCommand}" />
+            </Grid>
+          </Grid>
+        </Border>
+
         <views:RoutingEditorView />
 
         <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by

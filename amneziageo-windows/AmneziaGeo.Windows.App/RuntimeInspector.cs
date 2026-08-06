@@ -40,7 +40,7 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     /// Renders the effective configuration report. Applied reads the live device, otherwise the report covers
     /// what the next connect would use.
     /// </summary>
-    public async Task<string> RenderAsync(IStateStore store, string profile, string config, bool applied, CancellationToken ct)
+    public async Task<string> RenderAsync(IStateStore store, string config, bool applied, CancellationToken ct)
     {
         var text = new StringBuilder();
         var configText = await store.GetConfigTextAsync(config, ct) ?? string.Empty;
@@ -56,7 +56,6 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
 
         Section(text, "state");
         Row(text, "source", applied ? "applied" : "planned");
-        Row(text, "profile", profile);
         Row(text, "config", config);
 
         Section(text, "routing");

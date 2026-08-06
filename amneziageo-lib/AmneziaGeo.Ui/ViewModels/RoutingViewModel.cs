@@ -10,8 +10,8 @@ namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
 /// Routing screen: the routing-list catalogue, the top Settings / Import / Export menu, the rule/per-routing
-/// editors, the import create-form, and list CRUD. The shared catalogue and the profile list live on the shell,
-/// reached through <c>_host</c>.
+/// editors, the import create-form, and list CRUD. The shared catalogue lives on the shell, reached through
+/// <c>_host</c>.
 /// </summary>
 internal sealed partial class RoutingViewModel : ViewModelBase
 {
@@ -43,7 +43,17 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private bool _sectionLoading;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyRoutingListCommand))]
     private RoutingListSummaryViewModel? _editRoutingList;
+
+    // The routing list every config uses, mirrored from the snapshot; null leaves each config on its own settings.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
+    [NotifyPropertyChangedFor(nameof(IsRoutingOff))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyRoutingListCommand))]
+    [NotifyCanExecuteChangedFor(nameof(TurnOffRoutingCommand))]
+    private long? _selectedRoutingListId;
 
     [ObservableProperty]
     private RoutingListChoice? _selectedCatalogueRouting = RoutingListChoice.None;
@@ -264,13 +274,49 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         SyncRoutingLists(snapshot.RoutingLists ?? []);
         HasRoutingLists = RoutingLists.Count > 0;
+        SelectedRoutingListId = snapshot.SelectedRoutingList;
         RoutingSettings?.ApplyRouteTtl(snapshot.RouteTtlSeconds);
     }
+
+    /// <summary>
+    /// Whether the open list is the one every config routes by.
+    /// </summary>
+    public bool IsOpenListActive => EditRoutingList is { } open && SelectedRoutingListId == open.Id;
+
+    /// <summary>
+    /// Whether no list is picked, so every config runs on its own settings.
+    /// </summary>
+    public bool IsRoutingOff => SelectedRoutingListId is null;
+
+    private bool CanApplyRoutingList => EditRoutingList is not null && !IsOpenListActive;
+
+    // Makes the open list the one every config routes by.
+    [RelayCommand(CanExecute = nameof(CanApplyRoutingList))]
+    private async Task ApplyRoutingList()
+    {
+        if (EditRoutingList is not { } open)
+        {
+            return;
+        }
+
+        var id = open.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, [id]));
+    }
+
+    // Drops the routing list, so every config runs on its own settings.
+    [RelayCommand(CanExecute = nameof(CanTurnOffRouting))]
+    private async Task TurnOffRouting()
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, ["none"]));
+    }
+
+    private bool CanTurnOffRouting => SelectedRoutingListId is not null;
 
     public void Reset()
     {
         RoutingLists.Clear();
         HasRoutingLists = false;
+        SelectedRoutingListId = null;
         RoutingEditor = null;
         RoutingSettings = null;
         EditRoutingList = null;
@@ -302,9 +348,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         SelectFirstIfNone();
     }
 
-    // Landing on the Routing section with nothing open: select the first list so it never opens empty. The
-    // active profile's own list is already reflected by OpenForProfile; this only fills the gap when the profile
-    // assigns none (or there is no active profile). A new-list draft in progress is left alone.
+    // Landing on the Routing section with nothing open: select the first list so it never opens empty. A
+    // new-list draft in progress is left alone.
     public void SelectFirstIfNone()
     {
         if (EditRoutingList is null && RoutingEditor is not { IsNew: true } && RoutingLists.Count > 0)
@@ -313,12 +358,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
     }
 
-    // Reflect a profile's assigned routing list into this section: a real list opens there (its rule /
-    // per-routing settings editors build via OnEditRoutingListChanged), while no list clears the section.
-    public void OpenForProfile(ProfileItemViewModel? profile)
+    // Reflect the globally selected routing list into this section: a real list opens there (its rule /
+    // per-routing settings editors build via OnEditRoutingListChanged), while none clears the section.
+    public void OpenSelected(long? listId)
     {
-        var choice = profile?.SelectedRoutingList;
-        if (choice is { IsReal: true } && RoutingLists.FirstOrDefault(r => r.Id == choice.Id) is { } row)
+        if (listId is { } id && RoutingLists.FirstOrDefault(r => r.Id == id) is { } row)
         {
             EditRoutingList = row;
             return;
@@ -525,7 +569,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     }
 
     // Builds the Routing section's rule editor + per-routing settings for a real (saved) list. Independent of
-    // any open profile - the section catalogue is standalone.
+    // the selection - the section catalogue is standalone.
     private void BuildSectionRoutingEditor(long id, string name)
     {
         if (RoutingEditor is not null && RoutingEditor.Id == id && !RoutingEditor.IsNew)
@@ -682,8 +726,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         RoutingSettings = null;
         EditRoutingList = null;
         var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
-        // Pre-fill a unique default name (#117) so the required-name field is never empty on open.
-        editor.Name = UniqueRoutingListName();
         RoutingEditor = editor;
         _ = editor.LoadAsync();
 
@@ -951,7 +993,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         RoutingSettings = null;
         RoutingEditor = null;
         var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
-        editor.Name = UniqueRoutingListName();
         RoutingEditor = editor;
         _ = editor.LoadAsync();
         RoutingSettings = new RoutingSettingsViewModel(_connection, 0);
@@ -975,9 +1016,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
     }
 
-    // The routing-list Delete trigger (#143): a list any profile references cannot be deleted - surface them in
-    // an error line. A new unsaved draft is not offered here (hidden while IsNew). Otherwise arm the inline
-    // confirm/cancel pair (#4).
+    // The routing-list Delete trigger (#143): a new unsaved draft is not offered here (hidden while IsNew).
+    // Otherwise arm the inline confirm/cancel pair (#4).
     [RelayCommand]
     private void RequestDeleteSectionRoutingList()
     {
@@ -987,13 +1027,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         RoutingDeleteStatus = string.Empty;
-        var users = ProfilesUsingRouting(RoutingEditor.Id);
-        if (users.Count > 0)
-        {
-            RoutingDeleteStatus = FormatInUse("Main_RoutingInUse", users);
-            return;
-        }
-
         RoutingDeletePending = true;
     }
 
@@ -1017,12 +1050,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         var deletedId = RoutingEditor.Id;
-        var users = ProfilesUsingRouting(deletedId);
-        if (users.Count > 0)
-        {
-            RoutingDeleteStatus = FormatInUse("Main_RoutingInUse", users);
-            return;
-        }
 
         if (!await RoutingEditor.DeleteAsync())
         {
@@ -1040,50 +1067,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             EditRoutingList = null;
             RoutingEditor = null;
             RoutingSettings = null;
-        }
-    }
-
-    // Profiles whose assigned routing list is this id (regardless of the use-routing toggle - the row still
-    // references the list). Reliable because delete is gated on !IsEditing, so no profile is mid-edit.
-    private List<string> ProfilesUsingRouting(long id) =>
-        _host.Profile.Profiles.Where(b => b.SelectedRoutingList.Id == id)
-            .Select(b => b.Name)
-            .ToList();
-
-    // "Cannot delete: …used by profiles:" followed by one bulleted profile per line (error-coloured in the UI).
-    private static string FormatInUse(string headerKey, IReadOnlyList<string> profiles) =>
-        Loc.Instance.Get(headerKey) + "\n" + string.Join("\n", profiles.Select(p => "• " + p));
-
-    private string UniqueRoutingListName()
-    {
-        // Include the name still held by the open editor: a just-saved new list lags RoutingLists by one
-        // snapshot, so without this a rapid second «Импорт» would propose the same default again.
-        var taken = RoutingLists.Select(r => r.Name);
-        if (RoutingEditor is { } editor)
-        {
-            taken = taken.Append(editor.Name);
-        }
-
-        return UniqueDefaultName(Loc.Instance.Get("MainVm_NewListDefaultName"), taken);
-    }
-
-    // A unique default name, pre-naming a new item so the required-name field is never empty on open:
-    // "<base>", then "<base> 2", "<base> 3"…
-    private static string UniqueDefaultName(string baseName, IEnumerable<string> taken)
-    {
-        var existing = taken.ToHashSet(StringComparer.Ordinal);
-        if (!existing.Contains(baseName))
-        {
-            return baseName;
-        }
-
-        for (var i = 2; ; i++)
-        {
-            var candidate = $"{baseName} {i}";
-            if (!existing.Contains(candidate))
-            {
-                return candidate;
-            }
         }
     }
 }

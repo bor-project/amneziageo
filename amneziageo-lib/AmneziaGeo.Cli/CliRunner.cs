@@ -93,8 +93,8 @@ public static class CliRunner
             connection
               status                            what the agent runs and what it would run
               watch                             follow status changes until interrupted
-              select <profile|config>           choose what the next connect binds to
-              up [<profile|config>]             connect (optionally selecting first)
+              select <config>                   choose what the next connect binds to
+              up [<config>]                     connect (optionally selecting first)
               down                              disconnect
 
             configurations
@@ -111,15 +111,9 @@ public static class CliRunner
               config websocket <name> on|off [--host <h>] [--port <n>] [--mtu <n>] [--ipv6 on|off]
               config geo <name> on|off [rule...]
 
-            profiles
-              profile list
-              profile add <name> [<config>]
-              profile rename <name> <new-name>
-              profile remove <name>
-              profile routing <name> <list-id|list-name|none> [on|off]
-
             routing lists
               routing list
+              routing use <id|name|none>
               routing show <id|name>
               routing create <name> [rule...]
               routing set <id|name> [rule...]       replace every rule
@@ -167,7 +161,7 @@ public static class CliRunner
               update check                      ask whether a newer application exists
 
             portable bundles
-              bundle export [--all] [--profile <n>]... [--config <n>]... [--list <n>]... [--out <path>]
+              bundle export [--all] [--config <n>]... [--list <n>]... [--out <path>]
               bundle import (--file <path> | --stdin) [--policy new|replace|skip|merge]
 
             the contract itself
@@ -191,7 +185,6 @@ public static class CliRunner
         {
             "status" or "watch" or "select" or "up" or "down" => await StatusCommands.RunAsync(agent, rest[0], arguments, ct).ConfigureAwait(false),
             "config" => await ConfigCommands.RunAsync(agent, arguments).ConfigureAwait(false),
-            "profile" => await ProfileCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "routing" => await RoutingCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             "settings" => await SettingsCommands.RunAsync(agent, arguments).ConfigureAwait(false),

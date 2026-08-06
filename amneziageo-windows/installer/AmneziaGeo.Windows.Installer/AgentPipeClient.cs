@@ -75,11 +75,11 @@ internal static class AgentPipeClient
     }
 
     /// <summary>
-    /// Connects to the running agent and reports whether it has a selected (or bound) profile with a
-    /// configuration - i.e. a connection that can be dialed straight after install (#188). Best-effort:
-    /// returns false if the agent is not running or the snapshot does not arrive in time.
+    /// Connects to the running agent and reports whether it has a selected (or bound) configuration - i.e. a
+    /// connection that can be dialed straight after install (#188). Best-effort: returns false if the agent is
+    /// not running or the snapshot does not arrive in time.
     /// </summary>
-    public static async Task<bool> HasConnectableProfileAsync(
+    public static async Task<bool> HasConnectableConfigAsync(
         TimeSpan connectTimeout, TimeSpan readTimeout, CancellationToken ct)
     {
         try
@@ -123,19 +123,16 @@ internal static class AgentPipeClient
         }
     }
 
-    // A selected (or bound) target that resolves to a profile carrying a configuration is a dialable connection.
+    // A selected (or bound) target naming a stored configuration is a dialable connection.
     private static bool IsConnectable(Snapshot snapshot)
     {
         var target = string.IsNullOrEmpty(snapshot.SelectedTarget) ? snapshot.BoundTarget : snapshot.SelectedTarget;
-        if (string.IsNullOrEmpty(target) || snapshot.Profiles is null)
+        if (string.IsNullOrEmpty(target) || snapshot.Configs is null)
         {
             return false;
         }
 
-        return snapshot.Profiles.Any(p =>
-            !string.IsNullOrEmpty(p.Config)
-            && (string.Equals(p.Name, target, StringComparison.Ordinal)
-                || string.Equals(p.Config, target, StringComparison.Ordinal)));
+        return snapshot.Configs.Any(c => string.Equals(c.Name, target, StringComparison.Ordinal));
     }
 
     // Agent acks may carry a localization key (IpcMessage encoding: marker char + key + unit-separated args)
@@ -181,7 +178,7 @@ internal static class AgentPipeClient
         [JsonPropertyName("sources")] public Source[]? Sources { get; set; }
         [JsonPropertyName("selectedTarget")] public string? SelectedTarget { get; set; }
         [JsonPropertyName("boundTarget")] public string? BoundTarget { get; set; }
-        [JsonPropertyName("profiles")] public Profile[]? Profiles { get; set; }
+        [JsonPropertyName("configs")] public Config[]? Configs { get; set; }
     }
 
     private sealed class Source
@@ -191,9 +188,8 @@ internal static class AgentPipeClient
         [JsonPropertyName("updateAvailable")] public bool UpdateAvailable { get; set; }
     }
 
-    private sealed class Profile
+    private sealed class Config
     {
         [JsonPropertyName("name")] public string? Name { get; set; }
-        [JsonPropertyName("config")] public string? Config { get; set; }
     }
 }

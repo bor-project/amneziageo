@@ -16,7 +16,6 @@ namespace AmneziaGeo.Linux.App;
 /// </summary>
 internal sealed class LinuxAgent : IDisposable
 {
-    private const string SelectedTargetKey = "selected-target";
     private const string LogLevelKey = "log-level";
     private const string RouteLogKey = "route-log";
     private const string SurviveRebootKey = "survive-reboot";
@@ -84,7 +83,7 @@ internal sealed class LinuxAgent : IDisposable
         await _geo.RematerializeIfStaleAsync(ct).ConfigureAwait(false);
 
         var settings = await _store.GetSettingsAsync(ct).ConfigureAwait(false);
-        _selectedTarget = settings.TryGetValue(SelectedTargetKey, out var target) && target.Length > 0 ? target : null;
+        _selectedTarget = settings.TryGetValue(StateKeys.SelectedTarget, out var target) && target.Length > 0 ? target : null;
         _logLevel = settings.TryGetValue(LogLevelKey, out var level) ? KnownLogLevel(level) : "error";
         _routeLog = settings.TryGetValue(RouteLogKey, out var route) && IsOn(route);
         _surviveReboot = settings.TryGetValue(SurviveRebootKey, out var survive) && IsOn(survive);
@@ -154,14 +153,6 @@ internal sealed class LinuxAgent : IDisposable
             configs.Add(await BuildConfigEntryAsync(name, ct).ConfigureAwait(false));
         }
 
-        var profiles = new List<ProfileEntry>();
-        foreach (var name in await _store.ListProfileNamesAsync(ct).ConfigureAwait(false))
-        {
-            var profile = await _store.GetProfileAsync(name, ct).ConfigureAwait(false);
-            var (listId, useRouting) = await _store.GetProfileRoutingAsync(name, ct).ConfigureAwait(false);
-            profiles.Add(new ProfileEntry(name, StatusFor(name), profile?.Config ?? string.Empty, listId, useRouting));
-        }
-
         var routingLists = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
             .Select(s => new RoutingListEntry(s.Id, s.Name, s.RuleCount, s.RouteCount, s.DomainCount))
             .ToList();
@@ -170,11 +161,11 @@ internal sealed class LinuxAgent : IDisposable
             AgentVersion: "Linux preview",
             BoundTarget: _boundTarget,
             Configs: configs,
-            Profiles: profiles,
             RoutingLists: routingLists,
             Active: _tunnel.Running,
             BoundStatus: _boundStatus,
             SelectedTarget: _selectedTarget,
+            SelectedRoutingList: await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false),
             Sources: await BuildSourcesAsync(ct).ConfigureAwait(false),
             ConnectFailed: _connectFailed,
             LogLevel: _logLevel,
@@ -256,16 +247,7 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpCopyConfig:
                 return await CopyConfigAsync(args, ct).ConfigureAwait(false);
 
-            case IpcContract.OpAddProfile:
-                return await SaveProfileAsync(args, ct).ConfigureAwait(false);
-
-            case IpcContract.OpRemoveProfile:
-                return await RemoveProfileAsync(args, ct).ConfigureAwait(false);
-
-            case IpcContract.OpRenameProfile:
-                return await RenameProfileAsync(args, ct).ConfigureAwait(false);
-
-            case IpcContract.OpSelectProfile:
+            case IpcContract.OpSelectConfig:
                 return await SelectTargetAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpAssignRouting:
@@ -375,16 +357,16 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, $"unknown connection state '{desired}'");
         }
 
-        var configName = await ResolveConfigNameAsync(_selectedTarget, ct).ConfigureAwait(false);
+        var configName = _selectedTarget;
         var config = configName is null ? null : await _store.GetConfigTextAsync(configName, ct).ConfigureAwait(false);
         if (configName is null || config is null)
         {
             _connectFailed = true;
-            _connectFailReason = ConnectFailureReason.ConfigMissing.ToString();
+            _connectFailReason = (configName is null ? ConnectFailureReason.NoTargetSelected : ConnectFailureReason.ConfigMissing).ToString();
             _connectFailDetail = "no configuration";
             _boundStatus = ConnectionStatus.Failed;
             await PushAsync(ct).ConfigureAwait(false);
-            return new IpcAck(false, $"no configuration bound to '{_selectedTarget ?? "(none)"}'");
+            return new IpcAck(false, configName is null ? "no configuration is selected" : $"configuration '{configName}' not found");
         }
 
         _desiredConnected = true;
@@ -395,7 +377,7 @@ internal sealed class LinuxAgent : IDisposable
         _boundStatus = ConnectionStatus.Connecting;
         await PushAsync(ct).ConfigureAwait(false);
 
-        var routing = await TunnelRouting.LoadAsync(_store, _selectedTarget, ct).ConfigureAwait(false);
+        var routing = await TunnelRouting.LoadAsync(_store, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
         var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds);
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
@@ -497,11 +479,21 @@ internal sealed class LinuxAgent : IDisposable
             return NotFound(args[0]);
         }
 
+        if (string.Equals(args[0], _boundTarget, StringComparison.Ordinal) && _tunnel.Running)
+        {
+            return new IpcAck(false, $"config {args[0]} is running; disconnect first");
+        }
+
         await _store.RemoveConfigAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveTunnelGeoAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveConfigTransportAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveConfigDnsAsync(args[0], ct).ConfigureAwait(false);
         await _store.RemoveConfigExclusionsAsync(args[0], ct).ConfigureAwait(false);
+        if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
+        {
+            await StoreSelectedTargetAsync(null, ct).ConfigureAwait(false);
+        }
+
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -547,106 +539,31 @@ internal sealed class LinuxAgent : IDisposable
         return Ok();
     }
 
-    private async Task<IpcAck> SaveProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 1)
-        {
-            return Fail();
-        }
-
-        var config = args.Count > 1 ? args[1] : string.Empty;
-        if (config.Length > 0 && !await _store.ConfigExistsAsync(config, ct).ConfigureAwait(false))
-        {
-            return new IpcAck(false, $"configuration '{config}' not found");
-        }
-
-        await _store.SaveProfileAsync(new Profile(args[0], config), ct).ConfigureAwait(false);
-        await PushAsync(ct).ConfigureAwait(false);
-        return Ok();
-    }
-
-    private async Task<IpcAck> RemoveProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 1)
-        {
-            return Fail();
-        }
-
-        if (await _store.GetProfileAsync(args[0], ct).ConfigureAwait(false) is null)
-        {
-            return NotFound(args[0]);
-        }
-
-        if (string.Equals(args[0], _boundTarget, StringComparison.Ordinal) && _tunnel.Running)
-        {
-            return new IpcAck(false, $"'{args[0]}' is the running profile");
-        }
-
-        await _store.RemoveProfileAsync(args[0], ct).ConfigureAwait(false);
-        if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
-        {
-            await StoreSelectedTargetAsync(null, ct).ConfigureAwait(false);
-        }
-
-        await PushAsync(ct).ConfigureAwait(false);
-        return Ok();
-    }
-
-    private async Task<IpcAck> RenameProfileAsync(IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (args.Count < 2)
-        {
-            return Fail();
-        }
-
-        var profile = await _store.GetProfileAsync(args[0], ct).ConfigureAwait(false);
-        if (profile is null)
-        {
-            return NotFound(args[0]);
-        }
-
-        if (!string.Equals(args[0], args[1], StringComparison.Ordinal)
-            && await _store.GetProfileAsync(args[1], ct).ConfigureAwait(false) is not null)
-        {
-            return new IpcAck(false, $"'{args[1]}' already exists");
-        }
-
-        var (listId, useRouting) = await _store.GetProfileRoutingAsync(args[0], ct).ConfigureAwait(false);
-        await _store.SaveProfileAsync(new Profile(args[1], profile.Config), ct).ConfigureAwait(false);
-        await _store.SetProfileRoutingAsync(args[1], listId, useRouting, ct).ConfigureAwait(false);
-        await _store.RemoveProfileAsync(args[0], ct).ConfigureAwait(false);
-        if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
-        {
-            await StoreSelectedTargetAsync(args[1], ct).ConfigureAwait(false);
-        }
-
-        await PushAsync(ct).ConfigureAwait(false);
-        return Ok();
-    }
-
     private async Task<IpcAck> SelectTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        await StoreSelectedTargetAsync(args.Count > 0 && args[0].Length > 0 ? args[0] : null, ct).ConfigureAwait(false);
+        var config = args.Count > 0 && args[0].Length > 0 ? args[0] : null;
+        if (config is not null && !await _store.ConfigExistsAsync(config, ct).ConfigureAwait(false))
+        {
+            return NotFound(config);
+        }
+
+        await StoreSelectedTargetAsync(config, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
 
+    // Picks the routing list every config uses; a missing or unparsable id means a full tunnel.
     private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        if (args.Count < 1)
-        {
-            return Fail();
-        }
-
-        if (await _store.GetProfileAsync(args[0], ct).ConfigureAwait(false) is null)
+        var listId = args.Count > 0 && long.TryParse(args[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : (long?)null;
+        if (listId is not null && await _store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false) is null)
         {
             return NotFound(args[0]);
         }
 
-        var listId = args.Count > 1 && long.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
-            ? parsed
-            : (long?)null;
-        await _store.SetProfileRoutingAsync(args[0], listId, args.Count > 2 && IsOn(args[2]), ct).ConfigureAwait(false);
+        await _store.SetSelectedRoutingListAsync(listId, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1027,10 +944,9 @@ internal sealed class LinuxAgent : IDisposable
 
     private async Task<IpcAck> GetRuntimeConfigAsync(CancellationToken ct)
     {
-        var configName = await ResolveConfigNameAsync(_selectedTarget, ct).ConfigureAwait(false);
+        var configName = _selectedTarget;
         var report = new StringBuilder();
         report.Append("library      : ").Append(AgentPaths.Root).Append('\n');
-        report.Append("target       : ").Append(_selectedTarget ?? "(none)").Append('\n');
         report.Append("config       : ").Append(configName ?? "(none)").Append('\n');
         report.Append("status       : ").Append(_boundStatus).Append('\n');
         report.Append("active       : ").Append(_tunnel.Running ? "yes" : "no").Append('\n');
@@ -1042,16 +958,14 @@ internal sealed class LinuxAgent : IDisposable
             report.Append("mtu          : ").Append(WgConfigEditor.GetMtu(text)).Append('\n');
         }
 
-        if (_selectedTarget is not null)
+        var selectedList = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } selectedId
+            ? await _store.GetRoutingListAsync(selectedId, ct).ConfigureAwait(false)
+            : null;
+        report.Append("routing list : ").Append(selectedList?.Name ?? "(full tunnel)").Append('\n');
+        if (selectedList is not null)
         {
-            var (listId, useRouting) = await _store.GetProfileRoutingAsync(_selectedTarget, ct).ConfigureAwait(false);
-            var list = listId is null ? null : await _store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false);
-            report.Append("routing list : ").Append(list?.Name ?? "(none)").Append(useRouting ? " (on)" : " (off)").Append('\n');
-            if (list is not null)
-            {
-                report.Append("  geoip routes   : ").Append(list.Routes.Count).Append('\n');
-                report.Append("  geosite domains: ").Append(list.Domains.Count).Append('\n');
-            }
+            report.Append("  geoip routes   : ").Append(selectedList.Routes.Count).Append('\n');
+            report.Append("  geosite domains: ").Append(selectedList.Domains.Count).Append('\n');
         }
 
         report.Append("mode         : ").Append(_tunnel.Mode).Append('\n');
@@ -1077,15 +991,11 @@ internal sealed class LinuxAgent : IDisposable
         var rows = new List<object>();
         rows.AddRange(_tunnel.Tunneled.Select(host => (object)new { kind = "live", key = host, value = "tunnel" }));
         rows.AddRange(_tunnel.Bypassed.Select(host => (object)new { kind = "live", key = host, value = "direct" }));
-        if (_selectedTarget is not null)
+        if (await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
+            && await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false) is { } list)
         {
-            var (listId, _) = await _store.GetProfileRoutingAsync(_selectedTarget, ct).ConfigureAwait(false);
-            var list = listId is null ? null : await _store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false);
-            if (list is not null)
-            {
-                rows.AddRange(list.Routes.Select(route => (object)new { kind = "proxy", key = route, value = "geoip" }));
-                rows.AddRange(list.Domains.Select(domain => (object)new { kind = "domain", key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() }));
-            }
+            rows.AddRange(list.Routes.Select(route => (object)new { kind = "proxy", key = route, value = "geoip" }));
+            rows.AddRange(list.Domains.Select(domain => (object)new { kind = "domain", key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() }));
         }
 
         const int cap = 1000;
@@ -1138,22 +1048,10 @@ internal sealed class LinuxAgent : IDisposable
         return entries;
     }
 
-    // The config a target binds to: the profile's config, or the target itself when it names a config.
-    private async Task<string?> ResolveConfigNameAsync(string? target, CancellationToken ct)
-    {
-        if (target is null)
-        {
-            return null;
-        }
-
-        var profile = await _store.GetProfileAsync(target, ct).ConfigureAwait(false);
-        return profile is { Config.Length: > 0 } ? profile.Config : target;
-    }
-
     private async Task StoreSelectedTargetAsync(string? target, CancellationToken ct)
     {
         _selectedTarget = target;
-        await _store.SetSettingAsync(SelectedTargetKey, target ?? string.Empty, ct).ConfigureAwait(false);
+        await _store.SetSettingAsync(StateKeys.SelectedTarget, target ?? string.Empty, ct).ConfigureAwait(false);
     }
 
     private string StatusFor(string name)

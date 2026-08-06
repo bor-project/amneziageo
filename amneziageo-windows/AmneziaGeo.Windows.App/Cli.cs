@@ -19,7 +19,7 @@ internal sealed class Cli(
     UapiClient uapi,
     NetworkReconciler reconciler,
     TunnelRunner tunnelRunner,
-    ProfileRunner profileRunner,
+    ConfigRunner configRunner,
     BackupService backupService,
     GeoConfigurator geoConfigurator,
     IGeoFileStore geoFiles,
@@ -117,20 +117,10 @@ internal sealed class Cli(
                 return await ConfigEditAsync(name, path);
             case ["config-remove", var name]:
                 return await ConfigRemoveAsync(name);
-            case ["profile-add", var name]:
-                return await ProfileAddAsync(name, string.Empty);
-            case ["profile-add", var name, var config]:
-                return await ProfileAddAsync(name, config);
-            case ["profile-list"]:
-                return await ProfileListAsync();
-            case ["profile-show", var name]:
-                return await ProfileShowAsync(name);
-            case ["profile-remove", var name]:
-                return await ProfileRemoveAsync(name);
             case ["routing-list-add", var listName, .. var listRules]:
                 return await RoutingListAddAsync(listName, listRules);
-            case ["assign-routing", var profile, var list, var toggle]:
-                return await AssignRoutingAsync(profile, list, toggle);
+            case ["assign-routing", var list]:
+                return await AssignRoutingAsync(list);
             case ["set-websocket", var name, var toggle, var port]:
                 return await SetWebSocketAsync(name, toggle, port, string.Empty);
             case ["set-websocket", var name, var toggle, var port, var host]:
@@ -139,18 +129,18 @@ internal sealed class Cli(
                 return await IpcCmdAsync(IpcContract.OpSetConnection, ["connect"]);
             case ["disconnect"]:
                 return await IpcCmdAsync(IpcContract.OpSetConnection, ["disconnect"]);
-            case ["profile-run", var name]:
-                return await ProfileRunAsync(name);
+            case ["config-run", var name]:
+                return await ConfigRunAsync(name);
             case ["ipc-probe"]:
                 return await IpcProbeAsync();
             case ["ipc-ui-probe", var seconds]:
                 return await IpcUiProbeAsync(seconds);
             case ["ipc-cmd", var op, .. var cmdArgs]:
                 return await IpcCmdAsync(op, cmdArgs);
-            case ["profile-state"]:
-                return await ProfileStateAsync(null);
-            case ["profile-state", var name]:
-                return await ProfileStateAsync(name);
+            case ["tunnel-state"]:
+                return await TunnelStateAsync(null);
+            case ["tunnel-state", var name]:
+                return await TunnelStateAsync(name);
             case ["backup", var path]:
                 return await backupService.BackupAsync(path);
             case ["restore", var path]:
@@ -449,67 +439,11 @@ internal sealed class Cli(
         return 0;
     }
 
-    private async Task<int> ProfileAddAsync(string name, string config)
+    private async Task<int> ConfigRunAsync(string name)
     {
-        if (!string.IsNullOrEmpty(config) && !await configRepo.ExistsAsync(config))
+        if (!await configRepo.ExistsAsync(name))
         {
-            Console.WriteLine($"unknown config: {config}");
-            return 1;
-        }
-
-        await store.SaveProfileAsync(new Profile(name, config));
-        Console.WriteLine($"saved profile {name}: config={(config.Length > 0 ? config : "(none)")}");
-        return 0;
-    }
-
-    private async Task<int> ProfileListAsync()
-    {
-        foreach (var name in await store.ListProfileNamesAsync())
-        {
-            var profile = await store.GetProfileAsync(name);
-            if (profile is not null)
-            {
-                Console.WriteLine($"{name}\t{(profile.Config.Length > 0 ? profile.Config : "(none)")}");
-            }
-        }
-
-        return 0;
-    }
-
-    private async Task<int> ProfileShowAsync(string name)
-    {
-        var profile = await store.GetProfileAsync(name);
-        if (profile is null)
-        {
-            Console.WriteLine($"unknown profile: {name}");
-            return 1;
-        }
-
-        var config = profile.Config;
-        if (config.Length == 0)
-        {
-            Console.WriteLine($"profile {name} (no configuration)");
-            return 0;
-        }
-
-        var state = await configRepo.ExistsAsync(config) ? serviceManager.QueryState(config) : "MISSING";
-        Console.WriteLine($"profile {name}\t{config}\t{state}");
-        return 0;
-    }
-
-    private async Task<int> ProfileRemoveAsync(string name)
-    {
-        await store.RemoveProfileAsync(name);
-        Console.WriteLine($"removed profile {name}");
-        return 0;
-    }
-
-    private async Task<int> ProfileRunAsync(string name)
-    {
-        var profile = await store.GetProfileAsync(name);
-        if (profile is null)
-        {
-            Console.WriteLine($"unknown profile: {name}");
+            Console.WriteLine($"unknown config: {name}");
             return 1;
         }
 
@@ -520,17 +454,17 @@ internal sealed class Cli(
                 e.Cancel = true;
                 cts.Cancel();
             };
-            await profileRunner.RunAsync(profile, cts.Token);
+            await configRunner.RunAsync(name, cts.Token);
         }
 
         return 0;
     }
 
-    private async Task<int> ProfileStateAsync(string? name)
+    private async Task<int> TunnelStateAsync(string? name)
     {
         if (name is null)
         {
-            foreach (var state in await store.ListProfileStatesAsync())
+            foreach (var state in await store.ListTunnelStatesAsync())
             {
                 PrintState(state);
             }
@@ -538,7 +472,7 @@ internal sealed class Cli(
             return 0;
         }
 
-        var single = await store.GetProfileStateAsync(name);
+        var single = await store.GetTunnelStateAsync(name);
         if (single is null)
         {
             Console.WriteLine($"no live state for {name}");
@@ -585,11 +519,7 @@ internal sealed class Cli(
                 Console.WriteLine($"config\t{config.Name}\t{config.Endpoint}\tgeo={(config.GeoSplit ? "on" : "off")}\t{config.Status}");
             }
 
-            foreach (var profile in snapshot.Profiles)
-            {
-                var routing = profile.UseRouting ? profile.RoutingListId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "on" : "off";
-                Console.WriteLine($"profile\t{profile.Name}\t{profile.Status}\tconfig={(profile.Config.Length > 0 ? profile.Config : "(none)")}\trouting={routing}");
-            }
+            Console.WriteLine($"routing\t{snapshot.SelectedRoutingList?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"}");
 
             foreach (var list in snapshot.RoutingLists ?? [])
             {
@@ -680,14 +610,8 @@ internal sealed class Cli(
         return 0;
     }
 
-    private async Task<int> AssignRoutingAsync(string profile, string list, string toggle)
+    private async Task<int> AssignRoutingAsync(string list)
     {
-        if (await store.GetProfileAsync(profile) is null)
-        {
-            Console.WriteLine($"unknown profile: {profile}");
-            return 1;
-        }
-
         long? listId = null;
         if (!list.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
@@ -701,9 +625,8 @@ internal sealed class Cli(
             listId = routingList.Id;
         }
 
-        var useRouting = toggle.Equals("on", StringComparison.OrdinalIgnoreCase);
-        await store.SetProfileRoutingAsync(profile, listId, useRouting);
-        Console.WriteLine($"assigned {profile}: list={list} use={(useRouting ? "on" : "off")}");
+        await store.SetSelectedRoutingListAsync(listId);
+        Console.WriteLine($"routing: {(listId is null ? "full tunnel" : list)}");
         return 0;
     }
 
@@ -779,7 +702,7 @@ internal sealed class Cli(
         return kind is null ? null : new GeoRule(kind.Value, value);
     }
 
-    private static void PrintState(ProfileState state)
+    private static void PrintState(TunnelState state)
     {
         Console.WriteLine($"{state.Name}\t{state.Status}\t{state.UpdatedAt:u}");
     }

@@ -1,16 +1,17 @@
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Control surface shared between the IPC broker and the profile runner.
+/// Control surface shared between the IPC broker and the config runner.
 /// </summary>
 internal sealed class AgentControl
 {
     /// <summary>
-    /// Store key for the selected target profile.
+    /// Store key for the selected config.
     /// </summary>
-    public const string SelectedTargetKey = "selected-target";
+    public const string SelectedTargetKey = StateKeys.SelectedTarget;
 
     private readonly Lock _gate = new();
     private volatile bool _running;
@@ -40,12 +41,12 @@ internal sealed class AgentControl
     public bool RestartRequired => _restartRequired;
 
     /// <summary>
-    /// The user-selected profile (radio).
+    /// The user-selected config (radio).
     /// </summary>
     public string? Target => _target;
 
     /// <summary>
-    /// The profile the running tunnel is bound to.
+    /// The config the running tunnel is bound to.
     /// </summary>
     public string? RunningTarget => _runningTarget;
 
@@ -178,7 +179,7 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Selects the active target profile without changing running state.
+    /// Selects the active target config without changing running state.
     /// </summary>
     public void SetTarget(string name)
     {
@@ -203,8 +204,8 @@ internal sealed class AgentControl
     }
 
     /// <summary>
-    /// Follows a profile rename in the live binding without switching the tunnel, so the supervisor keeps
-    /// resolving the running profile - a stale target reads as a broken binding on the next re-dial.
+    /// Follows a config rename in the live binding without switching the tunnel, so the supervisor keeps
+    /// resolving the running config - a stale target reads as a broken binding on the next re-dial.
     /// </summary>
     public void RetargetName(string oldName, string newName)
     {

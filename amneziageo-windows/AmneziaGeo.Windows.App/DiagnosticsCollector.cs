@@ -155,7 +155,7 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             }
         }
 
-        // Routing lists and profile bindings.
+        // Routing lists and the selected one.
         var routingLists = await store.ListRoutingListsAsync(ct);
         if (routingLists.Count > 0)
         {
@@ -167,19 +167,9 @@ internal sealed class DiagnosticsCollector(IStateStore store, SettingsStore sett
             }
         }
 
-        var profiles = await store.ListProfileNamesAsync(ct);
-        if (profiles.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"[profiles] ({profiles.Count})");
-            foreach (var name in profiles)
-            {
-                var profile = await store.GetProfileAsync(name, ct);
-                var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct);
-                var routing = listId is not null ? $"routing list {listId} ({(useRouting ? "on" : "off")})" : "no routing list";
-                sb.AppendLine($"  {name} -> config '{(string.IsNullOrEmpty(profile?.Config) ? "(none)" : profile!.Config)}', {routing}");
-            }
-        }
+        var selected = await store.GetSelectedRoutingListAsync(ct);
+        sb.AppendLine();
+        sb.AppendLine($"[routing] {(selected is null ? "full tunnel (no list)" : $"list {selected}")}");
 
         return sb.ToString();
     }

@@ -9,7 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Top-level composer: hosts the per-screen view-models (connection / profile / config / routing / sources /
+/// Top-level composer: hosts the per-screen view-models (connection / config / routing / sources /
 /// logs / general), owns the settings-section rail, and fans the agent snapshot out to each screen.
 /// </summary>
 internal sealed partial class MainWindowViewModel : ViewModelBase
@@ -84,15 +84,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _settingsDetailOpen;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
     private bool _hasConfigs;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowNoProfilesYetHint))]
-    private bool _hasProfiles;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSettingsProfile))]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
     [NotifyPropertyChangedFor(nameof(IsSettingsRouting))]
     [NotifyPropertyChangedFor(nameof(IsSettingsGeneral))]
@@ -101,7 +95,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(AppUpdateBannerVisible))]
     [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
     [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
-    private string _settingsSection = "profile";
+    private string _settingsSection = "config";
 
     /// <summary>
     /// ctor
@@ -113,7 +107,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Diagnostics = new DiagnosticsViewModel(connection);
         General = new GeneralViewModel(this, connection, prefs);
         Config = new ConfigViewModel(this, connection);
-        Profile = new ProfileViewModel(this, connection);
         Routing = new RoutingViewModel(this, connection);
         Home = new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
@@ -122,7 +115,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         UpdateActiveSection();
         General.PropertyChanged += OnGeneralPropertyChanged;
         Config.PropertyChanged += OnSectionBarChanged;
-        Profile.PropertyChanged += OnSectionBarChanged;
         Routing.PropertyChanged += OnSectionBarChanged;
         _connection.Connected += OnConnected;
         _connection.Disconnected += OnDisconnected;
@@ -155,11 +147,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ConfigViewModel Config { get; }
 
     /// <summary>
-    /// Profile screen: the profile catalogue and the open-profile editor.
-    /// </summary>
-    public ProfileViewModel Profile { get; }
-
-    /// <summary>
     /// Routing screen.
     /// </summary>
     public RoutingViewModel Routing { get; }
@@ -168,8 +155,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Geo sources screen.
     /// </summary>
     public SourcesViewModel Sources { get; }
-
-    public bool ShowNoProfilesYetHint => HasConfigs && !HasProfiles;
 
     /// <summary>
     /// Whether the home (connect) view is shown.
@@ -218,8 +203,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public bool ShowSplitter => IsSettings && !IsCompact;
 
-    public bool IsSettingsProfile => SettingsSection == "profile";
-
     public bool IsSettingsConfig => SettingsSection == "config";
 
     public bool IsSettingsRouting => SettingsSection == "routing";
@@ -240,7 +223,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Whether the reconnect offer belongs in the section footer: the editable sections carry it there instead
     /// of the floating notice.
     /// </summary>
-    public bool ReconnectPromptInSection => ShowContent && SettingsSection is "profile" or "config" or "routing";
+    public bool ReconnectPromptInSection => ShowContent && SettingsSection is "config" or "routing";
 
     /// <summary>
     /// Whether the section footer offers the reconnect that applies the saved settings: it takes the strip once
@@ -250,8 +233,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         && !_reconnectDeferred
         && ReconnectPromptInSection
         && !Config.ShowSaveBar
-        && !Routing.ShowSaveBar
-        && !Profile.ShowSaveBar;
+        && !Routing.ShowSaveBar;
 
     /// <summary>
     /// Re-arms the footer reconnect offer, so a save asks again after an earlier one was put off.
@@ -303,7 +285,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private void NavHome()
     {
         Nav = "home";
-        Profile.OpenProfile = null;
         Config.AbandonCreate();
         Routing.AbandonCreate();
         Routing.LeaveSection();
@@ -348,7 +329,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         var slash = view.IndexOf('/');
         var section = slash > 0 ? view[(slash + 1)..] : string.Empty;
-        if (section is "profile" or "config" or "routing" or "general" or "sources" or "logs")
+        if (section is "config" or "routing" or "general" or "sources" or "logs")
         {
             SettingsSection = section;
         }
@@ -377,26 +358,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         AppExitHost.Exit();
     }
 
-    // Home «Добавить профиль»: переход в настройки на секцию профилей.
+    // Home «Добавить конфигурацию»: переход в настройки на секцию конфигураций.
     [RelayCommand]
-    private void AddProfile()
+    private void AddConfig()
     {
         Nav = "settings";
-        SettingsSection = "profile";
+        SettingsSection = "config";
         SettingsDetailOpen = true;
-        Profile.EnterSection();
+        Config.EnterSection();
         RefreshLogsActive();
     }
 
     [RelayCommand]
     private void NavSettings()
     {
-        // Open the active profile when entering settings so the profile-scoped sections show its config / routing.
-        if (Home.ActiveProfile is not null)
-        {
-            Profile.OpenProfile = Home.ActiveProfile;
-        }
-
         // Compact mode opens on the section rail; the wide layout shows the rail and content together.
         SettingsDetailOpen = false;
         Nav = "settings";
@@ -408,8 +383,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Fill an empty Routing / Config section with the first available item so it never opens on a blank editor.
-    // The active profile's own config / routing list is already reflected by the profile cascade; this is the
-    // fallback when that leaves nothing (no active profile, or it assigns none).
     private void SelectSectionDefault(string section)
     {
         if (section == "routing")
@@ -419,10 +392,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         else if (section == "config")
         {
             Config.EnterSection();
-        }
-        else if (section == "profile")
-        {
-            Profile.EnterSection();
         }
     }
 
@@ -555,10 +524,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // Changing section disarms any pending delete confirmation AND clears any blocked-delete reason line in
         // the section being left, so a stale red error does not linger on return (#3/#4).
         Config.ConfigDeletePending = false;
-        Profile.ProfileDeletePending = false;
         Routing.RoutingDeletePending = false;
         Config.ConfigDeleteStatus = string.Empty;
-        Profile.ProfileDeleteStatus = string.Empty;
         Routing.RoutingDeleteStatus = string.Empty;
 
         // Leaving config discards an in-progress new-config draft (and stops its scanner).
@@ -578,15 +545,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // Opening the log section loads the on-disk files at once, rather than waiting for the next heartbeat.
         RefreshLogsActive();
 
-        // Landing on a profile-scoped section with nothing open selects the current (active) profile, so the
-        // section shows its config / routing instead of an empty editor. Opening the profile cascades into the
-        // Config and Routing sections (OnOpenProfileChanged).
-        if (value is "profile" or "config" or "routing" && Profile.OpenProfile is null && Home.ActiveProfile is not null)
-        {
-            Profile.OpenProfile = Home.ActiveProfile;
-        }
-
-        // Still empty after the profile cascade: fall back to the first available list / config.
+        // Nothing open in the section being entered: fall back to the first available list / config.
         SelectSectionDefault(value);
     }
 
@@ -596,7 +555,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     {
         Config.IsActiveSection = SettingsSection == "config";
         Routing.IsActiveSection = SettingsSection == "routing";
-        Profile.IsActiveSection = SettingsSection == "profile";
     }
 
     private void OnGeneralPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -625,7 +583,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Sources.IsCompact = compact;
         Diagnostics.IsCompact = compact;
         General.IsCompact = compact;
-        Profile.IsCompact = compact;
 
         // A width flip can reveal or hide the logs content (compact rail vs wide content), so re-evaluate.
         RefreshLogsActive();
@@ -646,13 +603,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Dispatcher.UIThread.Post(() =>
         {
             Home.Reset();
-            Profile.Reset();
             Config.Reset();
             Routing.Reset();
             Sources.Reset();
             Diagnostics.Reset();
             HasConfigs = false;
-            HasProfiles = false;
         });
     }
 
@@ -666,13 +621,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Config.Apply(snapshot.Configs);
         Routing.Apply(snapshot);
         Sources.Apply(snapshot);
-        Profile.Apply(snapshot.Profiles, snapshot.RoutingLists ?? []);
         HasConfigs = Config.Configs.Count > 0;
-        HasProfiles = Profile.Profiles.Count > 0;
-        Profile.NotifyHostFlagsChanged();
+        Config.NotifyHostFlagsChanged();
         Home.NotifyHostFlagsChanged();
-        // The connection card matches the agent's target against the freshly-reconciled profile rows, so it
-        // runs after Profile.Apply.
+        // The connection card matches the agent's target against the freshly-reconciled config rows, so it
+        // runs after Config.Apply.
         Home.Apply(snapshot);
         General.Apply(snapshot);
         Diagnostics.Apply(snapshot);

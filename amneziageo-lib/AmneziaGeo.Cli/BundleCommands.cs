@@ -4,7 +4,7 @@ using AmneziaGeo.Ipc;
 namespace AmneziaGeo.Cli;
 
 /// <summary>
-/// Portable bundles: moving configurations, routing lists and profiles between machines.
+/// Portable bundles: moving configurations and routing lists between machines.
 /// </summary>
 internal static class BundleCommands
 {
@@ -32,7 +32,7 @@ internal static class BundleCommands
     private static async Task<int> ExportAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var flags = Flags.Parse(args, "all");
-        if (!flags.Allowed("all", "profile", "config", "list", "out"))
+        if (!flags.Allowed("all", "config", "list", "out"))
         {
             return Reply.Usage(flags.Error!);
         }
@@ -40,14 +40,13 @@ internal static class BundleCommands
         var snapshot = agent.Snapshot;
         var selection = flags.Has("all")
             ? new Selection(
-                [.. snapshot.Profiles.Select(profile => profile.Name)],
                 [.. snapshot.Configs.Select(config => config.Name)],
                 [.. (snapshot.RoutingLists ?? []).Select(list => list.Name)])
-            : new Selection([.. flags.Values("profile")], [.. flags.Values("config")], [.. flags.Values("list")]);
+            : new Selection([.. flags.Values("config")], [.. flags.Values("list")]);
 
-        if (selection.Profiles.Length + selection.Configs.Length + selection.RoutingLists.Length == 0)
+        if (selection.Configs.Length + selection.RoutingLists.Length == 0)
         {
-            return Reply.Usage("nothing selected: pass --all, or --profile/--config/--list");
+            return Reply.Usage("nothing selected: pass --all, or --config/--list");
         }
 
         var ack = await agent.SendAsync(IpcContract.OpExportBundle, JsonSerializer.Serialize(selection, IpcJson.Options)).ConfigureAwait(false);
@@ -99,7 +98,7 @@ internal static class BundleCommands
     }
 
     /// <summary>
-    /// What an export carries; a selected profile pulls in its config and routing list agent-side.
+    /// What an export carries.
     /// </summary>
-    private sealed record Selection(string[] Profiles, string[] Configs, string[] RoutingLists);
+    private sealed record Selection(string[] Configs, string[] RoutingLists);
 }

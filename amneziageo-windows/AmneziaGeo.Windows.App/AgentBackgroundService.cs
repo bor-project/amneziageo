@@ -5,11 +5,11 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Drives the profile runner for the agent's active profile.
+/// Drives the config runner for the agent's selected config.
 /// </summary>
 internal sealed class AgentBackgroundService(
     AgentTarget target,
-    ProfileRunner runner,
+    ConfigRunner runner,
     AgentControl control,
     SettingsStore settingsStore,
     NetworkReconciler reconciler,
@@ -36,7 +36,7 @@ internal sealed class AgentBackgroundService(
         // few times over the first minute so a leaked loopback redirect cannot strand the box until a manual connect.
         _ = RetryBootReconcileAsync(stoppingToken);
 
-        // Bring the last active user's library forward so boot auto-connect uses their profile; a machine root left
+        // Bring the last active user's library forward so boot auto-connect uses their config; a machine root left
         // by an older build is ignored, it holds no library.
         var lastOwnerRoot = await store.GetSettingAsync("last-owner-root", stoppingToken);
         if (!string.IsNullOrEmpty(lastOwnerRoot) && !AppDataRoot.IsMachineRoot(lastOwnerRoot))
@@ -47,23 +47,25 @@ internal sealed class AgentBackgroundService(
         // Persisted selection wins over the launch arg; a dangling selection is dropped.
         var stored = await store.GetSettingAsync(AgentControl.SelectedTargetKey, stoppingToken);
         var launch = !string.IsNullOrWhiteSpace(stored) ? stored! : target.Name;
-        var group = string.IsNullOrWhiteSpace(launch) ? null : await ResolveProfileAsync(launch, stoppingToken);
-        if (group is not null)
+        var config = !string.IsNullOrWhiteSpace(launch) && await configRepo.ExistsAsync(launch, stoppingToken)
+            ? launch
+            : string.Empty;
+        if (config.Length > 0)
         {
-            logger.LogInformation("the background service is up; profile {Profile} is selected, using configuration '{Config}'", group.Name, group.Config);
-            control.SetTarget(group.Name);
+            logger.LogInformation("the background service is up; configuration '{Config}' is selected", config);
+            control.SetTarget(config);
 
             if (string.IsNullOrWhiteSpace(stored))
             {
-                await store.SetSettingAsync(AgentControl.SelectedTargetKey, group.Name, stoppingToken);
+                await store.SetSettingAsync(AgentControl.SelectedTargetKey, config, stoppingToken);
             }
 
-            // Survive-reboot: dial the selected profile on start; the supervisor's retry engine waits out a
+            // Survive-reboot: dial the selected config on start; the supervisor's retry engine waits out a
             // missing network (backoff + a NetworkWatcher wake) until the host answers or rejects the config.
             var settings = await settingsStore.LoadAsync(stoppingToken);
             if (settings.SurviveReboot)
             {
-                logger.LogInformation("'stay connected after a restart' is on, so profile {Profile} is being connected without waiting for you", group.Name);
+                logger.LogInformation("'stay connected after a restart' is on, so configuration '{Config}' is being connected without waiting for you", config);
                 control.SetRunning(true);
             }
         }
@@ -74,10 +76,10 @@ internal sealed class AgentBackgroundService(
                 await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, stoppingToken);
             }
 
-            logger.LogInformation("the background service is up, but no profile is selected; nothing will connect until you pick one");
+            logger.LogInformation("the background service is up, but no configuration is selected; nothing will connect until you pick one");
         }
 
-        await runner.RunAsync(group ?? new Profile(string.Empty, string.Empty), stoppingToken);
+        await runner.RunAsync(config, stoppingToken);
         logger.LogInformation("the background service is stopping; no tunnel is kept up while it is down");
     }
 
@@ -103,21 +105,5 @@ internal sealed class AgentBackgroundService(
 
             reconciler.Reconcile(() => control.Running);
         }
-    }
-
-    private async Task<Profile?> ResolveProfileAsync(string target, CancellationToken ct)
-    {
-        var profile = await store.GetProfileAsync(target, ct);
-        if (profile is not null)
-        {
-            return profile;
-        }
-
-        if (await configRepo.ExistsAsync(target, ct))
-        {
-            return new Profile(target, target);
-        }
-
-        return null;
     }
 }

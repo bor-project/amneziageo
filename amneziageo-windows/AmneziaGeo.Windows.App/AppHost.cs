@@ -94,7 +94,7 @@ internal static class AppHost
         services.AddSingleton<LiveSession>();
         services.AddSingleton<TunnelRunner>();
         services.AddSingleton<RuntimeInspector>();
-        services.AddSingleton<ProfileRunner>();
+        services.AddSingleton<ConfigRunner>();
         services.AddSingleton<BackupService>();
         services.AddSingleton<DiagnosticsCollector>();
         services.AddSingleton<AgentStatusBroker>();

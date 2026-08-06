@@ -218,7 +218,7 @@
       <Setter Property="CornerRadius" Value="120" />
     </Style>
 
-    <!-- Active-profile radio. -->
+    <!-- Active-item radio. -->
     <Style Selector="Button.radiopick">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />

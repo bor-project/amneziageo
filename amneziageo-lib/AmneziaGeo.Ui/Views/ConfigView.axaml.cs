@@ -66,7 +66,7 @@ internal sealed partial class ConfigView : UserControl
         }
     }
 
-    // Standalone config-import: adds a config to the shared catalogue without a profile.
+    // Standalone config-import: adds a config to the shared catalogue.
     private async void OnSectionConfigBrowse(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not ConfigViewModel vm)

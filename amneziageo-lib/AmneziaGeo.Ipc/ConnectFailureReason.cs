@@ -11,9 +11,9 @@ public enum ConnectFailureReason
     Unknown,
 
     /// <summary>
-    /// The target profile has no configuration to dial.
+    /// No configuration is selected to dial.
     /// </summary>
-    ProfileEmpty,
+    NoTargetSelected,
 
     /// <summary>
     /// The configuration is not stored.

@@ -36,12 +36,6 @@ public static class IpcContract
     public const string OpAddConfig = "add-config";
 
     /// <summary>
-    /// Command to save a profile: args are name and its single configuration name
-    /// (an empty configuration name leaves the profile without a configuration).
-    /// </summary>
-    public const string OpAddProfile = "add-profile";
-
-    /// <summary>
     /// Command to set a config's geo split-tunnel settings: args are name, on/off, then rule tokens.
     /// </summary>
     public const string OpSetGeo = "set-geo";
@@ -68,7 +62,7 @@ public static class IpcContract
 
     /// <summary>
     /// Command to list the machine's currently-connected local subnets. No args. The ack message holds
-    /// newline-separated CIDRs; the UI merges them into a profile's exclusions list on demand.
+    /// newline-separated CIDRs; the UI merges them into a config's exclusions list on demand.
     /// </summary>
     public const string OpListLocalSubnets = "list-local-subnets";
 
@@ -117,8 +111,7 @@ public static class IpcContract
     public const string OpCountRoutes = "count-routes";
 
     /// <summary>
-    /// Command to assign or unassign a routing list to a profile and toggle its use.
-    /// Args: profile name, list id (or "none"), "on" / "off".
+    /// Command to pick the routing list every config uses. Args: list id, or "none" for a full tunnel.
     /// </summary>
     public const string OpAssignRouting = "assign-routing";
 
@@ -147,10 +140,10 @@ public static class IpcContract
     public const string OpSetSetting = "set-setting";
 
     /// <summary>
-    /// Command to choose the active profile (or single config) the agent binds to. Args: name.
+    /// Command to choose the config the agent binds to. Args: name.
     /// If connected, the agent switches to it; otherwise it becomes the target the next connect uses.
     /// </summary>
-    public const string OpSelectProfile = "set-profile";
+    public const string OpSelectConfig = "set-config";
 
     /// <summary>
     /// Command to add a geo data source and download it immediately. Args: kind (geosite/geoip), url.
@@ -205,24 +198,19 @@ public static class IpcContract
 
     /// <summary>
     /// Command to overwrite an existing config's wg-quick text (manual edit). Args: name, text. The config
-    /// must already exist; its profile memberships, geo, and routing state are preserved.
+    /// must already exist; its geo and routing state are preserved.
     /// </summary>
     public const string OpEditConfig = "edit-config";
 
     /// <summary>
-    /// Command to delete a stored config by name, with its service, geo settings, resolutions, and
-    /// profile bindings. Args: name. Refused if the config is bound to the running profile.
+    /// Command to delete a stored config by name, with its service, geo settings and resolutions. Args: name.
+    /// Refused if the config is the running one.
     /// </summary>
     public const string OpRemoveConfig = "remove-config";
 
     /// <summary>
-    /// Command to delete a profile by name. Args: name. Refused if it is the running profile.
-    /// </summary>
-    public const string OpRemoveProfile = "remove-profile";
-
-    /// <summary>
     /// Command to rename a config. Args: current name, new name. Carries the config's geo, transport,
-    /// resolutions, and profile bindings across. Refused if in use by the running tunnel.
+    /// resolutions and the agent's selection across. Refused if in use by the running tunnel.
     /// </summary>
     public const string OpRenameConfig = "rename-config";
 
@@ -233,21 +221,14 @@ public static class IpcContract
     public const string OpCopyConfig = "copy-config";
 
     /// <summary>
-    /// Command to rename a profile. Args: current name, new name. Carries the profile's
-    /// routing assignment and selection/binding across. Refused if it is the running profile.
-    /// </summary>
-    public const string OpRenameProfile = "rename-profile";
-
-    /// <summary>
-    /// Command to export a selective bundle of configs, routing lists, and profiles as a portable JSON file.
-    /// Args: a selection JSON object (each array optional; a selected profile pulls in its bound config and
-    /// routing list automatically). The ack message holds the bundle JSON.
+    /// Command to export a selective bundle of configs and routing lists as a portable JSON file.
+    /// Args: a selection JSON object (each array optional). The ack message holds the bundle JSON.
     /// </summary>
     public const string OpExportBundle = "export-bundle";
 
     /// <summary>
-    /// Command to import a selective bundle, recreating its configs, routing lists, and profiles as new,
-    /// independent entities under fresh (de-duplicated) names on any name collision. Args: bundle json.
+    /// Command to import a selective bundle, recreating its configs and routing lists as new, independent
+    /// entities under fresh (de-duplicated) names on any name collision. Args: bundle json.
     /// The ack message holds a human-readable summary.
     /// </summary>
     public const string OpImportBundle = "import-bundle";

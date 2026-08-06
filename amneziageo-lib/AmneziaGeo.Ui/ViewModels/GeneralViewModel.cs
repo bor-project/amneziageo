@@ -128,7 +128,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private BundleImportViewModel? _bundleImport;
 
     /// <summary>
-    /// Auto-connect the selected profile on service start (survive a reboot).
+    /// Auto-connect the selected config on service start (survive a reboot).
     /// </summary>
     [ObservableProperty]
     private bool _surviveReboot;
@@ -760,7 +760,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// <summary>
     /// Elevated one-shot that reverts a leftover DNS redirect so the internet works again after a dead or hung
     /// agent stranded the resolver. A separate elevated process, so it works even when the agent is unresponsive;
-    /// touches DNS only - not profiles, configs, or routes.
+    /// touches DNS only - not configs or routes.
     /// </summary>
     [RelayCommand]
     private void RepairNetwork()
@@ -800,7 +800,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [RelayCommand]
     private async Task OpenBundleExport()
     {
-        var export = new BundleExportViewModel(_connection, _host.Profile.Profiles, _host.Config.Configs, _host.Routing.RoutingLists);
+        var export = new BundleExportViewModel(_connection, _host.Config.Configs, _host.Routing.RoutingLists);
         await export.LoadRoutingRulesAsync();
         BundleExport = export;
         BundleMode = BundleMode.Export;

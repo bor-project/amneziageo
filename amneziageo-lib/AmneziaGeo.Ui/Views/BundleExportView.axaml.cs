@@ -7,7 +7,7 @@ using AmneziaGeo.Ui.ViewModels;
 namespace AmneziaGeo.Ui.Views;
 
 /// <summary>
-/// Inline selective bundle export: check profiles, configs and routing lists, then copy / save the JSON.
+/// Inline selective bundle export: check configs and routing lists, then copy / save the JSON.
 /// </summary>
 internal sealed partial class BundleExportView : UserControl
 {

@@ -17,7 +17,7 @@ internal sealed record TunnelRouting(
     IReadOnlyList<GeoDomain> BlockDomains)
 {
     /// <summary>
-    /// No list bound: a full tunnel by the config's own AllowedIPs.
+    /// No list selected: a full tunnel by the config's own AllowedIPs.
     /// </summary>
     public static TunnelRouting None { get; } = new(false, string.Empty, [], [], [], [], [], []);
 
@@ -30,17 +30,12 @@ internal sealed record TunnelRouting(
         || BlockRoutes.Count > 0 || BlockDomains.Count > 0;
 
     /// <summary>
-    /// Reads the list bound to a profile and the mode it runs in.
+    /// Reads the globally selected list and the mode it runs in.
     /// </summary>
-    public static async Task<TunnelRouting> LoadAsync(IStateStore store, string? profile, CancellationToken ct)
+    public static async Task<TunnelRouting> LoadAsync(IStateStore store, CancellationToken ct)
     {
-        if (profile is null)
-        {
-            return None;
-        }
-
-        var (listId, useRouting) = await store.GetProfileRoutingAsync(profile, ct).ConfigureAwait(false);
-        if (!useRouting || listId is null)
+        var listId = await store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        if (listId is null)
         {
             return None;
         }

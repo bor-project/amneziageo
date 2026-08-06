@@ -6,8 +6,8 @@ namespace AmneziaGeo.Decl;
 public static class ConfigRename
 {
     /// <summary>
-    /// Carries the per-config settings, the resolved addresses and the profile bindings from the old name to the
-    /// new one. The configuration row itself is renamed by the caller.
+    /// Carries the per-config settings, the resolved addresses, the live state and the agent's selection from the
+    /// old name to the new one. The configuration row itself is renamed by the caller.
     /// </summary>
     public static async Task CarryAsync(IStateStore store, string oldName, string newName, CancellationToken ct = default)
     {
@@ -46,15 +46,17 @@ public static class ConfigRename
 
         await store.RemoveDomainResolutionsAsync(oldName, ct).ConfigureAwait(false);
 
-        foreach (var profileName in await store.ListProfileNamesAsync(ct).ConfigureAwait(false))
+        var state = await store.GetTunnelStateAsync(oldName, ct).ConfigureAwait(false);
+        if (state is not null)
         {
-            var profile = await store.GetProfileAsync(profileName, ct).ConfigureAwait(false);
-            if (profile is null || !string.Equals(profile.Config, oldName, StringComparison.Ordinal))
-            {
-                continue;
-            }
+            await store.SaveTunnelStateAsync(state with { Name = newName }, ct).ConfigureAwait(false);
+            await store.RemoveTunnelStateAsync(oldName, ct).ConfigureAwait(false);
+        }
 
-            await store.SaveProfileAsync(profile with { Config = newName }, ct).ConfigureAwait(false);
+        var selected = await store.GetSettingAsync(StateKeys.SelectedTarget, ct).ConfigureAwait(false);
+        if (string.Equals(selected, oldName, StringComparison.Ordinal))
+        {
+            await store.SetSettingAsync(StateKeys.SelectedTarget, newName, ct).ConfigureAwait(false);
         }
     }
 }

@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace AmneziaGeo.Geo;
 
 /// <summary>
-/// Selective snapshot of configs, routing lists, profiles. Configs carry keys in clear; only rule tokens travel.
+/// Selective snapshot of configs and routing lists. Configs carry keys in clear; only rule tokens travel.
 /// </summary>
 public static class PortableBundle
 {
@@ -16,7 +16,7 @@ public static class PortableBundle
     /// <summary>
     /// The bundle schema version this build writes and can read.
     /// </summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions _options = new()
     {
@@ -26,14 +26,15 @@ public static class PortableBundle
     };
 
     /// <summary>
-    /// Exported selection of configs, routing lists, and profiles. Profile references resolve by name on import.
+    /// Exported selection of configs and routing lists.
     /// </summary>
     public sealed record Bundle(
         string Format,
         int Version,
         IReadOnlyList<ConfigBlock> Configs,
         IReadOnlyList<RoutingBlock> RoutingLists,
-        IReadOnlyList<ProfileBlock> Profiles);
+        // Version 1 pairings; read on import, never written.
+        IReadOnlyList<ProfileBlock>? Profiles = null);
 
     /// <summary>
     /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries.
@@ -70,7 +71,7 @@ public static class PortableBundle
     public sealed record RoutingSettingsBlock(string Exclusions, bool AllUdp, string Mode = "split", bool UseGlobalProxy = false);
 
     /// <summary>
-    /// A thin profile reference: bound config and routing list by name; either may be null.
+    /// A version 1 profile reference: bound config and routing list by name; either may be null.
     /// </summary>
     public sealed record ProfileBlock(
         string Name,

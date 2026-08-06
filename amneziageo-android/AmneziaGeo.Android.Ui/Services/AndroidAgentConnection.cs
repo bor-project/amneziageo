@@ -18,15 +18,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace AmneziaGeo.Android.Ui.Services;
 
 /// <summary>
-/// In-process agent for the Android head: persists configs/profiles, projects status snapshots, and drives
+/// In-process agent for the Android head: persists configs, projects status snapshots, and drives
 /// the tunnel through <see cref="GeoVpnService"/>.
 /// </summary>
 internal sealed class AndroidAgentConnection : IAgentConnection
 {
     private readonly Dictionary<string, string> _configs = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _profiles = new(StringComparer.Ordinal);
-    // Per-profile routing assignment: value = "<listId>|<1|0>" (1 = use routing).
-    private readonly Dictionary<string, string> _routing = new(StringComparer.Ordinal);
     private readonly string _storePath;
     private const int DefaultMtu = 1420;
 
@@ -47,6 +44,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private VpnBridge.Listener? _events;
 
     private string? _selectedTarget;
+    private long? _selectedRoutingList;
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
     private bool _active;
@@ -160,57 +158,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 PushSnapshot();
                 return Ok();
 
-            case IpcContract.OpAddProfile:
-                if (args.Count < 1)
-                {
-                    return Fail();
-                }
-
-                _profiles[args[0]] = args.Count > 1 ? args[1] : string.Empty;
-                Save();
-                PushSnapshot();
-                return Ok();
-
             case IpcContract.OpRemoveConfig:
-                if (args.Count > 0)
-                {
-                    _configs.Remove(args[0]);
-                    Save();
-                    PushSnapshot();
-                }
-
-                return Ok();
-
-            case IpcContract.OpRemoveProfile:
-                if (args.Count > 0)
-                {
-                    _profiles.Remove(args[0]);
-                    _routing.Remove(args[0]);
-                    Save();
-                    PushSnapshot();
-                }
-
-                return Ok();
+                return RemoveConfig(args);
 
             case IpcContract.OpGetConfig:
                 return args.Count > 0 && _configs.TryGetValue(args[0], out var text)
                     ? new IpcAck(true, text)
                     : Fail();
 
-            case IpcContract.OpSelectProfile:
-                _selectedTarget = args.Count > 0 ? args[0] : null;
-                Save();
-                PushSnapshot();
-                return Ok();
+            case IpcContract.OpSelectConfig:
+                return SelectConfig(args);
 
             case IpcContract.OpSetConnection:
                 return await SetConnectionAsync(args.Count > 0 ? args[0] : string.Empty);
 
-            case IpcContract.OpRenameProfile:
-                return RenameEntry(_profiles, args, rebindConfig: false);
-
             case IpcContract.OpRenameConfig:
-                return RenameEntry(_configs, args, rebindConfig: true);
+                return RenameConfig(args);
 
             case IpcContract.OpAssignRouting:
                 return AssignRouting(args);
@@ -312,22 +275,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Ok();
         }
 
-        // Two different refusals: nothing to connect to, and a target whose config is gone.
+        // Two different refusals: nothing to connect to, and a selection whose config is gone.
         if (_selectedTarget is not { Length: > 0 })
         {
             _connectFailed = true;
-            _log.Error("agent", "connect refused: no profile selected");
+            _log.Error("agent", "connect refused: no configuration selected");
             PushSnapshot();
             return new IpcAck(false, "nothing selected");
         }
 
-        var configName = _profiles.TryGetValue(_selectedTarget, out var bound) && bound.Length > 0 ? bound : _selectedTarget;
+        var configName = _selectedTarget;
         if (!_configs.TryGetValue(configName, out var configText))
         {
             _connectFailed = true;
-            _log.Error("agent", $"connect refused: no config for target '{_selectedTarget}'");
+            _log.Error("agent", $"connect refused: configuration '{configName}' is gone");
             PushSnapshot();
-            return new IpcAck(false, $"no config bound to '{_selectedTarget}'");
+            return new IpcAck(false, $"configuration '{configName}' not found");
         }
 
         var granted = await EnsureVpnPermissionAsync();
@@ -344,9 +307,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _boundStatus = ConnectionStatus.Connecting;
         _boundTarget = _selectedTarget;
         PushSnapshot();
-        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(_selectedTarget);
-        VpnBridge.WritePlan(await BuildPlanAsync(_selectedTarget).ConfigureAwait(false));
-        _log.Info("agent", $"connect requested: target '{_selectedTarget}', app-split {appMode}");
+        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync();
+        VpnBridge.WritePlan(await BuildPlanAsync().ConfigureAwait(false));
+        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app-split {appMode}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
             _transports.GetValueOrDefault(configName), foreground: true);
@@ -494,23 +457,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private void PushSnapshot()
     {
         var configs = _configs.Select(kv => Entry(kv.Key, kv.Value)).ToList();
-        var profiles = _profiles
-            .Select(kv =>
-            {
-                var routing = _routing.TryGetValue(kv.Key, out var raw) ? ParseRouting(raw) : (ListId: (long?)null, UseRouting: false);
-                return new ProfileEntry(kv.Key, StatusFor(kv.Key), kv.Value, routing.ListId, routing.UseRouting);
-            })
-            .ToList();
 
         Latest = new StatusSnapshot(
             AgentVersion: "Android preview",
             BoundTarget: _boundTarget,
             Configs: configs,
-            Profiles: profiles,
             RoutingLists: _routingSummaries,
             Active: _active,
             BoundStatus: _boundStatus,
             SelectedTarget: _selectedTarget,
+            SelectedRoutingList: _selectedRoutingList,
             Sources: BuildSources(),
             ConnectFailed: _connectFailed,
             EngineVersion: string.Empty,
@@ -919,14 +875,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().ConfigureAwait(false);
         await _store.RemoveRoutingListAsync(id).ConfigureAwait(false);
-        var detached = _routing.Where(kv => ParseRouting(kv.Value).ListId == id).Select(kv => kv.Key).ToList();
-        foreach (var profile in detached)
-        {
-            _routing.Remove(profile);
-        }
 
-        if (detached.Count > 0)
+        // Falls back to a full tunnel when the removed list was the selected one.
+        if (_selectedRoutingList == id)
         {
+            _selectedRoutingList = null;
             Save();
         }
 
@@ -982,12 +935,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // Export selection from OpExportBundle's arg0 json; all arrays optional. RoutingRules maps a routing list
     // name to the rule tokens to keep; an absent list keeps all its rules.
     private sealed record BundleSelection(
-        string[]? Profiles,
         string[]? Configs,
         string[]? RoutingLists,
         Dictionary<string, string[]>? RoutingRules);
 
-    // Packs the picked configs, routing lists and profiles into a portable bundle.
+    // Packs the picked configs and routing lists into a portable bundle.
     private async Task<IpcAck> ExportBundleAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -1005,25 +957,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         var configNames = new HashSet<string>(selection.Configs ?? [], StringComparer.Ordinal);
         var routingNames = new HashSet<string>(selection.RoutingLists ?? [], StringComparer.Ordinal);
-        var profileNames = new HashSet<string>(selection.Profiles ?? [], StringComparer.Ordinal);
 
-        // Профиль тянет за собой свою конфигурацию и свой список маршрутизации.
-        foreach (var profile in profileNames)
-        {
-            if (_profiles.TryGetValue(profile, out var boundConfig) && boundConfig.Length > 0)
-            {
-                configNames.Add(boundConfig);
-            }
-
-            if (_routing.TryGetValue(profile, out var raw)
-                && ParseRouting(raw).ListId is { } boundId
-                && await _store.GetRoutingListAsync(boundId).ConfigureAwait(false) is { } boundList)
-            {
-                routingNames.Add(boundList.Name);
-            }
-        }
-
-        if (configNames.Count == 0 && routingNames.Count == 0 && profileNames.Count == 0)
+        if (configNames.Count == 0 && routingNames.Count == 0)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NothingSelectedForExport"));
         }
@@ -1079,41 +1014,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
         }
 
-        var profileBlocks = new List<PortableBundle.ProfileBlock>();
-        foreach (var name in profileNames)
-        {
-            // Профиль без конфигурации не экспортируется.
-            if (!_profiles.TryGetValue(name, out var config) || config.Length == 0)
-            {
-                continue;
-            }
-
-            var routingName = default(string);
-            var useRouting = false;
-            if (_routing.TryGetValue(name, out var raw))
-            {
-                var parsed = ParseRouting(raw);
-                useRouting = parsed.UseRouting;
-                if (parsed.ListId is { } id && await _store.GetRoutingListAsync(id).ConfigureAwait(false) is { } list)
-                {
-                    routingName = list.Name;
-                }
-            }
-
-            profileBlocks.Add(new PortableBundle.ProfileBlock(name, config, routingName, useRouting));
-        }
-
         var bundle = new PortableBundle.Bundle(
             PortableBundle.FormatTag,
             PortableBundle.CurrentVersion,
             configBlocks,
-            routingBlocks,
-            profileBlocks);
-        _log.Info("agent", $"exported bundle: {configBlocks.Count} configs, {routingBlocks.Count} routing lists, {profileBlocks.Count} profiles");
+            routingBlocks);
+        _log.Info("agent", $"exported bundle: {configBlocks.Count} configs, {routingBlocks.Count} routing lists");
         return new IpcAck(true, PortableBundle.Serialize(bundle));
     }
 
-    // Recreates the bundle's configs, routing lists and profiles; policy picks what to do on a name clash.
+    // Recreates the bundle's configs and routing lists; policy picks what to do on a name clash.
     private async Task<IpcAck> ImportBundleAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
@@ -1156,11 +1066,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             .GroupBy(l => l.Name, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var configNames = new HashSet<string>(_configs.Keys, StringComparer.Ordinal);
-        var profileNames = new HashSet<string>(_profiles.Keys, StringComparer.Ordinal);
         var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
-
-        var configMap = new Dictionary<string, string>(StringComparer.Ordinal);
-        var routingMap = new Dictionary<string, long>(StringComparer.Ordinal);
         var renames = new List<string>();
 
         foreach (var block in bundle.Configs)
@@ -1173,7 +1079,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     await ApplyTransportAsync(block.Name, block.Transport).ConfigureAwait(false);
                 }
 
-                configMap[block.Name] = block.Name;
                 continue;
             }
 
@@ -1186,7 +1091,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             _configs[finalName] = block.ConfigText;
             await ApplyTransportAsync(finalName, block.Transport).ConfigureAwait(false);
-            configMap[block.Name] = finalName;
         }
 
         foreach (var block in bundle.RoutingLists)
@@ -1202,7 +1106,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     await ApplyRoutingSettingsAsync(existing.Id, block.Settings).ConfigureAwait(false);
                 }
 
-                routingMap[block.Name] = existing.Id;
                 continue;
             }
 
@@ -1215,61 +1118,24 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             var newId = await _geo.ApplyToRoutingListAsync(0, finalName, block.Rules).ConfigureAwait(false);
             await ApplyRoutingSettingsAsync(newId, block.Settings).ConfigureAwait(false);
-            routingMap[block.Name] = newId;
         }
 
-        var importedProfiles = 0;
-        foreach (var block in bundle.Profiles)
+        if (bundle.Profiles is { Count: > 0 } legacy)
         {
-            var config = block.Config is not null && configMap.TryGetValue(block.Config, out var mapped)
-                ? mapped
-                : string.Empty;
-
-            // Профиль без конфигурации пропускается.
-            if (config.Length == 0)
-            {
-                continue;
-            }
-
-            var routingId = block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var rid)
-                ? rid
-                : default(long?);
-            importedProfiles++;
-
-            if (_profiles.ContainsKey(block.Name) && policy != "new")
-            {
-                if (policy != "skip")
-                {
-                    _profiles[block.Name] = config;
-                    BindRouting(block.Name, routingId, block.UseRouting);
-                }
-
-                continue;
-            }
-
-            var finalName = FreeName(block.Name, profileNames, "Профиль");
-            profileNames.Add(finalName);
-            if (!string.Equals(finalName, block.Name, StringComparison.Ordinal))
-            {
-                renames.Add($"«{block.Name}» → «{finalName}»");
-            }
-
-            _profiles[finalName] = config;
-            BindRouting(finalName, routingId, block.UseRouting);
+            _log.Info("agent", $"the bundle carries {legacy.Count} profile(s) from an older build; their pairings are dropped");
         }
 
         Save();
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
-        _log.Info("agent", $"imported bundle: {bundle.Configs.Count} configs, {bundle.RoutingLists.Count} routing lists, {importedProfiles} profiles");
+        _log.Info("agent", $"imported bundle: {bundle.Configs.Count} configs, {bundle.RoutingLists.Count} routing lists");
 
         if (renames.Count == 0)
         {
             return new IpcAck(true, IpcMessage.Key(
                 "Agent_BundleImported",
                 bundle.Configs.Count,
-                bundle.RoutingLists.Count,
-                importedProfiles));
+                bundle.RoutingLists.Count));
         }
 
         if (renames.Count <= 5)
@@ -1278,15 +1144,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 "Agent_BundleImportedRenamed",
                 bundle.Configs.Count,
                 bundle.RoutingLists.Count,
-                importedProfiles,
                 string.Join(", ", renames)));
         }
 
         return new IpcAck(true, IpcMessage.Key(
             "Agent_BundleImportedRenamedMany",
             bundle.Configs.Count,
-            bundle.RoutingLists.Count,
-            importedProfiles));
+            bundle.RoutingLists.Count));
     }
 
     // Подбирает свободное имя импортируемому блоку; пустое заменяет запасным.
@@ -1328,18 +1192,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await _store.SetRoutingSettingsAsync(
             new RoutingSettings(listId, settings.Exclusions, settings.AllUdp, "split")).ConfigureAwait(false);
-    }
-
-    // Points a profile at a routing list, or clears the binding.
-    private void BindRouting(string profile, long? listId, bool useRouting)
-    {
-        if (listId is null)
-        {
-            _routing.Remove(profile);
-            return;
-        }
-
-        _routing[profile] = $"{listId.Value.ToString(CultureInfo.InvariantCulture)}|{(useRouting ? "1" : "0")}";
     }
 
     // Stores a config's tunnel MTU and IPv6 opt-in; both reach the tunnel builder on the next connect. The
@@ -1397,30 +1249,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _transports = transports;
     }
 
-    // Assigns or clears a profile's routing list. Args: profile, list id (or "none"), "on"/"off".
+    // Picks the routing list every config uses. Args: list id, or "none" for a full tunnel.
     private IpcAck AssignRouting(IReadOnlyList<string> args)
     {
-        if (args.Count < 1)
-        {
-            return Fail();
-        }
-
-        var profile = args[0];
-        var listArg = args.Count > 1 ? args[1] : "none";
-        var on = args.Count > 2 && IsOn(args[2]);
-        if (string.Equals(listArg, "none", StringComparison.OrdinalIgnoreCase)
-            || !long.TryParse(listArg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId))
-        {
-            _routing.Remove(profile);
-        }
-        else
-        {
-            _routing[profile] = $"{listId.ToString(CultureInfo.InvariantCulture)}|{(on ? "1" : "0")}";
-        }
+        var listArg = args.Count > 0 ? args[0] : "none";
+        _selectedRoutingList = string.Equals(listArg, "none", StringComparison.OrdinalIgnoreCase)
+            || !long.TryParse(listArg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId)
+                ? null
+                : listId;
 
         Save();
         PushSnapshot();
-        if (_active && string.Equals(_boundTarget, profile, StringComparison.Ordinal))
+        if (_active)
         {
             _ = SetConnectionAsync("connect");
         }
@@ -1430,27 +1270,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // The rules the session routes by. Addresses stay ranges and names stay names: a name resolved to a fresh
     // address keeps its verdict, which a set of host routes fixed at connect never could.
-    private async Task<GeoRoutingPlan> BuildPlanAsync(string? profile)
+    private async Task<GeoRoutingPlan> BuildPlanAsync()
     {
-        if (profile is null || !_routing.TryGetValue(profile, out var raw))
-        {
-            return GeoRoutingPlan.Full;
-        }
-
-        var (listId, useRouting) = ParseRouting(raw);
-        if (!useRouting || listId is null)
+        if (_selectedRoutingList is not { } listId)
         {
             return GeoRoutingPlan.Full;
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var list = await _store.GetRoutingListAsync(listId.Value).ConfigureAwait(false);
+        var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
         if (list is null)
         {
             return GeoRoutingPlan.Full;
         }
 
-        var settings = await _store.GetRoutingSettingsAsync(listId.Value).ConfigureAwait(false);
+        var settings = await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false);
         var directRoutes = new List<string>(list.DirectRoutes);
         var directDomains = new List<GeoDomain>(list.DirectDomains);
         SplitExclusions(settings?.Exclusions, directRoutes, directDomains);
@@ -1469,11 +1303,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
         if (!plan.HasRules)
         {
-            _log.Warn("geo", $"routing '{profile}': the list decides nothing, running the full tunnel instead");
+            _log.Warn("geo", $"routing '{list.Name}': the list decides nothing, running the full tunnel instead");
             return GeoRoutingPlan.Full;
         }
 
-        _log.Info("geo", $"routing '{profile}': {plan.ProxyRoutes.Count}/{plan.DirectRoutes.Count}/{plan.BlockRoutes.Count} ranges, "
+        _log.Info("geo", $"routing '{list.Name}': {plan.ProxyRoutes.Count}/{plan.DirectRoutes.Count}/{plan.BlockRoutes.Count} ranges, "
             + $"{plan.ProxyDomains.Count}/{plan.DirectDomains.Count}/{plan.BlockDomains.Count} names, "
             + (plan.FullTunnel ? "full tunnel" : "split")
             + (plan.AllUdp ? ", all udp tunneled" : string.Empty));
@@ -1530,8 +1364,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             using var document = JsonDocument.Parse(System.IO.File.ReadAllText(_storePath));
             LoadMap(document.RootElement, "Configs", _configs);
-            LoadMap(document.RootElement, "Profiles", _profiles);
-            LoadMap(document.RootElement, "Routing", _routing);
+            if (document.RootElement.TryGetProperty("SelectedRouting", out var selectedList)
+                && selectedList.ValueKind == JsonValueKind.Number
+                && selectedList.TryGetInt64(out var listId))
+            {
+                _selectedRoutingList = listId;
+            }
+
             if (document.RootElement.TryGetProperty("LogLevel", out var level) && level.ValueKind == JsonValueKind.String)
             {
                 _logLevel = KnownLogLevel(level.GetString() ?? "info");
@@ -1549,11 +1388,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _routeTtl = seconds;
             }
 
-            // A selection outliving the profile it names would refuse every connect with nothing to point at.
-            if (document.RootElement.TryGetProperty("Selected", out var selected)
-                && selected.ValueKind == JsonValueKind.String
-                && selected.GetString() is { Length: > 0 } target
-                && _profiles.ContainsKey(target))
+            var target = document.RootElement.TryGetProperty("Selected", out var selected) && selected.ValueKind == JsonValueKind.String
+                ? selected.GetString()
+                : null;
+            target = CarryProfile(document.RootElement, target);
+
+            // A selection outliving the config it names would refuse every connect with nothing to point at.
+            if (target is { Length: > 0 } && _configs.ContainsKey(target))
             {
                 _selectedTarget = target;
             }
@@ -1561,6 +1402,45 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         catch (Exception)
         {
         }
+    }
+
+    // One-time move off named profiles: the selected profile (else any) hands its config to the selection and its
+    // routing list to the global one; the rest of the pairings are lost. Save() drops both maps, so this runs once.
+    private string? CarryProfile(JsonElement root, string? target)
+    {
+        if (!root.TryGetProperty("Profiles", out var profiles) || profiles.ValueKind != JsonValueKind.Object)
+        {
+            return target;
+        }
+
+        var carried = default(string);
+        foreach (var entry in profiles.EnumerateObject())
+        {
+            if (carried is null || string.Equals(entry.Name, target, StringComparison.Ordinal))
+            {
+                carried = entry.Name;
+            }
+        }
+
+        if (carried is null)
+        {
+            return target;
+        }
+
+        if (root.TryGetProperty("Routing", out var routing)
+            && routing.ValueKind == JsonValueKind.Object
+            && routing.TryGetProperty(carried, out var raw)
+            && raw.ValueKind == JsonValueKind.String)
+        {
+            var (listId, useRouting) = ParseRouting(raw.GetString() ?? string.Empty);
+            if (useRouting && listId is not null)
+            {
+                _selectedRoutingList = listId;
+            }
+        }
+
+        var bound = profiles.GetProperty(carried);
+        return bound.ValueKind == JsonValueKind.String && bound.GetString() is { Length: > 0 } config ? config : target;
     }
 
     private static void LoadMap(JsonElement root, string name, Dictionary<string, string> into)
@@ -1586,14 +1466,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             var builder = new System.Text.StringBuilder();
             builder.Append("{\"Configs\":");
             AppendMap(builder, _configs);
-            builder.Append(",\"Profiles\":");
-            AppendMap(builder, _profiles);
-            builder.Append(",\"Routing\":");
-            AppendMap(builder, _routing);
             builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
+            builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
             builder.Append('}');
             System.IO.File.WriteAllText(_storePath, builder.ToString());
         }
@@ -1620,9 +1497,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         builder.Append('}');
     }
 
-    // Renames a profile / config key in place, carrying its value, retargeting the selection and binding, and (for
-    // a config) repointing the profiles bound to it. Refuses a name already taken in the same map.
-    private IpcAck RenameEntry(Dictionary<string, string> map, IReadOnlyList<string> args, bool rebindConfig)
+    // Renames a config in place, carrying its text and moving the selection and the live latch with it.
+    private IpcAck RenameConfig(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
         {
@@ -1636,48 +1512,61 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return Ok();
         }
 
-        if (!map.TryGetValue(oldName, out var value))
+        if (!_configs.TryGetValue(oldName, out var value))
         {
             return Fail();
         }
 
-        if (map.ContainsKey(newName))
+        if (_configs.ContainsKey(newName))
         {
             return new IpcAck(false, Loc.Instance.Get("Agent_NameTaken", newName));
         }
 
-        map.Remove(oldName);
-        map[newName] = value;
-
-        if (rebindConfig)
-        {
-            foreach (var profile in _profiles.Keys.ToList())
-            {
-                if (string.Equals(_profiles[profile], oldName, StringComparison.Ordinal))
-                {
-                    _profiles[profile] = newName;
-                }
-            }
-        }
-        else
-        {
-            RebindProfileState(oldName, newName);
-            // Selection and the live latch name a profile: a config of the same name must not move them.
-            RetargetSelection(oldName, newName);
-        }
-
+        _configs.Remove(oldName);
+        _configs[newName] = value;
+        RetargetSelection(oldName, newName);
         Save();
         PushSnapshot();
         return Ok();
     }
 
-    // Carries a profile's routing assignment across a rename.
-    private void RebindProfileState(string oldName, string newName)
+    // Binds the next connect to a config.
+    private IpcAck SelectConfig(IReadOnlyList<string> args)
     {
-        if (_routing.Remove(oldName, out var routing))
+        var name = args.Count > 0 && args[0].Length > 0 ? args[0] : null;
+        if (name is not null && !_configs.ContainsKey(name))
         {
-            _routing[newName] = routing;
+            return Fail();
         }
+
+        _selectedTarget = name;
+        Save();
+        PushSnapshot();
+        return Ok();
+    }
+
+    // Refuses while the config is the running target; otherwise drops it and clears a selection pointing at it.
+    private IpcAck RemoveConfig(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1)
+        {
+            return Fail();
+        }
+
+        if (_active && string.Equals(args[0], _boundTarget, StringComparison.Ordinal))
+        {
+            return new IpcAck(false, $"config {args[0]} is running; disconnect first");
+        }
+
+        _configs.Remove(args[0]);
+        if (string.Equals(args[0], _selectedTarget, StringComparison.Ordinal))
+        {
+            _selectedTarget = null;
+        }
+
+        Save();
+        PushSnapshot();
+        return Ok();
     }
 
     private void RetargetSelection(string oldName, string newName)
@@ -1693,28 +1582,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // The include app set for a profile from its assigned routing list's app:pkg rules; ("off", []) when none.
-    private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync(string? profile)
+    // The include app set from the selected routing list's app:pkg rules; ("off", []) when none.
+    private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync()
     {
-        if (profile is null || !_routing.TryGetValue(profile, out var raw))
-        {
-            return ("off", []);
-        }
-
-        var (listId, useRouting) = ParseRouting(raw);
-        if (!useRouting || listId is null)
+        if (_selectedRoutingList is not { } listId)
         {
             return ("off", []);
         }
 
         await EnsureInitAsync().ConfigureAwait(false);
-        var settings = await _store.GetRoutingSettingsAsync(listId.Value).ConfigureAwait(false);
+        var settings = await _store.GetRoutingSettingsAsync(listId).ConfigureAwait(false);
         if (settings is { UseGlobalProxy: true })
         {
             return ("off", []);
         }
 
-        var list = await _store.GetRoutingListAsync(listId.Value).ConfigureAwait(false);
+        var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
         if (list?.Apps is not { Count: > 0 })
         {
             return ("off", []);
@@ -1838,10 +1721,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task<IpcAck> GetRuntimeConfigAsync()
     {
         await EnsureInitAsync().ConfigureAwait(false);
-        var target = _selectedTarget;
-        var configName = target is not null && _profiles.TryGetValue(target, out var bound) && bound.Length > 0 ? bound : target;
+        var configName = _selectedTarget;
         var report = new System.Text.StringBuilder();
-        report.Append("target       : ").Append(target ?? "(none)").Append('\n');
         report.Append("config       : ").Append(configName ?? "(none)").Append('\n');
         report.Append("status       : ").Append(_boundStatus).Append('\n');
         report.Append("active       : ").Append(_active ? "yes" : "no").Append('\n');
@@ -1850,7 +1731,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             report.Append("endpoint     : ").Append(WgConfigEditor.GetEndpoint(configText) ?? "(none)").Append('\n');
         }
 
-        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync(target);
+        var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync();
         report.Append("app split    : ").Append(appMode);
         if (appMode != "off" && appPkgs is { Length: > 0 })
         {
@@ -1858,31 +1739,23 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         report.Append('\n');
-        AppendRoutingReport(report, target);
+        AppendRoutingReport(report);
         report.Append("log level    : ").Append(_logLevel).Append('\n');
         report.Append("route log    : ").Append(_routeLog ? "on" : "off").Append('\n');
         return new IpcAck(true, report.ToString());
     }
 
-    // Appends the target's routing-list assignment and its rule counts to the runtime report.
-    private void AppendRoutingReport(System.Text.StringBuilder report, string? target)
+    // Appends the selected routing list and its rule counts to the runtime report.
+    private void AppendRoutingReport(System.Text.StringBuilder report)
     {
-        if (target is null || !_routing.TryGetValue(target, out var raw))
+        if (_selectedRoutingList is not { } listId)
         {
-            report.Append("routing list : (none)\n");
+            report.Append("routing list : (full tunnel)\n");
             return;
         }
 
-        var (listId, useRouting) = ParseRouting(raw);
-        if (listId is null)
-        {
-            report.Append("routing list : (none)\n");
-            return;
-        }
-
-        var summary = _routingSummaries.FirstOrDefault(r => r.Id == listId.Value);
-        var name = summary?.Name ?? listId.Value.ToString(CultureInfo.InvariantCulture);
-        report.Append("routing list : ").Append(name).Append(useRouting ? " (on)" : " (off)").Append('\n');
+        var summary = _routingSummaries.FirstOrDefault(r => r.Id == listId);
+        report.Append("routing list : ").Append(summary?.Name ?? listId.ToString(CultureInfo.InvariantCulture)).Append('\n');
         report.Append("  geoip routes   : ").Append(summary?.RouteCount ?? 0).Append('\n');
         report.Append("  geosite domains: ").Append(summary?.DomainCount ?? 0).Append('\n');
     }
@@ -1892,27 +1765,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         await EnsureInitAsync().ConfigureAwait(false);
         var rows = new List<object>();
-        var target = _selectedTarget;
-        if (target is not null && _routing.TryGetValue(target, out var raw))
+        if (_selectedRoutingList is { } listId
+            && await _store.GetRoutingListAsync(listId).ConfigureAwait(false) is { } list)
         {
-            var (listId, _) = ParseRouting(raw);
-            if (listId is not null)
+            foreach (var route in list.Routes)
             {
-                var list = await _store.GetRoutingListAsync(listId.Value).ConfigureAwait(false);
-                if (list is not null)
-                {
-                    foreach (var route in list.Routes)
-                    {
-                        rows.Add(new { kind = "proxy", key = route, value = "geoip" });
-                    }
+                rows.Add(new { kind = "proxy", key = route, value = "geoip" });
+            }
 
-                    if (list.Domains is not null)
-                    {
-                        foreach (var domain in list.Domains)
-                        {
-                            rows.Add(new { kind = "domain", key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() });
-                        }
-                    }
+            if (list.Domains is not null)
+            {
+                foreach (var domain in list.Domains)
+                {
+                    rows.Add(new { kind = "domain", key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() });
                 }
             }
         }

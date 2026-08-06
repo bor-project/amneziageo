@@ -172,9 +172,6 @@
   <data name="BundleExport_Heading" xml:space="preserve">
     <value>Export profiles, configurations and routing lists</value>
   </data>
-  <data name="BundleExport_ProfilesSection" xml:space="preserve">
-    <value>PROFILES</value>
-  </data>
   <data name="BundleExport_RoutingSection" xml:space="preserve">
     <value>ROUTING</value>
   </data>
@@ -316,8 +313,8 @@
   <data name="Main_AutoCheckTitle" xml:space="preserve">
     <value>Auto-update</value>
   </data>
-  <data name="Main_BackToProfilesTooltip" xml:space="preserve">
-    <value>Back to profiles</value>
+  <data name="Main_BackTooltip" xml:space="preserve">
+    <value>Back</value>
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
     <value>Select profiles, configurations, and routing lists to transfer to another device, or import a previously exported file.</value>
@@ -339,21 +336,6 @@
   </data>
   <data name="Main_CheckUpdatesButton" xml:space="preserve">
     <value>Check for updates</value>
-  </data>
-  <data name="Main_ChooseConfigLabel" xml:space="preserve">
-    <value>CHOOSE A CONFIGURATION</value>
-  </data>
-  <data name="Main_ChooseListLabel" xml:space="preserve">
-    <value>CHOOSE A LIST</value>
-  </data>
-  <data name="Main_ChooseProfileToSetup" xml:space="preserve">
-    <value>CHOOSE A PROFILE TO SET UP</value>
-  </data>
-  <data name="Main_ProfileLabel" xml:space="preserve">
-    <value>Profile</value>
-  </data>
-  <data name="Main_SetActiveProfile" xml:space="preserve">
-    <value>Set active</value>
   </data>
   <data name="Main_ClearButton" xml:space="preserve">
     <value>Clear</value>
@@ -437,7 +419,7 @@
     <value>Delete configuration</value>
   </data>
   <data name="Main_DeleteConfigHint" xml:space="preserve">
-    <value>First unlink it from profiles and stop the tunnel using it.</value>
+    <value>First stop the tunnel using it.</value>
   </data>
   <data name="Main_DeleteConfigTitle" xml:space="preserve">
     <value>Delete configuration</value>
@@ -463,35 +445,11 @@
   <data name="Main_RoutingLoading" xml:space="preserve">
     <value>Loading…</value>
   </data>
-  <data name="Main_DeleteProfileButton" xml:space="preserve">
-    <value>Delete profile</value>
-  </data>
-  <data name="Main_DeleteProfileTitle" xml:space="preserve">
-    <value>Delete profile</value>
-  </data>
-  <data name="Main_DeleteProfilePrompt" xml:space="preserve">
-    <value>Remove this profile from the catalogue. This cannot be undone.</value>
-  </data>
-  <data name="Main_ProfileSettingsTitle" xml:space="preserve">
-    <value>Profile settings</value>
-  </data>
-  <data name="Main_DeleteProfileHint" xml:space="preserve">
-    <value>The profile is deleted together with its settings. A running profile must be disconnected first.</value>
-  </data>
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Delete</value>
   </data>
   <data name="Main_PendingDeleteHint" xml:space="preserve">
     <value>Marked for deletion. Press Save to delete, or Cancel to keep it.</value>
-  </data>
-  <data name="Main_ConfigInUse" xml:space="preserve">
-    <value>Cannot delete: the configuration is used by profiles:</value>
-  </data>
-  <data name="Main_RoutingInUse" xml:space="preserve">
-    <value>Cannot delete: the routing list is used by profiles:</value>
-  </data>
-  <data name="Main_ProfileInUse" xml:space="preserve">
-    <value>Cannot delete: the profile is connected. Disconnect it first.</value>
   </data>
   <data name="Main_DeletionLabel" xml:space="preserve">
     <value>DELETION</value>
@@ -535,8 +493,11 @@
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Unsaved changes</value>
   </data>
-  <data name="Main_FullTunnel" xml:space="preserve">
-    <value>Full tunnel</value>
+  <data name="Main_RoutingOffButton" xml:space="preserve">
+    <value>Turn off</value>
+  </data>
+  <data name="Main_RoutingOffState" xml:space="preserve">
+    <value>off</value>
   </data>
   <data name="Main_GeoDismissTooltip" xml:space="preserve">
     <value>Later - you can update it in settings</value>
@@ -640,9 +601,6 @@
   <data name="Main_NewListButton" xml:space="preserve">
     <value>New list</value>
   </data>
-  <data name="Main_NoProfilesHint" xml:space="preserve">
-    <value>Add a profile and a configuration in settings.</value>
-  </data>
   <data name="Main_AddConfigButton" xml:space="preserve">
     <value>Add configuration</value>
   </data>
@@ -681,24 +639,6 @@
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
     <value>RULES</value>
-  </data>
-  <data name="Main_ProfileAddButton" xml:space="preserve">
-    <value>New</value>
-  </data>
-  <data name="Main_AddProfileButton" xml:space="preserve">
-    <value>Add profile</value>
-  </data>
-  <data name="Main_NoProfileYetHint" xml:space="preserve">
-    <value>Create a profile to link a configuration with routing.</value>
-  </data>
-  <data name="Main_ProfileNoConfigHint" xml:space="preserve">
-    <value>This profile has no configuration yet. Pick one from the list, or add it in the «Configurations» section.</value>
-  </data>
-  <data name="Main_ProfileRenameHint" xml:space="preserve">
-    <value>A new name for this profile. A running profile cannot be renamed.</value>
-  </data>
-  <data name="Main_ProfileSection" xml:space="preserve">
-    <value>Profile</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
     <value>WebSocket proxy</value>
@@ -748,12 +688,6 @@
   <data name="Main_RailLogsTitle" xml:space="preserve">
     <value>Diagnostics</value>
   </data>
-  <data name="Main_RailProfileSubtitle" xml:space="preserve">
-    <value>Configuration + routing</value>
-  </data>
-  <data name="Main_RailProfileTitle" xml:space="preserve">
-    <value>Profile</value>
-  </data>
   <data name="Main_RailRoutingSubtitle" xml:space="preserve">
     <value>Rule lists and traffic</value>
   </data>
@@ -765,9 +699,6 @@
   </data>
   <data name="Main_RailSourcesTitle" xml:space="preserve">
     <value>Geo sources</value>
-  </data>
-  <data name="Main_RenameProfileTooltip" xml:space="preserve">
-    <value>Rename profile</value>
   </data>
   <data name="Main_RenameTooltip" xml:space="preserve">
     <value>Rename</value>
@@ -898,18 +829,6 @@
   <data name="Scan_Title" xml:space="preserve">
     <value>Scan QR from camera</value>
   </data>
-  <data name="Profile_ConnectAction" xml:space="preserve">
-    <value>Connect</value>
-  </data>
-  <data name="Profile_NoConfig" xml:space="preserve">
-    <value>no configuration</value>
-  </data>
-  <data name="Profile_ConfigRequired" xml:space="preserve">
-    <value>Select a configuration - the profile will not be saved without one.</value>
-  </data>
-  <data name="Profile_SwitchAction" xml:space="preserve">
-    <value>Switch</value>
-  </data>
   <data name="BundleExportCode_CopiedToClipboard" xml:space="preserve">
     <value>Copied to clipboard.</value>
   </data>
@@ -918,9 +837,6 @@
   </data>
   <data name="BundleExportCode_Saved" xml:space="preserve">
     <value>Saved.</value>
-  </data>
-  <data name="BundleExportVm_NoConfiguration" xml:space="preserve">
-    <value>no configuration</value>
   </data>
   <data name="BundleImportCode_BundleFileTitle" xml:space="preserve">
     <value>Bundle file</value>
@@ -1027,20 +943,11 @@
   <data name="MainVm_ConnectAttempt" xml:space="preserve">
     <value>Attempt {0}</value>
   </data>
-  <data name="MainVm_ConnectHintNoConfig" xml:space="preserve">
-    <value>The profile has no configuration - set one in settings</value>
-  </data>
-  <data name="MainVm_ConnectHintSelectProfile" xml:space="preserve">
-    <value>Select a profile</value>
-  </data>
   <data name="MainVm_Disconnect" xml:space="preserve">
     <value>Disconnect</value>
   </data>
   <data name="MainVm_LogSearchMatches" xml:space="preserve">
     <value>{0} match(es)</value>
-  </data>
-  <data name="MainVm_NewProfileDefaultName" xml:space="preserve">
-    <value>New profile</value>
   </data>
   <data name="MainVm_NoAgentConnection" xml:space="preserve">
     <value>No connection to the agent</value>
@@ -1078,12 +985,6 @@
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>The connection timed out.</value>
   </data>
-  <data name="MainVm_NoticeProfileEmpty" xml:space="preserve">
-    <value>Profile «{0}» is empty - add a configuration.</value>
-  </data>
-  <data name="MainVm_NoticeProfileSelected" xml:space="preserve">
-    <value>Profile «{0}» selected. Reconnect to apply.</value>
-  </data>
   <data name="MainVm_NoticeSettingsChanged" xml:space="preserve">
     <value>Settings changed. Reconnect to apply.</value>
   </data>
@@ -1119,9 +1020,6 @@
   </data>
   <data name="Update_Close" xml:space="preserve">
     <value>Close</value>
-  </data>
-  <data name="ProfileChoice_NoneLabel" xml:space="preserve">
-    <value>- none -</value>
   </data>
   <data name="QrCode_CopiedToClipboard" xml:space="preserve">
     <value>Copied to clipboard.</value>
@@ -1268,14 +1166,14 @@
     <value>h</value>
   </data>
   <data name="Agent_BundleImported" xml:space="preserve">
-    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.</value>
+    <value>Imported - configurations: {0}, routing lists: {1}.</value>
   </data>
   <data name="Agent_BundleImportedRenamed" xml:space="preserve">
-    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.
-Renamed on import: {3}.</value>
+    <value>Imported - configurations: {0}, routing lists: {1}.
+Renamed on import: {2}.</value>
   </data>
   <data name="Agent_BundleImportedRenamedMany" xml:space="preserve">
-    <value>Imported - configurations: {0}, routing lists: {1}, profiles: {2}.
+    <value>Imported - configurations: {0}, routing lists: {1}.
 Renamed on import: several names clashed with existing ones.</value>
   </data>
   <data name="Agent_BundleParseFailed" xml:space="preserve">
@@ -1553,9 +1451,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_HomeSelectConfigHint" xml:space="preserve">
     <value>Select a configuration to connect.</value>
   </data>
-  <data name="Main_ProfileNeedsConfigHint" xml:space="preserve">
-    <value>Add a configuration first to create a profile.</value>
-  </data>
   <data name="InstallerVm_ResetSettings" xml:space="preserve">
     <value>Reset settings</value>
   </data>
@@ -1607,9 +1502,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Launcher_Title" xml:space="preserve">
     <value>Quick launch</value>
   </data>
-  <data name="Launcher_ActiveProfile" xml:space="preserve">
-    <value>Active profile</value>
-  </data>
   <data name="Launcher_Loading" xml:space="preserve">
     <value>Loading profiles…</value>
   </data>
@@ -1657,9 +1549,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="MainVm_CacheShownCapped" xml:space="preserve">
     <value>{0} of {1}, agent returned {2}</value>
-  </data>
-  <data name="Agent_NoProfileSelected" xml:space="preserve">
-    <value>No profile selected.</value>
   </data>
   <data name="Main_LogTypeLabel" xml:space="preserve">
     <value>Log</value>
@@ -1772,9 +1661,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Tui_Select" xml:space="preserve">
     <value>Select</value>
   </data>
-  <data name="Tui_Assign" xml:space="preserve">
-    <value>Routing…</value>
-  </data>
   <data name="Tui_Show" xml:space="preserve">
     <value>Show</value>
   </data>
@@ -1822,5 +1708,41 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Tui_LogEmpty" xml:space="preserve">
     <value>The log is empty: raise the level on the Общие screen</value>
+  </data>
+  <data name="Agent_NoConfigSelected" xml:space="preserve">
+    <value>No configuration selected.</value>
+  </data>
+  <data name="Main_NoConfigsHint" xml:space="preserve">
+    <value>Add a configuration in settings.</value>
+  </data>
+  <data name="Main_SetActiveTitle" xml:space="preserve">
+    <value>Active configuration</value>
+  </data>
+  <data name="Main_SetActiveHint" xml:space="preserve">
+    <value>The next connect dials this configuration.</value>
+  </data>
+  <data name="Main_SetActiveConfig" xml:space="preserve">
+    <value>Make active</value>
+  </data>
+  <data name="Main_IsActiveBadge" xml:space="preserve">
+    <value>Active now</value>
+  </data>
+  <data name="Main_ApplyRoutingTitle" xml:space="preserve">
+    <value>Routing list</value>
+  </data>
+  <data name="Main_ApplyRoutingHint" xml:space="preserve">
+    <value>Every configuration routes by the applied list.</value>
+  </data>
+  <data name="Main_ApplyRoutingButton" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="Main_RoutingOffNotice" xml:space="preserve">
+    <value>Routing is off - every configuration runs with its own settings.</value>
+  </data>
+  <data name="MainVm_ConnectHintSelectConfig" xml:space="preserve">
+    <value>Select a configuration</value>
+  </data>
+  <data name="MainVm_NoticeConfigSelected" xml:space="preserve">
+    <value>Configuration «{0}» selected. Reconnect to apply.</value>
   </data>
 </root>

@@ -594,7 +594,7 @@ internal static unsafe class Program
         _popupPending = false;
         Native.KillTimer(_hwnd, PopupTimerId);
 
-        var autoDial = _autoConnect && AgentLink.HasActiveProfile;
+        var autoDial = _autoConnect && AgentLink.HasActiveConfig;
         if (autoDial)
         {
             AgentLink.SendConnect();
@@ -823,7 +823,7 @@ internal static unsafe class Program
 
         if (_current == 0)
         {
-            var connectFlags = AgentLink.HasActiveProfile ? Native.MF_STRING : Native.MF_STRING | Native.MF_GRAYED;
+            var connectFlags = AgentLink.HasActiveConfig ? Native.MF_STRING : Native.MF_STRING | Native.MF_GRAYED;
             Native.AppendMenuW(menu, connectFlags, (nuint)Native.ID_CONNECT, Labels.Connect);
         }
         else if (_current == 2)

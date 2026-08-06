@@ -4,7 +4,7 @@ namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Composite state store: routes shared geo assets and machine settings to the machine store, and the user
-/// library (configs, profiles, routing, projections, resolutions, per-user settings) to a per-user store.
+/// library (configs, routing, projections, resolutions, per-user settings) to a per-user store.
 /// </summary>
 internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : IStateStore
 {
@@ -188,18 +188,6 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task<DomainResolution?> GetDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default) => user.GetDomainResolutionAsync(tunnel, domain, ct);
 
     /// <inheritdoc/>
-    public Task SaveProfileAsync(Profile profile, CancellationToken ct = default) => user.SaveProfileAsync(profile, ct);
-
-    /// <inheritdoc/>
-    public Task<Profile?> GetProfileAsync(string name, CancellationToken ct = default) => user.GetProfileAsync(name, ct);
-
-    /// <inheritdoc/>
-    public Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default) => user.ListProfileNamesAsync(ct);
-
-    /// <inheritdoc/>
-    public Task RemoveProfileAsync(string name, CancellationToken ct = default) => user.RemoveProfileAsync(name, ct);
-
-    /// <inheritdoc/>
     public Task<long> SaveRoutingListAsync(RoutingList list, CancellationToken ct = default) => user.SaveRoutingListAsync(list, ct);
 
     /// <inheritdoc/>
@@ -226,9 +214,6 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task<long?> GetActiveRoutingListGenerationAsync(string tunnel, CancellationToken ct = default) => user.GetActiveRoutingListGenerationAsync(tunnel, ct);
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<long>> ListAssignedRoutingListIdsAsync(CancellationToken ct = default) => user.ListAssignedRoutingListIdsAsync(ct);
-
-    /// <inheritdoc/>
     public Task<RoutingSettings?> GetRoutingSettingsAsync(long routingListId, CancellationToken ct = default) => user.GetRoutingSettingsAsync(routingListId, ct);
 
     /// <inheritdoc/>
@@ -238,20 +223,22 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default) => user.RemoveRoutingSettingsAsync(routingListId, ct);
 
     /// <inheritdoc/>
-    public Task<(long? RoutingListId, bool UseRouting)> GetProfileRoutingAsync(string profile, CancellationToken ct = default) => user.GetProfileRoutingAsync(profile, ct);
+    public Task<long?> GetSelectedRoutingListAsync(CancellationToken ct = default) => user.GetSelectedRoutingListAsync(ct);
 
     /// <inheritdoc/>
-    public Task SetProfileRoutingAsync(string profile, long? routingListId, bool useRouting, CancellationToken ct = default)
-        => user.SetProfileRoutingAsync(profile, routingListId, useRouting, ct);
+    public Task SetSelectedRoutingListAsync(long? routingListId, CancellationToken ct = default) => user.SetSelectedRoutingListAsync(routingListId, ct);
 
     /// <inheritdoc/>
-    public Task SaveProfileStateAsync(ProfileState state, CancellationToken ct = default) => user.SaveProfileStateAsync(state, ct);
+    public Task SaveTunnelStateAsync(TunnelState state, CancellationToken ct = default) => user.SaveTunnelStateAsync(state, ct);
 
     /// <inheritdoc/>
-    public Task<ProfileState?> GetProfileStateAsync(string name, CancellationToken ct = default) => user.GetProfileStateAsync(name, ct);
+    public Task<TunnelState?> GetTunnelStateAsync(string name, CancellationToken ct = default) => user.GetTunnelStateAsync(name, ct);
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<ProfileState>> ListProfileStatesAsync(CancellationToken ct = default) => user.ListProfileStatesAsync(ct);
+    public Task<IReadOnlyList<TunnelState>> ListTunnelStatesAsync(CancellationToken ct = default) => user.ListTunnelStatesAsync(ct);
+
+    /// <inheritdoc/>
+    public Task RemoveTunnelStateAsync(string name, CancellationToken ct = default) => user.RemoveTunnelStateAsync(name, ct);
 
     /// <inheritdoc/>
     public Task BackupToAsync(string destinationPath, CancellationToken ct = default) => user.BackupToAsync(destinationPath, ct);

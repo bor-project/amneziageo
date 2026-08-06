@@ -1,19 +1,19 @@
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
-/// A full picture of the agent's configurations, profiles, routing lists,
-/// and their statuses.
+/// A full picture of the agent's configurations, routing lists, and their statuses.
 /// </summary>
 public sealed record StatusSnapshot(
     string AgentVersion,
     string? BoundTarget,
     IReadOnlyList<ConfigEntry> Configs,
-    IReadOnlyList<ProfileEntry> Profiles,
     IReadOnlyList<RoutingListEntry>? RoutingLists = null,
     bool Active = true,
     string BoundStatus = ConnectionStatus.Disconnected,
     bool RestartRequired = false,
     string? SelectedTarget = null,
+    // Routing list every config uses; null routes everything through the tunnel.
+    long? SelectedRoutingList = null,
     IReadOnlyList<SourceEntry>? Sources = null,
     string UpdateUrl = "",
     bool UpdateAvailable = false,
@@ -40,7 +40,7 @@ public sealed record StatusSnapshot(
     string ConnectFailDetail = "",
     // Transient-failure retry count for the current dial; 0 when not retrying.
     int RetryAttempt = 0,
-    // Auto-connect the selected profile on service start (survive a reboot).
+    // Auto-connect the selected config on service start (survive a reboot).
     bool SurviveReboot = false,
     // Retry a desired connection at a fixed interval instead of the default backoff.
     bool PeriodicReconnect = false,

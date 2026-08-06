@@ -14,7 +14,7 @@
   <StackPanel Spacing="12">
     <TextBlock Text="{l:Tr BundleImport_Heading}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
 
-    <!-- Global name-conflict policy applied to every clashing config / routing list / profile. -->
+    <!-- Global name-conflict policy applied to every clashing config / routing list. -->
     <StackPanel Spacing="4">
       <TextBlock Classes="label" Text="{l:Tr BundleImport_ConflictLabel}" />
       <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" SelectedIndex="{Binding ConflictPolicyIndex, Mode=TwoWay}">
@@ -36,7 +36,7 @@
                Watermark="{l:Tr BundleImport_PayloadWatermark}" />
     </Border>
 
-    <!-- Load / import actions. A host may inject a leading action (e.g. «Новый» profile) so all three share
+    <!-- Load / import actions. A host may inject a leading action so all three share
          this wrap row at equal width and reflow to a new line when they don't fit. -->
     <WrapPanel HorizontalAlignment="Center">
       <ContentControl x:CompileBindings="False"

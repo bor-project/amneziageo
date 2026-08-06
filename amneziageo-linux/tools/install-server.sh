@@ -90,7 +90,6 @@ Installed.
 Next steps:
   sudo amneziageo geo download                       # seed and download the geo bases
   sudo amneziageo config import work --file work.conf
-  sudo amneziageo profile add work work
   sudo amneziageo up work
   sudo amneziageo settings set survive-reboot on
   sudo amneziageo settings set periodic-reconnect-enabled on

@@ -5,8 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// A single checkable row in the selective export tree: a profile, a config, or a routing list, by name.
-/// IsLocked disables the checkbox while a checked profile depends on it, without forcing it unchecked.
+/// A single checkable row in the selective export tree: a config or a routing list, by name.
 /// A routing list also carries its rules so the user can drop machine-specific ones before export.
 /// </summary>
 internal sealed partial class BundleItem : ViewModelBase
@@ -38,7 +37,7 @@ internal sealed partial class BundleItem : ViewModelBase
     public bool CanCheck => !IsLocked && !IsDisabled;
 
     /// <summary>
-    /// Store id of a routing list, so its rules can be fetched; 0 for profiles and configs.
+    /// Store id of a routing list, so its rules can be fetched; 0 for configs.
     /// </summary>
     public long ListId { get; set; }
 
@@ -49,7 +48,7 @@ internal sealed partial class BundleItem : ViewModelBase
 
     /// <summary>
     /// Invoked after IsChecked changes by user action. The owning dialog subscribes per item to apply the
-    /// profile to config/routing-list cascade and recompute whether Export can run.
+    /// recompute whether Export can run.
     /// </summary>
     public Action<bool>? CheckedChanged { get; set; }
 

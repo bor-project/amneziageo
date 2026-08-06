@@ -6,20 +6,19 @@ using AmneziaGeo.Ipc;
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
-/// Portable bundles: exports the selected configs, routing lists and profiles, and imports them back.
+/// Portable bundles: exports the selected configs and routing lists, and imports them back.
 /// </summary>
 internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 {
     // Export selection from OpExportBundle's arg0 JSON; all arrays optional. RoutingRules maps a routing
     // list name to the rule tokens to KEEP; an absent list keeps all its rules.
     private sealed record SelectionRequest(
-        string[]? Profiles,
         string[]? Configs,
         string[]? RoutingLists,
         Dictionary<string, string[]>? RoutingRules);
 
     /// <summary>
-    /// Builds a bundle from the selected configs, routing lists and profiles.
+    /// Builds a bundle from the selected configs and routing lists.
     /// </summary>
     public async Task<IpcAck> ExportAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
@@ -34,36 +33,13 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             return new IpcAck(false, IpcMessage.Key("Agent_ExportSelectionParseFailed"));
         }
 
-        // Picking a profile carries the config and routing list it binds, so the bundle can reconnect as is.
         var configNames = new HashSet<string>(selection.Configs ?? [], StringComparer.Ordinal);
         var routingNames = new HashSet<string>(selection.RoutingLists ?? [], StringComparer.Ordinal);
-        var profileNames = new HashSet<string>(selection.Profiles ?? [], StringComparer.Ordinal);
         var pickedConfigs = new HashSet<string>(configNames, StringComparer.Ordinal);
         var pickedLists = new HashSet<string>(routingNames, StringComparer.Ordinal);
         var missing = new List<string>();
 
-        foreach (var profileName in profileNames)
-        {
-            var profile = await store.GetProfileAsync(profileName, ct).ConfigureAwait(false);
-            if (profile is null)
-            {
-                missing.Add(profileName);
-                continue;
-            }
-
-            if (!string.IsNullOrEmpty(profile.Config))
-            {
-                configNames.Add(profile.Config);
-            }
-
-            var (listId, _) = await store.GetProfileRoutingAsync(profileName, ct).ConfigureAwait(false);
-            if (listId is not null && await store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false) is { } boundList)
-            {
-                routingNames.Add(boundList.Name);
-            }
-        }
-
-        if (configNames.Count == 0 && routingNames.Count == 0 && profileNames.Count == 0)
+        if (configNames.Count == 0 && routingNames.Count == 0)
         {
             return new IpcAck(false, IpcMessage.Key("Agent_NothingSelectedForExport"));
         }
@@ -131,23 +107,6 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             }
         }
 
-        var profileBlocks = new List<PortableBundle.ProfileBlock>();
-        foreach (var name in profileNames)
-        {
-            var profile = await store.GetProfileAsync(name, ct).ConfigureAwait(false);
-            if (profile is null)
-            {
-                continue;
-            }
-
-            var (listId, useRouting) = await store.GetProfileRoutingAsync(name, ct).ConfigureAwait(false);
-            var routingListName = listId is not null && await store.GetRoutingListAsync(listId.Value, ct).ConfigureAwait(false) is { } list
-                ? list.Name
-                : null;
-
-            profileBlocks.Add(new PortableBundle.ProfileBlock(name, profile.Config.Length > 0 ? profile.Config : null, routingListName, useRouting));
-        }
-
         if (missing.Count > 0)
         {
             return new IpcAck(false, $"not found: {string.Join(", ", missing)}");
@@ -157,8 +116,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             PortableBundle.FormatTag,
             PortableBundle.CurrentVersion,
             configBlocks,
-            routingBlocks,
-            profileBlocks);
+            routingBlocks);
         return new IpcAck(true, PortableBundle.Serialize(bundle));
     }
 
@@ -195,19 +153,15 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             return new IpcAck(false, IpcMessage.Key("Agent_BundleTooNew", bundle.Version));
         }
 
-        // Configs, profiles and routing lists each own a separate name space; the snapshots detect collisions.
+        // Configs and routing lists each own a separate name space; the snapshots detect collisions.
         var existingConfigs = new HashSet<string>(await store.ListConfigNamesAsync(ct).ConfigureAwait(false), StringComparer.Ordinal);
-        var existingProfiles = new HashSet<string>(await store.ListProfileNamesAsync(ct).ConfigureAwait(false), StringComparer.Ordinal);
         var existingLists = (await store.ListRoutingListsAsync(ct).ConfigureAwait(false))
             .ToDictionary(l => l.Name, l => l, StringComparer.Ordinal);
 
         // Growing name spaces so the add-as-new path never reuses a name taken earlier in THIS import.
         var configNames = new HashSet<string>(existingConfigs, StringComparer.Ordinal);
-        var profileNames = new HashSet<string>(existingProfiles, StringComparer.Ordinal);
         var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
 
-        var configNameMap = new Dictionary<string, string>(StringComparer.Ordinal);
-        var routingMap = new Dictionary<string, long>(StringComparer.Ordinal);
         var renames = new List<string>();
         var importedConfigs = 0;
         var importedLists = 0;
@@ -221,13 +175,11 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
             {
                 if (policy == "skip")
                 {
-                    configNameMap[block.Name] = incoming;
                     continue;
                 }
 
                 await store.SaveConfigAsync(incoming, block.ConfigText, ct).ConfigureAwait(false);
                 await ApplyConfigExtrasAsync(incoming, block, policy, ct).ConfigureAwait(false);
-                configNameMap[block.Name] = incoming;
                 importedConfigs++;
                 continue;
             }
@@ -241,18 +193,16 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
 
             await store.SaveConfigAsync(freeName, block.ConfigText, ct).ConfigureAwait(false);
             await ApplyConfigExtrasAsync(freeName, block, "new", ct).ConfigureAwait(false);
-            configNameMap[block.Name] = freeName;
             importedConfigs++;
         }
 
         foreach (var block in bundle.RoutingLists)
         {
-            // Same-name list and a non-default policy: act on the existing row, so bound profiles stay bound.
+            // Same-name list and a non-default policy: act on the existing row, so the selection stays valid.
             if (existingLists.TryGetValue(block.Name, out var existingList) && policy != "new")
             {
                 if (policy == "skip")
                 {
-                    routingMap[block.Name] = existingList.Id;
                     continue;
                 }
 
@@ -266,7 +216,6 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                     await store.SetRoutingSettingsAsync(new RoutingSettings(existingList.Id, existingSettings.Exclusions, existingSettings.AllUdp, existingSettings.Mode, existingSettings.UseGlobalProxy), ct).ConfigureAwait(false);
                 }
 
-                routingMap[block.Name] = existingList.Id;
                 importedLists++;
                 continue;
             }
@@ -284,52 +233,18 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
                 await store.SetRoutingSettingsAsync(new RoutingSettings(newId, settings.Exclusions, settings.AllUdp, settings.Mode, settings.UseGlobalProxy), ct).ConfigureAwait(false);
             }
 
-            routingMap[block.Name] = newId;
             importedLists++;
         }
 
-        var importedProfiles = 0;
-        foreach (var block in bundle.Profiles)
-        {
-            var config = ResolveConfig(block.Config, configNameMap, configNames);
-            long? routingId = block.RoutingList is not null && routingMap.TryGetValue(block.RoutingList, out var listId) ? listId : null;
-
-            var name = existingProfiles.Contains(block.Name) && policy != "new"
-                ? block.Name
-                : FreeName(block.Name, profileNames);
-            if (policy == "skip" && existingProfiles.Contains(block.Name))
-            {
-                continue;
-            }
-
-            importedProfiles++;
-
-            profileNames.Add(name);
-            if (!string.Equals(name, block.Name, StringComparison.Ordinal))
-            {
-                renames.Add($"«{block.Name}» → «{name}»");
-            }
-
-            await store.SaveProfileAsync(new Profile(name, config), ct).ConfigureAwait(false);
-
-            // No auto-target here: a bulk import must not steal the selection.
-            if (routingId is not null)
-            {
-                await store.SetProfileRoutingAsync(name, routingId.Value, block.UseRouting, ct).ConfigureAwait(false);
-            }
-        }
-
-        // A config and the profile bound to it clash under the same name and land on the same new one; showing
-        // that pair once reads as one rename instead of a duplicated line.
         var shown = renames.Distinct(StringComparer.Ordinal).ToList();
         if (shown.Count == 0)
         {
-            return new IpcAck(true, IpcMessage.Key("Agent_BundleImported", importedConfigs, importedLists, importedProfiles));
+            return new IpcAck(true, IpcMessage.Key("Agent_BundleImported", importedConfigs, importedLists));
         }
 
         return shown.Count <= 5
-            ? new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamed", importedConfigs, importedLists, importedProfiles, string.Join(", ", shown)))
-            : new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamedMany", importedConfigs, importedLists, importedProfiles));
+            ? new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamed", importedConfigs, importedLists, string.Join(", ", shown)))
+            : new IpcAck(true, IpcMessage.Key("Agent_BundleImportedRenamedMany", importedConfigs, importedLists));
     }
 
     // Settings that travel with a config; merge keeps the geo rules already stored.
@@ -381,22 +296,6 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         await geo.ApplyAsync(name, geoBlock.Split, rules, ct).ConfigureAwait(false);
     }
 
-    // The name the bundle's config landed under, or a config already here under that name.
-    private static string ResolveConfig(string? wanted, Dictionary<string, string> map, HashSet<string> present)
-    {
-        if (wanted is null)
-        {
-            return string.Empty;
-        }
-
-        if (map.TryGetValue(wanted, out var mapped))
-        {
-            return mapped;
-        }
-
-        return present.Contains(wanted) ? wanted : string.Empty;
-    }
-
     private static SelectionRequest? ParseSelection(string json)
     {
         try
@@ -415,7 +314,7 @@ internal sealed class BundleCommands(IStateStore store, GeoConfigurator geo)
         var baseName = desired.Trim();
         if (baseName.Length == 0)
         {
-            baseName = "Профиль";
+            baseName = "config";
         }
 
         if (!taken.Contains(baseName))

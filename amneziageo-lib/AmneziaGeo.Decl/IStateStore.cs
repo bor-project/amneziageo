@@ -1,7 +1,7 @@
 namespace AmneziaGeo.Decl;
 
 /// <summary>
-/// Persistent store for tunnel profiles, geo settings, and geo file metadata.
+/// Persistent store for tunnel configs, geo settings, and geo file metadata.
 /// </summary>
 public interface IStateStore
 {
@@ -11,27 +11,27 @@ public interface IStateStore
     Task InitializeAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the config's own geo settings, ignoring any live profile projection.
+    /// Returns the config's own geo settings, ignoring any live routing projection.
     /// </summary>
     Task<TunnelGeo?> GetTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the geo set the running tunnel should apply: profile projection if present, else the config's own split.
+    /// Returns the geo set the running tunnel should apply: the live projection if present, else the config's own split.
     /// </summary>
     Task<TunnelGeo?> GetActiveTunnelGeoAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates the config's own geo settings. Leaves any live profile projection untouched.
+    /// Inserts or updates the config's own geo settings. Leaves any live routing projection untouched.
     /// </summary>
     Task SaveTunnelGeoAsync(TunnelGeo geo, CancellationToken ct = default);
 
     /// <summary>
-    /// Stores a profile routing projection and marks it live. routingListId is the source list (null for full-tunnel / no-list).
+    /// Stores a routing projection and marks it live. routingListId is the source list (null for full-tunnel / no-list).
     /// </summary>
     Task SaveTunnelProjectionAsync(string name, bool split, IReadOnlyList<string> routes, IReadOnlyList<GeoDomain> domains, IReadOnlyList<string> apps, long? routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// Drops the live profile projection, reverting to the config's own split. No-op when no row exists.
+    /// Drops the live routing projection, reverting to the config's own split. No-op when no row exists.
     /// </summary>
     Task ClearTunnelProjectionAsync(string name, CancellationToken ct = default);
 
@@ -169,26 +169,6 @@ public interface IStateStore
     Task<DomainResolution?> GetDomainResolutionAsync(string tunnel, string domain, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates a profile.
-    /// </summary>
-    Task SaveProfileAsync(Profile profile, CancellationToken ct = default);
-
-    /// <summary>
-    /// Returns the named profile, or null if absent.
-    /// </summary>
-    Task<Profile?> GetProfileAsync(string name, CancellationToken ct = default);
-
-    /// <summary>
-    /// Returns all stored profile names.
-    /// </summary>
-    Task<IReadOnlyList<string>> ListProfileNamesAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// Removes a profile by name.
-    /// </summary>
-    Task RemoveProfileAsync(string name, CancellationToken ct = default);
-
-    /// <summary>
     /// Inserts or updates a routing list. Returns the row id.
     /// </summary>
     Task<long> SaveRoutingListAsync(RoutingList list, CancellationToken ct = default);
@@ -215,7 +195,7 @@ public interface IStateStore
     Task<IReadOnlyList<(long Id, string Name, int RuleCount, int RouteCount, int DomainCount)>> ListRoutingListSummariesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Removes a routing list by id. Profile assignments are cleared.
+    /// Removes a routing list by id. The global selection is cleared when it named this list.
     /// </summary>
     Task RemoveRoutingListAsync(long id, CancellationToken ct = default);
 
@@ -229,11 +209,6 @@ public interface IStateStore
     /// so the change poll can skip the full materialization read when nothing changed. Null when none is projected.
     /// </summary>
     Task<long?> GetActiveRoutingListGenerationAsync(string tunnel, CancellationToken ct = default);
-
-    /// <summary>
-    /// Returns ids of routing lists assigned to at least one profile.
-    /// </summary>
-    Task<IReadOnlyList<long>> ListAssignedRoutingListIdsAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Returns a routing list's traffic settings, or null when none (defaults: split mode, no all-UDP).
@@ -251,14 +226,14 @@ public interface IStateStore
     Task RemoveRoutingSettingsAsync(long routingListId, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the assigned routing list id (or null) and the use-routing flag for a profile.
+    /// Returns the globally selected routing list id, or null for a full tunnel.
     /// </summary>
-    Task<(long? RoutingListId, bool UseRouting)> GetProfileRoutingAsync(string profile, CancellationToken ct = default);
+    Task<long?> GetSelectedRoutingListAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Sets the assigned routing list id (or null to clear) and the use-routing flag for a profile.
+    /// Sets the globally selected routing list id, or null for a full tunnel.
     /// </summary>
-    Task SetProfileRoutingAsync(string profile, long? routingListId, bool useRouting, CancellationToken ct = default);
+    Task SetSelectedRoutingListAsync(long? routingListId, CancellationToken ct = default);
 
     /// <summary>
     /// Returns metadata for a geo file, or null if absent.
@@ -291,19 +266,24 @@ public interface IStateStore
     Task SetSettingAsync(string key, string value, CancellationToken ct = default);
 
     /// <summary>
-    /// Inserts or updates the live runtime state for a profile.
+    /// Inserts or updates the live runtime state for a config.
     /// </summary>
-    Task SaveProfileStateAsync(ProfileState state, CancellationToken ct = default);
+    Task SaveTunnelStateAsync(TunnelState state, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the live runtime state for a profile, or null if absent.
+    /// Returns the live runtime state for a config, or null if absent.
     /// </summary>
-    Task<ProfileState?> GetProfileStateAsync(string name, CancellationToken ct = default);
+    Task<TunnelState?> GetTunnelStateAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the live runtime state for every profile.
+    /// Returns the live runtime state for every config.
     /// </summary>
-    Task<IReadOnlyList<ProfileState>> ListProfileStatesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<TunnelState>> ListTunnelStatesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes the live runtime state for a config. No-op when no row exists.
+    /// </summary>
+    Task RemoveTunnelStateAsync(string name, CancellationToken ct = default);
 
     /// <summary>
     /// Writes a consistent snapshot of the database to the given destination path.

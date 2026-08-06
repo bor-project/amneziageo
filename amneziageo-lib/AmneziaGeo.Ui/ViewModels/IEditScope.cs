@@ -5,7 +5,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
 /// The dirty-tracking + commit contract shared by the autosave-capable editors (config transport / export,
-/// routing list / settings, profile row). It tracks whether the surface holds uncommitted changes against a
+/// routing list / settings). It tracks whether the surface holds uncommitted changes against a
 /// captured baseline and commits them through the agent. Marking dirty compares the live fields to the baseline
 /// and never persists on its own, so it cannot reintroduce the per-keystroke save that caused the #28/#33
 /// focus-steal.

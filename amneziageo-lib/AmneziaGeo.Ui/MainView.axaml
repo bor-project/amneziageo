@@ -126,31 +126,31 @@
                        IsVisible="{Binding Home.ShowRetry}" />
           </StackPanel>
 
-          <!-- Profile picker (saved profiles) when any exist; otherwise an add-profile button. -->
+          <!-- Config picker when any exist; otherwise an add-config button. -->
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6" Width="300" Margin="0,6,0,0">
             <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                      IsVisible="{Binding HasProfiles}"
-                      ItemsSource="{Binding Profile.ProfileOptions}"
-                      SelectedItem="{Binding Home.ActiveProfileChoice, Mode=TwoWay}">
+                      IsVisible="{Binding HasConfigs}"
+                      ItemsSource="{Binding Config.ConfigCatalogueOptions}"
+                      SelectedItem="{Binding Home.ActiveConfigChoice, Mode=TwoWay}">
               <controls:AdaptiveComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ProfileChoice">
+                <DataTemplate x:DataType="vm:ConfigChoice">
                   <TextBlock Text="{Binding Name}" />
                 </DataTemplate>
               </controls:AdaptiveComboBox.ItemTemplate>
             </controls:AdaptiveComboBox>
-            <!-- No profiles: add-profile button (opens the profile settings section). -->
+            <!-- No configs: add-config button (opens the config settings section). -->
             <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
-                    IsVisible="{Binding !HasProfiles}" Command="{Binding AddProfileCommand}">
+                    IsVisible="{Binding !HasConfigs}" Command="{Binding AddConfigCommand}">
               <StackPanel Orientation="Horizontal" Spacing="4">
                 <TextBlock Text="+" />
-                <TextBlock Text="{l:Tr Main_AddProfileButton}" />
+                <TextBlock Text="{l:Tr Main_AddConfigButton}" />
               </StackPanel>
             </Button>
-            <!-- No profiles: hint to add one in settings. -->
-            <TextBlock IsVisible="{Binding !HasProfiles}" Classes="muted" FontSize="12"
+            <!-- No configs: hint to add one in settings. -->
+            <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
-                       Text="{l:Tr Main_NoProfilesHint}" />
-            <!-- Profiles exist but none usable: hint to pick one. -->
+                       Text="{l:Tr Main_NoConfigsHint}" />
+            <!-- Configs exist but none picked: hint to pick one. -->
             <TextBlock IsVisible="{Binding Home.ShowSelectConfigHint}" Classes="muted" FontSize="12"
                        HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
                        Text="{l:Tr Main_HomeSelectConfigHint}" />
@@ -180,7 +180,7 @@
                navigation is never locked; deletion is confirmed inline. -->
           <Button Grid.Column="0" Classes="backbtn" VerticalAlignment="Center"
                   Command="{Binding NavBackCommand}"
-                  ToolTip.Tip="{l:Tr Main_BackToProfilesTooltip}">
+                  ToolTip.Tip="{l:Tr Main_BackTooltip}">
             <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
                       Foreground="{DynamicResource AgMutedBrush}" />
           </Button>
@@ -193,9 +193,6 @@
                        Foreground="{DynamicResource AgMutedBrush}"
                        IsVisible="{Binding !IsSectionDetail}" />
             <Panel IsVisible="{Binding IsSectionDetail}">
-              <TextBlock Text="{l:Tr Main_ProfileSection}" IsVisible="{Binding IsSettingsProfile}"
-                         FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
-                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
               <TextBlock Text="{l:Tr Main_ConfigSection}" IsVisible="{Binding IsSettingsConfig}"
                          FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
                          TextTrimming="CharacterEllipsis" Foreground="{DynamicResource AgMutedBrush}" />
@@ -269,27 +266,8 @@
         <ScrollViewer>
           <StackPanel x:Name="RailMenu" Classes="railmenu" Classes.compact="{Binding IsCompact}" Margin="12,12"
                       KeyboardNavigation.TabNavigation="Cycle">
-              <Button x:Name="RailProfile" Classes="rowselect" Classes.active="{Binding IsSettingsProfile}" Margin="0,3"
+              <Button x:Name="RailConfig" Classes="rowselect" Classes.active="{Binding IsSettingsConfig}" Margin="0,3"
                       XYFocus.Up="{Binding ElementName=RailGeneral}"
-                      Command="{Binding SelectSettingsCommand}" CommandParameter="profile">
-                <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
-                    <Ellipse Width="16" Height="16" StrokeThickness="2"
-                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                             IsVisible="{Binding IsSettingsProfile}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Grid>
-                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
-                    <TextBlock Text="{l:Tr Main_RailProfileTitle}" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="{l:Tr Main_RailProfileSubtitle}" FontSize="11.5" Classes="muted"
-                               TextTrimming="CharacterEllipsis" />
-                  </StackPanel>
-                </Grid>
-              </Button>
-
-              <Button Classes="rowselect" Classes.active="{Binding IsSettingsConfig}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="config">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
                   <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
@@ -366,7 +344,7 @@
               </Button>
 
               <Button x:Name="RailGeneral" Classes="rowselect" Classes.active="{Binding IsSettingsGeneral}" Margin="0,3"
-                      XYFocus.Down="{Binding ElementName=RailProfile}"
+                      XYFocus.Down="{Binding ElementName=RailConfig}"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="general">
                 <Grid ColumnDefinitions="Auto,*" Margin="12,7">
                   <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
@@ -418,16 +396,6 @@
                  template stays unrealized until the section is shown; the built view is kept afterwards, so
                  switching back is free. The viewport-derived sizes stay outside the templates: an element-name
                  binding does not cross a template's name scope. -->
-
-            <!-- PROFILE SECTION -->
-            <ContentControl IsVisible="{Binding IsSettingsProfile}" Content="{Binding Profile}"
-                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-              <ContentControl.ContentTemplate>
-                <DataTemplate x:DataType="vm:ProfileViewModel">
-                  <views:ProfileView />
-                </DataTemplate>
-              </ContentControl.ContentTemplate>
-            </ContentControl>
 
             <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 32px inset. -->
             <ContentControl IsVisible="{Binding IsSettingsConfig}" Content="{Binding Config}"
@@ -539,31 +507,6 @@
                   </StackPanel>
                 </Grid>
               </StackPanel>
-            </Border>
-            <!-- Static footer for profile: open-profile edits. Save / Cancel + unsaved indicator. -->
-            <Border IsVisible="{Binding Profile.ShowSaveBar}"
-                    Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
-                    BorderThickness="0,1,0,0" CornerRadius="0,0,13,13" MinHeight="52" Padding="18,7">
-              <!-- Compact drops the Save / Cancel pair under the unsaved-changes label so they never overlap it. -->
-              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
-                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-                  <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
-                  <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12" VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Right"
-                            Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}">
-                  <Button Classes="methodpick" Content="{l:Tr Main_CancelButton}"
-                          Width="120"
-                          Command="{Binding Profile.CancelSectionCommand}" />
-                  <Button Classes="accent" Content="{l:Tr Main_SaveButton}"
-                          Width="120" Padding="6"
-                          Command="{Binding Profile.SaveSectionCommand}"
-                          IsVisible="{Binding Profile.ShowSaveButton}"
-                          IsEnabled="{Binding Profile.CanSave}" />
-                </StackPanel>
-              </Grid>
             </Border>
             <!-- Static footer shared by the editable sections: a saved change that needs a reconnect takes the
                  strip the Save bar just left, offering the reconnect in place of Save / Cancel. -->

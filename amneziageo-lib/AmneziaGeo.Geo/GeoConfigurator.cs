@@ -52,6 +52,25 @@ public sealed class GeoConfigurator(IStateStore store, IGeoFileStore files)
         return await store.SaveRoutingListAsync(MaterializeRoutingList(listId, name, rules, index), ct);
     }
 
+    /// <summary>
+    /// Expands the role-tagged rule tokens without storing anything, so a draft can be measured before it is saved.
+    /// </summary>
+    public async Task<RoutingList> MaterializeDraftAsync(IReadOnlyList<string> ruleTokens, CancellationToken ct = default)
+    {
+        var rules = new List<GeoRule>();
+        foreach (var token in ruleTokens)
+        {
+            var rule = ParseRoleRule(token);
+            if (rule is not null)
+            {
+                rules.Add(rule);
+            }
+        }
+
+        var index = GeoIndex.Load(await store.ListGeoSourcesAsync(ct), files);
+        return MaterializeRoutingList(0, string.Empty, rules, index);
+    }
+
     // Bumped whenever a rule token starts covering something else, so stored lists are rebuilt against the new
     // expansion instead of keeping what an older version wrote.
     private const string MaterializerVersion = "2";

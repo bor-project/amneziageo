@@ -110,6 +110,13 @@ public static class IpcContract
     public const string OpGetRoutingList = "get-routing-list";
 
     /// <summary>
+    /// Command to count the routes a rule set would put into the tun. Args: [0] mode ("full" / "split"), then
+    /// role-tagged rule tokens. The ack message holds a JSON object { routes, limit }; limit 0 means the device
+    /// carries any number of them.
+    /// </summary>
+    public const string OpCountRoutes = "count-routes";
+
+    /// <summary>
     /// Command to assign or unassign a routing list to a profile and toggle its use.
     /// Args: profile name, list id (or "none"), "on" / "off".
     /// </summary>

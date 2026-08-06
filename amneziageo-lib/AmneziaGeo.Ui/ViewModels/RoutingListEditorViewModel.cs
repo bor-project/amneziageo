@@ -145,6 +145,90 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// </summary>
     public bool HasAnyRule => TotalRules > 0;
 
+    // The ceiling belongs to devices that build the tunnel without the relay: android below 10 turns the lists
+    // into routes at connect and hands them over in one transaction.
+    private static bool RouteBudgetApplies => OperatingSystem.IsAndroid() && !OperatingSystem.IsAndroidVersionAtLeast(29);
+
+    // The rule set the held answer belongs to; the same set is not asked about twice.
+    private string _budgetSignature = string.Empty;
+
+    // Discards a stale answer.
+    private int _budgetToken;
+
+    /// <summary>
+    /// Routes the current rules turn into.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RouteBudgetExceeded))]
+    private int _routeCount;
+
+    /// <summary>
+    /// Routes this device carries; 0 when it has no ceiling.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RouteBudgetExceeded))]
+    private int _routeLimit;
+
+    /// <summary>
+    /// True when the rules turn into more routes than the device carries.
+    /// </summary>
+    public bool RouteBudgetExceeded => RouteLimit > 0 && RouteCount > RouteLimit;
+
+    /// <summary>
+    /// Asks the agent what the current rules turn into and holds the answer.
+    /// </summary>
+    public async Task RefreshRouteBudgetAsync()
+    {
+        if (!RouteBudgetApplies)
+        {
+            return;
+        }
+
+        var rules = AllRoleTokens();
+        var signature = (GlobalProxyActive ? "full\n" : "split\n") + string.Join('\n', rules);
+        if (string.Equals(signature, _budgetSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var token = ++_budgetToken;
+        if (rules.Count == 0)
+        {
+            _budgetSignature = signature;
+            RouteCount = 0;
+            return;
+        }
+
+        var args = new List<string> { GlobalProxyActive ? "full" : "split" };
+        args.AddRange(rules);
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpCountRoutes, args));
+        if (token != _budgetToken || !ack.Ok)
+        {
+            return;
+        }
+
+        var (routes, limit) = ParseBudget(ack.Message);
+        _budgetSignature = signature;
+        RouteLimit = limit;
+        RouteCount = routes;
+    }
+
+    // Reads the { routes, limit } the agent answers with; a malformed ack reads as no ceiling.
+    private static (int Routes, int Limit) ParseBudget(string message)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(message);
+            var routes = doc.RootElement.TryGetProperty("routes", out var count) && count.TryGetInt32(out var value) ? value : 0;
+            var limit = doc.RootElement.TryGetProperty("limit", out var cap) && cap.TryGetInt32(out var ceiling) ? ceiling : 0;
+            return (routes, limit);
+        }
+        catch (JsonException)
+        {
+            return (0, 0);
+        }
+    }
+
     /// <summary>
     /// The Proxy bucket: tunneled while the global proxy is off.
     /// </summary>
@@ -179,7 +263,11 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [ObservableProperty]
     private bool _allUdpActive;
 
-    partial void OnGlobalProxyActiveChanged(bool value) => RefreshTransfer();
+    partial void OnGlobalProxyActiveChanged(bool value)
+    {
+        RefreshTransfer();
+        _ = RefreshRouteBudgetAsync();
+    }
 
     partial void OnAllUdpActiveChanged(bool value) => RefreshTransfer();
 
@@ -614,6 +702,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return false;
         }
 
+        // A list this device cannot carry is refused on a fresh count, not on whatever the last edit left behind.
+        await RefreshRouteBudgetAsync();
+        if (RouteBudgetExceeded)
+        {
+            ValidationMessage = Loc.Instance.Get("RoutingEditor_TooManyRoutes", RouteCount, RouteLimit);
+            return false;
+        }
+
         IsBusy = true;
         try
         {
@@ -691,6 +787,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
         OnPropertyChanged(nameof(HasAnyRule));
         RefreshTransfer();
+        _ = RefreshRouteBudgetAsync();
     }
 
     /// <inheritdoc />
@@ -705,6 +802,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
         if (TotalRules == 0)
         {
             ValidationMessage = Loc.Instance.Get("RoutingEditor_AddAtLeastOneEntry");
+            return false;
+        }
+
+        if (RouteBudgetExceeded)
+        {
+            ValidationMessage = Loc.Instance.Get("RoutingEditor_TooManyRoutes", RouteCount, RouteLimit);
             return false;
         }
 

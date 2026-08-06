@@ -191,11 +191,24 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool ShowSaveButton => !IsCreatingSectionRouting || IsImportManual;
 
     /// <summary>
-    /// Whether the footer Save button is enabled.
+    /// Whether the footer Save button is enabled. A list this device cannot carry is not saved at all.
     /// </summary>
-    public bool CanSave => IsCreatingSectionRouting
-        ? RoutingEditor is { IsNameMissing: false, HasAnyRule: true }
-        : IsEditDirty;
+    public bool CanSave => RoutingEditor is not { RouteBudgetExceeded: true }
+        && (IsCreatingSectionRouting
+            ? RoutingEditor is { IsNameMissing: false, HasAnyRule: true }
+            : IsEditDirty);
+
+    /// <summary>
+    /// Whether the footer says the list turns into more routes than the device carries.
+    /// </summary>
+    public bool ShowRouteBudgetWarning => RoutingEditor is { RouteBudgetExceeded: true };
+
+    /// <summary>
+    /// The warning line above the footer buttons.
+    /// </summary>
+    public string RouteBudgetWarning => RoutingEditor is { RouteBudgetExceeded: true } editor
+        ? Loc.Instance.Get("RoutingEditor_TooManyRoutes", editor.RouteCount, editor.RouteLimit)
+        : string.Empty;
 
     private void RefreshEditBar()
     {
@@ -203,6 +216,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowSaveBar));
         OnPropertyChanged(nameof(ShowSaveButton));
         OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(ShowRouteBudgetWarning));
+        OnPropertyChanged(nameof(RouteBudgetWarning));
     }
 
     // Re-raise the computed section flags after an observable driver changes.

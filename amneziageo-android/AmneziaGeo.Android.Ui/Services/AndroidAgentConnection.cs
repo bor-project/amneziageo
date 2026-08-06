@@ -11,6 +11,7 @@ using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Routing;
 using AmneziaGeo.Ui.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -243,6 +244,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpGetRoutingList:
                 return await GetRoutingListAsync(args);
+
+            case IpcContract.OpCountRoutes:
+                return await CountRoutesAsync(args);
 
             case IpcContract.OpRemoveRoutingList:
                 return await RemoveRoutingListAsync(args);
@@ -876,6 +880,34 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         return new IpcAck(true, string.Join('\n', list.Rules.Select(GeoConfigurator.FormatWithRole)));
+    }
+
+    // Counts the routes a draft rule set puts into the tun, so the editor can refuse a list this device cannot
+    // carry. A device with the relay reports no ceiling.
+    private async Task<IpcAck> CountRoutesAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1)
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        try
+        {
+            await EnsureGeoFilesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("geo", $"route count runs on the geo files at hand: {ex.Message}");
+        }
+
+        var full = string.Equals(args[0], "full", StringComparison.OrdinalIgnoreCase);
+        var draft = await _geo.MaterializeDraftAsync([.. args.Skip(1)]).ConfigureAwait(false);
+        // A name carries no address until connect, where it resolves and cuts or adds about two routes.
+        var names = draft.Domains.Count + draft.DirectDomains.Count + draft.BlockDomains.Count;
+        var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
+        var limit = RouteBudget.Applies ? RouteBudget.Max : 0;
+        return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)},\"limit\":{limit.ToString(CultureInfo.InvariantCulture)}}}");
     }
 
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args)

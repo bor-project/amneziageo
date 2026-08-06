@@ -197,6 +197,14 @@ public sealed class GeoVpnService : VpnService
             _proxyPort = relay?.Start() ?? 0;
             _relay = relay;
             var rules = await MaterializeAsync(plan, servers, _proxyPort > 0).ConfigureAwait(false);
+            if (RouteBudget.Applies && rules.Tunneled.Count > RouteBudget.Max)
+            {
+                Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
+                    + "transaction; shorten the routing list or run it on android 10 or newer");
+                Teardown(VpnStage.Failed, $"too many routes: {rules.Tunneled.Count} of {RouteBudget.Max}");
+                return;
+            }
+
             var pfd = BuildTunnel(resolved, name, appMode, appList, mtu, ipv6, rules.Tunneled, servers, _proxyPort);
             if (pfd is null)
             {

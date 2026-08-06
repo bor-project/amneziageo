@@ -1198,6 +1198,9 @@
   <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
     <value>This is the shared WebView2 host and would tunnel every app that uses WebView2. Add the specific application instead - its in-app web traffic is routed with it.</value>
   </data>
+  <data name="RoutingEditor_TooManyRoutes" xml:space="preserve">
+    <value>The list turns into {0} routes, this device carries {1}. Shorten it, or move the ranges out of the tunnel.</value>
+  </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>All local subnets are already in the list.</value>
   </data>

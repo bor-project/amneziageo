@@ -1198,6 +1198,9 @@
   <data name="RoutingEditor_WebViewHostTooBroad" xml:space="preserve">
     <value>Это общий хост WebView2 - правило на нём затуннелит все приложения на WebView2. Добавьте конкретное приложение, его веб-трафик пойдёт вместе с ним.</value>
   </data>
+  <data name="RoutingEditor_TooManyRoutes" xml:space="preserve">
+    <value>Список разворачивается в {0} маршрутов, устройство выдерживает {1}. Сократите список или уберите диапазоны из туннеля.</value>
+  </data>
   <data name="RoutingSettings_AllLocalSubnetsPresent" xml:space="preserve">
     <value>Все локальные сети уже в списке.</value>
   </data>

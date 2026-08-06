@@ -1,0 +1,135 @@
+# Builds all three platforms on every branch push so a break surfaces before a tag, and runs the tests.
+# Nothing is published: the packages are versioned 0.0.1.<commit count> and land as run artifacts.
+# The release pipeline (release.yml) is what a v* tag drives.
+name: build
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - 'README.md'
+      - 'README.ru.md'
+      - 'LICENSE'
+      - '.github/FUNDING.yml'
+      - '.github/CODEOWNERS'
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (submodules + tags)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Cache the engine toolchain
+        # .deps holds Go, llvm-mingw and wintun; build-engine-win7.ps1 re-downloads only what is missing.
+        uses: actions/cache@v4
+        with:
+          path: amneziageo-windows/amneziawg-windows/.deps
+          key: awg-deps-${{ hashFiles('amneziageo-windows/tools/build-engine-win7.ps1') }}
+
+      - name: Build the AmneziaWG engine (tunnel.dll)
+        shell: pwsh
+        run: ./amneziageo-windows/tools/build-engine-win7.ps1 -Arch x64
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build the solution
+        run: dotnet build AmneziaGeo.Windows.slnx -c Release
+
+      - name: Run the tests
+        run: dotnet test amneziageo-tests/AmneziaGeo.Tests/AmneziaGeo.Tests.csproj -c Release
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (submodules + tags)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: amneziageo-android/amneziawg-go/go.mod
+          cache: false
+
+      - name: Build the AmneziaWG daemon
+        run: amneziageo-linux/tools/build-engine-linux.sh
+
+      - name: Build the Debian packages
+        # amd64 only: the arm64 cross-build has its own job in the release pipeline.
+        run: amneziageo-linux/tools/build-deb.sh --arch amd64
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-amd64
+          path: dist/*.deb
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (submodules + tags)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: amneziageo-android/libamneziawg-go/go.mod
+          cache: false
+
+      - name: Install the .NET Android workload
+        run: dotnet workload install android
+
+      - name: Ensure the SDK platforms the app targets
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$sdkmanager" "platforms;android-35" "platforms;android-36" > /dev/null
+
+      - name: Build the native engine
+        run: amneziageo-android/tools/build-engine-android.sh
+
+      - name: Build the APK
+        # Debug: no AOT, so a push costs minutes instead of half an hour. The release pipeline builds Release.
+        run: amneziageo-android/tools/build-apk.sh --config Debug
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-debug
+          path: amneziageo-android/tools/dist/*.apk
+          if-no-files-found: error

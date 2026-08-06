@@ -1,10 +1,13 @@
-# Builds the Windows installers in CI and publishes them as a GitHub Release on every tag push (v*).
-# The build job is a 2x2 matrix: {x64, arm64} x {fdd (framework-dependent), scd (self-contained)} = 4
-# installers, each its own runner (fail-fast off, so a broken arch still ships the ones that build).
+# Builds every platform in CI and publishes the results as a GitHub Release on every tag push (v*).
+# Windows: a 2x2 matrix {x64, arm64} x {fdd (framework-dependent), scd (self-contained)} = 4 installers.
+# Linux:   the amneziageo and amneziageo-gui Debian packages for amd64 and arm64.
+# Android: one APK carrying arm64-v8a, armeabi-v7a and x86_64.
+# Every job is its own runner with fail-fast off, so a broken target still ships the ones that build.
 # Bundles are UNSIGNED. Once SignPath is configured (SIGNPATH_ORGANIZATION_ID variable +
 # SIGNPATH_API_TOKEN secret) the sign job submits them to SignPath and the release ships signed; until
 # then the release is unsigned. The signing key never lives in the repo or on the runner
 # (installer.config.ci.json sets signingCert = null, so the local signtool path is skipped).
+# The APK takes the SDK debug key unless the ANDROID_KEYSTORE_BASE64 secret holds a release keystore.
 name: build & sign release
 
 on:
@@ -78,6 +81,128 @@ jobs:
           path: amneziageo-windows/installer/AmneziaGeo.Windows.Installer.Bundle/dist/*.exe
           if-no-files-found: error
 
+  # Debian packages: amneziageo (agent, engine, console client, systemd unit) and amneziageo-gui.
+  # Both are self-contained, so the target machine needs neither the .NET runtime nor Go. The arm64
+  # package is cross-built on the x64 runner: `dotnet publish -r linux-arm64` and a CGO-free `go build`
+  # both cross-compile, and dpkg-deb only writes the archive.
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout (submodules + tags)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0   # version falls back to 0.0.1.<commit count> off a tag
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: amneziageo-android/amneziawg-go/go.mod
+          cache: false
+
+      - name: Build the AmneziaWG daemon
+        # Engine.targets refuses to build the agent until this binary exists; build-deb.sh then rebuilds
+        # it for the package architecture.
+        run: amneziageo-linux/tools/build-engine-linux.sh
+
+      - name: Build the Debian packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--arch ${{ matrix.arch }})
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
+            args+=(--version "$ver")
+          fi
+          amneziageo-linux/tools/build-deb.sh "${args[@]}"
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # One APK for all three ABIs. Release is AOT-compiled: a weak TV box starts about twice as fast.
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (submodules + tags)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: amneziageo-android/libamneziawg-go/go.mod
+          cache: false
+
+      - name: Install the .NET Android workload
+        run: dotnet workload install android
+
+      - name: Ensure the SDK platforms the app targets
+        # The runner image carries most of them; installing is idempotent and keeps the build off a
+        # "missing android.jar" error when the image moves on.
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$sdkmanager" "platforms;android-35" "platforms;android-36" > /dev/null
+
+      - name: Build the native engine
+        run: amneziageo-android/tools/build-engine-android.sh
+
+      - name: Build the APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_STORE_PASS: ${{ secrets.ANDROID_STORE_PASS }}
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          set -euo pipefail
+          # A debug-signed APK never upgrades over one signed elsewhere: the SDK key is generated per
+          # machine. Set the ANDROID_KEYSTORE_BASE64 secret to sign every release with one key.
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export ANDROID_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          fi
+          args=(--config Release)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
+            args+=(--version "$ver")
+          fi
+          amneziageo-android/tools/build-apk.sh "${args[@]}"
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: amneziageo-android/tools/dist/*.apk
+          if-no-files-found: error
+
   sign:
     needs: build
     runs-on: ubuntu-latest
@@ -118,21 +243,22 @@ jobs:
           path: signed/*.exe
           if-no-files-found: error
 
-  # Publishes the GitHub Release that the app's auto-update reads. update.json + the installers are
-  # attached as assets. A stable client polls https://github.com/<repo>/releases/latest/download/update.json;
-  # a prerelease (allowPrerelease) client finds the newest release via the releases API. Either way the client
-  # builds its own installer name (AmneziaGeo-<version>-<its build target>.exe) from the manifest version, so
-  # each arch/payload downloads its own file; `setup` stays as a legacy fallback. Runs on a tag push whether or
-  # not signing ran, preferring signed installers and falling back to the unsigned ones.
+  # Publishes the GitHub Release that the app's auto-update reads. update.json + the installers, packages
+  # and the APK are attached as assets. A stable client polls
+  # https://github.com/<repo>/releases/latest/download/update.json; a prerelease (allowPrerelease) client
+  # finds the newest release via the releases API. Either way the client builds its own installer name
+  # (AmneziaGeo-<version>-<its build target>.exe) from the manifest version, so each arch/payload downloads
+  # its own file; `setup` stays as a legacy fallback. Runs on a tag push whether or not signing ran,
+  # preferring signed installers and falling back to the unsigned ones.
   publish:
-    needs: [build, sign]
+    needs: [build, build-linux, build-android, sign]
     runs-on: ubuntu-latest
-    # always() + tag: publish whatever built even if some arch failed or the sign job was skipped. It does
-    # NOT gate on needs.build.result, so a partial matrix (e.g. x64 ok, arm64 broken) still ships.
+    # always() + tag: publish whatever built even if some target failed or the sign job was skipped. It does
+    # NOT gate on needs.*.result, so a partial matrix (e.g. x64 ok, arm64 broken) still ships.
     if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
     steps:
       # Grab every artifact of this run into artifacts/<name>/. Downloading by a specific name would fail
-      # when that arch/variant did not build, so download all and pick below.
+      # when that target did not build, so download all and pick below.
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -145,38 +271,51 @@ jobs:
           shopt -s nullglob
           mkdir -p release
           # Prefer signed over unsigned when both exist (signed dirs are globbed first; dedup by basename).
-          for f in artifacts/installer-signed-*/*.exe artifacts/installer-unsigned-*/*.exe; do
+          for f in artifacts/installer-signed-*/*.exe artifacts/installer-unsigned-*/*.exe \
+                   artifacts/deb-*/*.deb artifacts/apk/*.apk; do
             b=$(basename "$f")
             if [ ! -e "release/$b" ]; then cp "$f" "release/$b"; echo "asset: $b"; fi
           done
-          count=$(ls release/*.exe 2>/dev/null | wc -l)
-          [ "$count" -ge 1 ] || { echo "no installers built; nothing to publish"; exit 1; }
+          count=$(ls release | wc -l)
+          [ "$count" -ge 1 ] || { echo "nothing built; nothing to publish"; exit 1; }
+          # The tag is the version every job was told to build with.
+          VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
           # Legacy fallback entry point = x64 framework-dependent. New clients ignore update.json.setup and
           # build their own per-build installer name; setup only serves clients with no baked build target.
           SETUP=$(ls release/AmneziaGeo-*-win-x64-fdd.exe 2>/dev/null | head -1 || true)
-          if [ -n "$SETUP" ]; then
-            VER=$(basename "$SETUP" | sed -n 's/^AmneziaGeo-\(.*\)-win-x64-fdd\.exe$/\1/p')
-          else
-            SETUP=$(ls release/*.exe | head -1)
-            VER=$(basename "$SETUP" | sed -n 's/^AmneziaGeo-\(.*\)-win-.*\.exe$/\1/p')
-            echo "WARNING: x64-fdd absent; auto-update entry = $(basename "$SETUP")"
+          if [ -z "$SETUP" ]; then
+            SETUP=$(ls release/*.exe 2>/dev/null | head -1 || true)
+            echo "WARNING: x64-fdd absent; auto-update entry = ${SETUP:-none}"
           fi
-          [ -n "$VER" ] || { echo "cannot parse version from $(basename "$SETUP")"; exit 1; }
-          SETUP_NAME=$(basename "$SETUP")
+          SETUP_NAME=$([ -n "$SETUP" ] && basename "$SETUP" || echo '')
           # Self-describing manifest: version + channel (stable vs prerelease from the tag) + an installers
           # array (one per published asset: platform/arch/variant) so the check is scoped to the installed
           # distribution. `setup` stays a legacy fallback; new clients build their own per-build name.
           CHANNEL=stable
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then CHANNEL=prerelease; fi
+          # SHA-256 lets the client verify the downloaded file before it runs it.
           installers_json=$(
             for f in release/AmneziaGeo-*.exe; do
               b=$(basename "$f")
               rest=${b#AmneziaGeo-${VER}-}; rest=${rest%.exe}   # win-<arch> (scd) or win-<arch>-<variant> (fdd)
               arch=$(echo "$rest" | sed -n 's/^win-\([^-]*\).*/\1/p')
               variant=$(echo "$rest" | sed -n 's/^win-[^-]*-\(.*\)/\1/p'); variant=${variant:-scd}
-              # SHA-256 lets the client verify the downloaded installer before it runs it.
               sha=$(sha256sum "$f" | cut -d' ' -f1)
               jq -n --arg name "$b" --arg platform windows --arg arch "$arch" --arg variant "$variant" --arg sha256 "$sha" \
+                 '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256}'
+            done
+            for f in release/*.deb; do
+              b=$(basename "$f")
+              rest=${b%.deb}                                   # <package>_<version>_<arch>
+              sha=$(sha256sum "$f" | cut -d' ' -f1)
+              jq -n --arg name "$b" --arg platform linux --arg arch "${rest##*_}" --arg variant "${rest%%_*}" --arg sha256 "$sha" \
+                 '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256}'
+            done
+            for f in release/*.apk; do
+              b=$(basename "$f")
+              sha=$(sha256sum "$f" | cut -d' ' -f1)
+              # One package carries every ABI the engine is built for.
+              jq -n --arg name "$b" --arg platform android --arg arch universal --arg variant apk --arg sha256 "$sha" \
                  '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256}'
             done | jq -s '.'
           )
@@ -202,4 +341,4 @@ jobs:
           # A suffixed tag (v1.2.3.4-beta.1) ships as a prerelease so it never becomes the stable "latest";
           # only allowPrerelease builds discover it, via the GitHub releases API. Plain tags mark --latest.
           if [[ "$TAG" == *-* ]]; then CHANNEL="--prerelease"; else CHANNEL="--latest"; fi
-          gh release create "$TAG" $CHANNEL --title "AmneziaGeo ${TAG#v}" --notes "AmneziaGeo ${TAG#v}" release/*.exe release/update.json
+          gh release create "$TAG" $CHANNEL --title "AmneziaGeo ${TAG#v}" --notes "AmneziaGeo ${TAG#v}" release/*

@@ -30,7 +30,7 @@
   <!-- Stops with build steps when the gitignored native Go engine is absent. -->
   <Target Name="CheckNativeEngine" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true'">
     <Error Condition="!Exists('%(AndroidNativeLibrary.Identity)')"
-           Text="Native engine '%(AndroidNativeLibrary.Identity)' is missing (gitignored artifact). Build it first:%0A  git submodule update --init --recursive%0A  powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\tools\build-engine-android.ps1&quot;" />
+           Text="Native engine '%(AndroidNativeLibrary.Identity)' is missing (gitignored artifact). Build it first:%0A  git submodule update --init --recursive%0A  powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\tools\build-engine-android.ps1&quot;%0Aon Linux and macOS:%0A  bash amneziageo-android/tools/build-engine-android.sh" />
   </Target>
 
 </Project>

@@ -72,6 +72,15 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     public StatusSnapshot? Latest { get; private set; }
 
     /// <summary>
+    /// Awaits the store load and republishes the snapshot it filled.
+    /// </summary>
+    public async Task ReadyAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        PushSnapshot();
+    }
+
+    /// <summary>
     /// ctor
     /// </summary>
     public AndroidAgentConnection()
@@ -876,7 +885,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await EnsureInitAsync().ConfigureAwait(false);
         await _store.RemoveRoutingListAsync(id).ConfigureAwait(false);
 
-        // Falls back to a full tunnel when the removed list was the selected one.
+        // Turns routing off when the removed list was the selected one.
         if (_selectedRoutingList == id)
         {
             _selectedRoutingList = null;
@@ -1249,7 +1258,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _transports = transports;
     }
 
-    // Picks the routing list every config uses. Args: list id, or "none" for a full tunnel.
+    // Picks the routing list every config uses. Args: list id, or "none" to turn routing off.
     private IpcAck AssignRouting(IReadOnlyList<string> args)
     {
         var listArg = args.Count > 0 ? args[0] : "none";
@@ -1750,7 +1759,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         if (_selectedRoutingList is not { } listId)
         {
-            report.Append("routing list : (full tunnel)\n");
+            report.Append("routing list : (off)\n");
             return;
         }
 

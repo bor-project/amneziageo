@@ -35,8 +35,10 @@ internal sealed class AndroidCliHost : ICliHost
         var agent = AndroidAgentConnection.Current ?? new AndroidAgentConnection();
         agent.Start();
 
+        // Waits for the loaded snapshot, not the first one: routing lists and transports arrive with the store.
+        var ready = agent.ReadyAsync();
         var deadline = DateTime.UtcNow + connectWait;
-        while (agent.Latest is null && DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
+        while (!ready.IsCompleted && DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
         {
             await Task.Delay(50, ct).ConfigureAwait(false);
         }

@@ -296,7 +296,9 @@ jobs:
           CHANNEL=stable
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then CHANNEL=prerelease; fi
           # SHA-256 lets the client verify the downloaded file before it runs it.
+          # The slurp has to take all three loops; on the last one alone the other objects arrive raw.
           installers_json=$(
+            {
             for f in release/AmneziaGeo-*.exe; do
               b=$(basename "$f")
               rest=${b#AmneziaGeo-${VER}-}; rest=${rest%.exe}   # win-<arch> (scd) or win-<arch>-<variant> (fdd)
@@ -319,7 +321,8 @@ jobs:
               # One package carries every ABI the engine is built for.
               jq -n --arg name "$b" --arg platform android --arg arch universal --arg variant apk --arg sha256 "$sha" \
                  '{name:$name, platform:$platform, arch:$arch, variant:$variant, sha256:$sha256}'
-            done | jq -s '.'
+            done
+            } | jq -s '.'
           )
           jq -n --arg version "$VER" --arg description "AmneziaGeo $VER" --arg channel "$CHANNEL" \
              --arg setup "$SETUP_NAME" --argjson installers "$installers_json" \

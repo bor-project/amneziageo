@@ -33,6 +33,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private DispatcherTimer? _autoUpdateTimer;
     private bool _autoCheckArmed;
 
+    // The Linux agent owns the update: it downloads the packages and hands them to the package manager, so the
+    // window only relays the commands and mirrors the state the snapshot carries.
+    private readonly bool _agentUpdates = OperatingSystem.IsLinux();
+    private string _agentPhase = string.Empty;
+    private string? _installingVersion;
+
     // Set by the host to run the byte-pump under the process-alive pin, so closing a window mid-download neither
     // quits the app nor aborts the download (#21). Falls back to a direct download when unset.
     private Action? _pinnedDownloadRunner;
@@ -321,6 +327,33 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         _updateSetupUrl = snapshot.UpdateSetupUrl;
         _expectedSha256 = snapshot.UpdateSetupSha256;
 
+        if (_agentUpdates)
+        {
+            ApplyAgentDownloadState(snapshot);
+        }
+        else
+        {
+            ApplyOwnDownloadState(snapshot);
+        }
+
+        if (snapshot.UpdateAvailable && !string.IsNullOrEmpty(snapshot.UpdateVersion))
+        {
+            if (!string.Equals(snapshot.UpdateVersion, _bannerUpdateVersion, StringComparison.Ordinal))
+            {
+                _bannerUpdateVersion = snapshot.UpdateVersion;
+                UpdateBannerVisible = true;
+            }
+        }
+        else
+        {
+            UpdateBannerVisible = false;
+            _bannerUpdateVersion = null;
+        }
+    }
+
+    // Windows: this process owns the setup byte-pump, so the snapshot only carries what another window did.
+    private void ApplyOwnDownloadState(StatusSnapshot snapshot)
+    {
         // A cancel was requested (e.g. the tray is exiting during a download): abort the in-flight byte-pump so
         // it deletes its partial and returns to the available state (#21). Null-guarded, so a stale request after
         // the download already ended is a no-op. The flag lets a windowless worker exit instead of surfacing the
@@ -356,20 +389,55 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             _downloadedSetupPath = null;
             _downloadedVersion = null;
         }
+    }
 
-        if (snapshot.UpdateAvailable && !string.IsNullOrEmpty(snapshot.UpdateVersion))
+    // Linux: the agent runs the download and the install, so the window follows the phase it publishes.
+    private void ApplyAgentDownloadState(StatusSnapshot snapshot)
+    {
+        UpdateDownloading = snapshot.UpdateDownloading;
+        UpdateDownloadPercent = snapshot.UpdateDownloadPercent;
+        UpdateDownloaded = snapshot.UpdateDownloaded && !snapshot.UpdateInstalling;
+        _downloadedSetupPath = snapshot.UpdateSetupPath;
+        _downloadedVersion = snapshot.UpdateVersion;
+
+        // The agent comes back on the new version; this window keeps the old one until it is restarted too.
+        if (_installingVersion is { Length: > 0 } installing
+            && string.Equals(snapshot.AgentVersion, installing, StringComparison.Ordinal))
         {
-            if (!string.Equals(snapshot.UpdateVersion, _bannerUpdateVersion, StringComparison.Ordinal))
-            {
-                _bannerUpdateVersion = snapshot.UpdateVersion;
-                UpdateBannerVisible = true;
-            }
+            _installingVersion = null;
+            _agentPhase = string.Empty;
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateRestartApp");
+            return;
         }
-        else
+
+        // Only a phase change writes the status line, so a manual check's own result is not overwritten.
+        var phase = UpdatePhaseKey(snapshot);
+        if (!string.Equals(phase, _agentPhase, StringComparison.Ordinal))
         {
-            UpdateBannerVisible = false;
-            _bannerUpdateVersion = null;
+            _agentPhase = phase;
+            UpdateStatus = phase.Length == 0 ? string.Empty : Loc.Instance.Get(phase);
         }
+    }
+
+    // Resource key for the phase the agent publishes; empty while it is idle.
+    private static string UpdatePhaseKey(StatusSnapshot snapshot)
+    {
+        if (snapshot.UpdateInstalling)
+        {
+            return "MainVm_UpdateInstalling";
+        }
+
+        if (snapshot.UpdateDownloadFailed)
+        {
+            return "MainVm_UpdateDownloadFailed";
+        }
+
+        if (snapshot.UpdateDownloading)
+        {
+            return "MainVm_UpdateDownloading";
+        }
+
+        return snapshot.UpdateDownloaded ? "MainVm_UpdateReadyToInstall" : string.Empty;
     }
 
     /// <summary>
@@ -487,6 +555,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [RelayCommand]
     private void DownloadUpdate()
     {
+        if (_agentUpdates)
+        {
+            _ = SendUpdateCommandAsync(IpcContract.OpDownloadUpdate);
+            return;
+        }
+
         if (_pinnedDownloadRunner is not null)
         {
             _pinnedDownloadRunner();
@@ -575,7 +649,30 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [RelayCommand]
     private void CancelDownload()
     {
+        if (_agentUpdates)
+        {
+            _ = SendUpdateCommandAsync(IpcContract.OpCancelUpdateDownload);
+            return;
+        }
+
         _downloadCts?.Cancel();
+    }
+
+    // Relays an update command to the agent that owns the flow.
+    private async Task SendUpdateCommandAsync(string op)
+    {
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(op, []));
+            if (!ack.Ok)
+            {
+                UpdateStatus = ack.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateError", ex.Message);
+        }
     }
 
     // Forwards a diagnostic line to the agent log; the UI process keeps no log of its own.
@@ -599,6 +696,24 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     {
         if (!UpdateDownloaded || string.IsNullOrEmpty(_downloadedSetupPath))
         {
+            return;
+        }
+
+        // The Linux packages are installed by the agent: it holds root and outlives the restart the install
+        // triggers, so the window only asks for it and waits for the version to change.
+        if (_agentUpdates)
+        {
+            _installingVersion = UpdateVersion;
+            _agentPhase = "MainVm_UpdateInstalling";
+            UpdateStatus = Loc.Instance.Get("MainVm_UpdateInstalling");
+            var started = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpApplyUpdate, []));
+            if (!started.Ok)
+            {
+                _installingVersion = null;
+                _agentPhase = string.Empty;
+                UpdateStatus = started.Message;
+            }
+
             return;
         }
 

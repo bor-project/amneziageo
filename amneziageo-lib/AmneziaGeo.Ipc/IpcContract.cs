@@ -255,6 +255,18 @@ public static class IpcContract
     public const string OpCancelUpdateDownload = "cancel-download";
 
     /// <summary>
+    /// Command to download the update the last check resolved. No args. Used where the agent owns the
+    /// download (Linux packages); the phase rides the next status snapshot.
+    /// </summary>
+    public const string OpDownloadUpdate = "download-update";
+
+    /// <summary>
+    /// Command to install the downloaded update. No args. Used where the agent owns the install (Linux
+    /// packages): it verifies the packages and hands them to the system package manager.
+    /// </summary>
+    public const string OpApplyUpdate = "apply-update";
+
+    /// <summary>
     /// Command to seed the default geo sources (if none) and synchronously download every source and
     /// re-materialize the routing lists. No args. Used by the installer's "download lists" step; the ack
     /// returns a human-readable result and Ok=false on any download failure (non-fatal to the caller).

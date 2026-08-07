@@ -15,6 +15,9 @@ ICU="libicu78 | libicu77 | libicu76 | libicu74 | libicu72 | libicu71 | libicu70"
 OUT="$ROOT/dist"
 CONFIGURATION="Release"
 WITH_GUI="yes"
+# Release manifest the packaged agent checks itself against; empty leaves the update section hidden.
+UPDATE_URL="https://github.com/bor-project/amneziageo/releases/latest/download/update.json"
+PRERELEASE=""
 
 usage() {
   cat <<EOF
@@ -25,6 +28,8 @@ usage: build-deb.sh [options]
   --out <dir>         where the packages land (default: $OUT)
   --debug             build the Debug configuration
   --no-gui            skip the amneziageo-gui package
+  --update-url <url>  update manifest the agent checks against (empty turns the check off)
+  --prerelease        keep the build on the prerelease channel
   --help              this help
 
 One build gives two packages per architecture: amneziageo (agent, engine, console client and the
@@ -43,6 +48,8 @@ while [ $# -gt 0 ]; do
     --out) OUT="$2"; shift 2 ;;
     --debug) CONFIGURATION="Debug"; shift ;;
     --no-gui) WITH_GUI="no"; shift ;;
+    --update-url) UPDATE_URL="$2"; shift 2 ;;
+    --prerelease) PRERELEASE="1"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
@@ -116,6 +123,8 @@ stage_core() {
       -r "$rid" \
       --self-contained true \
       -p:Version="$VERSION" \
+      -p:UpdateUrl="$UPDATE_URL" \
+      -p:AllowPrerelease="$PRERELEASE" \
       -o "$libdir" \
       -v minimal \
       --nologo

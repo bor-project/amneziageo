@@ -5,6 +5,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using AmneziaGeo.Linux.Ui.Services;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Desktop;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -36,6 +37,7 @@ public sealed partial class App : Application
                 _ => ThemeVariant.Default,
             };
             Loc.Instance.ApplyStartupCulture(prefs.Language);
+            DesktopQrScanning.Register();
 
             var connection = new AgentConnection();
             _connection = connection;

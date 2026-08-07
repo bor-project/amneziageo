@@ -1745,4 +1745,46 @@
   <data name="MainVm_NoticeConfigSelected" xml:space="preserve">
     <value>Выбрана конфигурация «{0}». Переподключитесь, чтобы применить.</value>
   </data>
+  <data name="Agent_UpdateNotPackaged" xml:space="preserve">
+    <value>Приложение установлено не из пакета, обновлять нечего.</value>
+  </data>
+  <data name="Agent_UpdateNoPackageForArch" xml:space="preserve">
+    <value>В релизе нет пакета {0} для {1}.</value>
+  </data>
+  <data name="Agent_UpdateNothingToDownload" xml:space="preserve">
+    <value>Обновление не предлагается.</value>
+  </data>
+  <data name="Agent_UpdateDownloadStarted" xml:space="preserve">
+    <value>Скачивается {0}.</value>
+  </data>
+  <data name="Agent_UpdateDownloadRunning" xml:space="preserve">
+    <value>Скачивание уже идёт.</value>
+  </data>
+  <data name="Agent_UpdateNoDownloadRunning" xml:space="preserve">
+    <value>Скачивание не запущено.</value>
+  </data>
+  <data name="Agent_UpdateDownloadCancelled" xml:space="preserve">
+    <value>Скачивание отменено.</value>
+  </data>
+  <data name="Agent_UpdateNothingDownloaded" xml:space="preserve">
+    <value>Ничего не скачано.</value>
+  </data>
+  <data name="Agent_UpdateVerifyFailed" xml:space="preserve">
+    <value>{0} не совпадает с опубликованной контрольной суммой.</value>
+  </data>
+  <data name="Agent_UpdateNoTransientUnit" xml:space="preserve">
+    <value>Нет systemd-run; поставьте пакеты вручную: sudo apt install {0}</value>
+  </data>
+  <data name="Agent_UpdateInstallStarted" xml:space="preserve">
+    <value>Устанавливается {0}.</value>
+  </data>
+  <data name="Agent_UpdateInstallFailed" xml:space="preserve">
+    <value>Установка не запустилась: {0}</value>
+  </data>
+  <data name="MainVm_UpdateInstalling" xml:space="preserve">
+    <value>Устанавливается…</value>
+  </data>
+  <data name="MainVm_UpdateRestartApp" xml:space="preserve">
+    <value>Обновлено. Перезапустите приложение.</value>
+  </data>
 </root>

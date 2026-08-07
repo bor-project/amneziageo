@@ -122,6 +122,8 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
             args+=(--version "$ver")
+            # A prerelease tag bakes the beta channel so the package does not offer the stable latest.
+            if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
           fi
           amneziageo-linux/tools/build-deb.sh "${args[@]}"
 

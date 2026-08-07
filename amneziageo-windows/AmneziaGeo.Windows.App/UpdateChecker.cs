@@ -1,6 +1,5 @@
 using System.Net.Http;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -14,8 +13,6 @@ internal sealed record UpdateInfo(bool Available, string Version, string SetupUr
 /// </summary>
 internal sealed class UpdateChecker(HttpClient http)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
-
     public async Task<UpdateInfo?> CheckAsync(
         string metadataUrl, string currentVersion, string buildTarget, bool allowPrerelease, CancellationToken ct = default)
     {
@@ -26,7 +23,7 @@ internal sealed class UpdateChecker(HttpClient http)
 
         // Prerelease channel: pick the newest release including prereleases via the GitHub API. Falls back to
         // the stable metadata URL when it is not a GitHub release URL or the API is unreachable.
-        if (allowPrerelease && TryGitHubRepo(metadataUrl, out var owner, out var repo))
+        if (allowPrerelease && UpdateFeed.TryGitHubRepo(metadataUrl, out var owner, out var repo))
         {
             var pre = await CheckViaGitHubAsync(owner, repo, currentVersion, buildTarget, ct);
             if (pre is not null)
@@ -42,8 +39,7 @@ internal sealed class UpdateChecker(HttpClient http)
     private async Task<UpdateInfo?> CheckViaGitHubAsync(
         string owner, string repo, string currentVersion, string buildTarget, CancellationToken ct)
     {
-        var api = $"https://api.github.com/repos/{owner}/{repo}/releases?per_page=20";
-        using var req = new HttpRequestMessage(HttpMethod.Get, api);
+        using var req = new HttpRequestMessage(HttpMethod.Get, UpdateFeed.ReleasesUrl(owner, repo));
         req.Headers.TryAddWithoutValidation("User-Agent", "AmneziaGeo-UpdateChecker");
         req.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
 
@@ -64,111 +60,34 @@ internal sealed class UpdateChecker(HttpClient http)
         return BuildInfo(json, new Uri(manifestUrl), currentVersion, buildTarget);
     }
 
-    // Takes the manifest of the highest released version; a stable release wins over a prerelease of the same version.
-    internal static string? SelectManifestUrl(string releasesJson)
-    {
-        var releases = JsonSerializer.Deserialize<List<GhRelease>>(releasesJson, JsonOptions);
-        return releases?
-            .Where(r => r is { Draft: false, Assets: not null })
-            .OrderByDescending(r => TagVersion(r.TagName))
-            .ThenBy(r => r.Prerelease)
-            .Select(r => r.Assets!
-                .FirstOrDefault(a => string.Equals(a.Name, "update.json", StringComparison.OrdinalIgnoreCase))?.Url)
-            .FirstOrDefault(url => !string.IsNullOrWhiteSpace(url));
-    }
-
-    // Reads the numeric part of a release tag (v1.2.3.4-beta -> 1.2.3.4); an unparsable tag sorts lowest.
-    private static System.Version TagVersion(string? tag)
-    {
-        var text = (tag ?? string.Empty).TrimStart('v', 'V');
-        var suffix = text.IndexOfAny(['-', '+']);
-        if (suffix >= 0)
-        {
-            text = text[..suffix];
-        }
-
-        return System.Version.TryParse(text, out var version) ? version : new System.Version(0, 0);
-    }
+    // Release picking lives in the shared feed; both agents order the same way.
+    internal static string? SelectManifestUrl(string releasesJson) => UpdateFeed.SelectManifestUrl(releasesJson);
 
     private static UpdateInfo? BuildInfo(string json, Uri baseUrl, string currentVersion, string buildTarget)
     {
-        var meta = JsonSerializer.Deserialize<UpdateMetadata>(json, JsonOptions);
-        if (meta is null || string.IsNullOrWhiteSpace(meta.Version))
+        var meta = UpdateFeed.ParseManifest(json);
+        if (meta is null)
         {
             return null;
         }
 
-        var setup = ResolveSetupName(meta, buildTarget);
+        var version = meta.Version ?? string.Empty;
+        var setup = ResolveSetupName(meta, version, buildTarget);
         var setupUrl = new Uri(baseUrl, setup).ToString();
         // The setup's published SHA-256, matched by installer name; empty on a legacy manifest without hashes.
-        var sha256 = meta.Installers?
-            .FirstOrDefault(i => string.Equals(i.Name, setup, StringComparison.OrdinalIgnoreCase))?
-            .Sha256 ?? string.Empty;
-        return new UpdateInfo(IsUpdate(meta.Version, currentVersion), meta.Version, setupUrl, meta.Description ?? string.Empty, sha256);
+        var sha256 = UpdateFeed.Sha256Of(meta, setup);
+        return new UpdateInfo(UpdateFeed.IsUpdate(version, currentVersion), version, setupUrl, meta.Description ?? string.Empty, sha256);
     }
 
     // The per-build installer name (AmneziaGeo-<version>-<target>.exe) so each arch/payload gets its own file;
     // falls back to the manifest setup field for a build with no baked target (or a legacy manifest).
-    private static string ResolveSetupName(UpdateMetadata meta, string buildTarget)
+    private static string ResolveSetupName(UpdateManifest meta, string version, string buildTarget)
     {
         if (!string.IsNullOrWhiteSpace(buildTarget))
         {
-            return $"AmneziaGeo-{meta.Version}-{buildTarget}.exe";
+            return $"AmneziaGeo-{version}-{buildTarget}.exe";
         }
 
         return string.IsNullOrWhiteSpace(meta.Setup) ? "AmneziaGeoSetup.exe" : meta.Setup;
     }
-
-    private static bool TryGitHubRepo(string metadataUrl, out string owner, out string repo)
-    {
-        owner = string.Empty;
-        repo = string.Empty;
-        if (!Uri.TryCreate(metadataUrl, UriKind.Absolute, out var uri)
-            || !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 2)
-        {
-            return false;
-        }
-
-        owner = segments[0];
-        repo = segments[1];
-        return true;
-    }
-
-    // A remote version differing in either direction is an update. A downgrade needs the interactive
-    // installer, which removes the newer install first; a silent run refuses it.
-    private static bool IsUpdate(string remote, string current)
-    {
-        if (System.Version.TryParse(remote, out var r) && System.Version.TryParse(current, out var c))
-        {
-            return r.CompareTo(c) != 0;
-        }
-
-        return !string.Equals(remote.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase);
-    }
-
-    private sealed record UpdateMetadata(
-        [property: JsonPropertyName("version")] string? Version,
-        [property: JsonPropertyName("description")] string? Description,
-        [property: JsonPropertyName("setup")] string? Setup,
-        [property: JsonPropertyName("installers")] List<UpdateInstaller>? Installers);
-
-    private sealed record UpdateInstaller(
-        [property: JsonPropertyName("name")] string? Name,
-        [property: JsonPropertyName("sha256")] string? Sha256);
-
-    private sealed record GhRelease(
-        [property: JsonPropertyName("tag_name")] string? TagName,
-        [property: JsonPropertyName("prerelease")] bool Prerelease,
-        [property: JsonPropertyName("draft")] bool Draft,
-        [property: JsonPropertyName("assets")] List<GhAsset>? Assets);
-
-    private sealed record GhAsset(
-        [property: JsonPropertyName("name")] string? Name,
-        [property: JsonPropertyName("browser_download_url")] string? Url);
 }

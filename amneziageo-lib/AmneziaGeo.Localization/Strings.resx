@@ -1745,4 +1745,46 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="MainVm_NoticeConfigSelected" xml:space="preserve">
     <value>Configuration «{0}» selected. Reconnect to apply.</value>
   </data>
+  <data name="Agent_UpdateNotPackaged" xml:space="preserve">
+    <value>The app is not installed from a package, so there is nothing to update.</value>
+  </data>
+  <data name="Agent_UpdateNoPackageForArch" xml:space="preserve">
+    <value>The release carries no {0} package for {1}.</value>
+  </data>
+  <data name="Agent_UpdateNothingToDownload" xml:space="preserve">
+    <value>No update is on offer.</value>
+  </data>
+  <data name="Agent_UpdateDownloadStarted" xml:space="preserve">
+    <value>Downloading {0}.</value>
+  </data>
+  <data name="Agent_UpdateDownloadRunning" xml:space="preserve">
+    <value>A download is already running.</value>
+  </data>
+  <data name="Agent_UpdateNoDownloadRunning" xml:space="preserve">
+    <value>No download is running.</value>
+  </data>
+  <data name="Agent_UpdateDownloadCancelled" xml:space="preserve">
+    <value>Download cancelled.</value>
+  </data>
+  <data name="Agent_UpdateNothingDownloaded" xml:space="preserve">
+    <value>Nothing is downloaded yet.</value>
+  </data>
+  <data name="Agent_UpdateVerifyFailed" xml:space="preserve">
+    <value>{0} does not match the published checksum.</value>
+  </data>
+  <data name="Agent_UpdateNoTransientUnit" xml:space="preserve">
+    <value>systemd-run is missing; install the packages by hand: sudo apt install {0}</value>
+  </data>
+  <data name="Agent_UpdateInstallStarted" xml:space="preserve">
+    <value>Installing {0}.</value>
+  </data>
+  <data name="Agent_UpdateInstallFailed" xml:space="preserve">
+    <value>The install could not start: {0}</value>
+  </data>
+  <data name="MainVm_UpdateInstalling" xml:space="preserve">
+    <value>Installing…</value>
+  </data>
+  <data name="MainVm_UpdateRestartApp" xml:space="preserve">
+    <value>Updated. Restart the app to finish.</value>
+  </data>
 </root>

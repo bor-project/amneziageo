@@ -9,7 +9,27 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Baseline; build-deb.sh overrides it with -p:Version=N.N.N.N so the agent reports the package version. -->
+    <Version>0.0.1</Version>
   </PropertyGroup>
+
+  <!-- Update URL baked at build time (build-deb.sh passes -p:UpdateUrl). AgentBuild reads it back as the
+       manifest the agent checks against; absent => the update section stays hidden. -->
+  <ItemGroup Condition="'$(UpdateUrl)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.UpdateUrl</_Parameter1>
+      <_Parameter2>$(UpdateUrl)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Prerelease channel baked from the tag (build-deb.sh passes -p:AllowPrerelease). "1" => the check also
+       offers prereleases, so a beta build stays on the beta channel. -->
+  <ItemGroup Condition="'$(AllowPrerelease)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.AllowPrerelease</_Parameter1>
+      <_Parameter2>$(AllowPrerelease)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />

@@ -131,8 +131,18 @@ configures is also reachable from the console client.
 
 ### Install
 
-Take the packages for your architecture from the [Releases](../../releases) page - there are amd64
-and arm64 builds - and let apt pull in the shared libraries they name:
+The installer takes the packages this machine needs straight from the newest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bor-project/amneziageo/master/amneziageo-linux/tools/install.sh | sudo bash
+```
+
+It reads the architecture from dpkg, checks every package against the SHA-256 published in
+`update.json` and hands them to apt. Options: `--no-gui` (agent alone), `--tag v1.2.3.4` (a named
+release), `--prerelease`, `--repo owner/name`.
+
+Or take the packages for your architecture from the [Releases](../../releases) page - there are
+amd64 and arm64 builds - and let apt pull in the shared libraries they name:
 
 ```bash
 # server
@@ -146,6 +156,14 @@ The agent starts and is enabled at boot right away. The binaries live in `/usr/l
 library in `/var/lib/amneziageo`, the client is `/usr/bin/amneziageo`, and the interface the agent
 creates comes from `/etc/default/amneziageo`. `apt remove` keeps the library, `apt purge` deletes
 it.
+
+### Update
+
+A packaged build carries the release manifest it checks against, so the app updates itself: the
+window offers the new version, the agent downloads exactly the packages this machine has installed
+for its own architecture, verifies them against the published SHA-256 and lets apt install them from
+a transient unit that outlives the agent restart. `amneziageo update check` reports the same from the
+console. Restart the window afterwards to run the new interface too.
 
 ### Build the packages
 

@@ -77,4 +77,6 @@ public sealed record StatusSnapshot(
     // Monotonic counter bumped when a geo-source refresh actually changed the local bases; a rise drives the tray balloon.
     int GeoUpdatedTick = 0,
     // Build target (win-<arch> for self-contained, win-<arch>-fdd for framework-dependent) baked at build time; drives the About build-type row.
-    string BuildTarget = "");
+    string BuildTarget = "",
+    // Whether the package manager is installing the downloaded update; only the agent-owned flow (Linux) sets it.
+    bool UpdateInstalling = false);

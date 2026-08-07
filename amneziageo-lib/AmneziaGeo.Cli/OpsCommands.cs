@@ -52,6 +52,9 @@ internal static class OpsCommands
         [IpcContract.OpListProcesses] = "apps",
         [IpcContract.OpCollectDiagnostics] = "diag collect",
         [IpcContract.OpCheckUpdate] = "update check",
+        [IpcContract.OpDownloadUpdate] = "update download",
+        [IpcContract.OpApplyUpdate] = "update install",
+        [IpcContract.OpCancelUpdateDownload] = "update cancel",
         [IpcContract.OpExportBundle] = "bundle export",
         [IpcContract.OpImportBundle] = "bundle import",
     };
@@ -193,11 +196,60 @@ internal static class OpsCommands
 
     private static async Task<int> UpdateAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
-        if (args.Count == 0 || args[0] != "check")
+        return (args.Count > 0 ? args[0] : string.Empty) switch
         {
-            return Reply.Usage("usage: update check");
+            "check" => await CheckUpdateAsync(agent).ConfigureAwait(false),
+            "download" => await DownloadUpdateAsync(agent).ConfigureAwait(false),
+            "install" => Reply.Report(await agent.SendAsync(IpcContract.OpApplyUpdate).ConfigureAwait(false)),
+            "cancel" => Reply.Report(await agent.SendAsync(IpcContract.OpCancelUpdateDownload).ConfigureAwait(false)),
+            _ => Reply.Usage("usage: update check | update download | update install | update cancel"),
+        };
+    }
+
+    // Starts the download and waits for the agent to settle; the progress rides the status snapshot.
+    private static async Task<int> DownloadUpdateAsync(IAgentLink agent)
+    {
+        var started = await agent.SendAsync(IpcContract.OpDownloadUpdate).ConfigureAwait(false);
+        if (!started.Ok)
+        {
+            return Reply.Report(started);
         }
 
+        var settled = false;
+        for (var i = 0; i < 3600 && !settled; i++)
+        {
+            var pending = agent.Snapshot;
+            settled = pending.UpdateDownloaded || pending.UpdateDownloadFailed || (i > 4 && !pending.UpdateDownloading);
+            if (!settled)
+            {
+                await Task.Delay(500).ConfigureAwait(false);
+            }
+        }
+
+        var snapshot = agent.Snapshot;
+        if (Output.Json)
+        {
+            Output.AsJson(new
+            {
+                ok = snapshot.UpdateDownloaded,
+                version = snapshot.UpdateVersion,
+                path = snapshot.UpdateSetupPath,
+            });
+            return snapshot.UpdateDownloaded ? Exit.Ok : Exit.Failed;
+        }
+
+        if (!snapshot.UpdateDownloaded)
+        {
+            Output.Error("the update was not downloaded; the agent log carries the reason");
+            return Exit.Failed;
+        }
+
+        Output.Info($"downloaded {snapshot.UpdateVersion}");
+        return Exit.Ok;
+    }
+
+    private static async Task<int> CheckUpdateAsync(IAgentLink agent)
+    {
         var ack = await agent.SendAsync(IpcContract.OpCheckUpdate, "silent").ConfigureAwait(false);
         if (!ack.Ok)
         {
@@ -251,7 +303,8 @@ internal static class OpsCommands
             or IpcContract.OpAddConfig or IpcContract.OpImportConfig or IpcContract.OpEditConfig
             or IpcContract.OpImportBundle or IpcContract.OpRemoveConfig
             or IpcContract.OpRemoveRoutingList or IpcContract.OpRemoveSource
-            or IpcContract.OpReportUpdateDownload or IpcContract.OpCancelUpdateDownload;
+            or IpcContract.OpReportUpdateDownload or IpcContract.OpCancelUpdateDownload
+            or IpcContract.OpDownloadUpdate or IpcContract.OpApplyUpdate;
 
     // Both agents answer an unimplemented operation with their own resource key.
     private static bool Unwired(string message) =>

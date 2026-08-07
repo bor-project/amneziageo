@@ -32,6 +32,7 @@ internal sealed class LinuxAgent : IDisposable
     private readonly HttpClient _httpClient = new();
     private readonly TunnelController _tunnel;
     private readonly BundleCommands _bundles;
+    private readonly LinuxUpdater _updater;
     private readonly AgentLog _log;
     private readonly SemaphoreSlim _commandGate = new(1, 1);
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
@@ -66,6 +67,7 @@ internal sealed class LinuxAgent : IDisposable
         _geo = new GeoConfigurator(_store, _geoFiles);
         _tunnel = new TunnelController(enginePath, interfaceName, log);
         _bundles = new BundleCommands(_store, _geo);
+        _updater = new LinuxUpdater(_httpClient, log, PushAsync);
     }
 
     /// <summary>
@@ -92,6 +94,7 @@ internal sealed class LinuxAgent : IDisposable
         _routeTtlSeconds = settings.TryGetValue(RouteTtlKey, out var ttl) && SettingKeys.TryParseRouteTtl(ttl, out var seconds) ? seconds : TunnelOptions.DefaultRouteTtlSeconds;
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
+        _updater.CollectInstallResult();
         _log.Info("agent", $"library {AgentPaths.Root}, target '{_selectedTarget ?? "(none)"}'");
     }
 
@@ -158,7 +161,7 @@ internal sealed class LinuxAgent : IDisposable
             .ToList();
 
         return new StatusSnapshot(
-            AgentVersion: "Linux preview",
+            AgentVersion: AgentBuild.Version,
             BoundTarget: _boundTarget,
             Configs: configs,
             RoutingLists: routingLists,
@@ -174,7 +177,22 @@ internal sealed class LinuxAgent : IDisposable
             ConnectFailDetail: _connectFailDetail,
             SurviveReboot: _surviveReboot,
             PeriodicReconnect: _periodicReconnect,
-            PeriodicReconnectIntervalSeconds: _reconnectIntervalSeconds);
+            PeriodicReconnectIntervalSeconds: _reconnectIntervalSeconds,
+            UpdateUrl: _updater.Url,
+            UpdateAvailable: _updater.Available,
+            UpdateVersion: _updater.Version,
+            UpdateSetupUrl: _updater.SetupUrl,
+            UpdateDescription: _updater.Description,
+            UpdateSetupSha256: _updater.Sha256,
+            UpdateSetupPath: _updater.SetupPath,
+            UpdateDownloading: _updater.Downloading,
+            UpdateDownloaded: _updater.Downloaded,
+            UpdateDownloadPercent: _updater.Percent,
+            UpdateDownloadFailed: _updater.Failed,
+            UpdateCancelRequested: _updater.CancelRequested,
+            UpdateChecking: _updater.Checking,
+            UpdateCheckFailed: _updater.CheckFailed,
+            UpdateInstalling: _updater.Installing);
     }
 
     // Notices a tunnel that went down under us and redials it while periodic reconnect is on.
@@ -331,6 +349,26 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpSetConnection:
                 return await SetConnectionAsync(args.Count > 0 ? args[0] : string.Empty, ct).ConfigureAwait(false);
+
+            case IpcContract.OpCheckUpdate:
+                return await _updater.CheckAsync(args.Count > 0 && args[0] == "silent", ct).ConfigureAwait(false);
+
+            case IpcContract.OpDownloadUpdate:
+            {
+                var started = _updater.StartDownload(ct);
+                await PushAsync(ct).ConfigureAwait(false);
+                return started;
+            }
+
+            case IpcContract.OpCancelUpdateDownload:
+                return _updater.Cancel();
+
+            case IpcContract.OpApplyUpdate:
+                return await _updater.InstallAsync(ct).ConfigureAwait(false);
+
+            // The agent owns the download here, so a client report changes nothing.
+            case IpcContract.OpReportUpdateDownload:
+                return Ok();
 
             default:
                 _log.Warn("agent", $"command '{command.Op}' is not wired in the Linux agent");
@@ -1121,6 +1159,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         _disposed = true;
+        _updater.Dispose();
         _tunnel.Dispose();
         _geoHttp.Dispose();
         _httpClient.Dispose();

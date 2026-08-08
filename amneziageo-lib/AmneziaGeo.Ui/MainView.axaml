@@ -130,7 +130,7 @@
           <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6" Width="300" Margin="0,6,0,0">
             <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                       IsVisible="{Binding HasConfigs}"
-                      ItemsSource="{Binding Config.ConfigCatalogueOptions}"
+                      ItemsSource="{Binding Config.HomeConfigOptions}"
                       SelectedItem="{Binding Home.ActiveConfigChoice, Mode=TwoWay}">
               <controls:AdaptiveComboBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:ConfigChoice">

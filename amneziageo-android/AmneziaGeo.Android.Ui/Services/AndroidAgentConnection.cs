@@ -184,6 +184,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 }
 
                 _configs[args[0]] = args[1];
+
+                // A first import is ready to dial: it takes the selection while there is none.
+                if (command.Op == IpcContract.OpImportConfig && _selectedTarget is null)
+                {
+                    _selectedTarget = args[0];
+                }
+
                 Save();
                 PushSnapshot();
                 return Ok();
@@ -197,7 +204,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     : Fail();
 
             case IpcContract.OpSelectConfig:
-                return SelectConfig(args);
+                return await SelectConfigAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpSetConnection:
                 return await SetConnectionAsync(args.Count > 0 ? args[0] : string.Empty);
@@ -513,7 +520,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RoutingLists: _routingSummaries,
             Active: _active,
             BoundStatus: _boundStatus,
-            SelectedTarget: _selectedTarget,
+            SelectedTarget: _selectedTarget ?? string.Empty,
             SelectedRoutingList: _selectedRoutingList,
             Sources: BuildSources(),
             ConnectFailed: _connectFailed,
@@ -1584,13 +1591,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
-    // Binds the next connect to a config.
-    private IpcAck SelectConfig(IReadOnlyList<string> args)
+    // Binds the next connect to a config; an empty name leaves none selected.
+    private async Task<IpcAck> SelectConfigAsync(IReadOnlyList<string> args)
     {
         var name = args.Count > 0 && args[0].Length > 0 ? args[0] : null;
         if (name is not null && !_configs.ContainsKey(name))
         {
             return Fail();
+        }
+
+        // Nothing selected leaves nothing to run: the tunnel bound to the old target goes down with it.
+        if (name is null && _active)
+        {
+            await SetConnectionAsync("disconnect").ConfigureAwait(false);
         }
 
         _selectedTarget = name;

@@ -327,6 +327,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         await configRepo.AddFromTextAsync(args[0], args[1], ct);
+        await EnsureDefaultTargetAsync(args[0], ct);
         logger.LogInformation("imported config {Name}", args[0]);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigImported", args[0]));
     }
@@ -828,16 +829,20 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return clean.Length == 0 ? "config" : clean;
     }
 
-    // Set the config as target when none is set; idempotent.
+    // Selects the config when this user has none, so a first import is ready to dial; idempotent.
     private async Task EnsureDefaultTargetAsync(string name, CancellationToken ct)
     {
-        if (!string.IsNullOrEmpty(control.Target))
+        if (!string.IsNullOrEmpty(await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct)))
         {
             return;
         }
 
-        control.SetTarget(name);
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
+        if (!control.Running || activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid))
+        {
+            control.SetTarget(name);
+        }
+
         logger.LogInformation("auto-selected configuration '{Config}' as connection target (none was set)", name);
     }
 
@@ -1346,9 +1351,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private async Task<IpcAck> SelectConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
+        // An empty name unpicks the configuration: the next connect has no target until one is chosen again.
         if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
         {
-            return new IpcAck(false, "set-config requires a config name");
+            return await ClearSelectedConfigAsync(ct);
         }
 
         var name = args[0];
@@ -1374,6 +1380,28 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         // No auto-switch; the tunnel keeps running. Selection takes effect on the next connect.
         return new IpcAck(true, control.Running ? $"selected {name} (reconnect to apply)" : $"selected {name}");
+    }
+
+    // Leaves this user with no configuration selected; a tunnel bound to it has nothing left to run for and
+    // is taken down with the selection.
+    private async Task<IpcAck> ClearSelectedConfigAsync(CancellationToken ct)
+    {
+        await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
+        var owned = activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid);
+        if (!control.Running || owned)
+        {
+            control.ClearTarget();
+        }
+
+        if (control.Running && owned)
+        {
+            control.SetRunning(false);
+            logger.LogInformation("no configuration selected, so the tunnel bound to it is being taken down");
+            return new IpcAck(true, "selection cleared, disconnecting");
+        }
+
+        logger.LogInformation("no configuration selected");
+        return new IpcAck(true, "selection cleared");
     }
 
     private async Task<IpcAck> AddSourceAsync(IReadOnlyList<string> args, CancellationToken ct)

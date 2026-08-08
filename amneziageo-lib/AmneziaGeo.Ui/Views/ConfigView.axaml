@@ -150,25 +150,14 @@
 
     <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
     <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionConfig}" Spacing="14">
-      <!-- Active card: makes this config the one the next connect binds to. -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-          <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
-                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-            <TextBlock Text="{l:Tr Main_SetActiveTitle}" FontWeight="SemiBold" FontSize="13.5" TextWrapping="Wrap" />
-            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_SetActiveHint}" />
-            <TextBlock FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AgAccentBrush}"
-                       IsVisible="{Binding IsOpenConfigActive}" Text="{l:Tr Main_IsActiveBadge}" />
-          </StackPanel>
-          <Button Classes="softbtn" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                  Content="{l:Tr Main_SetActiveConfig}"
-                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
-                  Command="{Binding SetActiveConfigCommand}" />
-        </Grid>
-      </Border>
+      <!-- Active card: makes this config the one the next connect binds to. The switch only turns on -
+           the active config is replaced by picking another, never left unpicked. -->
+      <controls:ApplySwitchCard x:Name="ActiveConfigCard" Icon="{StaticResource AgLockGeometry}"
+                                Title="{l:Tr Main_SetActiveTitle}"
+                                OnText="{l:Tr Main_SwitchOn}" OffText="{l:Tr Main_SwitchOff}"
+                                OnNotice="{l:Tr Main_IsActiveBadge}"
+                                OffNotice="{l:Tr Main_ConfigIdleNotice}"
+                                IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
 
       <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
       <StackPanel Spacing="2">

@@ -23,6 +23,8 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private string? _lastNotice;
     private bool _suppressActivePush;
     private bool _suppressActiveChoice;
+    // Set while an unpick is in flight: a snapshot taken before the agent heard it still names the old target.
+    private bool _clearingActive;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
@@ -291,51 +293,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             IsTunnelActive = snapshot.Active;
         }
 
-        var selected = snapshot.SelectedTarget ?? snapshot.BoundTarget;
-
-        // Mirror the agent's selected target into the connection-card config combo without echoing a select
-        // back. Prefer the agent's active/selected target; fall back to the last config the user had
-        // chosen (restored from prefs) so the window opens on it with connect still gated until present.
-        _suppressActivePush = true;
-        var active = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, selected, StringComparison.Ordinal));
-        if (active is null && !string.IsNullOrEmpty(_prefs.LastConfig))
-        {
-            active = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastConfig, StringComparison.Ordinal));
-        }
-
-        // The selected config lost its row (deleted here or elsewhere).
-        var selectionLost = active is null && ActiveConfig is not null && !_host.Config.Configs.Contains(ActiveConfig);
-        if (active is not null)
-        {
-            ActiveConfig = active;
-        }
-        else if (selectionLost)
-        {
-            ActiveConfig = null;
-        }
-        _suppressActivePush = false;
-
-        // Keep a config selected by default (all platforms): the sole config becomes the default right after
-        // the first import, and deleting the selected config hands selection to the next remaining one. Set
-        // outside the echo-suppression so it persists like a manual pick.
-        if (ActiveConfig is null)
-        {
-            var fallback = selectionLost
-                ? _host.Config.Configs.FirstOrDefault()
-                : _host.Config.Configs.Count == 1 ? _host.Config.Configs[0] : null;
-            if (fallback is not null)
-            {
-                ActiveConfig = fallback;
-            }
-        }
-
-        // A rename moves the selection under the UI, and the assignment above is echo-suppressed, so the
-        // preference that restores it on the next start would keep the old name and open with none selected.
-        if (ActiveConfig is { } current && !string.Equals(_prefs.LastConfig, current.Name, StringComparison.Ordinal))
-        {
-            _prefs.LastConfig = current.Name;
-            _prefs.Save();
-        }
+        ApplySelection(snapshot);
 
         // Owning the tunnel clears a pending takeover prompt; while it stands, keep it across snapshots.
         if (snapshot.Active)
@@ -388,6 +346,56 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         ShowNotice(notice, snapshot.ConnectFailed || snapshot.DisconnectFailed);
     }
 
+    // Matches the agent's selected target against the config rows. Skipped while an unpick is in flight: that
+    // snapshot predates the command and would put the config the user just dropped straight back.
+    private void ApplySelection(StatusSnapshot snapshot)
+    {
+        if (_clearingActive)
+        {
+            return;
+        }
+
+        var selected = snapshot.SelectedTarget ?? snapshot.BoundTarget;
+
+        // Mirror the agent's selected target into the connection-card config combo without echoing a select
+        // back. Prefer the agent's active/selected target; fall back to the last config the user had
+        // chosen (restored from prefs) so the window opens on it with connect still gated until present.
+        _suppressActivePush = true;
+        var active = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, selected, StringComparison.Ordinal));
+        if (active is null && !string.IsNullOrEmpty(_prefs.LastConfig))
+        {
+            active = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, _prefs.LastConfig, StringComparison.Ordinal));
+        }
+
+        // The selected config lost its row (deleted here or elsewhere).
+        var selectionLost = active is null && ActiveConfig is not null && !_host.Config.Configs.Contains(ActiveConfig);
+        if (active is not null)
+        {
+            ActiveConfig = active;
+        }
+        else if (selectionLost)
+        {
+            ActiveConfig = null;
+        }
+        _suppressActivePush = false;
+
+        // Deleting the selected config hands the selection to the next remaining one. Nothing else picks a
+        // config here: leaving none selected is the user's choice, and re-picking would undo it every snapshot.
+        // Set outside the echo-suppression so it persists like a manual pick.
+        if (ActiveConfig is null && selectionLost && _host.Config.Configs.FirstOrDefault() is { } fallback)
+        {
+            ActiveConfig = fallback;
+        }
+
+        // A rename moves the selection under the UI, and the assignment above is echo-suppressed, so the
+        // preference that restores it on the next start would keep the old name and open with none selected.
+        if (ActiveConfig is { } current && !string.Equals(_prefs.LastConfig, current.Name, StringComparison.Ordinal))
+        {
+            _prefs.LastConfig = current.Name;
+            _prefs.Save();
+        }
+    }
+
     // Re-raise the host-derived hint after the shell recomputes HasConfigs on a snapshot.
     public void NotifyHostFlagsChanged()
     {
@@ -430,9 +438,70 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             return;
         }
 
-        ActiveConfig = value.IsReal
-            ? _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal))
-            : null;
+        if (!value.IsReal)
+        {
+            _ = ClearActiveConfigAsync();
+            return;
+        }
+
+        ActiveConfig = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Leaves no configuration selected. A live tunnel is bound to the one being unpicked, so it goes down
+    /// first; a refused disconnect keeps the selection. The agent is told before the card, so a snapshot still
+    /// carrying the old target cannot put it back.
+    /// </summary>
+    internal async Task ClearActiveConfigAsync()
+    {
+        if (_clearingActive)
+        {
+            return;
+        }
+
+        _clearingActive = true;
+        try
+        {
+            if (IsTunnelActive && !await DisconnectAsync())
+            {
+                SyncActiveConfigChoice();
+                return;
+            }
+
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [string.Empty]));
+            _suppressActivePush = true;
+            ActiveConfig = null;
+            _suppressActivePush = false;
+            _prefs.LastConfig = string.Empty;
+            _prefs.Save();
+        }
+        finally
+        {
+            _clearingActive = false;
+        }
+    }
+
+    // Takes the tunnel down and reports whether it went. Optimistic state mirrors ToggleConnection so the
+    // header power control does not flicker while the command is in flight.
+    private async Task<bool> DisconnectAsync()
+    {
+        IsTunnelActive = false;
+        BoundStatus = ConnectionStatus.Disconnecting;
+        _toggleInFlight = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
+            if (!ack.Ok)
+            {
+                IsTunnelActive = true;
+            }
+
+            return ack.Ok;
+        }
+        finally
+        {
+            _toggleInFlight = false;
+        }
     }
 
     // Mirror the connection card's active config into its combo without echoing the pick back. Called by the
@@ -442,7 +511,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _suppressActiveChoice = true;
         ActiveConfigChoice = ActiveConfig is null
             ? ConfigChoice.None
-            : _host.Config.ConfigCatalogueOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, ActiveConfig.Name, StringComparison.Ordinal)) ?? ConfigChoice.None;
+            : _host.Config.HomeConfigOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, ActiveConfig.Name, StringComparison.Ordinal)) ?? ConfigChoice.None;
         _suppressActiveChoice = false;
     }
 
@@ -529,7 +598,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // True when the selected config and the running (bound) one differ, so the live tunnel does not match
     // what the card shows.
     private static bool SelectedDiffersFromBound(StatusSnapshot snapshot) =>
-        snapshot.SelectedTarget is not null
+        snapshot.SelectedTarget is { Length: > 0 }
         && !string.Equals(snapshot.SelectedTarget, snapshot.BoundTarget, StringComparison.Ordinal);
 
     // Maps the agent's classified failure reason to a localized notice.

@@ -47,7 +47,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSectionExport))]
     [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
     [NotifyPropertyChangedFor(nameof(IsOpenConfigActive))]
-    [NotifyCanExecuteChangedFor(nameof(SetActiveConfigCommand))]
+    [NotifyPropertyChangedFor(nameof(UseOpenConfig))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -141,6 +141,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
 
     public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [];
+
+    /// <summary>
+    /// The same catalogue for the home picker, «не выбрано» first: the connection card takes no configuration
+    /// at all, while the settings picker always shows one.
+    /// </summary>
+    public ObservableCollection<ConfigChoice> HomeConfigOptions { get; } = [ConfigChoice.None];
 
     /// <summary>
     /// The names of the configurations currently known.
@@ -268,14 +274,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     // Re-raise the host-derived flags after the shell recomputes them on a snapshot.
     public void NotifyHostFlagsChanged()
     {
-        SetActiveConfigCommand.NotifyCanExecuteChanged();
+        NotifyActiveConfigChanged();
     }
 
-    // Re-gate the "Set active" button after the connection card's active config changes.
+    // Re-read the active switch after the connection card's active config changes.
     public void NotifyActiveConfigChanged()
     {
-        SetActiveConfigCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsOpenConfigActive));
+        OnPropertyChanged(nameof(UseOpenConfig));
     }
 
     /// <summary>
@@ -284,12 +290,32 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public bool IsOpenConfigActive =>
         OpenConfig is { Length: > 0 } && string.Equals(OpenConfig, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
 
-    // The open config can be made active unless it already is.
-    private bool CanSetActiveConfig =>
-        OpenConfig is { Length: > 0 } name && !string.Equals(name, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
+    /// <summary>
+    /// Whether the open config is the one the next connect binds to. Turning it on makes the open config active,
+    /// turning it off leaves none selected and takes down a tunnel bound to it.
+    /// </summary>
+    public bool UseOpenConfig
+    {
+        get => IsOpenConfigActive;
+        set
+        {
+            if (value == IsOpenConfigActive)
+            {
+                OnPropertyChanged();
+                return;
+            }
+
+            if (value)
+            {
+                SetActiveConfig();
+                return;
+            }
+
+            _ = _host.Home.ClearActiveConfigAsync();
+        }
+    }
 
     // Makes the open config the active one (the agent's target), without connecting.
-    [RelayCommand(CanExecute = nameof(CanSetActiveConfig))]
     private void SetActiveConfig()
     {
         if (OpenConfig is not { Length: > 0 } name)
@@ -573,13 +599,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     private void ReconcileConfigCatalogueOptions()
     {
-        const int head = 0;
+        ReconcileOptions(ConfigCatalogueOptions, 0);
+        ReconcileOptions(HomeConfigOptions, 1);
+    }
+
+    // Mirrors the config names onto an option list, leaving the synthetic rows before head untouched.
+    private void ReconcileOptions(ObservableCollection<ConfigChoice> options, int head)
+    {
         var present = _configNames.ToHashSet(StringComparer.Ordinal);
-        for (var i = ConfigCatalogueOptions.Count - 1; i >= head; i--)
+        for (var i = options.Count - 1; i >= head; i--)
         {
-            if (!present.Contains(ConfigCatalogueOptions[i].Name))
+            if (!present.Contains(options[i].Name))
             {
-                ConfigCatalogueOptions.RemoveAt(i);
+                options.RemoveAt(i);
             }
         }
 
@@ -587,32 +619,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         {
             var name = _configNames[i];
             var slot = head + i;
-            var existing = ConfigCatalogueOptions.Skip(head).FirstOrDefault(o => string.Equals(o.Name, name, StringComparison.Ordinal));
+            var existing = options.Skip(head).FirstOrDefault(o => string.Equals(o.Name, name, StringComparison.Ordinal));
             if (existing is null)
             {
-                ConfigCatalogueOptions.Insert(Math.Min(slot, ConfigCatalogueOptions.Count), new ConfigChoice(name));
+                options.Insert(Math.Min(slot, options.Count), new ConfigChoice(name));
                 continue;
             }
 
-            var index = ConfigCatalogueOptions.IndexOf(existing);
+            var index = options.IndexOf(existing);
             if (index != slot)
             {
-                ConfigCatalogueOptions.Move(index, slot);
+                options.Move(index, slot);
             }
         }
-    }
-
-    // The config catalogue for the home combo. Order: «— не выбрано —» (None) then every config. Creating a
-    // config is the «+ Новая конфигурация» button in the Config section, not a combo entry (#111).
-    public IReadOnlyList<ConfigChoice> BuildConfigOptions()
-    {
-        var options = new List<ConfigChoice> { ConfigChoice.None };
-        foreach (var name in _configNames)
-        {
-            options.Add(new ConfigChoice(name));
-        }
-
-        return options;
     }
 
     // The first config that is not the one just deleted (still present in the collection until the next

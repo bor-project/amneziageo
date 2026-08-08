@@ -85,6 +85,7 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Bubble);
             _topLevel.AddHandler(GotFocusEvent, OnTopLevelGotFocus, RoutingStrategies.Bubble);
             _topLevel.AddHandler(LostFocusEvent, OnTopLevelLostFocus, RoutingStrategies.Bubble);
+            _topLevel.AddHandler(PointerReleasedEvent, OnTopLevelPointerReleased, RoutingStrategies.Tunnel);
         }
 
         MainActivity.Resumed += OnActivityResumed;
@@ -105,6 +106,7 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
             _topLevel.RemoveHandler(GotFocusEvent, OnTopLevelGotFocus);
             _topLevel.RemoveHandler(LostFocusEvent, OnTopLevelLostFocus);
+            _topLevel.RemoveHandler(PointerReleasedEvent, OnTopLevelPointerReleased);
             _topLevel = null;
         }
 
@@ -298,6 +300,29 @@ internal sealed partial class MobileSelectHost : UserControl
         _keyboardTarget = null;
     }
 
+    // Takes the field back from the input method and re-seats focus, which drops the keyboard and keeps the field.
+    private void CloseKeyboard(TextBox box)
+    {
+        _keyboardTarget = box;
+        InputMethod.SetIsInputMethodEnabled(box, false);
+        _topLevel?.FocusManager?.ClearFocus();
+        box.Focus(NavigationMethod.Directional);
+        _keyboardTarget = null;
+    }
+
+    // Raises the keyboard again on a tap into the field that already holds focus: Avalonia offers it on a focus
+    // change only, so the field the back button silenced would otherwise stay mute.
+    private void OnTopLevelPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_topLevel?.FocusManager?.GetFocusedElement() is TextBox box
+            && !InputMethod.GetIsInputMethodEnabled(box)
+            && e.Source is Visual source
+            && ReferenceEquals(source.FindAncestorOfType<TextBox>(true), box))
+        {
+            OpenKeyboard(box);
+        }
+    }
+
     private void OnTopLevelGotFocus(object? sender, GotFocusEventArgs e)
     {
         if (e.Source is Control control and not TopLevel)
@@ -417,9 +442,16 @@ internal sealed partial class MobileSelectHost : UserControl
         });
     }
 
-    // Dismisses the topmost overlay in stacking order.
+    // Dismisses the topmost overlay in stacking order; the keyboard covers everything and goes first.
     private bool CloseTopOverlay()
     {
+        if (_topLevel?.FocusManager?.GetFocusedElement() is TextBox typing
+            && InputMethod.GetIsInputMethodEnabled(typing))
+        {
+            CloseKeyboard(typing);
+            return true;
+        }
+
         if (FileBrowserOverlay.Current is { } browser)
         {
             browser.Back();

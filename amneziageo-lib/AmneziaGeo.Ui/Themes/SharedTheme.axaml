@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ti="using:Avalonia.Input.TextInput">
 
   <!-- Shared control styles. No hover effect app-wide; feedback is press opacity only. -->
     <FluentTheme />
@@ -352,6 +353,12 @@
       <!-- Fill the pane width like ComboBox.field, so form fields line up with the combos above/below
            them. An authored Width still wins (Stretch is ignored when a Width is set). -->
       <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <!-- Names the field multiline for the on-screen keyboard: its return key breaks the line instead of
+         closing the edit. -->
+    <Style Selector="TextBox[AcceptsReturn=True]">
+      <Setter Property="ti:TextInputOptions.Multiline" Value="True" />
     </Style>
 
     <!-- Pin text-input border on the template PART in every state. -->

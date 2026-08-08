@@ -1737,19 +1737,28 @@
     <value>Добавьте конфигурацию в настройках.</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
-    <value>Активная конфигурация</value>
-  </data>
-  <data name="Main_SetActiveHint" xml:space="preserve">
-    <value>Следующее подключение поднимет эту конфигурацию.</value>
-  </data>
-  <data name="Main_SetActiveConfig" xml:space="preserve">
-    <value>Сделать активной</value>
+    <value>Использовать эту конфигурацию</value>
   </data>
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Активна сейчас</value>
   </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>
+  </data>
+  <data name="Main_RoutingActiveNotice" xml:space="preserve">
+    <value>Эти правила сейчас действуют.</value>
+  </data>
+  <data name="Main_RoutingIdleNotice" xml:space="preserve">
+    <value>Эти правила пока не действуют.</value>
+  </data>
+  <data name="Main_ConfigIdleNotice" xml:space="preserve">
+    <value>Эта конфигурация пока не активна.</value>
+  </data>
+  <data name="Main_SwitchOn" xml:space="preserve">
+    <value>Вкл</value>
+  </data>
+  <data name="Main_SwitchOff" xml:space="preserve">
+    <value>Выкл</value>
   </data>
   <data name="MainVm_ConnectHintSelectConfig" xml:space="preserve">
     <value>Выберите конфигурацию</value>

@@ -167,7 +167,7 @@ internal sealed class LinuxAgent : IDisposable
             RoutingLists: routingLists,
             Active: _tunnel.Running,
             BoundStatus: _boundStatus,
-            SelectedTarget: _selectedTarget,
+            SelectedTarget: _selectedTarget ?? string.Empty,
             SelectedRoutingList: await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false),
             Sources: await BuildSourcesAsync(ct).ConfigureAwait(false),
             ConnectFailed: _connectFailed,
@@ -466,7 +466,16 @@ internal sealed class LinuxAgent : IDisposable
             return new IpcAck(false, IpcMessage.Key("Agent_ConfigNameTaken", args[0]));
         }
 
-        return await SaveConfigAsync(args, ct).ConfigureAwait(false);
+        var ack = await SaveConfigAsync(args, ct).ConfigureAwait(false);
+
+        // A first import is ready to dial: it takes the selection while there is none.
+        if (ack.Ok && _selectedTarget is null)
+        {
+            await StoreSelectedTargetAsync(args[0], ct).ConfigureAwait(false);
+            await PushAsync(ct).ConfigureAwait(false);
+        }
+
+        return ack;
     }
 
     private async Task<IpcAck> EditConfigAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -583,6 +592,12 @@ internal sealed class LinuxAgent : IDisposable
         if (config is not null && !await _store.ConfigExistsAsync(config, ct).ConfigureAwait(false))
         {
             return NotFound(config);
+        }
+
+        // Nothing selected leaves nothing to run: the tunnel bound to the old target goes down with it.
+        if (config is null && _tunnel.Running)
+        {
+            await SetConnectionAsync("disconnect", ct).ConfigureAwait(false);
         }
 
         await StoreSelectedTargetAsync(config, ct).ConfigureAwait(false);

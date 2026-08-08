@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AmneziaGeo.Ui.Controls.ApplySwitchCard"
+             x:Name="Root">
+  <UserControl.Styles>
+    <Style Selector="Border.callout">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <!-- Drops the accent border on a card that is off. -->
+    <Style Selector="Border.callout.off">
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+  </UserControl.Styles>
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgInfoGeometry">M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z</StreamGeometry>
+  </UserControl.Resources>
+  <!-- Accent callout for the one switch a section turns on: icon, what it does, the switch, and a line
+       saying whether it holds right now. The label column is the hit target, like SettingSwitchRow. -->
+  <Border Classes="callout" Classes.off="{Binding !#Root.IsChecked}"
+          Background="{DynamicResource AgAccentSoftBrush}"
+          BorderThickness="1" CornerRadius="12" Padding="14">
+    <StackPanel Spacing="10">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Grid.Column="0" Width="40" Height="40" CornerRadius="10" VerticalAlignment="Center"
+                Background="{DynamicResource AgPanelBrush}" BorderThickness="1"
+                BorderBrush="{DynamicResource AgBorder2Brush}">
+          <PathIcon Data="{Binding #Root.Icon}" Width="18" Height="18"
+                    Foreground="{DynamicResource AgAccentBrush}" />
+        </Border>
+
+        <StackPanel Grid.Column="1" Spacing="3" Margin="12,0" VerticalAlignment="Center"
+                    Background="Transparent" Cursor="Hand" Tapped="OnLabelTapped">
+          <TextBlock Text="{Binding #Root.Title}" FontWeight="SemiBold" FontSize="13.5" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                     IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="{Binding #Root.OffText}" FontSize="12.5" VerticalAlignment="Center"
+                     IsVisible="{Binding !#Root.IsChecked}" />
+          <TextBlock Text="{Binding #Root.OnText}" FontSize="12.5" VerticalAlignment="Center"
+                     IsVisible="{Binding #Root.IsChecked}" />
+          <ToggleSwitch x:Name="SwitchPart" MinWidth="0" VerticalAlignment="Center"
+                        IsChecked="{Binding #Root.IsChecked, Mode=TwoWay}"
+                        IsEnabled="{Binding #Root.SwitchEnabled}" />
+        </StackPanel>
+      </Grid>
+
+      <StackPanel Spacing="10" IsVisible="{Binding #Root.ShowNotice}">
+        <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
+        <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding #Root.ShowOffNotice}">
+          <PathIcon Grid.Column="0" Data="{StaticResource AgInfoGeometry}" Width="14" Height="14"
+                    VerticalAlignment="Top" Margin="0,1,8,0" Foreground="{DynamicResource AgWarnBrush}" />
+          <TextBlock Grid.Column="1" Text="{Binding #Root.OffNotice}" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{DynamicResource AgWarnBrush}" />
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding #Root.ShowOnNotice}">
+          <PathIcon Grid.Column="0" Data="{StaticResource AgInfoGeometry}" Width="14" Height="14"
+                    VerticalAlignment="Top" Margin="0,1,8,0" Foreground="{DynamicResource AgUpBrush}" />
+          <TextBlock Grid.Column="1" Text="{Binding #Root.OnNotice}" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{DynamicResource AgUpBrush}" />
+        </Grid>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

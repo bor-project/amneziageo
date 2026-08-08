@@ -1737,19 +1737,28 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Add a configuration in settings.</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
-    <value>Active configuration</value>
-  </data>
-  <data name="Main_SetActiveHint" xml:space="preserve">
-    <value>The next connect dials this configuration.</value>
-  </data>
-  <data name="Main_SetActiveConfig" xml:space="preserve">
-    <value>Make active</value>
+    <value>Use this configuration</value>
   </data>
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Active now</value>
   </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Use this configuration</value>
+  </data>
+  <data name="Main_RoutingActiveNotice" xml:space="preserve">
+    <value>These rules are in force now.</value>
+  </data>
+  <data name="Main_RoutingIdleNotice" xml:space="preserve">
+    <value>These rules are not active yet.</value>
+  </data>
+  <data name="Main_ConfigIdleNotice" xml:space="preserve">
+    <value>This configuration is not active yet.</value>
+  </data>
+  <data name="Main_SwitchOn" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Main_SwitchOff" xml:space="preserve">
+    <value>Off</value>
   </data>
   <data name="MainVm_ConnectHintSelectConfig" xml:space="preserve">
     <value>Select a configuration</value>

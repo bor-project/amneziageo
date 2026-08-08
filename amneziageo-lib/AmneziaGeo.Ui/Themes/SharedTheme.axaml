@@ -272,17 +272,32 @@
       </Setter>
     </Style>
 
-    <!-- Buttons the swipe uncovers: a card as tall as the row they sit behind, carrying a coloured glyph. -->
+    <!-- Buttons the swipe uncovers: the button is the touch target and holds no fill of its own, the card
+         inside it is what shows - a card as tall as the row they sit behind, carrying a coloured glyph. -->
     <Style Selector="Button.rowact">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="10" />
       <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="VerticalAlignment" Value="Stretch" />
-      <Setter Property="HorizontalContentAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.rowact Border.rowactcard">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Margin" Value="2,0" />
+    </Style>
+    <!-- Ring on the card, not on the touch target around it. -->
+    <Style Selector="Button.rowact:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="3" CornerRadius="10"
+                  Margin="2,0" />
+        </Template>
+      </Setter>
     </Style>
     <Style Selector="Button.rowact.drop">
       <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />

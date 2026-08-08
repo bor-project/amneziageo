@@ -6,7 +6,7 @@
     <Style Selector="Button:focus-visible, ComboBox:focus-visible, ToggleSwitch:focus-visible, CheckBox:focus-visible, TextBox:focus-visible, AutoCompleteBox:focus-visible">
       <Setter Property="FocusAdorner" Value="{x:Null}" />
     </Style>
-    <Style Selector="Button.rowselect:focus-visible, Button.accent:focus-visible">
+    <Style Selector="Button.rowselect:focus-visible, Button.accent:focus-visible, Button.rowact:focus-visible">
       <Setter Property="FocusAdorner" Value="{x:Null}" />
     </Style>
     <Style Selector="Button.powerbig:focus-visible Ellipse.focusring">

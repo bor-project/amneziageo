@@ -150,6 +150,13 @@ internal sealed partial class ServerRow : UserControl
 
     private void OnRowPressed(object? sender, PointerPressedEventArgs e)
     {
+        // The uncovered strip is the buttons', glyphs and the space around them alike: a press there never
+        // closes the row, so a finger that misses a glyph does not undo the swipe instead.
+        if (IsOpen && e.GetPosition(this).X >= Bounds.Width - ActionsWidth)
+        {
+            return;
+        }
+
         // A press on the uncovered buttons is theirs.
         if (Contains(ActionsPart, e.Source))
         {

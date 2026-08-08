@@ -17,32 +17,45 @@
   <Panel>
     <!-- Actions under the row, pinned right and uncovered by the swipe: bare glyphs whose colour, not a fill,
          carries the meaning. Both pairs hold the same footprint, so arming the delete does not move the row;
-         they take focus only while the row is open. -->
-    <Grid x:Name="ActionsPart" HorizontalAlignment="Right" ColumnDefinitions="Auto,Auto" ColumnSpacing="4"
-          Margin="0,0,4,0">
-      <Button Grid.Column="0" Classes="rowact" Width="56" Focusable="{Binding SwipeOpen}"
+         they take focus only while the row is open. The buttons tile the strip edge to edge and carry their card
+         inside, so a finger landing beside a glyph still presses it. -->
+    <Grid x:Name="ActionsPart" HorizontalAlignment="Right" ColumnDefinitions="Auto,Auto"
+          Margin="0,0,2,0">
+      <Button Grid.Column="0" Classes="rowact" Width="60" Focusable="{Binding SwipeOpen}"
               IsVisible="{Binding !DeletePending}" ToolTip.Tip="{l:Tr Main_EditButton}"
               Command="{Binding $parent[controls:ServerRow].EditCommand}" CommandParameter="{Binding}">
-        <PathIcon Data="{StaticResource AgRowEditGeometry}" Width="19" Height="19"
-                  Foreground="{Binding $parent[Button].Foreground}" />
+        <Border Classes="rowactcard">
+          <PathIcon Data="{StaticResource AgRowEditGeometry}" Width="19" Height="19"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Foreground="{Binding $parent[Button].Foreground}" />
+        </Border>
       </Button>
-      <Button Grid.Column="1" Classes="rowact drop" Width="56" Focusable="{Binding SwipeOpen}"
+      <Button Grid.Column="1" Classes="rowact drop" Width="60" Focusable="{Binding SwipeOpen}"
               IsVisible="{Binding !DeletePending}" ToolTip.Tip="{l:Tr Main_ConfirmDeleteButton}"
               Command="{Binding RequestDeleteCommand}">
-        <PathIcon Data="{StaticResource AgRowDeleteGeometry}" Width="19" Height="19"
-                  Foreground="{Binding $parent[Button].Foreground}" />
+        <Border Classes="rowactcard">
+          <PathIcon Data="{StaticResource AgRowDeleteGeometry}" Width="19" Height="19"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Foreground="{Binding $parent[Button].Foreground}" />
+        </Border>
       </Button>
-      <Button Grid.Column="0" Classes="rowact drop" Width="56" Focusable="{Binding SwipeOpen}"
+      <Button Grid.Column="0" Classes="rowact drop" Width="60" Focusable="{Binding SwipeOpen}"
               IsVisible="{Binding DeletePending}" ToolTip.Tip="{l:Tr Main_ConfirmButton}"
               Command="{Binding $parent[controls:ServerRow].DeleteCommand}" CommandParameter="{Binding}">
-        <PathIcon Data="{StaticResource AgRowConfirmGeometry}" Width="20" Height="20"
-                  Foreground="{Binding $parent[Button].Foreground}" />
+        <Border Classes="rowactcard">
+          <PathIcon Data="{StaticResource AgRowConfirmGeometry}" Width="20" Height="20"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Foreground="{Binding $parent[Button].Foreground}" />
+        </Border>
       </Button>
-      <Button Grid.Column="1" Classes="rowact" Width="56" Focusable="{Binding SwipeOpen}"
+      <Button Grid.Column="1" Classes="rowact" Width="60" Focusable="{Binding SwipeOpen}"
               IsVisible="{Binding DeletePending}" ToolTip.Tip="{l:Tr Main_CancelButton}"
               Command="{Binding CancelDeleteCommand}">
-        <PathIcon Data="{StaticResource AgRowCancelGeometry}" Width="19" Height="19"
-                  Foreground="{Binding $parent[Button].Foreground}" />
+        <Border Classes="rowactcard">
+          <PathIcon Data="{StaticResource AgRowCancelGeometry}" Width="19" Height="19"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Foreground="{Binding $parent[Button].Foreground}" />
+        </Border>
       </Button>
     </Grid>
 

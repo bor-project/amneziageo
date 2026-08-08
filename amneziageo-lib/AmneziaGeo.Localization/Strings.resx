@@ -1787,6 +1787,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Active now</value>
   </data>
+  <data name="Main_ConnectNowLink" xml:space="preserve">
+    <value>Connect now</value>
+  </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Use this configuration</value>
   </data>

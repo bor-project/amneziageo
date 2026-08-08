@@ -476,6 +476,17 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _host.NotifyRestartPendingChanged(value);
     }
 
+    // The config section offers its connect link only while nothing runs.
+    partial void OnIsTunnelActiveChanged(bool value)
+    {
+        _host.Config.NotifyActiveConfigChanged();
+    }
+
+    partial void OnIsConnectedChanged(bool value)
+    {
+        _host.Config.NotifyActiveConfigChanged();
+    }
+
     partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
     {
         if (oldValue is not null)

@@ -1787,6 +1787,9 @@
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Активна сейчас</value>
   </data>
+  <data name="Main_ConnectNowLink" xml:space="preserve">
+    <value>Выполнить подключение</value>
+  </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>
   </data>

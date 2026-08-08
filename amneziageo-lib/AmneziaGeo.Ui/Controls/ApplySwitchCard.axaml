@@ -57,8 +57,16 @@
         <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding #Root.ShowOnNotice}">
           <PathIcon Grid.Column="0" Data="{StaticResource AgInfoGeometry}" Width="14" Height="14"
                     VerticalAlignment="Top" Margin="0,1,8,0" Foreground="{DynamicResource AgUpBrush}" />
-          <TextBlock Grid.Column="1" Text="{Binding #Root.OnNotice}" FontSize="12" TextWrapping="Wrap"
-                     Foreground="{DynamicResource AgUpBrush}" />
+          <!-- The link continues the notice and drops to its own line when the text takes the width. -->
+          <WrapPanel Grid.Column="1">
+            <TextBlock Text="{Binding #Root.OnNotice}" FontSize="12" TextWrapping="Wrap"
+                       VerticalAlignment="Center" Foreground="{DynamicResource AgUpBrush}" />
+            <Button Classes="linkbtn" FontSize="12" VerticalAlignment="Center"
+                    IsVisible="{Binding #Root.IsActionVisible}"
+                    Command="{Binding #Root.ActionCommand}">
+              <TextBlock Text="{Binding #Root.ActionText}" />
+            </Button>
+          </WrapPanel>
         </Grid>
       </StackPanel>
     </StackPanel>

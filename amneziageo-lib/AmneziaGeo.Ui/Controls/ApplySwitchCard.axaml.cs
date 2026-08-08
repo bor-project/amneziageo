@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -38,6 +39,15 @@ internal sealed partial class ApplySwitchCard : UserControl
 
     public static readonly StyledProperty<bool> SwitchEnabledProperty =
         AvaloniaProperty.Register<ApplySwitchCard, bool>(nameof(SwitchEnabled), true);
+
+    public static readonly StyledProperty<string?> ActionTextProperty =
+        AvaloniaProperty.Register<ApplySwitchCard, string?>(nameof(ActionText));
+
+    public static readonly StyledProperty<ICommand?> ActionCommandProperty =
+        AvaloniaProperty.Register<ApplySwitchCard, ICommand?>(nameof(ActionCommand));
+
+    public static readonly StyledProperty<bool> IsActionVisibleProperty =
+        AvaloniaProperty.Register<ApplySwitchCard, bool>(nameof(IsActionVisible));
 
     public static readonly StyledProperty<bool> ShowNoticeProperty =
         AvaloniaProperty.Register<ApplySwitchCard, bool>(nameof(ShowNotice));
@@ -109,6 +119,33 @@ internal sealed partial class ApplySwitchCard : UserControl
     {
         get => GetValue(SwitchEnabledProperty);
         set => SetValue(SwitchEnabledProperty, value);
+    }
+
+    /// <summary>
+    /// Надпись ссылки рядом с сообщением включённой карточки.
+    /// </summary>
+    public string? ActionText
+    {
+        get => GetValue(ActionTextProperty);
+        set => SetValue(ActionTextProperty, value);
+    }
+
+    /// <summary>
+    /// Команда ссылки рядом с сообщением включённой карточки.
+    /// </summary>
+    public ICommand? ActionCommand
+    {
+        get => GetValue(ActionCommandProperty);
+        set => SetValue(ActionCommandProperty, value);
+    }
+
+    /// <summary>
+    /// Показывать ли ссылку.
+    /// </summary>
+    public bool IsActionVisible
+    {
+        get => GetValue(IsActionVisibleProperty);
+        set => SetValue(IsActionVisibleProperty, value);
     }
 
     /// <summary>

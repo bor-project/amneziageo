@@ -51,6 +51,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
     [NotifyPropertyChangedFor(nameof(IsOpenConfigActive))]
     [NotifyPropertyChangedFor(nameof(UseOpenConfig))]
+    [NotifyPropertyChangedFor(nameof(ShowConnectOpenConfig))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -294,6 +295,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(IsOpenConfigActive));
         OnPropertyChanged(nameof(UseOpenConfig));
+        OnPropertyChanged(nameof(ShowConnectOpenConfig));
     }
 
     /// <summary>
@@ -301,6 +303,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool IsOpenConfigActive =>
         OpenConfig is { Length: > 0 } && string.Equals(OpenConfig, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether the active card offers to dial the open config: it is the one the next connect binds to, the agent
+    /// is there, and no tunnel runs yet.
+    /// </summary>
+    public bool ShowConnectOpenConfig => IsOpenConfigActive && _host.Home.IsConnected && !_host.Home.IsTunnelActive;
 
     /// <summary>
     /// Whether the open config is the one the next connect binds to. Turning it on makes the open config active,
@@ -336,6 +344,20 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         _host.Home.ActiveConfig = Configs.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Поднимает туннель на открытой конфигурации.
+    /// </summary>
+    [RelayCommand]
+    private async Task ConnectOpenConfig()
+    {
+        if (OpenConfig is not { Length: > 0 } name)
+        {
+            return;
+        }
+
+        await _host.Home.ToggleConfigConnectionAsync(name, true);
     }
 
     /// <summary>

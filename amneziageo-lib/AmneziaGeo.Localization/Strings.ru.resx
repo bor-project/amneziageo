@@ -1775,9 +1775,6 @@
   <data name="Main_ProbeNoAnswer" xml:space="preserve">
     <value>нет ответа</value>
   </data>
-  <data name="Main_ProbeHandshake" xml:space="preserve">
-    <value>{0} с назад</value>
-  </data>
   <data name="Main_ProbeNoAddress" xml:space="preserve">
     <value>нет адреса</value>
   </data>

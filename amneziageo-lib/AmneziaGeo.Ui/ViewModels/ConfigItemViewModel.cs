@@ -155,12 +155,13 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private static readonly IBrush _idle = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
 
     /// <summary>
-    /// The response cell: the round trip, a dash before the first measurement, or why nothing came back.
+    /// The response cell: the round trip, a dash before the first measurement, or why nothing came back. A live
+    /// tunnel that is being answered says it with the frame alone and leaves the cell empty.
     /// </summary>
     public string ProbeText => Probing
         ? "..."
         : LinkKnown
-        ? (LinkSilent ? Loc.Instance.Get("Main_ProbeNoAnswer") : Loc.Instance.Get("Main_ProbeHandshake", HandshakeAgeSeconds))
+        ? (LinkSilent ? Loc.Instance.Get("Main_ProbeNoAnswer") : string.Empty)
         : ProbeState switch
         {
             ProbeOutcome.Alive => Loc.Instance.Get("Main_ProbeMilliseconds", ProbeMilliseconds),

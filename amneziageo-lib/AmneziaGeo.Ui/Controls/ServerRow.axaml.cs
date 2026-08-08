@@ -27,6 +27,7 @@ internal sealed partial class ServerRow : UserControl
     private const double SwipeGap = 8;
 
     private readonly TranslateTransform _shift = new();
+    private readonly TranslateTransform _nameShift = new();
     private Point _origin;
     private bool _pressed;
     private bool _swiping;
@@ -50,10 +51,14 @@ internal sealed partial class ServerRow : UserControl
     {
         InitializeComponent();
         FacePart.RenderTransform = _shift;
+        TextPart.RenderTransform = _nameShift;
 
         // The row is never dragged by hand: every change of X is run by this transition, short enough to keep up
-        // with the finger and eased out so it lands instead of stopping.
-        _shift.Transitions = new Transitions
+        // with the finger and eased out so it lands instead of stopping. The name rides the same timing.
+        _shift.Transitions = Glide();
+        _nameShift.Transitions = Glide();
+
+        static Transitions Glide() => new()
         {
             new DoubleTransition
             {
@@ -116,6 +121,10 @@ internal sealed partial class ServerRow : UserControl
             return width + ActionsPart.Margin.Left + ActionsPart.Margin.Right + SwipeGap;
         }
     }
+
+    // Free width beside the name and the address inside their column: how far they can follow the row back.
+    private double NameSlack =>
+        Math.Max(0, TextPart.Bounds.Width - Math.Max(NamePart.DesiredSize.Width, EndpointPart.DesiredSize.Width));
 
     /// <inheritdoc/>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -253,6 +262,9 @@ internal sealed partial class ServerRow : UserControl
     private void Slide(double shift)
     {
         _shift.X = shift;
+
+        // The name walks against the leaving row and keeps its place on screen, as far as the space beside it goes.
+        _nameShift.X = Math.Min(-shift, NameSlack);
     }
 
     // Only one row keeps its buttons uncovered.

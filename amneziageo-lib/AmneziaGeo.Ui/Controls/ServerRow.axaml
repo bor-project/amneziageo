@@ -65,10 +65,10 @@
             ToolTip.Tip="{Binding RowActionText}">
       <Panel>
         <Grid ColumnDefinitions="*,Auto" Margin="11,7">
-          <StackPanel Grid.Column="0" VerticalAlignment="Center">
-            <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold"
+          <StackPanel x:Name="TextPart" Grid.Column="0" VerticalAlignment="Center">
+            <TextBlock x:Name="NamePart" Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold"
                        TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{Binding Endpoint}" FontSize="11" Classes="muted mono"
+            <TextBlock x:Name="EndpointPart" Text="{Binding Endpoint}" FontSize="11" Classes="muted mono"
                        TextTrimming="CharacterEllipsis" />
           </StackPanel>
           <TextBlock Grid.Column="1" Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}"

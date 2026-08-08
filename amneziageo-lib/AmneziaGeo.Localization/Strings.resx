@@ -1775,9 +1775,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_ProbeNoAnswer" xml:space="preserve">
     <value>no answer</value>
   </data>
-  <data name="Main_ProbeHandshake" xml:space="preserve">
-    <value>{0} s ago</value>
-  </data>
   <data name="Main_ProbeNoAddress" xml:space="preserve">
     <value>no address</value>
   </data>

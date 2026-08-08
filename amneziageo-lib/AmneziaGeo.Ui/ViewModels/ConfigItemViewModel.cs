@@ -155,19 +155,20 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private static readonly IBrush _idle = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
 
     /// <summary>
-    /// The response cell: the round trip, a dash before the first measurement, or why nothing came back. A live
-    /// tunnel that is being answered says it with the frame alone and leaves the cell empty.
+    /// The response cell: the round trip, a dash before the first measurement, or why nothing came back. The
+    /// running tunnel overrides it: its own silence is the answer, and an echo it swallows leaves the cell empty
+    /// instead of calling a live server dead.
     /// </summary>
     public string ProbeText => Probing
         ? "..."
-        : LinkKnown
-        ? (LinkSilent ? Loc.Instance.Get("Main_ProbeNoAnswer") : string.Empty)
+        : LinkSilent
+        ? Loc.Instance.Get("Main_ProbeNoAnswer")
         : ProbeState switch
         {
             ProbeOutcome.Alive => Loc.Instance.Get("Main_ProbeMilliseconds", ProbeMilliseconds),
-            ProbeOutcome.NoAnswer => Loc.Instance.Get("Main_ProbeNoAnswer"),
+            ProbeOutcome.NoAnswer => LinkKnown ? string.Empty : Loc.Instance.Get("Main_ProbeNoAnswer"),
             ProbeOutcome.NoAddress => Loc.Instance.Get("Main_ProbeNoAddress"),
-            _ => "-",
+            _ => LinkKnown ? string.Empty : "-",
         };
 
     /// <summary>
@@ -175,12 +176,12 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public IBrush ProbeBrush => Probing
         ? _idle
-        : LinkKnown
-        ? (LinkSilent ? _dead : _fast)
+        : LinkSilent
+        ? _dead
         : ProbeState switch
         {
             ProbeOutcome.Alive => ProbeMilliseconds <= 200 ? _fast : _slow,
             ProbeOutcome.Unknown => _idle,
-            _ => _dead,
+            _ => LinkKnown ? _idle : _dead,
         };
 }

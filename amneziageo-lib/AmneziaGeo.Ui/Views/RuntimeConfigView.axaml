@@ -24,8 +24,7 @@
     </Border>
 
     <!-- Pane card: cache filters over the body. Body fills the rest. -->
-    <Border Grid.Row="1" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-            CornerRadius="12" Padding="16" Background="Transparent">
+    <Border Grid.Row="1" Classes="sect" Classes.compact="{Binding IsCompact}">
       <Grid RowDefinitions="Auto,*">
 
         <!-- Cache filters: free text plus the record type. -->

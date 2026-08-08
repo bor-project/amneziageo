@@ -62,11 +62,8 @@
     <Border Grid.Row="1" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="0,14,0,0" />
 
     <!-- Import section (last row, stars). Imported with the footer Save once text parses + name is set (#143). -->
-    <Border Grid.Row="3" Margin="0,14,0,0"
-            IsVisible="{Binding IsSectionImport}"
-            Background="Transparent"
-            BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-            CornerRadius="12" Padding="10">
+    <Border Grid.Row="3" Margin="0,14,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
+            IsVisible="{Binding IsSectionImport}">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Spacing="6">
           <!-- Title + (method label + change button) reflow: the method group drops to its own line when the
@@ -154,9 +151,7 @@
     <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
     <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionConfig}" Spacing="14">
       <!-- Active card: makes this config the one the next connect binds to. -->
-      <Border Background="Transparent"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16">
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
           <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
                       Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
@@ -205,16 +200,13 @@
       </StackPanel>
 
       <!-- Proxy (WebSocket) card. -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
       </Border>
 
       <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
            the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
-      <Border Background="Transparent"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16">
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="10">
           <!-- Compact stacks the trigger under the description; wide keeps them side by side. -->
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
@@ -251,8 +243,7 @@
 
     <!-- Export section: read-only QR of the .conf / of the vpn:// link, with copy / save. -->
     <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionExport}" Spacing="14">
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
           <StackPanel Spacing="2">
             <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />

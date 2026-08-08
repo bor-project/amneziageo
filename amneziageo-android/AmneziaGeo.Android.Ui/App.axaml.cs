@@ -38,6 +38,8 @@ public sealed partial class App : Avalonia.Application
             // Tell the shared UI which device it draws on, then drop the D-pad focus rings on a phone.
             UiPlatform.IsTelevision = global::Android.App.Application.Context.PackageManager?
                 .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
+            UiPlatform.SupportsWebSocket = false;
+            UiPlatform.SupportsGeoPreview = false;
             if (!UiPlatform.IsTelevision)
             {
                 Styles.Add(new StyleInclude(new Uri("avares://AmneziaGeo.Android.Ui/"))

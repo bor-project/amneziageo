@@ -554,6 +554,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             "NoHandshake" => "MainVm_NoticeConnectFailed_NoHandshake",
             "TransportRejected" => "MainVm_NoticeConnectFailed_TransportRejected",
             "Timeout" => "MainVm_NoticeConnectFailed_Timeout",
+            "NoTargetSelected" => "MainVm_NoticeConnectFailed_NoTargetSelected",
+            "ConfigInvalid" => "MainVm_NoticeConnectFailed_ConfigInvalid",
+            "PermissionDenied" => "MainVm_NoticeConnectFailed_PermissionDenied",
+            "TooManyRoutes" => "MainVm_NoticeConnectFailed_TooManyRoutes",
+            "TunnelSetupFailed" => "MainVm_NoticeConnectFailed_TunnelSetupFailed",
+            "EngineStartFailed" => "MainVm_NoticeConnectFailed_EngineStartFailed",
+            "EngineUnavailable" => "MainVm_NoticeConnectFailed_EngineUnavailable",
             _ => "MainVm_NoticeConnectFailed",
         };
     }
@@ -563,7 +570,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     {
         return key is "MainVm_NoticeConnectFailed_ServiceStartFailed"
             or "MainVm_NoticeConnectFailed_ServiceLaunchFailed"
-            or "MainVm_NoticeConnectFailed_TransportRejected";
+            or "MainVm_NoticeConnectFailed_TransportRejected"
+            or "MainVm_NoticeConnectFailed_TooManyRoutes"
+            or "MainVm_NoticeConnectFailed_TunnelSetupFailed"
+            or "MainVm_NoticeConnectFailed_EngineUnavailable";
     }
 
     /// <summary>

@@ -205,7 +205,10 @@ internal static class ConfigCommands
         var stored = agent.Snapshot.Configs.FirstOrDefault(config => config.Name == flags.Positional[0]);
         var port = flags.Value("port") ?? (stored?.WebSocketPort ?? 443).ToString(CultureInfo.InvariantCulture);
         var host = flags.Value("host") ?? stored?.WebSocketHost ?? string.Empty;
-        var mtu = flags.Value("mtu") ?? (stored?.Mtu ?? 0).ToString(CultureInfo.InvariantCulture);
+
+        // An unset MTU goes over empty; the agents read that as the default.
+        var storedMtu = stored?.Mtu ?? 0;
+        var mtu = flags.Value("mtu") ?? (storedMtu > 0 ? storedMtu.ToString(CultureInfo.InvariantCulture) : string.Empty);
         var ipv6 = flags.Value("ipv6") ?? ((stored?.UseIpv6 ?? false) ? "on" : "off");
         if (!Toggle.TryParse(ipv6, out var useIpv6))
         {

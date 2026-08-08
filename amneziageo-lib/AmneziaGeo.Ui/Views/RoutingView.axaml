@@ -22,9 +22,12 @@
     <!-- Section tabs + catalogue combo. HeaderReflow keeps them side by side while they fit and drops the combo
          to its own row when the pane is too narrow (or compact). The caption floats above the combo. -->
     <Grid x:Name="HeaderGrid" Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" Margin="0,12,0,0">
-      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. -->
+      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. The
+           switch below sits far to the right, so directional focus walks past it; naming it as the down target
+           puts it on the way. -->
       <controls:SegmentedSelector x:Name="HeaderTabs" Grid.Row="0" Grid.Column="0"
                             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
+                            XYFocus.Down="{Binding #UseListSwitch}"
                             Command="{Binding SelectRoutingSectionCommand}" IsCompact="{Binding IsCompact}"
                             Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
                             Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
@@ -53,7 +56,7 @@
               </DataTemplate>
             </controls:AdaptiveComboBox.ItemTemplate>
           </controls:AdaptiveComboBox>
-          <TextBlock IsVisible="{Binding !HasRoutingLists}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+          <TextBlock IsVisible="{Binding ShowNoListsHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                      Text="{l:Tr Main_NoRoutingListsHint}" />
         </StackPanel>
       </Panel>
@@ -65,51 +68,33 @@
     <!-- Content: one section shown at a time. -->
     <Panel Grid.Row="2" Margin="0,14,0,0">
 
+      <!-- Catalogue loader: the agent has not reported its routing lists yet (#134). -->
+      <StackPanel IsVisible="{Binding ShowCatalogueLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
+        <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+        <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+      </StackPanel>
+
       <!-- Section loader until an opened list's rules + traffic settings finish (#193). -->
       <StackPanel IsVisible="{Binding ShowSettingsLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
         <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
         <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
       </StackPanel>
 
-      <!-- Settings section: the apply card + the shared editor + delete card. -->
+      <!-- Settings section: the picked-list switch + the shared editor + delete card. -->
       <StackPanel IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
-        <!-- Apply card: makes this list the one every config routes by, or turns routing off. -->
-        <Border Background="Transparent"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="12" Padding="16">
-          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
-                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-              <TextBlock Text="{l:Tr Main_ApplyRoutingTitle}" FontWeight="SemiBold" FontSize="13.5" TextWrapping="Wrap" />
-              <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Main_ApplyRoutingHint}" />
-              <TextBlock FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap"
-                         Foreground="{DynamicResource AgAccentBrush}"
-                         IsVisible="{Binding IsOpenListActive}" Text="{l:Tr Main_IsActiveBadge}" />
-              <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                         IsVisible="{Binding IsRoutingOff}" Text="{l:Tr Main_RoutingOffNotice}" />
-            </StackPanel>
-            <Grid VerticalAlignment="Center"
-                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w240}"
-                  ColumnDefinitions="*,*" ColumnSpacing="8">
-              <Button Grid.Column="0" Classes="accent" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_ApplyRoutingButton}"
-                      Command="{Binding ApplyRoutingListCommand}" />
-              <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_RoutingOffButton}"
-                      Command="{Binding TurnOffRoutingCommand}" />
-            </Grid>
-          </Grid>
-        </Border>
+        <!-- On: every config routes by the open list. Off: none of them routes at all. -->
+        <Grid ColumnDefinitions="*,Auto" MinHeight="40">
+          <TextBlock Grid.Column="0" Text="{l:Tr Main_UseRoutingToggle}" FontSize="13.5"
+                     VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0" />
+          <ToggleSwitch x:Name="UseListSwitch" Grid.Column="1" MinWidth="0" VerticalAlignment="Center"
+                        IsChecked="{Binding UseOpenList, Mode=TwoWay}" />
+        </Grid>
 
         <views:RoutingEditorView />
 
         <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
              the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
-        <Border Background="Transparent" IsVisible="{Binding ShowDeleteCard}"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="12" Padding="16">
+        <Border Classes="sect" Classes.compact="{Binding IsCompact}" IsVisible="{Binding ShowDeleteCard}">
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
               <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
@@ -145,8 +130,7 @@
 
       <!-- Export section: QR / raw payload of the list, with copy / save. -->
       <Border IsVisible="{Binding IsSectionExport}"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
+              Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
           <StackPanel Spacing="2">
             <TextBlock Text="{l:Tr Main_ExportListTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />

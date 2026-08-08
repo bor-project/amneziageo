@@ -985,6 +985,27 @@
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>The connection timed out.</value>
   </data>
+  <data name="MainVm_NoticeConnectFailed_NoTargetSelected" xml:space="preserve">
+    <value>Could not connect: no configuration is selected.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ConfigInvalid" xml:space="preserve">
+    <value>Could not connect: the configuration could not be read.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_PermissionDenied" xml:space="preserve">
+    <value>Could not connect: the VPN permission was refused.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_TooManyRoutes" xml:space="preserve">
+    <value>The routing list is larger than this device takes in one transaction ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_TunnelSetupFailed" xml:space="preserve">
+    <value>Could not create the tunnel interface ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_EngineStartFailed" xml:space="preserve">
+    <value>The tunnel engine did not start.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_EngineUnavailable" xml:space="preserve">
+    <value>The tunnel engine is missing for this device ({0}).</value>
+  </data>
   <data name="MainVm_NoticeSettingsChanged" xml:space="preserve">
     <value>Settings changed. Reconnect to apply.</value>
   </data>
@@ -1727,17 +1748,8 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Active now</value>
   </data>
-  <data name="Main_ApplyRoutingTitle" xml:space="preserve">
-    <value>Routing list</value>
-  </data>
-  <data name="Main_ApplyRoutingHint" xml:space="preserve">
-    <value>Every configuration routes by the applied list.</value>
-  </data>
-  <data name="Main_ApplyRoutingButton" xml:space="preserve">
-    <value>Apply</value>
-  </data>
-  <data name="Main_RoutingOffNotice" xml:space="preserve">
-    <value>Routing is off - every configuration runs with its own settings.</value>
+  <data name="Main_UseRoutingToggle" xml:space="preserve">
+    <value>Use this configuration</value>
   </data>
   <data name="MainVm_ConnectHintSelectConfig" xml:space="preserve">
     <value>Select a configuration</value>

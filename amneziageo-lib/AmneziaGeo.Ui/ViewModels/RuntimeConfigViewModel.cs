@@ -73,6 +73,10 @@ internal sealed partial class RuntimeConfigViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<string> CacheKinds { get; } = ["all", "state", "domain", "proxy", "direct", "block", "none"];
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     // Which of the two panes is showing: the configuration itself or the caches.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowsConfigValues))]

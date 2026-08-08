@@ -59,8 +59,7 @@
 
       <!-- Settings pane: capture level (ageo) or on/off (routes), then log actions; stacked under the shared source. -->
       <Border IsVisible="{Binding IsSettingsMode}" VerticalAlignment="Top"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
+              Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="18" MaxWidth="420"
                     HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
           <Panel>
@@ -123,8 +122,7 @@
 
       <!-- Viewer pane: full-width card. Body fills the rest under the control bar. -->
       <Border IsVisible="{Binding IsViewMode}"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
+              Classes="sect" Classes.compact="{Binding IsCompact}">
         <Grid RowDefinitions="Auto,*">
 
           <!-- Wide control bar: search fills; arrows-only nav; follow. -->

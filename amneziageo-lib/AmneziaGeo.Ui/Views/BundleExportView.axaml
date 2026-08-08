@@ -13,8 +13,7 @@
     <TextBlock Text="{l:Tr BundleExport_Heading}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
 
     <!-- PHASE 1: selection tree. -->
-    <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-            CornerRadius="12" Padding="16" Background="Transparent" IsVisible="{Binding !IsExported}">
+    <Border Classes="sect" Classes.compact="{Binding IsCompact}" IsVisible="{Binding !IsExported}">
       <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="16">
 

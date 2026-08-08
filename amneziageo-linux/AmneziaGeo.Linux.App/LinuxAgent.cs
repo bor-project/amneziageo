@@ -698,8 +698,9 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var entries = await _geo.EntriesAsync(args[0], ct).ConfigureAwait(false);
+        // A limit of 0 asks for the whole category; without one the answer stays a short page.
         var cap = args.Count > 1 && int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? Math.Clamp(parsed, 1, 5000)
+            ? (parsed <= 0 ? entries.Count : parsed)
             : 300;
         return new IpcAck(true, JsonSerializer.Serialize(new { total = entries.Count, entries = entries.Take(cap).ToArray() }));
     }

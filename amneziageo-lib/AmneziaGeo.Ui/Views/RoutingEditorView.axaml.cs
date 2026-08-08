@@ -1,9 +1,11 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
@@ -19,6 +21,17 @@ internal sealed partial class RoutingEditorView : UserControl
     public RoutingEditorView()
     {
         InitializeComponent();
+    }
+
+    // Copies everything the expanded rule covers to the clipboard.
+    private async void OnCopyRuleEntries(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: RoutingRuleItemViewModel item })
+        {
+            return;
+        }
+
+        await ExportActions.CopyToClipboardAsync(this, string.Join(Environment.NewLine, item.Entries));
     }
 
     // Per-app tunneling source picks. Editor VM resolved via the routing VM's RoutingEditor (MenuFlyout items

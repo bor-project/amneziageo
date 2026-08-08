@@ -22,6 +22,10 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
 
     private readonly IAgentConnection _connection;
 
+    // Narrow-window layout flag, pushed by the shell.
+    [ObservableProperty]
+    private bool _isCompact;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportCommand))]
     private bool _canExport;

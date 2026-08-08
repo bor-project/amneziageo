@@ -26,6 +26,7 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     private bool _baseUseIpv6;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowWebSocketFields))]
     private bool _useWebSocket;
 
     [ObservableProperty]
@@ -215,6 +216,21 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// at save time (#143).
     /// </summary>
     public void Retarget(string name) => ConfigName = name;
+
+    /// <summary>
+    /// Whether this platform carries the tunnel over a WebSocket proxy.
+    /// </summary>
+    public bool SupportsWebSocket => UiPlatform.SupportsWebSocket;
+
+    /// <summary>
+    /// Whether the platform note replaces the WebSocket controls.
+    /// </summary>
+    public bool WebSocketUnavailable => !UiPlatform.SupportsWebSocket;
+
+    /// <summary>
+    /// Whether the WebSocket address fields are shown.
+    /// </summary>
+    public bool ShowWebSocketFields => UseWebSocket && UiPlatform.SupportsWebSocket;
 
     /// <summary>
     /// True when the login+password auth mode is selected (mode 1).

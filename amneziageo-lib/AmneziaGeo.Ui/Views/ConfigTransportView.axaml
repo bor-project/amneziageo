@@ -14,10 +14,15 @@
     <TextBlock Text="{l:Tr Main_ProxyWebSocketLabel}" FontWeight="SemiBold" FontSize="15" />
 
     <controls:SettingSwitchRow Label="{l:Tr Main_UseWebSocketToggle}" Description="{l:Tr Main_ProxyWebSocketHint}"
-                               IsChecked="{Binding UseWebSocket, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                               IsChecked="{Binding UseWebSocket, Mode=TwoWay}" HorizontalAlignment="Stretch"
+                               IsVisible="{Binding SupportsWebSocket}" />
+
+    <!-- A platform without wstunnel says so instead of offering a switch that cannot hold. -->
+    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Android_WebSocketUnsupported}"
+               IsVisible="{Binding WebSocketUnavailable}" />
 
     <!-- Fixed-width blocks so a narrow card wraps them to the next line instead of clipping the fields. -->
-    <WrapPanel IsVisible="{Binding UseWebSocket}" MaxWidth="980" HorizontalAlignment="Left">
+    <WrapPanel IsVisible="{Binding ShowWebSocketFields}" MaxWidth="980" HorizontalAlignment="Left">
       <StackPanel Width="300" Spacing="2" Margin="0,0,12,10">
         <TextBlock Classes="label" Text="{l:Tr Main_ServerHostLabel}" />
         <TextBox Classes="field" Text="{Binding WebSocketHost}" Watermark="{l:Tr Main_ServerHostWatermark}" />

@@ -46,12 +46,23 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     // Set while OnCultureChanged re-localizes the combos; suppresses their change handlers.
     private bool _syncingCombos;
 
+    // Set while a combo restore is queued.
+    private bool _restoringCombos;
+
     // Set while Apply seeds the connection settings from the snapshot; suppresses their autosave push.
     private bool _suppressSettingPush;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     private bool _isCompact;
+
+    partial void OnIsCompactChanged(bool value)
+    {
+        if (BundleExport is { } export)
+        {
+            export.IsCompact = value;
+        }
+    }
 
     /// <summary>
     /// UI language options.
@@ -915,7 +926,10 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     [RelayCommand]
     private async Task OpenBundleExport()
     {
-        var export = new BundleExportViewModel(_connection, _host.Config.Configs, _host.Routing.RoutingLists);
+        var export = new BundleExportViewModel(_connection, _host.Config.Configs, _host.Routing.RoutingLists)
+        {
+            IsCompact = IsCompact,
+        };
         await export.LoadRoutingRulesAsync();
         BundleExport = export;
         BundleMode = BundleMode.Export;
@@ -945,6 +959,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             return;
         }
 
+        if (value < 0)
+        {
+            RestoreCombos();
+            return;
+        }
+
         var token = TokenForLanguageIndex(value);
         _prefs.Language = token;
         _prefs.Save();
@@ -953,8 +973,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     partial void OnSelectedThemeIndexChanged(int value)
     {
-        if (_syncingCombos || value < 0)
+        if (_syncingCombos)
         {
+            return;
+        }
+
+        if (value < 0)
+        {
+            RestoreCombos();
             return;
         }
 
@@ -1091,6 +1117,33 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
         // Re-raise all computed labels on a language change.
         OnPropertyChanged(string.Empty);
+    }
+
+    // Puts the saved choice back after a combo clears its selection.
+    private void RestoreCombos()
+    {
+        if (_restoringCombos)
+        {
+            return;
+        }
+
+        _restoringCombos = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _syncingCombos = true;
+                try
+                {
+                    SelectedLanguageIndex = IndexForLanguage(_prefs.Language);
+                    SelectedThemeIndex = IndexForTheme(_prefs.Theme);
+                }
+                finally
+                {
+                    _syncingCombos = false;
+                    _restoringCombos = false;
+                }
+            },
+            DispatcherPriority.Background);
     }
 
     private static int IndexForLanguage(string? token) => token?.Trim().ToLowerInvariant() switch

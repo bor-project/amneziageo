@@ -26,6 +26,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly Dictionary<string, string> _configs = new(StringComparer.Ordinal);
     private readonly string _storePath;
     private const int DefaultMtu = 1420;
+    private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
     private readonly GeoConfigurator _geo;
@@ -33,7 +34,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly AndroidAgentLog _log;
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
-    private IReadOnlyList<RoutingListEntry> _routingSummaries = [];
+    // Null until the store has been read: the snapshot says "not loaded yet", not "no lists".
+    private IReadOnlyList<RoutingListEntry>? _routingSummaries;
     private IReadOnlyDictionary<string, ConfigTransport> _transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
     private IReadOnlyList<GeoSource> _geoSources = [];
     private IReadOnlyList<GeoFileMetadata> _geoFileMeta = [];
@@ -49,6 +51,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _boundStatus = ConnectionStatus.Disconnected;
     private bool _active;
     private bool _connectFailed;
+    private string _connectFailReason = string.Empty;
+    private string _connectFailDetail = string.Empty;
     private bool _started;
     private bool _disposed;
     private string _logLevel = "error";
@@ -118,6 +122,23 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     public Task<IpcAck> SendCommandAsync(IpcCommand command) => DispatchAsync(command);
 
+    // Reads the version the package manager reports for this build.
+    private static string ReadAppVersion()
+    {
+        try
+        {
+            var context = Application.Context;
+            var name = context.PackageName;
+            var info = name is null ? null : context.PackageManager?.GetPackageInfo(name, 0);
+            return info?.VersionName ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("AndroidAgent", "reading the package version failed: " + ex);
+            return string.Empty;
+        }
+    }
+
     public Task<IpcAck> SendCommandRawAsync(IpcCommand command) => DispatchAsync(command);
 
     public void Dispose()
@@ -168,7 +189,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return Ok();
 
             case IpcContract.OpRemoveConfig:
-                return RemoveConfig(args);
+                return await RemoveConfigAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpGetConfig:
                 return args.Count > 0 && _configs.TryGetValue(args[0], out var text)
@@ -182,7 +203,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await SetConnectionAsync(args.Count > 0 ? args[0] : string.Empty);
 
             case IpcContract.OpRenameConfig:
-                return RenameConfig(args);
+                return await RenameConfigAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpAssignRouting:
                 return AssignRouting(args);
@@ -287,7 +308,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         // Two different refusals: nothing to connect to, and a selection whose config is gone.
         if (_selectedTarget is not { Length: > 0 })
         {
-            _connectFailed = true;
+            SetConnectFailure(nameof(ConnectFailureReason.NoTargetSelected), string.Empty);
             _log.Error("agent", "connect refused: no configuration selected");
             PushSnapshot();
             return new IpcAck(false, "nothing selected");
@@ -296,7 +317,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var configName = _selectedTarget;
         if (!_configs.TryGetValue(configName, out var configText))
         {
-            _connectFailed = true;
+            SetConnectFailure(nameof(ConnectFailureReason.ConfigMissing), configName);
             _log.Error("agent", $"connect refused: configuration '{configName}' is gone");
             PushSnapshot();
             return new IpcAck(false, $"configuration '{configName}' not found");
@@ -305,11 +326,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var granted = await EnsureVpnPermissionAsync();
         if (!granted)
         {
+            SetConnectFailure(nameof(ConnectFailureReason.PermissionDenied), string.Empty);
             _log.Warn("agent", "connect refused: vpn permission denied");
+            PushSnapshot();
             return new IpcAck(false, "vpn permission denied");
         }
 
-        _connectFailed = false;
+        ClearConnectFailure();
         // Reports the connecting stage from the request: the tunnel process speaks only once it is up, and until
         // then a snapshot would pull the card back to disconnected.
         _active = true;
@@ -411,11 +434,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var stage = intent.GetIntExtra(VpnBridge.ExtraStage, -1);
         if (stage >= 0)
         {
-            OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail));
+            OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail),
+                intent.GetStringExtra(VpnBridge.ExtraReason));
         }
     }
 
-    private void OnVpnStateChanged(VpnStage stage, string? detail)
+    private void OnVpnStateChanged(VpnStage stage, string? detail, string? reason = null)
     {
         // The session name comes back from the tunnel, so a head that started after it still names what runs.
         var session = string.IsNullOrEmpty(detail) ? _selectedTarget : detail;
@@ -430,7 +454,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _active = true;
                 _boundStatus = ConnectionStatus.Connected;
                 _boundTarget = session;
-                _connectFailed = false;
+                ClearConnectFailure();
                 break;
             case VpnStage.Disconnected:
                 _active = false;
@@ -441,12 +465,27 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _active = false;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
-                _connectFailed = true;
+                SetConnectFailure(reason ?? nameof(ConnectFailureReason.Unknown), detail ?? string.Empty);
                 break;
         }
 
         LogVpnStage(stage, detail);
         PushSnapshot();
+    }
+
+    // Marks the last connect as failed and names its cause for the notice.
+    private void SetConnectFailure(string reason, string detail)
+    {
+        _connectFailed = true;
+        _connectFailReason = reason;
+        _connectFailDetail = detail;
+    }
+
+    private void ClearConnectFailure()
+    {
+        _connectFailed = false;
+        _connectFailReason = string.Empty;
+        _connectFailDetail = string.Empty;
     }
 
     // Records a tunnel state transition in the agent log; a failure is logged at error level with its cause.
@@ -468,7 +507,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var configs = _configs.Select(kv => Entry(kv.Key, kv.Value)).ToList();
 
         Latest = new StatusSnapshot(
-            AgentVersion: "Android preview",
+            AgentVersion: AppVersion,
             BoundTarget: _boundTarget,
             Configs: configs,
             RoutingLists: _routingSummaries,
@@ -478,6 +517,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             SelectedRoutingList: _selectedRoutingList,
             Sources: BuildSources(),
             ConnectFailed: _connectFailed,
+            ConnectFailReason: _connectFailReason,
+            ConnectFailDetail: _connectFailDetail,
             EngineVersion: string.Empty,
             LogLevel: _logLevel,
             RouteLog: _routeLog,
@@ -788,8 +829,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var entries = await _geo.EntriesAsync(args[0]).ConfigureAwait(false);
+        // A limit of 0 asks for the whole category; without one the answer stays a short page.
         var cap = args.Count > 1 && int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var c)
-            ? Math.Clamp(c, 1, 5000)
+            ? (c <= 0 ? entries.Count : c)
             : 300;
         return new IpcAck(true, JsonSerializer.Serialize(new { total = entries.Count, entries = entries.Take(cap).ToArray() }));
     }
@@ -1506,8 +1548,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         builder.Append('}');
     }
 
-    // Renames a config in place, carrying its text and moving the selection and the live latch with it.
-    private IpcAck RenameConfig(IReadOnlyList<string> args)
+    // Renames a config in place, carrying its text, its stored settings, the selection and the live latch with it.
+    private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
         {
@@ -1535,6 +1577,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _configs[newName] = value;
         RetargetSelection(oldName, newName);
         Save();
+        await EnsureInitAsync().ConfigureAwait(false);
+        await ConfigRename.CarryAsync(_store, oldName, newName).ConfigureAwait(false);
+        await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
     }
@@ -1554,8 +1599,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return Ok();
     }
 
-    // Refuses while the config is the running target; otherwise drops it and clears a selection pointing at it.
-    private IpcAck RemoveConfig(IReadOnlyList<string> args)
+    // Refuses while the config is the running target; otherwise drops it with its stored settings and clears a selection pointing at it.
+    private async Task<IpcAck> RemoveConfigAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 1)
         {
@@ -1574,6 +1619,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         Save();
+        await EnsureInitAsync().ConfigureAwait(false);
+        await _store.RemoveConfigTransportAsync(args[0]).ConfigureAwait(false);
+        await RefreshTransportsAsync().ConfigureAwait(false);
         PushSnapshot();
         return Ok();
     }
@@ -1763,7 +1811,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return;
         }
 
-        var summary = _routingSummaries.FirstOrDefault(r => r.Id == listId);
+        var summary = _routingSummaries?.FirstOrDefault(r => r.Id == listId);
         report.Append("routing list : ").Append(summary?.Name ?? listId.ToString(CultureInfo.InvariantCulture)).Append('\n');
         report.Append("  geoip routes   : ").Append(summary?.RouteCount ?? 0).Append('\n');
         report.Append("  geosite domains: ").Append(summary?.DomainCount ?? 0).Append('\n');

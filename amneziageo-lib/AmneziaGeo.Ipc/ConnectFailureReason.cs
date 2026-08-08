@@ -54,4 +54,34 @@ public enum ConnectFailureReason
     /// The overall connect deadline elapsed.
     /// </summary>
     Timeout,
+
+    /// <summary>
+    /// The configuration could not be parsed.
+    /// </summary>
+    ConfigInvalid,
+
+    /// <summary>
+    /// The platform refused the VPN permission.
+    /// </summary>
+    PermissionDenied,
+
+    /// <summary>
+    /// The routing list holds more routes than the platform takes in one transaction.
+    /// </summary>
+    TooManyRoutes,
+
+    /// <summary>
+    /// The platform refused to create the tunnel interface.
+    /// </summary>
+    TunnelSetupFailed,
+
+    /// <summary>
+    /// The tunnel engine refused to start.
+    /// </summary>
+    EngineStartFailed,
+
+    /// <summary>
+    /// The native tunnel engine is missing for this device.
+    /// </summary>
+    EngineUnavailable,
 }

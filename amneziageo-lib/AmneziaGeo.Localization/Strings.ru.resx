@@ -985,6 +985,27 @@
   <data name="MainVm_NoticeConnectFailed_Timeout" xml:space="preserve">
     <value>Время ожидания подключения истекло.</value>
   </data>
+  <data name="MainVm_NoticeConnectFailed_NoTargetSelected" xml:space="preserve">
+    <value>Не удалось подключиться: конфигурация не выбрана.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_ConfigInvalid" xml:space="preserve">
+    <value>Не удалось подключиться: конфигурацию не удалось прочитать.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_PermissionDenied" xml:space="preserve">
+    <value>Не удалось подключиться: разрешение на VPN отклонено.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_TooManyRoutes" xml:space="preserve">
+    <value>Список маршрутизации больше, чем это устройство принимает за раз ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_TunnelSetupFailed" xml:space="preserve">
+    <value>Не удалось создать интерфейс туннеля ({0}).</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_EngineStartFailed" xml:space="preserve">
+    <value>Движок туннеля не запустился.</value>
+  </data>
+  <data name="MainVm_NoticeConnectFailed_EngineUnavailable" xml:space="preserve">
+    <value>Для этого устройства нет движка туннеля ({0}).</value>
+  </data>
   <data name="MainVm_NoticeSettingsChanged" xml:space="preserve">
     <value>Настройки изменены. Переподключитесь, чтобы применить.</value>
   </data>
@@ -1727,17 +1748,8 @@
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Активна сейчас</value>
   </data>
-  <data name="Main_ApplyRoutingTitle" xml:space="preserve">
-    <value>Список маршрутизации</value>
-  </data>
-  <data name="Main_ApplyRoutingHint" xml:space="preserve">
-    <value>По применённому списку ходят все конфигурации.</value>
-  </data>
-  <data name="Main_ApplyRoutingButton" xml:space="preserve">
-    <value>Применить</value>
-  </data>
-  <data name="Main_RoutingOffNotice" xml:space="preserve">
-    <value>Маршрутизация выключена - каждая конфигурация работает со своими настройками.</value>
+  <data name="Main_UseRoutingToggle" xml:space="preserve">
+    <value>Использовать эту конфигурацию</value>
   </data>
   <data name="MainVm_ConnectHintSelectConfig" xml:space="preserve">
     <value>Выберите конфигурацию</value>

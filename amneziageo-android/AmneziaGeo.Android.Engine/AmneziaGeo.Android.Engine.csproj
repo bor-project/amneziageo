@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Geo\AmneziaGeo.Geo.csproj" />
+    <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
     <ProjectReference Include="..\..\amneziageo-lib\AmneziaGeo.Routing\AmneziaGeo.Routing.csproj" />
   </ItemGroup>
 

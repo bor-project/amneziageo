@@ -43,6 +43,7 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     partial void OnIsCompactChanged(bool value)
     {
         Logs.IsCompact = value;
+        Config.IsCompact = value;
     }
 
     // Which pane is showing.

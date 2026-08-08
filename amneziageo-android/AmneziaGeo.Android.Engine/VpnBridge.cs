@@ -41,19 +41,29 @@ public static class VpnBridge
     /// </summary>
     public const string ExtraTrace = "trace";
 
+    /// <summary>
+    /// Failure reason extra, a <see cref="AmneziaGeo.Ipc.ConnectFailureReason"/> name.
+    /// </summary>
+    public const string ExtraReason = "reason";
+
     private const string PlanFile = "plan.json";
     private const string ProcessSuffix = ":vpn";
 
     /// <summary>
     /// Reports a stage to the head.
     /// </summary>
-    public static void Publish(Context context, VpnStage stage, string? detail)
+    public static void Publish(Context context, VpnStage stage, string? detail, string? reason = null)
     {
         var intent = Broadcast(context, ActionEvent);
         intent.PutExtra(ExtraStage, (int)stage);
         if (detail is not null)
         {
             intent.PutExtra(ExtraDetail, detail);
+        }
+
+        if (reason is not null)
+        {
+            intent.PutExtra(ExtraReason, reason);
         }
 
         context.SendBroadcast(intent);

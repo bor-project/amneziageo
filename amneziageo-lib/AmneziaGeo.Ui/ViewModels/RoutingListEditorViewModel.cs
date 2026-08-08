@@ -370,7 +370,8 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
         item.IsLoading = true;
         var generation = _detailsGeneration;
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetGeoEntries, [item.Token]));
+        // Ask for the whole category: the row list virtualizes, so it costs what is on screen.
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetGeoEntries, [item.Token, "0"]));
         if (generation != _detailsGeneration)
         {
             return;
@@ -428,9 +429,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private static string Summarize(int total, int shown) => total switch
     {
         0 => Loc.Instance.Get("RoutingEditor_RuleNoEntries"),
-        _ when shown < total => Loc.Instance.Get("RoutingEditor_RuleEntriesShown", Math.Min(shown, RoutingRuleItemViewModel.PreviewLines), total),
-        _ when total > RoutingRuleItemViewModel.PreviewLines =>
-            Loc.Instance.Get("RoutingEditor_RuleEntriesShown", RoutingRuleItemViewModel.PreviewLines, total),
+        _ when shown < total => Loc.Instance.Get("RoutingEditor_RuleEntriesShown", shown, total),
         _ => Loc.Instance.Get("RoutingEditor_RuleEntriesCount", total),
     };
 

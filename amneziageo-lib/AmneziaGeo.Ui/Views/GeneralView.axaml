@@ -25,8 +25,7 @@
 
         <!-- Appearance card: theme + language (live switch). -->
         <Border x:Name="AppearanceCard" Grid.Row="0" Grid.Column="0"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="12" Padding="16" Background="Transparent">
+                Classes="sect" Classes.compact="{Binding IsCompact}">
           <StackPanel Spacing="12">
             <TextBlock Text="{l:Tr Main_AppearanceTitle}" FontWeight="SemiBold" FontSize="15" />
 
@@ -45,8 +44,7 @@
 
         <!-- About card: versions + app self-update. -->
         <Border x:Name="AboutCard"
-                BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                CornerRadius="12" Padding="16" Background="Transparent">
+                Classes="sect" Classes.compact="{Binding IsCompact}">
           <StackPanel Spacing="12">
             <TextBlock Text="{l:Tr About_Section}" FontWeight="SemiBold" FontSize="15" />
 
@@ -128,8 +126,7 @@
 
       <!-- Connection resilience card: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
            the Android agent does not apply these settings. -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent"
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}"
               IsVisible="{Binding CanConfigureConnection}">
         <!-- Compact drops each toggle / control under its title + description. -->
         <StackPanel Spacing="12">
@@ -196,8 +193,7 @@
 
       <!-- Network repair card: elevated one-shot that clears a leftover DNS redirect so the internet works
            again after a failed connect or a removal stranded the resolver. Windows only. -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent"
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}"
               IsVisible="{Binding CanRepairNetwork}">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
           <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"
@@ -218,8 +214,7 @@
       </Border>
 
       <!-- Exit card: closes the shell where there is no window frame to close it with (Android TV). -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent"
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}"
               IsVisible="{Binding CanExitApp}">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
           <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"
@@ -238,8 +233,7 @@
       </Border>
 
       <!-- Import / export card (full width): hint left, actions right. Opens the bundle sub-views inline. -->
-      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-              CornerRadius="12" Padding="16" Background="Transparent">
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <!-- Compact drops the export / import buttons under the hint. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
           <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"

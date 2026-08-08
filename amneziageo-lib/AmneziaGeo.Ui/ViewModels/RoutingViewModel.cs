@@ -20,6 +20,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     private long? _pendingEditRoutingListId;
     private bool _suppressCatalogueRouting;
+
+    // Set once the agent has reported its catalogue; until then an empty one only means "not loaded".
+    private bool _catalogueKnown;
+
+    // Set while the section waits for that first report.
+    private bool _enterDeferred;
     // The list open before "+ Импорт" so Cancel restores it.
     private RoutingListSummaryViewModel? _listBeforeCreate;
 
@@ -44,15 +50,13 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
-    [NotifyCanExecuteChangedFor(nameof(ApplyRoutingListCommand))]
+    [NotifyPropertyChangedFor(nameof(UseOpenList))]
     private RoutingListSummaryViewModel? _editRoutingList;
 
     // The routing list every config uses, mirrored from the snapshot; null leaves each config on its own settings.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
-    [NotifyPropertyChangedFor(nameof(IsRoutingOff))]
-    [NotifyCanExecuteChangedFor(nameof(ApplyRoutingListCommand))]
-    [NotifyCanExecuteChangedFor(nameof(TurnOffRoutingCommand))]
+    [NotifyPropertyChangedFor(nameof(UseOpenList))]
     private long? _selectedRoutingListId;
 
     [ObservableProperty]
@@ -265,6 +269,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(CanSettingsSection));
         OnPropertyChanged(nameof(CanExportSection));
+        OnPropertyChanged(nameof(ShowNoListsHint));
     }
 
     /// <summary>
@@ -272,10 +277,51 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
     {
-        SyncRoutingLists(snapshot.RoutingLists ?? []);
-        HasRoutingLists = RoutingLists.Count > 0;
+        // No catalogue in the snapshot means the agent has not read its store yet - keep what is on screen and
+        // stay "not loaded", rather than reading it as an account with no lists.
+        if (snapshot.RoutingLists is { } entries)
+        {
+            SyncRoutingLists(entries);
+            HasRoutingLists = RoutingLists.Count > 0;
+            MarkCatalogueKnown();
+        }
+
         SelectedRoutingListId = snapshot.SelectedRoutingList;
         RoutingSettings?.ApplyRouteTtl(snapshot.RouteTtlSeconds);
+    }
+
+    /// <summary>
+    /// Whether the section waits for a catalogue the agent has not reported yet.
+    /// </summary>
+    public bool ShowCatalogueLoader => _enterDeferred;
+
+    /// <summary>
+    /// Whether the header says there are no saved lists; silent until the catalogue is known.
+    /// </summary>
+    public bool ShowNoListsHint => _catalogueKnown && !HasRoutingLists;
+
+    // The first snapshot settles the catalogue: an empty one now means there are no lists, and a section held
+    // on its loader can finally land somewhere.
+    private void MarkCatalogueKnown()
+    {
+        if (_catalogueKnown)
+        {
+            return;
+        }
+
+        _catalogueKnown = true;
+        OnPropertyChanged(nameof(ShowNoListsHint));
+        if (!_enterDeferred)
+        {
+            return;
+        }
+
+        _enterDeferred = false;
+        OnPropertyChanged(nameof(ShowCatalogueLoader));
+        if (IsActiveSection)
+        {
+            EnterSection();
+        }
     }
 
     /// <summary>
@@ -284,36 +330,39 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool IsOpenListActive => EditRoutingList is { } open && SelectedRoutingListId == open.Id;
 
     /// <summary>
-    /// Whether no list is picked, so every config runs on its own settings.
+    /// Whether every config routes by the open list. Setting it makes the open list the picked one, or leaves
+    /// every config on its own settings.
     /// </summary>
-    public bool IsRoutingOff => SelectedRoutingListId is null;
-
-    private bool CanApplyRoutingList => EditRoutingList is not null && !IsOpenListActive;
-
-    // Makes the open list the one every config routes by.
-    [RelayCommand(CanExecute = nameof(CanApplyRoutingList))]
-    private async Task ApplyRoutingList()
+    public bool UseOpenList
     {
-        if (EditRoutingList is not { } open)
+        get => IsOpenListActive;
+        set
         {
-            return;
+            if (value == IsOpenListActive)
+            {
+                return;
+            }
+
+            _ = AssignRoutingAsync(value);
         }
-
-        var id = open.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, [id]));
     }
 
-    // Drops the routing list, so every config runs on its own settings.
-    [RelayCommand(CanExecute = nameof(CanTurnOffRouting))]
-    private async Task TurnOffRouting()
+    // Sends the assignment, then re-reads the switch from the state the agent answered with.
+    private async Task AssignRoutingAsync(bool useOpenList)
     {
-        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, ["none"]));
+        var id = useOpenList && EditRoutingList is { } open
+            ? open.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : "none";
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, [id]));
+        OnPropertyChanged(nameof(UseOpenList));
     }
-
-    private bool CanTurnOffRouting => SelectedRoutingListId is not null;
 
     public void Reset()
     {
+        _catalogueKnown = false;
+        _enterDeferred = false;
+        OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(ShowNoListsHint));
         RoutingLists.Clear();
         HasRoutingLists = false;
         SelectedRoutingListId = null;
@@ -341,6 +390,15 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
         if (RoutingLists.Count == 0)
         {
+            // The agent has not reported its lists yet: hold the section on a loader. Opening the import draft
+            // here would stick, since a later catalogue never pulls the section back out of it (#134).
+            if (!_catalogueKnown)
+            {
+                _enterDeferred = true;
+                OnPropertyChanged(nameof(ShowCatalogueLoader));
+                return;
+            }
+
             BeginSectionRouting();
             return;
         }

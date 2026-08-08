@@ -7,6 +7,7 @@ using Android.Content.PM;
 using Android.Net;
 using Android.OS;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Routing;
 using Java.Net;
 
@@ -99,12 +100,13 @@ public sealed class GeoVpnService : VpnService
     private VpnBridge.Listener? _stops;
     private VpnStage _stage = VpnStage.Disconnected;
     private string? _detail;
+    private string? _reason;
 
     /// <inheritdoc/>
     public override void OnCreate()
     {
         base.OnCreate();
-        _queries = new VpnBridge.Listener { Handler = _ => Publish(_stage, _detail) };
+        _queries = new VpnBridge.Listener { Handler = _ => Publish(_stage, _detail, _reason) };
         VpnBridge.Listen(this, _queries, VpnBridge.ActionQuery);
         _stops = new VpnBridge.Listener { Handler = _ => Teardown(VpnStage.Disconnected, null) };
         VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
@@ -129,7 +131,7 @@ public sealed class GeoVpnService : VpnService
         var ipv6 = intent?.GetBooleanExtra(ExtraIpv6, false) ?? false;
         if (string.IsNullOrEmpty(config))
         {
-            Teardown(VpnStage.Failed, "no config");
+            Teardown(VpnStage.Failed, "no config", nameof(ConnectFailureReason.ConfigMissing));
             return StartCommandResult.NotSticky;
         }
 
@@ -184,7 +186,7 @@ public sealed class GeoVpnService : VpnService
             var uapi = WgQuickToUapi.Convert(resolved);
             if (uapi is null)
             {
-                Teardown(VpnStage.Failed, "invalid config");
+                Teardown(VpnStage.Failed, "invalid config", nameof(ConnectFailureReason.ConfigInvalid));
                 return;
             }
 
@@ -201,14 +203,17 @@ public sealed class GeoVpnService : VpnService
             {
                 Report($"{rules.Tunneled.Count} routes are more than the {RouteBudget.Max} this android takes in one "
                     + "transaction; shorten the routing list or run it on android 10 or newer");
-                Teardown(VpnStage.Failed, $"too many routes: {rules.Tunneled.Count} of {RouteBudget.Max}");
+                Teardown(VpnStage.Failed, $"{rules.Tunneled.Count} of {RouteBudget.Max}",
+                    nameof(ConnectFailureReason.TooManyRoutes));
                 return;
             }
 
-            var pfd = BuildTunnel(resolved, name, appMode, appList, mtu, ipv6, rules.Tunneled, servers, _proxyPort);
+            var pfd = BuildTunnel(resolved, name, appMode, appList, mtu, ipv6, rules.Tunneled, servers, _proxyPort,
+                out var establishError);
             if (pfd is null)
             {
-                Teardown(VpnStage.Failed, "establish failed");
+                Teardown(VpnStage.Failed, establishError ?? "establish failed",
+                    nameof(ConnectFailureReason.TunnelSetupFailed));
                 return;
             }
 
@@ -217,7 +222,7 @@ public sealed class GeoVpnService : VpnService
             if (handle < 0)
             {
                 ParcelFileDescriptor.AdoptFd(tunFd)?.Close();
-                Teardown(VpnStage.Failed, "engine start failed");
+                Teardown(VpnStage.Failed, "engine start failed", nameof(ConnectFailureReason.EngineStartFailed));
                 return;
             }
 
@@ -241,8 +246,16 @@ public sealed class GeoVpnService : VpnService
         catch (Exception ex)
         {
             global::Android.Util.Log.Error("GeoVpnService", "bring-up failed: " + ex);
-            Teardown(VpnStage.Failed, ex.Message);
+            Teardown(VpnStage.Failed, ex.Message, ReasonFor(ex));
         }
+    }
+
+    // Names the causes worth telling apart; the rest stay unclassified and get the generic notice.
+    private static string ReasonFor(Exception ex)
+    {
+        return ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException
+            ? nameof(ConnectFailureReason.EngineUnavailable)
+            : nameof(ConnectFailureReason.Unknown);
     }
 
     /// <summary>
@@ -365,11 +378,12 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Reports a stage to the head and keeps it as the answer to a later query.
-    private void Publish(VpnStage stage, string? detail)
+    private void Publish(VpnStage stage, string? detail, string? reason = null)
     {
         _stage = stage;
         _detail = detail;
-        VpnBridge.Publish(this, stage, detail);
+        _reason = reason;
+        VpnBridge.Publish(this, stage, detail, reason);
     }
 
     private static void Report(string text)
@@ -391,8 +405,10 @@ public sealed class GeoVpnService : VpnService
         bool ipv6,
         IReadOnlyList<string> routes,
         IReadOnlyList<string> servers,
-        int proxyPort)
+        int proxyPort,
+        out string? error)
     {
+        error = null;
         try
         {
             var builder = new Builder(this);
@@ -448,6 +464,7 @@ public sealed class GeoVpnService : VpnService
         catch (Java.Lang.Exception ex)
         {
             global::Android.Util.Log.Error("GeoVpnService", "establish failed: " + ex);
+            error = ex.GetType().Name;
             return null;
         }
     }
@@ -718,10 +735,10 @@ public sealed class GeoVpnService : VpnService
             .Build();
     }
 
-    private void Teardown(VpnStage stage, string? detail)
+    private void Teardown(VpnStage stage, string? detail, string? reason = null)
     {
         Release();
-        Publish(stage, detail);
+        Publish(stage, detail, reason);
         StopForeground(StopForegroundFlags.Remove);
         StopSelf();
     }

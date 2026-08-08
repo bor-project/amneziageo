@@ -1,3 +1,4 @@
+using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AmneziaGeo.Ui.ViewModels;
@@ -8,19 +9,14 @@ namespace AmneziaGeo.Ui.ViewModels;
 internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
 {
     /// <summary>
-    /// Lines the preview box renders. A country runs to tens of thousands of entries and the box lays out every
-    /// line it holds, which costs more than the entries themselves.
-    /// </summary>
-    public const int PreviewLines = 500;
-
-    /// <summary>
     /// ctor
     /// </summary>
     public RoutingRuleItemViewModel(string token)
     {
         Token = token;
-        CanExpand = token.StartsWith("geosite:", StringComparison.OrdinalIgnoreCase)
-            || token.StartsWith("geoip:", StringComparison.OrdinalIgnoreCase);
+        CanExpand = UiPlatform.SupportsGeoPreview
+            && (token.StartsWith("geosite:", StringComparison.OrdinalIgnoreCase)
+                || token.StartsWith("geoip:", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -43,8 +39,17 @@ internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
     [ObservableProperty]
     private string _detailSummary = string.Empty;
 
+    /// <summary>
+    /// What the rule covers, one entry per row.
+    /// </summary>
     [ObservableProperty]
-    private string _entriesText = string.Empty;
+    [NotifyPropertyChangedFor(nameof(HasEntries))]
+    private IReadOnlyList<string> _entries = [];
+
+    /// <summary>
+    /// True while there are rows to show.
+    /// </summary>
+    public bool HasEntries => Entries.Count > 0;
 
     /// <summary>
     /// Collapse arrow, turned down while the entries are shown.
@@ -62,7 +67,7 @@ internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
     public void ShowDetails(string summary, IReadOnlyList<string> entries)
     {
         DetailSummary = summary;
-        EntriesText = string.Join(Environment.NewLine, entries.Count > PreviewLines ? entries.Take(PreviewLines) : entries);
+        Entries = entries;
         IsLoading = false;
         HasDetails = true;
     }
@@ -74,7 +79,7 @@ internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
     {
         IsExpanded = false;
         DetailSummary = string.Empty;
-        EntriesText = string.Empty;
+        Entries = [];
         IsLoading = false;
         HasDetails = false;
     }
@@ -85,7 +90,7 @@ internal sealed partial class RoutingRuleItemViewModel : ViewModelBase
     public void ShowError(string message)
     {
         DetailSummary = message;
-        EntriesText = string.Empty;
+        Entries = [];
         IsLoading = false;
     }
 }

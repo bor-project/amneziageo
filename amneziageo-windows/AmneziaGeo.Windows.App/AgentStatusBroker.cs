@@ -1003,8 +1003,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var entries = await geo.EntriesAsync(args[0], ct);
+        // A limit of 0 asks for the whole category; without one the answer stays a short page.
         var cap = args.Count > 1 && int.TryParse(args[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
-            ? Math.Clamp(parsed, 1, 5000)
+            ? (parsed <= 0 ? entries.Count : parsed)
             : 300;
         var json = System.Text.Json.JsonSerializer.Serialize(new { total = entries.Count, entries = entries.Take(cap).ToArray() });
         return new IpcAck(true, json);

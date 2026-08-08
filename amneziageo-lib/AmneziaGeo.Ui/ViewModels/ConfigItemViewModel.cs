@@ -3,6 +3,7 @@ using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace AmneziaGeo.Ui.ViewModels;
 
@@ -47,19 +48,23 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
-    [NotifyPropertyChangedFor(nameof(DotBrush))]
+    [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
+    [NotifyPropertyChangedFor(nameof(ShowActiveFrame))]
     [NotifyPropertyChangedFor(nameof(RowActionText))]
     private string _status = ConnectionStatus.Idle;
 
     /// <summary>
-    /// The state dot colour. Every row keeps the dot's place, only the configuration the tunnel is bound to
-    /// paints it, so a row never shifts.
+    /// Whether the row wears its frame in the connection colour: the configuration the tunnel is bound to.
     /// </summary>
-    public IBrush DotBrush => Status is ConnectionStatus.Connected
+    public bool ShowStatusFrame => Status is ConnectionStatus.Connected
         or ConnectionStatus.Connecting
-        or ConnectionStatus.Disconnecting
-        ? StatusBrush
-        : Brushes.Transparent;
+        or ConnectionStatus.Disconnecting;
+
+    /// <summary>
+    /// Whether the row wears the accent frame: the configuration the next connect takes, with nothing running
+    /// on it yet.
+    /// </summary>
+    public bool ShowActiveFrame => IsActive && !ShowStatusFrame;
 
     /// <summary>
     /// What clicking the row does: the running configuration goes down, every other one is dialled.
@@ -80,7 +85,37 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
 
     // Whether this row is the configuration the connect button dials.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowActiveFrame))]
     private bool _isActive;
+
+    // Whether the swipe uncovered the row's buttons.
+    [ObservableProperty]
+    private bool _swipeOpen;
+
+    // Whether the row's delete is armed and waiting for the confirm.
+    [ObservableProperty]
+    private bool _deletePending;
+
+    // Covering the buttons disarms the delete.
+    partial void OnSwipeOpenChanged(bool value)
+    {
+        if (!value)
+        {
+            DeletePending = false;
+        }
+    }
+
+    /// <summary>
+    /// Заряжает удаление строки: пара «Подтвердить / Отмена» занимает место кнопок.
+    /// </summary>
+    [RelayCommand]
+    private void RequestDelete() => DeletePending = true;
+
+    /// <summary>
+    /// Снимает подтверждение удаления.
+    /// </summary>
+    [RelayCommand]
+    private void CancelDelete() => DeletePending = false;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]

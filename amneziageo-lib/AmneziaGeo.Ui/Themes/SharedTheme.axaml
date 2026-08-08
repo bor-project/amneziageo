@@ -255,6 +255,39 @@
     <Style Selector="Button.rowselect.active">
       <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
     </Style>
+    <!-- Home server row: a flat card whose frame, not its fill, carries the connection state. -->
+    <Style Selector="Button.serverrow">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.serverrow:focus-visible">
+      <Setter Property="FocusAdorner">
+        <Template>
+          <Border BorderBrush="{DynamicResource AgAccentBrush}" BorderThickness="3" CornerRadius="12" />
+        </Template>
+      </Setter>
+    </Style>
+
+    <!-- Buttons the swipe uncovers: a card as tall as the row they sit behind, carrying a coloured glyph. -->
+    <Style Selector="Button.rowact">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.rowact.drop">
+      <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+
     <!-- Compact settings menu: rows are navigation (a tap opens the detail and replaces the rail), so drop the
          radio dot and the selected-row highlight. Wide keeps them - the rail sits beside the open panel. -->
     <Style Selector="StackPanel.railmenu StackPanel.railtext">

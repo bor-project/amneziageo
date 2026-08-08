@@ -12,7 +12,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditScope
 {
     private readonly IAgentConnection _connection;
-    private readonly string _endpoint;
+    private string _endpoint;
 
     // Baseline captured on load / commit / import; the transport is dirty when a field differs from it (#143).
     private bool _baseUseWebSocket;
@@ -216,6 +216,31 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     /// at save time (#143).
     /// </summary>
     public void Retarget(string name) => ConfigName = name;
+
+    /// <summary>
+    /// Наводит черновые настройки на эндпоинт из распознанного текста конфигурации; нетронутое поле прокси
+    /// заполняется тем же хостом. Используется формой добавления, где конфигурации ещё нет.
+    /// </summary>
+    public void SeedEndpoint(string endpoint)
+    {
+        _endpoint = endpoint;
+        if (!string.IsNullOrWhiteSpace(WebSocketHost))
+        {
+            return;
+        }
+
+        _applying = true;
+        try
+        {
+            WebSocketHost = EndpointHost(endpoint);
+        }
+        finally
+        {
+            _applying = false;
+        }
+
+        _baseWebSocketHost = WebSocketHost;
+    }
 
     /// <summary>
     /// Whether this platform carries the tunnel over a WebSocket proxy.

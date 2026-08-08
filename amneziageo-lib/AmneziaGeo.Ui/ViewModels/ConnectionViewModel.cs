@@ -560,6 +560,28 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Takes the tunnel down when it carries this configuration, so the agent lets it be removed; reports
+    /// whether the configuration is free.
+    /// </summary>
+    internal async Task<bool> EnsureDisconnectedAsync(string name)
+    {
+        // Only the configuration the tunnel is bound to: a merely selected one is dropped without touching a
+        // tunnel that runs on another.
+        if (!IsTunnelActive || !string.Equals(BoundTarget, name, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!await DisconnectAsync())
+        {
+            return false;
+        }
+
+        await WaitForDisconnectAsync();
+        return true;
+    }
+
     // Takes the tunnel down and reports whether it went. Optimistic state mirrors ToggleConnection so the
     // header power control does not flicker while the command is in flight.
     private async Task<bool> DisconnectAsync()

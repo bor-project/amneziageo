@@ -22,6 +22,8 @@
     <StreamGeometry x:Key="AgGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
     <!-- Back glyph. -->
     <StreamGeometry x:Key="AgBackGeometry">M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z</StreamGeometry>
+    <!-- Plus glyph. -->
+    <StreamGeometry x:Key="AgPlusGeometry">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
     <!-- Close glyph. -->
     <StreamGeometry x:Key="AgCloseGeometry">M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z</StreamGeometry>
   </UserControl.Resources>
@@ -175,8 +177,9 @@
                     Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=colServers}"
                     Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
                     Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=insetLeft16}">
-                <!-- Table head: the caption and the button that re-measures every server. -->
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="2,0,0,2" IsVisible="{Binding HasConfigs}">
+                <!-- Table head: the caption, the button that re-measures every server, and the one that adds
+                     a configuration and comes back here. -->
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="2,0,0,2" IsVisible="{Binding HasConfigs}">
                   <TextBlock Grid.Column="0" Text="{l:Tr Main_ServersTitle}" Classes="muted"
                              FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                   <Button Grid.Column="1" Classes="icon" Padding="5,3" VerticalAlignment="Center"
@@ -185,35 +188,28 @@
                     <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14"
                               Foreground="{DynamicResource AgMutedBrush}" />
                   </Button>
+                  <Button Grid.Column="2" Classes="icon" Padding="5,3" VerticalAlignment="Center"
+                          Command="{Binding AddServerCommand}"
+                          ToolTip.Tip="{l:Tr Main_AddConfigButton}">
+                    <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="14" Height="14"
+                              Foreground="{DynamicResource AgMutedBrush}" />
+                  </Button>
                 </Grid>
 
                 <Panel Grid.Row="1">
-                  <!-- One row per configuration: state dot, name, endpoint, and the last measured response.
-                       The row connects that configuration, or drops the tunnel when it is the live one; a list
-                       too long for the screen scrolls. -->
+                  <!-- One row per configuration: name, endpoint, and the last measured response, in a frame
+                       carrying the connection colour. The row connects that configuration, or drops the tunnel
+                       when it is the live one; a swipe left uncovers its edit and delete buttons. A list too
+                       long for the screen scrolls. -->
                   <ScrollViewer IsVisible="{Binding HasConfigs}"
                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding Config.Configs}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConfigItemViewModel">
-                          <Button Classes="rowselect" Classes.active="{Binding IsActive}" Margin="0,2"
-                                  Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
-                                  CommandParameter="{Binding}"
-                                  ToolTip.Tip="{Binding RowActionText}">
-                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="11,7">
-                              <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,8,0"
-                                       VerticalAlignment="Center" Fill="{Binding DotBrush}" />
-                              <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold"
-                                           TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding Endpoint}" FontSize="11" Classes="muted mono"
-                                           TextTrimming="CharacterEllipsis" />
-                              </StackPanel>
-                              <TextBlock Grid.Column="2" Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}"
-                                         FontSize="11.5" FontWeight="SemiBold"
-                                         VerticalAlignment="Center" Margin="8,0,0,0" />
-                            </Grid>
-                          </Button>
+                          <controls:ServerRow Margin="0,2" IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
+                                  ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
+                                  EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
+                                  DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}" />
                         </DataTemplate>
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>

@@ -93,6 +93,13 @@
                    Margin="0,10,0,0"
                    IsVisible="{Binding SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+        <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
+             configuration. Shown beside the text, where there is something to apply them to. -->
+        <Border DockPanel.Dock="Bottom" Classes="sect" Classes.compact="{Binding IsCompact}" Margin="0,14,0,0"
+                IsVisible="{Binding IsImportManual}">
+          <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
+        </Border>
+
         <!-- Source: method picker / manual entry / live scanner, swapped inline. -->
         <Panel MinHeight="220" Margin="0,12,0,0">
 

@@ -400,6 +400,69 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RefreshLogsActive();
     }
 
+    // «+» над списком серверов: импорт конфигурации, который вернёт к списку после сохранения.
+    [RelayCommand]
+    private void AddServer()
+    {
+        Nav = "settings";
+        SettingsSection = "config";
+        SettingsDetailOpen = true;
+        Config.EnterImportSection(returnToServers: true);
+        RefreshLogsActive();
+    }
+
+    // Кнопка «Изменить» строки сервера: настройки этой конфигурации.
+    [RelayCommand]
+    private void EditServer(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        item.SwipeOpen = false;
+        Nav = "settings";
+        SettingsSection = "config";
+        SettingsDetailOpen = true;
+        Config.OpenConfigFor(item.Name);
+        RefreshLogsActive();
+    }
+
+    // Кнопка «Удалить» строки сервера: сначала снимаем туннель с этой конфигурации, потом удаляем её.
+    [RelayCommand]
+    private async Task DeleteServer(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        item.SwipeOpen = false;
+        if (!await Home.EnsureDisconnectedAsync(item.Name))
+        {
+            return;
+        }
+
+        var ack = await Config.RemoveConfigAsync(item.Name);
+        if (!ack.Ok)
+        {
+            Home.ShowNotice(Describe(ack));
+        }
+    }
+
+    // Резолвит отказ агента в текст: агент шлёт ключи локализации, а не фразы.
+    private static string Describe(IpcAck ack) =>
+        IpcMessage.TryParse(ack.Message, out var key, out var args) ? Loc.Instance.Get(key, args) : ack.Message;
+
+    /// <summary>
+    /// Возвращает к списку серверов конфигурацию, добавленную из него.
+    /// </summary>
+    public void ReturnToServerList()
+    {
+        HomeTab = "servers";
+        NavHome();
+    }
+
     [RelayCommand]
     private void NavSettings()
     {

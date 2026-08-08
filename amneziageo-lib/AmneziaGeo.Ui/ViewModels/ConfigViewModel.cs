@@ -25,6 +25,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private bool _sectionConfigSaving;
     private bool _suppressCatalogueConfig;
 
+    // The import was started from the home server list, which the saved configuration returns to.
+    private bool _returnToServers;
+
     // Rename baseline: the open config's persisted name; a differing ConfigRename saves on the section Save.
     private string _baseConfigRename = string.Empty;
 
@@ -122,6 +125,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     // Live QR scanner for the create form; non-null only while the camera method is active.
     [ObservableProperty]
     private ScanViewModel? _sectionScan;
+
+    // Transport of the config being added: the same proxy / MTU / IPv6 the open config carries, committed
+    // once the import gave the configuration a name.
+    [ObservableProperty]
+    private ConfigTransportViewModel? _sectionTransport;
 
     /// <summary>
     /// ctor
@@ -381,14 +389,30 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Переводит секцию конфигураций в импорт для перехода из профилей.
+    /// Переводит секцию конфигураций в импорт. Начатый из списка серверов импорт возвращает к нему после
+    /// сохранения.
     /// </summary>
-    public void EnterImportSection()
+    public void EnterImportSection(bool returnToServers = false)
     {
+        _returnToServers = returnToServers;
         if (!IsCreatingSectionConfig)
         {
             BeginSectionConfig();
         }
+    }
+
+    /// <summary>
+    /// Открывает настройки названной конфигурации, минуя выбор в каталоге.
+    /// </summary>
+    public void OpenConfigFor(string name)
+    {
+        if (IsCreatingSectionConfig)
+        {
+            CancelSectionConfig();
+        }
+
+        ManageSection = ConfigSection.Config;
+        OpenConfig = name;
     }
 
     // Discard an in-progress draft before switching to Config / Export.
@@ -455,6 +479,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         // A config just imported in the Config section: open it once its row arrives so OnOpenConfigChanged
         // seeds the transport editor from the real snapshot row instead of all-defaults.
         ResolvePendingOpenConfig();
+
+        // The open config is gone (deleted from the server list or elsewhere): move to what is left, so the
+        // editors never key by a name the agent no longer has.
+        if (OpenConfig is { } open && _pendingOpenConfig is null && !_configNames.Contains(open, StringComparer.Ordinal))
+        {
+            OpenConfig = Configs.FirstOrDefault()?.Name;
+        }
 
         // Re-select the section combo now that the option list is current: an OpenConfig set above (or a
         // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
@@ -597,6 +628,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         if (VpnLinkCodec.TryDecode(value) is { } imported)
         {
             SeedSectionNameFromConfig(imported);
+            SectionTransport?.SeedEndpoint(VpnLinkCodec.HostName(imported.ConfText) ?? string.Empty);
         }
     }
 
@@ -796,8 +828,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         SectionConfigStatus = string.Empty;
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
+        SectionTransport = NewSectionTransport();
         IsCreatingSectionConfig = true;
     }
+
+    // Transport editor of a config that does not exist yet: defaults, no endpoint until the text is read.
+    private ConfigTransportViewModel NewSectionTransport() =>
+        new(_connection, string.Empty, string.Empty, false, string.Empty, 443, 0, false);
 
     // Discards the create-form draft. Called when the import section is left (tab switch / home) and on disconnect.
     private void CancelSectionConfig()
@@ -808,6 +845,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         SectionConfigStatus = string.Empty;
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
+        SectionTransport = null;
+        _returnToServers = false;
     }
 
     // Switch the create form to manual entry.
@@ -888,6 +927,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         _sectionConfigDefaultName = UniqueConfigName();
         SectionConfigName = _sectionConfigDefaultName;
+        SectionTransport = NewSectionTransport();
         ChangeMethod();
     }
 
@@ -996,6 +1036,13 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return false;
         }
 
+        // The transport is checked before the import, so a bad port / MTU is reported while the form still
+        // holds everything the user typed.
+        if (SectionTransport is { } draft && !draft.CanCommit())
+        {
+            return false;
+        }
+
         _sectionConfigSaving = true;
         try
         {
@@ -1006,14 +1053,30 @@ internal sealed partial class ConfigViewModel : ViewModelBase
                 return false;
             }
 
+            // The drafted proxy / MTU / IPv6 now have a configuration to sit on.
+            if (SectionTransport is { IsDirty: true } transport)
+            {
+                transport.Retarget(name);
+                await transport.CommitAsync();
+            }
+
             IsCreatingSectionConfig = false;
             SectionConfigName = string.Empty;
             SectionConfigText = string.Empty;
             SectionConfigStatus = string.Empty;
+            SectionTransport = null;
             // Open the just-imported config once its row lands in the next snapshot, so the transport editor
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
             ResolvePendingOpenConfig();
+
+            // Started from the home server list: hand the screen back to it.
+            if (_returnToServers)
+            {
+                _returnToServers = false;
+                _host.ReturnToServerList();
+            }
+
             return true;
         }
         finally

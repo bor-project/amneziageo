@@ -454,6 +454,12 @@
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Delete</value>
   </data>
+  <data name="Main_ConfirmButton" xml:space="preserve">
+    <value>Confirm</value>
+  </data>
+  <data name="Main_EditButton" xml:space="preserve">
+    <value>Edit</value>
+  </data>
   <data name="Main_PendingDeleteHint" xml:space="preserve">
     <value>Marked for deletion. Press Save to delete, or Cancel to keep it.</value>
   </data>

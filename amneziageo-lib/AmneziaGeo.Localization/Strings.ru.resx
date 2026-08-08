@@ -454,6 +454,12 @@
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Удалить</value>
   </data>
+  <data name="Main_ConfirmButton" xml:space="preserve">
+    <value>Подтвердить</value>
+  </data>
+  <data name="Main_EditButton" xml:space="preserve">
+    <value>Изменить</value>
+  </data>
   <data name="Main_PendingDeleteHint" xml:space="preserve">
     <value>Помечено на удаление. Нажмите «Сохранить», чтобы удалить, или «Отмена», чтобы оставить.</value>
   </data>

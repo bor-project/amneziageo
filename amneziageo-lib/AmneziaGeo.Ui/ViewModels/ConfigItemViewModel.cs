@@ -79,9 +79,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public string StatusText => StatusLabels.Text(Status);
 
     /// <summary>
-    /// The status badge color.
+    /// The status badge color: a running configuration whose peer has gone quiet wears the switching colour and
+    /// not the connected one, like the connect control it stands under.
     /// </summary>
-    public IBrush StatusBrush => StatusLabels.Brush(Status);
+    public IBrush StatusBrush => StatusLabels.Brush(LinkSilent ? ConnectionStatus.Connecting : Status);
 
     // Whether this row is the configuration the connect button dials.
     [ObservableProperty]
@@ -137,6 +138,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
+    [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private int _handshakeAgeSeconds = -1;
 
     // Whether the tunnel reports its own liveness, which beats an echo the server may be refusing to send.

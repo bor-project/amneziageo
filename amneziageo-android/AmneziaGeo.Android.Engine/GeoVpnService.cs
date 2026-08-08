@@ -86,6 +86,9 @@ public sealed class GeoVpnService : VpnService
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
     private const int HandshakeIntervalMs = 30_000;
+    private const int HandshakeWaitSeconds = 30;
+    private const int HandshakePollMs = 500;
+    private const int KeepaliveSeconds = 25;
     private const int TcpProtocol = 6;
     private const int ExitDelayMs = 1_000;
 
@@ -184,7 +187,9 @@ public sealed class GeoVpnService : VpnService
         {
             // A connect on top of a live session takes the old one down first, or its relay and its sockets stay behind.
             Release();
-            var resolved = ResolveEndpoint(config);
+            // Makes the peer answer on its own, so a quiet link is neither dropped by the provider nor mistaken
+            // for a live one.
+            var resolved = WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
             var uapi = WgQuickToUapi.Convert(resolved);
             if (uapi is null)
             {
@@ -235,7 +240,22 @@ public sealed class GeoVpnService : VpnService
                 Protect(socket);
             }
 
+            // The peer has to answer before the session counts as up: the tun and the engine start over a dead
+            // server just as well, and the head would paint a live connection over nothing.
+            var handshake = await WaitForHandshakeAsync(handle).ConfigureAwait(false);
+            if (handshake <= 0)
+            {
+                // A session the user has already stopped is not a failure to report.
+                if (_handle == handle)
+                {
+                    Teardown(VpnStage.Failed, "no handshake", nameof(ConnectFailureReason.NoHandshake));
+                }
+
+                return;
+            }
+
             Publish(VpnStage.Connected, name);
+            VpnBridge.PublishHandshake(this, handshake);
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
             _ = Task.Run(() => ReportHandshakeAsync(keepalive.Token));
@@ -580,6 +600,29 @@ public sealed class GeoVpnService : VpnService
             var share = tunnel > 0 ? relay.Bytes * 100 / tunnel : 0;
             Report($"{relay.Snapshot()}; tunnel {tunnel / 1024} KiB, relayed {share}%");
         }
+    }
+
+    // Waits for the peer's first answer, the only proof the session carries anything; 0 when none comes or the
+    // session is gone.
+    private async Task<long> WaitForHandshakeAsync(int handle)
+    {
+        for (var attempt = 0; attempt < HandshakeWaitSeconds * 1000 / HandshakePollMs; attempt++)
+        {
+            if (_handle != handle)
+            {
+                return 0;
+            }
+
+            var seen = PeerHandshake(AwgEngine.GetConfig(handle));
+            if (seen > 0)
+            {
+                return seen;
+            }
+
+            await Task.Delay(HandshakePollMs).ConfigureAwait(false);
+        }
+
+        return 0;
     }
 
     // Tells the head when the peer last answered, so a tunnel that is up but dead shows as such there.

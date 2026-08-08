@@ -415,6 +415,12 @@
   <data name="Main_CopyButton" xml:space="preserve">
     <value>Copy</value>
   </data>
+  <data name="Main_ShowButton" xml:space="preserve">
+    <value>Show</value>
+  </data>
+  <data name="Main_HideButton" xml:space="preserve">
+    <value>Hide</value>
+  </data>
   <data name="Main_DeleteConfigButton" xml:space="preserve">
     <value>Delete configuration</value>
   </data>
@@ -933,6 +939,9 @@
   </data>
   <data name="MainVm_ConnectHintClickToDisconnect" xml:space="preserve">
     <value>Click to disconnect</value>
+  </data>
+  <data name="MainVm_ConnectHintServerSilent" xml:space="preserve">
+    <value>The server has stopped answering</value>
   </data>
   <data name="MainVm_ConnectHintConnecting" xml:space="preserve">
     <value>Establishing connection…</value>
@@ -1735,6 +1744,36 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Main_NoConfigsHint" xml:space="preserve">
     <value>Add a configuration in settings.</value>
+  </data>
+  <data name="Main_ServersTitle" xml:space="preserve">
+    <value>Servers</value>
+  </data>
+  <data name="Main_HomeTabMain" xml:space="preserve">
+    <value>Home</value>
+  </data>
+  <data name="Main_HomeTabServers" xml:space="preserve">
+    <value>Servers</value>
+  </data>
+  <data name="Main_ServerRowTooltip" xml:space="preserve">
+    <value>Connect this configuration</value>
+  </data>
+  <data name="Main_ServerRowDisconnect" xml:space="preserve">
+    <value>Disconnect this configuration</value>
+  </data>
+  <data name="Main_ProbeTooltip" xml:space="preserve">
+    <value>Check the servers</value>
+  </data>
+  <data name="Main_ProbeMilliseconds" xml:space="preserve">
+    <value>{0} ms</value>
+  </data>
+  <data name="Main_ProbeNoAnswer" xml:space="preserve">
+    <value>no answer</value>
+  </data>
+  <data name="Main_ProbeHandshake" xml:space="preserve">
+    <value>{0} s ago</value>
+  </data>
+  <data name="Main_ProbeNoAddress" xml:space="preserve">
+    <value>no address</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Use this configuration</value>

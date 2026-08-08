@@ -568,6 +568,16 @@ internal sealed class ConfigRunner(
             return true;
         }
 
+        // Hand the keepalive view to the snapshot: the UI colours the connect control from it. Only a moved
+        // step is worth a push; the seconds in between change nothing on screen.
+        var handshakeAge = status.HandshakeSec > 0
+            ? HandshakeAge.Step(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec)
+            : -1;
+        if (control.SetHandshakeAge(handshakeAge))
+        {
+            control.SignalStatus();
+        }
+
         // Data still arriving is definitive liveness, even while a rekey handshake is in flight on a lossy link.
         if (status.RxBytes > _lastRxBytes)
         {
@@ -598,6 +608,8 @@ internal sealed class ConfigRunner(
 
     private void Stop(string member)
     {
+        control.SetHandshakeAge(-1);
+
         if (string.IsNullOrEmpty(member))
         {
             return;

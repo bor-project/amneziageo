@@ -48,8 +48,10 @@ internal sealed class LinuxAgent : IDisposable
     private int _reconnectIntervalSeconds = 30;
     private int _routeTtlSeconds = TunnelOptions.DefaultRouteTtlSeconds;
     private bool _desiredConnected;
+    private int _handshakeAge = -1;
     private DateTime _nextRetryUtc = DateTime.MinValue;
     private bool _connectFailed;
+    private bool _restartRequired;
     private string _connectFailReason = string.Empty;
     private string _connectFailDetail = string.Empty;
     private bool _disposed;
@@ -167,6 +169,7 @@ internal sealed class LinuxAgent : IDisposable
             RoutingLists: routingLists,
             Active: _tunnel.Running,
             BoundStatus: _boundStatus,
+            RestartRequired: _restartRequired,
             SelectedTarget: _selectedTarget ?? string.Empty,
             SelectedRoutingList: await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false),
             Sources: await BuildSourcesAsync(ct).ConfigureAwait(false),
@@ -195,9 +198,17 @@ internal sealed class LinuxAgent : IDisposable
             UpdateInstalling: _updater.Installing);
     }
 
-    // Notices a tunnel that went down under us and redials it while periodic reconnect is on.
+    // Notices a tunnel that went down under us and redials it while periodic reconnect is on, and carries the
+    // keepalive view to the clients: nothing else pushes a snapshot while the tunnel just runs.
     private async Task SuperviseAsync(CancellationToken ct)
     {
+        var age = _tunnel.Running ? await _tunnel.HandshakeAgeAsync(ct).ConfigureAwait(false) : -1;
+        if (age != _handshakeAge)
+        {
+            _handshakeAge = age;
+            await PushAsync(ct).ConfigureAwait(false);
+        }
+
         if (!_desiredConnected || _tunnel.Running)
         {
             return;
@@ -381,6 +392,7 @@ internal sealed class LinuxAgent : IDisposable
         if (desired == "disconnect")
         {
             _desiredConnected = false;
+            _restartRequired = false;
             _boundStatus = ConnectionStatus.Disconnecting;
             await PushAsync(ct).ConfigureAwait(false);
             await _tunnel.DownAsync(ct).ConfigureAwait(false);
@@ -409,6 +421,7 @@ internal sealed class LinuxAgent : IDisposable
 
         _desiredConnected = true;
         _connectFailed = false;
+        _restartRequired = false;
         _connectFailReason = string.Empty;
         _connectFailDetail = string.Empty;
         _boundTarget = _selectedTarget;
@@ -617,8 +630,25 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         await _store.SetSelectedRoutingListAsync(listId, ct).ConfigureAwait(false);
+        await ApplyRoutingAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
+    }
+
+    // Hands the edited rules to the running tunnel; what a live session cannot take raises the reconnect banner.
+    private async Task ApplyRoutingAsync(CancellationToken ct)
+    {
+        if (!_tunnel.Running)
+        {
+            return;
+        }
+
+        var routing = await TunnelRouting.LoadAsync(_store, ct).ConfigureAwait(false);
+        if (!_tunnel.ApplyRules(routing))
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the edited rules change the tunnel mode; they apply on the next connect");
+        }
     }
 
     private async Task<IpcAck> SetGeoAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -742,6 +772,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var saved = await _geo.ApplyToRoutingListAsync(id, name, [.. args.Skip(2)], ct).ConfigureAwait(false);
+        await ApplyRoutingAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return new IpcAck(true, saved.ToString(CultureInfo.InvariantCulture));
     }
@@ -768,6 +799,7 @@ internal sealed class LinuxAgent : IDisposable
 
         await _store.RemoveRoutingListAsync(id, ct).ConfigureAwait(false);
         await _store.RemoveRoutingSettingsAsync(id, ct).ConfigureAwait(false);
+        await ApplyRoutingAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -808,6 +840,7 @@ internal sealed class LinuxAgent : IDisposable
             await _store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, useGlobalProxy ? "full" : "split", useGlobalProxy), ct).ConfigureAwait(false);
         }
 
+        await ApplyRoutingAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }
@@ -1064,6 +1097,7 @@ internal sealed class LinuxAgent : IDisposable
         var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
         var dns = await _store.GetConfigDnsAsync(name, ct).ConfigureAwait(false);
         var exclusions = await _store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
+        var handshake = string.Equals(name, _boundTarget, StringComparison.Ordinal) ? _handshakeAge : -1;
         return new ConfigEntry(
             name,
             WgConfigEditor.GetEndpoint(text) ?? string.Empty,
@@ -1076,7 +1110,8 @@ internal sealed class LinuxAgent : IDisposable
             dns?.Servers ?? string.Empty,
             exclusions?.Exclusions ?? string.Empty,
             transport?.Mtu ?? WgConfigEditor.GetMtu(text),
-            transport?.UseIpv6 ?? false);
+            transport?.UseIpv6 ?? false,
+            handshake);
     }
 
     private async Task<IReadOnlyList<SourceEntry>> BuildSourcesAsync(CancellationToken ct)

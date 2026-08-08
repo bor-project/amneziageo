@@ -3,14 +3,16 @@ using AmneziaGeo.Routing;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Hands the running session's live state to readers outside the data path - the runtime inspector reports on it,
-/// nothing else touches it. Both slots are empty between sessions, and each is filled only when the session builds
-/// that piece: the cache only for an on-demand Direct bucket, the tracker only in split mode with domain rules.
+/// Hands the running session's live state to readers outside the data path - the runtime inspector reports on it
+/// and a rule edit re-applies through it. Every slot is empty between sessions, and each is filled only when the
+/// session builds that piece: the cache only for an on-demand Direct bucket, the tracker only in split mode with
+/// domain rules, the proxy only when it bound its port.
 /// </summary>
 internal sealed class LiveSession
 {
     private volatile RoutingCache? _cache;
     private volatile DomainTracker? _tracker;
+    private volatile DnsProxy? _proxy;
 
     /// <summary>
     /// Per-destination verdict cache of the session in flight.
@@ -21,6 +23,11 @@ internal sealed class LiveSession
     /// Domain tracker of the session in flight.
     /// </summary>
     public DomainTracker? Tracker => _tracker;
+
+    /// <summary>
+    /// Name proxy of the session in flight.
+    /// </summary>
+    public DnsProxy? Proxy => _proxy;
 
     /// <summary>
     /// Publishes the session's verdict cache.
@@ -39,11 +46,20 @@ internal sealed class LiveSession
     }
 
     /// <summary>
-    /// Drops both slots at teardown.
+    /// Publishes the session's name proxy.
+    /// </summary>
+    public void SetProxy(DnsProxy? proxy)
+    {
+        _proxy = proxy;
+    }
+
+    /// <summary>
+    /// Drops every slot at teardown.
     /// </summary>
     public void Clear()
     {
         _cache = null;
         _tracker = null;
+        _proxy = null;
     }
 }

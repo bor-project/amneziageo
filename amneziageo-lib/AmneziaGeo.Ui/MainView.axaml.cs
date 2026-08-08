@@ -42,7 +42,6 @@ public sealed partial class MainView : UserControl
         if (_vm is not null)
         {
             _vm.WindowWidth = Bounds.Width > 0 ? Bounds.Width : 987;
-            _vm.WindowHeight = Bounds.Height > 0 ? Bounds.Height : 610;
             _vm.PropertyChanged += OnViewModelPropertyChanged;
             _vm.Home.PropertyChanged += OnHomePropertyChanged;
             ApplySettingsLayout();
@@ -64,7 +63,6 @@ public sealed partial class MainView : UserControl
         if (_vm is not null)
         {
             _vm.WindowWidth = e.NewSize.Width;
-            _vm.WindowHeight = e.NewSize.Height;
         }
     }
 
@@ -112,6 +110,18 @@ public sealed partial class MainView : UserControl
         {
             e.Handled = true;
         }
+    }
+
+    // The back arrow. With the on-screen keyboard up the press only drops it and the screen stays: a
+    // multiline field spends Enter on a line break, leaving no other way to put the keyboard away.
+    private void OnBackClick(object? sender, RoutedEventArgs e)
+    {
+        if (SoftInputBridge.Dismiss())
+        {
+            return;
+        }
+
+        _vm?.NavBackCommand.Execute(null);
     }
 
     // Escape and the back button take the back arrow's route: section detail first, then home.
@@ -163,7 +173,9 @@ public sealed partial class MainView : UserControl
 
             if (vm.IsHome)
             {
-                HomePowerButton.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
+                // The compact server tab hides the round button, so its tab takes the ring instead.
+                var connect = vm.ShowHomeConnect ? (Control)HomePowerButton : HomeServersTab;
+                connect.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
             }
             else if (vm.IsSettings)
             {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Platform;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -29,6 +30,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private ComboBox? _activeComboBox;
     private readonly TranslateTransform _sheetTransform;
     private readonly Action<AdaptiveComboBox> _showSelect;
+    private readonly Func<bool> _dismissKeyboard;
     private TopLevel? _topLevel;
     private Control? _selectedRow;
     private TextBox? _keyboardTarget;
@@ -41,6 +43,7 @@ internal sealed partial class MobileSelectHost : UserControl
         InitializeComponent();
         _sheetTransform = (TranslateTransform)SelectSheet.RenderTransform!;
         _showSelect = Open;
+        _dismissKeyboard = DismissKeyboard;
         AdaptiveComboBox.SelectPresenter = _showSelect;
         RootGrid.Children.Insert(0, content);
 
@@ -64,6 +67,7 @@ internal sealed partial class MobileSelectHost : UserControl
         _topLevel = TopLevel.GetTopLevel(this);
         AdaptiveComboBox.SelectPresenter = _showSelect;
         AppSplitBridge.Register(ShowAppPicker);
+        SoftInputBridge.Register(_dismissKeyboard);
         // TV file managers answer the single-file picker with a multi-select payload it never reads, so the pick
         // comes back empty; the built-in browser owns opening there.
         if (UiPlatform.IsTelevision || !HasHandler(global::Android.Content.Intent.ActionOpenDocument))
@@ -98,6 +102,8 @@ internal sealed partial class MobileSelectHost : UserControl
         {
             AdaptiveComboBox.SelectPresenter = null;
         }
+
+        SoftInputBridge.Unregister(_dismissKeyboard);
 
         if (_topLevel is not null)
         {
@@ -445,10 +451,8 @@ internal sealed partial class MobileSelectHost : UserControl
     // Dismisses the topmost overlay in stacking order; the keyboard covers everything and goes first.
     private bool CloseTopOverlay()
     {
-        if (_topLevel?.FocusManager?.GetFocusedElement() is TextBox typing
-            && InputMethod.GetIsInputMethodEnabled(typing))
+        if (DismissKeyboard())
         {
-            CloseKeyboard(typing);
             return true;
         }
 
@@ -471,6 +475,38 @@ internal sealed partial class MobileSelectHost : UserControl
         }
 
         return false;
+    }
+
+    // Takes the keyboard off the field being edited, reporting whether there was one. The pane answers what the
+    // platform really shows: the field's own flag comes back to its default once the field is focused again, and
+    // a second press would spend itself on a keyboard that is already down.
+    private bool DismissKeyboard()
+    {
+        if (_topLevel is not { } top)
+        {
+            return false;
+        }
+
+        var typing = top.FocusManager?.GetFocusedElement() as TextBox;
+        var open = top.InputPane is { } pane
+            ? pane.State == InputPaneState.Open
+            : typing is not null && InputMethod.GetIsInputMethodEnabled(typing);
+
+        if (!open)
+        {
+            return false;
+        }
+
+        if (typing is not null)
+        {
+            CloseKeyboard(typing);
+        }
+        else
+        {
+            top.FocusManager?.ClearFocus();
+        }
+
+        return true;
     }
 
     // Whether a real activity handles the intent: Android TV images ship only a stub that toasts and returns.

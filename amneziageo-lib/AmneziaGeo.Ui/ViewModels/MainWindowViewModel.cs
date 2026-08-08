@@ -56,7 +56,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCompact))]
-    [NotifyPropertyChangedFor(nameof(IsHorizontalHome))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeConnect))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeServers))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
@@ -64,13 +65,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
     [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     private double _windowWidth = 987;
-
-    /// <summary>
-    /// Current view height, used to restack the home controls on short landscape screens.
-    /// </summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsHorizontalHome))]
-    private double _windowHeight = 610;
 
     /// <summary>
     /// In compact mode, whether a section detail is open (true) or the section rail is shown (false).
@@ -85,6 +79,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _hasConfigs;
+
+    /// <summary>
+    /// Which home pane the compact layout shows: "main" (the connect control) or "servers" (the server table).
+    /// The wide layout shows both at once and ignores it.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsHomeMain))]
+    [NotifyPropertyChangedFor(nameof(IsHomeServers))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeConnect))]
+    [NotifyPropertyChangedFor(nameof(ShowHomeServers))]
+    private string _homeTab = "main";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
@@ -179,12 +184,30 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Whether the short, wide home surface should place its controls side by side.
     /// </summary>
-    public bool IsHorizontalHome => WindowHeight < 520 && WindowWidth >= CompactBreakpoint;
-
     /// <summary>
     /// Whether a section detail is open in compact mode; the header then shows the section name.
     /// </summary>
     public bool IsSectionDetail => IsCompact && SettingsDetailOpen;
+
+    /// <summary>
+    /// Whether the compact home shows the connect pane.
+    /// </summary>
+    public bool IsHomeMain => HomeTab == "main";
+
+    /// <summary>
+    /// Whether the compact home shows the server pane.
+    /// </summary>
+    public bool IsHomeServers => HomeTab == "servers";
+
+    /// <summary>
+    /// Whether the connect control is on screen: always when wide, on its tab when compact.
+    /// </summary>
+    public bool ShowHomeConnect => !IsCompact || IsHomeMain;
+
+    /// <summary>
+    /// Whether the server table is on screen: always when wide, on its tab when compact.
+    /// </summary>
+    public bool ShowHomeServers => !IsCompact || IsHomeServers;
 
     /// <summary>
     /// Whether the settings section rail is shown: always in wide mode, and in compact mode only when no section
@@ -281,10 +304,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return Config.ConfigNames;
     }
 
+    // Compact home tab pick.
+    [RelayCommand]
+    private void SelectHomeTab(string tab)
+    {
+        HomeTab = tab;
+    }
+
     [RelayCommand]
     private void NavHome()
     {
         Nav = "home";
+        Home.ProbeOnHomeShown();
         Config.AbandonCreate();
         Routing.AbandonCreate();
         Routing.LeaveSection();

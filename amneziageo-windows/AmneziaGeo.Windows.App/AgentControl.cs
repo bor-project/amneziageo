@@ -24,6 +24,7 @@ internal sealed class AgentControl
     private volatile bool _disconnectFailed;
     private volatile string? _disconnectFailDetail;
     private volatile int _retryAttempt;
+    private volatile int _handshakeAge = -1;
     private volatile bool _awaitingRetry;
     private volatile bool _wakePending;
     private CancellationTokenSource _change = new();
@@ -34,6 +35,21 @@ internal sealed class AgentControl
     /// Whether the agent keeps a tunnel up.
     /// </summary>
     public bool Running => _running;
+
+    /// <summary>
+    /// How long ago the running tunnel's peer last answered, in reporting steps; -1 before it ever has.
+    /// </summary>
+    public int HandshakeAge => _handshakeAge;
+
+    /// <summary>
+    /// Records the running tunnel's handshake age and reports whether the step moved.
+    /// </summary>
+    public bool SetHandshakeAge(int seconds)
+    {
+        var moved = _handshakeAge != seconds;
+        _handshakeAge = seconds;
+        return moved;
+    }
 
     /// <summary>
     /// A connected tunnel must be reconnected to apply a changed setting.

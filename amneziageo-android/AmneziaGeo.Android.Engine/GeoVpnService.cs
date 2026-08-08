@@ -85,6 +85,7 @@ public sealed class GeoVpnService : VpnService
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
+    private const int HandshakeIntervalMs = 30_000;
     private const int TcpProtocol = 6;
     private const int ExitDelayMs = 1_000;
 
@@ -96,6 +97,7 @@ public sealed class GeoVpnService : VpnService
     private int _proxyPort;
     private ProxyRelay? _relay;
     private CancellationTokenSource? _reports;
+    private CancellationTokenSource? _keepalive;
     private VpnBridge.Listener? _queries;
     private VpnBridge.Listener? _stops;
     private VpnStage _stage = VpnStage.Disconnected;
@@ -234,6 +236,9 @@ public sealed class GeoVpnService : VpnService
             }
 
             Publish(VpnStage.Connected, name);
+            var keepalive = new CancellationTokenSource();
+            _keepalive = keepalive;
+            _ = Task.Run(() => ReportHandshakeAsync(keepalive.Token));
             if (relay is not null && _proxyPort > 0)
             {
                 Report($"local proxy on {ProxyHost}:{_proxyPort} offered to the applications, "
@@ -577,6 +582,45 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
+    // Tells the head when the peer last answered, so a tunnel that is up but dead shows as such there.
+    private async Task ReportHandshakeAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(HandshakeIntervalMs, ct).ConfigureAwait(false);
+            }
+            catch (System.OperationCanceledException)
+            {
+                return;
+            }
+
+            var handle = _handle;
+            if (handle < 0)
+            {
+                return;
+            }
+
+            VpnBridge.PublishHandshake(this, PeerHandshake(AwgEngine.GetConfig(handle)));
+        }
+    }
+
+    // The peer's last handshake in unix seconds; 0 before it has ever answered.
+    private static long PeerHandshake(string? uapi)
+    {
+        foreach (var line in (uapi ?? string.Empty).Split('\n'))
+        {
+            if (line.StartsWith("last_handshake_time_sec=", StringComparison.Ordinal)
+                && long.TryParse(line[(line.IndexOf('=') + 1)..].Trim(), out var seconds))
+            {
+                return seconds;
+            }
+        }
+
+        return 0;
+    }
+
     // Sums what the peer has carried in both directions.
     private static long TunnelBytes(string? uapi)
     {
@@ -754,6 +798,9 @@ public sealed class GeoVpnService : VpnService
         _reports?.Cancel();
         _reports?.Dispose();
         _reports = null;
+        _keepalive?.Cancel();
+        _keepalive?.Dispose();
+        _keepalive = null;
         _relay?.Dispose();
         _relay = null;
         _proxyPort = 0;

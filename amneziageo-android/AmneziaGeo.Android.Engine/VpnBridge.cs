@@ -46,6 +46,11 @@ public static class VpnBridge
     /// </summary>
     public const string ExtraReason = "reason";
 
+    /// <summary>
+    /// Peer handshake extra: unix seconds of the server's last answer.
+    /// </summary>
+    public const string ExtraHandshake = "handshake";
+
     private const string PlanFile = "plan.json";
     private const string ProcessSuffix = ":vpn";
 
@@ -66,6 +71,16 @@ public static class VpnBridge
             intent.PutExtra(ExtraReason, reason);
         }
 
+        context.SendBroadcast(intent);
+    }
+
+    /// <summary>
+    /// Reports the peer's last handshake to the head.
+    /// </summary>
+    public static void PublishHandshake(Context context, long unixSeconds)
+    {
+        var intent = Broadcast(context, ActionEvent);
+        intent.PutExtra(ExtraHandshake, unixSeconds);
         context.SendBroadcast(intent);
     }
 

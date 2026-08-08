@@ -20,9 +20,9 @@ internal sealed class DnsRouter : IDisposable
 
     private readonly bool _split;
     private readonly bool _stripV6;
-    private readonly DomainMatcher _proxyDomains;
-    private readonly DomainMatcher _directDomains;
-    private readonly DomainMatcher _blockDomains;
+    private volatile DomainMatcher _proxyDomains;
+    private volatile DomainMatcher _directDomains;
+    private volatile DomainMatcher _blockDomains;
     private readonly IReadOnlyList<IPAddress> _tunnelResolvers;
     private readonly IReadOnlyList<IPAddress> _lanResolvers;
     private readonly RoutingCache _routes;
@@ -52,6 +52,17 @@ internal sealed class DnsRouter : IDisposable
     /// Address the router listens on.
     /// </summary>
     public static IPAddress Listen { get; } = IPAddress.Parse("127.0.0.71");
+
+    /// <summary>
+    /// Takes the edited rules over; the next lookup is answered by them.
+    /// </summary>
+    public void ApplyRules(TunnelRouting routing)
+    {
+        _proxyDomains = new DomainMatcher(routing.ProxyDomains);
+        _directDomains = new DomainMatcher(routing.DirectDomains);
+        _blockDomains = new DomainMatcher(routing.BlockDomains);
+        _log.Info("dns", $"name rules reloaded: {routing.ProxyDomains.Count} tunneled, {routing.DirectDomains.Count} direct, {routing.BlockDomains.Count} refused");
+    }
 
     /// <summary>
     /// Binds the listeners and starts serving; false when the address is taken.

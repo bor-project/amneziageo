@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Linux.Engine;
 using AmneziaGeo.Routing;
 
@@ -154,6 +155,28 @@ internal sealed class TunnelController : IDisposable
     public void SetRouteTtl(int seconds) => _cache?.SetTtl(seconds);
 
     /// <summary>
+    /// Applies edited rules to the running tunnel and drops every verdict taken under the old ones; false when
+    /// only a fresh tunnel can carry the change, because the mode decides what the engine was told to accept.
+    /// </summary>
+    public bool ApplyRules(TunnelRouting routing)
+    {
+        if (_cache is not { } cache)
+        {
+            return false;
+        }
+
+        if ((routing.Split && routing.HasRules) != _split)
+        {
+            return false;
+        }
+
+        cache.Rebuild(routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes);
+        _dns?.ApplyRules(routing);
+        Mode = _split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
+        return true;
+    }
+
+    /// <summary>
     /// Tears the tunnel down; the interface goes with the daemon process.
     /// </summary>
     public async Task DownAsync(CancellationToken ct = default)
@@ -250,6 +273,34 @@ internal sealed class TunnelController : IDisposable
         catch (OperationCanceledException)
         {
         }
+    }
+
+    /// <summary>
+    /// Seconds since the peer last answered, or -1 when nothing runs or the peer has never answered.
+    /// </summary>
+    public async Task<int> HandshakeAgeAsync(CancellationToken ct)
+    {
+        if (_daemon is not { } daemon)
+        {
+            return -1;
+        }
+
+        try
+        {
+            foreach (var line in (await daemon.GetConfigAsync(ct).ConfigureAwait(false)).Split('\n'))
+            {
+                if (line.StartsWith("last_handshake_time_sec=", StringComparison.Ordinal)
+                    && long.TryParse(line.AsSpan(24), out var seconds) && seconds > 0)
+                {
+                    return HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seconds));
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or SocketException)
+        {
+        }
+
+        return -1;
     }
 
     // Whether the peer has answered at least once.

@@ -48,10 +48,10 @@ internal sealed class CompactConverter : IValueConverter
             // Top gap under the tabs when the catalogue combo drops to its own row in compact.
             "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
-            "homeOrientation" => compact ? Orientation.Horizontal : Orientation.Vertical,
-            // Home status/hint column: matches the config picker when stacked, free-width when the row is
-            // horizontal and the width is shared with the power button and the picker.
-            "homeStatusWidth" => compact ? double.NaN : 300d,
+            // Home server column: indented off the connect column when the two stand side by side.
+            "insetLeft16" => compact ? new Thickness(0) : new Thickness(16, 0, 0, 0),
+            // Home server pane: its own column beside the connect one, the whole row when compact.
+            "colServers" => compact ? 0 : 2,
             // Column widths for an even-split row: a fixed control becomes a star column in compact so it
             // shares the width, and the spacer/other-content column collapses.
             "colAutoStar" => compact ? new GridLength(1, GridUnitType.Star) : GridLength.Auto,

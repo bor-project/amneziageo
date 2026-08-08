@@ -288,17 +288,9 @@ internal sealed class TunnelRunner(
 
         var (parsedCidrs, parsedExclusionDomains) = ParseExclusions(storedExclusions ?? string.Empty);
         var exclusionDomains = new List<string>(parsedExclusionDomains);
-        // Direct bucket (both modes): its domains stay on the local resolver, off the tunnel, overriding a proxy match.
-        if (activeList is not null)
-        {
-            foreach (var direct in activeList.DirectDomains)
-            {
-                if (!exclusionDomains.Contains(direct.Value))
-                {
-                    exclusionDomains.Add(direct.Value);
-                }
-            }
-        }
+        // Direct bucket (both modes): its domains stay on the local resolver, off the tunnel, overriding a proxy
+        // match. Handed to the proxy on its own so an edited list rebuilds it without a fresh tunnel.
+        var directDomains = activeList?.DirectDomains ?? [];
         // Keep LAN DNS suffixes off-tunnel (split-horizon DNS).
         foreach (var suffix in dns.CaptureLocalDnsSuffixes())
         {
@@ -437,7 +429,8 @@ internal sealed class TunnelRunner(
             }
         }
 
-        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, tracker, appDns, routing);
+        var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing);
+        session.SetProxy(proxy);
 
         // Per-app DNS: a name queried by a matched app resolves through the tunnel and routes its answer. On
         // learn, drop the proxy's pre-mark answer AND flush the OS resolver cache so the app's retry re-queries
@@ -669,7 +662,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing)
+    private DnsProxy? StartProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, bool stripV6, bool localIsLan, IReadOnlyList<string> tunnelUpstream, IReadOnlyList<string> localUpstream, IReadOnlyList<string> lanUpstream, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, AppDnsTracker? appDns, RoutingCache? routing)
     {
         var tunnelIp = ParseFirst(tunnelUpstream, IPAddress.Parse("1.1.1.1"));
         var tunnelSecondary = tunnelUpstream.Count > 1 && IPAddress.TryParse(tunnelUpstream[1], out var ts) ? ts : null;
@@ -680,7 +673,7 @@ internal sealed class TunnelRunner(
             .Where(ip => ip is not null)
             .Select(ip => ip!)
             .ToList();
-        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing);
+        var proxy = new DnsProxy(domains, blockDomains, tunnelIp, localIp, lanIp, lanPool, localIsLan, localDomains, directDomains, tracker, loggerFactory.CreateLogger<DnsProxy>(), stripV6, tunnelSecondary, appDns, routing);
         if (proxy.BoundV4 is null)
         {
             return null;
@@ -1024,6 +1017,13 @@ internal sealed class TunnelRunner(
             if (list is not null)
             {
                 routing.Rebuild(current.Routes, list.DirectRoutes, list.BlockRoutes);
+
+                // The Direct and Block names live in the proxy, outside the tracker: it only runs in split mode,
+                // while these two buckets decide in both.
+                if (session.Proxy is { } proxy && proxy.UpdateBuckets(list.BlockDomains, list.DirectDomains))
+                {
+                    dns.FlushCache();
+                }
             }
 
             session.Tracker?.ApplyList(current, ct);

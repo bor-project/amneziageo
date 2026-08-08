@@ -15,4 +15,31 @@ public sealed record ConfigEntry(
     string Dns = "",
     string Exclusions = "",
     int Mtu = 0,
-    bool UseIpv6 = false);
+    bool UseIpv6 = false,
+    // Seconds since the peer's last handshake on the running tunnel, in 30-second steps so a snapshot is not
+    // pushed every second; -1 for every config that is not running.
+    int HandshakeAgeSeconds = -1);
+
+/// <summary>
+/// Terms both sides read the handshake age by.
+/// </summary>
+public static class HandshakeAge
+{
+    /// <summary>
+    /// Step the age is reported in.
+    /// </summary>
+    public const int StepSeconds = 30;
+
+    /// <summary>
+    /// Age beyond which the peer counts as gone: AmneziaWG itself rejects the session at this point.
+    /// </summary>
+    public const int SilentSeconds = 180;
+
+    /// <summary>
+    /// Rounds an age down to the reporting step; a negative age stays unknown.
+    /// </summary>
+    public static int Step(long seconds)
+    {
+        return seconds < 0 ? -1 : (int)(seconds / StepSeconds * StepSeconds);
+    }
+}

@@ -49,7 +49,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private long? _selectedRoutingList;
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
+    private long _handshakeUnix;
     private bool _active;
+    private bool _restartRequired;
     private bool _connectFailed;
     private string _connectFailReason = string.Empty;
     private string _connectFailDetail = string.Empty;
@@ -340,6 +342,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         ClearConnectFailure();
+        _restartRequired = false;
         // Reports the connecting stage from the request: the tunnel process speaks only once it is up, and until
         // then a snapshot would pull the card back to disconnected.
         _active = true;
@@ -438,6 +441,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return;
         }
 
+        var handshake = intent.GetLongExtra(VpnBridge.ExtraHandshake, -1);
+        if (handshake >= 0)
+        {
+            _handshakeUnix = handshake;
+            PushSnapshot();
+            return;
+        }
+
         var stage = intent.GetIntExtra(VpnBridge.ExtraStage, -1);
         if (stage >= 0)
         {
@@ -454,6 +465,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             case VpnStage.Connecting:
                 _active = true;
+                _restartRequired = false;
                 _boundStatus = ConnectionStatus.Connecting;
                 _boundTarget = session;
                 break;
@@ -465,13 +477,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 break;
             case VpnStage.Disconnected:
                 _active = false;
+                _restartRequired = false;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
+                _handshakeUnix = 0;
                 break;
             case VpnStage.Failed:
                 _active = false;
+                _restartRequired = false;
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
+                _handshakeUnix = 0;
                 SetConnectFailure(reason ?? nameof(ConnectFailureReason.Unknown), detail ?? string.Empty);
                 break;
         }
@@ -509,6 +525,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
+    // A live tun keeps the routes establish() was given, so an edited list only reaches the tunnel on a reconnect.
+    private void MarkRoutingChanged(long listId)
+    {
+        if (_active && _selectedRoutingList == listId)
+        {
+            _restartRequired = true;
+            _log.Info("agent", "the edited routing list applies on the next connect");
+        }
+    }
+
     private void PushSnapshot()
     {
         var configs = _configs.Select(kv => Entry(kv.Key, kv.Value)).ToList();
@@ -520,6 +546,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RoutingLists: _routingSummaries,
             Active: _active,
             BoundStatus: _boundStatus,
+            RestartRequired: _restartRequired,
             SelectedTarget: _selectedTarget ?? string.Empty,
             SelectedRoutingList: _selectedRoutingList,
             Sources: BuildSources(),
@@ -537,12 +564,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private ConfigEntry Entry(string name, string config)
     {
         var transport = _transports.GetValueOrDefault(name);
+        var handshake = _active && _handshakeUnix > 0 && string.Equals(_boundTarget, name, StringComparison.Ordinal)
+            ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix))
+            : -1;
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: false,
             WebSocketHost: transport?.WebSocketHost ?? string.Empty,
             WebSocketPort: transport?.WebSocketPort ?? 443,
             Mtu: transport?.Mtu ?? 0,
-            UseIpv6: transport?.UseIpv6 ?? false);
+            UseIpv6: transport?.UseIpv6 ?? false,
+            HandshakeAgeSeconds: handshake);
     }
 
     private string StatusFor(string target)
@@ -874,6 +905,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var savedId = await _geo.ApplyToRoutingListAsync(id, name, [.. args.Skip(2)]).ConfigureAwait(false);
+        MarkRoutingChanged(savedId);
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, savedId.ToString(CultureInfo.InvariantCulture));
@@ -933,6 +965,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         await EnsureInitAsync().ConfigureAwait(false);
         await _store.RemoveRoutingListAsync(id).ConfigureAwait(false);
+        MarkRoutingChanged(id);
 
         // Turns routing off when the removed list was the selected one.
         if (_selectedRoutingList == id)
@@ -986,6 +1019,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             await _store.SetRoutingSettingsAsync(new RoutingSettings(id, exclusions, allUdp, mode, useGlobalProxy)).ConfigureAwait(false);
         }
 
+        MarkRoutingChanged(id);
         PushSnapshot();
         return Ok();
     }

@@ -71,10 +71,10 @@ internal sealed class DnsProxy
     // Volatile: read on the hot query path, replaced on the poll thread; the matcher is immutable.
     private volatile IReadOnlyList<GeoDomain> _domains;
     private volatile DomainMatcher _matcher;
-    // Block bucket: names refused with NXDOMAIN before any tunnel/bypass decision. Applied at connect
-    // (a live block-domain change needs a reconnect); never tunneled or resolved.
-    private readonly DomainMatcher _blockMatcher;
-    private readonly bool _hasBlockDomains;
+    // Block bucket: names refused with NXDOMAIN before any tunnel/bypass decision; never tunneled or resolved.
+    private volatile IReadOnlyList<GeoDomain> _blockDomains;
+    private volatile DomainMatcher _blockMatcher;
+    private volatile bool _hasBlockDomains;
     private readonly IPAddress _tunnelUpstream;
     private readonly IPAddress? _tunnelUpstreamSecondary;
     private readonly IPAddress _localUpstream;
@@ -84,7 +84,9 @@ internal sealed class DnsProxy
     private readonly IReadOnlyList<IPAddress> _lanPool;
     // Non-geo names resolve on the LAN (raceable) in split mode; offshore through the tunnel in full mode.
     private readonly bool _localIsLan;
-    private readonly IReadOnlyList<string> _localDomains;
+    // Suffixes the session was built with, kept apart from the Direct bucket so a list edit rebuilds only it.
+    private readonly IReadOnlyList<string> _staticLocalDomains;
+    private volatile IReadOnlyList<string> _localDomains;
     private readonly DomainTracker? _tracker;
     private readonly ILogger<DnsProxy> _logger;
     private readonly bool _stripV6;
@@ -96,12 +98,13 @@ internal sealed class DnsProxy
     /// <summary>
     /// ctor
     /// </summary>
-    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null)
+    public DnsProxy(IReadOnlyList<GeoDomain> domains, IReadOnlyList<GeoDomain> blockDomains, IPAddress tunnelUpstream, IPAddress localUpstream, IPAddress? lanUpstream, IReadOnlyList<IPAddress> lanPool, bool localIsLan, IReadOnlyList<string> localDomains, IReadOnlyList<GeoDomain> directDomains, DomainTracker? tracker, ILogger<DnsProxy> logger, bool stripV6, IPAddress? tunnelSecondary = null, AppDnsTracker? appDns = null, RoutingCache? routing = null)
     {
         _appDns = appDns;
         _routing = routing;
         _domains = domains;
         _matcher = new DomainMatcher(domains);
+        _blockDomains = blockDomains;
         _blockMatcher = new DomainMatcher(blockDomains);
         _hasBlockDomains = blockDomains.Count > 0;
         _tunnelUpstream = tunnelUpstream;
@@ -110,7 +113,8 @@ internal sealed class DnsProxy
         _lanUpstream = lanUpstream;
         _lanPool = lanPool;
         _localIsLan = localIsLan;
-        _localDomains = [.. localDomains.Select(d => d.Trim().Trim('.').ToLowerInvariant()).Where(d => d.Length > 0)];
+        _staticLocalDomains = Normalize(localDomains);
+        _localDomains = WithDirect(_staticLocalDomains, directDomains);
         _tracker = tracker;
         _logger = logger;
         _stripV6 = stripV6;
@@ -226,6 +230,51 @@ internal sealed class DnsProxy
         }
 
         _bypass[key] = Environment.TickCount64 + (BypassTtlSeconds * 1000L);
+    }
+
+    /// <summary>
+    /// Rebuilds the Direct and Block buckets live from an edited list; true when either moved, so the caller can
+    /// flush the OS resolver cache and let a name decided under the old rules be asked again.
+    /// </summary>
+    public bool UpdateBuckets(IReadOnlyList<GeoDomain> blockDomains, IReadOnlyList<GeoDomain> directDomains)
+    {
+        var locals = WithDirect(_staticLocalDomains, directDomains);
+        if (_blockDomains.SequenceEqual(blockDomains) && _localDomains.SequenceEqual(locals, StringComparer.Ordinal))
+        {
+            return false;
+        }
+
+        _blockDomains = blockDomains;
+        _blockMatcher = new DomainMatcher(blockDomains);
+        _hasBlockDomains = blockDomains.Count > 0;
+        _localDomains = locals;
+
+        // Drop cached answers and the negative cache: a name refused or kept local now may hold a verdict from
+        // before the edit.
+        _cache.Clear();
+        _bypass.Clear();
+
+        _logger.LogInformation("direct and blocked names reloaded without reconnecting: {Local} local suffix(es), {Block} blocked rule(s) now in effect", locals.Count, blockDomains.Count);
+        return true;
+    }
+
+    // Suffixes as the local check wants them: trimmed, dotless at the ends, lower case.
+    private static IReadOnlyList<string> Normalize(IEnumerable<string> domains) =>
+        [.. domains.Select(d => d.Trim().Trim('.').ToLowerInvariant()).Where(d => d.Length > 0)];
+
+    // The session's own suffixes plus the Direct bucket, whose names resolve locally and stay off the tunnel.
+    private static IReadOnlyList<string> WithDirect(IReadOnlyList<string> statics, IReadOnlyList<GeoDomain> direct)
+    {
+        var merged = new List<string>(statics);
+        foreach (var name in Normalize(direct.Select(d => d.Value)))
+        {
+            if (!merged.Contains(name))
+            {
+                merged.Add(name);
+            }
+        }
+
+        return merged;
     }
 
     /// <summary>

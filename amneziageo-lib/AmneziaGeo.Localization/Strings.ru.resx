@@ -415,6 +415,12 @@
   <data name="Main_CopyButton" xml:space="preserve">
     <value>Копировать</value>
   </data>
+  <data name="Main_ShowButton" xml:space="preserve">
+    <value>Показать</value>
+  </data>
+  <data name="Main_HideButton" xml:space="preserve">
+    <value>Скрыть</value>
+  </data>
   <data name="Main_DeleteConfigButton" xml:space="preserve">
     <value>Удалить конфигурацию</value>
   </data>
@@ -933,6 +939,9 @@
   </data>
   <data name="MainVm_ConnectHintClickToDisconnect" xml:space="preserve">
     <value>Нажмите, чтобы отключиться</value>
+  </data>
+  <data name="MainVm_ConnectHintServerSilent" xml:space="preserve">
+    <value>Сервер перестал отвечать</value>
   </data>
   <data name="MainVm_ConnectHintConnecting" xml:space="preserve">
     <value>Устанавливается соединение…</value>
@@ -1735,6 +1744,36 @@
   </data>
   <data name="Main_NoConfigsHint" xml:space="preserve">
     <value>Добавьте конфигурацию в настройках.</value>
+  </data>
+  <data name="Main_ServersTitle" xml:space="preserve">
+    <value>Серверы</value>
+  </data>
+  <data name="Main_HomeTabMain" xml:space="preserve">
+    <value>Главная</value>
+  </data>
+  <data name="Main_HomeTabServers" xml:space="preserve">
+    <value>Серверы</value>
+  </data>
+  <data name="Main_ServerRowTooltip" xml:space="preserve">
+    <value>Подключить эту конфигурацию</value>
+  </data>
+  <data name="Main_ServerRowDisconnect" xml:space="preserve">
+    <value>Отключить эту конфигурацию</value>
+  </data>
+  <data name="Main_ProbeTooltip" xml:space="preserve">
+    <value>Проверить серверы</value>
+  </data>
+  <data name="Main_ProbeMilliseconds" xml:space="preserve">
+    <value>{0} мс</value>
+  </data>
+  <data name="Main_ProbeNoAnswer" xml:space="preserve">
+    <value>нет ответа</value>
+  </data>
+  <data name="Main_ProbeHandshake" xml:space="preserve">
+    <value>{0} с назад</value>
+  </data>
+  <data name="Main_ProbeNoAddress" xml:space="preserve">
+    <value>нет адреса</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>

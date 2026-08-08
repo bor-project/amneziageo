@@ -1071,10 +1071,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return token.StartsWith("app:", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Rules that only take effect on a fresh tunnel: any app rule (the ETW matcher is built at bring-up) and the
-    // Block bucket (its WFP drops are armed once and never rebuilt). Proxy geo is reconciled live by the domain
-    // tracker. Direct is reconciled live by the routing cache, but only while the bucket is large enough to be
-    // resolved per destination - a small one is materialized at bring-up, so a change to it needs a fresh tunnel.
+    // Rules that only take effect on a fresh tunnel: any app rule, whose matcher is built at bring-up. Ranges are
+    // re-decided by the routing cache and names by the proxy, both on the rule announcement.
     private static bool RequiresReconnect(string rule, bool directIsEager)
     {
         if (IsAppRule(rule))
@@ -2265,6 +2263,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var boundConfig = boundState?.Name;
         var boundStatus = boundState?.Status ?? ConnectionStatus.Disconnected;
 
+        // Keepalive view of the running tunnel: how long ago its peer last answered.
+        var handshakeAge = boundState is not null ? control.HandshakeAge : -1;
+
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
         var defaultExclusions = default(string);
@@ -2281,7 +2282,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 ? DisplayStatus(boundState.Status)
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false));
+            var handshake = string.Equals(name, boundConfig, StringComparison.Ordinal) ? handshakeAge : -1;
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake));
         }
 
         var routingLists = new List<RoutingListEntry>();

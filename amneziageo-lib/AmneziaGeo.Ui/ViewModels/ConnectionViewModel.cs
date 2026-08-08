@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using Avalonia.Media;
 using Avalonia.Threading;
 using AmneziaGeo.Ipc;
@@ -18,8 +19,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private readonly IAgentConnection _connection;
     private readonly UiPreferences _prefs;
     private readonly DispatcherTimer _noticeTimer;
+    private readonly DispatcherTimer _networkTimer;
 
     private bool _toggleInFlight;
+    private CancellationTokenSource? _probeCts;
+    private bool _probedOnce;
     private string? _lastNotice;
     private bool _suppressActivePush;
     private bool _suppressActiveChoice;
@@ -78,6 +82,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // False until the first snapshot lands, so the card shows a loader instead of the indeterminate button.
     [ObservableProperty]
     private bool _isReady;
+
+    // A measurement of every server is in flight.
+    [ObservableProperty]
+    private bool _probeRunning;
 
     [ObservableProperty]
     private bool _noticeVisible;
@@ -138,6 +146,34 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             _noticeTimer.Stop();
             NoticeVisible = false;
         };
+        _networkTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _networkTimer.Tick += (_, _) =>
+        {
+            _networkTimer.Stop();
+            ProbeOnHomeShown();
+        };
+        try
+        {
+            NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        }
+        catch (Exception)
+        {
+            // A platform that reports no network events leaves the button and the home screen as the triggers.
+        }
+    }
+
+    // An interface came up, went down, or changed address: what the table shows no longer holds. A burst of
+    // events is coalesced into one measurement, and only the screen that shows the table pays for it.
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_host.IsHome)
+            {
+                _networkTimer.Stop();
+                _networkTimer.Start();
+            }
+        });
     }
 
     /// <summary>
@@ -178,7 +214,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     public bool IsConnectingIn => IsConnecting && !IsTunnelActive;
 
-    public string ConnectHint => ConnState switch
+    // The running tunnel has heard nothing from its server for longer than a rekey window: up, but dead.
+    public bool ServerSilent => ConnState == 2
+        && _host.Config.Configs.FirstOrDefault(c => string.Equals(c.Name, BoundTarget, StringComparison.Ordinal)) is { LinkSilent: true };
+
+    public string ConnectHint => ServerSilent
+        ? Loc.Instance.Get("MainVm_ConnectHintServerSilent")
+        : ConnState switch
     {
         1 => Loc.Instance.Get(ShowRetry ? "MainVm_ConnectHintRetrying" : "MainVm_ConnectHintConnecting"),
         2 => Loc.Instance.Get("MainVm_ConnectHintClickToDisconnect"),
@@ -207,24 +249,26 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     // the user with no in-window retry. It clears on its own once the disconnect completes (#14).
     public bool CanDismissNotice => !DisconnectFailed;
 
-    // Colour per state: disconnected grey, transitioning (connect / disconnect) orange, connected blue.
-    public IBrush ConnectCircleBrush => ConnState == 2 ? _circleBlue : Brushes.White;
+    // Colour per state: disconnected grey, transitioning (connect / disconnect) orange, connected blue. A
+    // tunnel whose server has gone silent takes the same orange as a switch in flight - it is up, but carries
+    // nothing.
+    public IBrush ConnectCircleBrush => ConnState == 2 && !ServerSilent ? _circleBlue : Brushes.White;
 
-    public IBrush ConnectCircleBorderBrush => ConnState switch
+    public IBrush ConnectCircleBorderBrush => ServerSilent ? _orange : ConnState switch
     {
         2 => Brushes.Transparent,
         1 => _orange,
         _ => _circleBorderGray,
     };
 
-    public IBrush ConnectCircleForeground => ConnState switch
+    public IBrush ConnectCircleForeground => ServerSilent ? _orange : ConnState switch
     {
         2 => Brushes.White,
         1 => _orange,
         _ => _glyphGray,
     };
 
-    public IBrush ConnectStatusBrush => ConnState switch
+    public IBrush ConnectStatusBrush => ServerSilent ? _orange : ConnState switch
     {
         2 => _textBlue,
         1 => _orange,
@@ -233,7 +277,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     public IBrush ConnectHintBrush => _hintBrush;
 
-    public Color TrayStatusColor => ConnState switch
+    public Color TrayStatusColor => ServerSilent ? Color.FromRgb(0xE0, 0x90, 0x2F) : ConnState switch
     {
         2 => Color.FromRgb(0x2A, 0x6F, 0xDB),
         1 => Color.FromRgb(0xE0, 0x90, 0x2F),
@@ -265,6 +309,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         // connect re-gates until the next reconnect snapshot.
         ActiveConfig = null;
         BoundTarget = null;
+        _probeCts?.Cancel();
+        _probedOnce = false;
+        ProbeRunning = false;
         _noticeTimer.Stop();
         _lastNotice = null;
         NoticeVisible = false;
@@ -294,6 +341,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
 
         ApplySelection(snapshot);
+
+        // First catalogue in hand: measure every server once, so the home list opens carrying real numbers.
+        if (!_probedOnce && _host.HasConfigs)
+        {
+            _probedOnce = true;
+            ProbeAllCommand.Execute(null);
+        }
 
         // Owning the tunnel clears a pending takeover prompt; while it stands, keep it across snapshots.
         if (snapshot.Active)
@@ -337,6 +391,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             notice = Loc.Instance.Get("MainVm_NoticeSettingsChanged");
             reconnect = true;
         }
+
+        // The keepalive age arrived with the rows, so re-colour the connect control from it.
+        NotifyServerSilentChanged();
 
         ConnectFailed = snapshot.ConnectFailed;
         DisconnectFailed = snapshot.DisconnectFailed;
@@ -396,6 +453,18 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
     }
 
+    // Re-raise everything the silent-server verdict feeds.
+    private void NotifyServerSilentChanged()
+    {
+        OnPropertyChanged(nameof(ServerSilent));
+        OnPropertyChanged(nameof(ConnectHint));
+        OnPropertyChanged(nameof(ConnectCircleBrush));
+        OnPropertyChanged(nameof(ConnectCircleBorderBrush));
+        OnPropertyChanged(nameof(ConnectCircleForeground));
+        OnPropertyChanged(nameof(ConnectStatusBrush));
+        OnPropertyChanged(nameof(TrayStatusColor));
+    }
+
     // Re-raise the host-derived hint after the shell recomputes HasConfigs on a snapshot.
     public void NotifyHostFlagsChanged()
     {
@@ -409,6 +478,16 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
     {
+        if (oldValue is not null)
+        {
+            oldValue.IsActive = false;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.IsActive = true;
+        }
+
         SyncActiveConfigChoice();
         NotifyCanToggleConnection();
         _host.Config.NotifyActiveConfigChanged();
@@ -513,6 +592,87 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             ? ConfigChoice.None
             : _host.Config.HomeConfigOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, ActiveConfig.Name, StringComparison.Ordinal)) ?? ConfigChoice.None;
         _suppressActiveChoice = false;
+    }
+
+    /// <summary>
+    /// Connects the configuration a home server row stands for, or takes the tunnel down when the row is the
+    /// one already running.
+    /// </summary>
+    [RelayCommand]
+    private async Task ConnectConfig(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        var live = IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
+        ActiveConfig = item;
+        await ToggleConfigConnectionAsync(item.Name, !live);
+    }
+
+    /// <summary>
+    /// Re-measures every server when the home screen is shown again; a run already in flight is left alone.
+    /// </summary>
+    public void ProbeOnHomeShown()
+    {
+        if (!ProbeRunning && _host.HasConfigs)
+        {
+            ProbeAllCommand.Execute(null);
+        }
+    }
+
+    // Measures every configuration at once; the previous run, if any, is dropped.
+    [RelayCommand]
+    private void ProbeAll()
+    {
+        _probeCts?.Cancel();
+        _probeCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _probeCts = cts;
+        _ = RunProbeAsync(cts);
+    }
+
+    private async Task RunProbeAsync(CancellationTokenSource cts)
+    {
+        var rows = _host.Config.Configs.ToArray();
+        foreach (var row in rows)
+        {
+            row.Probing = true;
+        }
+
+        ProbeRunning = true;
+        try
+        {
+            await Task.WhenAll(rows.Select(row => ProbeRowAsync(row, cts.Token)));
+        }
+        finally
+        {
+            // A run superseded by a newer one leaves the flag to whoever replaced it.
+            if (ReferenceEquals(_probeCts, cts))
+            {
+                ProbeRunning = false;
+            }
+        }
+    }
+
+    // Measures one server off the UI thread and posts the answer back into its row.
+    private static async Task ProbeRowAsync(ConfigItemViewModel row, CancellationToken ct)
+    {
+        var result = await EndpointProbe
+            .MeasureAsync(row.Endpoint, row.UseWebSocket, row.WebSocketHost, row.WebSocketPort, ct)
+            .ConfigureAwait(false);
+        if (ct.IsCancellationRequested)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            row.ProbeState = result.Outcome;
+            row.ProbeMilliseconds = result.Milliseconds;
+            row.Probing = false;
+        });
     }
 
     [RelayCommand(CanExecute = nameof(CanToggleConnection))]

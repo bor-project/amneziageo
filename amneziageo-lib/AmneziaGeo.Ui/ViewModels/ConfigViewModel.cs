@@ -56,6 +56,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     private ConfigTransportViewModel? _configTransport;
 
+    // Whether the .conf text is on screen. Off until asked for: the text carries the private key.
+    [ObservableProperty]
+    private bool _showConfigText;
+
     [ObservableProperty]
     private string _configDeleteStatus = string.Empty;
 
@@ -326,10 +330,17 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _host.Home.ActiveConfig = Configs.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Показывает или прячет текст конфигурации.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleConfigText() => ShowConfigText = !ShowConfigText;
+
     // Entering the config settings section: keep an in-progress draft, land on the active / first config, or fall
     // back to Import when there are no configs to show.
     public void EnterSection()
     {
+        ShowConfigText = false;
         if (IsCreatingSectionConfig)
         {
             return;
@@ -359,6 +370,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return;
         }
 
+        ShowConfigText = false;
         LeaveImport();
         SelectFirstIfNone();
         ManageSection = target == "export" ? ConfigSection.Export : ConfigSection.Config;
@@ -434,6 +446,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.Exclusions = entry.Exclusions;
             existing.Mtu = entry.Mtu;
             existing.UseIpv6 = entry.UseIpv6;
+            existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
@@ -491,6 +504,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     partial void OnOpenConfigChanged(string? value)
     {
+        ShowConfigText = false;
         ConfigDeleteStatus = string.Empty;
         ConfigDeletePending = false;
         // Set the rename baseline before the field so seeding it does not read as a dirty edit (#143).

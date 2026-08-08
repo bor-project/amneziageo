@@ -15,6 +15,7 @@
     <StreamGeometry x:Key="AgSwapGeometry">M6.99,11L3,15L6.99,19V16H14V14H6.99V11M21,9L17.01,5V8H10V10H17.01V13L21,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
+    <StreamGeometry x:Key="AgEyeGeometry">M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z</StreamGeometry>
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Last row stars to fill the pane with the import config-text box. Cards stretch the full pane width. -->
@@ -170,11 +171,26 @@
                    IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
 
-      <!-- Editable .conf text: committed on the footer Save through the shared config view model. -->
+      <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
+           until asked for - it carries the private key - and hidden again on every entry into the section. -->
       <StackPanel Spacing="2">
-        <TextBlock Classes="label" Text="{l:Tr Main_ConfigTextLabel}" />
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_ConfigTextLabel}" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="linkbtn" Command="{Binding ToggleConfigTextCommand}"
+                  VerticalAlignment="Center" HorizontalAlignment="Right">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14" />
+              <!-- Both captions share one cell so the link keeps its width across the toggle. -->
+              <Panel>
+                <TextBlock Text="{l:Tr Main_ShowButton}" IsVisible="{Binding !ShowConfigText}" />
+                <TextBlock Text="{l:Tr Main_HideButton}" IsVisible="{Binding ShowConfigText}" />
+              </Panel>
+            </StackPanel>
+          </Button>
+        </Grid>
         <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
                 CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+                IsVisible="{Binding ShowConfigText}"
                 IsEnabled="{Binding ConfigExport.IsReady}">
           <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
                    AcceptsReturn="True" TextWrapping="NoWrap"

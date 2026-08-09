@@ -375,6 +375,7 @@ internal sealed class TunnelRunner(
         // The proxy bucket is passed too: it decides precedence on an overlap, and in split it marks the addresses a
         // proxy range would otherwise pull into the tunnel. Built before the tracker, which consults it before
         // routing a resolved name into the tunnel.
+        var synReset = new SynSentReset(name, loggerFactory.CreateLogger<SynSentReset>());
         var applier = new RouteApplier(
             routes,
             firewall,
@@ -382,8 +383,12 @@ internal sealed class TunnelRunner(
             name,
             WgConfigEditor.GetPeerPublicKey(config),
             () => underlayProbe is null ? (null, 0u) : RouteManager.UnderlayHop(underlayProbe),
-            killSwitch);
-        var routing = new RoutingCache(applier, new TcpTableProbe(), geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>());
+            killSwitch,
+            synReset);
+        // The probe attributes each live connection to its process, so a matched app's destination is never taken
+        // for ordinary traffic and settled onto the physical path.
+        var liveDestinations = new TcpTableProbe();
+        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>());
         session.SetCache(routing);
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
         // announced the same way instead of being polled for.
@@ -406,7 +411,7 @@ internal sealed class TunnelRunner(
                 // resolver infrastructure, and the list's own ranges are decided per destination by the cache.
                 var trackerStatic = geoSplit ? startupRoutes : geoRoutes;
                 var trackerList = geoSplit ? new List<string>() : listRoutes;
-                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, trackerStatic, trackerList, appSettings.RouteTtlSeconds, stripV6, geoSplit, routing);
+                tracker = new DomainTracker(store, routes, uapi, loggerFactory.CreateLogger<DomainTracker>(), name, peer, trackerStatic, trackerList, appSettings.RouteTtlSeconds, stripV6, geoSplit, routing, synReset);
                 session.SetTracker(tracker);
                 routing.SetAdoptionCheck(tracker.Holds);
             }
@@ -426,7 +431,21 @@ internal sealed class TunnelRunner(
                 // A matched app's destination is dropped before anything observes it, so the drop itself is where
                 // the app rule has to be applied: its remotes take the tunnel instead of a permit.
                 routing.SetAppMatch(matcher.MatchesDevicePath);
+                // The same rule over the connection table: a half-open attempt is seen there whether or not the
+                // firewall reported its drop, and one already permitted outside is moved back onto the tunnel.
+                liveDestinations.SetAppMatch(matcher.MatchPids);
             }
+        }
+
+        // An app that reaches bare addresses has no name to resolve, so each of them is learned by watching the app
+        // fail once. Remembering them turns that into a one-off: they are routed at the next bring-up, and the
+        // moment one of them reappears the rest go with it.
+        if (matcher is not null && tracker is not null)
+        {
+            var appMemory = new AppDestinationMemory(store, tracker, name, apps, loggerFactory.CreateLogger<AppDestinationMemory>());
+            routing.AppDestination += appMemory.Note;
+            tracker.SetAppDestinationSink(appMemory.Note);
+            _ = Task.Run(() => appMemory.RunAsync(sessionCts.Token));
         }
 
         var proxy = StartProxy(trackDomains ? domains : [], blockDomains, stripV6, geoSplit, tunnelResolver, localResolver, lanResolvers, exclusionDomains, directDomains, tracker, appDns, routing);

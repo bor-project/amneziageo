@@ -28,7 +28,8 @@ internal sealed class DomainTracker(
     int routeTtlSeconds,
     bool stripV6,
     bool lazyRanges,
-    RoutingCache? routing = null)
+    RoutingCache? routing = null,
+    SynSentReset? synReset = null)
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, HashSet<string>> _current = [];
@@ -307,6 +308,27 @@ internal sealed class DomainTracker(
 
     // Drops the flow tracker's record of a destination it already handled.
     private volatile Action<IReadOnlyList<string>>? _onForgotten;
+
+    // Reports destinations a matched app reached, so they are remembered and routed before it asks again.
+    private volatile Action<IReadOnlyList<string>>? _onAppDestinations;
+
+    // Aborts the half-open connections that left before these routes existed: their source address was chosen
+    // without the route and cannot be changed, so the app has to open them again.
+    private void Reset(IReadOnlyList<string> cidrs)
+    {
+        if (synReset is not null && Hosts(cidrs) is { Count: > 0 } addresses)
+        {
+            synReset.Abort(addresses);
+        }
+    }
+
+    /// <summary>
+    /// Attaches the sink told which destinations a matched app reached.
+    /// </summary>
+    public void SetAppDestinationSink(Action<IReadOnlyList<string>> sink)
+    {
+        _onAppDestinations = sink;
+    }
 
     /// <summary>
     /// Attaches the sink told which destinations were released, so their dedupe records go with them.
@@ -779,6 +801,7 @@ internal sealed class DomainTracker(
         // Advertise off-lock so the pipe round-trip never blocks the DNS resolve / serve-known path on _lock.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
         Adopt(addedCidrs);
+        Reset(addedCidrs);
         return allHandled;
     }
 
@@ -929,6 +952,7 @@ internal sealed class DomainTracker(
         // Advertise off-lock: the pipe round-trip must not hold the resolve path.
         uapi.AddAllowedIps(tunnelName, peerPublicKey, addedCidrs);
         Adopt(addedCidrs);
+        Reset(addedCidrs);
         if (promoted is not null)
         {
             foreach (var name in promoted)
@@ -937,6 +961,7 @@ internal sealed class DomainTracker(
             }
         }
 
+        _onAppDestinations?.Invoke(ips);
         return allHandled;
     }
 

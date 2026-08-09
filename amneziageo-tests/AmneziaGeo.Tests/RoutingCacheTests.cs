@@ -112,7 +112,7 @@ public sealed class RoutingCacheTests
     // The tests drive Sweep directly, so nothing is ever live.
     private sealed class IdleLive : ILiveDestinations
     {
-        public HashSet<uint> Snapshot() => [];
+        public LiveDestinations Snapshot() => new([], []);
     }
 
     private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300)
@@ -340,6 +340,48 @@ public sealed class RoutingCacheTests
 
         Assert.Empty(applier.Tunneled);
         Assert.Equal(new[] { Numeric(YandexAddress) }, applier.Dropped);
+    }
+
+    [Fact]
+    public void InSplit_AppOwnedDestinationOutsideEveryRange_IsReportedForRemembering()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        var learned = new List<string>();
+        cache.AppDestination += address => learned.Add(address.ToString());
+
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Equal(new[] { YandexAddress }, learned);
+    }
+
+    [Fact]
+    public void InSplit_AppOwnedDestinationAProxyRangeCovers_IsNotReported()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: [YandexRange]);
+        var learned = new List<string>();
+        cache.AppDestination += address => learned.Add(address.ToString());
+
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Equal(new[] { YandexAddress }, applier.Tunneled);
+        Assert.Empty(learned);
+    }
+
+    [Fact]
+    public void InSplit_PermittedDestinationLaterClaimedByAnApp_IsReportedOnce()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        var learned = new List<string>();
+        cache.AppDestination += address => learned.Add(address.ToString());
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        cache.Note(Numeric(YandexAddress), app: true);
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        Assert.Equal(new[] { YandexAddress }, learned);
     }
 
     [Fact]

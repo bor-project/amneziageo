@@ -22,9 +22,10 @@ internal sealed class ProcNet : ILiveDestinations
     private const int V6HexLength = 32;
 
     /// <summary>
-    /// Remote addresses of every current connection, host order.
+    /// Remote addresses of every current connection, host order. The socket tables name no image here, so nothing
+    /// is attributed to an app rule.
     /// </summary>
-    public HashSet<uint> Snapshot()
+    public LiveDestinations Snapshot()
     {
         var peers = new HashSet<uint>();
         foreach (var table in Tables)
@@ -32,7 +33,7 @@ internal sealed class ProcNet : ILiveDestinations
             Read(table, peers);
         }
 
-        return peers;
+        return new LiveDestinations(peers, []);
     }
 
     private static void Read(string path, HashSet<uint> peers)

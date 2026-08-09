@@ -67,6 +67,7 @@ public sealed class RoutingCache
         public long LastTouch;
         public bool Routed;
         public bool Tunneled;
+        public bool ByApp;
         public uint InterfaceIndex;
         public ulong FilterOut;
         public ulong FilterIn;
@@ -210,6 +211,12 @@ public sealed class RoutingCache
     }
 
     /// <summary>
+    /// Raised when an app rule alone puts a destination in the tunnel - no range covers it. Nothing resolved to
+    /// such an address, so this is the only moment it can be learned.
+    /// </summary>
+    public event Action<IPAddress>? AppDestination;
+
+    /// <summary>
     /// Records contact with a destination and installs its bypass route on first sight. Called per DNS answer, per
     /// connect event and per table scan.
     /// </summary>
@@ -218,9 +225,12 @@ public sealed class RoutingCache
         Note(address, false);
     }
 
-    // app: the destination belongs to a process the app rules cover, so in split it rides the tunnel whatever the
-    // ranges say.
-    internal void Note(uint address, bool app)
+    /// <summary>
+    /// Records contact with a destination, saying whether a process the app rules cover owns it. In split such a
+    /// destination rides the tunnel whatever the ranges say, and one already pinned to the physical path is moved
+    /// onto it - which is what makes a wrong first guess recoverable instead of permanent.
+    /// </summary>
+    public void Note(uint address, bool app)
     {
         var now = Environment.TickCount64;
         if (_entries.TryGetValue(address, out var existing))
@@ -390,14 +400,17 @@ public sealed class RoutingCache
                 try
                 {
                     var active = _live.Snapshot();
-                    foreach (var address in active)
+                    foreach (var address in active.All)
                     {
-                        Note(address);
+                        // Attribution decides the verdict: a matched app's destination noted as ordinary traffic
+                        // earns a permit out the physical path, and a permitted address is never dropped again - so
+                        // the firewall's report, the one place the app rule could still apply, never comes.
+                        Note(address, active.App.Contains(address));
                     }
 
                     if (++scans % Volatile.Read(ref _scansPerSweep) == 0)
                     {
-                        Sweep(active, Environment.TickCount64);
+                        Sweep(active.All, Environment.TickCount64);
                     }
                 }
                 catch (Exception ex)
@@ -474,6 +487,7 @@ public sealed class RoutingCache
         {
             Release(entry, generation, filters, withdrawn);
             entry.Plan = RoutePlan.Tunnel;
+            entry.ByApp = true;
         }
 
         _applier.RemoveTunnel(withdrawn);
@@ -511,6 +525,7 @@ public sealed class RoutingCache
             Numeric = address,
             Verdict = verdict,
             Plan = Decide(verdict, app),
+            ByApp = app,
             LastTouch = now,
         };
 
@@ -631,12 +646,23 @@ public sealed class RoutingCache
 
     private void Install(Entry entry, long now)
     {
+        if (Apply(entry, now))
+        {
+            // Off the entry lock: the sink routes the rest of the app's remembered addresses, which takes locks of
+            // its own.
+            AppDestination?.Invoke(entry.Address);
+        }
+    }
+
+    // Applies what the plan asks for; true when an app rule alone brought the destination into the tunnel.
+    private bool Apply(Entry entry, long now)
+    {
         lock (entry)
         {
             Volatile.Write(ref entry.LastTouch, now);
             if (Installed(entry))
             {
-                return;
+                return false;
             }
 
             var holds = entry.Plan is RoutePlan.Bypass or RoutePlan.Tunnel;
@@ -647,21 +673,22 @@ public sealed class RoutingCache
                     _logger.LogWarning("the host-route limit is reached ({Max} in use); further addresses follow the default route instead of their own rule until some are freed", MaxApplied);
                 }
 
-                return;
+                return false;
             }
 
             // Into the tunnel: the route and the advertisement travel together, and no permit applies - the traffic
             // leaves through the tunnel interface, which the kill-switch permits wholesale.
             if (entry.Plan == RoutePlan.Tunnel)
             {
-                if (_applier.TryTunnel(entry.Address))
+                if (!_applier.TryTunnel(entry.Address))
                 {
-                    entry.Tunneled = true;
-                    Interlocked.Increment(ref _applied);
-                    Interlocked.Increment(ref _installed);
+                    return false;
                 }
 
-                return;
+                entry.Tunneled = true;
+                Interlocked.Increment(ref _applied);
+                Interlocked.Increment(ref _installed);
+                return entry.ByApp && entry.Verdict != RouteVerdict.Proxy;
             }
 
             // Permit first: until the route exists the traffic still rides the tunnel, whereas a route without a
@@ -680,7 +707,7 @@ public sealed class RoutingCache
 
             if (entry.Plan != RoutePlan.Bypass || entry.Routed)
             {
-                return;
+                return false;
             }
 
             if (_applier.TryAddRoute(entry.Address, out var index))
@@ -690,6 +717,8 @@ public sealed class RoutingCache
                 Interlocked.Increment(ref _applied);
                 Interlocked.Increment(ref _installed);
             }
+
+            return false;
         }
     }
 

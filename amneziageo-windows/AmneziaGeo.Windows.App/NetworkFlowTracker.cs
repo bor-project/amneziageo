@@ -45,7 +45,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     private readonly uint _excludeEndpointV4;
     // Every v4 destination is offered here regardless of app rules, on connect and on a first datagram: it drives the
     // on-demand Direct routes for addresses that never went through the resolver.
-    private readonly Action<uint>? _noteV4;
+    private readonly Action<uint, bool>? _noteV4;
     private readonly ILogger _logger;
     private TraceEventSession? _session;
     // Seen destinations; ETW handler is single-threaded, no lock needed.
@@ -74,7 +74,7 @@ internal sealed class NetworkFlowTracker : IDisposable
     /// <summary>
     /// ctor
     /// </summary>
-    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint>? noteV4 = null)
+    public NetworkFlowTracker(AppMatcher? matcher, DomainTracker? tracker, bool allUdp, bool tunnelV6, IPAddress? excludeEndpoint, ILogger logger, Action<uint, bool>? noteV4 = null)
     {
         _matcher = matcher;
         _tracker = tracker;
@@ -462,7 +462,9 @@ internal sealed class NetworkFlowTracker : IDisposable
         }
     }
 
-    // Offers a v4 destination to the on-demand router, ahead of the app-match gate.
+    // Offers a v4 destination to the on-demand router, ahead of the app-match gate but never blind to it: a
+    // destination handed over as ordinary traffic is settled onto the physical path, and that decision outlives
+    // every later attempt of the app that opened it.
     private void NoteDestination(uint pid, uint networkOrderAddress)
     {
         if (_noteV4 is null || pid == OwnProcessId || networkOrderAddress == _excludeEndpointV4)
@@ -470,7 +472,7 @@ internal sealed class NetworkFlowTracker : IDisposable
             return;
         }
 
-        _noteV4(BinaryPrimitives.ReverseEndianness(networkOrderAddress));
+        _noteV4(BinaryPrimitives.ReverseEndianness(networkOrderAddress), MatchesPidCached(pid));
     }
 
     // Routes a UDP destination: all-UDP routes it plainly, an app match also promotes its domain.

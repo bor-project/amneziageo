@@ -13,7 +13,8 @@ internal sealed class RouteApplier(
     string tunnelName,
     string? peerPublicKey,
     Func<(IPAddress? Gateway, uint InterfaceIndex)> hopProvider,
-    bool killSwitch) : IRouteApplier
+    bool killSwitch,
+    SynSentReset synReset) : IRouteApplier
 {
     private const long HopTtlMs = 30_000;
 
@@ -95,6 +96,9 @@ internal sealed class RouteApplier(
         }
 
         uapi.AddAllowedIps(tunnelName, peerPublicKey, [Cidr(address)]);
+        // The attempt that discovered this address is still waiting, carrying the source address it was given
+        // before the route existed. A route cannot move it, so it is aborted and the app opens a new one.
+        synReset.Abort([address]);
         return true;
     }
 

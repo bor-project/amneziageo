@@ -257,6 +257,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN exclude_routes_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN exclude_domains_json TEXT NOT NULL DEFAULT '[]';", ct).ConfigureAwait(false);
 
+            // The place a config holds in the list; existing rows share 0 and stay ordered by name.
+            await TryAlterAsync(connection, "ALTER TABLE configs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+
             await DropProfilesAsync(connection, ct).ConfigureAwait(false);
 
             await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
@@ -1406,7 +1409,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
-                command.CommandText = "SELECT name FROM configs ORDER BY name;";
+                command.CommandText = "SELECT name FROM configs ORDER BY sort_order, name;";
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
@@ -1423,6 +1426,35 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
+    public async Task SetConfigOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                for (var i = 0; i < names.Count; i++)
+                {
+                    var update = connection.CreateCommand();
+                    await using (update.ConfigureAwait(false))
+                    {
+                        update.Transaction = transaction;
+                        update.CommandText = "UPDATE configs SET sort_order = $order WHERE name = $name;";
+                        update.Parameters.AddWithValue("$order", i + 1);
+                        update.Parameters.AddWithValue("$name", names[i]);
+                        await update.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task SaveConfigAsync(string name, string text, CancellationToken ct = default)
     {
         var connection = new SqliteConnection(_connectionString);
@@ -1433,10 +1465,11 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
+                // A new config lands after the ones already listed; an overwrite keeps its place.
                 command.CommandText =
                     """
-                    INSERT INTO configs (name, text, created_at, updated_at)
-                    VALUES ($name, $text, $now, $now)
+                    INSERT INTO configs (name, text, created_at, updated_at, sort_order)
+                    VALUES ($name, $text, $now, $now, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM configs))
                     ON CONFLICT(name) DO UPDATE SET
                         text       = excluded.text,
                         updated_at = excluded.updated_at;

@@ -79,15 +79,6 @@
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Не удалось запустить сброс.</value>
   </data>
-  <data name="General_ExitSection" xml:space="preserve">
-    <value>Приложение</value>
-  </data>
-  <data name="General_ExitHint" xml:space="preserve">
-    <value>Закрывает окно приложения. Запущенный туннель продолжает работать и остаётся в области уведомлений.</value>
-  </data>
-  <data name="General_ExitButton" xml:space="preserve">
-    <value>Закрыть приложение</value>
-  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Показывать оповещения</value>
   </data>

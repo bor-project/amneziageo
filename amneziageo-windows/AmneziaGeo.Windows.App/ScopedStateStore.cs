@@ -163,6 +163,9 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task<IReadOnlyList<string>> ListConfigNamesAsync(CancellationToken ct = default) => user.ListConfigNamesAsync(ct);
 
     /// <inheritdoc/>
+    public Task SetConfigOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default) => user.SetConfigOrderAsync(names, ct);
+
+    /// <inheritdoc/>
     public Task SaveConfigAsync(string name, string text, CancellationToken ct = default) => user.SaveConfigAsync(name, text, ct);
 
     /// <inheritdoc/>

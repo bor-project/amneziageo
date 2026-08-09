@@ -213,25 +213,6 @@
         </Grid>
       </Border>
 
-      <!-- Exit card: closes the shell where there is no window frame to close it with (Android TV). -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}"
-              IsVisible="{Binding CanExitApp}">
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
-          <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"
-                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-            <TextBlock Text="{l:Tr General_ExitSection}" FontWeight="SemiBold" FontSize="15" />
-            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{l:Tr General_ExitHint}" />
-          </StackPanel>
-          <StackPanel VerticalAlignment="Center"
-                      Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                      Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
-            <Button Classes="softbtn" Padding="16,7" HorizontalAlignment="Stretch"
-                    Command="{Binding ExitAppCommand}" Content="{l:Tr General_ExitButton}" />
-          </StackPanel>
-        </Grid>
-      </Border>
-
       <!-- Import / export card (full width): hint left, actions right. Opens the bundle sub-views inline. -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <!-- Compact drops the export / import buttons under the hint. -->

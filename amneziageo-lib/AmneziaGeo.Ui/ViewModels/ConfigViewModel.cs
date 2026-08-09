@@ -19,6 +19,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private readonly IAgentConnection _connection;
 
     private IReadOnlyList<string> _configNames = [];
+
+    // The order a drag just sent; held until a snapshot arrives carrying it.
+    private IReadOnlyList<string>? _pendingOrder;
     private string? _pendingOpenConfig;
     private string? _configBeforeCreate;
     private string _sectionConfigDefaultName = string.Empty;
@@ -454,6 +457,15 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         // Reconcile in place (match by name) rather than Clear()+Add(): rebuilding the collection on
         // every snapshot push would regenerate every row's controls, flickering the list each tick even
         // though usually only the status field moves during a connect. Update the existing rows instead.
+        // A drag just sent its order: leave the rows where the user put them until the agent's snapshot
+        // carries that order back, so a snapshot already on its way does not throw them about meanwhile.
+        var holdOrder = _pendingOrder is { } pending
+            && !pending.SequenceEqual(entries.Select(e => e.Name), StringComparer.Ordinal);
+        if (!holdOrder)
+        {
+            _pendingOrder = null;
+        }
+
         var present = entries.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
         for (var i = Configs.Count - 1; i >= 0; i--)
         {
@@ -475,7 +487,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             else
             {
                 var from = Configs.IndexOf(existing);
-                if (from != i)
+                if (from != i && !holdOrder)
                 {
                     Configs.Move(from, i);
                 }
@@ -738,6 +750,24 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Stores the order a drag left the server list in.
+    /// </summary>
+    [RelayCommand]
+    private async Task ApplyOrder()
+    {
+        var names = Configs.Select(config => config.Name).ToList();
+        _pendingOrder = names;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReorderConfigs, names));
+        if (!ack.Ok)
+        {
+            _pendingOrder = null;
+            _host.Home.ShowNotice(IpcMessage.TryParse(ack.Message, out var key, out var args)
+                ? Loc.Instance.Get(key, args)
+                : ack.Message);
+        }
     }
 
     internal async Task<IpcAck> RemoveConfigAsync(string name)

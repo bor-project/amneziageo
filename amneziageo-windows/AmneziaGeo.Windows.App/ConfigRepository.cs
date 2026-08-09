@@ -25,6 +25,14 @@ internal sealed class ConfigRepository(IStateStore store, ServiceManager service
     }
 
     /// <summary>
+    /// Stores the order the configurations are listed in.
+    /// </summary>
+    public Task ReorderAsync(IReadOnlyList<string> names, CancellationToken ct = default)
+    {
+        return store.SetConfigOrderAsync(names, ct);
+    }
+
+    /// <summary>
     /// Imports a new configuration from a wg-quick file.
     /// </summary>
     public async Task AddAsync(string name, string sourcePath, CancellationToken ct = default)

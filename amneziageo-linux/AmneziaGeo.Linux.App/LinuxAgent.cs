@@ -273,6 +273,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpRenameConfig:
                 return await RenameConfigAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpReorderConfigs:
+                return await ReorderConfigsAsync(args, ct).ConfigureAwait(false);
+
             case IpcContract.OpCopyConfig:
                 return await CopyConfigAsync(args, ct).ConfigureAwait(false);
 
@@ -554,6 +557,19 @@ internal sealed class LinuxAgent : IDisposable
             await StoreSelectedTargetAsync(null, ct).ConfigureAwait(false);
         }
 
+        await PushAsync(ct).ConfigureAwait(false);
+        return Ok();
+    }
+
+    // Stores the order the config list is shown in.
+    private async Task<IpcAck> ReorderConfigsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return Fail();
+        }
+
+        await _store.SetConfigOrderAsync(args, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
     }

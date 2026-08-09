@@ -124,9 +124,15 @@ public sealed partial class MainView : UserControl
         _vm?.NavBackCommand.Execute(null);
     }
 
-    // Escape and the back button take the back arrow's route: section detail first, then home.
+    // Escape and the back button take the back arrow's route: out of a card the remote stepped into, then
+    // the section detail, then home.
     private bool NavigateBack()
     {
+        if (Controls.ServerCard.LeaveEntered(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
+        {
+            return true;
+        }
+
         if (_vm is null || !_vm.IsSettings)
         {
             return false;

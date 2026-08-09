@@ -250,6 +250,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpEditConfig => await EditConfigAsync(command.Args, ct),
                 IpcContract.OpRemoveConfig => await RemoveConfigAsync(command.Args, ct),
                 IpcContract.OpRenameConfig => await RenameConfigAsync(command.Args, ct),
+                IpcContract.OpReorderConfigs => await ReorderConfigsAsync(command.Args, ct),
                 IpcContract.OpCopyConfig => await CopyConfigAsync(command.Args, ct),
                 IpcContract.OpExportBundle => await ExportBundleAsync(command.Args, ct),
                 IpcContract.OpImportBundle => await ImportBundleAsync(command.Args, ct),
@@ -415,6 +416,17 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         await configRepo.CopyAsync(source, destination, ct);
         logger.LogInformation("copied config {Source} -> {Dest}", source, destination);
         return new IpcAck(true, IpcMessage.Key("Agent_ConfigCopied", destination));
+    }
+
+    private async Task<IpcAck> ReorderConfigsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return new IpcAck(false, "reorder-configs requires the ordered names");
+        }
+
+        await configRepo.ReorderAsync(args, ct);
+        return new IpcAck(true, "reordered configs");
     }
 
     private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args, CancellationToken ct)

@@ -168,39 +168,65 @@
               <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding ShowHomeServers}">
                 <!-- Table head: the caption, the button that re-measures every server, and the one that adds
                      a configuration and comes back here. -->
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="2,0,0,2" IsVisible="{Binding HasConfigs}">
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="2,0,0,2" IsVisible="{Binding HasConfigs}">
                   <TextBlock Grid.Column="0" Text="{l:Tr Main_ServersTitle}" Classes="muted"
                              FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                  <Button Grid.Column="1" Classes="icon" Padding="8,6" VerticalAlignment="Center"
-                          Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
-                          ToolTip.Tip="{l:Tr Main_ProbeTooltip}">
-                    <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="18" Height="18"
-                              Foreground="{DynamicResource AgMutedBrush}" />
-                  </Button>
-                  <Button Grid.Column="2" Classes="icon" Padding="8,6" VerticalAlignment="Center"
-                          Command="{Binding AddServerCommand}"
-                          ToolTip.Tip="{l:Tr Main_AddConfigButton}">
-                    <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="18" Height="18"
-                              Foreground="{DynamicResource AgMutedBrush}" />
-                  </Button>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4,0,0,0"
+                              HorizontalAlignment="{Binding ServersHeaderAlign}">
+                    <Button Classes="icon" Padding="8,6" VerticalAlignment="Center"
+                            Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
+                            ToolTip.Tip="{l:Tr Main_ProbeTooltip}">
+                      <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="18" Height="18"
+                                Foreground="{DynamicResource AgMutedBrush}" />
+                    </Button>
+                    <Button Classes="icon" Padding="8,6" VerticalAlignment="Center"
+                            Command="{Binding AddServerCommand}"
+                            ToolTip.Tip="{l:Tr Main_AddConfigButton}">
+                      <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="18" Height="18"
+                                Foreground="{DynamicResource AgMutedBrush}" />
+                    </Button>
+                  </StackPanel>
                 </Grid>
 
                 <Panel Grid.Row="1">
-                  <!-- One row per configuration: name, endpoint, and the last measured response, in a frame
-                       carrying the connection colour. The row picks that configuration and measures it; a swipe
-                       right uncovers its connect button, a swipe left its edit and delete buttons. A list too
-                       long for the screen scrolls. -->
-                  <ScrollViewer IsVisible="{Binding HasConfigs}"
+                  <!-- Narrow: the cards stand in one column, each stretched to the width. -->
+                  <ScrollViewer IsVisible="{Binding ShowServerStack}"
                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl ItemsSource="{Binding Config.Configs}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConfigItemViewModel">
-                          <controls:ServerRow Margin="0,2" IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
-                                  IsConnectOpen="{Binding ConnectOpen, Mode=TwoWay}"
+                          <controls:ServerCard Margin="0,0,0,8" Compact="True"
+                                  IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
                                   SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.SelectRowCommand}"
                                   ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
                                   EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
-                                  DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}" />
+                                  DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}"
+                                  DropCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.ApplyOrderCommand}" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+
+                  <!-- Wide: the same cards tiled across the pane. A remote walks them with the arrows, steps
+                       into one with the centre key to reach its buttons, and steps back out with the back key.
+                       A drag carries a card to another place. -->
+                  <ScrollViewer IsVisible="{Binding ShowServerGrid}"
+                                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Config.Configs}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ConfigItemViewModel">
+                          <controls:ServerCard Width="252" Margin="0,0,10,10"
+                                  IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
+                                  SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.SelectRowCommand}"
+                                  ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
+                                  EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
+                                  DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}"
+                                  DropCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.ApplyOrderCommand}" />
                         </DataTemplate>
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>

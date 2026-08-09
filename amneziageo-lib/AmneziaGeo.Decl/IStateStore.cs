@@ -106,9 +106,14 @@ public interface IStateStore
     Task<string?> GetConfigTextAsync(string name, CancellationToken ct = default);
 
     /// <summary>
-    /// Returns the names of all stored configurations, ordered by name.
+    /// Returns the names of all stored configurations, in the order the user set them, then by name.
     /// </summary>
     Task<IReadOnlyList<string>> ListConfigNamesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores the order the configurations are listed in. Names left out keep their own place.
+    /// </summary>
+    Task SetConfigOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default);
 
     /// <summary>
     /// Inserts or updates the wg-quick text of a configuration.

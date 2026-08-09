@@ -215,6 +215,11 @@ public static class IpcContract
     public const string OpRenameConfig = "rename-config";
 
     /// <summary>
+    /// Command to set the order the configs are listed in. Args: the names, in the order they are shown.
+    /// </summary>
+    public const string OpReorderConfigs = "reorder-configs";
+
+    /// <summary>
     /// Command to duplicate a config into an independent copy. Args: source name, destination name. Copies
     /// the config text plus its geo settings and cached resolutions; the destination must be a free name.
     /// </summary>

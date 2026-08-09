@@ -4,5 +4,9 @@
              RequestedThemeVariant="Light">
   <Application.Styles>
     <StyleInclude Source="avares://AmneziaGeo.Ui/Themes/SharedTheme.axaml" />
+    <!-- No tooltips under a finger. -->
+    <Style Selector=":is(Control)">
+      <Setter Property="ToolTip.ServiceEnabled" Value="False" />
+    </Style>
   </Application.Styles>
 </Application>

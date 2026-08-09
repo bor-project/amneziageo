@@ -28,9 +28,11 @@ internal sealed partial class ServerRow : UserControl
 
     private readonly TranslateTransform _shift = new();
     private readonly TranslateTransform _nameShift = new();
+    private readonly ListReorder _reorder;
     private Point _origin;
     private bool _pressed;
     private bool _swiping;
+    private bool _settled;
 
     public static readonly StyledProperty<ICommand?> SelectCommandProperty =
         AvaloniaProperty.Register<ServerRow, ICommand?>(nameof(SelectCommand));
@@ -44,6 +46,9 @@ internal sealed partial class ServerRow : UserControl
     public static readonly StyledProperty<ICommand?> DeleteCommandProperty =
         AvaloniaProperty.Register<ServerRow, ICommand?>(nameof(DeleteCommand));
 
+    public static readonly StyledProperty<ICommand?> DropCommandProperty =
+        AvaloniaProperty.Register<ServerRow, ICommand?>(nameof(DropCommand));
+
     public static readonly StyledProperty<bool> IsOpenProperty =
         AvaloniaProperty.Register<ServerRow, bool>(nameof(IsOpen), defaultBindingMode: BindingMode.TwoWay);
 
@@ -56,6 +61,8 @@ internal sealed partial class ServerRow : UserControl
     public ServerRow()
     {
         InitializeComponent();
+        _reorder = new ListReorder(this, vertical: true) { HoldFirst = true };
+        HiddenTip.Watch(Actions());
         FacePart.RenderTransform = _shift;
         TextPart.RenderTransform = _nameShift;
 
@@ -118,6 +125,15 @@ internal sealed partial class ServerRow : UserControl
     }
 
     /// <summary>
+    /// Команда, принимающая новый порядок строк.
+    /// </summary>
+    public ICommand? DropCommand
+    {
+        get => GetValue(DropCommandProperty);
+        set => SetValue(DropCommandProperty, value);
+    }
+
+    /// <summary>
     /// Открыты ли кнопки строки.
     /// </summary>
     public bool IsOpen
@@ -164,6 +180,11 @@ internal sealed partial class ServerRow : UserControl
         if (change.Property == IsOpenProperty || change.Property == IsConnectOpenProperty)
         {
             Slide(Offset);
+            HiddenTip.Drop([FacePart, .. Actions()]);
+        }
+        else if (change.Property == DropCommandProperty)
+        {
+            _reorder.Dropped = DropCommand;
         }
     }
 
@@ -202,16 +223,12 @@ internal sealed partial class ServerRow : UserControl
 
     private void OnRowPressed(object? sender, PointerPressedEventArgs e)
     {
-        // The uncovered strip is the buttons', glyphs and the space around them alike: a press there never
-        // closes the row, so a finger that misses a glyph does not undo the swipe instead.
-        var x = e.GetPosition(this).X;
-        if ((IsOpen && x >= Bounds.Width - ActionsWidth) || (IsConnectOpen && x <= ConnectWidth))
-        {
-            return;
-        }
-
-        // A press on the uncovered buttons is theirs.
-        if (Contains(ActionsPart, e.Source) || Contains(ConnectPart, e.Source))
+        // The row answers a press on its own face and nothing else. The strip a swipe uncovers is the buttons'
+        // - glyphs, the space around them and the gap beside them alike - so a press aimed at a button neither
+        // reaches the row nor undoes the swipe, however the press is read.
+        var point = e.GetPosition(this);
+        if (Bared(ActionsPart, IsOpen, point) || Bared(ConnectPart, IsConnectOpen, point)
+            || !Contains(FacePart, e.Source))
         {
             return;
         }
@@ -226,7 +243,16 @@ internal sealed partial class ServerRow : UserControl
 
         _pressed = true;
         _swiping = false;
-        _origin = e.GetPosition(this);
+        _settled = false;
+        _origin = point;
+        _reorder.Press(e);
+    }
+
+    // Whether the press landed on the strip an open side bares: the buttons' own box, widened by the gap the
+    // row keeps off them.
+    private static bool Bared(Control part, bool open, Point point)
+    {
+        return open && point.X >= part.Bounds.X - SwipeGap && point.X <= part.Bounds.Right + SwipeGap;
     }
 
     private void OnRowMoved(object? sender, PointerEventArgs e)
@@ -236,12 +262,28 @@ internal sealed partial class ServerRow : UserControl
             return;
         }
 
+        // A row already on its way to another place in the list keeps the pointer.
+        if (_reorder.Dragging)
+        {
+            _reorder.Move(e);
+            e.Handled = true;
+            return;
+        }
+
         var point = e.GetPosition(this);
         var dx = point.X - _origin.X;
         if (Math.Abs(dx) < SwipeThreshold || Math.Abs(dx) <= Math.Abs(point.Y - _origin.Y))
         {
+            // Nothing across the row: the finger may be carrying it up or down the list instead.
+            if (_reorder.Move(e))
+            {
+                e.Handled = true;
+            }
+
             return;
         }
+
+        _reorder.Cancel();
 
         if (!_swiping)
         {
@@ -251,27 +293,38 @@ internal sealed partial class ServerRow : UserControl
             e.Pointer.Capture(this);
         }
 
-        // The direction alone decides: the row runs the whole way to the buttons it heads for, or the whole way
-        // back over the ones it stands off, without waiting for the finger to cover the distance.
-        var side = dx < 0 ? (Side == 1 ? 0 : -1) : (Side == -1 ? 0 : 1);
-        if (side != Side)
+        // One move per swipe, and the row runs the whole way without waiting for the finger to cover the
+        // distance: an open row only goes back, and only under a finger heading for the buttons it bares; the
+        // side it stands off opens only from a closed row. Nothing opens behind a close.
+        if (!_settled)
         {
-            Settle(side);
+            var side = Side == 0 ? (dx < 0 ? -1 : 1) : Math.Sign(dx) == -Side ? 0 : Side;
+            if (side != Side)
+            {
+                _settled = true;
+                Settle(side);
+            }
         }
 
-        // A reversal within the same gesture counts from here.
-        _origin = point;
         e.Handled = true;
     }
 
     private void OnRowReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_reorder.Release())
+        {
+            _pressed = false;
+            e.Handled = true;
+            return;
+        }
+
         if (!_pressed)
         {
             return;
         }
 
         _pressed = false;
+        _settled = false;
         if (!_swiping)
         {
             return;
@@ -285,7 +338,9 @@ internal sealed partial class ServerRow : UserControl
     // The list took the pointer mid-swipe: leave the row where its state says.
     private void OnRowCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
+        _reorder.Cancel();
         _pressed = false;
+        _settled = false;
         if (_swiping)
         {
             _swiping = false;
@@ -302,6 +357,12 @@ internal sealed partial class ServerRow : UserControl
         {
             CloseOthers();
         }
+    }
+
+    // The buttons both sides of the row keep under it.
+    private List<Button> Actions()
+    {
+        return [.. ActionsPart.Children.OfType<Button>(), .. ConnectPart.Children.OfType<Button>()];
     }
 
     private static Button? FirstButton(Panel part)

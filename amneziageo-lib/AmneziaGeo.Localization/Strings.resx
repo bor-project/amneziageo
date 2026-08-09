@@ -79,15 +79,6 @@
   <data name="General_NetworkRepairFailed" xml:space="preserve">
     <value>Could not start the repair.</value>
   </data>
-  <data name="General_ExitSection" xml:space="preserve">
-    <value>Application</value>
-  </data>
-  <data name="General_ExitHint" xml:space="preserve">
-    <value>Closes the app window. A running tunnel keeps working and stays in the notification area.</value>
-  </data>
-  <data name="General_ExitButton" xml:space="preserve">
-    <value>Close app</value>
-  </data>
   <data name="General_ShowNotifications" xml:space="preserve">
     <value>Show notifications</value>
   </data>

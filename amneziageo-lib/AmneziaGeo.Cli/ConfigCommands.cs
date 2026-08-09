@@ -16,7 +16,7 @@ internal static class ConfigCommands
     {
         if (args.Count == 0)
         {
-            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|dns|exclusions|websocket|geo>");
+            return Reply.Usage("usage: amneziageo config <list|show|link|import|edit|rename|copy|remove|order|dns|exclusions|websocket|geo>");
         }
 
         var rest = (IReadOnlyList<string>)[.. args.Skip(1)];
@@ -36,6 +36,9 @@ internal static class ConfigCommands
             "remove" => rest.Count == 1
                 ? Reply.Report(await agent.SendAsync(IpcContract.OpRemoveConfig, rest[0]).ConfigureAwait(false), $"removed {rest[0]}")
                 : Reply.Usage("usage: amneziageo config remove <name>"),
+            "order" => rest.Count > 0
+                ? Reply.Report(await agent.SendAsync(IpcContract.OpReorderConfigs, [.. rest]).ConfigureAwait(false), "order saved")
+                : Reply.Usage("usage: amneziageo config order <name> [<name>...]"),
             "dns" => await DnsAsync(agent, rest).ConfigureAwait(false),
             "exclusions" => await ExclusionsAsync(agent, rest).ConfigureAwait(false),
             "websocket" => await WebSocketAsync(agent, rest).ConfigureAwait(false),

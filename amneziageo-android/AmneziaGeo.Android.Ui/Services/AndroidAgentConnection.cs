@@ -24,6 +24,9 @@ namespace AmneziaGeo.Android.Ui.Services;
 internal sealed class AndroidAgentConnection : IAgentConnection
 {
     private readonly Dictionary<string, string> _configs = new(StringComparer.Ordinal);
+
+    // The order the list is shown in; the store file keeps it as the order its config map is written in.
+    private List<string> _order = [];
     private readonly string _storePath;
     private const int DefaultMtu = 1420;
     private static readonly string AppVersion = ReadAppVersion();
@@ -213,6 +216,17 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpRenameConfig:
                 return await RenameConfigAsync(args).ConfigureAwait(false);
+
+            case IpcContract.OpReorderConfigs:
+                if (args.Count == 0)
+                {
+                    return Fail();
+                }
+
+                _order = [.. args];
+                Save();
+                PushSnapshot();
+                return Ok();
 
             case IpcContract.OpAssignRouting:
                 return AssignRouting(args);
@@ -537,7 +551,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     private void PushSnapshot()
     {
-        var configs = _configs.Select(kv => Entry(kv.Key, kv.Value)).ToList();
+        var configs = OrderedNames().Select(name => Entry(name, _configs[name])).ToList();
 
         Latest = new StatusSnapshot(
             AgentVersion: AppVersion,
@@ -559,6 +573,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RouteTtlSeconds: _routeTtl);
 
         SnapshotReceived?.Invoke(Latest);
+    }
+
+    // The names in the order the user set, with anything it does not name after them.
+    private List<string> OrderedNames()
+    {
+        var names = _order.Where(_configs.ContainsKey).ToList();
+        names.AddRange(_configs.Keys.Where(name => !names.Contains(name)));
+        return names;
     }
 
     private ConfigEntry Entry(string name, string config)
@@ -1456,6 +1478,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             using var document = JsonDocument.Parse(System.IO.File.ReadAllText(_storePath));
             LoadMap(document.RootElement, "Configs", _configs);
+            _order = [.. _configs.Keys];
             if (document.RootElement.TryGetProperty("SelectedRouting", out var selectedList)
                 && selectedList.ValueKind == JsonValueKind.Number
                 && selectedList.TryGetInt64(out var listId))
@@ -1557,7 +1580,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         {
             var builder = new System.Text.StringBuilder();
             builder.Append("{\"Configs\":");
-            AppendMap(builder, _configs);
+            AppendMap(builder, OrderedNames(), _configs);
             builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
@@ -1571,11 +1594,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    private static void AppendMap(System.Text.StringBuilder builder, Dictionary<string, string> map)
+    private static void AppendMap(System.Text.StringBuilder builder, List<string> names, Dictionary<string, string> map)
     {
         builder.Append('{');
         var first = true;
-        foreach (var entry in map)
+        foreach (var name in names)
         {
             if (!first)
             {
@@ -1583,7 +1606,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
 
             first = false;
-            builder.Append(JsonSerializer.Serialize(entry.Key)).Append(':').Append(JsonSerializer.Serialize(entry.Value));
+            builder.Append(JsonSerializer.Serialize(name)).Append(':').Append(JsonSerializer.Serialize(map[name]));
         }
 
         builder.Append('}');
@@ -1616,6 +1639,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         _configs.Remove(oldName);
         _configs[newName] = value;
+
+        // A rename keeps the row where it stands.
+        var place = _order.IndexOf(oldName);
+        if (place >= 0)
+        {
+            _order[place] = newName;
+        }
+
         RetargetSelection(oldName, newName);
         Save();
         await EnsureInitAsync().ConfigureAwait(false);

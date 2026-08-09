@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Controls.ServerCard"
+             x:CompileBindings="True"
+             x:DataType="vm:ConfigItemViewModel">
+  <Panel>
+    <!-- Narrow screen only: the same buttons lie under the card, pinned right on a surface of their own, and a
+         swipe uncovers them. On a wide screen they stand on the card's face instead. -->
+    <Border x:Name="ActionsBox" HorizontalAlignment="Right" CornerRadius="12"
+            Background="{DynamicResource AgPanel2Brush}"
+            IsVisible="{Binding $parent[controls:ServerCard].Compact}">
+      <controls:CardActions x:Name="StripActions" />
+    </Border>
+
+    <!-- The card itself: it picks the configuration and measures it, and carries its buttons on the face. -->
+    <Button x:Name="FacePart" Classes="serverrow"
+            Command="{Binding $parent[controls:ServerCard].SelectCommand}" CommandParameter="{Binding}"
+            ToolTip.Tip="{l:Tr Main_ServerRowSelect}">
+      <Panel>
+        <!-- Three lines and the buttons beside them: the name, the address under it, the measurement under
+             that. -->
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" Margin="12,9">
+          <TextBlock x:Name="NamePart" Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="13"
+                     FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock x:Name="EndpointPart" Grid.Row="1" Grid.Column="0" Text="{Binding Endpoint}"
+                     FontSize="11" Classes="muted mono" TextTrimming="CharacterEllipsis" />
+          <TextBlock x:Name="ProbePart" Grid.Row="2" Grid.Column="0" Text="{Binding ProbeText}"
+                     Foreground="{Binding ProbeBrush}" FontSize="11.5" FontWeight="SemiBold" />
+
+          <StackPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+            <!-- The glyph carries the state, not the action: grey while nothing runs on this configuration,
+                 amber while it is being dialled or has gone quiet, blue while it is up - the colours the big
+                 button wears. -->
+            <Button x:Name="ConnectPart" Classes="rowact cardact"
+                    Classes.big="{Binding $parent[controls:ServerCard].Compact}"
+                    Foreground="{Binding StatusBrush}" HorizontalAlignment="Center"
+                    Focusable="{Binding $parent[controls:ServerCard].Entered}"
+                    ToolTip.Tip="{Binding RowActionText}"
+                    Command="{Binding $parent[controls:ServerCard].ConnectCommand}" CommandParameter="{Binding}">
+              <Border Classes="rowactcard">
+                <PathIcon Data="{DynamicResource AgPowerGeometry}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Foreground="{Binding $parent[Button].Foreground}" />
+              </Border>
+            </Button>
+
+            <controls:CardActions x:Name="FaceActions" ButtonWidth="34" ButtonHeight="30"
+                                  IsVisible="{Binding !$parent[controls:ServerCard].Compact}" />
+          </StackPanel>
+        </Grid>
+
+        <!-- Frame in the connection colour on the configuration the tunnel is bound to, grey on the one the
+             user picked, accent on the card a remote has stepped into. -->
+        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
+        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowSelectedFrame}" />
+        <Border BorderThickness="2" CornerRadius="12" IsHitTestVisible="False"
+                BorderBrush="{DynamicResource AgAccentBrush}"
+                IsVisible="{Binding $parent[controls:ServerCard].Entered}" />
+      </Panel>
+    </Button>
+  </Panel>
+</UserControl>

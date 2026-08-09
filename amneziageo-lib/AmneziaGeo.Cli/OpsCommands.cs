@@ -21,6 +21,7 @@ internal static class OpsCommands
         [IpcContract.OpRenameConfig] = "config rename",
         [IpcContract.OpCopyConfig] = "config copy",
         [IpcContract.OpRemoveConfig] = "config remove",
+        [IpcContract.OpReorderConfigs] = "config order",
         [IpcContract.OpSetConfigDns] = "config dns",
         [IpcContract.OpSetConfigExclusions] = "config exclusions",
         [IpcContract.OpSetWebSocket] = "config websocket",

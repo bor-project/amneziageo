@@ -56,8 +56,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCompact))]
-    [NotifyPropertyChangedFor(nameof(ShowHomeConnect))]
-    [NotifyPropertyChangedFor(nameof(ShowHomeServers))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
@@ -81,8 +79,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _hasConfigs;
 
     /// <summary>
-    /// Which home pane the compact layout shows: "main" (the connect control) or "servers" (the server table).
-    /// The wide layout shows both at once and ignores it.
+    /// Which home pane is shown: "main" (the connect control) or "servers" (the server table). Every width
+    /// shows one of the two, picked by the tabs above them.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHomeMain))]
@@ -182,32 +180,29 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsCompact => WindowWidth < CompactBreakpoint;
 
     /// <summary>
-    /// Whether the short, wide home surface should place its controls side by side.
-    /// </summary>
-    /// <summary>
     /// Whether a section detail is open in compact mode; the header then shows the section name.
     /// </summary>
     public bool IsSectionDetail => IsCompact && SettingsDetailOpen;
 
     /// <summary>
-    /// Whether the compact home shows the connect pane.
+    /// Whether the home screen shows the connect pane.
     /// </summary>
     public bool IsHomeMain => HomeTab == "main";
 
     /// <summary>
-    /// Whether the compact home shows the server pane.
+    /// Whether the home screen shows the server pane.
     /// </summary>
     public bool IsHomeServers => HomeTab == "servers";
 
     /// <summary>
-    /// Whether the connect control is on screen: always when wide, on its tab when compact.
+    /// Whether the connect control is on screen: on its tab, at every width.
     /// </summary>
-    public bool ShowHomeConnect => !IsCompact || IsHomeMain;
+    public bool ShowHomeConnect => IsHomeMain;
 
     /// <summary>
-    /// Whether the server table is on screen: always when wide, on its tab when compact.
+    /// Whether the server table is on screen: on its tab, at every width.
     /// </summary>
-    public bool ShowHomeServers => !IsCompact || IsHomeServers;
+    public bool ShowHomeServers => IsHomeServers;
 
     /// <summary>
     /// Whether the settings section rail is shown: always in wide mode, and in compact mode only when no section

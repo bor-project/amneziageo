@@ -15,8 +15,8 @@ using AmneziaGeo.Ui.ViewModels;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Строка сервера на главном экране: нажатие подключает конфигурацию, свайп влево открывает «Изменить»
-/// и «Удалить», пульт и клавиатура открывают их стрелкой вправо.
+/// Строка сервера на главном экране: нажатие выбирает конфигурацию, свайп влево открывает «Изменить»
+/// и «Удалить», свайп вправо - «Подключить»; пульт и клавиатура открывают их стрелками.
 /// </summary>
 internal sealed partial class ServerRow : UserControl
 {
@@ -32,6 +32,9 @@ internal sealed partial class ServerRow : UserControl
     private bool _pressed;
     private bool _swiping;
 
+    public static readonly StyledProperty<ICommand?> SelectCommandProperty =
+        AvaloniaProperty.Register<ServerRow, ICommand?>(nameof(SelectCommand));
+
     public static readonly StyledProperty<ICommand?> ConnectCommandProperty =
         AvaloniaProperty.Register<ServerRow, ICommand?>(nameof(ConnectCommand));
 
@@ -43,6 +46,9 @@ internal sealed partial class ServerRow : UserControl
 
     public static readonly StyledProperty<bool> IsOpenProperty =
         AvaloniaProperty.Register<ServerRow, bool>(nameof(IsOpen), defaultBindingMode: BindingMode.TwoWay);
+
+    public static readonly StyledProperty<bool> IsConnectOpenProperty =
+        AvaloniaProperty.Register<ServerRow, bool>(nameof(IsConnectOpen), defaultBindingMode: BindingMode.TwoWay);
 
     /// <summary>
     /// ctor
@@ -78,6 +84,15 @@ internal sealed partial class ServerRow : UserControl
     /// <summary>
     /// Команда нажатия по строке.
     /// </summary>
+    public ICommand? SelectCommand
+    {
+        get => GetValue(SelectCommandProperty);
+        set => SetValue(SelectCommandProperty, value);
+    }
+
+    /// <summary>
+    /// Команда кнопки «Подключить».
+    /// </summary>
     public ICommand? ConnectCommand
     {
         get => GetValue(ConnectCommandProperty);
@@ -111,16 +126,32 @@ internal sealed partial class ServerRow : UserControl
         set => SetValue(IsOpenProperty, value);
     }
 
-    // How far the row slides: past the pair it uncovers, margins and gap included, so no button keeps a strip
-    // of the row over it - a tap there would close the row instead of running the command.
-    private double ActionsWidth
+    /// <summary>
+    /// Открыта ли кнопка подключения.
+    /// </summary>
+    public bool IsConnectOpen
     {
-        get
-        {
-            var width = ActionsPart.Bounds.Width > 0 ? ActionsPart.Bounds.Width : ActionsPart.DesiredSize.Width;
-            return width + ActionsPart.Margin.Left + ActionsPart.Margin.Right + SwipeGap;
-        }
+        get => GetValue(IsConnectOpenProperty);
+        set => SetValue(IsConnectOpenProperty, value);
     }
+
+    // How far the row slides: past the buttons it uncovers, margins and gap included, so no button keeps a
+    // strip of the row over it - a tap there would close the row instead of running the command.
+    private double ActionsWidth => Uncovered(ActionsPart);
+
+    private double ConnectWidth => Uncovered(ConnectPart);
+
+    private static double Uncovered(Control part)
+    {
+        var width = part.Bounds.Width > 0 ? part.Bounds.Width : part.DesiredSize.Width;
+        return width + part.Margin.Left + part.Margin.Right + SwipeGap;
+    }
+
+    // Which side the row stands off: -1 the edit and delete pair, 1 the connect button, 0 neither.
+    private int Side => IsOpen ? -1 : IsConnectOpen ? 1 : 0;
+
+    // Where the row stands for the side it is on.
+    private double Offset => IsOpen ? -ActionsWidth : IsConnectOpen ? ConnectWidth : 0;
 
     // Free width beside the name and the address inside their column: how far they can follow the row back.
     private double NameSlack =>
@@ -130,27 +161,39 @@ internal sealed partial class ServerRow : UserControl
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == IsOpenProperty)
+        if (change.Property == IsOpenProperty || change.Property == IsConnectOpenProperty)
         {
-            Slide(IsOpen ? -ActionsWidth : 0);
+            Slide(Offset);
         }
     }
 
     /// <inheritdoc/>
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        // No swipe on a remote: the right arrow uncovers the buttons and seats focus on the first one, the left
-        // arrow puts them back. A closed row keeps both arrows for directional navigation.
-        if (e.Key == Key.Right && !IsOpen)
+        // No swipe on a remote: the right arrow uncovers the edit and delete pair, the left arrow the connect
+        // button, and the opposite arrow puts an open row back, seating focus on what it uncovers.
+        if (e.Key == Key.Right && IsConnectOpen)
         {
-            Settle(true);
-            ActionsPart.Children.OfType<Button>().FirstOrDefault(b => b.IsVisible)?.Focus(NavigationMethod.Directional);
+            Settle(0);
+            FacePart.Focus(NavigationMethod.Directional);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Right && !IsOpen)
+        {
+            Settle(-1);
+            FirstButton(ActionsPart)?.Focus(NavigationMethod.Directional);
             e.Handled = true;
         }
         else if (e.Key == Key.Left && IsOpen)
         {
-            Settle(false);
+            Settle(0);
             FacePart.Focus(NavigationMethod.Directional);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Left && !IsConnectOpen)
+        {
+            Settle(1);
+            FirstButton(ConnectPart)?.Focus(NavigationMethod.Directional);
             e.Handled = true;
         }
 
@@ -161,21 +204,22 @@ internal sealed partial class ServerRow : UserControl
     {
         // The uncovered strip is the buttons', glyphs and the space around them alike: a press there never
         // closes the row, so a finger that misses a glyph does not undo the swipe instead.
-        if (IsOpen && e.GetPosition(this).X >= Bounds.Width - ActionsWidth)
+        var x = e.GetPosition(this).X;
+        if ((IsOpen && x >= Bounds.Width - ActionsWidth) || (IsConnectOpen && x <= ConnectWidth))
         {
             return;
         }
 
         // A press on the uncovered buttons is theirs.
-        if (Contains(ActionsPart, e.Source))
+        if (Contains(ActionsPart, e.Source) || Contains(ConnectPart, e.Source))
         {
             return;
         }
 
-        // An open row takes the first tap to close itself, so a stray press cannot connect it.
-        if (IsOpen)
+        // An open row takes the first tap to close itself, so a stray press cannot pick or connect it.
+        if (Side != 0)
         {
-            Settle(false);
+            Settle(0);
             e.Handled = true;
             return;
         }
@@ -202,17 +246,17 @@ internal sealed partial class ServerRow : UserControl
         if (!_swiping)
         {
             _swiping = true;
-            // Taking the pointer drops the row button's press, so the swipe never ends in a connect; it also
-            // keeps the list from scrolling under the finger.
+            // Taking the pointer drops the row button's press, so the swipe never ends in a pick; it also keeps
+            // the list from scrolling under the finger.
             e.Pointer.Capture(this);
         }
 
-        // The direction alone decides: the row runs the whole way to the buttons, or the whole way back, without
-        // waiting for the finger to cover the distance.
-        var open = dx < 0;
-        if (open != IsOpen)
+        // The direction alone decides: the row runs the whole way to the buttons it heads for, or the whole way
+        // back over the ones it stands off, without waiting for the finger to cover the distance.
+        var side = dx < 0 ? (Side == 1 ? 0 : -1) : (Side == -1 ? 0 : 1);
+        if (side != Side)
         {
-            Settle(open);
+            Settle(side);
         }
 
         // A reversal within the same gesture counts from here.
@@ -245,26 +289,33 @@ internal sealed partial class ServerRow : UserControl
         if (_swiping)
         {
             _swiping = false;
-            Slide(IsOpen ? -ActionsWidth : 0);
+            Slide(Offset);
         }
     }
 
-    private void Settle(bool open)
+    private void Settle(int side)
     {
-        IsOpen = open;
-        Slide(open ? -ActionsWidth : 0);
-        if (open)
+        IsOpen = side < 0;
+        IsConnectOpen = side > 0;
+        Slide(Offset);
+        if (side != 0)
         {
             CloseOthers();
         }
+    }
+
+    private static Button? FirstButton(Panel part)
+    {
+        return part.Children.OfType<Button>().FirstOrDefault(b => b.IsVisible);
     }
 
     private void Slide(double shift)
     {
         _shift.X = shift;
 
-        // The name walks against the leaving row and keeps its place on screen, as far as the space beside it goes.
-        _nameShift.X = Math.Min(-shift, NameSlack);
+        // The name walks against a row leaving to the left and keeps its place on screen, as far as the space
+        // beside it goes; a row leaving to the right uncovers nothing over it, so the name rides along.
+        _nameShift.X = shift < 0 ? Math.Min(-shift, NameSlack) : 0;
     }
 
     // Only one row keeps its buttons uncovered.
@@ -280,6 +331,7 @@ internal sealed partial class ServerRow : UserControl
             if (!ReferenceEquals(row, DataContext))
             {
                 row.SwipeOpen = false;
+                row.ConnectOpen = false;
             }
         }
     }

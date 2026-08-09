@@ -30,9 +30,8 @@
 
   <Grid>
 
-    <!-- HOME screen: gear left, centered title, the connect control and the servers. Wide seats the round
-         control on the left and the server table on the right, split like the settings screen; compact shows one
-         of the two at a time behind a pair of tabs. -->
+    <!-- HOME screen: gear left, centered title, the connect control and the servers. A pair of tabs shows one
+         of the two at a time, at every width. -->
     <Border Classes="card" Margin="12" Padding="0" IsVisible="{Binding IsHome}">
       <DockPanel LastChildFill="True">
 
@@ -58,14 +57,13 @@
         </Border>
 
         <Panel>
-          <!-- Body: the connect control and the servers, side by side when wide, one tab at a time when
-               compact. A loader stands in until the first agent snapshot, so the indeterminate power button
-               never flashes on open. -->
+          <!-- Body: the connect control and the servers, one tab at a time. A loader stands in until the
+               first agent snapshot, so the indeterminate power button never flashes on open. -->
           <Grid RowDefinitions="Auto,*" Margin="12,4,12,12" IsVisible="{Binding Home.IsReady}">
 
-            <!-- Compact tabs over the two panes. -->
+            <!-- Tabs over the two panes. -->
             <Border Grid.Row="0" Classes="segtrack sub" Margin="0,0,0,10" MaxWidth="420"
-                    IsVisible="{Binding IsCompact}">
+                    HorizontalAlignment="Center">
               <UniformGrid Columns="2">
                 <Button Classes="seg" Classes.active="{Binding IsHomeMain}"
                         Command="{Binding SelectHomeTabCommand}" CommandParameter="main"
@@ -76,12 +74,10 @@
               </UniformGrid>
             </Border>
 
-            <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*">
+            <Grid Grid.Row="1">
 
-              <!-- Connect column: the round control, the status, and, where the table is a tab away, the
-                   config picker. -->
-              <StackPanel Grid.Column="0" Width="290" Spacing="14"
-                          Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
+              <!-- Connect pane: the round control, the status and the config picker. -->
+              <StackPanel Width="290" Spacing="14"
                           HorizontalAlignment="Center" VerticalAlignment="Center"
                           IsVisible="{Binding ShowHomeConnect}">
                 <Button x:Name="HomePowerButton" Classes="powerbig" HorizontalAlignment="Center"
@@ -143,8 +139,8 @@
                              IsVisible="{Binding Home.ShowRetry}" />
                 </StackPanel>
 
-                <!-- Config picker: the compact tab carries it, the wide layout has the table beside it instead. -->
-                <StackPanel Spacing="6" IsVisible="{Binding IsCompact}">
+                <!-- Config picker: the same pick the server table carries a tab away. -->
+                <StackPanel Spacing="6">
                   <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                             IsVisible="{Binding HasConfigs}"
                             ItemsSource="{Binding Config.HomeConfigOptions}"
@@ -169,14 +165,7 @@
                 </StackPanel>
               </StackPanel>
 
-              <!-- Divider between the two columns, as between the settings rail and its content. -->
-              <Border Grid.Column="1" Width="1" Margin="0,6" Background="{DynamicResource AgBorderBrush}"
-                      IsVisible="{Binding !IsCompact}" />
-
-              <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding ShowHomeServers}"
-                    Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=colServers}"
-                    Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
-                    Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=insetLeft16}">
+              <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding ShowHomeServers}">
                 <!-- Table head: the caption, the button that re-measures every server, and the one that adds
                      a configuration and comes back here. -->
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="2,0,0,2" IsVisible="{Binding HasConfigs}">
@@ -198,8 +187,8 @@
 
                 <Panel Grid.Row="1">
                   <!-- One row per configuration: name, endpoint, and the last measured response, in a frame
-                       carrying the connection colour. The row connects that configuration, or drops the tunnel
-                       when it is the live one; a swipe left uncovers its edit and delete buttons. A list too
+                       carrying the connection colour. The row picks that configuration and measures it; a swipe
+                       right uncovers its connect button, a swipe left its edit and delete buttons. A list too
                        long for the screen scrolls. -->
                   <ScrollViewer IsVisible="{Binding HasConfigs}"
                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -207,6 +196,8 @@
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConfigItemViewModel">
                           <controls:ServerRow Margin="0,2" IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
+                                  IsConnectOpen="{Binding ConnectOpen, Mode=TwoWay}"
+                                  SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.SelectRowCommand}"
                                   ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
                                   EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
                                   DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}" />

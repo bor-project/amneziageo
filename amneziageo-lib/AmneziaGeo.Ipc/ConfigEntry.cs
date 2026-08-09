@@ -31,9 +31,11 @@ public static class HandshakeAge
     public const int StepSeconds = 30;
 
     /// <summary>
-    /// Age beyond which the peer counts as gone: AmneziaWG itself rejects the session at this point.
+    /// Age beyond which the peer counts as gone. A keepalive refreshes the handshake only once the session
+    /// reaches its own 180-second limit, so a live tunnel climbs to 180 every cycle; the reporting step and the
+    /// interval add another minute on top of that.
     /// </summary>
-    public const int SilentSeconds = 180;
+    public const int SilentSeconds = 300;
 
     /// <summary>
     /// Rounds an age down to the reporting step; a negative age stays unknown.

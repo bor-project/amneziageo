@@ -28,7 +28,6 @@ internal sealed class CompactConverter : IValueConverter
             "col" => compact ? 0 : 1,
             "col2" => compact ? 0 : 2,
             "span2" => compact ? 2 : 1,
-            "span3" => compact ? 3 : 1,
             "alignRL" => compact ? HorizontalAlignment.Left : HorizontalAlignment.Right,
             "alignLC" => compact ? HorizontalAlignment.Center : HorizontalAlignment.Left,
             "stretchL" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
@@ -48,10 +47,6 @@ internal sealed class CompactConverter : IValueConverter
             // Top gap under the tabs when the catalogue combo drops to its own row in compact.
             "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
-            // Home server column: indented off the connect column when the two stand side by side.
-            "insetLeft16" => compact ? new Thickness(0) : new Thickness(16, 0, 0, 0),
-            // Home server pane: its own column beside the connect one, the whole row when compact.
-            "colServers" => compact ? 0 : 2,
             // Column widths for an even-split row: a fixed control becomes a star column in compact so it
             // shares the width, and the spacer/other-content column collapses.
             "colAutoStar" => compact ? new GridLength(1, GridUnitType.Star) : GridLength.Auto,

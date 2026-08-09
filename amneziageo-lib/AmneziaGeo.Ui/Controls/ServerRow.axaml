@@ -15,6 +15,21 @@
   </UserControl.Resources>
 
   <Panel>
+    <!-- Connect under the row, pinned left and uncovered by the swipe to the right: a bare glyph like the pair
+         on the other side, in the drop colour on the configuration the tunnel already carries. It takes focus
+         only while the row is out of its way. -->
+    <Grid x:Name="ConnectPart" HorizontalAlignment="Left" Margin="2,0,0,0">
+      <Button Classes="rowact" Classes.drop="{Binding ShowStatusFrame}" Width="60"
+              Focusable="{Binding ConnectOpen}" ToolTip.Tip="{Binding RowActionText}"
+              Command="{Binding $parent[controls:ServerRow].ConnectCommand}" CommandParameter="{Binding}">
+        <Border Classes="rowactcard">
+          <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="19" Height="19"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Foreground="{Binding $parent[Button].Foreground}" />
+        </Border>
+      </Button>
+    </Grid>
+
     <!-- Actions under the row, pinned right and uncovered by the swipe: bare glyphs whose colour, not a fill,
          carries the meaning. Both pairs hold the same footprint, so arming the delete does not move the row;
          they take focus only while the row is open. The buttons tile the strip edge to edge and carry their card
@@ -59,10 +74,10 @@
       </Button>
     </Grid>
 
-    <!-- The row itself: connects the configuration, or drops the tunnel when it is the live one. -->
+    <!-- The row itself: picks the configuration and measures it, leaving the tunnel to the connect button. -->
     <Button x:Name="FacePart" Classes="serverrow"
-            Command="{Binding $parent[controls:ServerRow].ConnectCommand}" CommandParameter="{Binding}"
-            ToolTip.Tip="{Binding RowActionText}">
+            Command="{Binding $parent[controls:ServerRow].SelectCommand}" CommandParameter="{Binding}"
+            ToolTip.Tip="{l:Tr Main_ServerRowSelect}">
       <Panel>
         <Grid ColumnDefinitions="*,Auto" Margin="11,7">
           <StackPanel x:Name="TextPart" Grid.Column="0" VerticalAlignment="Center">
@@ -75,12 +90,12 @@
                      FontSize="11.5" FontWeight="SemiBold"
                      VerticalAlignment="Center" Margin="8,0,0,0" />
         </Grid>
-        <!-- Frame in the connection colour on the configuration the tunnel is bound to, accent on the one the
-             next connect takes. -->
+        <!-- Frame in the connection colour on the configuration the tunnel is bound to, grey on the one the
+             user picked. -->
         <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
         <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
-                BorderBrush="{DynamicResource AgAccentBrush}" IsVisible="{Binding ShowActiveFrame}" />
+                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowSelectedFrame}" />
       </Panel>
     </Button>
   </Panel>

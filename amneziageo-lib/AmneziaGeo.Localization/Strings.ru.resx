@@ -1766,6 +1766,9 @@
   <data name="Main_ServerRowDisconnect" xml:space="preserve">
     <value>Отключить эту конфигурацию</value>
   </data>
+  <data name="Main_ServerRowSelect" xml:space="preserve">
+    <value>Выбрать эту конфигурацию</value>
+  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Проверить серверы</value>
   </data>
@@ -1776,7 +1779,7 @@
     <value>нет ответа</value>
   </data>
   <data name="Main_ProbeNoAddress" xml:space="preserve">
-    <value>нет адреса</value>
+    <value>недоступен</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>

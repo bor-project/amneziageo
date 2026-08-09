@@ -49,7 +49,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
-    [NotifyPropertyChangedFor(nameof(ShowActiveFrame))]
+    [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
     [NotifyPropertyChangedFor(nameof(RowActionText))]
     private string _status = ConnectionStatus.Idle;
 
@@ -61,10 +61,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         or ConnectionStatus.Disconnecting;
 
     /// <summary>
-    /// Whether the row wears the accent frame: the configuration the next connect takes, with nothing running
-    /// on it yet.
+    /// Whether the row wears the grey frame: the configuration the user picked, with no tunnel on it.
     /// </summary>
-    public bool ShowActiveFrame => IsActive && !ShowStatusFrame;
+    public bool ShowSelectedFrame => IsSelected && !ShowStatusFrame;
 
     /// <summary>
     /// What clicking the row does: the running configuration goes down, every other one is dialled.
@@ -84,14 +83,18 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public IBrush StatusBrush => StatusLabels.Brush(LinkSilent ? ConnectionStatus.Connecting : Status);
 
-    // Whether this row is the configuration the connect button dials.
+    // Whether the user picked this row.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowActiveFrame))]
-    private bool _isActive;
+    [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
+    private bool _isSelected;
 
-    // Whether the swipe uncovered the row's buttons.
+    // Whether the swipe uncovered the row's edit and delete buttons.
     [ObservableProperty]
     private bool _swipeOpen;
+
+    // Whether the swipe uncovered the row's connect button.
+    [ObservableProperty]
+    private bool _connectOpen;
 
     // Whether the row's delete is armed and waiting for the confirm.
     [ObservableProperty]

@@ -79,6 +79,11 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [ObservableProperty]
     private ConfigChoice? _ActiveConfigChoice = ConfigChoice.None;
 
+    // The row the user picked in the server table: it wears the frame, and while nothing runs it is also the
+    // configuration the connect control dials.
+    [ObservableProperty]
+    private ConfigItemViewModel? _selectedRow;
+
     // False until the first snapshot lands, so the card shows a loader instead of the indeterminate button.
     [ObservableProperty]
     private bool _isReady;
@@ -377,10 +382,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             notice = Loc.Instance.Get("MainVm_NoticeDisconnectFailed");
             reconnect = true;
         }
-        else if (snapshot.Active && SelectedDiffersFromBound(snapshot))
+        else if (snapshot.Active && !_toggleInFlight
+            && string.Equals(snapshot.BoundStatus, ConnectionStatus.Connected, StringComparison.Ordinal)
+            && SelectedDiffersFromBound(snapshot))
         {
             // A different config is selected on the live tunnel: reuse the reconnect banner so its action applies
             // the switch (Reconnect dials the newly selected ActiveConfig), like the settings-changed case below.
+            // A switch in flight names the new target while the old one still runs, so the banner waits for the
+            // tunnel to settle rather than blinking through every switch.
             notice = Loc.Instance.Get("MainVm_NoticeConfigSelected", snapshot.SelectedTarget);
             reconnect = true;
         }
@@ -487,18 +496,22 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _host.Config.NotifyActiveConfigChanged();
     }
 
-    partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
+    partial void OnSelectedRowChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
     {
         if (oldValue is not null)
         {
-            oldValue.IsActive = false;
+            oldValue.IsSelected = false;
         }
 
         if (newValue is not null)
         {
-            newValue.IsActive = true;
+            newValue.IsSelected = true;
         }
+    }
 
+    partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
+    {
+        SelectedRow = newValue;
         SyncActiveConfigChoice();
         NotifyCanToggleConnection();
         _host.Config.NotifyActiveConfigChanged();
@@ -628,6 +641,31 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Picks the row the user tapped and measures its server. A live tunnel keeps its target and its status:
+    /// the tap moves the frame alone, and the row's own connect button is what switches the tunnel over.
+    /// </summary>
+    [RelayCommand]
+    private void SelectRow(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        if (IsTunnelActive)
+        {
+            SelectedRow = item;
+        }
+        else
+        {
+            ActiveConfig = item;
+        }
+
+        item.Probing = true;
+        _ = ProbeRowAsync(item, CancellationToken.None);
+    }
+
+    /// <summary>
     /// Connects the configuration a home server row stands for, or takes the tunnel down when the row is the
     /// one already running.
     /// </summary>
@@ -640,6 +678,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
 
         var live = IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
+        item.ConnectOpen = false;
         ActiveConfig = item;
         await ToggleConfigConnectionAsync(item.Name, !live);
     }

@@ -27,6 +27,12 @@
             Command="{Binding $parent[controls:ServerCard].SelectCommand}" CommandParameter="{Binding}"
             ToolTip.Tip="{l:Tr Main_ServerRowSelect}">
       <Panel>
+        <!-- Card the remote has stepped into wears a wash under its lines: a frame alone reads as one more
+             border among the frames the card already carries. -->
+        <Border CornerRadius="12" IsHitTestVisible="False" Opacity="0.14"
+                Background="{DynamicResource AgAccentBrush}"
+                IsVisible="{Binding $parent[controls:ServerCard].Entered}" />
+
         <!-- Three lines and the buttons beside them: the name, the address under it, the measurement under
              that. -->
         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" Margin="12,9">

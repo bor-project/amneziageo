@@ -67,6 +67,9 @@ internal sealed partial class ServerCard : UserControl
     // Ключ входа нажат: его отпускание карточка съедает сама.
     private bool _entering;
 
+    // Пункт меню выбран: фокус уходит на экран, который он открыл.
+    private bool _picked;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -78,6 +81,12 @@ internal sealed partial class ServerCard : UserControl
         HiddenTip.Watch(FaceActions);
         EditItem.Click += OnEditPicked;
         DeleteItem.Click += OnDeletePicked;
+        if (MorePart.Flyout is { } menu)
+        {
+            menu.Opened += OnMenuOpened;
+            menu.Closed += OnMenuClosed;
+        }
+
         FacePart.RenderTransform = _shift;
         NamePart.RenderTransform = _nameShift;
         EndpointPart.RenderTransform = _nameShift;
@@ -355,9 +364,45 @@ internal sealed partial class ServerCard : UserControl
     // Кнопка на лице карточки.
     private Button[] FaceActions => [MorePart];
 
+    // Открытое меню встречает пульт на «Изменить».
+    private void OnMenuOpened(object? sender, EventArgs e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            EditItem.Focus(NavigationMethod.Directional);
+            EditItem.IsSelected = true;
+        });
+    }
+
+    // Меню закрыто без выбора: рамка возвращается на кнопку, которая его открыла.
+    private void OnMenuClosed(object? sender, EventArgs e)
+    {
+        if (_picked)
+        {
+            _picked = false;
+            return;
+        }
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (!Entered)
+                {
+                    return;
+                }
+
+                // Флаут уже вернул фокус на кнопку обычным способом, и рамки на ней нет: фокус уводится и
+                // ставится заново как от пульта.
+                ConnectPart.Focus(NavigationMethod.Directional);
+                MorePart.Focus(NavigationMethod.Directional);
+            },
+            DispatcherPriority.Background);
+    }
+
     // Пункт меню «Изменить».
     private void OnEditPicked(object? sender, RoutedEventArgs e)
     {
+        _picked = true;
         if (EditCommand?.CanExecute(DataContext) == true)
         {
             EditCommand.Execute(DataContext);
@@ -367,6 +412,7 @@ internal sealed partial class ServerCard : UserControl
     // Пункт меню «Удалить»: спрашивает подтверждение.
     private void OnDeletePicked(object? sender, RoutedEventArgs e)
     {
+        _picked = true;
         if (AskDeleteCommand?.CanExecute(DataContext) == true)
         {
             AskDeleteCommand.Execute(DataContext);

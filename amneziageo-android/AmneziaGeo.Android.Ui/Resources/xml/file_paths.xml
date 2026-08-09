@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exports handed to another application live in the cache, under one folder the provider shares. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <cache-path name="share" path="share/" />
+</paths>

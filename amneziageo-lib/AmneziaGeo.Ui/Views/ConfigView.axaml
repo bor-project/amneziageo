@@ -15,6 +15,7 @@
     <StreamGeometry x:Key="AgSwapGeometry">M6.99,11L3,15L6.99,19V16H14V14H6.99V11M21,9L17.01,5V8H10V10H17.01V13L21,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
+    <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
     <StreamGeometry x:Key="AgEyeGeometry">M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9M12,4.5C17,4.5 21.27,7.61 23,12C21.27,16.39 17,19.5 12,19.5C7,19.5 2.73,16.39 1,12C2.73,7.61 7,4.5 12,4.5M3.18,12C4.83,15.36 8.24,17.5 12,17.5C15.76,17.5 19.17,15.36 20.82,12C19.17,8.64 15.76,6.5 12,6.5C8.24,6.5 4.83,8.64 3.18,12Z</StreamGeometry>
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
@@ -312,12 +313,14 @@
           </Grid>
           <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                      HorizontalAlignment="Center" TextAlignment="Center" />
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="10" MaxWidth="520" HorizontalAlignment="Center">
-            <Button Grid.Column="0" Classes="methodpick" HorizontalAlignment="Stretch" Padding="16,6"
+          <!-- Buttons at their own width: a narrow card carries them onto the next line instead of
+               squeezing them. -->
+          <WrapPanel HorizontalAlignment="Center" MaxWidth="520">
+            <Button Classes="methodpick" Margin="4" Padding="16,6"
                     Click="OnCopyExport" IsEnabled="{Binding IsReady}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-                <!-- Compact drops the label to just "Copy" so it fits the narrow half-width button. -->
+                <!-- Compact drops the label to just "Copy". -->
                 <Panel>
                   <TextBlock Text="{l:Tr Main_CopyContentButton}"
                              IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
@@ -326,14 +329,22 @@
                 </Panel>
               </StackPanel>
             </Button>
-            <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Padding="16,6"
+            <Button Classes="accent" Margin="4" Padding="16,6"
                     Click="OnDownloadQr" IsVisible="{Binding ShowQr}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
                 <TextBlock Text="{l:Tr Main_DownloadQrButton}" />
               </StackPanel>
             </Button>
-          </Grid>
+            <!-- Sending the QR on: shows up where the platform hands a file to another application. -->
+            <Button Classes="methodpick" Margin="4" Padding="16,6" Click="OnSendQr"
+                    IsVisible="{Binding CanSendExport}" IsEnabled="{Binding ShowQr}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
+                <TextBlock Text="{l:Tr Main_SendToAppButton}" />
+              </StackPanel>
+            </Button>
+          </WrapPanel>
         </StackPanel>
       </Border>
     </StackPanel>

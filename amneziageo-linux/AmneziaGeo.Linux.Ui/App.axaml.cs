@@ -53,6 +53,7 @@ public sealed partial class App : Application
             };
             desktop.MainWindow = window;
             window.Show();
+            SingleInstance.StartListening(window);
             viewModel.Start();
         }
 

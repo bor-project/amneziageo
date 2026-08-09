@@ -359,6 +359,26 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// </summary>
     public async Task ExportToAsync(string path)
     {
+        if (await BuildExportTextAsync() is not { } text)
+        {
+            return;
+        }
+
+        try
+        {
+            await File.WriteAllTextAsync(path, text);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, [$"log export write failed: {ex.Message}"]));
+        }
+    }
+
+    /// <summary>
+    /// Renders the whole selected table through the agent; null when the agent did not answer.
+    /// </summary>
+    public async Task<string?> BuildExportTextAsync()
+    {
         IpcAck ack;
         try
         {
@@ -366,23 +386,16 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
         catch
         {
-            return;
+            return null;
         }
 
-        if (!ack.Ok)
-        {
-            return;
-        }
-
-        try
-        {
-            await File.WriteAllTextAsync(path, ack.Message);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpLogClient, [$"log export write failed: {ex.Message}"]));
-        }
+        return ack.Ok ? ack.Message : null;
     }
+
+    /// <summary>
+    /// Whether the platform hands an export to another application.
+    /// </summary>
+    public bool CanSendExport => PlatformExportHost.CanSend;
 
     // Queues a load of the window ending at beforeId (null = tail); coalesces so the newest request wins.
     // showLoader marks a user-driven load (shows the loader); the background tail poll passes false.

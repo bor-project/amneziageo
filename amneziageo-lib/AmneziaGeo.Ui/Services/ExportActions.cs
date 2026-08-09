@@ -1,8 +1,11 @@
 using System;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 
 namespace AmneziaGeo.Ui.Services;
@@ -112,6 +115,57 @@ internal static class ExportActions
         await using var stream = await file.OpenWriteAsync();
         write(stream);
         return true;
+    }
+
+    /// <summary>
+    /// Puts a picture on the clipboard, through the platform hook where the toolkit clipboard carries text only.
+    /// </summary>
+    public static async Task<bool> CopyImageAsync(Visual source, Bitmap image, string name)
+    {
+        if (PlatformExportHost.CopyImageAsync(name, ToPng(image)) is { } platform)
+        {
+            return await platform;
+        }
+
+        if (TopLevel.GetTopLevel(source)?.Clipboard is not { } clipboard)
+        {
+            return false;
+        }
+
+        var item = new DataTransferItem();
+        item.SetBitmap(image);
+        var transfer = new DataTransfer();
+        transfer.Add(item);
+        try
+        {
+            await clipboard.SetDataAsync(transfer);
+            return true;
+        }
+        catch (Exception)
+        {
+            // Не всякий буфер обмена принимает картинку.
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Hands text to another application.
+    /// </summary>
+    public static Task<bool> SendTextAsync(string text, string name)
+        => PlatformExportHost.SendAsync(name, "text/plain", Encoding.UTF8.GetBytes(text)) ?? Task.FromResult(false);
+
+    /// <summary>
+    /// Hands a picture to another application.
+    /// </summary>
+    public static Task<bool> SendImageAsync(Bitmap image, string name)
+        => PlatformExportHost.SendAsync(name, "image/png", ToPng(image)) ?? Task.FromResult(false);
+
+    // Encodes the bitmap as PNG bytes.
+    private static byte[] ToPng(Bitmap image)
+    {
+        using var buffer = new MemoryStream();
+        image.Save(buffer);
+        return buffer.ToArray();
     }
 
     /// <summary>

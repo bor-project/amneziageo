@@ -66,6 +66,17 @@ internal sealed partial class ConfigView : UserControl
         }
     }
 
+    // Hands the rendered QR to another application.
+    private async void OnSendQr(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not ExportDialogViewModel vm || vm.QrImage is not { } qr)
+        {
+            return;
+        }
+
+        await ExportActions.SendImageAsync(qr, vm.ConfigName + ".png");
+    }
+
     // Standalone config-import: adds a config to the shared catalogue.
     private async void OnSectionConfigBrowse(object? sender, RoutedEventArgs e)
     {

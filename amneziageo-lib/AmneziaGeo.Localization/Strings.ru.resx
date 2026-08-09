@@ -169,6 +169,9 @@
   <data name="BundleExport_RoutingRulesHint" xml:space="preserve">
     <value>Снимите галочки с правил, которые не нужно выгружать (например приложения на этой машине).</value>
   </data>
+  <data name="BundleExport_SendToAppButton" xml:space="preserve">
+    <value>Отправить…</value>
+  </data>
   <data name="BundleExport_SaveToFileButton" xml:space="preserve">
     <value>Сохранить в файл…</value>
   </data>
@@ -738,6 +741,9 @@
   </data>
   <data name="Main_SaveNameTooltip" xml:space="preserve">
     <value>Сохранить имя</value>
+  </data>
+  <data name="Main_SendToAppButton" xml:space="preserve">
+    <value>Отправить…</value>
   </data>
   <data name="Main_SaveToFileButton" xml:space="preserve">
     <value>Сохранить в файл…</value>

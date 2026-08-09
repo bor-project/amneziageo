@@ -51,6 +51,9 @@ public sealed partial class App : Avalonia.Application
             // Register the CameraX camera scanner so the config/routing import can scan QR codes.
             AndroidQrScanning.Register();
 
+            // Hand an export to another application, and a QR to the clipboard, both as a file behind a link.
+            AndroidExport.Register();
+
             // Offer an in-app exit: a TV has no window frame to close. Drops the task and the head with it, while
             // the tunnel goes on running in its own process.
             AppExitHost.Register(() => MainActivity.Current?.FinishAndRemoveTask());

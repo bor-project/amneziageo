@@ -103,6 +103,11 @@ internal sealed partial class ExportDialogViewModel : ViewModelBase, IEditScope
     public string Payload => IsQrLink ? LinkText : ConfText;
 
     /// <summary>
+    /// Whether the platform hands an export to another application.
+    /// </summary>
+    public bool CanSendExport => PlatformExportHost.CanSend;
+
+    /// <summary>
     /// Loads the config text from the agent and renders its QR.
     /// </summary>
     public async Task LoadAsync()

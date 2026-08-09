@@ -44,4 +44,15 @@ internal sealed partial class BundleExportView : UserControl
             vm.StatusMessage = Loc.Instance.Get("BundleExportCode_Saved");
         }
     }
+
+    // Hands the bundle to another application.
+    private async void OnSendFile(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not BundleExportViewModel vm)
+        {
+            return;
+        }
+
+        await ExportActions.SendTextAsync(vm.Payload, vm.SuggestedFileName);
+    }
 }

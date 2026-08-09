@@ -10,6 +10,12 @@ public static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // Одно окно: второй запуск выводит открытое вперёд и уходит.
+        if (!SingleInstance.TryAcquire())
+        {
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

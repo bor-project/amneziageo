@@ -41,4 +41,18 @@ internal sealed partial class LogsView : UserControl
 
         await vm.ExportToAsync(path);
     }
+
+    // Hands the whole selected log table to another application.
+    private async void OnSendLog(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LogsViewModel vm)
+        {
+            return;
+        }
+
+        if (await vm.BuildExportTextAsync() is { } text)
+        {
+            await ExportActions.SendTextAsync(text, vm.SelectedLogType + ".log");
+        }
+    }
 }

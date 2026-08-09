@@ -64,6 +64,9 @@ internal sealed partial class ServerCard : UserControl
     private bool _swiping;
     private bool _settled;
 
+    // Ключ входа нажат: его отпускание карточка съедает сама.
+    private bool _entering;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -102,6 +105,7 @@ internal sealed partial class ServerCard : UserControl
         AddHandler(PointerReleasedEvent, OnCardReleased, RoutingStrategies.Tunnel);
         AddHandler(PointerCaptureLostEvent, OnCardCaptureLost, RoutingStrategies.Tunnel);
         AddHandler(KeyDownEvent, OnCardKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, OnCardKeyUp, RoutingStrategies.Tunnel);
         LostFocus += OnCardLostFocus;
 
         // A card built already open knows how far to stand off only once its buttons have been measured.
@@ -253,6 +257,7 @@ internal sealed partial class ServerCard : UserControl
     {
         if (e.Key is Key.Enter or Key.Space && !Entered)
         {
+            _entering = true;
             Enter();
             e.Handled = true;
             return;
@@ -268,16 +273,33 @@ internal sealed partial class ServerCard : UserControl
             Leave();
             e.Handled = true;
         }
-        else if (e.Key is Key.Left or Key.Right)
+        else if (WalksWith(e.Key))
         {
-            Step(e.Key == Key.Right ? 1 : -1);
+            Step(Forward(e.Key) ? 1 : -1);
             e.Handled = true;
         }
-        else if (e.Key is Key.Up or Key.Down)
+        else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
+            // Поперёк ряда кнопок пульт из карточки не уходит.
             e.Handled = true;
         }
     }
+
+    // Отпускание ключа входа гасится: иначе оно нажимает кнопку, на которую только что сел фокус.
+    private void OnCardKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (_entering && e.Key is Key.Enter or Key.Space)
+        {
+            _entering = false;
+            e.Handled = true;
+        }
+    }
+
+    // Ось, вдоль которой лежат кнопки: на широкой карточке они стоят столбиком, на узкой - в ряд под ней.
+    private bool WalksWith(Key key) => Compact ? key is Key.Left or Key.Right : key is Key.Up or Key.Down;
+
+    // Шаг вперёд по этой оси.
+    private static bool Forward(Key key) => key is Key.Down or Key.Right;
 
     // Focus taken elsewhere leaves the card behind: its buttons stop taking focus and go back under it.
     private void OnCardLostFocus(object? sender, RoutedEventArgs e)
@@ -301,6 +323,7 @@ internal sealed partial class ServerCard : UserControl
 
     private void Leave()
     {
+        _entering = false;
         Entered = false;
         Settle(false);
         FacePart.Focus(NavigationMethod.Directional);

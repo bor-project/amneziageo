@@ -1311,12 +1311,14 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsTransferText))]
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    [NotifyPropertyChangedFor(nameof(TransferReady))]
     private bool _isTransferQr = true;
 
     public bool IsTransferText => !IsTransferQr;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QrUnavailable))]
+    [NotifyPropertyChangedFor(nameof(TransferReady))]
     private Bitmap? _routingQrImage;
 
     // Set once a QR build has run, so the too-large notice stays hidden before the first generation.
@@ -1333,6 +1335,16 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     /// Raw transfer payload shown in the Config tab; refreshed as the list changes.
     /// </summary>
     public string TransferText => BuildTransferPayload();
+
+    /// <summary>
+    /// Whether the open form can be copied, saved or sent: the text always, the QR once it is drawn.
+    /// </summary>
+    public bool TransferReady => IsTransferText || RoutingQrImage is not null;
+
+    /// <summary>
+    /// Whether the platform hands an export to another application.
+    /// </summary>
+    public bool CanSendExport => PlatformExportHost.CanSend;
 
     [RelayCommand]
     private void ShowTransferQr()

@@ -139,6 +139,14 @@
                   <TextBlock Text="{Binding Home.RetryText}" FontSize="12" FontWeight="SemiBold"
                              TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}"
                              IsVisible="{Binding Home.ShowRetry}" />
+                  <!-- What the live tunnel carries, and the warning that it keeps re-establishing the session
+                       instead of carrying anything. -->
+                  <TextBlock Text="{Binding Home.LinkSpeedText}" FontSize="12"
+                             TextAlignment="Center" Foreground="{Binding Home.ConnectHintBrush}"
+                             IsVisible="{Binding Home.ShowLink}" />
+                  <TextBlock Text="{Binding Home.LinkChurnText}" FontSize="12" FontWeight="SemiBold"
+                             TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.LinkChurnBrush}"
+                             IsVisible="{Binding Home.LinkChurning}" />
                 </StackPanel>
 
                 <!-- Config picker: the same pick the server table carries a tab away. -->

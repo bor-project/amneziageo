@@ -10,6 +10,11 @@ using AmneziaGeo.Routing;
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
+/// The peer's last handshake in unix seconds and the bytes it has carried.
+/// </summary>
+internal readonly record struct PeerCounters(long HandshakeUnix, long RxBytes, long TxBytes);
+
+/// <summary>
 /// Brings the amneziawg-go interface up and down over UAPI and iproute2, and applies the routing rules the
 /// connection runs under.
 /// </summary>
@@ -276,31 +281,46 @@ internal sealed class TunnelController : IDisposable
     }
 
     /// <summary>
-    /// Seconds since the peer last answered, or -1 when nothing runs or the peer has never answered.
+    /// The peer's last handshake and its byte counters, or null when nothing runs.
     /// </summary>
-    public async Task<int> HandshakeAgeAsync(CancellationToken ct)
+    public async Task<PeerCounters?> PeerCountersAsync(CancellationToken ct)
     {
         if (_daemon is not { } daemon)
         {
-            return -1;
+            return null;
         }
 
         try
         {
+            var handshake = 0L;
+            var rx = 0L;
+            var tx = 0L;
             foreach (var line in (await daemon.GetConfigAsync(ct).ConfigureAwait(false)).Split('\n'))
             {
                 if (line.StartsWith("last_handshake_time_sec=", StringComparison.Ordinal)
-                    && long.TryParse(line.AsSpan(24), out var seconds) && seconds > 0)
+                    && long.TryParse(line.AsSpan(24), out var seconds) && seconds > handshake)
                 {
-                    return HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seconds));
+                    handshake = seconds;
+                }
+                else if (line.StartsWith("rx_bytes=", StringComparison.Ordinal)
+                    && long.TryParse(line.AsSpan(9), out var received))
+                {
+                    rx += received;
+                }
+                else if (line.StartsWith("tx_bytes=", StringComparison.Ordinal)
+                    && long.TryParse(line.AsSpan(9), out var sent))
+                {
+                    tx += sent;
                 }
             }
+
+            return new PeerCounters(handshake, rx, tx);
         }
         catch (Exception ex) when (ex is IOException or SocketException)
         {
         }
 
-        return -1;
+        return null;
     }
 
     // Whether the peer has answered at least once.

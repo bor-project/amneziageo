@@ -25,6 +25,7 @@ internal sealed class AgentControl
     private volatile string? _disconnectFailDetail;
     private volatile int _retryAttempt;
     private volatile int _handshakeAge = -1;
+    private volatile LinkReading _link = LinkReading.Empty;
     private volatile bool _awaitingRetry;
     private volatile bool _wakePending;
     private CancellationTokenSource _change = new();
@@ -49,6 +50,21 @@ internal sealed class AgentControl
         var moved = _handshakeAge != seconds;
         _handshakeAge = seconds;
         return moved;
+    }
+
+    /// <summary>
+    /// The running tunnel's throughput and handshake rate.
+    /// </summary>
+    public LinkReading Link => _link;
+
+    /// <summary>
+    /// Records the running tunnel's link reading and reports whether it moved enough to show.
+    /// </summary>
+    public bool SetLink(LinkReading reading)
+    {
+        var previous = _link;
+        _link = reading;
+        return reading.DiffersFrom(previous);
     }
 
     /// <summary>

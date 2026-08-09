@@ -85,7 +85,7 @@ public sealed class GeoVpnService : VpnService
     private const string DefaultDns = "1.1.1.1";
     private const string ProxyHost = "127.0.0.1";
     private const int ReportIntervalMs = 15_000;
-    private const int HandshakeIntervalMs = 30_000;
+    private const int LinkIntervalMs = 5_000;
     private const int HandshakeWaitSeconds = 30;
     private const int HandshakePollMs = 500;
     private const int KeepaliveSeconds = 25;
@@ -255,10 +255,10 @@ public sealed class GeoVpnService : VpnService
             }
 
             Publish(VpnStage.Connected, name);
-            VpnBridge.PublishHandshake(this, handshake);
+            VpnBridge.PublishLink(this, handshake, LinkReading.Empty);
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
-            _ = Task.Run(() => ReportHandshakeAsync(keepalive.Token));
+            _ = Task.Run(() => ReportLinkAsync(keepalive.Token));
             if (relay is not null && _proxyPort > 0)
             {
                 Report($"local proxy on {ProxyHost}:{_proxyPort} offered to the applications, "
@@ -625,14 +625,18 @@ public sealed class GeoVpnService : VpnService
         return 0;
     }
 
-    // Tells the head when the peer last answered, so a tunnel that is up but dead shows as such there.
-    private async Task ReportHandshakeAsync(CancellationToken ct)
+    // Tells the head when the peer last answered, what the link carries, and how often the session is
+    // re-established, so a tunnel that is up but dead shows as such there.
+    private async Task ReportLinkAsync(CancellationToken ct)
     {
+        var meter = new LinkMeter();
+        var reported = LinkReading.Empty;
+        var handshake = 0L;
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(HandshakeIntervalMs, ct).ConfigureAwait(false);
+                await Task.Delay(LinkIntervalMs, ct).ConfigureAwait(false);
             }
             catch (System.OperationCanceledException)
             {
@@ -645,8 +649,41 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
-            VpnBridge.PublishHandshake(this, PeerHandshake(AwgEngine.GetConfig(handle)));
+            var uapi = AwgEngine.GetConfig(handle);
+            var seen = PeerHandshake(uapi);
+            var (rx, tx) = PeerBytes(uapi);
+            var reading = meter.Sample(rx, tx, seen);
+            if (seen == handshake && !reading.DiffersFrom(reported))
+            {
+                continue;
+            }
+
+            handshake = seen;
+            reported = reading;
+            VpnBridge.PublishLink(this, seen, reading);
         }
+    }
+
+    // What the peer has carried, received and sent apart.
+    private static (long Rx, long Tx) PeerBytes(string? uapi)
+    {
+        var rx = 0L;
+        var tx = 0L;
+        foreach (var line in (uapi ?? string.Empty).Split('\n'))
+        {
+            if (line.StartsWith("rx_bytes=", StringComparison.Ordinal)
+                && long.TryParse(line[(line.IndexOf('=') + 1)..].Trim(), out var received))
+            {
+                rx += received;
+            }
+            else if (line.StartsWith("tx_bytes=", StringComparison.Ordinal)
+                && long.TryParse(line[(line.IndexOf('=') + 1)..].Trim(), out var sent))
+            {
+                tx += sent;
+            }
+        }
+
+        return (rx, tx);
     }
 
     // The peer's last handshake in unix seconds; 0 before it has ever answered.

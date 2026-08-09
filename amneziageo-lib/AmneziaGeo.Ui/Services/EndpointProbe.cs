@@ -32,18 +32,21 @@ internal enum ProbeOutcome
 }
 
 /// <summary>
-/// One measurement: the outcome and the round trip in milliseconds.
+/// One measurement: the outcome, the average round trip in milliseconds, and the share of probes lost.
 /// </summary>
-internal readonly record struct ProbeResult(ProbeOutcome Outcome, int Milliseconds);
+internal readonly record struct ProbeResult(ProbeOutcome Outcome, int Milliseconds, int LossPercent);
 
 /// <summary>
-/// Measures whether a configuration's server answers and how long it takes. A WebSocket transport is measured
-/// by a TCP connect to the front it dials; a plain tunnel by an ICMP echo to its endpoint, since AmneziaWG
-/// answers a real handshake and nothing else.
+/// Measures whether a configuration's server answers, how long it takes, and how much of a short burst it
+/// drops. A WebSocket transport is measured by a TCP connect to the front it dials; a plain tunnel by an ICMP
+/// echo to its endpoint, since AmneziaWG answers a real handshake and nothing else.
 /// </summary>
 internal static class EndpointProbe
 {
-    private const int TimeoutMs = 3000;
+    private const int TimeoutMs = 1500;
+
+    // Probes per measurement: enough for a loss reading, few enough to keep a sweep of every server short.
+    private const int Probes = 5;
 
     /// <summary>
     /// Measures one configuration's server.
@@ -59,12 +62,26 @@ internal static class EndpointProbe
         var address = await ResolveAsync(overWebSocket ? webSocketHost : HostOf(endpoint), ct).ConfigureAwait(false);
         if (address is null)
         {
-            return new ProbeResult(ProbeOutcome.NoAddress, 0);
+            return new ProbeResult(ProbeOutcome.NoAddress, 0, 100);
         }
 
-        return overWebSocket
-            ? await ConnectAsync(address, webSocketPort, ct).ConfigureAwait(false)
-            : await EchoAsync(address, ct).ConfigureAwait(false);
+        var answered = 0;
+        var elapsed = 0L;
+        for (var i = 0; i < Probes && !ct.IsCancellationRequested; i++)
+        {
+            var one = overWebSocket
+                ? await ConnectAsync(address, webSocketPort, ct).ConfigureAwait(false)
+                : await EchoAsync(address, ct).ConfigureAwait(false);
+            if (one.Outcome == ProbeOutcome.Alive)
+            {
+                answered++;
+                elapsed += one.Milliseconds;
+            }
+        }
+
+        return answered > 0
+            ? new ProbeResult(ProbeOutcome.Alive, (int)(elapsed / answered), (Probes - answered) * 100 / Probes)
+            : new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
     }
 
     // The host of a "host:port" endpoint, brackets around an IPv6 literal included; a bare IPv6 literal is
@@ -122,11 +139,11 @@ internal static class EndpointProbe
         try
         {
             await socket.ConnectAsync(new IPEndPoint(address, port), deadline.Token).ConfigureAwait(false);
-            return new ProbeResult(ProbeOutcome.Alive, (int)clock.ElapsedMilliseconds);
+            return new ProbeResult(ProbeOutcome.Alive, (int)clock.ElapsedMilliseconds, 0);
         }
         catch (Exception)
         {
-            return new ProbeResult(ProbeOutcome.NoAnswer, 0);
+            return new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
         }
     }
 
@@ -144,12 +161,12 @@ internal static class EndpointProbe
             using var ping = new Ping();
             var reply = await ping.SendPingAsync(address, TimeoutMs).ConfigureAwait(false);
             return reply.Status == IPStatus.Success
-                ? new ProbeResult(ProbeOutcome.Alive, (int)reply.RoundtripTime)
-                : new ProbeResult(ProbeOutcome.NoAnswer, 0);
+                ? new ProbeResult(ProbeOutcome.Alive, (int)reply.RoundtripTime, 0)
+                : new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
         }
         catch (Exception)
         {
-            return new ProbeResult(ProbeOutcome.NoAnswer, 0);
+            return new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
         }
     }
 
@@ -180,12 +197,12 @@ internal static class EndpointProbe
                 await socket.SendAsync(EchoRequest(v6), SocketFlags.None, deadline.Token).ConfigureAwait(false);
                 var received = await socket.ReceiveAsync(reply, SocketFlags.None, deadline.Token).ConfigureAwait(false);
                 return received > 0
-                    ? new ProbeResult(ProbeOutcome.Alive, (int)clock.ElapsedMilliseconds)
-                    : new ProbeResult(ProbeOutcome.NoAnswer, 0);
+                    ? new ProbeResult(ProbeOutcome.Alive, (int)clock.ElapsedMilliseconds, 0)
+                    : new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
             }
             catch (Exception)
             {
-                return new ProbeResult(ProbeOutcome.NoAnswer, 0);
+                return new ProbeResult(ProbeOutcome.NoAnswer, 0, 100);
             }
         }
     }

@@ -49,6 +49,10 @@ internal sealed class LinuxAgent : IDisposable
     private int _routeTtlSeconds = TunnelOptions.DefaultRouteTtlSeconds;
     private bool _desiredConnected;
     private int _handshakeAge = -1;
+    private readonly LinkMeter _meter = new();
+    private LinkReading _link = LinkReading.Empty;
+    private DateTimeOffset _linkLoggedAt;
+    private bool _churnLogged;
     private DateTime _nextRetryUtc = DateTime.MinValue;
     private bool _connectFailed;
     private bool _restartRequired;
@@ -202,10 +206,27 @@ internal sealed class LinuxAgent : IDisposable
     // keepalive view to the clients: nothing else pushes a snapshot while the tunnel just runs.
     private async Task SuperviseAsync(CancellationToken ct)
     {
-        var age = _tunnel.Running ? await _tunnel.HandshakeAgeAsync(ct).ConfigureAwait(false) : -1;
-        if (age != _handshakeAge)
+        var counters = _tunnel.Running ? await _tunnel.PeerCountersAsync(ct).ConfigureAwait(false) : null;
+        var age = -1;
+        var reading = LinkReading.Empty;
+        if (counters is { } peer)
+        {
+            age = peer.HandshakeUnix > 0
+                ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix))
+                : -1;
+            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix);
+            LogLink(reading);
+        }
+        else
+        {
+            _meter.Reset();
+            _churnLogged = false;
+        }
+
+        if (age != _handshakeAge || reading.DiffersFrom(_link))
         {
             _handshakeAge = age;
+            _link = reading;
             await PushAsync(ct).ConfigureAwait(false);
         }
 
@@ -237,6 +258,35 @@ internal sealed class LinuxAgent : IDisposable
         {
             _log.Warn("agent", $"reconnect failed: {ack.Message}");
         }
+    }
+
+    // Writes the link to the journal: a line a minute while it runs, and a warning when it starts or stops
+    // re-establishing the session.
+    private void LogLink(LinkReading reading)
+    {
+        var churning = LinkHealth.Churning(reading.HandshakesPerMinute);
+        if (churning != _churnLogged)
+        {
+            _churnLogged = churning;
+            if (churning)
+            {
+                // Loud enough to survive the default capture floor: this is the record a transient outage leaves.
+                _log.Error("link", $"the session is re-established {reading.HandshakesPerMinute} times a minute, so the link carries almost nothing");
+            }
+            else
+            {
+                _log.Info("link", "the session stopped re-establishing");
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (now - _linkLoggedAt < TimeSpan.FromSeconds(60))
+        {
+            return;
+        }
+
+        _linkLoggedAt = now;
+        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min");
     }
 
     private async Task<IpcAck> RunAsync(IpcCommand command, CancellationToken ct)
@@ -1113,7 +1163,9 @@ internal sealed class LinuxAgent : IDisposable
         var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
         var dns = await _store.GetConfigDnsAsync(name, ct).ConfigureAwait(false);
         var exclusions = await _store.GetConfigExclusionsAsync(name, ct).ConfigureAwait(false);
-        var handshake = string.Equals(name, _boundTarget, StringComparison.Ordinal) ? _handshakeAge : -1;
+        var bound = string.Equals(name, _boundTarget, StringComparison.Ordinal);
+        var handshake = bound ? _handshakeAge : -1;
+        var reading = bound ? _link : LinkReading.Empty;
         return new ConfigEntry(
             name,
             WgConfigEditor.GetEndpoint(text) ?? string.Empty,
@@ -1127,7 +1179,10 @@ internal sealed class LinuxAgent : IDisposable
             exclusions?.Exclusions ?? string.Empty,
             transport?.Mtu ?? WgConfigEditor.GetMtu(text),
             transport?.UseIpv6 ?? false,
-            handshake);
+            handshake,
+            reading.RxBitsPerSecond,
+            reading.TxBitsPerSecond,
+            reading.HandshakesPerMinute);
     }
 
     private async Task<IReadOnlyList<SourceEntry>> BuildSourcesAsync(CancellationToken ct)

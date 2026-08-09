@@ -2277,6 +2277,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         // Keepalive view of the running tunnel: how long ago its peer last answered.
         var handshakeAge = boundState is not null ? control.HandshakeAge : -1;
+        var link = boundState is not null ? control.Link : LinkReading.Empty;
 
         var configs = new List<ConfigEntry>();
         // Computed at most once per snapshot, and only for a config that has no saved exclusions.
@@ -2294,8 +2295,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 ? DisplayStatus(boundState.Status)
                 : ConnectionStatus.Idle;
             var rules = geoSettings is not null ? geoSettings.Rules.Select(GeoConfigurator.Format).ToList() : [];
-            var handshake = string.Equals(name, boundConfig, StringComparison.Ordinal) ? handshakeAge : -1;
-            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake));
+            var bound = string.Equals(name, boundConfig, StringComparison.Ordinal);
+            var handshake = bound ? handshakeAge : -1;
+            var reading = bound ? link : LinkReading.Empty;
+            configs.Add(new ConfigEntry(name, ReadEndpoint(configText), geoSettings?.GeoSplit ?? false, status, rules, transport?.UseWebSocket ?? false, transport?.WebSocketHost ?? string.Empty, transport?.WebSocketPort ?? 443, configDns?.Servers ?? string.Empty, exclusions, transport?.Mtu ?? 0, transport?.UseIpv6 ?? false, handshake, reading.RxBitsPerSecond, reading.TxBitsPerSecond, reading.HandshakesPerMinute));
         }
 
         var routingLists = new List<RoutingListEntry>();

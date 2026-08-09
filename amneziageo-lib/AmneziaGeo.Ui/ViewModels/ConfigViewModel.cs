@@ -505,6 +505,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.Mtu = entry.Mtu;
             existing.UseIpv6 = entry.UseIpv6;
             existing.HandshakeAgeSeconds = entry.HandshakeAgeSeconds;
+            existing.RxBitsPerSecond = entry.RxBitsPerSecond;
+            existing.TxBitsPerSecond = entry.TxBitsPerSecond;
+            existing.HandshakesPerMinute = entry.HandshakesPerMinute;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];

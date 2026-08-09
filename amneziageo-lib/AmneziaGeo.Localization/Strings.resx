@@ -1784,6 +1784,21 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_ProbeNoAddress" xml:space="preserve">
     <value>unreachable</value>
   </data>
+  <data name="Main_ProbeMillisecondsLoss" xml:space="preserve">
+    <value>{0} ms, {1}% lost</value>
+  </data>
+  <data name="Main_ProbeBest" xml:space="preserve">
+    <value>best</value>
+  </data>
+  <data name="Main_LinkSpeedMbit" xml:space="preserve">
+    <value>down {0} up {1} Mbit/s</value>
+  </data>
+  <data name="Main_LinkSpeedKbit" xml:space="preserve">
+    <value>down {0} up {1} kbit/s</value>
+  </data>
+  <data name="Main_LinkChurn" xml:space="preserve">
+    <value>the session is re-established {0} times a minute</value>
+  </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Use this configuration</value>
   </data>

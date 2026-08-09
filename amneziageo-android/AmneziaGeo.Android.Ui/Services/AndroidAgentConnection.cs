@@ -53,6 +53,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
     private long _handshakeUnix;
+    private LinkReading _link = LinkReading.Empty;
+    private DateTimeOffset _linkLoggedAt;
+    private bool _churnLogged;
     private bool _active;
     private bool _restartRequired;
     private bool _connectFailed;
@@ -459,6 +462,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (handshake >= 0)
         {
             _handshakeUnix = handshake;
+            _link = new LinkReading(
+                intent.GetLongExtra(VpnBridge.ExtraRxBits, 0),
+                intent.GetLongExtra(VpnBridge.ExtraTxBits, 0),
+                intent.GetIntExtra(VpnBridge.ExtraChurn, 0));
+            LogLink(_link);
             PushSnapshot();
             return;
         }
@@ -495,6 +503,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
                 _handshakeUnix = 0;
+                ResetLink();
                 break;
             case VpnStage.Failed:
                 _active = false;
@@ -502,12 +511,49 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _boundStatus = ConnectionStatus.Disconnected;
                 _boundTarget = null;
                 _handshakeUnix = 0;
+                ResetLink();
                 SetConnectFailure(reason ?? nameof(ConnectFailureReason.Unknown), detail ?? string.Empty);
                 break;
         }
 
         LogVpnStage(stage, detail);
         PushSnapshot();
+    }
+
+    // Drops the link view a stopped tunnel left behind.
+    private void ResetLink()
+    {
+        _link = LinkReading.Empty;
+        _churnLogged = false;
+    }
+
+    // Writes the link to the journal: a line a minute while it runs, and a warning when it starts or stops
+    // re-establishing the session.
+    private void LogLink(LinkReading reading)
+    {
+        var churning = LinkHealth.Churning(reading.HandshakesPerMinute);
+        if (churning != _churnLogged)
+        {
+            _churnLogged = churning;
+            if (churning)
+            {
+                // Loud enough to survive the default capture floor: this is the record a transient outage leaves.
+                _log.Error("link", $"the session is re-established {reading.HandshakesPerMinute} times a minute, so the link carries almost nothing");
+            }
+            else
+            {
+                _log.Info("link", "the session stopped re-establishing");
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (now - _linkLoggedAt < TimeSpan.FromSeconds(60))
+        {
+            return;
+        }
+
+        _linkLoggedAt = now;
+        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min");
     }
 
     // Marks the last connect as failed and names its cause for the notice.
@@ -586,16 +632,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private ConfigEntry Entry(string name, string config)
     {
         var transport = _transports.GetValueOrDefault(name);
-        var handshake = _active && _handshakeUnix > 0 && string.Equals(_boundTarget, name, StringComparison.Ordinal)
+        var bound = _active && string.Equals(_boundTarget, name, StringComparison.Ordinal);
+        var handshake = bound && _handshakeUnix > 0
             ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix))
             : -1;
+        var reading = bound ? _link : LinkReading.Empty;
         return new ConfigEntry(name, WgConfigEditor.GetEndpoint(config) ?? string.Empty, false, StatusFor(name), [],
             WebSocket: false,
             WebSocketHost: transport?.WebSocketHost ?? string.Empty,
             WebSocketPort: transport?.WebSocketPort ?? 443,
             Mtu: transport?.Mtu ?? 0,
             UseIpv6: transport?.UseIpv6 ?? false,
-            HandshakeAgeSeconds: handshake);
+            HandshakeAgeSeconds: handshake,
+            RxBitsPerSecond: reading.RxBitsPerSecond,
+            TxBitsPerSecond: reading.TxBitsPerSecond,
+            HandshakesPerMinute: reading.HandshakesPerMinute);
     }
 
     private string StatusFor(string target)

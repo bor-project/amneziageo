@@ -41,6 +41,12 @@ internal sealed class ConfigRunner(
     private int _deadStreak;
     private const int DeadStreakLimit = 3;
 
+    // Throughput and handshake rate of the running tunnel, and the journal line that keeps their history.
+    private readonly LinkMeter _meter = new();
+    private static readonly TimeSpan _linkLogInterval = TimeSpan.FromSeconds(60);
+    private DateTimeOffset _linkLoggedAt;
+    private bool _churnLogged;
+
     /// <summary>
     /// Runs sessions per target change.
     /// </summary>
@@ -578,6 +584,13 @@ internal sealed class ConfigRunner(
             control.SignalStatus();
         }
 
+        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec);
+        LogLink(member, reading);
+        if (control.SetLink(reading))
+        {
+            control.SignalStatus();
+        }
+
         // Data still arriving is definitive liveness, even while a rekey handshake is in flight on a lossy link.
         if (status.RxBytes > _lastRxBytes)
         {
@@ -596,6 +609,36 @@ internal sealed class ConfigRunner(
     }
 
     // Gas any other per-tunnel service before raising this target, so two adapters never fight over routes (#168).
+    // Writes the link to the journal: a line a minute while it runs, and a warning when it starts or stops
+    // re-establishing the session.
+    private void LogLink(string member, LinkReading reading)
+    {
+        var churning = LinkHealth.Churning(reading.HandshakesPerMinute);
+        if (churning != _churnLogged)
+        {
+            _churnLogged = churning;
+            if (churning)
+            {
+                // Loud enough to survive the default capture floor: this is the record a transient outage leaves.
+                logger.LogError("{Member}: the session is re-established {Rate} times a minute, so the link carries almost nothing", member, reading.HandshakesPerMinute);
+            }
+            else
+            {
+                logger.LogInformation("{Member}: the session stopped re-establishing", member);
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (now - _linkLoggedAt < _linkLogInterval)
+        {
+            return;
+        }
+
+        _linkLoggedAt = now;
+        logger.LogInformation("{Member}: link receives {Rx} kbit/s, sends {Tx} kbit/s, handshakes {Rate}/min",
+            member, reading.RxBitsPerSecond / 1000, reading.TxBitsPerSecond / 1000, reading.HandshakesPerMinute);
+    }
+
     private void ReapForeignTunnels(string keep)
     {
         var reaped = InstallerMaintenance.ReapTransientServices(keep);
@@ -609,6 +652,9 @@ internal sealed class ConfigRunner(
     private void Stop(string member)
     {
         control.SetHandshakeAge(-1);
+        _meter.Reset();
+        _churnLogged = false;
+        control.SetLink(LinkReading.Empty);
 
         if (string.IsNullOrEmpty(member))
         {

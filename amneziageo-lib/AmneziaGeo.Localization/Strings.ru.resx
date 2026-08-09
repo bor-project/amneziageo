@@ -1784,6 +1784,21 @@
   <data name="Main_ProbeNoAddress" xml:space="preserve">
     <value>недоступен</value>
   </data>
+  <data name="Main_ProbeMillisecondsLoss" xml:space="preserve">
+    <value>{0} мс, потери {1}%</value>
+  </data>
+  <data name="Main_ProbeBest" xml:space="preserve">
+    <value>лучший</value>
+  </data>
+  <data name="Main_LinkSpeedMbit" xml:space="preserve">
+    <value>приём {0} отдача {1} Мбит/с</value>
+  </data>
+  <data name="Main_LinkSpeedKbit" xml:space="preserve">
+    <value>приём {0} отдача {1} кбит/с</value>
+  </data>
+  <data name="Main_LinkChurn" xml:space="preserve">
+    <value>сессия переустанавливается {0} раз в минуту</value>
+  </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>
   </data>

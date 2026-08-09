@@ -222,9 +222,37 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     public bool IsConnectingIn => IsConnecting && !IsTunnelActive;
 
+    // The row the tunnel runs on, the only one carrying live link numbers.
+    private ConfigItemViewModel? BoundRow =>
+        _host.Config.Configs.FirstOrDefault(c => string.Equals(c.Name, BoundTarget, StringComparison.Ordinal));
+
     // The running tunnel has heard nothing from its server for longer than a rekey window: up, but dead.
-    public bool ServerSilent => ConnState == 2
-        && _host.Config.Configs.FirstOrDefault(c => string.Equals(c.Name, BoundTarget, StringComparison.Ordinal)) is { LinkSilent: true };
+    public bool ServerSilent => ConnState == 2 && BoundRow is { LinkSilent: true };
+
+    /// <summary>
+    /// Whether the home screen shows what the running tunnel carries.
+    /// </summary>
+    public bool ShowLink => ConnState == 2 && BoundRow is not null;
+
+    /// <summary>
+    /// Receive and send rates of the running tunnel.
+    /// </summary>
+    public string LinkSpeedText => BoundRow?.LinkSpeedText ?? string.Empty;
+
+    /// <summary>
+    /// Whether the running tunnel keeps re-establishing its session instead of carrying traffic.
+    /// </summary>
+    public bool LinkChurning => ConnState == 2 && BoundRow is { LinkChurning: true };
+
+    /// <summary>
+    /// How many sessions a minute the running tunnel burns.
+    /// </summary>
+    public string LinkChurnText => BoundRow?.LinkChurnText ?? string.Empty;
+
+    /// <summary>
+    /// Colour of the re-establish warning.
+    /// </summary>
+    public IBrush LinkChurnBrush => _orange;
 
     public string ConnectHint => ServerSilent
         ? Loc.Instance.Get("MainVm_ConnectHintServerSilent")
@@ -478,6 +506,10 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private void NotifyServerSilentChanged()
     {
         OnPropertyChanged(nameof(ServerSilent));
+        OnPropertyChanged(nameof(ShowLink));
+        OnPropertyChanged(nameof(LinkSpeedText));
+        OnPropertyChanged(nameof(LinkChurning));
+        OnPropertyChanged(nameof(LinkChurnText));
         OnPropertyChanged(nameof(ConnectHint));
         OnPropertyChanged(nameof(ConnectCircleBrush));
         OnPropertyChanged(nameof(ConnectCircleBorderBrush));
@@ -729,6 +761,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         try
         {
             await Task.WhenAll(rows.Select(row => ProbeRowAsync(row, cts.Token)));
+            MarkBest(rows);
         }
         finally
         {
@@ -737,6 +770,20 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             {
                 ProbeRunning = false;
             }
+        }
+    }
+
+    // Names the server the sweep favours: fewest losses first, then the shortest round trip.
+    private static void MarkBest(IReadOnlyList<ConfigItemViewModel> rows)
+    {
+        var best = rows
+            .Where(row => row.ProbeState == ProbeOutcome.Alive)
+            .OrderBy(row => row.ProbeLossPercent)
+            .ThenBy(row => row.ProbeMilliseconds)
+            .FirstOrDefault();
+        foreach (var row in rows)
+        {
+            row.IsBest = ReferenceEquals(row, best);
         }
     }
 
@@ -755,6 +802,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             row.ProbeState = result.Outcome;
             row.ProbeMilliseconds = result.Milliseconds;
+            row.ProbeLossPercent = result.LossPercent;
             row.Probing = false;
         });
     }

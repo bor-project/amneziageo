@@ -2,6 +2,7 @@ using System.Text.Json;
 using Android.App;
 using Android.Content;
 using Android.OS;
+using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Android.Engine;
 
@@ -51,6 +52,21 @@ public static class VpnBridge
     /// </summary>
     public const string ExtraHandshake = "handshake";
 
+    /// <summary>
+    /// Receive rate extra: bits per second the peer carries in.
+    /// </summary>
+    public const string ExtraRxBits = "rxbits";
+
+    /// <summary>
+    /// Send rate extra: bits per second the peer carries out.
+    /// </summary>
+    public const string ExtraTxBits = "txbits";
+
+    /// <summary>
+    /// Handshake rate extra: sessions established per minute.
+    /// </summary>
+    public const string ExtraChurn = "churn";
+
     private const string PlanFile = "plan.json";
     private const string ProcessSuffix = ":vpn";
 
@@ -75,12 +91,15 @@ public static class VpnBridge
     }
 
     /// <summary>
-    /// Reports the peer's last handshake to the head.
+    /// Reports the peer's last handshake and what the link carries to the head.
     /// </summary>
-    public static void PublishHandshake(Context context, long unixSeconds)
+    public static void PublishLink(Context context, long unixSeconds, LinkReading reading)
     {
         var intent = Broadcast(context, ActionEvent);
         intent.PutExtra(ExtraHandshake, unixSeconds);
+        intent.PutExtra(ExtraRxBits, reading.RxBitsPerSecond);
+        intent.PutExtra(ExtraTxBits, reading.TxBitsPerSecond);
+        intent.PutExtra(ExtraChurn, reading.HandshakesPerMinute);
         context.SendBroadcast(intent);
     }
 

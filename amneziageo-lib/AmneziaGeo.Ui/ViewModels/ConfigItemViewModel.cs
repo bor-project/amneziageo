@@ -136,13 +136,58 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     private bool _probing;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProbeText))]
+    [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    private int _probeLossPercent;
+
+    // Whether this server won the last sweep of them all.
+    [ObservableProperty]
+    private bool _isBest;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
+    private long _rxBitsPerSecond;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
+    private long _txBitsPerSecond;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LinkChurning))]
+    [NotifyPropertyChangedFor(nameof(LinkChurnText))]
+    private int _handshakesPerMinute;
+
+    /// <summary>
+    /// Whether the tunnel keeps re-establishing its session instead of carrying traffic.
+    /// </summary>
+    public bool LinkChurning => LinkHealth.Churning(HandshakesPerMinute);
+
+    /// <summary>
+    /// How many sessions a minute the link burns; empty while it holds one.
+    /// </summary>
+    public string LinkChurnText => LinkChurning
+        ? Loc.Instance.Get("Main_LinkChurn", HandshakesPerMinute)
+        : string.Empty;
+
+    /// <summary>
+    /// What the running tunnel carries in both directions.
+    /// </summary>
+    public string LinkSpeedText => SpeedFormat.Pair(RxBitsPerSecond, TxBitsPerSecond);
+
     // Seconds since the running tunnel's peer last answered; -1 on every config that is not running.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkSpeed))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private int _handshakeAgeSeconds = -1;
+
+    /// <summary>
+    /// Whether the row carries a live throughput reading, which only the running tunnel does.
+    /// </summary>
+    public bool ShowLinkSpeed => LinkKnown;
 
     // Whether the tunnel reports its own liveness, which beats an echo the server may be refusing to send.
     private bool LinkKnown => HandshakeAgeSeconds >= 0;
@@ -168,14 +213,16 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         ? Loc.Instance.Get("Main_ProbeNoAnswer")
         : ProbeState switch
         {
-            ProbeOutcome.Alive => Loc.Instance.Get("Main_ProbeMilliseconds", ProbeMilliseconds),
+            ProbeOutcome.Alive => ProbeLossPercent > 0
+                ? Loc.Instance.Get("Main_ProbeMillisecondsLoss", ProbeMilliseconds, ProbeLossPercent)
+                : Loc.Instance.Get("Main_ProbeMilliseconds", ProbeMilliseconds),
             ProbeOutcome.NoAnswer => LinkKnown ? string.Empty : Loc.Instance.Get("Main_ProbeNoAnswer"),
             ProbeOutcome.NoAddress => Loc.Instance.Get("Main_ProbeNoAddress"),
             _ => LinkKnown ? string.Empty : "-",
         };
 
     /// <summary>
-    /// The response colour: green for a quick answer, amber for a slow one, red for none.
+    /// The response colour: green for a quick clean answer, amber for a slow or lossy one, red for none.
     /// </summary>
     public IBrush ProbeBrush => Probing
         ? _idle
@@ -183,8 +230,16 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         ? _dead
         : ProbeState switch
         {
-            ProbeOutcome.Alive => ProbeMilliseconds <= 200 ? _fast : _slow,
+            ProbeOutcome.Alive => AliveBrush,
             ProbeOutcome.Unknown => _idle,
             _ => LinkKnown ? _idle : _dead,
         };
+
+    // Loss at which a server that still answers is no better than one that does not.
+    private const int LossyPercent = 40;
+
+    // A server that answers: green only when it is both quick and lossless.
+    private IBrush AliveBrush => ProbeLossPercent >= LossyPercent
+        ? _dead
+        : ProbeMilliseconds <= 200 && ProbeLossPercent == 0 ? _fast : _slow;
 }

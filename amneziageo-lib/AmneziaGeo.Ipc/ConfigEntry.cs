@@ -18,7 +18,12 @@ public sealed record ConfigEntry(
     bool UseIpv6 = false,
     // Seconds since the peer's last handshake on the running tunnel, in 30-second steps so a snapshot is not
     // pushed every second; -1 for every config that is not running.
-    int HandshakeAgeSeconds = -1);
+    int HandshakeAgeSeconds = -1,
+    // Peer throughput over the last agent poll and how often the session is re-established; zero on every
+    // config that is not running.
+    long RxBitsPerSecond = 0,
+    long TxBitsPerSecond = 0,
+    int HandshakesPerMinute = 0);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

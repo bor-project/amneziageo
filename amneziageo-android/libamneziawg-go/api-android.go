@@ -16,6 +16,9 @@ import "C"
 
 import (
 	"fmt"
+	"runtime"
+	"runtime/debug"
+	"time"
 	"unsafe"
 
 	"github.com/amnezia-vpn/amneziawg-go/conn"
@@ -25,10 +28,38 @@ import (
 
 const logTag = "amneziawg-go"
 
+// Holds the runtime to a budget: the engine takes a 64 KiB buffer per packet in flight and pools them, so a
+// burst leaves tens of megabytes behind a tunnel that is idle again.
+const (
+	memoryLimit      = 64 << 20
+	gcPercent        = 50
+	scavengeInterval = 2 * time.Minute
+	scavengeFloor    = 8 << 20
+)
+
 var (
 	tunnelHandles = make(map[int32]*device.Device)
 	nextHandle    int32
 )
+
+func init() {
+	debug.SetGCPercent(gcPercent)
+	debug.SetMemoryLimit(memoryLimit)
+	go scavenge()
+}
+
+// Hands the pages a burst left free back to the system.
+func scavenge() {
+	ticker := time.NewTicker(scavengeInterval)
+	defer ticker.Stop()
+	var stats runtime.MemStats
+	for range ticker.C {
+		runtime.ReadMemStats(&stats)
+		if stats.HeapIdle-stats.HeapReleased >= scavengeFloor {
+			debug.FreeOSMemory()
+		}
+	}
+}
 
 func androidLog(prio C.int, tag *C.char, message string) {
 	cmessage := C.CString(message)
@@ -91,6 +122,7 @@ func wgTurnOff(handle int32) {
 	}
 	delete(tunnelHandles, handle)
 	dev.Close()
+	debug.FreeOSMemory()
 }
 
 //export wgGetSocketV4

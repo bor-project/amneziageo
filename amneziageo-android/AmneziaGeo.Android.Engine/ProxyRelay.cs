@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -173,9 +174,7 @@ internal sealed class ProxyRelay : IDisposable
         try
         {
             client.NoDelay = true;
-            var head = new byte[HeadLimit];
-            var length = await ReadHeadAsync(client, head, ct).ConfigureAwait(false);
-            var request = length > 0 ? ParseRequest(head, length) : null;
+            var request = await ReadRequestAsync(client, ct).ConfigureAwait(false);
             if (request is null)
             {
                 Interlocked.Increment(ref _refused);
@@ -260,14 +259,14 @@ internal sealed class ProxyRelay : IDisposable
     // Passes the response on with the head rewritten, then the rest as it comes.
     private async Task RelayResponseAsync(Socket target, Socket client, Entry entry, CancellationToken ct)
     {
+        var head = ArrayPool<byte>.Shared.Rent(HeadLimit);
         try
         {
-            var head = new byte[HeadLimit];
             var used = 0;
             var end = 0;
-            while (used < head.Length)
+            while (used < HeadLimit)
             {
-                var read = await target.ReceiveAsync(head.AsMemory(used), SocketFlags.None, ct).ConfigureAwait(false);
+                var read = await target.ReceiveAsync(head.AsMemory(used, HeadLimit - used), SocketFlags.None, ct).ConfigureAwait(false);
                 if (read <= 0)
                 {
                     break;
@@ -296,6 +295,10 @@ internal sealed class ProxyRelay : IDisposable
         catch (ObjectDisposedException)
         {
         }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(head);
+        }
 
         await PumpAsync(target, client, entry, ct).ConfigureAwait(false);
     }
@@ -303,12 +306,12 @@ internal sealed class ProxyRelay : IDisposable
     // Copies one direction until end of stream and half-closes the far side.
     private async Task PumpAsync(Socket from, Socket to, Entry entry, CancellationToken ct)
     {
-        var buffer = new byte[BufferSize];
+        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var read = await from.ReceiveAsync(buffer, SocketFlags.None, ct).ConfigureAwait(false);
+                var read = await from.ReceiveAsync(buffer.AsMemory(0, BufferSize), SocketFlags.None, ct).ConfigureAwait(false);
                 if (read <= 0)
                 {
                     break;
@@ -326,6 +329,10 @@ internal sealed class ProxyRelay : IDisposable
         }
         catch (ObjectDisposedException)
         {
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
 
         try
@@ -588,13 +595,28 @@ internal sealed class ProxyRelay : IDisposable
         }
     }
 
+    // Reads the request head into a pooled buffer.
+    private static async Task<Request?> ReadRequestAsync(Socket client, CancellationToken ct)
+    {
+        var head = ArrayPool<byte>.Shared.Rent(HeadLimit);
+        try
+        {
+            var length = await ReadHeadAsync(client, head, HeadLimit, ct).ConfigureAwait(false);
+            return length > 0 ? ParseRequest(head, length) : null;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(head);
+        }
+    }
+
     // Reads until the head ends, keeping whatever body arrived with it.
-    private static async Task<int> ReadHeadAsync(Socket client, byte[] buffer, CancellationToken ct)
+    private static async Task<int> ReadHeadAsync(Socket client, byte[] buffer, int limit, CancellationToken ct)
     {
         var used = 0;
-        while (used < buffer.Length)
+        while (used < limit)
         {
-            var read = await client.ReceiveAsync(buffer.AsMemory(used), SocketFlags.None, ct).ConfigureAwait(false);
+            var read = await client.ReceiveAsync(buffer.AsMemory(used, limit - used), SocketFlags.None, ct).ConfigureAwait(false);
             if (read <= 0)
             {
                 return 0;

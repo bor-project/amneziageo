@@ -447,6 +447,62 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RefreshLogsActive();
     }
 
+    // Конфигурация, о которой спрошено «удалить?»; без неё вопроса на экране нет.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDeleteAsk))]
+    [NotifyPropertyChangedFor(nameof(DeleteAskName))]
+    private ConfigItemViewModel? _deleteAsk;
+
+    /// <summary>
+    /// Стоит ли на экране вопрос об удалении.
+    /// </summary>
+    public bool ShowDeleteAsk => DeleteAsk is not null;
+
+    /// <summary>
+    /// Имя конфигурации в вопросе.
+    /// </summary>
+    public string DeleteAskName => DeleteAsk?.Name ?? string.Empty;
+
+    /// <summary>
+    /// Часть фразы до имени.
+    /// </summary>
+    public string DeleteAskPrefix => PromptPart(0);
+
+    /// <summary>
+    /// Часть фразы после имени.
+    /// </summary>
+    public string DeleteAskSuffix => PromptPart(1);
+
+    // Делит фразу по месту имени: оно набрано полужирным.
+    private static string PromptPart(int index)
+    {
+        var parts = Loc.Instance.Get("Main_DeleteServerPrompt").Split("{0}");
+        return index < parts.Length ? parts[index] : string.Empty;
+    }
+
+    // Пункт меню «Удалить» на широкой карточке: выносит вопрос на экран.
+    [RelayCommand]
+    private void AskDeleteServer(ConfigItemViewModel? item)
+    {
+        DeleteAsk = item;
+    }
+
+    // «Отмена» в вопросе.
+    [RelayCommand]
+    private void CancelDeleteAsk()
+    {
+        DeleteAsk = null;
+    }
+
+    // «Удалить» в вопросе.
+    [RelayCommand]
+    private async Task ConfirmDeleteAsk()
+    {
+        var item = DeleteAsk;
+        DeleteAsk = null;
+        await DeleteServer(item);
+    }
+
     // Кнопка «Удалить» строки сервера: сначала снимаем туннель с этой конфигурации, потом удаляем её.
     [RelayCommand]
     private async Task DeleteServer(ConfigItemViewModel? item)

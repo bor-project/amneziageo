@@ -17,9 +17,9 @@ using AmneziaGeo.Ui.ViewModels;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Карточка сервера: имя, адрес, замер и кнопки на лице. На узком экране «Изменить» и «Удалить» уходят под
-/// карточку, их открывает свайп влево. Нажатие выбирает конфигурацию, Enter вводит пульт внутрь, «назад»
-/// выводит.
+/// Карточка сервера: имя, адрес, замер, кнопка подключения сверху и меню «Изменить» и «Удалить» снизу. На
+/// узком экране эта пара уходит под карточку, её открывает свайп влево. Нажатие выбирает конфигурацию, Enter
+/// вводит пульт внутрь, «назад» выводит.
 /// </summary>
 internal sealed partial class ServerCard : UserControl
 {
@@ -40,6 +40,9 @@ internal sealed partial class ServerCard : UserControl
 
     public static readonly StyledProperty<ICommand?> DeleteCommandProperty =
         AvaloniaProperty.Register<ServerCard, ICommand?>(nameof(DeleteCommand));
+
+    public static readonly StyledProperty<ICommand?> AskDeleteCommandProperty =
+        AvaloniaProperty.Register<ServerCard, ICommand?>(nameof(AskDeleteCommand));
 
     public static readonly StyledProperty<ICommand?> DropCommandProperty =
         AvaloniaProperty.Register<ServerCard, ICommand?>(nameof(DropCommand));
@@ -69,7 +72,9 @@ internal sealed partial class ServerCard : UserControl
         InitializeComponent();
         _reorder = new ListReorder(this, vertical: false);
         HiddenTip.Watch(StripActions.Items);
-        HiddenTip.Watch(FaceActions.Items);
+        HiddenTip.Watch(FaceActions);
+        EditItem.Click += OnEditPicked;
+        DeleteItem.Click += OnDeletePicked;
         FacePart.RenderTransform = _shift;
         NamePart.RenderTransform = _nameShift;
         EndpointPart.RenderTransform = _nameShift;
@@ -137,6 +142,15 @@ internal sealed partial class ServerCard : UserControl
     {
         get => GetValue(DeleteCommandProperty);
         set => SetValue(DeleteCommandProperty, value);
+    }
+
+    /// <summary>
+    /// Команда, спрашивающая подтверждение удаления.
+    /// </summary>
+    public ICommand? AskDeleteCommand
+    {
+        get => GetValue(AskDeleteCommandProperty);
+        set => SetValue(AskDeleteCommandProperty, value);
     }
 
     /// <summary>
@@ -270,7 +284,7 @@ internal sealed partial class ServerCard : UserControl
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (Entered && !IsKeyboardFocusWithin)
+            if (Entered && !IsKeyboardFocusWithin && MorePart.Flyout is not { IsOpen: true })
             {
                 Entered = false;
                 Settle(false);
@@ -309,10 +323,31 @@ internal sealed partial class ServerCard : UserControl
         return [ConnectPart, .. Actions().Where(button => button.IsVisible)];
     }
 
-    // The pair the card shows in the layout it stands in.
+    // The buttons the card shows in the layout it stands in.
     private IEnumerable<Button> Actions()
     {
-        return Compact ? StripActions.Items : FaceActions.Items;
+        return Compact ? StripActions.Items : FaceActions;
+    }
+
+    // Кнопка на лице карточки.
+    private Button[] FaceActions => [MorePart];
+
+    // Пункт меню «Изменить».
+    private void OnEditPicked(object? sender, RoutedEventArgs e)
+    {
+        if (EditCommand?.CanExecute(DataContext) == true)
+        {
+            EditCommand.Execute(DataContext);
+        }
+    }
+
+    // Пункт меню «Удалить»: спрашивает подтверждение.
+    private void OnDeletePicked(object? sender, RoutedEventArgs e)
+    {
+        if (AskDeleteCommand?.CanExecute(DataContext) == true)
+        {
+            AskDeleteCommand.Execute(DataContext);
+        }
     }
 
     private void OnCardPressed(object? sender, PointerPressedEventArgs e)

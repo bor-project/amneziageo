@@ -170,6 +170,52 @@
       <Setter Property="Foreground" Value="White" />
     </Style>
 
+    <!-- Question standing over the whole screen: a card of its own, a step above the ones behind it. -->
+    <Style Selector="Border.dialogcard">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="BoxShadow" Value="0 18 44 0 #59000000" />
+    </Style>
+    <!-- The answer that removes something: filled in the colour the delete wears everywhere else. -->
+    <Style Selector="Button.dropfill">
+      <Setter Property="Background" Value="{DynamicResource AgDownBrush}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.dropfill /template/ ContentPresenter#PART_ContentPresenter, Button.dropfill:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgDownBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgDownBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.dropfill:pressed">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+    <!-- The answer that leaves everything as it was: outline only. -->
+    <Style Selector="Button.outline">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgFgBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.outline /template/ ContentPresenter#PART_ContentPresenter, Button.outline:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgFgBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="Button.outline:pressed">
+      <Setter Property="Opacity" Value="0.72" />
+    </Style>
+
     <!-- Button icons follow the button's text colour. -->
     <Style Selector="Button PathIcon">
       <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
@@ -301,6 +347,25 @@
     </Style>
     <Style Selector="Button.rowact.drop">
       <Setter Property="Foreground" Value="{DynamicResource AgDownBrush}" />
+    </Style>
+
+    <!-- Menu the server card opens: a card of the same make, with room around its rows. -->
+    <Style Selector="MenuFlyoutPresenter.cardmenu">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="6" />
+    </Style>
+    <Style Selector="MenuFlyoutPresenter.cardmenu MenuItem">
+      <Setter Property="Padding" Value="10,7" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="MenuFlyoutPresenter.cardmenu Separator">
+      <Setter Property="Background" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Margin" Value="8,3" />
     </Style>
 
     <!-- Connect button on a server card, bigger on the narrow screen a finger works. -->

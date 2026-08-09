@@ -6,6 +6,13 @@
              x:Class="AmneziaGeo.Ui.Controls.ServerCard"
              x:CompileBindings="True"
              x:DataType="vm:ConfigItemViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgCardMoreGeometry">M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z</StreamGeometry>
+    <!-- Menu glyphs are drawn as outlines: a stroked path, no fill under it. -->
+    <StreamGeometry x:Key="AgMenuEditGeometry">M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5l4 4</StreamGeometry>
+    <StreamGeometry x:Key="AgMenuDeleteGeometry">M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6</StreamGeometry>
+  </UserControl.Resources>
+
   <Panel>
     <!-- Narrow screen only: the same buttons lie under the card, pinned right on a surface of their own, and a
          swipe uncovers them. On a wide screen they stand on the card's face instead. -->
@@ -30,13 +37,16 @@
           <TextBlock x:Name="ProbePart" Grid.Row="2" Grid.Column="0" Text="{Binding ProbeText}"
                      Foreground="{Binding ProbeBrush}" FontSize="11.5" FontWeight="SemiBold" />
 
-          <StackPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+          <!-- The wide card stands the power button in its top corner and the menu in the bottom one; the
+               narrow one carries the power button alone, centred, and keeps its pair under the swipe. -->
+          <DockPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" LastChildFill="False"
+                     VerticalAlignment="Center">
             <!-- The glyph carries the state, not the action: grey while nothing runs on this configuration,
                  amber while it is being dialled or has gone quiet, blue while it is up - the colours the big
                  button wears. -->
-            <Button x:Name="ConnectPart" Classes="rowact cardact"
+            <Button x:Name="ConnectPart" DockPanel.Dock="Top" Classes="rowact cardact"
                     Classes.big="{Binding $parent[controls:ServerCard].Compact}"
-                    Foreground="{Binding StatusBrush}" HorizontalAlignment="Center"
+                    Foreground="{Binding StatusBrush}" HorizontalAlignment="Right"
                     Focusable="{Binding $parent[controls:ServerCard].Entered}"
                     ToolTip.Tip="{Binding RowActionText}"
                     Command="{Binding $parent[controls:ServerCard].ConnectCommand}" CommandParameter="{Binding}">
@@ -47,9 +57,36 @@
               </Border>
             </Button>
 
-            <controls:CardActions x:Name="FaceActions" ButtonWidth="34" ButtonHeight="30"
-                                  IsVisible="{Binding !$parent[controls:ServerCard].Compact}" />
-          </StackPanel>
+            <!-- Menu the wide card carries: edit, and a delete that asks the whole screen. -->
+            <Button x:Name="MorePart" DockPanel.Dock="Bottom" Classes="rowact" Width="44" Height="30"
+                    HorizontalAlignment="Right" Foreground="{DynamicResource AgMutedBrush}"
+                    IsVisible="{Binding !$parent[controls:ServerCard].Compact}"
+                    Focusable="{Binding $parent[controls:ServerCard].Entered}">
+              <PathIcon Data="{StaticResource AgCardMoreGeometry}" Width="19" Height="19"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Foreground="{Binding $parent[Button].Foreground}" />
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="cardmenu">
+                  <MenuItem x:Name="EditItem" Header="{l:Tr Main_EditButton}">
+                    <MenuItem.Icon>
+                      <Path Data="{StaticResource AgMenuEditGeometry}" Width="15" Height="15" Stretch="Uniform"
+                            Stroke="{DynamicResource AgAccentBrush}" StrokeThickness="1.5"
+                            StrokeLineCap="Round" StrokeJoin="Round" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                  <Separator />
+                  <MenuItem x:Name="DeleteItem" Header="{l:Tr Main_ConfirmDeleteButton}"
+                            Foreground="{DynamicResource AgDownBrush}">
+                    <MenuItem.Icon>
+                      <Path Data="{StaticResource AgMenuDeleteGeometry}" Width="15" Height="15" Stretch="Uniform"
+                            Stroke="{DynamicResource AgDownBrush}" StrokeThickness="1.5"
+                            StrokeLineCap="Round" StrokeJoin="Round" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+          </DockPanel>
         </Grid>
 
         <!-- Frame in the connection colour on the configuration the tunnel is bound to, grey on the one the

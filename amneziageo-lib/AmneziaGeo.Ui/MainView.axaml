@@ -24,6 +24,8 @@
     <StreamGeometry x:Key="AgBackGeometry">M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z</StreamGeometry>
     <!-- Plus glyph. -->
     <StreamGeometry x:Key="AgPlusGeometry">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
+    <!-- Trash glyph, drawn as an outline. -->
+    <StreamGeometry x:Key="AgTrashGeometry">M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6</StreamGeometry>
     <!-- Close glyph. -->
     <StreamGeometry x:Key="AgCloseGeometry">M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z</StreamGeometry>
   </UserControl.Resources>
@@ -226,6 +228,7 @@
                                   ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
                                   EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
                                   DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}"
+                                  AskDeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).AskDeleteServerCommand}"
                                   DropCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.ApplyOrderCommand}" />
                         </DataTemplate>
                       </ItemsControl.ItemTemplate>
@@ -657,6 +660,34 @@
       </Border>
 
     </StackPanel>
+
+    <!-- Delete asked over the whole screen: the wide card's menu opens it, the narrow card keeps its own pair
+         under the swipe. -->
+    <Panel ZIndex="60" Background="#66000000" IsVisible="{Binding ShowDeleteAsk}">
+      <Border Classes="dialogcard" Width="430" Padding="22,20"
+              HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="13">
+          <Panel Width="46" Height="46" HorizontalAlignment="Left">
+            <Ellipse Fill="{DynamicResource AgDownBrush}" Opacity="0.15" />
+            <Path Data="{DynamicResource AgTrashGeometry}" Width="21" Height="21" Stretch="Uniform"
+                  Stroke="{DynamicResource AgDownBrush}" StrokeThickness="1.7"
+                  StrokeLineCap="Round" StrokeJoin="Round"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Panel>
+          <TextBlock Text="{l:Tr Main_DeleteServerTitle}" FontSize="18" FontWeight="SemiBold"
+                     TextWrapping="Wrap" />
+          <!-- The runs stand tight against each other: a line break between them prints as a space. -->
+          <TextBlock FontSize="13" TextWrapping="Wrap"
+                     Foreground="{DynamicResource AgMutedBrush}"><Run Text="{Binding DeleteAskPrefix}" /><Run Text="{Binding DeleteAskName}" FontWeight="SemiBold" /><Run Text="{Binding DeleteAskSuffix}" /></TextBlock>
+          <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,5,0,0">
+            <Button x:Name="DeleteAskCancel" Classes="outline" Content="{l:Tr Main_CancelButton}"
+                    Width="124" Padding="6,9" Command="{Binding CancelDeleteAskCommand}" />
+            <Button Classes="dropfill" Content="{l:Tr Main_ConfirmDeleteButton}"
+                    Width="124" Padding="6,9" Command="{Binding ConfirmDeleteAskCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Panel>
 
   </Grid>
 </UserControl>

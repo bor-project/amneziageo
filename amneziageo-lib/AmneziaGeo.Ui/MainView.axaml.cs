@@ -128,6 +128,12 @@ public sealed partial class MainView : UserControl
     // the section detail, then home.
     private bool NavigateBack()
     {
+        if (_vm?.ShowDeleteAsk == true)
+        {
+            _vm.CancelDeleteAskCommand.Execute(null);
+            return true;
+        }
+
         if (Controls.ServerCard.LeaveEntered(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
         {
             return true;
@@ -155,6 +161,14 @@ public sealed partial class MainView : UserControl
             or nameof(MainWindowViewModel.IsSettings))
         {
             FocusCurrentScreen();
+        }
+
+        // Пульту нужна точка входа в вопрос: иначе стрелки ходят по карточкам за плашкой.
+        if (e.PropertyName is nameof(MainWindowViewModel.ShowDeleteAsk) && _vm?.ShowDeleteAsk == true)
+        {
+            Dispatcher.UIThread.Post(
+                () => DeleteAskCancel.Focus(NavigationMethod.Directional),
+                DispatcherPriority.Loaded);
         }
     }
 

@@ -445,6 +445,12 @@
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Delete</value>
   </data>
+  <data name="Main_DeleteServerTitle" xml:space="preserve">
+    <value>Delete server?</value>
+  </data>
+  <data name="Main_DeleteServerPrompt" xml:space="preserve">
+    <value>Server {0} will be removed from the list. This action cannot be undone.</value>
+  </data>
   <data name="Main_ConfirmButton" xml:space="preserve">
     <value>Confirm</value>
   </data>

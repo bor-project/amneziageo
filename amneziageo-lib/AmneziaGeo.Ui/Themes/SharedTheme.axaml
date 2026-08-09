@@ -338,6 +338,12 @@
       <Setter Property="RenderTransform" Value="none" />
       <Setter Property="Opacity" Value="0.85" />
     </Style>
+    <!-- Press shades the server row instead of thinning it: the dip in opacity above lets the buttons lying
+         under the row show through. Stands after that rule, so it wins. -->
+    <Style Selector="Button.serverrow:pressed">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+    </Style>
     <Style Selector="Button:disabled">
       <Setter Property="Opacity" Value="0.5" />
     </Style>

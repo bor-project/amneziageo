@@ -22,6 +22,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private readonly DispatcherTimer _networkTimer;
 
     private bool _toggleInFlight;
+
+    // The configuration a dial is heading for, until the tunnel binds it.
+    private string? _dialTarget;
     private CancellationTokenSource? _probeCts;
     private bool _probedOnce;
     private string? _lastNotice;
@@ -323,6 +326,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         NoticeText = null;
         ReconnectAvailable = false;
         RestartPending = false;
+        _dialTarget = null;
         ConnectFailed = false;
         DisconnectFailed = false;
         TakeoverPending = false;
@@ -365,6 +369,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             return;
         }
 
+        // The dial is over once the tunnel carries its target, the dial fails, or the tunnel goes down.
+        if (_dialTarget is not null
+            && (!snapshot.Active || snapshot.ConnectFailed
+                || string.Equals(snapshot.BoundTarget, _dialTarget, StringComparison.Ordinal)))
+        {
+            _dialTarget = null;
+        }
+
         // Top-center notice (auto-hides after 5s, dismissable): a different config is selected while a
         // tunnel is up (reconnect to apply - no auto-switch), settings changed on a live tunnel, or a
         // connect failure. Shown once per distinct notice, not re-armed while the same one holds.
@@ -382,14 +394,14 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             notice = Loc.Instance.Get("MainVm_NoticeDisconnectFailed");
             reconnect = true;
         }
-        else if (snapshot.Active && !_toggleInFlight
+        else if (snapshot.Active && !_toggleInFlight && _dialTarget is null
             && string.Equals(snapshot.BoundStatus, ConnectionStatus.Connected, StringComparison.Ordinal)
             && SelectedDiffersFromBound(snapshot))
         {
             // A different config is selected on the live tunnel: reuse the reconnect banner so its action applies
             // the switch (Reconnect dials the newly selected ActiveConfig), like the settings-changed case below.
-            // A switch in flight names the new target while the old one still runs, so the banner waits for the
-            // tunnel to settle rather than blinking through every switch.
+            // A switch names the new target while the old one still runs, so the banner waits for the tunnel to
+            // carry it rather than blinking through every switch.
             notice = Loc.Instance.Get("MainVm_NoticeConfigSelected", snapshot.SelectedTarget);
             reconnect = true;
         }
@@ -761,6 +773,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             // a deleted one). Idempotent if already selected. Mirrors ToggleConfigConnectionAsync.
             if (connect && ActiveConfig is not null)
             {
+                _dialTarget = ActiveConfig.Name;
                 await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
             }
 
@@ -768,6 +781,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 new IpcCommand(IpcContract.OpSetConnection, [connect ? "connect" : "disconnect"]));
             if (!ack.Ok)
             {
+                _dialTarget = null;
                 IsTunnelActive = !connect;
                 if (connect && OwnedByOtherAck(ack))
                 {
@@ -799,11 +813,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             if (connect)
             {
+                _dialTarget = config;
                 await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
                 var ack = await _connection.SendCommandAsync(
                     new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
                 if (!ack.Ok)
                 {
+                    _dialTarget = null;
                     IsTunnelActive = false;
                     if (OwnedByOtherAck(ack))
                     {

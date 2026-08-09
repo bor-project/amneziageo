@@ -171,16 +171,16 @@
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="2,0,0,2" IsVisible="{Binding HasConfigs}">
                   <TextBlock Grid.Column="0" Text="{l:Tr Main_ServersTitle}" Classes="muted"
                              FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                  <Button Grid.Column="1" Classes="icon" Padding="5,3" VerticalAlignment="Center"
+                  <Button Grid.Column="1" Classes="icon" Padding="8,6" VerticalAlignment="Center"
                           Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
                           ToolTip.Tip="{l:Tr Main_ProbeTooltip}">
-                    <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="14" Height="14"
+                    <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="18" Height="18"
                               Foreground="{DynamicResource AgMutedBrush}" />
                   </Button>
-                  <Button Grid.Column="2" Classes="icon" Padding="5,3" VerticalAlignment="Center"
+                  <Button Grid.Column="2" Classes="icon" Padding="8,6" VerticalAlignment="Center"
                           Command="{Binding AddServerCommand}"
                           ToolTip.Tip="{l:Tr Main_AddConfigButton}">
-                    <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="14" Height="14"
+                    <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="18" Height="18"
                               Foreground="{DynamicResource AgMutedBrush}" />
                   </Button>
                 </Grid>

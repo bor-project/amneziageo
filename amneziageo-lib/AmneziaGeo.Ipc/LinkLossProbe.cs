@@ -7,9 +7,10 @@ namespace AmneziaGeo.Ipc;
 /// Measures what the tunnel drops. The peer counters carry bytes and the last handshake and nothing else, so loss is
 /// knowable only by sending something through the tunnel and counting what fails to return - and it has to travel
 /// inside the tunnel, an echo to the endpoint measuring the path the tunnel is carried over rather than the tunnel.
-/// The targets are the resolvers the config declares and the peer's own address on the tunnel: both are carried by
-/// the tunnel by construction, and both answer an echo. A target that never answers names an unusable probe rather
-/// than a dead link, and the share stays unknown instead of reading as total loss.
+/// The target is the peer's own address on the tunnel and nothing else: it is the far end of the tunnel itself. A
+/// resolver the config declares sits past the exit, so what it loses belongs to the public path behind the server
+/// and would read here as loss of the channel. A target that never answers names an unusable probe rather than a
+/// dead link, and the share stays unknown instead of reading as total loss.
 /// </summary>
 public sealed class LinkLossProbe
 {
@@ -129,9 +130,28 @@ public sealed class LinkLossProbe
     }
 
     /// <summary>
-    /// Addresses worth echoing for a config: the resolvers it declares, then the peer's own address on the tunnel.
+    /// The far end of the tunnel: the peer's own address on every subnet the interface sits in. Nothing else
+    /// measures the tunnel, every other address being reached through it and out the far side.
     /// </summary>
-    public static IReadOnlyList<string> TargetsFor(IEnumerable<string> dnsServers, IEnumerable<string> interfaceAddresses)
+    public static IReadOnlyList<string> PeerTargets(IEnumerable<string> interfaceAddresses)
+    {
+        var targets = new List<string>();
+        foreach (var address in interfaceAddresses)
+        {
+            if (PeerAddress(address) is { } peer)
+            {
+                Keep(targets, peer);
+            }
+        }
+
+        return targets;
+    }
+
+    /// <summary>
+    /// The resolvers the config declares: reached through the tunnel and out past the exit, so they measure the
+    /// public path behind the server rather than the channel to it.
+    /// </summary>
+    public static IReadOnlyList<string> BeyondTargets(IEnumerable<string> dnsServers)
     {
         var targets = new List<string>();
         foreach (var server in dnsServers)
@@ -139,14 +159,6 @@ public sealed class LinkLossProbe
             if (IPAddress.TryParse(server.Trim(), out var parsed) && parsed.AddressFamily == AddressFamily.InterNetwork)
             {
                 Keep(targets, parsed.ToString());
-            }
-        }
-
-        foreach (var address in interfaceAddresses)
-        {
-            if (PeerAddress(address) is { } peer)
-            {
-                Keep(targets, peer);
             }
         }
 

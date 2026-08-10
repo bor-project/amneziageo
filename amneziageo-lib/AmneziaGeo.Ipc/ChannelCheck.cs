@@ -60,9 +60,20 @@ public static class CheckLegs
     public const string Peer = "peer";
 
     /// <summary>
+    /// A resolver the config declares, reached through the tunnel: the public path past the exit.
+    /// </summary>
+    public const string Beyond = "beyond";
+
+    /// <summary>
     /// A download through the tunnel: what the whole chain delivers.
     /// </summary>
     public const string Tunnel = "tunnel";
+
+    /// <summary>
+    /// The destination this user's traffic actually goes to, pulled through the same tunnel: what the neutral
+    /// download above is compared against.
+    /// </summary>
+    public const string Source = "source";
 
     /// <summary>
     /// The same download outside the tunnel: what the home channel delivers without the server.
@@ -112,6 +123,11 @@ public static class CheckVerdicts
     public const string ServerLoss = "Check_ServerLoss";
 
     /// <summary>
+    /// The path past the exit loses packets while the tunnel to the server is clean. Args: loss percent.
+    /// </summary>
+    public const string BeyondLoss = "Check_BeyondLoss";
+
+    /// <summary>
     /// The tunnel delivers almost nothing while the server answers. Args: bits per second.
     /// </summary>
     public const string ServerSlow = "Check_ServerSlow";
@@ -120,6 +136,12 @@ public static class CheckVerdicts
     /// The same download is many times faster outside the tunnel. Args: tunnel bits/s, direct bits/s.
     /// </summary>
     public const string TunnelBehindDirect = "Check_TunnelBehindDirect";
+
+    /// <summary>
+    /// The destination the traffic goes to is many times slower than a neutral download through the same
+    /// tunnel. Args: source bits/s, tunnel bits/s.
+    /// </summary>
+    public const string SourceBehindTunnel = "Check_SourceBehindTunnel";
 
     /// <summary>
     /// Nothing to blame. Args: bits per second.
@@ -558,7 +580,9 @@ public static class ChannelVerdict
         var endpoint = Leg(legs, CheckLegs.Endpoint);
         var handshake = Leg(legs, CheckLegs.Handshake);
         var peer = Leg(legs, CheckLegs.Peer);
+        var beyond = Leg(legs, CheckLegs.Beyond);
         var tunnel = Leg(legs, CheckLegs.Tunnel);
+        var source = Leg(legs, CheckLegs.Source);
         var direct = Leg(legs, CheckLegs.Direct);
 
         if (Lossy(gateway))
@@ -593,6 +617,11 @@ public static class ChannelVerdict
             return (CheckVerdicts.ServerLoss, [Text(peer!.LossPercent)], CheckLegs.Peer);
         }
 
+        if (Lossy(beyond))
+        {
+            return (CheckVerdicts.BeyondLoss, [Text(beyond!.LossPercent)], CheckLegs.Beyond);
+        }
+
         if (tunnel is { BitsPerSecond: >= 0 })
         {
             if (direct is { BitsPerSecond: >= 0 } && direct.BitsPerSecond >= tunnel.BitsPerSecond * DirectRatio
@@ -600,6 +629,16 @@ public static class ChannelVerdict
             {
                 return (CheckVerdicts.TunnelBehindDirect,
                     [CheckFormat.Mbits(tunnel.BitsPerSecond), CheckFormat.Mbits(direct.BitsPerSecond)], CheckLegs.Tunnel);
+            }
+
+            // The one question a support thread starts from: two downloads over the same tunnel, one neutral and
+            // one to what the user is watching. A neutral download that runs while the other crawls names the
+            // source, and there is nothing to read into the pair while the tunnel itself is the slow part.
+            if (source is { BitsPerSecond: >= 0 } && tunnel.BitsPerSecond >= SlowBitsPerSecond
+                && tunnel.BitsPerSecond >= source.BitsPerSecond * DirectRatio)
+            {
+                return (CheckVerdicts.SourceBehindTunnel,
+                    [CheckFormat.Mbits(source.BitsPerSecond), CheckFormat.Mbits(tunnel.BitsPerSecond)], CheckLegs.Source);
             }
 
             if (tunnel.BitsPerSecond < SlowBitsPerSecond)
@@ -683,8 +722,10 @@ public static class CheckPhrase
             CheckVerdicts.PathMtu => $"the path cuts packets above {Arg(args, 0)} bytes: set the tunnel MTU to {Arg(args, 1)}",
             CheckVerdicts.Rekeying => $"the session is re-established {Arg(args, 0)} time(s) a minute: the carrier drops the handshake",
             CheckVerdicts.ServerLoss => $"the far side of the tunnel loses {Arg(args, 0)}% while the path to it is clean: the fault is the server",
+            CheckVerdicts.BeyondLoss => $"the path past the exit loses {Arg(args, 0)}% while the tunnel to the server is clean: the fault is behind the server, not the channel",
             CheckVerdicts.ServerSlow => $"the tunnel delivers {Arg(args, 0)} Mbit/s while the server answers: change the server",
             CheckVerdicts.TunnelBehindDirect => $"the tunnel delivers {Arg(args, 0)} Mbit/s where the same download outside it delivers {Arg(args, 1)}: the fault is the server, not the home channel",
+            CheckVerdicts.SourceBehindTunnel => $"the destination this traffic goes to delivers {Arg(args, 0)} Mbit/s where a neutral download over the same tunnel delivers {Arg(args, 1)}: the fault is the source, not the tunnel",
             CheckVerdicts.Healthy => $"nothing to blame: the tunnel delivers {Arg(args, 0)} Mbit/s without loss",
             CheckVerdicts.HealthyOutsideTunnel => $"nothing to blame on the legs measured; the {Arg(args, 0)} Mbit/s belongs to the path beside the tunnel, which is where this download went",
             CheckVerdicts.SweepEmpty => "there is no saved server to measure",

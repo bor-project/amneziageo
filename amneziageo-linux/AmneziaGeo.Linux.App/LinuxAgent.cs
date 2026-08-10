@@ -308,13 +308,13 @@ internal sealed class LinuxAgent : IDisposable
         return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
     }
 
-    // Starts this connection's loss probe: the resolvers the config declares and the peer's own address on the
-    // tunnel are echoed once a second, and what fails to come back is the loss the screen shows.
+    // Starts this connection's loss probe: the peer's own address on the tunnel is echoed once a second, and what
+    // fails to come back is the loss the screen shows.
     private void StartLossProbe(string config)
     {
         StopLossProbe();
         var run = new CancellationTokenSource();
-        var probe = new LinkLossProbe(LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(config), WgConfigEditor.GetAddresses(config)));
+        var probe = new LinkLossProbe(LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(config)));
         _loss = probe;
         _lossRun = run;
         _ = Task.Run(() => probe.RunAsync(run.Token));
@@ -462,7 +462,7 @@ internal sealed class LinuxAgent : IDisposable
                 return await GetCacheEntriesAsync(ct).ConfigureAwait(false);
 
             case IpcContract.OpCheckChannel:
-                return await CheckChannelAsync(ct).ConfigureAwait(false);
+                return await CheckChannelAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpCheckServers:
                 return await CheckServersAsync(ct).ConfigureAwait(false);
@@ -1352,7 +1352,7 @@ internal sealed class LinuxAgent : IDisposable
     }
 
     // The ladder from the local gateway out to a download through the tunnel.
-    private async Task<IpcAck> CheckChannelAsync(CancellationToken ct)
+    private async Task<IpcAck> CheckChannelAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var config = _selectedTarget;
         if (string.IsNullOrEmpty(config))
@@ -1368,11 +1368,13 @@ internal sealed class LinuxAgent : IDisposable
             _tunnel.Running,
             LocalGateway.Find(),
             await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
-            LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)),
+            LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(text)),
+            LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
             !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase),
             true,
             _tunnel.Running ? _handshakeAge : -1,
             _tunnel.Running ? _link.HandshakesPerMinute : -1,
+            SourceHost: args.Count > 0 ? args[0] : null,
             ConfiguredMtu: WgConfigEditor.GetMtu(text),
             CarrierPort: carrier.Port);
 

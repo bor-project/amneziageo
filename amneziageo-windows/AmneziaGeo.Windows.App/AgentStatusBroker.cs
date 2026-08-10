@@ -268,7 +268,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpExportLog => await ExportLogAsync(command.Args, ct),
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
                 IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
-                IpcContract.OpCheckChannel => await CheckChannelAsync(ct),
+                IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
                 IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
@@ -1047,10 +1047,10 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     }
 
     // The channel ladder, run for the config this window reports on.
-    private async Task<IpcAck> CheckChannelAsync(CancellationToken ct)
+    private async Task<IpcAck> CheckChannelAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var (config, _) = await InspectTargetAsync(ct);
-        return await checks.ChannelAsync(store, config, ct);
+        return await checks.ChannelAsync(store, config, args.Count > 0 ? args[0] : string.Empty, ct);
     }
 
     // Why one destination goes where it goes, under the rules in force for this window's config.

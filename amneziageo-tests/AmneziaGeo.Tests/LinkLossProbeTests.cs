@@ -5,8 +5,8 @@ namespace AmneziaGeo.Tests;
 
 /// <summary>
 /// The loss share the home screen shows: what the window counts, when it refuses to answer, and which addresses
-/// are worth echoing. A share taken too early, or against a target that answers nothing, would read as a broken
-/// link - the one thing this number must never invent.
+/// it is allowed to echo. A share taken too early, taken against a target that answers nothing, or taken past the
+/// server that carries it would read as a broken link - the one thing this number must never invent.
 /// </summary>
 public sealed class LinkLossProbeTests
 {
@@ -64,17 +64,24 @@ public sealed class LinkLossProbeTests
     }
 
     [Fact]
-    public void TheResolversComeFirst_ThenThePeerOnTheTunnel()
+    public void TheChannelIsEchoedAtThePeerAlone()
     {
-        var targets = LinkLossProbe.TargetsFor(["1.1.1.1", "9.9.9.9"], ["10.0.0.6/24"]);
+        var targets = LinkLossProbe.PeerTargets(["10.0.0.6/24"]);
 
-        Assert.Equal(["1.1.1.1", "9.9.9.9", "10.0.0.1"], targets);
+        Assert.Equal(["10.0.0.1"], targets);
+    }
+
+    [Fact]
+    public void TheResolversTheConfigDeclares_BelongToThePathPastTheExit()
+    {
+        Assert.Equal(["1.1.1.1", "9.9.9.9"], LinkLossProbe.BeyondTargets(["1.1.1.1", "9.9.9.9"]));
+        Assert.Empty(LinkLossProbe.PeerTargets([]));
     }
 
     [Fact]
     public void ASingleHostAddress_IsReadAsOneSubnetOfTheServer()
     {
-        var targets = LinkLossProbe.TargetsFor([], ["10.8.2.21/32"]);
+        var targets = LinkLossProbe.PeerTargets(["10.8.2.21/32"]);
 
         Assert.Equal(["10.8.2.1"], targets);
     }
@@ -82,7 +89,7 @@ public sealed class LinkLossProbeTests
     [Fact]
     public void AnAddressAlreadyTheFirstHost_NamesNoPeer()
     {
-        var targets = LinkLossProbe.TargetsFor([], ["10.8.2.1/24"]);
+        var targets = LinkLossProbe.PeerTargets(["10.8.2.1/24"]);
 
         Assert.Empty(targets);
     }
@@ -90,9 +97,8 @@ public sealed class LinkLossProbeTests
     [Fact]
     public void AddressesTheEchoCannotUse_AreLeftOut()
     {
-        var targets = LinkLossProbe.TargetsFor(["fd00::1", "1.1.1.1", "1.1.1.1"], ["fdcc::cafe/128"]);
-
-        Assert.Equal(["1.1.1.1"], targets);
+        Assert.Equal(["1.1.1.1"], LinkLossProbe.BeyondTargets(["fd00::1", "1.1.1.1", "1.1.1.1"]));
+        Assert.Empty(LinkLossProbe.PeerTargets(["fdcc::cafe/128"]));
     }
 
     [Fact]

@@ -1928,8 +1928,14 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_Leg_peer" xml:space="preserve">
     <value>server in tunnel</value>
   </data>
+  <data name="Check_Leg_beyond" xml:space="preserve">
+    <value>past the exit</value>
+  </data>
   <data name="Check_Leg_tunnel" xml:space="preserve">
     <value>through tunnel</value>
+  </data>
+  <data name="Check_Leg_source" xml:space="preserve">
+    <value>your busiest destination</value>
   </data>
   <data name="Check_Leg_direct" xml:space="preserve">
     <value>beside tunnel</value>
@@ -1994,11 +2000,17 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_ServerLoss" xml:space="preserve">
     <value>The far side of the tunnel loses {0}% while the path to it is clean: the fault is the server.</value>
   </data>
+  <data name="Check_BeyondLoss" xml:space="preserve">
+    <value>The path past the exit loses {0}% while the tunnel to the server is clean: the fault is behind the server, not the channel.</value>
+  </data>
   <data name="Check_ServerSlow" xml:space="preserve">
     <value>The tunnel delivers {0} Mbit/s while the server answers: change the server.</value>
   </data>
   <data name="Check_TunnelBehindDirect" xml:space="preserve">
     <value>The tunnel delivers {0} Mbit/s where the same download beside it delivers {1}: the fault is the server, not the home channel.</value>
+  </data>
+  <data name="Check_SourceBehindTunnel" xml:space="preserve">
+    <value>The destination your traffic goes to delivers {0} Mbit/s where a neutral download over the same tunnel delivers {1}: the fault is the source, not the tunnel.</value>
   </data>
   <data name="Check_Healthy" xml:space="preserve">
     <value>Nothing to blame: the tunnel delivers {0} Mbit/s without loss.</value>

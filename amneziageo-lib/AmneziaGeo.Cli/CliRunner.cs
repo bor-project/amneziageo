@@ -158,6 +158,7 @@ public static class CliRunner
               apps [--filter <text>]            what per-app rules can address here
               doctor                            check the things a headless install gets wrong
               check                             measure the channel leg by leg and name the culprit
+              check channel [host]              the same, timed against a destination you name
               check <target>                    why a domain, address, app: or geo rule goes where it goes
               diag collect                      write a redacted support bundle and print its path
               update check                      ask whether a newer application exists

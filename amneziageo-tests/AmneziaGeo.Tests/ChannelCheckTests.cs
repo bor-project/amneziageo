@@ -75,6 +75,43 @@ public sealed class ChannelCheckTests
     }
 
     [Fact]
+    public void LossPastACleanTunnel_BlamesWhatStandsBehindTheServer()
+    {
+        var (key, args, culprit) = ChannelVerdict.Decide(
+            [
+                new CheckLeg(CheckLegs.Gateway, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Endpoint, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Handshake, LegState.Ok, AgeSeconds: 30, RekeysPerMinute: 0),
+                new CheckLeg(CheckLegs.Peer, LegState.Ok, RttMs: 42, LossPercent: 0),
+                new CheckLeg(CheckLegs.Beyond, LegState.Weak, RttMs: 48, LossPercent: 9),
+                new CheckLeg(CheckLegs.Tunnel, LegState.Ok, BitsPerSecond: 39_000_000),
+            ],
+            connected: true);
+
+        Assert.Equal(CheckVerdicts.BeyondLoss, key);
+        Assert.Equal(CheckLegs.Beyond, culprit);
+        Assert.Equal("9", args[0]);
+        Assert.Contains("not the channel", CheckPhrase.English(key, args), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LossOnBothSidesOfTheExit_BlamesTheNearerLeg()
+    {
+        var (key, _, culprit) = ChannelVerdict.Decide(
+            [
+                new CheckLeg(CheckLegs.Gateway, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Endpoint, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Handshake, LegState.Ok, AgeSeconds: 30, RekeysPerMinute: 0),
+                new CheckLeg(CheckLegs.Peer, LegState.Weak, LossPercent: 12),
+                new CheckLeg(CheckLegs.Beyond, LegState.Weak, LossPercent: 9),
+            ],
+            connected: true);
+
+        Assert.Equal(CheckVerdicts.ServerLoss, key);
+        Assert.Equal(CheckLegs.Peer, culprit);
+    }
+
+    [Fact]
     public void ASlowTunnelBehindAHealthyServer_BlamesTheServer()
     {
         var (key, args, culprit) = ChannelVerdict.Decide(
@@ -110,6 +147,63 @@ public sealed class ChannelCheckTests
         Assert.Equal(CheckLegs.Tunnel, culprit);
         Assert.Equal("3", args[0]);
         Assert.Equal("78", args[1]);
+    }
+
+    [Fact]
+    public void ASourceCrawlingWhileTheTunnelRuns_BlamesTheSource()
+    {
+        var (key, args, culprit) = ChannelVerdict.Decide(
+            [
+                new CheckLeg(CheckLegs.Gateway, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Endpoint, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Handshake, LegState.Ok, AgeSeconds: 30, RekeysPerMinute: 0),
+                new CheckLeg(CheckLegs.Peer, LegState.Ok, LossPercent: 0),
+                new CheckLeg(CheckLegs.Tunnel, LegState.Ok, BitsPerSecond: 40_000_000),
+                new CheckLeg(CheckLegs.Source, LegState.Bad, BitsPerSecond: 700_000, Note: "iptv.example"),
+            ],
+            connected: true);
+
+        Assert.Equal(CheckVerdicts.SourceBehindTunnel, key);
+        Assert.Equal(CheckLegs.Source, culprit);
+        Assert.Equal("0.7", args[0]);
+        Assert.Equal("40", args[1]);
+        Assert.Contains("not the tunnel", CheckPhrase.English(key, args), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ASourceKeepingUpWithTheTunnel_BlamesNobody()
+    {
+        var (key, _, culprit) = ChannelVerdict.Decide(
+            [
+                new CheckLeg(CheckLegs.Gateway, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Endpoint, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Handshake, LegState.Ok, AgeSeconds: 30, RekeysPerMinute: 0),
+                new CheckLeg(CheckLegs.Peer, LegState.Ok, LossPercent: 0),
+                new CheckLeg(CheckLegs.Tunnel, LegState.Ok, BitsPerSecond: 40_000_000),
+                new CheckLeg(CheckLegs.Source, LegState.Ok, BitsPerSecond: 22_000_000, Note: "iptv.example"),
+            ],
+            connected: true);
+
+        Assert.Equal(CheckVerdicts.Healthy, key);
+        Assert.Equal(string.Empty, culprit);
+    }
+
+    [Fact]
+    public void ASlowTunnelWithASlowSource_StillBlamesTheTunnel()
+    {
+        var (key, _, culprit) = ChannelVerdict.Decide(
+            [
+                new CheckLeg(CheckLegs.Gateway, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Endpoint, LegState.Ok, LossPercent: 0, MaxPacketBytes: 1472),
+                new CheckLeg(CheckLegs.Handshake, LegState.Ok, AgeSeconds: 30, RekeysPerMinute: 0),
+                new CheckLeg(CheckLegs.Peer, LegState.Ok, LossPercent: 0),
+                new CheckLeg(CheckLegs.Tunnel, LegState.Bad, BitsPerSecond: 400_000),
+                new CheckLeg(CheckLegs.Source, LegState.Bad, BitsPerSecond: 40_000, Note: "iptv.example"),
+            ],
+            connected: true);
+
+        Assert.Equal(CheckVerdicts.ServerSlow, key);
+        Assert.Equal(CheckLegs.Tunnel, culprit);
     }
 
     [Fact]

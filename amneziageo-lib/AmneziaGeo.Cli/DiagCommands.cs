@@ -74,9 +74,38 @@ internal static class DiagCommands
             return await ServersAsync(agent).ConfigureAwait(false);
         }
 
-        var ack = target.Length == 0
+        // "channel" takes the destination to time the tunnel against; bare "check" leaves the agent to find it.
+        if (string.Equals(target, "channel", StringComparison.Ordinal))
+        {
+            return await ChannelAsync(agent, args.Count > 1 ? args[1] : string.Empty).ConfigureAwait(false);
+        }
+
+        if (target.Length == 0)
+        {
+            return await ChannelAsync(agent, string.Empty).ConfigureAwait(false);
+        }
+
+        var ack = await agent.SendAsync(IpcContract.OpCheckTarget, target).ConfigureAwait(false);
+        if (!ack.Ok)
+        {
+            return Reply.Report(ack);
+        }
+
+        if (Output.Json)
+        {
+            Output.Line(ack.Message);
+            return Exit.Ok;
+        }
+
+        return Target(ack.Message);
+    }
+
+    // The ladder, timed against the destination named or the one the agent finds.
+    private static async Task<int> ChannelAsync(IAgentLink agent, string source)
+    {
+        var ack = source.Length == 0
             ? await agent.SendAsync(IpcContract.OpCheckChannel).ConfigureAwait(false)
-            : await agent.SendAsync(IpcContract.OpCheckTarget, target).ConfigureAwait(false);
+            : await agent.SendAsync(IpcContract.OpCheckChannel, source).ConfigureAwait(false);
 
         if (!ack.Ok)
         {
@@ -89,7 +118,7 @@ internal static class DiagCommands
             return Exit.Ok;
         }
 
-        return target.Length == 0 ? Channel(ack.Message) : Target(ack.Message);
+        return Channel(ack.Message);
     }
 
     private static int Channel(string payload)

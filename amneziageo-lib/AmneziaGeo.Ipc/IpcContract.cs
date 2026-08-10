@@ -287,7 +287,10 @@ public static class IpcContract
 
     /// <summary>
     /// Command to run the channel check: the ladder from the local gateway out to a download through the tunnel.
-    /// No args. The ack message holds one tab-separated "leg" row per measured leg and a closing "verdict" row
+    /// Optional arg [0]: a host or URL timed over the same tunnel as the neutral download, so the two separate a
+    /// slow source from a slow tunnel; absent, the agent uses the destination its relay sees carrying the most
+    /// traffic and skips that leg when it knows of none. The ack message holds one tab-separated "leg" row per
+    /// measured leg and a closing "verdict" row
     /// naming the culprit. The run is stored in the check journal as well, so it travels in the diagnostics
     /// archive whatever the log is set to capture.
     /// </summary>

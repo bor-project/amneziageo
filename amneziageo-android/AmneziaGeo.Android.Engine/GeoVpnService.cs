@@ -280,9 +280,9 @@ public sealed class GeoVpnService : VpnService
             VpnBridge.PublishLink(this, handshake, LinkReading.Empty);
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
-            // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the
-            // resolvers the config declares and the peer's own address on the tunnel are echoed once a second.
-            var loss = new LinkLossProbe(LinkLossProbe.TargetsFor(servers, WgConfigEditor.GetAddresses(resolved)));
+            // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the peer's
+            // own address on the tunnel is echoed once a second.
+            var loss = new LinkLossProbe(LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(resolved)));
             _ = Task.Run(() => loss.RunAsync(keepalive.Token));
             _ = Task.Run(() => ReportLinkAsync(loss, keepalive.Token));
             if (relay is not null && _proxyPort > 0)
@@ -622,6 +622,7 @@ public sealed class GeoVpnService : VpnService
                 return;
             }
 
+            VpnBridge.WriteSessions(relay.Sessions());
             var tunnel = TunnelBytes(AwgEngine.GetConfig(handle));
             var share = tunnel > 0 ? relay.Bytes * 100 / tunnel : 0;
             Report($"{relay.Snapshot()}; tunnel {tunnel / 1024} KiB, relayed {share}%");
@@ -769,8 +770,10 @@ public sealed class GeoVpnService : VpnService
     }
 
     // Restricts the tunnel to (or excludes) the given app packages: "include" = only these apps use the tunnel,
-    // "exclude" = every app but these. A stale/uninstalled package is skipped so it cannot fail establish.
-    private static void ApplyAppSplit(Builder builder, string? mode, string[]? packages)
+    // "exclude" = every app but these. A stale/uninstalled package is skipped so it cannot fail establish. An
+    // allow list carries this application too: the relay serves the proxy the tunnel offers, and left off the list
+    // it sends every proxied byte beside the tunnel instead of into it.
+    private void ApplyAppSplit(Builder builder, string? mode, string[]? packages)
     {
         if (packages is not { Length: > 0 } || string.IsNullOrEmpty(mode))
         {
@@ -778,6 +781,7 @@ public sealed class GeoVpnService : VpnService
         }
 
         var exclude = string.Equals(mode, "exclude", StringComparison.Ordinal);
+        var applied = 0;
         foreach (var package in packages)
         {
             if (string.IsNullOrWhiteSpace(package))
@@ -785,20 +789,41 @@ public sealed class GeoVpnService : VpnService
                 continue;
             }
 
-            try
+            if (Listed(builder, exclude, package))
             {
-                if (exclude)
-                {
-                    builder.AddDisallowedApplication(package);
-                }
-                else
-                {
-                    builder.AddAllowedApplication(package);
-                }
+                applied++;
             }
-            catch (global::Android.Content.PM.PackageManager.NameNotFoundException)
+            else
             {
+                Report($"the routing list names {package}, which is not installed here");
             }
+        }
+
+        if (!exclude && applied > 0 && PackageName is { Length: > 0 } self && Listed(builder, false, self))
+        {
+            Report($"{applied} application(s) ride the tunnel, and this one with them to carry their proxy");
+        }
+    }
+
+    // Puts one package on the builder's allow or deny list; false when it is not installed here.
+    private static bool Listed(Builder builder, bool exclude, string package)
+    {
+        try
+        {
+            if (exclude)
+            {
+                builder.AddDisallowedApplication(package);
+            }
+            else
+            {
+                builder.AddAllowedApplication(package);
+            }
+
+            return true;
+        }
+        catch (global::Android.Content.PM.PackageManager.NameNotFoundException)
+        {
+            return false;
         }
     }
 
@@ -941,6 +966,7 @@ public sealed class GeoVpnService : VpnService
         _keepalive = null;
         _relay?.Dispose();
         _relay = null;
+        VpnBridge.ClearSessions();
         _proxyPort = 0;
         _carrier?.Dispose();
         _carrier = null;

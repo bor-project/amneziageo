@@ -143,29 +143,8 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        ReleaseSingleView();
         base.OnCreate(savedInstanceState);
         App.Stage("activity", clock);
-    }
-
-    // Frees the single view from the root of an activity the system destroyed: this one attaches the same
-    // instance, and a control that still has a parent is refused (#196).
-    private static void ReleaseSingleView()
-    {
-        if (Avalonia.Application.Current?.ApplicationLifetime is not ISingleViewApplicationLifetime { MainView: { } view })
-        {
-            return;
-        }
-
-        if (view.GetVisualRoot() is ContentControl root)
-        {
-            root.Content = null;
-        }
-
-        if (view.GetVisualParent() is ContentPresenter presenter)
-        {
-            presenter.UpdateChild();
-        }
     }
 
     /// <inheritdoc/>
@@ -186,6 +165,30 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         if (IsFinishing)
         {
             global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
+            return;
+        }
+
+        ReleaseSingleView();
+    }
+
+    // Frees the single view from the root going away: the next activity attaches the same instance, and a
+    // control that still has a parent is refused (#196). Avalonia must already be up, so this cannot move
+    // ahead of base.OnCreate - touching it earlier builds the shared dispatcher on a stub that runs nothing.
+    private static void ReleaseSingleView()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime is not ISingleViewApplicationLifetime { MainView: { } view })
+        {
+            return;
+        }
+
+        if (view.GetVisualRoot() is ContentControl root)
+        {
+            root.Content = null;
+        }
+
+        if (view.GetVisualParent() is ContentPresenter presenter)
+        {
+            presenter.UpdateChild();
         }
     }
 

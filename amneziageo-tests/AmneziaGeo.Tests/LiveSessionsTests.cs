@@ -51,6 +51,27 @@ public sealed class LiveSessionsTests
     }
 
     [Fact]
+    public void ADestinationWithoutByteCounts_KeepsItsVerdictAndClock()
+    {
+        var report = new SessionReport(
+            5,
+            [new LiveSession("10.1.2.3", LiveSession.Undecided, IdleSeconds: 12)],
+            40,
+            7);
+
+        var back = SessionReport.Parse(report.ToPayload());
+
+        Assert.Equal(LiveSession.Undecided, back.Sessions[0].Verdict);
+        Assert.Equal(0, back.Sessions[0].Bytes);
+        Assert.Equal(-1, back.Sessions[0].BitsPerSecond);
+        Assert.Equal(-1, back.Sessions[0].AgeSeconds);
+        Assert.Equal(12, back.Sessions[0].IdleSeconds);
+        Assert.False(back.Sessions[0].Stalled);
+        Assert.Equal(40, back.Held);
+        Assert.Equal(7, back.Undecided);
+    }
+
+    [Fact]
     public void AHeldConnectionCarryingNothing_ReadsAsStalled()
     {
         Assert.True(new LiveSession("iptv.example", "proxy", 900_000, 0, 1, 300, LiveSession.StallSeconds).Stalled);

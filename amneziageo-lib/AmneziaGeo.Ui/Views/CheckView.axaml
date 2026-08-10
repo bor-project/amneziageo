@@ -13,15 +13,18 @@
     <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
 
       <!-- The channel ladder; the target row is hidden until its search is reworked. -->
-      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
-        <Button Grid.Column="0" Classes="accent" Command="{Binding RunChannelCommand}"
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
+        <Button Grid.Column="0" Classes="accent" Padding="11,5,11,6" Command="{Binding RunChannelCommand}"
                 IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunChannel}" />
         <!-- The same light legs against every saved server: which one to be on right now. -->
         <Button Grid.Column="1" Classes="softbtn" Command="{Binding RunServersCommand}"
                 IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunServers}" />
-        <TextBox Grid.Column="2" Classes="field" Text="{Binding Target, Mode=TwoWay}"
+        <!-- Where the traffic is going right now, without measuring anything. -->
+        <Button Grid.Column="2" Classes="softbtn" Command="{Binding RunSessionsCommand}"
+                IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunSessions}" />
+        <TextBox Grid.Column="3" Classes="field" Text="{Binding Target, Mode=TwoWay}"
                  Watermark="{l:Tr Check_TargetWatermark}" IsVisible="False" />
-        <Button Grid.Column="3" Classes="softbtn" Command="{Binding RunTargetCommand}"
+        <Button Grid.Column="4" Classes="softbtn" Command="{Binding RunTargetCommand}"
                 IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunTarget}" IsVisible="False" />
       </Grid>
 

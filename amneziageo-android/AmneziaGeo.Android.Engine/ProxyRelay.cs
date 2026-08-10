@@ -26,7 +26,7 @@ internal sealed class ProxyRelay : IDisposable
     private const int MaxSweepMs = 30_000;
     private const int MaxEntries = 4096;
     private const int TopHosts = 6;
-    private const int SessionRows = 20;
+    private const int SessionRows = SessionReport.MaxRows;
 
     private readonly DomainMatcher _proxyNames;
     private readonly DomainMatcher _directNames;
@@ -176,7 +176,7 @@ internal sealed class ProxyRelay : IDisposable
             RouteVerdict.Block => "block",
             RouteVerdict.Direct => "direct",
             RouteVerdict.Proxy => "proxy",
-            _ => "undecided",
+            _ => LiveSession.Undecided,
         };
     }
 

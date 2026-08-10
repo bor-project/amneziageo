@@ -1898,6 +1898,39 @@
   <data name="Check_RunServers" xml:space="preserve">
     <value>Замерить серверы</value>
   </data>
+  <data name="Check_RunSessions" xml:space="preserve">
+    <value>Что идёт сейчас</value>
+  </data>
+  <data name="Check_SessionsSummary" xml:space="preserve">
+    <value>Назначений: {0}, не определено {1}, без движения {2}, передано {3}.</value>
+  </data>
+  <data name="Check_SessionsNone" xml:space="preserve">
+    <value>Сейчас через туннель ничего не идёт.</value>
+  </data>
+  <data name="Check_SessionLive" xml:space="preserve">
+    <value>соединений: {0}</value>
+  </data>
+  <data name="Check_SessionAge" xml:space="preserve">
+    <value>держится {0} с</value>
+  </data>
+  <data name="Check_SessionIdle" xml:space="preserve">
+    <value>тишина {0} с</value>
+  </data>
+  <data name="Check_SessionStalled" xml:space="preserve">
+    <value>застой</value>
+  </data>
+  <data name="Check_Verdict_proxy" xml:space="preserve">
+    <value>туннель</value>
+  </data>
+  <data name="Check_Verdict_direct" xml:space="preserve">
+    <value>напрямую</value>
+  </data>
+  <data name="Check_Verdict_block" xml:space="preserve">
+    <value>блок</value>
+  </data>
+  <data name="Check_Verdict_undecided" xml:space="preserve">
+    <value>не определено</value>
+  </data>
   <data name="Check_SweepLive" xml:space="preserve">
     <value>сейчас поднят</value>
   </data>

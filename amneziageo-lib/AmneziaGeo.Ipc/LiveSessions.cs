@@ -23,6 +23,11 @@ public sealed record LiveSession(
     public const int StallSeconds = 20;
 
     /// <summary>
+    /// Verdict a destination carries while no rule names it.
+    /// </summary>
+    public const string Undecided = "undecided";
+
+    /// <summary>
     /// Whether something is connected there and nothing has moved for the stall window.
     /// </summary>
     public bool Stalled => Live > 0 && IdleSeconds >= StallSeconds;
@@ -147,6 +152,11 @@ public sealed record SessionReport(
     int Undecided = 0,
     long TotalBytes = 0)
 {
+    /// <summary>
+    /// Destinations one report carries; the rest is counted, not listed.
+    /// </summary>
+    public const int MaxRows = 20;
+
     /// <summary>
     /// A report holding nothing, which is what a tunnel without a relay has to say.
     /// </summary>

@@ -268,6 +268,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpExportLog => await ExportLogAsync(command.Args, ct),
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
                 IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
+                IpcContract.OpGetSessions => await GetSessionsAsync(ct),
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
                 IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
@@ -1080,6 +1081,15 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         return new IpcAck(true, System.Text.Json.JsonSerializer.Serialize(inspector.Collect()));
+    }
+
+    // What the tunnel carries right now. A tunnel this user does not own carries nothing to report.
+    private async Task<IpcAck> GetSessionsAsync(CancellationToken ct)
+    {
+        var (config, applied) = await InspectTargetAsync(ct);
+        return new IpcAck(true, applied && config.Length > 0
+            ? inspector.HeldSessions(config).ToPayload()
+            : SessionReport.Empty.ToPayload());
     }
 
     // The tunnel the config screen reports on: the running one while this user owns it, otherwise the config

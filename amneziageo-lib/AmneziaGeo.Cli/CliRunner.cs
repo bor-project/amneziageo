@@ -154,6 +154,7 @@ public static class CliRunner
               log say <text>                    mark the agent log from a test script
               runtime                           the configuration the next connect would use
               cache [--filter <text>]           resolutions, routes and addresses the agent holds
+              sessions                          where the traffic is going right now
               subnets                           local subnets, ready to paste into exclusions
               apps [--filter <text>]            what per-app rules can address here
               doctor                            check the things a headless install gets wrong
@@ -191,7 +192,7 @@ public static class CliRunner
             "routing" => await RoutingCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             "settings" => await SettingsCommands.RunAsync(agent, arguments).ConfigureAwait(false),
-            "log" or "runtime" or "cache" or "subnets" or "doctor" or "diag" or "check" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
+            "log" or "runtime" or "cache" or "sessions" or "subnets" or "doctor" or "diag" or "check" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
             "bundle" => await BundleCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "ipc" or "ops" or "apps" or "update" => await OpsCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             _ => Reply.Usage($"unknown command '{rest[0]}'; run '{host.ExeName} help'"),

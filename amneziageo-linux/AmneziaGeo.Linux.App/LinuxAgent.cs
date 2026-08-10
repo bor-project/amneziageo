@@ -461,6 +461,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpGetCacheEntries:
                 return await GetCacheEntriesAsync(ct).ConfigureAwait(false);
 
+            case IpcContract.OpGetSessions:
+                return GetSessions();
+
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, ct).ConfigureAwait(false);
 
@@ -1242,6 +1245,28 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         return text.Length == 0 ? "the tunnel holds nothing right now" : text.ToString();
+    }
+
+    // What the tunnel carries right now. Nothing here relays connections, so a destination is a live route with
+    // its verdict, and there are no bytes on it to count.
+    private IpcAck GetSessions()
+    {
+        var rows = new List<LiveSession>();
+        foreach (var host in _tunnel.Tunneled)
+        {
+            rows.Add(new LiveSession(host, "proxy"));
+        }
+
+        foreach (var host in _tunnel.Bypassed)
+        {
+            rows.Add(new LiveSession(host, "direct"));
+        }
+
+        var report = new SessionReport(
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            [.. rows.Take(SessionReport.MaxRows)],
+            rows.Count);
+        return new IpcAck(true, report.ToPayload());
     }
 
     private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)

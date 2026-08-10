@@ -1898,6 +1898,39 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_RunServers" xml:space="preserve">
     <value>Measure the servers</value>
   </data>
+  <data name="Check_RunSessions" xml:space="preserve">
+    <value>What is going now</value>
+  </data>
+  <data name="Check_SessionsSummary" xml:space="preserve">
+    <value>{0} destination(s), {1} undecided, {2} without movement, {3} carried.</value>
+  </data>
+  <data name="Check_SessionsNone" xml:space="preserve">
+    <value>Nothing is going through the tunnel right now.</value>
+  </data>
+  <data name="Check_SessionLive" xml:space="preserve">
+    <value>{0} connection(s)</value>
+  </data>
+  <data name="Check_SessionAge" xml:space="preserve">
+    <value>open {0} s</value>
+  </data>
+  <data name="Check_SessionIdle" xml:space="preserve">
+    <value>quiet {0} s</value>
+  </data>
+  <data name="Check_SessionStalled" xml:space="preserve">
+    <value>stalled</value>
+  </data>
+  <data name="Check_Verdict_proxy" xml:space="preserve">
+    <value>tunnel</value>
+  </data>
+  <data name="Check_Verdict_direct" xml:space="preserve">
+    <value>direct</value>
+  </data>
+  <data name="Check_Verdict_block" xml:space="preserve">
+    <value>blocked</value>
+  </data>
+  <data name="Check_Verdict_undecided" xml:space="preserve">
+    <value>undecided</value>
+  </data>
   <data name="Check_SweepLive" xml:space="preserve">
     <value>running now</value>
   </data>

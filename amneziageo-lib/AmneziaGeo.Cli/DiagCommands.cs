@@ -21,6 +21,7 @@ internal static class DiagCommands
             "log" => await LogAsync(agent, host, args, ct).ConfigureAwait(false),
             "runtime" => Reply.Payload(await agent.SendAsync(IpcContract.OpGetRuntimeConfig).ConfigureAwait(false)),
             "cache" => await CacheAsync(agent, args).ConfigureAwait(false),
+            "sessions" => await SessionsAsync(agent).ConfigureAwait(false),
             "subnets" => Reply.Payload(await agent.SendAsync(IpcContract.OpListLocalSubnets).ConfigureAwait(false)),
             "doctor" => Doctor(agent, host),
             "check" => await CheckAsync(agent, args).ConfigureAwait(false),
@@ -311,6 +312,33 @@ internal static class DiagCommands
 
         var rows = entries.Select(entry => (IReadOnlyList<string>)[entry.Kind, entry.Key, entry.Value]).ToList();
         Output.Table(["KIND", "KEY", "VALUE"], rows, "the cache is empty");
+        return Exit.Ok;
+    }
+
+    // What the tunnel carries right now, busiest first, with the totals under it.
+    private static async Task<int> SessionsAsync(IAgentLink agent)
+    {
+        var ack = await agent.SendAsync(IpcContract.OpGetSessions).ConfigureAwait(false);
+        if (!ack.Ok)
+        {
+            return Reply.Report(ack);
+        }
+
+        if (Output.Json)
+        {
+            Output.Line(ack.Message);
+            return Exit.Ok;
+        }
+
+        var report = SessionReport.Parse(ack.Message);
+        var rows = report.Sessions.Select(row => (IReadOnlyList<string>)[row.Host, row.Describe()]).ToList();
+        Output.Table(["DESTINATION", "HOLDS"], rows, "the tunnel carries nothing right now");
+        if (report.Held > 0)
+        {
+            Output.Line($"{report.Held} held, {report.Undecided} undecided, {report.Stalled} stalled, "
+                + $"{CheckFormat.Bytes(report.TotalBytes)} carried");
+        }
+
         return Exit.Ok;
     }
 

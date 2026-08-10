@@ -18,6 +18,9 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
     // Cache rows returned at most; the tail is dropped and the total reported.
     private const int MaxCacheEntries = 20000;
 
+    // Destinations one session report lists; the rest is counted, not named.
+    private const int MaxSessionRows = AmneziaGeo.Ipc.SessionReport.MaxRows;
+
     // Prefixes printed at most, per config line and per device peer; a geo split puts thousands on one tunnel.
     private const int MaxAllowedIps = 500;
 
@@ -171,6 +174,63 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
         }
 
         return text.Length == 0 ? "the tunnel holds nothing right now" : text.ToString();
+    }
+
+    /// <summary>
+    /// What the tunnel carries right now, freshest first. Nothing here relays connections, so a destination is
+    /// the verdict held for it and the idle clock left on it, and no row counts bytes.
+    /// </summary>
+    public AmneziaGeo.Ipc.SessionReport Sessions()
+    {
+        var rows = new List<AmneziaGeo.Ipc.LiveSession>();
+        foreach (var domain in session.Tracker?.Snapshot() ?? [])
+        {
+            rows.Add(new AmneziaGeo.Ipc.LiveSession(domain.Domain, "proxy", IdleSeconds: domain.IdleSeconds));
+        }
+
+        var undecided = 0;
+        foreach (var held in session.Cache?.Snapshot() ?? [])
+        {
+            var verdict = Verdict(held.Verdict.ToString());
+            if (verdict == AmneziaGeo.Ipc.LiveSession.Undecided)
+            {
+                undecided++;
+            }
+
+            // An adopted address leaves with the name that resolved it, and that name is already a row here.
+            if (!held.Adopted)
+            {
+                rows.Add(new AmneziaGeo.Ipc.LiveSession(held.Address.ToString(), verdict, IdleSeconds: held.IdleSeconds));
+            }
+        }
+
+        return new AmneziaGeo.Ipc.SessionReport(
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            [.. rows.OrderBy(row => row.IdleSeconds).Take(MaxSessionRows)],
+            rows.Count,
+            undecided);
+    }
+
+    /// <summary>
+    /// The same, read from the service process when the tunnel runs there.
+    /// </summary>
+    public AmneziaGeo.Ipc.SessionReport HeldSessions(string config)
+    {
+        if (HasLiveSession)
+        {
+            return Sessions();
+        }
+
+        var served = RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.OpSessions, logger);
+        return served is { Length: > 0 }
+            ? AmneziaGeo.Ipc.SessionReport.Parse(served)
+            : AmneziaGeo.Ipc.SessionReport.Empty;
+    }
+
+    // The word a session row carries: an address no rule names is undecided, not "none".
+    private static string Verdict(string name)
+    {
+        return name == "None" ? AmneziaGeo.Ipc.LiveSession.Undecided : name.ToLowerInvariant();
     }
 
     // A cache nobody answered for.

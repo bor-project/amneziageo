@@ -349,6 +349,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpGetCacheEntries:
                 return await GetCacheEntriesAsync();
 
+            case IpcContract.OpGetSessions:
+                return GetSessions();
+
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(args, CancellationToken.None).ConfigureAwait(false);
 
@@ -1978,6 +1981,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private static string? BusiestHost()
     {
         return VpnBridge.ReadSessions(SessionWindowSeconds).Busiest?.Host;
+    }
+
+    // What the relay holds, as it left it: the tunnel runs in another process, so this is read whole rather
+    // than asked for, and a snapshot older than the window answers about a session that is already gone.
+    private static IpcAck GetSessions()
+    {
+        return new IpcAck(true, VpnBridge.ReadSessions(SessionWindowSeconds).ToPayload());
     }
 
     // Every saved server measured by the legs that cost only echoes. A socket cannot be excused from the tunnel

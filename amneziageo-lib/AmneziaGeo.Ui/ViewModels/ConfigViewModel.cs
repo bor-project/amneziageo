@@ -28,6 +28,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private bool _sectionConfigSaving;
     private bool _suppressCatalogueConfig;
 
+    // Whether the agent has reported its config catalogue, and whether entering the section waits for it.
+    private bool _catalogueKnown;
+    private bool _enterDeferred;
+
     // The import was started from the home server list, which the saved configuration returns to.
     private bool _returnToServers;
 
@@ -381,6 +385,15 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         if (Configs.Count == 0)
         {
+            // The agent has not reported its configs yet: hold the section on a loader. Opening the import draft
+            // here would stick, since a later catalogue never pulls the section back out of it (#137).
+            if (!_catalogueKnown)
+            {
+                _enterDeferred = true;
+                OnPropertyChanged(nameof(ShowCatalogueLoader));
+                return;
+            }
+
             BeginSectionConfig();
             return;
         }
@@ -529,6 +542,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
         SyncCatalogueConfig();
         NotifyHasConfigsChanged();
+        MarkCatalogueKnown();
     }
 
     /// <summary>
@@ -537,6 +551,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public void Reset()
     {
+        _catalogueKnown = false;
+        _enterDeferred = false;
+        OnPropertyChanged(nameof(ShowCatalogueLoader));
         Configs.Clear();
         OpenConfig = null;
         _pendingOpenConfig = null;
@@ -562,6 +579,34 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         _pendingOpenConfig = null;
         OpenConfig = pending;
+    }
+
+    /// <summary>
+    /// Whether the section waits for a catalogue the agent has not reported yet.
+    /// </summary>
+    public bool ShowCatalogueLoader => _enterDeferred;
+
+    // The first snapshot settles the catalogue: an empty one now means there are no configs, and a section held
+    // on its loader can finally land somewhere.
+    private void MarkCatalogueKnown()
+    {
+        if (_catalogueKnown)
+        {
+            return;
+        }
+
+        _catalogueKnown = true;
+        if (!_enterDeferred)
+        {
+            return;
+        }
+
+        _enterDeferred = false;
+        OnPropertyChanged(nameof(ShowCatalogueLoader));
+        if (IsActiveSection)
+        {
+            EnterSection();
+        }
     }
 
     private void NotifyHasConfigsChanged()

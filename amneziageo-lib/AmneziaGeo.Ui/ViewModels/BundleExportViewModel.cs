@@ -151,7 +151,9 @@ internal sealed partial class BundleExportViewModel : ViewModelBase
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpExportBundle, [json]));
             if (!ack.Ok)
             {
-                StatusMessage = ack.Message;
+                StatusMessage = IpcMessage.TryParse(ack.Message, out var key, out var args)
+                    ? Loc.Instance.Get(key, args)
+                    : ack.Message;
                 return;
             }
 

@@ -49,13 +49,17 @@ internal sealed partial class BundleImportViewModel : ViewModelBase
         {
             var policy = ConflictPolicyIndex switch { 1 => "replace", 2 => "skip", 3 => "merge", _ => "new" };
             var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpImportBundle, [Payload, policy]));
-            StatusMessage = ack.Message;
+            StatusMessage = Describe(ack);
         }
         finally
         {
             IsBusy = false;
         }
     }
+
+    // Resolves what the agent answered: it sends a localization key with its counts, not a phrase.
+    private static string Describe(IpcAck ack) =>
+        IpcMessage.TryParse(ack.Message, out var key, out var args) ? Loc.Instance.Get(key, args) : ack.Message;
 
     /// <summary>
     /// Загружает брошенный драгом файл бэкапа в поле импорта.

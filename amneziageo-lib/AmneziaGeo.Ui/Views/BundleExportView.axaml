@@ -81,6 +81,12 @@
                BorderThickness="0" Background="Transparent"
                FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="11" />
     </Border>
+    <!-- Carries the result and the errors. Stands above the buttons: a television scrolls no further than the
+         control holding focus, so a line under them never comes on screen. -->
+    <TextBlock x:Name="StatusText" Text="{Binding StatusMessage}" Foreground="{DynamicResource AgDownBrush}"
+               FontSize="12" TextWrapping="Wrap"
+               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
     <!-- Buttons at their own width: a narrow card carries them onto the next line instead of squeezing them. -->
     <WrapPanel HorizontalAlignment="Left" IsVisible="{Binding IsExported}">
       <Button Classes="methodpick" Margin="0,0,8,8" Click="OnCopy">
@@ -103,8 +109,5 @@
       </Button>
     </WrapPanel>
 
-    <TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource AgDownBrush}" FontSize="12"
-               TextWrapping="Wrap"
-               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
   </StackPanel>
 </UserControl>

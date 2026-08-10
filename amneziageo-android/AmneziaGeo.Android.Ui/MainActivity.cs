@@ -3,6 +3,10 @@ using Android.Content;
 using Android.Content.PM;
 using Avalonia;
 using Avalonia.Android;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Presenters;
+using Avalonia.VisualTree;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 
@@ -139,8 +143,29 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     protected override void OnCreate(global::Android.OS.Bundle? savedInstanceState)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
+        ReleaseSingleView();
         base.OnCreate(savedInstanceState);
         App.Stage("activity", clock);
+    }
+
+    // Frees the single view from the root of an activity the system destroyed: this one attaches the same
+    // instance, and a control that still has a parent is refused (#196).
+    private static void ReleaseSingleView()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime is not ISingleViewApplicationLifetime { MainView: { } view })
+        {
+            return;
+        }
+
+        if (view.GetVisualRoot() is ContentControl root)
+        {
+            root.Content = null;
+        }
+
+        if (view.GetVisualParent() is ContentPresenter presenter)
+        {
+            presenter.UpdateChild();
+        }
     }
 
     /// <inheritdoc/>

@@ -1928,8 +1928,14 @@
   <data name="Check_Leg_peer" xml:space="preserve">
     <value>сервер в туннеле</value>
   </data>
+  <data name="Check_Leg_beyond" xml:space="preserve">
+    <value>за выходом</value>
+  </data>
   <data name="Check_Leg_tunnel" xml:space="preserve">
     <value>через туннель</value>
+  </data>
+  <data name="Check_Leg_source" xml:space="preserve">
+    <value>ваш верхний адрес</value>
   </data>
   <data name="Check_Leg_direct" xml:space="preserve">
     <value>мимо туннеля</value>
@@ -1994,11 +2000,17 @@
   <data name="Check_ServerLoss" xml:space="preserve">
     <value>Дальняя сторона туннеля теряет {0}% при чистом канале до неё: виноват сервер.</value>
   </data>
+  <data name="Check_BeyondLoss" xml:space="preserve">
+    <value>Путь за сервером выхода теряет {0}% при чистом туннеле до сервера: виновато то, что за сервером, а не канал.</value>
+  </data>
   <data name="Check_ServerSlow" xml:space="preserve">
     <value>Туннель отдаёт {0} Мбит/с при живом сервере: смените сервер.</value>
   </data>
   <data name="Check_TunnelBehindDirect" xml:space="preserve">
     <value>Туннель отдаёт {0} Мбит/с, а то же скачивание мимо него - {1}: виноват сервер, а не домашний канал.</value>
+  </data>
+  <data name="Check_SourceBehindTunnel" xml:space="preserve">
+    <value>Адрес, куда идёт ваш трафик, отдаёт {0} Мбит/с, а нейтральное скачивание по тому же туннелю - {1}: виноват источник, а не туннель.</value>
   </data>
   <data name="Check_Healthy" xml:space="preserve">
     <value>Винить нечего: туннель отдаёт {0} Мбит/с без потерь.</value>

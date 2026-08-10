@@ -15,6 +15,7 @@ public sealed record ChannelProbeOptions(
     string? Gateway = null,
     string? Endpoint = null,
     IReadOnlyList<string>? TunnelTargets = null,
+    IReadOnlyList<string>? BeyondTargets = null,
     bool TunnelIsDefault = false,
     bool EndpointOutsideTunnel = true,
     int HandshakeAgeSeconds = -1,
@@ -22,14 +23,15 @@ public sealed record ChannelProbeOptions(
     long RxBytes = -1,
     long TxBytes = -1,
     string SpeedUrl = ChannelProbe.DefaultSpeedUrl,
+    string? SourceHost = null,
     Func<Socket, bool>? Bypass = null,
     int ConfiguredMtu = 0,
     int CarrierPort = 0);
 
 /// <summary>
-/// Runs the ladder: gateway, the server outside the tunnel, the session, the server inside the tunnel, and a
-/// download through the tunnel against the same download beside it. Every leg cuts off the layer in front of it,
-/// so the first one that fails is the answer to "which part is broken".
+/// Runs the ladder: gateway, the server outside the tunnel, the session, the server inside the tunnel, the public
+/// path past the exit, and a download through the tunnel against the same download beside it. Every leg cuts off
+/// the layer in front of it, so the first one that fails is the answer to "which part is broken".
 /// </summary>
 public static class ChannelProbe
 {
@@ -55,6 +57,10 @@ public static class ChannelProbe
     // Seconds each throughput leg pulls for.
     private const int DownloadMs = 4_000;
 
+    // Bytes a destination has to hand over before what it took counts as a rate; a page that ends in a moment
+    // times its own latency and nothing else.
+    private const int SourceFloorBytes = 256 * 1024;
+
     /// <summary>
     /// Runs every leg and returns the finished report.
     /// </summary>
@@ -70,10 +76,14 @@ public static class ChannelProbe
         if (options.Connected)
         {
             legs.Add(Handshake(options));
-            legs.Add(await PeerAsync(options, ct).ConfigureAwait(false));
+            legs.Add(await InsideAsync(CheckLegs.Peer, options.TunnelTargets, "nothing inside the tunnel answered an echo", ct).ConfigureAwait(false));
             legs.Add(tunneled
-                ? await ThroughputAsync(CheckLegs.Tunnel, options.SpeedUrl, null, ct).ConfigureAwait(false)
+                ? await InsideAsync(CheckLegs.Beyond, options.BeyondTargets, "nothing past the exit answered an echo", ct).ConfigureAwait(false)
+                : new CheckLeg(CheckLegs.Beyond, LegState.Skipped, Note: "the routing list carries only what it names, so this echo says nothing about the path past the exit"));
+            legs.Add(tunneled
+                ? (await ThroughputAsync(CheckLegs.Tunnel, options.SpeedUrl, null, ct).ConfigureAwait(false)).Leg
                 : new CheckLeg(CheckLegs.Tunnel, LegState.Skipped, Note: "the routing list carries only what it names, so this download does not ride the tunnel"));
+            legs.Add(await SourceAsync(options, tunneled, ct).ConfigureAwait(false));
         }
 
         legs.Add(await BesideAsync(options, tunneled, ct).ConfigureAwait(false));
@@ -184,12 +194,48 @@ public static class ChannelProbe
     {
         if (!tunneled)
         {
-            return await ThroughputAsync(CheckLegs.Direct, options.SpeedUrl, null, ct).ConfigureAwait(false);
+            return (await ThroughputAsync(CheckLegs.Direct, options.SpeedUrl, null, ct).ConfigureAwait(false)).Leg;
         }
 
         return options.Bypass is null
             ? new CheckLeg(CheckLegs.Direct, LegState.Skipped, Note: "this system cannot send beside its own tunnel")
-            : await ThroughputAsync(CheckLegs.Direct, options.SpeedUrl, options.Bypass, ct).ConfigureAwait(false);
+            : (await ThroughputAsync(CheckLegs.Direct, options.SpeedUrl, options.Bypass, ct).ConfigureAwait(false)).Leg;
+    }
+
+    // The destination the user's traffic actually goes to, pulled over the same tunnel as the neutral download
+    // beside it. Alone it says nothing - a slow source and a slow tunnel look the same - and next to the neutral
+    // one it separates them in a single run.
+    private static async Task<CheckLeg> SourceAsync(ChannelProbeOptions options, bool tunneled, CancellationToken ct)
+    {
+        if (options.SourceHost is not { Length: > 0 } host)
+        {
+            return new CheckLeg(CheckLegs.Source, LegState.Skipped, Note: "nothing here knows which destination carries this traffic");
+        }
+
+        if (!tunneled)
+        {
+            return new CheckLeg(CheckLegs.Source, LegState.Skipped, Note: $"the routing list decides where {host} goes, so this download does not ride the tunnel");
+        }
+
+        var (leg, bytes) = await ThroughputAsync(CheckLegs.Source, SourceUrl(host), null, ct).ConfigureAwait(false);
+        if (bytes >= SourceFloorBytes)
+        {
+            return leg with { Note = host };
+        }
+
+        // A page that ends in a moment, a refusal or a redirect timed its own latency and nothing else. The leg
+        // says what came back instead of calling the destination slow: a rate invented here would blame it.
+        var reason = bytes > 0 ? $"sent {CheckFormat.Bytes(bytes)}, too little to time" : "handed over nothing to time";
+        return new CheckLeg(CheckLegs.Source, LegState.Unknown, Note: $"{host} {reason}");
+    }
+
+    // Where a named destination is asked for its bytes; one given as a URL is taken as it stands.
+    private static string SourceUrl(string host)
+    {
+        return host.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || host.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? host
+                : $"https://{host}/";
     }
 
     /// <summary>
@@ -233,10 +279,12 @@ public static class ChannelProbe
             TxBytes: options.TxBytes);
     }
 
-    // The far side of the tunnel: the first target inside it that answers is the one measured.
-    private static async Task<CheckLeg> PeerAsync(ChannelProbeOptions options, CancellationToken ct)
+    // A leg sent through the tunnel: the first target that answers is the one measured. A silent set leaves the
+    // leg unknown rather than borrowing the next target's path, which is how a resolver past the exit came to
+    // stand in for the peer.
+    private static async Task<CheckLeg> InsideAsync(string name, IReadOnlyList<string>? targets, string silent, CancellationToken ct)
     {
-        foreach (var target in options.TunnelTargets ?? [])
+        foreach (var target in targets ?? [])
         {
             if (!IPAddress.TryParse(target, out var address))
             {
@@ -246,11 +294,11 @@ public static class ChannelProbe
             var (rtt, jitter, loss) = await EchoAsync(address, null, ct).ConfigureAwait(false);
             if (loss < 100)
             {
-                return new CheckLeg(CheckLegs.Peer, ChannelVerdict.StateFor(loss), rtt, jitter, loss, Note: address.ToString());
+                return new CheckLeg(name, ChannelVerdict.StateFor(loss), rtt, jitter, loss, Note: address.ToString());
             }
         }
 
-        return new CheckLeg(CheckLegs.Peer, LegState.Unknown, Note: "nothing inside the tunnel answered an echo");
+        return new CheckLeg(name, LegState.Unknown, Note: silent);
     }
 
     // Round trip, jitter and loss over one burst; a target silent from the start is abandoned early.
@@ -330,8 +378,10 @@ public static class ChannelProbe
         return passed;
     }
 
-    // Bits per second pulled over the budget; a bypass sends the same request beside the tunnel.
-    private static async Task<CheckLeg> ThroughputAsync(string name, string url, Func<Socket, bool>? bypass, CancellationToken ct)
+    // Bits per second pulled over the budget, with what arrived; a bypass sends the same request beside the
+    // tunnel. The byte count decides whether the rate is one at all: a destination that ends after a page timed
+    // its own latency.
+    private static async Task<(CheckLeg Leg, long Bytes)> ThroughputAsync(string name, string url, Func<Socket, bool>? bypass, CancellationToken ct)
     {
         var handler = new SocketsHttpHandler
         {
@@ -373,12 +423,12 @@ public static class ChannelProbe
 
                 var span = Math.Max(clock.ElapsedMilliseconds - started, 1);
                 var bits = total * 8000 / span;
-                return new CheckLeg(name, ChannelVerdict.StateFor(bits), BitsPerSecond: bits);
+                return (new CheckLeg(name, ChannelVerdict.StateFor(bits), BitsPerSecond: bits), total);
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or SocketException or OperationCanceledException or InvalidOperationException)
         {
-            return new CheckLeg(name, LegState.Bad, BitsPerSecond: 0, Note: "the download never started");
+            return (new CheckLeg(name, LegState.Bad, BitsPerSecond: 0, Note: "the download never started"), 0);
         }
         finally
         {

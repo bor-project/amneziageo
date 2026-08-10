@@ -18,8 +18,10 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
 {
     /// <summary>
     /// Runs the ladder from the local gateway out to a download, and returns the measured legs with the verdict.
+    /// Nothing here watches per-destination traffic, so the destination to time the tunnel against is the one
+    /// the caller names.
     /// </summary>
-    public async Task<IpcAck> ChannelAsync(IStateStore store, string config, CancellationToken ct)
+    public async Task<IpcAck> ChannelAsync(IStateStore store, string config, string source, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(config))
         {
@@ -36,11 +38,13 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
             connected,
             LocalGateway.Find(),
             await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
-            LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)),
+            LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(text)),
+            LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
             !split,
             true,
             connected ? control.HandshakeAge : -1,
             connected ? control.Link.HandshakesPerMinute : -1,
+            SourceHost: source,
             ConfiguredMtu: TunnelRunner.EffectiveMtu(transport?.Mtu ?? 0),
             CarrierPort: carrier.Port);
 

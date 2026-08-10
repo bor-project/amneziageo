@@ -73,6 +73,7 @@ public static class VpnBridge
     public const string ExtraLoss = "loss";
 
     private const string PlanFile = "plan.json";
+    private const string SessionsFile = "sessions.txt";
     private const string ProcessSuffix = ":vpn";
 
     /// <summary>
@@ -201,6 +202,60 @@ public static class VpnBridge
         }
     }
 
+    /// <summary>
+    /// Writes what the relay holds for the head to read; a broadcast carries a stage, not a table.
+    /// </summary>
+    public static void WriteSessions(SessionReport report)
+    {
+        try
+        {
+            File.WriteAllText(SessionsPath(), report.ToPayload());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the relay snapshot failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the last snapshot the tunnel wrote; one older than the window says nothing about what runs now.
+    /// </summary>
+    public static SessionReport ReadSessions(int freshSeconds)
+    {
+        try
+        {
+            var path = SessionsPath();
+            if (!File.Exists(path))
+            {
+                return SessionReport.Empty;
+            }
+
+            var report = SessionReport.Parse(File.ReadAllText(path));
+            var age = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - report.UnixMs;
+            return age >= 0 && age <= freshSeconds * 1000L ? report : SessionReport.Empty;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the relay snapshot failed: " + ex);
+            return SessionReport.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Drops the snapshot a stopped tunnel left behind.
+    /// </summary>
+    public static void ClearSessions()
+    {
+        try
+        {
+            File.Delete(SessionsPath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the relay snapshot failed: " + ex);
+        }
+    }
+
     private static Intent Broadcast(Context context, string action)
     {
         var intent = new Intent(action);
@@ -210,6 +265,9 @@ public static class VpnBridge
 
     private static string PlanPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", PlanFile);
+
+    private static string SessionsPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", SessionsFile);
 
     /// <summary>
     /// Receiver handing every broadcast to a delegate.

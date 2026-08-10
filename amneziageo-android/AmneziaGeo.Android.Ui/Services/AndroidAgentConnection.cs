@@ -29,6 +29,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private List<string> _order = [];
     private readonly string _storePath;
     private const int DefaultMtu = 1420;
+
+    // Age past which the tunnel's own snapshot of what it carries is no longer an answer about what runs now.
+    private const int SessionWindowSeconds = 60;
     private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
@@ -347,7 +350,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await GetCacheEntriesAsync();
 
             case IpcContract.OpCheckChannel:
-                return await CheckChannelAsync(CancellationToken.None).ConfigureAwait(false);
+                return await CheckChannelAsync(args, CancellationToken.None).ConfigureAwait(false);
 
             case IpcContract.OpCheckServers:
                 return await CheckServersAsync(CancellationToken.None).ConfigureAwait(false);
@@ -1525,6 +1528,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var directDomains = new List<GeoDomain>(list.DirectDomains);
         SplitExclusions(settings?.Exclusions, directRoutes, directDomains);
 
+        // Naming applications is the split itself: only those reach the tunnel, so what they reach belongs in it
+        // unless another rule says otherwise. Read as a split by destination, a list of applications alone names
+        // nothing and sends them all direct.
+        var perApp = settings is not { UseGlobalProxy: true } && AppPackages(list.Apps).Length > 0;
         var plan = new GeoRoutingPlan(
             list.Routes,
             directRoutes,
@@ -1532,12 +1539,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             list.Domains,
             directDomains,
             list.BlockDomains,
-            settings is { UseGlobalProxy: true },
+            settings is { UseGlobalProxy: true } || perApp,
             settings is { AllUdp: true },
             _routeTtl);
 
         // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
-        if (!plan.HasRules)
+        if (!plan.HasRules && !perApp)
         {
             _log.Warn("geo", $"routing '{list.Name}': the list decides nothing, running the full tunnel instead");
             return GeoRoutingPlan.Full;
@@ -1545,9 +1552,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         _log.Info("geo", $"routing '{list.Name}': {plan.ProxyRoutes.Count}/{plan.DirectRoutes.Count}/{plan.BlockRoutes.Count} ranges, "
             + $"{plan.ProxyDomains.Count}/{plan.DirectDomains.Count}/{plan.BlockDomains.Count} names, "
-            + (plan.FullTunnel ? "full tunnel" : "split")
+            + ModeName(perApp, plan.FullTunnel)
             + (plan.AllUdp ? ", all udp tunneled" : string.Empty));
         return plan;
+    }
+
+    // How the session reads in the log: applications named, everything tunneled, or rules deciding each destination.
+    private static string ModeName(bool perApp, bool fullTunnel)
+    {
+        if (perApp)
+        {
+            return "per-app tunnel";
+        }
+
+        return fullTunnel ? "full tunnel" : "split";
     }
 
     // Splits the free-text exclusions into what the router classifies: an address becomes a direct range, anything
@@ -1922,7 +1940,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // The ladder, as far as a phone can measure it: the socket cannot be excused from the tunnel outside the
     // service that owns it, so the leg under the tunnel is skipped rather than measured through the tunnel.
-    private async Task<IpcAck> CheckChannelAsync(CancellationToken ct)
+    private async Task<IpcAck> CheckChannelAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
         var config = _selectedTarget;
         if (string.IsNullOrEmpty(config))
@@ -1940,17 +1958,26 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             running,
             LocalGateway.Find(),
             await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
-            LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)),
+            LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(text)),
+            LinkLossProbe.BeyondTargets(WgConfigEditor.GetDns(text)),
             true,
             false,
             running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
             running ? _link.HandshakesPerMinute : -1,
+            SourceHost: args.Count > 0 && args[0].Length > 0 ? args[0] : BusiestHost(),
             ConfiguredMtu: transport is { Mtu: > 0 } ? transport.Mtu : WgConfigEditor.GetMtu(text),
             CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
         return new IpcAck(true, report.ToPayload());
+    }
+
+    // The destination the user is actually watching: the relay lives in the tunnel process and leaves what it
+    // ranks by traffic where the head can read it.
+    private static string? BusiestHost()
+    {
+        return VpnBridge.ReadSessions(SessionWindowSeconds).Busiest?.Host;
     }
 
     // Every saved server measured by the legs that cost only echoes. A socket cannot be excused from the tunnel
@@ -2256,20 +2283,24 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
-        if (list?.Apps is not { Count: > 0 })
+        var packages = AppPackages(list?.Apps);
+        return packages.Length > 0 ? ("include", packages) : ("off", []);
+    }
+
+    // The packages a routing list names, without the marker they are stored under.
+    private static string[] AppPackages(IReadOnlyList<string>? apps)
+    {
+        const string prefix = "pkg=";
+        if (apps is not { Count: > 0 })
         {
-            return ("off", []);
+            return [];
         }
 
-        const string prefix = "pkg=";
-        var packages = list.Apps
+        return [.. apps
             .Where(a => a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             .Select(a => a[prefix.Length..].Trim())
             .Where(p => p.Length > 0)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return packages.Length > 0 ? ("include", packages) : ("off", []);
+            .Distinct(StringComparer.Ordinal)];
     }
 
     // Reads a window of one log table for the in-app viewer, newest first.

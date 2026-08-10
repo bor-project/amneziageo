@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using AmneziaGeo.Geo;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Android.Engine;
@@ -25,6 +26,7 @@ internal sealed class ProxyRelay : IDisposable
     private const int MaxSweepMs = 30_000;
     private const int MaxEntries = 4096;
     private const int TopHosts = 6;
+    private const int SessionRows = 20;
 
     private readonly DomainMatcher _proxyNames;
     private readonly DomainMatcher _directNames;
@@ -122,6 +124,51 @@ internal sealed class ProxyRelay : IDisposable
             + $", apps [{string.Join(' ', _owners.Keys)}]; top: {string.Join(", ", top)}";
     }
 
+    /// <summary>
+    /// What the relay holds right now, busiest first. The head runs in another process, so this is rendered
+    /// whole rather than queried, and each rate is what its destination carried since the previous snapshot.
+    /// </summary>
+    public SessionReport Sessions()
+    {
+        var now = Environment.TickCount64;
+        var all = _entries.Values.ToList();
+        var undecided = 0;
+        foreach (var entry in all)
+        {
+            if (entry.Verdict == RouteVerdict.None)
+            {
+                undecided++;
+            }
+        }
+
+        var rows = new List<LiveSession>();
+        foreach (var entry in all.OrderByDescending(one => Volatile.Read(ref one.Bytes)).Take(SessionRows))
+        {
+            rows.Add(Row(entry, now));
+        }
+
+        return new SessionReport(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rows, all.Count, undecided, Bytes);
+    }
+
+    // One held destination as the head reads it.
+    private static LiveSession Row(Entry entry, long now)
+    {
+        var bytes = Volatile.Read(ref entry.Bytes);
+        var span = Math.Max(1, now - Volatile.Read(ref entry.ReportedAt));
+        var bits = (bytes - Volatile.Read(ref entry.Reported)) * 8000 / span;
+        Volatile.Write(ref entry.Reported, bytes);
+        Volatile.Write(ref entry.ReportedAt, now);
+        return new LiveSession(
+            entry.Host,
+            Word(entry.Verdict),
+            bytes,
+            bits,
+            Volatile.Read(ref entry.Live),
+            (int)((now - entry.Since) / 1000),
+            (int)((now - Volatile.Read(ref entry.LastTouch)) / 1000),
+            entry.App);
+    }
+
     private static string Word(RouteVerdict verdict)
     {
         return verdict switch
@@ -181,8 +228,8 @@ internal sealed class ProxyRelay : IDisposable
                 return;
             }
 
-            NoteOwner(client, request.Host);
             entry = Touch(request.Host);
+            NoteOwner(client, entry);
             if (entry.Verdict == RouteVerdict.Block)
             {
                 Interlocked.Increment(ref _blocked);
@@ -469,7 +516,8 @@ internal sealed class ProxyRelay : IDisposable
     {
         var entry = _entries.GetOrAdd(host, name =>
         {
-            var fresh = new Entry(name) { Verdict = ByName(name), LastTouch = Environment.TickCount64 };
+            var started = Environment.TickCount64;
+            var fresh = new Entry(name) { Verdict = ByName(name), LastTouch = started, Since = started, ReportedAt = started };
             _log($"relay: {name} -> {Word(fresh.Verdict)}");
             return fresh;
         });
@@ -530,18 +578,25 @@ internal sealed class ProxyRelay : IDisposable
         }
     }
 
-    // Names the application behind a loopback connection, once per package.
-    private void NoteOwner(Socket client, string host)
+    // Names the application behind a loopback connection, once per destination: the lookup costs a system call
+    // and the answer does not change while the destination is held.
+    private void NoteOwner(Socket client, Entry entry)
     {
-        if (_owner is null || client.RemoteEndPoint is not IPEndPoint peer)
+        if (_owner is null || entry.App.Length > 0 || client.RemoteEndPoint is not IPEndPoint peer)
         {
             return;
         }
 
         var name = _owner(peer);
-        if (name is not null && _owners.TryAdd(name, 0))
+        if (name is null)
         {
-            _log($"relay: {name} -> {host}");
+            return;
+        }
+
+        entry.App = name;
+        if (_owners.TryAdd(name, 0))
+        {
+            _log($"relay: {name} -> {entry.Host}");
         }
     }
 
@@ -713,8 +768,12 @@ internal sealed class ProxyRelay : IDisposable
 
         public RouteVerdict Verdict;
         public long LastTouch;
+        public long Since;
         public long Bytes;
+        public long Reported;
+        public long ReportedAt;
         public int Live;
+        public string App = string.Empty;
         public IReadOnlyList<IPAddress> Addresses = [];
     }
 

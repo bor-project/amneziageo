@@ -464,6 +464,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(ct).ConfigureAwait(false);
 
+            case IpcContract.OpCheckServers:
+                return await CheckServersAsync(ct).ConfigureAwait(false);
+
             case IpcContract.OpCheckTarget:
                 return await CheckTargetAsync(args, ct).ConfigureAwait(false);
 
@@ -744,9 +747,25 @@ internal sealed class LinuxAgent : IDisposable
             await SetConnectionAsync("disconnect", ct).ConfigureAwait(false);
         }
 
+        Journal(SwitchLog.Config(_selectedTarget, config));
         await StoreSelectedTargetAsync(config, ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
+    }
+
+    // Keeps a switchover in the log whatever the capture floor is.
+    private void Journal(string? line)
+    {
+        if (line is { Length: > 0 })
+        {
+            _log.Note(SwitchLog.Source, line);
+        }
+    }
+
+    // The name a routing list id stands for; null id is routing off.
+    private async Task<string?> ListNameAsync(long? listId, CancellationToken ct)
+    {
+        return listId is long id ? (await _store.GetRoutingListAsync(id, ct).ConfigureAwait(false))?.Name : null;
     }
 
     // Picks the routing list every config uses; a missing or unparsable id turns routing off.
@@ -760,6 +779,10 @@ internal sealed class LinuxAgent : IDisposable
             return NotFound(args[0]);
         }
 
+        var currentList = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false);
+        Journal(SwitchLog.RoutingList(
+            await ListNameAsync(currentList, ct).ConfigureAwait(false),
+            await ListNameAsync(listId, ct).ConfigureAwait(false)));
         await _store.SetSelectedRoutingListAsync(listId, ct).ConfigureAwait(false);
         await ApplyRoutingAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
@@ -1355,6 +1378,31 @@ internal sealed class LinuxAgent : IDisposable
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // Every saved server measured by the legs that cost only echoes.
+    private async Task<IpcAck> CheckServersAsync(CancellationToken ct)
+    {
+        var servers = new List<SweepServer>();
+        foreach (var name in await _store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            var text = await _store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
+            var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            var carrier = Carrier(text, transport);
+            servers.Add(new SweepServer(
+                name,
+                await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
+                carrier.Port,
+                _tunnel.Running && string.Equals(name, _selectedTarget, StringComparison.Ordinal)));
+        }
+
+        var full = _tunnel.Running && !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase);
+        var report = await ServerSweep
+            .RunAsync(servers, new SweepOptions(LocalGateway.Find(), _tunnel.Running, full), ct)
+            .ConfigureAwait(false);
+
+        Record(report.Render(), report.VerdictKey != CheckVerdicts.SweepBest);
         return new IpcAck(true, report.ToPayload());
     }
 

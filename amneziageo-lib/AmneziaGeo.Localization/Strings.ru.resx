@@ -1895,6 +1895,12 @@
   <data name="Check_RunChannel" xml:space="preserve">
     <value>Проверить канал</value>
   </data>
+  <data name="Check_RunServers" xml:space="preserve">
+    <value>Замерить серверы</value>
+  </data>
+  <data name="Check_SweepLive" xml:space="preserve">
+    <value>сейчас поднят</value>
+  </data>
   <data name="Check_RunTarget" xml:space="preserve">
     <value>Проверить</value>
   </data>
@@ -1999,6 +2005,21 @@
   </data>
   <data name="Check_HealthyOutsideTunnel" xml:space="preserve">
     <value>На измеренных участках всё в порядке; {0} Мбит/с - это путь мимо туннеля, по нему и пошло скачивание.</value>
+  </data>
+  <data name="Check_SweepEmpty" xml:space="preserve">
+    <value>Сохранённых серверов нет - замерять нечего.</value>
+  </data>
+  <data name="Check_SweepSilent" xml:space="preserve">
+    <value>Ни один сохранённый сервер не ответил: сравнивать нечего.</value>
+  </data>
+  <data name="Check_SweepBest" xml:space="preserve">
+    <value>Сейчас лучше всех отвечает «{0}»: {1} мс, потери {2}%.</value>
+  </data>
+  <data name="Check_SweepInTunnel" xml:space="preserve">
+    <value>Лучший из замеренных - «{0}» ({1} мс, потери {2}%), но туннель был поднят и пробы шли через него: отключитесь и замерьте снова, чтобы сравнить сами серверы.</value>
+  </data>
+  <data name="Check_SweepSwitch" xml:space="preserve">
+    <value>Сейчас поднят «{0}», а «{1}» отвечает лучше ({2} мс, потери {3}%): смените сервер.</value>
   </data>
   <data name="Check_TargetNoRules" xml:space="preserve">
     <value>Список маршрутизации не выбран, поэтому всё идёт по AllowedIPs самого туннеля.</value>

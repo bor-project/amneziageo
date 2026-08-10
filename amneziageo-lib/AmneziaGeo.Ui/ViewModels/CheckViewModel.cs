@@ -108,7 +108,13 @@ internal sealed partial class CheckViewModel : ViewModelBase
     [RelayCommand]
     private async Task RunChannelAsync()
     {
-        await RunAsync(new IpcCommand(IpcContract.OpCheckChannel, []), channel: true);
+        await RunAsync(new IpcCommand(IpcContract.OpCheckChannel, []), RunKind.Channel);
+    }
+
+    [RelayCommand]
+    private async Task RunServersAsync()
+    {
+        await RunAsync(new IpcCommand(IpcContract.OpCheckServers, []), RunKind.Servers);
     }
 
     [RelayCommand]
@@ -120,10 +126,10 @@ internal sealed partial class CheckViewModel : ViewModelBase
             return;
         }
 
-        await RunAsync(new IpcCommand(IpcContract.OpCheckTarget, [target]), channel: false);
+        await RunAsync(new IpcCommand(IpcContract.OpCheckTarget, [target]), RunKind.Target);
     }
 
-    private async Task RunAsync(IpcCommand command, bool channel)
+    private async Task RunAsync(IpcCommand command, RunKind kind)
     {
         if (IsRunning)
         {
@@ -158,13 +164,13 @@ internal sealed partial class CheckViewModel : ViewModelBase
             return;
         }
 
-        Show(ack.Message, channel);
+        Show(ack.Message, kind);
     }
 
     // Fills the pane from the ack: the rows as measured, then the verdict in words.
-    private void Show(string payload, bool channel)
+    private void Show(string payload, RunKind kind)
     {
-        if (channel)
+        if (kind == RunKind.Channel)
         {
             var report = CheckReport.Parse(payload);
             BodyText = Legs(report);
@@ -174,10 +180,45 @@ internal sealed partial class CheckViewModel : ViewModelBase
             return;
         }
 
+        if (kind == RunKind.Servers)
+        {
+            var sweep = SweepReport.Parse(payload);
+            BodyText = Rows(sweep);
+            Blamed = sweep.VerdictKey != CheckVerdicts.SweepBest;
+            Verdict = Loc.Instance.Get(sweep.VerdictKey, [.. sweep.VerdictArgs]);
+            return;
+        }
+
         var target = TargetReport.Parse(payload);
         BodyText = Facts(target);
         Blamed = target.VerdictKey is not (TargetVerdicts.Proxy or TargetVerdicts.UnlistedFull);
         Verdict = Loc.Instance.Get(target.VerdictKey, [.. target.VerdictArgs]);
+    }
+
+    // The sweep: the gateway everything is measured through, then one line per server.
+    private static string Rows(SweepReport report)
+    {
+        var text = new StringBuilder();
+        if (report.Gateway is { } gateway)
+        {
+            text.Append("  ")
+                .Append(Loc.Instance.Get("Check_Leg_gateway").PadRight(20))
+                .Append(Loc.Instance.Get($"Check_State_{gateway.State}").PadRight(16))
+                .Append(Measured(gateway))
+                .Append('\n');
+        }
+
+        foreach (var row in report.Servers)
+        {
+            text.Append(row.Best ? "* " : "  ")
+                .Append(row.Config.PadRight(20))
+                .Append(Loc.Instance.Get($"Check_State_{row.State}").PadRight(16))
+                .Append(Measured(new CheckLeg(row.Config, row.State, row.RttMs, row.JitterMs, row.LossPercent, Note: row.Note)))
+                .Append(row.Live ? $" \u00b7 {Loc.Instance.Get("Check_SweepLive")}" : string.Empty)
+                .Append('\n');
+        }
+
+        return text.ToString();
     }
 
     private static string Legs(CheckReport report)
@@ -254,6 +295,27 @@ internal sealed partial class CheckViewModel : ViewModelBase
         }
 
         return text.ToString();
+    }
+
+    /// <summary>
+    /// What one run of the pane asks the agent for.
+    /// </summary>
+    private enum RunKind
+    {
+        /// <summary>
+        /// The ladder for the config in force.
+        /// </summary>
+        Channel,
+
+        /// <summary>
+        /// Every saved server, light legs only.
+        /// </summary>
+        Servers,
+
+        /// <summary>
+        /// One destination.
+        /// </summary>
+        Target,
     }
 
     // Resolves a failed ack to text: the agent sends localization keys, not sentences.

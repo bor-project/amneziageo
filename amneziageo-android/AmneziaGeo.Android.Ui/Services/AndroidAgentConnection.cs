@@ -245,7 +245,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return Ok();
 
             case IpcContract.OpAssignRouting:
-                return AssignRouting(args);
+                return await AssignRoutingAsync(args).ConfigureAwait(false);
 
             case IpcContract.OpAddSource:
                 return await AddSourceAsync(args);
@@ -348,6 +348,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpCheckChannel:
                 return await CheckChannelAsync(CancellationToken.None).ConfigureAwait(false);
+
+            case IpcContract.OpCheckServers:
+                return await CheckServersAsync(CancellationToken.None).ConfigureAwait(false);
 
             case IpcContract.OpCheckTarget:
                 return await CheckTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
@@ -1481,14 +1484,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Picks the routing list every config uses. Args: list id, or "none" to turn routing off.
-    private IpcAck AssignRouting(IReadOnlyList<string> args)
+    private async Task<IpcAck> AssignRoutingAsync(IReadOnlyList<string> args)
     {
         var listArg = args.Count > 0 ? args[0] : "none";
-        _selectedRoutingList = string.Equals(listArg, "none", StringComparison.OrdinalIgnoreCase)
+        var picked = string.Equals(listArg, "none", StringComparison.OrdinalIgnoreCase)
             || !long.TryParse(listArg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId)
                 ? null
-                : listId;
+                : (long?)listId;
 
+        Journal(SwitchLog.RoutingList(await ListNameAsync(_selectedRoutingList).ConfigureAwait(false), await ListNameAsync(picked).ConfigureAwait(false)));
+        _selectedRoutingList = picked;
         Save();
         PushSnapshot();
         if (_active)
@@ -1925,7 +1930,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             return new IpcAck(false, IpcMessage.Key("Agent_NoConfigSelected"));
         }
 
-        var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        // Configs live in this agent's own JSON; the store the desktop agents read them from is empty here.
+        var text = _configs.GetValueOrDefault(config, string.Empty);
         var running = VpnBridge.IsRunning(Application.Context);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
         var carrier = Carrier(text, transport);
@@ -1944,6 +1950,33 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // Every saved server measured by the legs that cost only echoes. A socket cannot be excused from the tunnel
+    // outside the service that owns it, so a sweep run while the tunnel is up says so in its verdict.
+    private async Task<IpcAck> CheckServersAsync(CancellationToken ct)
+    {
+        var running = VpnBridge.IsRunning(Application.Context);
+        var servers = new List<SweepServer>();
+        foreach (var name in OrderedNames())
+        {
+            var text = _configs.GetValueOrDefault(name, string.Empty);
+            var transport = await _store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            var carrier = Carrier(text, transport);
+            servers.Add(new SweepServer(
+                name,
+                await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
+                carrier.Port,
+                running && string.Equals(name, _selectedTarget, StringComparison.Ordinal)));
+        }
+
+        // The phone carries the whole tun, so a tunnel that runs is the default route for every probe here.
+        var report = await ServerSweep
+            .RunAsync(servers, new SweepOptions(LocalGateway.Find(), running, running), ct)
+            .ConfigureAwait(false);
+
+        Record(report.Render(), report.VerdictKey != CheckVerdicts.SweepBest);
         return new IpcAck(true, report.ToPayload());
     }
 
@@ -2139,10 +2172,32 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             await SetConnectionAsync("disconnect").ConfigureAwait(false);
         }
 
+        Journal(SwitchLog.Config(_selectedTarget, name));
         _selectedTarget = name;
         Save();
         PushSnapshot();
         return Ok();
+    }
+
+    // Keeps a switchover in the log whatever the capture floor is.
+    private void Journal(string? line)
+    {
+        if (line is { Length: > 0 })
+        {
+            _log.Note(SwitchLog.Source, line);
+        }
+    }
+
+    // The name a routing list id stands for; null id is routing off.
+    private async Task<string?> ListNameAsync(long? listId)
+    {
+        if (listId is not long id)
+        {
+            return null;
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        return (await _store.GetRoutingListAsync(id).ConfigureAwait(false))?.Name;
     }
 
     // Refuses while the config is the running target; otherwise drops it with its stored settings and clears a selection pointing at it.

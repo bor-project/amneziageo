@@ -71,6 +71,15 @@ internal sealed class AgentLog : IDisposable
     }
 
     /// <summary>
+    /// Stores one row whatever the capture floor is: a switchover is rare and is read before anything else.
+    /// </summary>
+    public void Note(string source, string message)
+    {
+        Console.WriteLine($"{Stamp()} [{LevelToken(AmneziaGeo.Ipc.SwitchLog.LevelId)}] {source} {message}");
+        _store.AppendAgent(UnixMs(), AmneziaGeo.Ipc.SwitchLog.LevelId, source, message);
+    }
+
+    /// <summary>
     /// Stores one leveled agent row when the level clears the capture floor; always mirrors to the console.
     /// </summary>
     public void Agent(int levelId, string source, string message)

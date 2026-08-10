@@ -131,6 +131,32 @@ public static class CheckVerdicts
     /// only what it names. Args: bits per second of the path it did ride.
     /// </summary>
     public const string HealthyOutsideTunnel = "Check_HealthyOutsideTunnel";
+
+    /// <summary>
+    /// There is no saved server for a sweep to measure.
+    /// </summary>
+    public const string SweepEmpty = "Check_SweepEmpty";
+
+    /// <summary>
+    /// No saved server answered the sweep, so it says nothing about any of them.
+    /// </summary>
+    public const string SweepSilent = "Check_SweepSilent";
+
+    /// <summary>
+    /// The server to be on right now. Args: name, round trip, loss percent.
+    /// </summary>
+    public const string SweepBest = "Check_SweepBest";
+
+    /// <summary>
+    /// The sweep had to send through the tunnel it compares servers against. Args: name, round trip, loss percent.
+    /// </summary>
+    public const string SweepInTunnel = "Check_SweepInTunnel";
+
+    /// <summary>
+    /// The server that is up answers worse than the best measured. Args: running name, best name, round trip,
+    /// loss percent.
+    /// </summary>
+    public const string SweepSwitch = "Check_SweepSwitch";
 }
 
 /// <summary>
@@ -661,6 +687,11 @@ public static class CheckPhrase
             CheckVerdicts.TunnelBehindDirect => $"the tunnel delivers {Arg(args, 0)} Mbit/s where the same download outside it delivers {Arg(args, 1)}: the fault is the server, not the home channel",
             CheckVerdicts.Healthy => $"nothing to blame: the tunnel delivers {Arg(args, 0)} Mbit/s without loss",
             CheckVerdicts.HealthyOutsideTunnel => $"nothing to blame on the legs measured; the {Arg(args, 0)} Mbit/s belongs to the path beside the tunnel, which is where this download went",
+            CheckVerdicts.SweepEmpty => "there is no saved server to measure",
+            CheckVerdicts.SweepSilent => "no saved server answered, so this sweep says nothing about any of them",
+            CheckVerdicts.SweepBest => $"the server to be on right now is \"{Arg(args, 0)}\": {Arg(args, 1)} ms, {Arg(args, 2)}% loss",
+            CheckVerdicts.SweepInTunnel => $"the best of what was measured is \"{Arg(args, 0)}\" ({Arg(args, 1)} ms, {Arg(args, 2)}% loss), but the tunnel was up and the probes rode it: disconnect and sweep again to compare the servers themselves",
+            CheckVerdicts.SweepSwitch => $"\"{Arg(args, 0)}\" is the one running while \"{Arg(args, 1)}\" answers better ({Arg(args, 2)} ms, {Arg(args, 3)}% loss): change the server",
             _ => "nothing answered, so this run says nothing about the link",
         };
     }

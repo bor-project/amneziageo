@@ -60,7 +60,7 @@ public static class ChannelProbe
     /// </summary>
     public static async Task<CheckReport> RunAsync(ChannelProbeOptions options, CancellationToken ct)
     {
-        var legs = new List<CheckLeg> { await NearAsync(CheckLegs.Gateway, options.Gateway, null, ct).ConfigureAwait(false) };
+        var legs = new List<CheckLeg> { await EchoLegAsync(CheckLegs.Gateway, options.Gateway, null, true, ct).ConfigureAwait(false) };
 
         legs.Add(await EndpointAsync(options, ct).ConfigureAwait(false));
 
@@ -109,18 +109,20 @@ public static class ChannelProbe
         }
 
         return options.CarrierPort > 0
-            ? await FrontAsync(options.Endpoint, options.CarrierPort, options.Bypass, ct).ConfigureAwait(false)
-            : await NearAsync(CheckLegs.Endpoint, options.Endpoint, options.Bypass, ct).ConfigureAwait(false);
+            ? await ConnectLegAsync(CheckLegs.Endpoint, options.Endpoint, options.CarrierPort, options.Bypass, ct).ConfigureAwait(false)
+            : await EchoLegAsync(CheckLegs.Endpoint, options.Endpoint, options.Bypass, true, ct).ConfigureAwait(false);
     }
 
-    // A leg measured by connecting: the carrier answers TCP, so round trip, jitter and loss come from a burst of
-    // connects. The largest packet is left unmeasured - a stream carrier splits what it is given, and the size it
-    // takes says nothing about the MTU the tunnel should run at.
-    private static async Task<CheckLeg> FrontAsync(string? target, int port, Func<Socket, bool>? bypass, CancellationToken ct)
+    /// <summary>
+    /// A leg measured by connecting: the carrier answers TCP, so round trip, jitter and loss come from a burst
+    /// of connects. The largest packet is left unmeasured - a stream carrier splits what it is given, and the
+    /// size it takes says nothing about the MTU the tunnel should run at.
+    /// </summary>
+    public static async Task<CheckLeg> ConnectLegAsync(string name, string? target, int port, Func<Socket, bool>? bypass, CancellationToken ct)
     {
         if (!IPAddress.TryParse(target, out var address))
         {
-            return new CheckLeg(CheckLegs.Endpoint, LegState.Unknown, Note: target is { Length: > 0 } ? "not an address" : "no address to probe");
+            return new CheckLeg(name, LegState.Unknown, Note: target is { Length: > 0 } ? "not an address" : "no address to probe");
         }
 
         var times = new List<int>();
@@ -149,13 +151,13 @@ public static class ChannelProbe
 
         if (times.Count == 0)
         {
-            return new CheckLeg(CheckLegs.Endpoint, LegState.Unknown, LossPercent: LinkHealth.LossUnknown, Note: $"{address}:{port} accepted no connection");
+            return new CheckLeg(name, LegState.Unknown, LossPercent: LinkHealth.LossUnknown, Note: $"{address}:{port} accepted no connection");
         }
 
         var average = (int)times.Average();
         var jitter = times.Count > 1 ? (int)times.Select(one => Math.Abs(one - average)).Average() : 0;
         var loss = lost * 100 / (times.Count + lost);
-        return new CheckLeg(CheckLegs.Endpoint, ChannelVerdict.StateFor(loss), average, jitter, loss, Note: $"{address}:{port} inside a websocket");
+        return new CheckLeg(name, ChannelVerdict.StateFor(loss), average, jitter, loss, Note: $"{address}:{port} inside a websocket");
     }
 
     // One timed connect to the carrier; a refused or unanswered port counts as a loss.
@@ -190,8 +192,11 @@ public static class ChannelProbe
             : await ThroughputAsync(CheckLegs.Direct, options.SpeedUrl, options.Bypass, ct).ConfigureAwait(false);
     }
 
-    // A leg measured by echo: round trip, jitter, loss, and the largest payload the path carries whole.
-    private static async Task<CheckLeg> NearAsync(string name, string? target, Func<Socket, bool>? bypass, CancellationToken ct)
+    /// <summary>
+    /// A leg measured by echo: round trip, jitter, loss, and - when asked for - the largest payload the path
+    /// carries whole. That size costs a burst of its own, which a sweep over every server would pay per server.
+    /// </summary>
+    public static async Task<CheckLeg> EchoLegAsync(string name, string? target, Func<Socket, bool>? bypass, bool measureSize, CancellationToken ct)
     {
         if (!IPAddress.TryParse(target, out var address))
         {
@@ -204,7 +209,7 @@ public static class ChannelProbe
             return new CheckLeg(name, LegState.Unknown, LossPercent: LinkHealth.LossUnknown, Note: $"{address} never answered");
         }
 
-        var size = await LargestAsync(address, bypass, ct).ConfigureAwait(false);
+        var size = measureSize ? await LargestAsync(address, bypass, ct).ConfigureAwait(false) : 0;
         return new CheckLeg(name, ChannelVerdict.StateFor(loss), rtt, jitter, loss, MaxPacketBytes: size, Note: address.ToString());
     }
 

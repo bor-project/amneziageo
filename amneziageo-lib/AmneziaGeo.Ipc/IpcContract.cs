@@ -294,6 +294,14 @@ public static class IpcContract
     public const string OpCheckChannel = "check-channel";
 
     /// <summary>
+    /// Command to measure every saved server with the light legs: an echo burst to each endpoint, or a connect
+    /// burst to its websocket front. No args. The ack message holds one "leg" row for the local gateway, one
+    /// tab-separated "srv" row per server and a closing "verdict" row naming the one to be on. The run is stored
+    /// in the check journal as well. Nothing is downloaded here: a rate rides one tunnel at a time.
+    /// </summary>
+    public const string OpCheckServers = "check-servers";
+
+    /// <summary>
     /// Command to check one destination: args are a target token - a domain, an address, "app:pkg=..." /
     /// "app:path=..." or a geo rule ("geosite:telegram"). The ack message holds tab-separated "fact" rows and a
     /// closing "verdict" row saying why that traffic goes where it goes. Stored in the check journal too.

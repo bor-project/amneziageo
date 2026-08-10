@@ -12,8 +12,10 @@
 
     <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_DiagnosticsSection}" />
 
-    <!-- Pane tabs: log, configuration or check. Left when wide, full width in compact. -->
-    <controls:SegmentedSelector Grid.Row="1" Command="{Binding SelectTabCommand}" IsCompact="{Binding IsCompact}"
+    <!-- Pane tabs: log, configuration or check. Left when wide, full width in compact. Down steps into the
+         pane shown below, which directional focus walks past into the window header (#201). -->
+    <controls:SegmentedSelector x:Name="PaneTabs" Grid.Row="1" KeyDown="OnTabsKeyDown"
+                          Command="{Binding SelectTabCommand}" IsCompact="{Binding IsCompact}"
                           Item1Text="{l:Tr Main_DiagTabLog}" Item1Param="log" Item1Active="{Binding IsLogTab}"
                           Item2Text="{l:Tr Main_DiagTabConfig}" Item2Param="config" Item2Active="{Binding IsConfigTab}"
                           Item3Text="{l:Tr Main_DiagTabCheck}" Item3Param="check" Item3Active="{Binding IsCheckTab}" />
@@ -21,7 +23,7 @@
     <!-- Divider between the tabs and the pane. -->
     <Border Grid.Row="2" Height="1" Background="{DynamicResource AgBorderBrush}" />
 
-    <Panel Grid.Row="3">
+    <Panel x:Name="Body" Grid.Row="3" KeyDown="OnBodyKeyDown">
       <Panel IsVisible="{Binding IsLogTab}">
         <views:LogsView DataContext="{Binding Logs}" />
       </Panel>

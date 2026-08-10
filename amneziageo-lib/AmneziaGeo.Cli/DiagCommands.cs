@@ -65,10 +65,15 @@ internal static class DiagCommands
         };
     }
 
-    // The channel ladder, or one target; both answer with rows and a closing verdict.
+    // The channel ladder, the sweep of every server, or one target; each answers with rows and a verdict.
     private static async Task<int> CheckAsync(IAgentLink agent, IReadOnlyList<string> args)
     {
         var target = args.Count > 0 ? args[0] : string.Empty;
+        if (string.Equals(target, "servers", StringComparison.Ordinal))
+        {
+            return await ServersAsync(agent).ConfigureAwait(false);
+        }
+
         var ack = target.Length == 0
             ? await agent.SendAsync(IpcContract.OpCheckChannel).ConfigureAwait(false)
             : await agent.SendAsync(IpcContract.OpCheckTarget, target).ConfigureAwait(false);
@@ -99,6 +104,47 @@ internal static class DiagCommands
 
         Output.Line(CheckPhrase.English(report.VerdictKey, report.VerdictArgs));
         return Exit.Ok;
+    }
+
+    // Every saved server, best first in the verdict.
+    private static async Task<int> ServersAsync(IAgentLink agent)
+    {
+        var ack = await agent.SendAsync(IpcContract.OpCheckServers).ConfigureAwait(false);
+        if (!ack.Ok)
+        {
+            return Reply.Report(ack);
+        }
+
+        if (Output.Json)
+        {
+            Output.Line(ack.Message);
+            return Exit.Ok;
+        }
+
+        var report = SweepReport.Parse(ack.Message);
+        var rows = report.Servers
+            .Select(row => (IReadOnlyList<string>)[Mark(row), row.Config, row.State, row.Describe()])
+            .ToList();
+
+        Output.Table(["", "SERVER", "STATE", "MEASURED"], rows, "nothing was measured");
+        if (report.Gateway is { } gateway)
+        {
+            Output.Line($"{gateway.Name}: {gateway.Describe()}");
+        }
+
+        Output.Line(CheckPhrase.English(report.VerdictKey, report.VerdictArgs));
+        return Exit.Ok;
+    }
+
+    // The best of the sweep, and the one the tunnel is on.
+    private static string Mark(SweepRow row)
+    {
+        if (row.Best)
+        {
+            return row.Live ? "*>" : "*";
+        }
+
+        return row.Live ? ">" : string.Empty;
     }
 
     private static int Target(string payload)

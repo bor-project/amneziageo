@@ -269,6 +269,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
                 IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
                 IpcContract.OpCheckChannel => await CheckChannelAsync(ct),
+                IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
@@ -1343,6 +1344,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var currentList = await store.GetSelectedRoutingListAsync(ct);
+        Journal(SwitchLog.RoutingList(await ListNameAsync(currentList, ct), await ListNameAsync(listId, ct)));
         await store.SetSelectedRoutingListAsync(listId, ct);
         if (currentList != listId && control.Running)
         {
@@ -1352,6 +1354,21 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         logger.LogInformation("routing list {List} now applies to every configuration; with none picked, all traffic goes through the tunnel", listId);
         return new IpcAck(true, $"routing: {listId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none"} (applies on reconnect)");
+    }
+
+    // Keeps a switchover in the log whatever the capture floor is: it is what a support thread reads first.
+    private void Journal(string? line)
+    {
+        if (line is { Length: > 0 })
+        {
+            logStore.AppendAgent(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), SwitchLog.LevelId, SwitchLog.Source, line);
+        }
+    }
+
+    // The name a routing list id stands for; null id is routing off.
+    private async Task<string?> ListNameAsync(long? listId, CancellationToken ct)
+    {
+        return listId is long id ? (await store.GetRoutingListAsync(id, ct))?.Name : null;
     }
 
     private async Task<IpcAck> SetConnectionAsync(IReadOnlyList<string> args, CancellationToken ct)
@@ -1422,6 +1439,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         // Persist the per-user selection; reflect it on the shared control only when this user owns the tunnel or none runs.
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, name, ct);
+        Journal(SwitchLog.Config(currentSelection, name));
         if (!control.Running || activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid))
         {
             control.SetTarget(name);
@@ -1437,7 +1455,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     // is taken down with the selection.
     private async Task<IpcAck> ClearSelectedConfigAsync(CancellationToken ct)
     {
+        var previous = await store.GetSettingAsync(AgentControl.SelectedTargetKey, ct);
         await store.SetSettingAsync(AgentControl.SelectedTargetKey, string.Empty, ct);
+        Journal(SwitchLog.Config(previous, null));
         var owned = activeScope.IsOwnedBy(CurrentScope.UserRoot, CurrentScope.Sid);
         if (!control.Running || owned)
         {

@@ -50,6 +50,34 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     }
 
     /// <summary>
+    /// Measures every saved server with the legs that cost only echoes, and names the one to be on.
+    /// </summary>
+    public async Task<IpcAck> ServersAsync(IStateStore store, CancellationToken ct)
+    {
+        var servers = new List<SweepServer>();
+        foreach (var name in await store.ListConfigNamesAsync(ct).ConfigureAwait(false))
+        {
+            var text = await store.GetConfigTextAsync(name, ct).ConfigureAwait(false) ?? string.Empty;
+            var transport = await store.GetConfigTransportAsync(name, ct).ConfigureAwait(false);
+            var carrier = Carrier(text, transport);
+            servers.Add(new SweepServer(
+                name,
+                await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
+                carrier.Port,
+                Connected(name)));
+        }
+
+        var live = servers.FirstOrDefault(server => server.Live);
+        var full = live is not null && !(await ActiveListAsync(store, live.Name, ct).ConfigureAwait(false)).Split;
+        var report = await ServerSweep
+            .RunAsync(servers, new SweepOptions(LocalGateway.Find(), live is not null, full), ct)
+            .ConfigureAwait(false);
+
+        await RecordAsync(report.Render(), report.VerdictKey != CheckVerdicts.SweepBest, null, ct).ConfigureAwait(false);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    /// <summary>
     /// Says why one address, name, application or category goes where it goes.
     /// </summary>
     public async Task<IpcAck> TargetAsync(IStateStore store, string config, string target, CancellationToken ct)

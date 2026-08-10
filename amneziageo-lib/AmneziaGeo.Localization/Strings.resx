@@ -1895,6 +1895,12 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_RunChannel" xml:space="preserve">
     <value>Check the channel</value>
   </data>
+  <data name="Check_RunServers" xml:space="preserve">
+    <value>Measure the servers</value>
+  </data>
+  <data name="Check_SweepLive" xml:space="preserve">
+    <value>running now</value>
+  </data>
   <data name="Check_RunTarget" xml:space="preserve">
     <value>Check</value>
   </data>
@@ -1999,6 +2005,21 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Check_HealthyOutsideTunnel" xml:space="preserve">
     <value>Nothing to blame on the legs measured; the {0} Mbit/s belongs to the path beside the tunnel, which is where this download went.</value>
+  </data>
+  <data name="Check_SweepEmpty" xml:space="preserve">
+    <value>There is no saved server to measure.</value>
+  </data>
+  <data name="Check_SweepSilent" xml:space="preserve">
+    <value>No saved server answered, so this sweep says nothing about any of them.</value>
+  </data>
+  <data name="Check_SweepBest" xml:space="preserve">
+    <value>The server to be on right now is "{0}": {1} ms, {2}% loss.</value>
+  </data>
+  <data name="Check_SweepInTunnel" xml:space="preserve">
+    <value>The best of what was measured is "{0}" ({1} ms, {2}% loss), but the tunnel was up and the probes rode it: disconnect and measure again to compare the servers themselves.</value>
+  </data>
+  <data name="Check_SweepSwitch" xml:space="preserve">
+    <value>"{0}" is the one running, while "{1}" answers better ({2} ms, {3}% loss): change the server.</value>
   </data>
   <data name="Check_TargetNoRules" xml:space="preserve">
     <value>No routing list is in force, so every destination follows the tunnel's own AllowedIPs.</value>

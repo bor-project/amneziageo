@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using System.Threading.Tasks;
+using System.Text;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -137,7 +137,9 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
-        var file = await FilePickers.OpenAsync(this, Loc.Instance.Get("MainCode_RoutingListTitle"), "txt");
+        // The list exports as a QR picture by default, so the same picture is taken back here (#38).
+        var file = await FilePickers.OpenAsync(this, Loc.Instance.Get("MainCode_RoutingListTitle"),
+            "txt", "conf", "png", "jpg", "jpeg", "bmp", "gif");
         if (file is null)
         {
             return;
@@ -147,7 +149,25 @@ internal sealed partial class RoutingView : UserControl
         {
             // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
             // TryGetLocalPath is null.
-            vm.ApplyImportText(await ReadAllTextAsync(file));
+            var raw = await file.ReadAllBytesAsync();
+            if (!FileContent.LooksLikeImage(raw))
+            {
+                vm.ApplyImportText(new UTF8Encoding(false, false).GetString(raw).TrimStart('\ufeff'));
+                return;
+            }
+
+            using var picture = new MemoryStream(raw);
+            if (QrCodec.Decode(picture) is not { } scanned)
+            {
+                if (vm.RoutingEditor is { } withoutCode)
+                {
+                    withoutCode.StatusMessage = Loc.Instance.Get("MainCode_QrNotFound");
+                }
+
+                return;
+            }
+
+            vm.ApplyImportText(scanned);
         }
         catch (Exception ex)
         {
@@ -156,12 +176,5 @@ internal sealed partial class RoutingView : UserControl
                 editor.StatusMessage = ex.Message;
             }
         }
-    }
-
-    private static async Task<string> ReadAllTextAsync(PickedFile file)
-    {
-        await using var stream = await file.OpenReadAsync();
-        using var reader = new StreamReader(stream);
-        return await reader.ReadToEndAsync();
     }
 }

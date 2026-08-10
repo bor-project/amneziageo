@@ -50,6 +50,51 @@ internal sealed class PickedFile
 
         return File.OpenRead(_path!);
     }
+
+    /// <summary>
+    /// Reads the whole file.
+    /// </summary>
+    public async Task<byte[]> ReadAllBytesAsync()
+    {
+        await using var stream = await OpenReadAsync();
+        using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        return memory.ToArray();
+    }
+}
+
+/// <summary>
+/// Tells a picture from a text file.
+/// </summary>
+internal static class FileContent
+{
+    /// <summary>
+    /// Matches the PNG / JPEG / BMP / GIF magic bytes.
+    /// </summary>
+    public static bool LooksLikeImage(byte[] raw)
+    {
+        if (raw.Length < 4)
+        {
+            return false;
+        }
+
+        if (raw[0] == 0x89 && raw[1] == 0x50 && raw[2] == 0x4E && raw[3] == 0x47)
+        {
+            return true;
+        }
+
+        if (raw[0] == 0xFF && raw[1] == 0xD8)
+        {
+            return true;
+        }
+
+        if (raw[0] == 0x42 && raw[1] == 0x4D)
+        {
+            return true;
+        }
+
+        return raw[0] == 0x47 && raw[1] == 0x49 && raw[2] == 0x46;
+    }
 }
 
 /// <summary>

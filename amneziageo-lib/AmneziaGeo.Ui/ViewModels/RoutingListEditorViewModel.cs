@@ -616,6 +616,10 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
                 var detail = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetRoutingList, [_id.ToString(CultureInfo.InvariantCulture)]));
                 if (detail.Ok)
                 {
+                    // Replaces the buckets: a second load of the same editor would otherwise list every rule twice.
+                    ProxyRules.Clear();
+                    DirectRules.Clear();
+                    BlockRules.Clear();
                     foreach (var token in detail.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
                         var (role, plain) = SplitRoleToken(token);

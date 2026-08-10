@@ -38,6 +38,11 @@ internal static class RuntimeSnapshotPipe
     public const string OpTtl = "ttl";
 
     /// <summary>
+    /// Asks what the tunnel carries right now, as one session report.
+    /// </summary>
+    public const string OpSessions = "sessions";
+
+    /// <summary>
     /// Pipe a tunnel's service process serves on.
     /// </summary>
     public static string Name(string tunnel)

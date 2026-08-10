@@ -49,6 +49,7 @@ internal static class OpsCommands
         [IpcContract.OpLogClient] = "log say",
         [IpcContract.OpGetRuntimeConfig] = "runtime",
         [IpcContract.OpGetCacheEntries] = "cache",
+        [IpcContract.OpGetSessions] = "sessions",
         [IpcContract.OpListLocalSubnets] = "subnets",
         [IpcContract.OpListProcesses] = "apps",
         [IpcContract.OpCollectDiagnostics] = "diag collect",

@@ -347,6 +347,14 @@ public static class IpcContract
     public const string OpGetCacheEntries = "get-cache-entries";
 
     /// <summary>
+    /// Command to read what the tunnel carries right now. No args. The ack message holds the session report: one
+    /// "session" row per destination, busiest first, then a closing "held" row with the totals. Where nothing
+    /// relays connections, a row is a destination the routing holds, with its verdict and its idle clock and no
+    /// bytes to count.
+    /// </summary>
+    public const string OpGetSessions = "get-sessions";
+
+    /// <summary>
     /// Command for the UI to record a diagnostic line in the agent log (the UI process keeps no log of its
     /// own). Args: [0] message. Logged at warning level.
     /// </summary>

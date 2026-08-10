@@ -1001,6 +1001,11 @@ internal sealed class TunnelRunner(
             return System.Text.Json.JsonSerializer.Serialize(inspector.Counts());
         }
 
+        if (op == RuntimeSnapshotPipe.OpSessions)
+        {
+            return inspector.Sessions().ToPayload();
+        }
+
         return System.Text.Json.JsonSerializer.Serialize(inspector.Collect());
     }
 

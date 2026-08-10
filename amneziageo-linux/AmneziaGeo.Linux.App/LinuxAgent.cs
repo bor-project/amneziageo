@@ -226,7 +226,7 @@ internal sealed class LinuxAgent : IDisposable
             age = peer.HandshakeUnix > 0
                 ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix))
                 : -1;
-            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown);
+            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1);
             LogLink(reading);
         }
         else
@@ -1604,7 +1604,8 @@ internal sealed class LinuxAgent : IDisposable
             reading.RxBitsPerSecond,
             reading.TxBitsPerSecond,
             reading.HandshakesPerMinute,
-            reading.LossPercent);
+            reading.LossPercent,
+            reading.RttMs);
     }
 
     private async Task<IReadOnlyList<SourceEntry>> BuildSourcesAsync(CancellationToken ct)

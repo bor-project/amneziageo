@@ -590,7 +590,7 @@ internal sealed class ConfigRunner(
             control.SignalStatus();
         }
 
-        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown);
+        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1);
         LogLink(member, reading);
         if (control.SetLink(reading))
         {

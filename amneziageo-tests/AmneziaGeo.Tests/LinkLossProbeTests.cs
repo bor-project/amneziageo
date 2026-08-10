@@ -109,11 +109,65 @@ public sealed class LinkLossProbeTests
         Assert.True(clean.DiffersFrom(clean with { LossPercent = 12 }));
     }
 
+    [Fact]
+    public void TheFirstEchoBack_AlreadyCarriesTheTime()
+    {
+        var probe = new LinkLossProbe(["10.0.0.1"]);
+
+        probe.Record(40);
+
+        Assert.Equal(40, probe.RttMs);
+        Assert.Equal(LinkHealth.LossUnknown, probe.Percent);
+    }
+
+    [Fact]
+    public void TheEchoesThatNeverCameBack_AreLeftOutOfTheTime()
+    {
+        var probe = new LinkLossProbe(["10.0.0.1"]);
+
+        probe.Record(30);
+        probe.Record(-1);
+        probe.Record(50);
+
+        Assert.Equal(40, probe.RttMs);
+    }
+
+    [Fact]
+    public void ATunnelThatWentSilent_KeepsNoTime()
+    {
+        var probe = new LinkLossProbe(["10.0.0.1"]);
+        probe.Record(40);
+
+        Record(probe, 30, false);
+
+        Assert.Equal(-1, probe.RttMs);
+    }
+
+    [Fact]
+    public void AStoppedTunnel_LeavesNoTimeBehind()
+    {
+        var probe = new LinkLossProbe(["10.0.0.1"]);
+        probe.Record(40);
+
+        probe.Reset();
+
+        Assert.Equal(-1, probe.RttMs);
+    }
+
+    [Fact]
+    public void TheMovedRoundTrip_IsWorthASnapshot()
+    {
+        var quick = new LinkReading(1000, 1000, 0, 0, 40);
+
+        Assert.True(quick.DiffersFrom(quick with { RttMs = 90 }));
+        Assert.False(quick.DiffersFrom(quick with { RttMs = 42 }));
+    }
+
     private static void Record(LinkLossProbe probe, int times, bool answered)
     {
         for (var i = 0; i < times; i++)
         {
-            probe.Record(answered);
+            probe.Record(answered ? 40 : -1);
         }
     }
 }

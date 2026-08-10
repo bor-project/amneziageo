@@ -28,10 +28,11 @@ public sealed class LinkLossProbe
     private const int MaxTargets = 3;
 
     private readonly IPAddress[] _targets;
-    private readonly Queue<bool> _window = new();
+    private readonly Queue<int> _window = new();
     private readonly object _lock = new();
     private IPAddress? _chosen;
     private int _percent = LinkHealth.LossUnknown;
+    private int _rttMs = -1;
 
     /// <summary>
     /// ctor
@@ -56,6 +57,13 @@ public sealed class LinkLossProbe
     public int Percent => Volatile.Read(ref _percent);
 
     /// <summary>
+    /// Average round trip of the echoes that came back over the window; -1 while none has. It is the far end of
+    /// the tunnel that answers, so this is the channel's own time, measured where an echo to the endpoint is
+    /// swallowed by the tunnel it carries.
+    /// </summary>
+    public int RttMs => Volatile.Read(ref _rttMs);
+
+    /// <summary>
     /// Echoes the target once a second for as long as the session runs.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
@@ -78,18 +86,18 @@ public sealed class LinkLossProbe
             }
 
             var target = _chosen ?? _targets[attempt++ % _targets.Length];
-            var answered = await IcmpEcho.RoundTripAsync(target, TimeoutMs, ct).ConfigureAwait(false) >= 0;
+            var trip = await IcmpEcho.RoundTripAsync(target, TimeoutMs, ct).ConfigureAwait(false);
 
             // The first target that answers is the one measured from here on: alternating between them would fold
             // two paths into one share.
-            if (answered)
+            if (trip >= 0)
             {
                 _chosen ??= target;
             }
 
             if (_chosen is not null)
             {
-                Record(answered);
+                Record(trip);
             }
         }
     }
@@ -103,29 +111,43 @@ public sealed class LinkLossProbe
         {
             _window.Clear();
             Volatile.Write(ref _percent, LinkHealth.LossUnknown);
+            Volatile.Write(ref _rttMs, -1);
         }
     }
 
     /// <summary>
-    /// Folds one attempt into the window.
+    /// Folds one attempt into the window; a negative round trip stands for an echo that never came back.
     /// </summary>
-    public void Record(bool answered)
+    public void Record(int rttMs)
     {
         lock (_lock)
         {
-            _window.Enqueue(answered);
+            _window.Enqueue(rttMs);
             while (_window.Count > Window)
             {
                 _window.Dequeue();
             }
 
+            // The time stands on the first answer, unlike the share: a round trip needs no history, and waiting
+            // for one would leave a freshly connected server with no time on it at all.
+            var answered = 0;
+            var total = 0L;
+            foreach (var one in _window)
+            {
+                if (one >= 0)
+                {
+                    answered++;
+                    total += one;
+                }
+            }
+
+            Volatile.Write(ref _rttMs, answered > 0 ? (int)(total / answered) : -1);
             if (_window.Count < MinAttempts)
             {
                 return;
             }
 
-            var lost = _window.Count(one => !one);
-            Volatile.Write(ref _percent, lost * 100 / _window.Count);
+            Volatile.Write(ref _percent, (_window.Count - answered) * 100 / _window.Count);
         }
     }
 

@@ -181,7 +181,14 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(LinkLossText))]
     [NotifyPropertyChangedFor(nameof(LinkLossy))]
     [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     private int _linkLossPercent = LinkHealth.LossUnknown;
+
+    // Round trip the running tunnel timed to its far end; -1 on every config that is not running.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProbeText))]
+    [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    private int _linkRttMs = -1;
 
     /// <summary>
     /// Whether the row carries a loss share at all: only a running tunnel measures one, and only against a target
@@ -232,6 +239,11 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public bool ShowLinkSpeed => LinkKnown;
 
+    // Whether the running tunnel has timed its own echo. It stands ahead of the echo to the endpoint: that one
+    // travels the tunnel it is measuring once the session takes the default route, and the answer it never gets
+    // would leave the running server the only card on the screen with no time on it.
+    private bool LinkTimed => LinkKnown && LinkRttMs >= 0;
+
     // Whether the tunnel reports its own liveness, which beats an echo the server may be refusing to send.
     private bool LinkKnown => HandshakeAgeSeconds >= 0;
 
@@ -254,6 +266,8 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         ? "..."
         : LinkSilent
         ? Loc.Instance.Get("Main_ProbeNoAnswer")
+        : LinkTimed
+        ? Loc.Instance.Get("Main_ProbeMilliseconds", LinkRttMs)
         : ProbeState switch
         {
             ProbeOutcome.Alive => ProbeLossPercent > 0
@@ -271,6 +285,8 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         ? _idle
         : LinkSilent
         ? _dead
+        : LinkTimed
+        ? LinkBrush
         : ProbeState switch
         {
             ProbeOutcome.Alive => AliveBrush,
@@ -280,6 +296,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
 
     // Loss at which a server that still answers is no better than one that does not.
     private const int LossyPercent = 40;
+
+    // The running tunnel's own time: green while it is quick and drops nothing worth feeling.
+    private IBrush LinkBrush => LinkRttMs <= 200 && !LinkLossy ? _fast : _slow;
 
     // A server that answers: green only when it is both quick and lossless.
     private IBrush AliveBrush => ProbeLossPercent >= LossyPercent

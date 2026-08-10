@@ -116,7 +116,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Diagnostics = new DiagnosticsViewModel(connection);
         General = new GeneralViewModel(this, connection, prefs);
         Config = new ConfigViewModel(this, connection);
-        Routing = new RoutingViewModel(this, connection);
+        Routing = new RoutingViewModel(this, connection, prefs);
         Home = new ConnectionViewModel(this, connection, prefs);
         Sources = new SourcesViewModel(connection, () => { _ = Routing.RoutingEditor?.RefreshSuggestionsAsync(); });
         // Seed backing field from prefs without echoing OnChanged.

@@ -60,6 +60,11 @@ internal sealed class UiPreferences
     /// </summary>
     public string LastConfig { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Id of the routing list active last; 0 when none has been.
+    /// </summary>
+    public long LastRoutingList { get; set; }
+
     private static string DbPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "AmneziaGeo",
@@ -128,6 +133,7 @@ internal sealed class UiPreferences
             ["settings-section"] = SettingsSection,
             ["language"] = Language,
             ["last-config"] = LastConfig,
+            ["last-routing-list"] = LastRoutingList.ToString(CultureInfo.InvariantCulture),
         };
     }
 
@@ -177,6 +183,12 @@ internal sealed class UiPreferences
         if (values.TryGetValue("last-config", out var lastConfig))
         {
             prefs.LastConfig = lastConfig;
+        }
+
+        if (values.TryGetValue("last-routing-list", out var lastList)
+            && long.TryParse(lastList, NumberStyles.Integer, CultureInfo.InvariantCulture, out var listId))
+        {
+            prefs.LastRoutingList = listId;
         }
 
         return prefs;

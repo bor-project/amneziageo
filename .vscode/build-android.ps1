@@ -101,8 +101,13 @@ if ($Target -eq "emulator") {
     throw "Target '$name' has no emulator AVD name."
   }
 
-  & (Join-Path $PSScriptRoot "start-android-emulator.ps1") -AndroidSdk $AndroidSdk -AvdName $Emulator -NoSnapshotLoad
-  $adbTarget = "-e"
+  # Addresses the emulator by serial: -e fails as soon as a second emulator is running.
+  $serial = & (Join-Path $PSScriptRoot "start-android-emulator.ps1") -AndroidSdk $AndroidSdk -AvdName $Emulator -NoSnapshotLoad | Select-Object -Last 1
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+
+  $adbTarget = if ($serial) { "-s $serial" } else { "-e" }
 }
 elseif ($Device) {
   $adbTarget = "-s $Device"

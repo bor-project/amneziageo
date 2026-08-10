@@ -165,6 +165,7 @@ do {
   $bootCompleted = ((Invoke-Adb -s $serial shell getprop sys.boot_completed) -join "").Trim()
   if ($bootCompleted -eq "1") {
     Write-Host "Android emulator is ready: $serial"
+    Write-Output $serial
     exit 0
   }
 

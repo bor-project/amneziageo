@@ -341,11 +341,11 @@
       </Grid.ColumnDefinitions>
 
       <!-- Section rail. -->
-      <Border Grid.Column="0" Grid.Row="1" Classes="card" Margin="0,12,0,0" Padding="0"
+      <Border x:Name="RailPane" Grid.Column="0" Grid.Row="1" Classes="card" Margin="0,12,0,0" Padding="0"
               IsVisible="{Binding ShowRail}">
         <ScrollViewer>
           <StackPanel x:Name="RailMenu" Classes="railmenu" Classes.compact="{Binding IsCompact}" Margin="12,12"
-                      KeyboardNavigation.TabNavigation="Cycle">
+                      KeyboardNavigation.TabNavigation="Cycle" KeyDown="OnRailKeyDown">
               <Button x:Name="RailConfig" Classes="rowselect" Classes.active="{Binding IsSettingsConfig}" Margin="0,3"
                       XYFocus.Up="{Binding ElementName=RailGeneral}"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="config">
@@ -455,8 +455,8 @@
                     Background="Transparent" Margin="0,12,0,0" />
 
       <!-- Content pane. -->
-      <Border Grid.Column="2" Grid.Row="1" Classes="card" Margin="0,12,0,0" Padding="0"
-              IsVisible="{Binding ShowContent}"
+      <Border x:Name="ContentPane" Grid.Column="2" Grid.Row="1" Classes="card" Margin="0,12,0,0" Padding="0"
+              IsVisible="{Binding ShowContent}" KeyDown="OnContentKeyDown"
               controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
         <!-- Rows rather than a DockPanel: tab order follows the declaration, so the footer comes after
              the content and a remote reaches Save by tabbing on from the last field. -->

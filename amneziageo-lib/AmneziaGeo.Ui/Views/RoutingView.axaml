@@ -24,12 +24,12 @@
     <!-- Section tabs + catalogue combo. HeaderReflow keeps them side by side while they fit and drops the combo
          to its own row when the pane is too narrow (or compact). The caption floats above the combo. -->
     <Grid x:Name="HeaderGrid" Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" Margin="0,12,0,0">
-      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. The
-           switch below sits far to the right, so directional focus walks past it; naming it as the down target
-           puts it on the way. -->
+      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. Down
+           steps into the section shown below: each one starts in a different place, so directional focus lands
+           in the rail or skips to the card's last row instead (#201). -->
       <controls:SegmentedSelector x:Name="HeaderTabs" Grid.Row="0" Grid.Column="0"
                             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
-                            XYFocus.Down="{Binding #UseListCard.Toggle}"
+                            KeyDown="OnHeaderTabsKeyDown"
                             Command="{Binding SelectRoutingSectionCommand}" IsCompact="{Binding IsCompact}"
                             Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
                             Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
@@ -67,8 +67,8 @@
     <!-- Divider between the header (tabs + picker) and the content. -->
     <Border Grid.Row="1" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="0,14,0,0" />
 
-    <!-- Content: one section shown at a time. -->
-    <Panel Grid.Row="2" Margin="0,14,0,0">
+    <!-- Content: one section shown at a time. Up from its top row returns to the tabs, not to the window header. -->
+    <Panel x:Name="Body" Grid.Row="2" Margin="0,14,0,0" KeyDown="OnBodyKeyDown">
 
       <!-- Catalogue loader: the agent has not reported its routing lists yet (#134). -->
       <StackPanel IsVisible="{Binding ShowCatalogueLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
@@ -83,7 +83,7 @@
       </StackPanel>
 
       <!-- Settings section: the picked-list switch + the shared editor + delete card. -->
-      <StackPanel IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
+      <StackPanel x:Name="SettingsSection" IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
         <!-- On: every config routes by the open list. Off: none of them routes at all. -->
         <controls:ApplySwitchCard x:Name="UseListCard" Icon="{StaticResource AgRouteGeometry}"
                                   Title="{l:Tr Main_UseRoutingToggle}"
@@ -131,7 +131,7 @@
       </StackPanel>
 
       <!-- Export section: QR / raw payload of the list, with copy / save. -->
-      <Border IsVisible="{Binding IsSectionExport}"
+      <Border x:Name="ExportSection" IsVisible="{Binding IsSectionExport}"
               Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
           <StackPanel Spacing="2">
@@ -207,7 +207,7 @@
       </Border>
 
       <!-- Import section - method picker: blank / file / paste / QR. -->
-      <Border IsVisible="{Binding ShowImportPicker}"
+      <Border x:Name="ImportPicker" IsVisible="{Binding ShowImportPicker}"
               Background="{DynamicResource AgPanelBrush}"
               BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="9" MinHeight="220">
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4" Margin="16">
@@ -247,7 +247,7 @@
       </Border>
 
       <!-- Import section - draft editor (blank or prefilled from file / paste / QR). -->
-      <StackPanel IsVisible="{Binding ShowImportEditor}" Spacing="14">
+      <StackPanel x:Name="ImportEditor" IsVisible="{Binding ShowImportEditor}" Spacing="14">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_NewListLabel}" VerticalAlignment="Center" />
           <Button Grid.Column="1" Classes="methodpick" Command="{Binding ChangeMethodCommand}" Width="160">

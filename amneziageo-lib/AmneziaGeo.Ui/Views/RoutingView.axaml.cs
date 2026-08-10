@@ -1,9 +1,12 @@
 using System;
 using System.IO;
 using System.Text;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
@@ -26,6 +29,34 @@ internal sealed partial class RoutingView : UserControl
         _header = new HeaderReflow(HeaderGrid, HeaderTabs, PickerHost, Picker, PickerLabelFloat, PickerLabelInline,
             () => (DataContext as RoutingViewModel)?.IsCompact ?? false);
         DataContextChanged += (_, _) => _header.Apply();
+    }
+
+    // Steps from the tabs into the section under them.
+    private void OnHeaderTabsKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.Key is not Key.Down)
+        {
+            return;
+        }
+
+        e.Handled = PaneFocus.FocusFirst(PaneFocus.Shown(SettingsSection, ExportSection, ImportPicker, ImportEditor));
+    }
+
+    // Returns to the tabs from the section's top row.
+    private void OnBodyKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.Key is not Key.Up)
+        {
+            return;
+        }
+
+        if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is not Visual focused
+            || PaneFocus.HasNeighbour(Body, focused, NavigationDirection.Up))
+        {
+            return;
+        }
+
+        e.Handled = PaneFocus.FocusFirst(HeaderTabs);
     }
 
     // Routing-list export: copies the open form - the QR as a picture, the config as text.

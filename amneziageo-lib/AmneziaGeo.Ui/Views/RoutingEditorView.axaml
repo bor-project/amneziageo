@@ -53,7 +53,8 @@
               <TextBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
                        Watermark="{l:Tr Main_AddEntryWatermark}"
                        Text="{Binding RuleInput, Mode=TwoWay}" />
-              <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}">
+              <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}"
+                      KeyDown="OnAddEntryKeyDown">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                   <TextBlock Text="+" />
                   <TextBlock Text="{l:Tr Main_AddButton}" />
@@ -66,7 +67,8 @@
               <TextBox Classes="field"
                        Watermark="{l:Tr Main_AddEntryWatermark}"
                        Text="{Binding RuleInput, Mode=TwoWay}" />
-              <Button Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddRuleCommand}">
+              <Button Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddRuleCommand}"
+                      KeyDown="OnAddEntryKeyDown">
                 <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                   <TextBlock Text="+" />
                   <TextBlock Text="{l:Tr Main_AddButton}" />
@@ -178,7 +180,7 @@
         <StackPanel Spacing="6">
           <!-- The link below sits far to the right, so directional focus walks past it down the left edge;
                naming it as the down target puts it on the way. -->
-          <controls:SegmentedSelector Label="{l:Tr Main_RoleLabel}"
+          <controls:SegmentedSelector x:Name="RoleSegments" Label="{l:Tr Main_RoleLabel}"
               Command="{Binding SelectRoleCommand}"
               XYFocus.Down="{Binding #AddLocalSubnetsLink}"
               IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"

@@ -173,9 +173,8 @@ public sealed partial class MainView : UserControl
     }
 
     // Seats initial D-pad focus on each screen so an Android TV remote always has a starting point:
-    // the connect control on home, the active section row in settings. On a television home takes
-    // NavigationMethod.Directional so the connect control shows its ring as soon as the screen appears;
-    // everywhere else the focus is seated silently, without a ring.
+    // the connect control on home, the active section row in settings. On a television both take
+    // NavigationMethod.Directional, so the ring marks the entry point as soon as the screen appears.
     private void FocusCurrentScreen()
     {
         var vm = _vm;
@@ -199,11 +198,46 @@ public sealed partial class MainView : UserControl
             }
             else if (vm.IsSettings)
             {
-                var rows = RailMenu.Children.OfType<Button>();
-                var target = rows.FirstOrDefault(b => b.Classes.Contains("active")) ?? rows.FirstOrDefault();
-                target?.Focus(NavigationMethod.Unspecified);
+                FocusRail(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
             }
         }, DispatcherPriority.Loaded);
+    }
+
+    // Puts the focus on the open section row.
+    private bool FocusRail(NavigationMethod method)
+    {
+        var rows = RailMenu.Children.OfType<Button>();
+        var target = rows.FirstOrDefault(b => b.Classes.Contains("active")) ?? rows.FirstOrDefault();
+        return target?.Focus(method) == true;
+    }
+
+    // Rail -> content. Directional focus picks its target by geometry, so a rail row that lines up with
+    // nothing in the pane leaves the remote in the menu (#201).
+    private void OnRailKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.Key is not Key.Right || !ContentPane.IsEffectivelyVisible)
+        {
+            return;
+        }
+
+        e.Handled = Controls.PaneFocus.FocusFirst(ContentPane);
+    }
+
+    // Content -> rail. A control on the pane's left edge hands the focus back to the section menu.
+    private void OnContentKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.Key is not Key.Left || !RailPane.IsEffectivelyVisible)
+        {
+            return;
+        }
+
+        if (_topLevel?.FocusManager?.GetFocusedElement() is not Visual focused
+            || Controls.PaneFocus.HasNeighbour(ContentPane, focused, NavigationDirection.Left))
+        {
+            return;
+        }
+
+        e.Handled = FocusRail(NavigationMethod.Directional);
     }
 
     // Sizes the rail / splitter / content columns for the current mode: side by side when wide, a single

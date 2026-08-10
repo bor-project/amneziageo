@@ -533,7 +533,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 intent.GetLongExtra(VpnBridge.ExtraRxBits, 0),
                 intent.GetLongExtra(VpnBridge.ExtraTxBits, 0),
                 intent.GetIntExtra(VpnBridge.ExtraChurn, 0),
-                intent.GetIntExtra(VpnBridge.ExtraLoss, LinkHealth.LossUnknown));
+                intent.GetIntExtra(VpnBridge.ExtraLoss, LinkHealth.LossUnknown),
+                intent.GetIntExtra(VpnBridge.ExtraRtt, -1));
             LogLink(_link);
             PushSnapshot();
             return;
@@ -721,7 +722,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
             HandshakesPerMinute: reading.HandshakesPerMinute,
-            LossPercent: reading.LossPercent);
+            LossPercent: reading.LossPercent,
+            RttMs: reading.RttMs);
     }
 
     private string StatusFor(string target)

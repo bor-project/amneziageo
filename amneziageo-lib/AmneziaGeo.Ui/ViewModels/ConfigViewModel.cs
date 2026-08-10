@@ -522,6 +522,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             existing.TxBitsPerSecond = entry.TxBitsPerSecond;
             existing.HandshakesPerMinute = entry.HandshakesPerMinute;
             existing.LinkLossPercent = entry.LossPercent;
+            existing.LinkRttMs = entry.RttMs;
         }
 
         _configNames = [.. entries.Select(e => e.Name)];

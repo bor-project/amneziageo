@@ -679,7 +679,7 @@ public sealed class GeoVpnService : VpnService
             var uapi = AwgEngine.GetConfig(handle);
             var seen = PeerHandshake(uapi);
             var (rx, tx) = PeerBytes(uapi);
-            var reading = meter.Sample(rx, tx, seen, loss.Percent);
+            var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs);
             if (seen == handshake && !reading.DiffersFrom(reported))
             {
                 continue;

@@ -72,6 +72,11 @@ public static class VpnBridge
     /// </summary>
     public const string ExtraLoss = "loss";
 
+    /// <summary>
+    /// Round trip extra: milliseconds the tunnel's own echo took to the far end.
+    /// </summary>
+    public const string ExtraRtt = "rtt";
+
     private const string PlanFile = "plan.json";
     private const string SessionsFile = "sessions.txt";
     private const string ProcessSuffix = ":vpn";
@@ -107,6 +112,7 @@ public static class VpnBridge
         intent.PutExtra(ExtraTxBits, reading.TxBitsPerSecond);
         intent.PutExtra(ExtraChurn, reading.HandshakesPerMinute);
         intent.PutExtra(ExtraLoss, reading.LossPercent);
+        intent.PutExtra(ExtraRtt, reading.RttMs);
         context.SendBroadcast(intent);
     }
 

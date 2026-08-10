@@ -59,7 +59,10 @@ public sealed record LinkReading(
     long RxBitsPerSecond,
     long TxBitsPerSecond,
     int HandshakesPerMinute,
-    int LossPercent = LinkHealth.LossUnknown)
+    int LossPercent = LinkHealth.LossUnknown,
+    // Round trip to the far end of the tunnel, timed by the echo the loss share is counted from; -1 until one
+    // comes back.
+    int RttMs = -1)
 {
     /// <summary>
     /// A link that has carried nothing yet.
@@ -69,6 +72,9 @@ public sealed record LinkReading(
     // Rate step the screen resolves; a smaller move is not worth a snapshot.
     private const long Resolution = 100_000;
 
+    // Round trip step the screen resolves; the average wanders by a millisecond on its own.
+    private const int RttResolution = 5;
+
     /// <summary>
     /// Whether the difference from another reading is worth showing.
     /// </summary>
@@ -76,6 +82,7 @@ public sealed record LinkReading(
     {
         return HandshakesPerMinute != other.HandshakesPerMinute
             || LossPercent != other.LossPercent
+            || Math.Abs(RttMs - other.RttMs) >= RttResolution
             || Math.Abs(RxBitsPerSecond - other.RxBitsPerSecond) >= Resolution
             || Math.Abs(TxBitsPerSecond - other.TxBitsPerSecond) >= Resolution;
     }
@@ -101,7 +108,7 @@ public sealed class LinkMeter
     /// Folds one peer reading into the rates and returns the result. The loss share comes from the probe, the
     /// counters carrying no trace of what never arrived.
     /// </summary>
-    public LinkReading Sample(long rxBytes, long txBytes, long handshakeUnix, int lossPercent = LinkHealth.LossUnknown)
+    public LinkReading Sample(long rxBytes, long txBytes, long handshakeUnix, int lossPercent = LinkHealth.LossUnknown, int rttMs = -1)
     {
         var now = Environment.TickCount64;
         if (handshakeUnix > _handshakeUnix)
@@ -135,7 +142,7 @@ public sealed class LinkMeter
         _rxBytes = rxBytes;
         _txBytes = txBytes;
         _tick = now;
-        Reading = new LinkReading(rx, tx, perMinute, lossPercent);
+        Reading = new LinkReading(rx, tx, perMinute, lossPercent, rttMs);
         return Reading;
     }
 

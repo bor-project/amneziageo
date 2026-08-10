@@ -27,6 +27,11 @@ internal sealed class AndroidAgentLog : IDisposable
     }
 
     /// <summary>
+    /// The log database the diagnostics archive reads.
+    /// </summary>
+    public SqliteLogStore Store => _store;
+
+    /// <summary>
     /// Creates the log tables and starts the writer loop.
     /// </summary>
     public Task InitializeAsync(CancellationToken ct = default) => _store.InitializeAsync(ct);
@@ -63,9 +68,12 @@ internal sealed class AndroidAgentLog : IDisposable
     public void Warn(string source, string message) => Agent(4, source, message);
 
     /// <summary>
-    /// Logs an error row.
+    /// Logs an error row, with the exception when one is given.
     /// </summary>
-    public void Error(string source, string message) => Agent(5, source, message);
+    public void Error(string source, string message, Exception? error = null)
+    {
+        Agent(5, source, error is null ? message : $"{message}{Environment.NewLine}{error}");
+    }
 
     /// <summary>
     /// Stores one leveled agent row when the level clears the capture floor; always mirrors to logcat.

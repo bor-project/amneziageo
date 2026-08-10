@@ -286,7 +286,22 @@ public static class IpcContract
     public const string OpCollectDiagnostics = "collect-diagnostics";
 
     /// <summary>
-    /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes");
+    /// Command to run the channel check: the ladder from the local gateway out to a download through the tunnel.
+    /// No args. The ack message holds one tab-separated "leg" row per measured leg and a closing "verdict" row
+    /// naming the culprit. The run is stored in the check journal as well, so it travels in the diagnostics
+    /// archive whatever the log is set to capture.
+    /// </summary>
+    public const string OpCheckChannel = "check-channel";
+
+    /// <summary>
+    /// Command to check one destination: args are a target token - a domain, an address, "app:pkg=..." /
+    /// "app:path=..." or a geo rule ("geosite:telegram"). The ack message holds tab-separated "fact" rows and a
+    /// closing "verdict" row saying why that traffic goes where it goes. Stored in the check journal too.
+    /// </summary>
+    public const string OpCheckTarget = "check-target";
+
+    /// <summary>
+    /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");
     /// [1] optional limit (rows, default 400, clamped 1..2000); [2] optional beforeId cursor (read rows with
     /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo: hide rows less
     /// severe than it); [4] optional search substring (matches message or source). The ack message holds a
@@ -296,12 +311,12 @@ public static class IpcContract
     public const string OpReadLog = "read-log";
 
     /// <summary>
-    /// Command to clear one log table. Args: [0] table ("ageo"/"routes"). Other logs are left untouched.
+    /// Command to clear one log table. Args: [0] table ("ageo"/"routes"/"checks"). Other logs are left untouched.
     /// </summary>
     public const string OpClearLog = "clear-log";
 
     /// <summary>
-    /// Command to render a whole log table to text for the UI to save. Args: [0] table ("ageo"/"routes").
+    /// Command to render a whole log table to text for the UI to save. Args: [0] table ("ageo"/"routes"/"checks").
     /// The agent renders every row and returns the text in the ack message; the UI writes the file under the
     /// user account. The agent never writes a caller-supplied path.
     /// </summary>

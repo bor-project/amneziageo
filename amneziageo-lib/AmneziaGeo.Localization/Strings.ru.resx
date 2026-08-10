@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
@@ -1607,6 +1607,18 @@
   <data name="Linux_OpNotWired" xml:space="preserve">
     <value>Linux-агент пока не обрабатывает «{0}».</value>
   </data>
+  <data name="Agent_UpdateRunByWindow" xml:space="preserve">
+    <value>На этой системе обновление скачивает и устанавливает само окно приложения.</value>
+  </data>
+  <data name="Agent_PerAppUnsupported" xml:space="preserve">
+    <value>Маршрутизация по приложениям на этой системе не реализована.</value>
+  </data>
+  <data name="Android_PerConfigResolverUnsupported" xml:space="preserve">
+    <value>Свой DNS и свои исключения у конфигурации на Android ни на что не влияют: имена разрешаются внутри туннеля, а исключения задаются в списке маршрутизации.</value>
+  </data>
+  <data name="Android_UpdateUnsupported" xml:space="preserve">
+    <value>Эта сборка обновляется установкой пакета вручную.</value>
+  </data>
   <data name="Main_SettingsTab" xml:space="preserve">
     <value>Настройки</value>
   </data>
@@ -1876,5 +1888,146 @@
   </data>
   <data name="MainVm_UpdateRestartApp" xml:space="preserve">
     <value>Обновлено. Перезапустите приложение.</value>
+  </data>
+  <data name="Main_DiagTabCheck" xml:space="preserve">
+    <value>Проверка</value>
+  </data>
+  <data name="Check_RunChannel" xml:space="preserve">
+    <value>Проверить канал</value>
+  </data>
+  <data name="Check_RunTarget" xml:space="preserve">
+    <value>Проверить</value>
+  </data>
+  <data name="Check_TargetWatermark" xml:space="preserve">
+    <value>домен, адрес, app:pkg=... или geosite:...</value>
+  </data>
+  <data name="Check_Running" xml:space="preserve">
+    <value>идёт замер, это около двадцати секунд</value>
+  </data>
+  <data name="Check_EmptyTitle" xml:space="preserve">
+    <value>Замеров ещё нет</value>
+  </data>
+  <data name="Check_EmptyHint" xml:space="preserve">
+    <value>Проверка канала проходит путь от роутера до сервера и называет виноватый участок.</value>
+  </data>
+  <data name="Check_Leg_gateway" xml:space="preserve">
+    <value>шлюз</value>
+  </data>
+  <data name="Check_Leg_endpoint" xml:space="preserve">
+    <value>канал до сервера</value>
+  </data>
+  <data name="Check_Leg_handshake" xml:space="preserve">
+    <value>сессия</value>
+  </data>
+  <data name="Check_Leg_peer" xml:space="preserve">
+    <value>сервер в туннеле</value>
+  </data>
+  <data name="Check_Leg_tunnel" xml:space="preserve">
+    <value>через туннель</value>
+  </data>
+  <data name="Check_Leg_direct" xml:space="preserve">
+    <value>мимо туннеля</value>
+  </data>
+  <data name="Check_State_ok" xml:space="preserve">
+    <value>в порядке</value>
+  </data>
+  <data name="Check_State_weak" xml:space="preserve">
+    <value>с потерями</value>
+  </data>
+  <data name="Check_State_bad" xml:space="preserve">
+    <value>не работает</value>
+  </data>
+  <data name="Check_State_unknown" xml:space="preserve">
+    <value>нет ответа</value>
+  </data>
+  <data name="Check_State_skipped" xml:space="preserve">
+    <value>пропущено</value>
+  </data>
+  <data name="Check_Rtt" xml:space="preserve">
+    <value>задержка {0} мс</value>
+  </data>
+  <data name="Check_Jitter" xml:space="preserve">
+    <value>джиттер {0} мс</value>
+  </data>
+  <data name="Check_Loss" xml:space="preserve">
+    <value>потери {0}%</value>
+  </data>
+  <data name="Check_Size" xml:space="preserve">
+    <value>проходят пакеты до {0} Б</value>
+  </data>
+  <data name="Check_Age" xml:space="preserve">
+    <value>хендшейк {0} с назад</value>
+  </data>
+  <data name="Check_Rekeys" xml:space="preserve">
+    <value>{0} переустановок в минуту</value>
+  </data>
+  <data name="Check_Rate" xml:space="preserve">
+    <value>{0} Мбит/с</value>
+  </data>
+  <data name="Check_NotConnected" xml:space="preserve">
+    <value>Подключения нет, поэтому измерены только участки до туннеля.</value>
+  </data>
+  <data name="Check_NoMeasurement" xml:space="preserve">
+    <value>Ничего не ответило, поэтому прогон ничего не говорит о канале.</value>
+  </data>
+  <data name="Check_LocalLoss" xml:space="preserve">
+    <value>Локальная сеть теряет {0}% отправленного: виноват участок между устройством и роутером.</value>
+  </data>
+  <data name="Check_PathLoss" xml:space="preserve">
+    <value>Канал до сервера теряет {0}%: виноват участок между роутером и сервером.</value>
+  </data>
+  <data name="Check_PathMtu" xml:space="preserve">
+    <value>Путь режет пакеты больше {0} байт: поставьте MTU туннеля {1}.</value>
+  </data>
+  <data name="Check_MtuAdvice" xml:space="preserve">
+    <value>Путь несёт полезную нагрузку не больше {0} байт, а туннель работает с MTU {1} - он в путь не проходит: поставьте MTU {2}.</value>
+  </data>
+  <data name="Check_Rekeying" xml:space="preserve">
+    <value>Сессия переустанавливается {0} раз в минуту: канал рвёт хендшейк.</value>
+  </data>
+  <data name="Check_ServerLoss" xml:space="preserve">
+    <value>Дальняя сторона туннеля теряет {0}% при чистом канале до неё: виноват сервер.</value>
+  </data>
+  <data name="Check_ServerSlow" xml:space="preserve">
+    <value>Туннель отдаёт {0} Мбит/с при живом сервере: смените сервер.</value>
+  </data>
+  <data name="Check_TunnelBehindDirect" xml:space="preserve">
+    <value>Туннель отдаёт {0} Мбит/с, а то же скачивание мимо него - {1}: виноват сервер, а не домашний канал.</value>
+  </data>
+  <data name="Check_Healthy" xml:space="preserve">
+    <value>Винить нечего: туннель отдаёт {0} Мбит/с без потерь.</value>
+  </data>
+  <data name="Check_HealthyOutsideTunnel" xml:space="preserve">
+    <value>На измеренных участках всё в порядке; {0} Мбит/с - это путь мимо туннеля, по нему и пошло скачивание.</value>
+  </data>
+  <data name="Check_TargetNoRules" xml:space="preserve">
+    <value>Список маршрутизации не выбран, поэтому всё идёт по AllowedIPs самого туннеля.</value>
+  </data>
+  <data name="Check_TargetUnresolved" xml:space="preserve">
+    <value>«{0}» не разрешается ни в один адрес, маршрутизировать нечего: виноват резолвер.</value>
+  </data>
+  <data name="Check_TargetBlocked" xml:space="preserve">
+    <value>Отбрасывается правилом блокировки «{0}».</value>
+  </data>
+  <data name="Check_TargetDirect" xml:space="preserve">
+    <value>Идёт мимо туннеля по правилу «{0}» из списка «Директ».</value>
+  </data>
+  <data name="Check_TargetProxy" xml:space="preserve">
+    <value>Идёт через туннель по правилу «{0}».</value>
+  </data>
+  <data name="Check_TargetUnreachable" xml:space="preserve">
+    <value>Правило кладёт в туннель, но по адресу {0} никто не отвечает: проблема за туннелем.</value>
+  </data>
+  <data name="Check_TargetAppUnlisted" xml:space="preserve">
+    <value>«{0}» не входит ни в один список, поэтому трафик идёт по маршруту по умолчанию.</value>
+  </data>
+  <data name="Check_TargetAppBareIp" xml:space="preserve">
+    <value>«{0}» ходит на {1} адрес(ов), не покрытых ни одним правилом: правило по приложению реактивно и не ловит голые адреса, добавьте правило geoip для этого сервиса.</value>
+  </data>
+  <data name="Check_TargetUnlistedSplit" xml:space="preserve">
+    <value>Правил для «{0}» нет, а туннель несёт только перечисленное, поэтому трафик уходит напрямую.</value>
+  </data>
+  <data name="Check_TargetUnlistedFull" xml:space="preserve">
+    <value>Правил для «{0}» нет, но туннель - маршрут по умолчанию, поэтому трафик идёт через него.</value>
   </data>
 </root>

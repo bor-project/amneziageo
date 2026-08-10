@@ -125,6 +125,57 @@ internal sealed class RuntimeInspector(SettingsStore settings, UapiClient uapi, 
             session.Tracker?.Snapshot().Count ?? 0, drops.Watching, drops.Events);
     }
 
+    /// <summary>
+    /// The destinations the running tunnel holds: read from this process when it owns the tunnel, otherwise from
+    /// the service that does.
+    /// </summary>
+    public CacheSnapshot Held(string config)
+    {
+        if (HasLiveSession)
+        {
+            return Collect();
+        }
+
+        var served = RuntimeSnapshotPipe.Send(config, RuntimeSnapshotPipe.OpSnapshot, logger);
+        if (served is { Length: > 0 })
+        {
+            try
+            {
+                return JsonSerializer.Deserialize<CacheSnapshot>(served) ?? Nothing;
+            }
+            catch (JsonException ex)
+            {
+                logger.LogDebug(ex, "runtime cache: unreadable reply for {Tunnel}", config);
+            }
+        }
+
+        return Nothing;
+    }
+
+    /// <summary>
+    /// The same, rendered one row per line for the support archive.
+    /// </summary>
+    public string HeldText(string config)
+    {
+        var snapshot = Held(config);
+        var text = new StringBuilder();
+        foreach (var entry in snapshot.Entries)
+        {
+            text.Append(entry.Kind.PadRight(10)).Append(entry.Key.PadRight(22)).Append(entry.Value).Append('\n');
+        }
+
+        if (snapshot.Capped)
+        {
+            text.Append("cut to ").Append(snapshot.Entries.Count.ToString(CultureInfo.InvariantCulture))
+                .Append(" of ").Append(snapshot.Total.ToString(CultureInfo.InvariantCulture)).Append(" entries\n");
+        }
+
+        return text.Length == 0 ? "the tunnel holds nothing right now" : text.ToString();
+    }
+
+    // A cache nobody answered for.
+    private static readonly CacheSnapshot Nothing = new(0, false, []);
+
     public CacheSnapshot Collect()
     {
         var entries = new List<CacheEntry>();

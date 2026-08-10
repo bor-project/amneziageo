@@ -1,12 +1,14 @@
 using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Routing;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AmneziaGeo.Linux.App;
@@ -28,6 +30,8 @@ internal sealed class LinuxAgent : IDisposable
     private readonly LinuxGeoFileStore _geoFiles;
     private readonly GeoConfigurator _geo;
     private readonly GeoFileUpdater _geoUpdater;
+    private readonly GeoUpdateChecker _geoChecker;
+    private readonly DiagnosticsBundle _diagnostics;
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
     private readonly TunnelController _tunnel;
@@ -37,6 +41,7 @@ internal sealed class LinuxAgent : IDisposable
     private readonly SemaphoreSlim _commandGate = new(1, 1);
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
     private string? _selectedTarget;
     private string? _boundTarget;
@@ -75,6 +80,8 @@ internal sealed class LinuxAgent : IDisposable
         _geoFiles = new LinuxGeoFileStore(AgentPaths.GeoDirectory);
         _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, _geoFiles);
+        _geoChecker = new GeoUpdateChecker(_store, _geoHttp, _geoFiles);
+        _diagnostics = new DiagnosticsBundle(_store, log.Store);
         _geo = new GeoConfigurator(_store, _geoFiles);
         _tunnel = new TunnelController(enginePath, interfaceName, log);
         _bundles = new BundleCommands(_store, _geo);
@@ -420,6 +427,22 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpDownloadGeo:
                 return await UpdateSourcesAsync(null, ct).ConfigureAwait(false);
 
+            case IpcContract.OpCheckSource:
+                return await CheckSourceAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpCheckSources:
+                return await CheckSourcesAsync(ct).ConfigureAwait(false);
+
+            case IpcContract.OpCountRoutes:
+                return await CountRoutesAsync(args, ct).ConfigureAwait(false);
+
+            case IpcContract.OpCollectDiagnostics:
+                return await CollectDiagnosticsAsync(ct).ConfigureAwait(false);
+
+            // Nothing here routes by application: the tunnel is a kernel interface with no per-process verdict.
+            case IpcContract.OpListProcesses:
+                return new IpcAck(false, IpcMessage.Key("Agent_PerAppUnsupported"));
+
             case IpcContract.OpSetSetting:
                 return await SetSettingAsync(args, ct).ConfigureAwait(false);
 
@@ -437,6 +460,12 @@ internal sealed class LinuxAgent : IDisposable
 
             case IpcContract.OpGetCacheEntries:
                 return await GetCacheEntriesAsync(ct).ConfigureAwait(false);
+
+            case IpcContract.OpCheckChannel:
+                return await CheckChannelAsync(ct).ConfigureAwait(false);
+
+            case IpcContract.OpCheckTarget:
+                return await CheckTargetAsync(args, ct).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await _bundles.ExportAsync(args, ct).ConfigureAwait(false);
@@ -1174,6 +1203,23 @@ internal sealed class LinuxAgent : IDisposable
         return new IpcAck(true, report.ToString());
     }
 
+    // The destinations the running tunnel holds, one per line, for the support archive.
+    private string CacheText()
+    {
+        var text = new StringBuilder();
+        foreach (var host in _tunnel.Tunneled)
+        {
+            text.Append("tunnel  ").Append(host).Append('\n');
+        }
+
+        foreach (var host in _tunnel.Bypassed)
+        {
+            text.Append("direct  ").Append(host).Append('\n');
+        }
+
+        return text.Length == 0 ? "the tunnel holds nothing right now" : text.ToString();
+    }
+
     private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
     {
         var rows = new List<object>();
@@ -1189,6 +1235,253 @@ internal sealed class LinuxAgent : IDisposable
         const int cap = 1000;
         var capped = rows.Count > cap;
         return new IpcAck(true, JsonSerializer.Serialize(new { total = rows.Count, capped, entries = capped ? rows.Take(cap).ToList() : rows }));
+    }
+
+    // Asks every source whether its remote file changed, without downloading it.
+    private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
+    {
+        var sources = await _store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
+        if (sources.Count == 0)
+        {
+            return new IpcAck(true, IpcMessage.Key("Agent_NoSourcesToCheck"));
+        }
+
+        var available = 0;
+        foreach (var source in sources)
+        {
+            if (await CheckOneSourceAsync(source, ct).ConfigureAwait(false) == GeoUpdateChecker.Status.Available)
+            {
+                available++;
+            }
+        }
+
+        await PushAsync(ct).ConfigureAwait(false);
+        return new IpcAck(true, available == 0
+            ? IpcMessage.Key("Agent_CheckedNoUpdates", sources.Count)
+            : IpcMessage.Key("Agent_CheckedUpdatesAvailable", sources.Count, available));
+    }
+
+    private async Task<IpcAck> CheckSourceAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || args[0].Length == 0)
+        {
+            return Fail();
+        }
+
+        var sources = await _store.ListGeoSourcesAsync(ct).ConfigureAwait(false);
+        var source = sources.FirstOrDefault(entry => string.Equals(entry.Name, args[0], StringComparison.Ordinal));
+        if (source is null)
+        {
+            return NotFound(args[0]);
+        }
+
+        var status = await CheckOneSourceAsync(source, ct).ConfigureAwait(false);
+        await PushAsync(ct).ConfigureAwait(false);
+        return new IpcAck(true, status switch
+        {
+            GeoUpdateChecker.Status.Available => IpcMessage.Key("Agent_SourceUpdateAvailable", source.Name),
+            GeoUpdateChecker.Status.UpToDate => IpcMessage.Key("Agent_SourceUpToDate", source.Name),
+            _ => IpcMessage.Key("Agent_SourceCheckFailed", source.Name),
+        });
+    }
+
+    // Checks one source under its own ceiling; an unreachable host must not hold the command gate.
+    private async Task<GeoUpdateChecker.Status> CheckOneSourceAsync(GeoSource source, CancellationToken ct)
+    {
+        try
+        {
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(TimeSpan.FromSeconds(10));
+            var status = await _geoChecker.CheckAsync(source, budget.Token).ConfigureAwait(false);
+            if (status != GeoUpdateChecker.Status.Unknown)
+            {
+                _updateAvailable[source.Name] = status == GeoUpdateChecker.Status.Available;
+            }
+
+            return status;
+        }
+        catch (OperationCanceledException)
+        {
+            return GeoUpdateChecker.Status.Unknown;
+        }
+        catch (Exception ex)
+        {
+            _log.Error("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", ex);
+            return GeoUpdateChecker.Status.Unknown;
+        }
+    }
+
+    // Counts the routes a rule set would put into the tunnel; a Linux host carries any number of them.
+    private async Task<IpcAck> CountRoutesAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1)
+        {
+            return Fail();
+        }
+
+        var full = string.Equals(args[0], "full", StringComparison.OrdinalIgnoreCase);
+        var draft = await _geo.MaterializeDraftAsync([.. args.Skip(1)], ct).ConfigureAwait(false);
+        // A name carries no address until connect, where it resolves and cuts or adds about two routes.
+        var names = draft.Domains.Count + draft.DirectDomains.Count + draft.BlockDomains.Count;
+        var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
+        return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)},\"limit\":0}}");
+    }
+
+    // The ladder from the local gateway out to a download through the tunnel.
+    private async Task<IpcAck> CheckChannelAsync(CancellationToken ct)
+    {
+        var config = _selectedTarget;
+        if (string.IsNullOrEmpty(config))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NoConfigSelected"));
+        }
+
+        var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var options = new ChannelProbeOptions(
+            config,
+            _tunnel.Running,
+            LocalGateway.Find(),
+            await ResolveEndpointAsync(text, ct).ConfigureAwait(false),
+            LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)),
+            !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase),
+            true,
+            _tunnel.Running ? _handshakeAge : -1,
+            _tunnel.Running ? _link.HandshakesPerMinute : -1,
+            ConfiguredMtu: WgConfigEditor.GetMtu(text));
+
+        var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
+        Record(report.Render(), report.Culprit.Length > 0, report.Advice);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // Why one destination goes where it goes, under the rules in force.
+    private async Task<IpcAck> CheckTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "check-target requires a domain, an address, an app token or a geo rule");
+        }
+
+        var list = await _store.GetSelectedRoutingListAsync(ct).ConfigureAwait(false) is { } listId
+            ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
+            : null;
+        var split = !string.Equals(_tunnel.Mode, "full", StringComparison.OrdinalIgnoreCase);
+        var report = await new TargetInspector(list, split)
+            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(Held), ct)
+            .ConfigureAwait(false);
+
+        Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // What the running tunnel holds for an address right now.
+    private string? Held(System.Net.IPAddress address)
+    {
+        var value = address.ToString();
+        if (_tunnel.Tunneled.Contains(value))
+        {
+            return "routed into the tunnel right now";
+        }
+
+        return _tunnel.Bypassed.Contains(value) ? "routed past the tunnel right now" : null;
+    }
+
+    // Stores a finished run where no capture floor reaches it, and puts its closing line in the agent log.
+    // An MTU that does not fit the measured path is warned about on its own, whoever the run blames.
+    private void Record(string rendered, bool blamed, MtuAdvice? advice = null)
+    {
+        _log.Store.AppendCheck(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered.TrimEnd());
+        if (advice is not null)
+        {
+            _log.Warn("check", advice.Describe());
+        }
+
+        var closing = rendered.TrimEnd().Split('\n')[^1].Trim();
+        if (blamed)
+        {
+            _log.Warn("check", closing);
+            return;
+        }
+
+        _log.Info("check", closing);
+    }
+
+    // The server's address as the tunnel dials it.
+    private static async Task<string?> ResolveEndpointAsync(string text, CancellationToken ct)
+    {
+        var endpoint = WgConfigEditor.GetEndpoint(text);
+        if (string.IsNullOrEmpty(endpoint))
+        {
+            return null;
+        }
+
+        var colon = endpoint.LastIndexOf(':');
+        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
+        if (System.Net.IPAddress.TryParse(host, out var parsed))
+        {
+            return parsed.ToString();
+        }
+
+        try
+        {
+            var addresses = await System.Net.Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
+            return addresses.FirstOrDefault(one => one.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?.ToString();
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or ArgumentException or OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<IpcAck> CollectDiagnosticsAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _log.FlushAsync(ct).ConfigureAwait(false);
+            var path = await _diagnostics.WriteAsync(
+                Path.Combine(AgentPaths.Root, "diagnostics"),
+                DiagnosticsHeader(),
+                AgentLog.Render,
+                new BundleSources(
+                    null,
+                    async token => (await GetRuntimeConfigAsync(token).ConfigureAwait(false)).Message,
+                    token => Task.FromResult(CacheText())),
+                ct).ConfigureAwait(false);
+            _log.Info("agent", $"diagnostics archive written to {path}; keys and credentials in it are masked");
+            return new IpcAck(true, path);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "the diagnostics archive could not be built; nothing was written", ex);
+            return new IpcAck(false, IpcMessage.Key("Agent_DiagnosticsFailed", ex.Message));
+        }
+    }
+
+    // Opens the diagnostics summary with the build, the machine and the agent's own state.
+    private string DiagnosticsHeader()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("AmneziaGeo diagnostics");
+        sb.AppendLine($"generated:       {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"app version:     {AgentBuild.Version}");
+        sb.AppendLine($"os:              {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture})");
+        sb.AppendLine($"runtime:         {RuntimeInformation.FrameworkDescription}");
+        sb.AppendLine($"library:         {AgentPaths.Root}");
+        sb.AppendLine();
+        sb.AppendLine("[settings]");
+        sb.AppendLine($"log level:       {_logLevel}");
+        sb.AppendLine($"routing log:     {(_routeLog ? "on" : "off")}");
+        sb.AppendLine($"route ttl:       {_routeTtlSeconds}s");
+        sb.AppendLine($"survive reboot:  {(_surviveReboot ? "on" : "off")}");
+        sb.AppendLine($"reconnect:       {(_periodicReconnect ? $"every {_reconnectIntervalSeconds}s" : "off")}");
+        sb.AppendLine();
+        sb.AppendLine("[state]");
+        sb.AppendLine($"selected target: {_selectedTarget ?? "-"}");
+        sb.AppendLine($"bound target:    {_boundTarget ?? "-"}");
+        sb.AppendLine($"status:          {_boundStatus}");
+        sb.AppendLine($"connect failed:  {_connectFailed}");
+        sb.AppendLine();
+        return sb.ToString();
     }
 
     private async Task<ConfigEntry> BuildConfigEntryAsync(string name, CancellationToken ct)
@@ -1237,7 +1530,7 @@ internal sealed class LinuxAgent : IDisposable
                 meta?.CategoryCount ?? 0,
                 updating,
                 0,
-                false,
+                _updateAvailable.GetValueOrDefault(source.Name),
                 updating ? null : _sourceErrors.GetValueOrDefault(source.Name)));
         }
 
@@ -1283,7 +1576,7 @@ internal sealed class LinuxAgent : IDisposable
         }
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
 
     // Reconnect interval in seconds, clamped to a sane window.
     private static int ReconnectInterval(string? value) =>

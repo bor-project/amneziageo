@@ -9,7 +9,7 @@ namespace AmneziaGeo.Cli;
 /// </summary>
 internal static class DiagCommands
 {
-    private static readonly string[] _tables = ["ageo", "routes"];
+    private static readonly string[] _tables = ["ageo", "routes", "checks"];
 
     /// <summary>
     /// Runs one diagnostics command.
@@ -23,6 +23,7 @@ internal static class DiagCommands
             "cache" => await CacheAsync(agent, args).ConfigureAwait(false),
             "subnets" => Reply.Payload(await agent.SendAsync(IpcContract.OpListLocalSubnets).ConfigureAwait(false)),
             "doctor" => Doctor(agent, host),
+            "check" => await CheckAsync(agent, args).ConfigureAwait(false),
             "diag" => await DiagAsync(agent, args).ConfigureAwait(false),
             _ => Reply.Usage($"unknown command '{group}'"),
         };
@@ -51,7 +52,7 @@ internal static class DiagCommands
         var table = flags.Value("table") ?? "ageo";
         if (!_tables.Contains(table))
         {
-            return Reply.Usage("--table takes ageo or routes");
+            return Reply.Usage("--table takes ageo, routes or checks");
         }
 
         return args[0] switch
@@ -62,6 +63,51 @@ internal static class DiagCommands
             "export" => await ExportAsync(agent, table, flags).ConfigureAwait(false),
             _ => Reply.Usage($"unknown log command '{args[0]}'"),
         };
+    }
+
+    // The channel ladder, or one target; both answer with rows and a closing verdict.
+    private static async Task<int> CheckAsync(IAgentLink agent, IReadOnlyList<string> args)
+    {
+        var target = args.Count > 0 ? args[0] : string.Empty;
+        var ack = target.Length == 0
+            ? await agent.SendAsync(IpcContract.OpCheckChannel).ConfigureAwait(false)
+            : await agent.SendAsync(IpcContract.OpCheckTarget, target).ConfigureAwait(false);
+
+        if (!ack.Ok)
+        {
+            return Reply.Report(ack);
+        }
+
+        if (Output.Json)
+        {
+            Output.Line(ack.Message);
+            return Exit.Ok;
+        }
+
+        return target.Length == 0 ? Channel(ack.Message) : Target(ack.Message);
+    }
+
+    private static int Channel(string payload)
+    {
+        var report = CheckReport.Parse(payload);
+        var rows = report.Legs.Select(leg => (IReadOnlyList<string>)[leg.Name, leg.State, leg.Describe()]).ToList();
+        Output.Table(["LEG", "STATE", "MEASURED"], rows, "nothing was measured");
+        if (report.Advice is { } advice)
+        {
+            Output.Line(advice.Describe());
+        }
+
+        Output.Line(CheckPhrase.English(report.VerdictKey, report.VerdictArgs));
+        return Exit.Ok;
+    }
+
+    private static int Target(string payload)
+    {
+        var report = TargetReport.Parse(payload);
+        var rows = report.Facts.Select(fact => (IReadOnlyList<string>)[fact.Kind, fact.Name, fact.State, fact.Detail]).ToList();
+        Output.Table(["KIND", "NAME", "STATE", "DETAIL"], rows, "nothing was found");
+        Output.Line(TargetPhrase.English(report.VerdictKey, report.VerdictArgs));
+        return Exit.Ok;
     }
 
     private static async Task<int> DiagAsync(IAgentLink agent, IReadOnlyList<string> args)

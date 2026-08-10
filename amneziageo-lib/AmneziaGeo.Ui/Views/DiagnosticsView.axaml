@@ -12,10 +12,11 @@
 
     <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_DiagnosticsSection}" />
 
-    <!-- Pane tabs: log or configuration. Left when wide, full width in compact. -->
+    <!-- Pane tabs: log, configuration or check. Left when wide, full width in compact. -->
     <controls:SegmentedSelector Grid.Row="1" Command="{Binding SelectTabCommand}" IsCompact="{Binding IsCompact}"
                           Item1Text="{l:Tr Main_DiagTabLog}" Item1Param="log" Item1Active="{Binding IsLogTab}"
-                          Item2Text="{l:Tr Main_DiagTabConfig}" Item2Param="config" Item2Active="{Binding IsConfigTab}" />
+                          Item2Text="{l:Tr Main_DiagTabConfig}" Item2Param="config" Item2Active="{Binding IsConfigTab}"
+                          Item3Text="{l:Tr Main_DiagTabCheck}" Item3Param="check" Item3Active="{Binding IsCheckTab}" />
 
     <!-- Divider between the tabs and the pane. -->
     <Border Grid.Row="2" Height="1" Background="{DynamicResource AgBorderBrush}" />
@@ -26,6 +27,9 @@
       </Panel>
       <Panel IsVisible="{Binding IsConfigTab}">
         <views:RuntimeConfigView DataContext="{Binding Config}" />
+      </Panel>
+      <Panel IsVisible="{Binding IsCheckTab}">
+        <views:CheckView DataContext="{Binding Check}" />
       </Panel>
     </Panel>
 

@@ -12,6 +12,9 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(2);
 
+    // Diagnostic runs kept: each is a whole report, and a handful of them covers any support thread.
+    private const int ChecksKept = 50;
+
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -39,6 +42,7 @@ internal sealed class LogMaintenanceService(SqliteLogStore store, LogSettings se
         {
             var agent = await store.PruneAsync(SqliteLogStore.AgentTable, settings.MaxRowsPerTable, ct);
             var routes = await store.PruneAsync(SqliteLogStore.RoutesTable, settings.MaxRowsPerTable, ct);
+            await store.PruneAsync(SqliteLogStore.ChecksTable, ChecksKept, ct);
             if (agent + routes > 0)
             {
                 logger.LogDebug("dropped the oldest {Agent} log entries and {Routes} routing entries past the retention limit", agent, routes);

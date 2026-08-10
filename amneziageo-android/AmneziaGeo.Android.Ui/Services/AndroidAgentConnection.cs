@@ -34,6 +34,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly SqliteStateStore _store;
     private readonly GeoConfigurator _geo;
     private readonly GeoFileUpdater _geoUpdater;
+    private readonly GeoUpdateChecker _geoChecker;
     private readonly AndroidAgentLog _log;
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
@@ -44,6 +45,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private IReadOnlyList<GeoFileMetadata> _geoFileMeta = [];
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
     private Task? _initTask;
     private Task? _geoFilesTask;
     private VpnBridge.Listener? _events;
@@ -103,6 +105,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _store = new SqliteStateStore(System.IO.Path.Combine(dir, "state.db"));
         _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, geoFiles);
+        _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
         Current = this;
@@ -203,6 +206,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 PushSnapshot();
                 return Ok();
 
+            // One head, one process: presence needs no announcing here.
+            case IpcContract.OpAttachUi:
+                return Ok();
+
+            case IpcContract.OpAddConfig:
+                return await AddConfigAsync(args).ConfigureAwait(false);
+
+            case IpcContract.OpCopyConfig:
+                return await CopyConfigAsync(args).ConfigureAwait(false);
+
             case IpcContract.OpRemoveConfig:
                 return await RemoveConfigAsync(args).ConfigureAwait(false);
 
@@ -247,7 +260,14 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return await UpdateSourceAsync(args);
 
             case IpcContract.OpUpdateSources:
+            case IpcContract.OpDownloadGeo:
                 return await UpdateAllSourcesAsync();
+
+            case IpcContract.OpCheckSource:
+                return await CheckSourceAsync(args);
+
+            case IpcContract.OpCheckSources:
+                return await CheckSourcesAsync();
 
             case IpcContract.OpListLocalSubnets:
                 return new IpcAck(true, string.Join('\n', GeoVpnService.LocalSubnets()));
@@ -279,6 +299,32 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpSetWebSocket:
                 return await SetWebSocketAsync(args);
 
+            case IpcContract.OpSetGeo:
+                return await SetGeoAsync(args);
+
+            // The tunnel here resolves names through its own trap and routes by list, so neither of these
+            // reaches the session: the setting would be stored and never applied.
+            case IpcContract.OpSetConfigDns:
+            case IpcContract.OpSetConfigExclusions:
+                return new IpcAck(false, IpcMessage.Key("Android_PerConfigResolverUnsupported"));
+
+            case IpcContract.OpListProcesses:
+                return ListProcesses();
+
+            case IpcContract.OpCollectDiagnostics:
+                return await CollectDiagnosticsAsync();
+
+            // The package is replaced by hand here: nothing in the application downloads or installs itself.
+            case IpcContract.OpCheckUpdate:
+            case IpcContract.OpDownloadUpdate:
+            case IpcContract.OpApplyUpdate:
+            case IpcContract.OpCancelUpdateDownload:
+                return new IpcAck(false, IpcMessage.Key("Android_UpdateUnsupported"));
+
+            // Nothing downloads here, so a report from the window changes nothing.
+            case IpcContract.OpReportUpdateDownload:
+                return Ok();
+
             case IpcContract.OpReadLog:
                 return await ReadLogAsync(args);
 
@@ -299,6 +345,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpGetCacheEntries:
                 return await GetCacheEntriesAsync();
+
+            case IpcContract.OpCheckChannel:
+                return await CheckChannelAsync(CancellationToken.None).ConfigureAwait(false);
+
+            case IpcContract.OpCheckTarget:
+                return await CheckTargetAsync(args, CancellationToken.None).ConfigureAwait(false);
 
             case IpcContract.OpExportBundle:
                 return await ExportBundleAsync(args);
@@ -714,7 +766,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             var updating = _updatingSources.Contains(source.Name);
             var error = !updating && _sourceErrors.TryGetValue(source.Name, out var e) ? e : null;
-            list.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, 0, false, error));
+            list.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, 0, _updateAvailable.GetValueOrDefault(source.Name), error));
         }
 
         return list;
@@ -1672,6 +1724,341 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // Renames a config in place, carrying its text, its stored settings, the selection and the live latch with it.
+    // Imports a config from a file the caller names; the text path is import-config's.
+    private async Task<IpcAck> AddConfigAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || args[0].Length == 0 || args[1].Length == 0)
+        {
+            return Fail();
+        }
+
+        try
+        {
+            var text = await System.IO.File.ReadAllTextAsync(args[1]).ConfigureAwait(false);
+            return await DispatchAsync(new IpcCommand(IpcContract.OpImportConfig, [args[0], text])).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", $"the configuration file '{args[1]}' could not be read", ex);
+            return new IpcAck(false, ex.Message);
+        }
+    }
+
+    // Duplicates a config into an independent copy: its text, its transport and its geo settings.
+    private async Task<IpcAck> CopyConfigAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || args[0].Length == 0 || args[1].Trim().Length == 0)
+        {
+            return Fail();
+        }
+
+        var source = args[0];
+        var destination = args[1].Trim();
+        if (!_configs.TryGetValue(source, out var text))
+        {
+            return Fail();
+        }
+
+        if (_configs.ContainsKey(destination))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NameTaken", destination));
+        }
+
+        _configs[destination] = text;
+        Save();
+        await EnsureInitAsync().ConfigureAwait(false);
+        if (await _store.GetConfigTransportAsync(source).ConfigureAwait(false) is { } transport)
+        {
+            await _store.SetConfigTransportAsync(transport with { Name = destination }).ConfigureAwait(false);
+        }
+
+        if (await _store.GetTunnelGeoAsync(source).ConfigureAwait(false) is { } geo)
+        {
+            await _store.SaveTunnelGeoAsync(geo with { Name = destination }).ConfigureAwait(false);
+        }
+
+        await RefreshTransportsAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return new IpcAck(true, IpcMessage.Key("Agent_ConfigCopied", destination));
+    }
+
+    // Stores a config's own geo rules; the session takes them at the next connect.
+    private async Task<IpcAck> SetGeoAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 2 || !_configs.ContainsKey(args[0]))
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        try
+        {
+            await EnsureGeoFilesAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("geo", $"the rules are expanded against the geo files at hand: {ex}");
+        }
+
+        var (rules, routes, domains, skipped) = await _geo.ApplyAsync(args[0], IsOn(args[1]), [.. args.Skip(2)]).ConfigureAwait(false);
+        PushSnapshot();
+        var summary = $"saved: {rules} rules, {routes} routes, {domains} domains";
+        return new IpcAck(true, skipped > 0
+            ? $"{summary}, {skipped} tokens ignored (applies on reconnect)"
+            : $"{summary} (applies on reconnect)");
+    }
+
+    // Asks every source whether its remote file changed, without downloading it.
+    private async Task<IpcAck> CheckSourcesAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        if (_geoSources.Count == 0)
+        {
+            return new IpcAck(true, IpcMessage.Key("Agent_NoSourcesToCheck"));
+        }
+
+        var available = 0;
+        foreach (var source in _geoSources.ToList())
+        {
+            if (await CheckOneSourceAsync(source).ConfigureAwait(false) == GeoUpdateChecker.Status.Available)
+            {
+                available++;
+            }
+        }
+
+        PushSnapshot();
+        return new IpcAck(true, available == 0
+            ? IpcMessage.Key("Agent_CheckedNoUpdates", _geoSources.Count)
+            : IpcMessage.Key("Agent_CheckedUpdatesAvailable", _geoSources.Count, available));
+    }
+
+    private async Task<IpcAck> CheckSourceAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count < 1 || args[0].Length == 0)
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var source = _geoSources.FirstOrDefault(entry => string.Equals(entry.Name, args[0], StringComparison.Ordinal));
+        if (source is null)
+        {
+            return Fail();
+        }
+
+        var status = await CheckOneSourceAsync(source).ConfigureAwait(false);
+        PushSnapshot();
+        return new IpcAck(true, status switch
+        {
+            GeoUpdateChecker.Status.Available => IpcMessage.Key("Agent_SourceUpdateAvailable", source.Name),
+            GeoUpdateChecker.Status.UpToDate => IpcMessage.Key("Agent_SourceUpToDate", source.Name),
+            _ => IpcMessage.Key("Agent_SourceCheckFailed", source.Name),
+        });
+    }
+
+    // Checks one source under its own ceiling; an unreachable host must not hold the command.
+    private async Task<GeoUpdateChecker.Status> CheckOneSourceAsync(GeoSource source)
+    {
+        try
+        {
+            using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var status = await _geoChecker.CheckAsync(source, budget.Token).ConfigureAwait(false);
+            if (status != GeoUpdateChecker.Status.Unknown)
+            {
+                _updateAvailable[source.Name] = status == GeoUpdateChecker.Status.Available;
+            }
+
+            return status;
+        }
+        catch (System.OperationCanceledException)
+        {
+            return GeoUpdateChecker.Status.Unknown;
+        }
+        catch (Exception ex)
+        {
+            _log.Error("geo", $"'{source.Name}' could not be checked for a newer file; the copy at hand stays in use", ex);
+            return GeoUpdateChecker.Status.Unknown;
+        }
+    }
+
+    // The applications carrying a launcher icon: what a per-app rule can name on this system.
+    private static IpcAck ListProcesses()
+    {
+        var context = Application.Context;
+        var manager = context.PackageManager;
+        if (manager is null)
+        {
+            return new IpcAck(true, string.Empty);
+        }
+
+        var own = context.PackageName;
+        var intent = new Intent(Intent.ActionMain);
+        intent.AddCategory(Intent.CategoryLauncher);
+        var rows = manager.QueryIntentActivities(intent, global::Android.Content.PM.PackageInfoFlags.MetaData)
+            .Where(entry => entry.ActivityInfo?.ApplicationInfo?.PackageName is { Length: > 0 } package
+                && !string.Equals(package, own, StringComparison.Ordinal))
+            .Select(entry =>
+            {
+                var info = entry.ActivityInfo!.ApplicationInfo!;
+                return (Label: entry.LoadLabel(manager)?.ToString() ?? info.PackageName!, Package: info.PackageName!);
+            })
+            .GroupBy(app => app.Package, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(app => app.Label, StringComparer.CurrentCultureIgnoreCase)
+            .Select(app => string.Join('\t', "app", app.Label, app.Package, $"app:pkg={app.Package}"));
+        return new IpcAck(true, string.Join('\n', rows));
+    }
+
+    // The ladder, as far as a phone can measure it: the socket cannot be excused from the tunnel outside the
+    // service that owns it, so the leg under the tunnel is skipped rather than measured through the tunnel.
+    private async Task<IpcAck> CheckChannelAsync(CancellationToken ct)
+    {
+        var config = _selectedTarget;
+        if (string.IsNullOrEmpty(config))
+        {
+            return new IpcAck(false, IpcMessage.Key("Agent_NoConfigSelected"));
+        }
+
+        var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var running = VpnBridge.IsRunning(Application.Context);
+        var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        var options = new ChannelProbeOptions(
+            config,
+            running,
+            LocalGateway.Find(),
+            await ResolveEndpointAsync(text, ct).ConfigureAwait(false),
+            LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)),
+            true,
+            false,
+            running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
+            running ? _link.HandshakesPerMinute : -1,
+            ConfiguredMtu: transport is { Mtu: > 0 } ? transport.Mtu : WgConfigEditor.GetMtu(text));
+
+        var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
+        Record(report.Render(), report.Culprit.Length > 0, report.Advice);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // Why one destination goes where it goes, under the rules in force.
+    private async Task<IpcAck> CheckTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1 || string.IsNullOrWhiteSpace(args[0]))
+        {
+            return new IpcAck(false, "check-target requires a domain, an address, an app token or a geo rule");
+        }
+
+        var list = _selectedRoutingList is { } listId
+            ? await _store.GetRoutingListAsync(listId, ct).ConfigureAwait(false)
+            : null;
+        var settings = _selectedRoutingList is { } id
+            ? await _store.GetRoutingSettingsAsync(id, ct).ConfigureAwait(false)
+            : null;
+        var report = await new TargetInspector(list, !(settings?.UseGlobalProxy ?? false))
+            .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(), ct)
+            .ConfigureAwait(false);
+
+        Record(report.Render(), report.VerdictKey != TargetVerdicts.Proxy);
+        return new IpcAck(true, report.ToPayload());
+    }
+
+    // Stores a finished run where no capture floor reaches it, and puts its closing line in the agent log.
+    // An MTU that does not fit the measured path is warned about on its own, whoever the run blames.
+    private void Record(string rendered, bool blamed, MtuAdvice? advice = null)
+    {
+        _log.Store.AppendCheck(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), rendered.TrimEnd());
+        if (advice is not null)
+        {
+            _log.Warn("check", advice.Describe());
+        }
+
+        var closing = rendered.TrimEnd().Split('\n')[^1].Trim();
+        if (blamed)
+        {
+            _log.Warn("check", closing);
+            return;
+        }
+
+        _log.Info("check", closing);
+    }
+
+    // The server's address as the tunnel dials it.
+    private static async Task<string?> ResolveEndpointAsync(string text, CancellationToken ct)
+    {
+        var endpoint = WgConfigEditor.GetEndpoint(text);
+        if (string.IsNullOrEmpty(endpoint))
+        {
+            return null;
+        }
+
+        var colon = endpoint.LastIndexOf(':');
+        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
+        if (System.Net.IPAddress.TryParse(host, out var parsed))
+        {
+            return parsed.ToString();
+        }
+
+        try
+        {
+            var addresses = await System.Net.Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
+            return addresses.FirstOrDefault(one => one.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?.ToString();
+        }
+        catch (Exception ex) when (ex is System.Net.Sockets.SocketException or ArgumentException or System.OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<IpcAck> CollectDiagnosticsAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        try
+        {
+            await _log.Store.FlushAsync().ConfigureAwait(false);
+            var bundle = new DiagnosticsBundle(_store, _log.Store);
+            var path = await bundle.WriteAsync(DiagnosticsDirectory(), DiagnosticsHeader(), AndroidAgentLog.Render).ConfigureAwait(false);
+            _log.Info("agent", $"diagnostics archive written to {path}; keys and credentials in it are masked");
+            return new IpcAck(true, path);
+        }
+        catch (Exception ex)
+        {
+            _log.Error("agent", "the diagnostics archive could not be built; nothing was written", ex);
+            return new IpcAck(false, IpcMessage.Key("Agent_DiagnosticsFailed", ex.Message));
+        }
+    }
+
+    // Writes where support can pull the archive without root; the private directory is the fallback.
+    private static string DiagnosticsDirectory()
+    {
+        var external = Application.Context.GetExternalFilesDir(null)?.AbsolutePath;
+        var root = string.IsNullOrEmpty(external) ? Application.Context.FilesDir?.AbsolutePath ?? "." : external;
+        return System.IO.Path.Combine(root, "diagnostics");
+    }
+
+    // Opens the diagnostics summary with the build, the device and the agent's own state.
+    private string DiagnosticsHeader()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("AmneziaGeo diagnostics");
+        sb.AppendLine($"generated:       {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
+        sb.AppendLine($"app version:     {AppVersion}");
+        sb.AppendLine($"android:         {Build.VERSION.Release} (api {(int)Build.VERSION.SdkInt})");
+        sb.AppendLine($"device:          {Build.Manufacturer} {Build.Model}");
+        sb.AppendLine($"abi:             {string.Join(", ", Build.SupportedAbis ?? [])}");
+        sb.AppendLine();
+        sb.AppendLine("[settings]");
+        sb.AppendLine($"log level:       {_logLevel}");
+        sb.AppendLine($"routing log:     {(_routeLog ? "on" : "off")}");
+        sb.AppendLine($"route ttl:       {_routeTtl}s");
+        sb.AppendLine();
+        sb.AppendLine("[state]");
+        sb.AppendLine($"selected target: {_selectedTarget ?? "-"}");
+        sb.AppendLine($"bound target:    {_boundTarget ?? "-"}");
+        sb.AppendLine($"status:          {_boundStatus}");
+        sb.AppendLine($"connect failed:  {_connectFailed}");
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
     private async Task<IpcAck> RenameConfigAsync(IReadOnlyList<string> args)
     {
         if (args.Count < 2)
@@ -1988,7 +2375,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return new IpcAck(true, JsonSerializer.Serialize(new { total, capped, entries }));
     }
 
-    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable;
+    private static bool IsKnownLogTable(string name) => name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
 
     private static string KnownLogLevel(string token)
     {

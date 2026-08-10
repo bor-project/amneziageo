@@ -1,4 +1,4 @@
-using AmneziaGeo.Ipc;
+﻿using AmneziaGeo.Ipc;
 using AmneziaGeo.Ui.Services;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -7,8 +7,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Diagnostics screen: a tab per pane — the agent log and the configuration the agent runs on. Only the pane on
-/// screen reads the agent.
+/// Diagnostics screen: a tab per pane — the agent log, the configuration the agent runs on, and the checks it
+/// can run. Only the pane on screen reads the agent.
 /// </summary>
 internal sealed partial class DiagnosticsViewModel : ViewModelBase
 {
@@ -19,6 +19,7 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     {
         Logs = new LogsViewModel(connection);
         Config = new RuntimeConfigViewModel(connection);
+        Check = new CheckViewModel(connection);
     }
 
     /// <summary>
@@ -30,6 +31,11 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     /// Config pane: the runtime configuration and the caches behind it.
     /// </summary>
     public RuntimeConfigViewModel Config { get; }
+
+    /// <summary>
+    /// Check pane: the channel ladder and the targeted check, with the verdict they produced.
+    /// </summary>
+    public CheckViewModel Check { get; }
 
     /// <summary>
     /// Whether the diagnostics section is the one currently shown.
@@ -44,12 +50,14 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     {
         Logs.IsCompact = value;
         Config.IsCompact = value;
+        Check.IsCompact = value;
     }
 
     // Which pane is showing.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLogTab))]
     [NotifyPropertyChangedFor(nameof(IsConfigTab))]
+    [NotifyPropertyChangedFor(nameof(IsCheckTab))]
     private string _tab = "log";
 
     /// <summary>
@@ -62,6 +70,11 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     /// </summary>
     public bool IsConfigTab => Tab == "config";
 
+    /// <summary>
+    /// Whether the check pane is showing.
+    /// </summary>
+    public bool IsCheckTab => Tab == "check";
+
     partial void OnTabChanged(string value)
     {
         SyncPanes();
@@ -70,7 +83,7 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     [RelayCommand]
     private void SelectTab(string target)
     {
-        Tab = target == "config" ? "config" : "log";
+        Tab = target is "config" or "check" ? target : "log";
     }
 
     /// <summary>
@@ -86,6 +99,7 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     {
         Logs.SetActive(IsActive && IsLogTab);
         Config.SetActive(IsActive && IsConfigTab);
+        Check.SetActive(IsActive && IsCheckTab);
     }
 
     /// <summary>
@@ -104,5 +118,6 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
         IsActive = false;
         Logs.Reset();
         Config.SetActive(false);
+        Check.SetActive(false);
     }
 }

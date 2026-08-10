@@ -99,7 +99,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// <summary>
     /// The selectable log tables. The tokens are the same in every language.
     /// </summary>
-    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes"];
+    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", "checks"];
 
     [ObservableProperty]
     private string _selectedLogType = "ageo";

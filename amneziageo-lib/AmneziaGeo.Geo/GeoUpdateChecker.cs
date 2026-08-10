@@ -1,18 +1,14 @@
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using AmneziaGeo.Decl;
-using AmneziaGeo.Geo;
 
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Geo;
 
 /// <summary>
 /// Decides whether a geo source's remote file changed without re-fetching it.
 /// </summary>
-internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
+public sealed class GeoUpdateChecker(IStateStore store, GeoHttp http, IGeoFileStore files)
 {
     /// <summary>
     /// Update-check outcome for a single source.
@@ -40,7 +36,7 @@ internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
     /// </summary>
     public async Task<Status> CheckAsync(GeoSource source, CancellationToken ct = default)
     {
-        var meta = await store.GetGeoFileAsync(source.Name, ct);
+        var meta = await store.GetGeoFileAsync(source.Name, ct).ConfigureAwait(false);
         if (meta is null)
         {
             return Status.Available;
@@ -49,8 +45,8 @@ internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
         // A clean 304 / matching validator / matching byte length is a reliable "current". A changed validator
         // is NOT proof of new bytes - redirect/CDN ETags rotate on identical content - so a published checksum
         // arbitrates before falling back to the header verdict.
-        var localSize = TryLocalSize(source.Name);
-        var byHeaders = await CheckHeadersAsync(source.Url, meta, localSize, ct);
+        var localSize = LocalSize(source.Name);
+        var byHeaders = await CheckHeadersAsync(source.Url, meta, localSize, ct).ConfigureAwait(false);
         if (byHeaders == Status.UpToDate)
         {
             return Status.UpToDate;
@@ -58,7 +54,7 @@ internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
 
         // Content-based check for sources that ship a .sha256sum next to the data file (the geosite/geoip
         // releases). It suppresses the rotating-ETag false positive without re-downloading the whole file.
-        var byChecksum = await CheckChecksumAsync(source.Url, meta, ct);
+        var byChecksum = await CheckChecksumAsync(source.Url, meta, ct).ConfigureAwait(false);
         if (byChecksum != Status.Unknown)
         {
             return byChecksum;
@@ -87,7 +83,7 @@ internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
                 request.Headers.IfModifiedSince = since;
             }
 
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.NotModified)
             {
                 return Status.UpToDate;
@@ -142,7 +138,7 @@ internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
         try
         {
             // Publishers ship a .sha256sum next to the data file; first token is the digest.
-            var text = await http.GetStringAsync(url + ".sha256sum", ct);
+            var text = await http.GetStringAsync(url + ".sha256sum", ct).ConfigureAwait(false);
             var hash = text.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
 
             // Guard against a soft 404: only a real 64-char hex digest is comparable.
@@ -164,12 +160,12 @@ internal sealed class GeoUpdateChecker(IStateStore store, GeoHttp http)
     }
 
     // The stored data file's byte length, or 0 when it is missing / unreadable.
-    private static long TryLocalSize(string name)
+    private long LocalSize(string name)
     {
         try
         {
-            var info = new FileInfo(TunnelPaths.GeoDataFile(name));
-            return info.Exists ? info.Length : 0;
+            using var stream = files.OpenRead(name);
+            return stream is { CanSeek: true } ? stream.Length : 0;
         }
         catch (IOException)
         {

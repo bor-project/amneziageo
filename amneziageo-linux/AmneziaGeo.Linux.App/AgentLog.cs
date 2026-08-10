@@ -22,6 +22,11 @@ internal sealed class AgentLog : IDisposable
     }
 
     /// <summary>
+    /// The log database the diagnostics archive reads.
+    /// </summary>
+    public SqliteLogStore Store => _store;
+
+    /// <summary>
     /// Creates the log tables and starts the writer loop.
     /// </summary>
     public Task InitializeAsync(CancellationToken ct = default) => _store.InitializeAsync(ct);

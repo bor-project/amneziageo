@@ -2,7 +2,9 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using AmneziaGeo.Ui.Controls;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -21,6 +23,18 @@ internal sealed partial class RoutingEditorView : UserControl
     public RoutingEditorView()
     {
         InitializeComponent();
+    }
+
+    // Steps from the add button to the role segments: the next row starts at the card's left edge, so
+    // directional focus walks past them into the footer (#201).
+    private void OnAddEntryKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.Key is not Key.Down)
+        {
+            return;
+        }
+
+        e.Handled = PaneFocus.FocusFirst(RoleSegments);
     }
 
     // Copies everything the expanded rule covers to the clipboard.

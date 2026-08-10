@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
@@ -27,6 +28,7 @@ internal sealed partial class BundleImportView : UserControl
     public BundleImportView()
     {
         InitializeComponent();
+        StatusText.PropertyChanged += OnStatusChanged;
     }
 
     /// <summary>
@@ -36,6 +38,15 @@ internal sealed partial class BundleImportView : UserControl
     {
         get => GetValue(LeadingActionProperty);
         set => SetValue(LeadingActionProperty, value);
+    }
+
+    // Carries the panel to the result line as it appears: a remote scrolls only what it moves onto.
+    private void OnStatusChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == TextBlock.TextProperty && StatusText.Text is { Length: > 0 })
+        {
+            Dispatcher.UIThread.Post(() => StatusText.BringIntoView(), DispatcherPriority.Background);
+        }
     }
 
     private async void OnLoadFile(object? sender, RoutedEventArgs e)

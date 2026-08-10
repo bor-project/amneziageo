@@ -36,6 +36,11 @@
                Watermark="{l:Tr BundleImport_PayloadWatermark}" />
     </Border>
 
+    <!-- Carries both the success summary and error messages. Stands above the buttons: a television scrolls
+         no further than the control holding focus, so a line under them never comes on screen. -->
+    <TextBlock x:Name="StatusText" Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
     <!-- Load / import actions. A host may inject a leading action so all three share
          this wrap row at equal width and reflow to a new line when they don't fit. -->
     <WrapPanel HorizontalAlignment="Center">
@@ -55,8 +60,5 @@
       </Button>
     </WrapPanel>
 
-    <!-- Carries both the success summary and error messages. -->
-    <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-               IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
   </StackPanel>
 </UserControl>

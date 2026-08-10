@@ -35,6 +35,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private Control? _selectedRow;
     private TextBox? _keyboardTarget;
     private Control? _lastFocus;
+    private Control? _sheetFocus;
     private Control? _disabledFocus;
     private int _transitionVersion;
 
@@ -72,14 +73,22 @@ internal sealed partial class MobileSelectHost : UserControl
         // comes back empty; the built-in browser owns opening there.
         if (UiPlatform.IsTelevision || !HasHandler(global::Android.Content.Intent.ActionOpenDocument))
         {
-            FileBrowserHost.Register((title, extensions) => FileBrowserOverlay.ShowAsync(RootGrid, title, extensions));
+            FileBrowserHost.Register((title, extensions) =>
+            {
+                DropSheet();
+                return FileBrowserOverlay.ShowAsync(RootGrid, title, extensions);
+            });
         }
 
         // Opening and saving resolve separately: a phone may carry a third-party picker for open and still have
         // nothing but the stub for create, which accepts the intent and writes nothing.
         if (UiPlatform.IsTelevision || !HasHandler(global::Android.Content.Intent.ActionCreateDocument))
         {
-            FileSaverHost.Register((title, name) => FileBrowserOverlay.SaveAsync(RootGrid, title, name));
+            FileSaverHost.Register((title, name) =>
+            {
+                DropSheet();
+                return FileBrowserOverlay.SaveAsync(RootGrid, title, name);
+            });
         }
 
         if (_topLevel is not null)
@@ -133,6 +142,7 @@ internal sealed partial class MobileSelectHost : UserControl
         _transitionVersion++;
         _activeComboBox = comboBox;
         _selectedRow = null;
+        _sheetFocus = null;
         OptionsPanel.Children.Clear();
 
         for (var index = 0; index < items.Length; index++)
@@ -216,7 +226,7 @@ internal sealed partial class MobileSelectHost : UserControl
             SelectOverlay.Opacity = 1;
             _sheetTransform.Y = 0;
             _selectedRow?.BringIntoView();
-            _selectedRow?.Focus();
+            _selectedRow?.Focus(NavigationMethod.Directional);
         }, DispatcherPriority.Render);
     }
 
@@ -331,10 +341,28 @@ internal sealed partial class MobileSelectHost : UserControl
 
     private void OnTopLevelGotFocus(object? sender, GotFocusEventArgs e)
     {
-        if (e.Source is Control control and not TopLevel)
+        if (e.Source is not Control control || control is TopLevel)
         {
-            _lastFocus = control;
+            return;
         }
+
+        // The sheet holds the remote while it is up. Directional focus otherwise walks out from under it and
+        // presses the screen behind, which is how a file browser ends up below a sheet still showing the old choice.
+        if (_activeComboBox is not null)
+        {
+            if (SelectSheet.IsVisualAncestorOf(control))
+            {
+                _sheetFocus = control;
+            }
+            else
+            {
+                (_sheetFocus ?? _selectedRow)?.Focus(NavigationMethod.Directional);
+            }
+
+            return;
+        }
+
+        _lastFocus = control;
     }
 
     // A system picker drops focus on the way back, leaving the remote to start over from the header. Puts it
@@ -549,8 +577,17 @@ internal sealed partial class MobileSelectHost : UserControl
 
             SelectOverlay.IsVisible = false;
             OptionsPanel.Children.Clear();
-            comboBox?.Focus();
+            _sheetFocus = null;
+            comboBox?.Focus(NavigationMethod.Directional);
         }, _transitionDuration);
+    }
+
+    // Takes the sheet down ahead of another overlay: stacked, the remote drives the one underneath.
+    private void DropSheet()
+    {
+        var comboBox = _activeComboBox;
+        CloseImmediately();
+        comboBox?.Focus(NavigationMethod.Directional);
     }
 
     private void CloseImmediately()
@@ -558,6 +595,7 @@ internal sealed partial class MobileSelectHost : UserControl
         _transitionVersion++;
         _activeComboBox = null;
         _selectedRow = null;
+        _sheetFocus = null;
         SelectOverlay.IsVisible = false;
         SelectOverlay.Opacity = 0;
         _sheetTransform.Y = 32;

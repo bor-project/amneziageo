@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Android.App;
@@ -6,6 +7,7 @@ using Android.Content;
 using Android.Content.PM;
 using Android.Net;
 using Android.OS;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Routing;
@@ -74,6 +76,16 @@ public sealed class GeoVpnService : VpnService
     public const string ExtraMtu = "mtu";
 
     /// <summary>
+    /// WebSocket front extra: a host or a whole wss:// URL. Absent leaves the tunnel on plain UDP.
+    /// </summary>
+    public const string ExtraWsHost = "ws-host";
+
+    /// <summary>
+    /// WebSocket front port extra.
+    /// </summary>
+    public const string ExtraWsPort = "ws-port";
+
+    /// <summary>
     /// IPv6 opt-in extra. Off by default: a peer that hands out an address but routes no IPv6 turns every
     /// v6-capable name into a stall, and a family the tun does not carry is unreachable rather than leaked.
     /// </summary>
@@ -98,6 +110,7 @@ public sealed class GeoVpnService : VpnService
 
     private int _handle = -1;
     private int _proxyPort;
+    private WsCarrier? _carrier;
     private ProxyRelay? _relay;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
@@ -134,6 +147,8 @@ public sealed class GeoVpnService : VpnService
         var appList = intent?.GetStringArrayExtra(ExtraAppList);
         var mtu = intent?.GetIntExtra(ExtraMtu, 0) ?? 0;
         var ipv6 = intent?.GetBooleanExtra(ExtraIpv6, false) ?? false;
+        var wsHost = intent?.GetStringExtra(ExtraWsHost);
+        var wsPort = intent?.GetIntExtra(ExtraWsPort, 0) ?? 0;
         if (string.IsNullOrEmpty(config))
         {
             Teardown(VpnStage.Failed, "no config", nameof(ConnectFailureReason.ConfigMissing));
@@ -143,7 +158,7 @@ public sealed class GeoVpnService : VpnService
         StartForegroundNotification(name);
         Publish(VpnStage.Connecting, name);
         var plan = VpnBridge.ReadPlan();
-        Task.Run(() => BringUpAsync(plan, config, name, appMode, appList, mtu, ipv6));
+        Task.Run(() => BringUpAsync(plan, config, name, appMode, appList, mtu, ipv6, wsHost, wsPort));
         return StartCommandResult.NotSticky;
     }
 
@@ -181,7 +196,7 @@ public sealed class GeoVpnService : VpnService
         base.OnRevoke();
     }
 
-    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, bool ipv6)
+    private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, bool ipv6, string? wsHost, int wsPort)
     {
         try
         {
@@ -190,6 +205,13 @@ public sealed class GeoVpnService : VpnService
             // Makes the peer answer on its own, so a quiet link is neither dropped by the provider nor mistaken
             // for a live one.
             var resolved = WgConfigEditor.EnsurePersistentKeepalive(ResolveEndpoint(config), KeepaliveSeconds);
+            var carrier = StartCarrier(config, wsHost, wsPort);
+            if (carrier is not null)
+            {
+                _carrier = carrier;
+                resolved = WgConfigEditor.SetEndpoint(resolved, $"{ProxyHost}:{carrier.LocalPort}");
+            }
+
             var uapi = WgQuickToUapi.Convert(resolved);
             if (uapi is null)
             {
@@ -780,6 +802,38 @@ public sealed class GeoVpnService : VpnService
         }
     }
 
+    // The websocket the tunnel is carried inside when the configuration asks for one. The front is resolved
+    // here, while the machine still answers lookups of its own, and the carrier's socket is excused from the
+    // tunnel, or it would be asked to carry itself.
+    private WsCarrier? StartCarrier(string config, string? host, int port)
+    {
+        if (host is null && port <= 0)
+        {
+            return null;
+        }
+
+        var endpoint = WgConfigEditor.GetEndpoint(config) ?? string.Empty;
+        var colon = endpoint.LastIndexOf(':');
+        if (colon <= 0 || !int.TryParse(endpoint[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetPort))
+        {
+            Report("this configuration asks to be carried inside a websocket, but its Endpoint names no port");
+            return null;
+        }
+
+        var front = WsEndpoint.Parse(host, port, endpoint[..colon].Trim('[', ']'));
+        var address = ResolveHostV4(front.Host);
+        if (front.Port <= 0 || address is null || !System.Net.IPAddress.TryParse(address, out var parsed))
+        {
+            Report($"the websocket front {front.Host}:{front.Port} has no address to dial");
+            return null;
+        }
+
+        var carrier = WsCarrier.Start(front, parsed, targetPort, socket => Protect(socket.Handle.ToInt32()),
+            (message, ex) => Report(ex is null ? message : $"{message}: {ex.Message}"));
+        Report($"the tunnel is carried inside a websocket to {front.Host}:{front.Port}; the engine dials it on {ProxyHost}:{carrier.LocalPort}");
+        return carrier;
+    }
+
     private static string ResolveEndpoint(string config)
     {
         var endpoint = WgConfigEditor.GetEndpoint(config);
@@ -888,6 +942,8 @@ public sealed class GeoVpnService : VpnService
         _relay?.Dispose();
         _relay = null;
         _proxyPort = 0;
+        _carrier?.Dispose();
+        _carrier = null;
         if (_handle >= 0)
         {
             AwgEngine.TurnOff(_handle);

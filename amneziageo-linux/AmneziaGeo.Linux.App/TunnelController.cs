@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Linux.Engine;
@@ -21,6 +22,7 @@ internal readonly record struct PeerCounters(long HandshakeUnix, long RxBytes, l
 internal sealed class TunnelController : IDisposable
 {
     private const string TunDevice = "/dev/net/tun";
+    private const string Loopback = "127.0.0.1";
     private const int DefaultMtu = 1420;
     private const int HandshakeWaitSeconds = 30;
     private const int KeepaliveSeconds = 25;
@@ -29,6 +31,7 @@ internal sealed class TunnelController : IDisposable
     private readonly string _iface;
     private readonly AgentLog _log;
     private AwgDaemon? _daemon;
+    private WsCarrier? _carrier;
     private DnsRouter? _dns;
     private RoutingCache? _cache;
     private CancellationTokenSource? _sessionCts;
@@ -87,6 +90,21 @@ internal sealed class TunnelController : IDisposable
         }
 
         var (resolved, endpointIp) = await ResolveEndpointAsync(configText, ct).ConfigureAwait(false);
+        var carrier = await CarrierAsync(options.Transport, configText, ct).ConfigureAwait(false);
+        if (carrier.Refusal is not null)
+        {
+            _log.Warn("tunnel", $"connect refused: {carrier.Refusal}");
+            return carrier.Refusal;
+        }
+
+        if (carrier.Started is { } started)
+        {
+            // The engine dials the carrier instead of the server, and the address that has to stay outside the
+            // tunnel is the front's, not the endpoint's.
+            endpointIp = carrier.Address;
+            resolved = WgConfigEditor.SetEndpoint(resolved, $"{Loopback}:{started.LocalPort}");
+        }
+
         var split = routing.Split && routing.HasRules;
         var tunnelResolvers = TunnelResolvers(resolved);
         var startupRoutes = split ? tunnelResolvers.Select(server => $"{server}/32").ToList() : [];
@@ -98,10 +116,12 @@ internal sealed class TunnelController : IDisposable
         var uapi = WgQuickToUapi.Convert(config);
         if (uapi is null)
         {
+            carrier.Started?.Dispose();
             return "the configuration carries no usable [Interface] PrivateKey";
         }
 
         await DownAsync(ct).ConfigureAwait(false);
+        _carrier = carrier.Started;
 
         // Read before the tunnel routes land, while the machine's own path is the only one there is.
         var hop = await PhysicalHopAsync(ct).ConfigureAwait(false);
@@ -211,6 +231,12 @@ internal sealed class TunnelController : IDisposable
         {
             _pinnedEndpoint = null;
             await Shell.RunAsync("ip", ct, "route", "del", pinned).ConfigureAwait(false);
+        }
+
+        if (_carrier is { } carrier)
+        {
+            _carrier = null;
+            carrier.Dispose();
         }
 
         if (_daemon is { } daemon)
@@ -395,6 +421,72 @@ internal sealed class TunnelController : IDisposable
         }
 
         return gateway is not null && IPAddress.TryParse(gateway, out var address) ? [address] : [];
+    }
+
+    // The websocket carrier a configuration asks for: the engine dials it on the loopback and it wraps the
+    // tunnel in web traffic the network lets through. The front is resolved here, before the tunnel takes over
+    // the machine's routes, because a lookup made afterwards would travel inside the tunnel it is meant to open.
+    private async Task<(WsCarrier? Started, string? Address, string? Refusal)> CarrierAsync(ConfigTransport? transport, string configText, CancellationToken ct)
+    {
+        if (transport?.UseWebSocket != true)
+        {
+            return (null, null, null);
+        }
+
+        var endpoint = WgConfigEditor.GetEndpoint(configText) ?? string.Empty;
+        var colon = endpoint.LastIndexOf(':');
+        if (colon <= 0 || !int.TryParse(endpoint[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetPort))
+        {
+            return (null, null, "this configuration asks to be carried inside a websocket, but its Endpoint names no port");
+        }
+
+        var front = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, endpoint[..colon].Trim('[', ']'));
+        var address = await ResolveHostAsync(front.Host, ct).ConfigureAwait(false);
+        if (address is null || front.Port <= 0)
+        {
+            return (null, null, $"the websocket front {front.Host}:{front.Port} has no address to dial");
+        }
+
+        var carrier = WsCarrier.Start(front, address, targetPort, null, Note);
+        _log.Info("tunnel", $"the tunnel is carried inside a websocket to {front.Host}:{front.Port}; the engine dials it on {Loopback}:{carrier.LocalPort}");
+        return (carrier, address.ToString(), null);
+    }
+
+    // What the carrier has to say, at the level its news deserves.
+    private void Note(string message, Exception? ex)
+    {
+        if (ex is null)
+        {
+            _log.Info("tunnel", message);
+        }
+        else
+        {
+            _log.Error("tunnel", message, ex);
+        }
+    }
+
+    // One address for a host, as the tunnel dials it.
+    private static async Task<IPAddress?> ResolveHostAsync(string host, CancellationToken ct)
+    {
+        if (host.Length == 0)
+        {
+            return null;
+        }
+
+        if (IPAddress.TryParse(host, out var literal))
+        {
+            return literal;
+        }
+
+        try
+        {
+            var addresses = await Dns.GetHostAddressesAsync(host, ct).ConfigureAwait(false);
+            return Array.Find(addresses, one => one.AddressFamily == AddressFamily.InterNetwork);
+        }
+        catch (Exception ex) when (ex is SocketException or ArgumentException or OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     // The engine does not resolve names, so a hostname endpoint is rewritten to its address.

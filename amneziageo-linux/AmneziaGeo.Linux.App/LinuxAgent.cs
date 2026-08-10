@@ -546,7 +546,8 @@ internal sealed class LinuxAgent : IDisposable
 
         var routing = await TunnelRouting.LoadAsync(_store, ct).ConfigureAwait(false);
         var configDns = await _store.GetConfigDnsAsync(configName, ct).ConfigureAwait(false);
-        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds);
+        var configTransport = await _store.GetConfigTransportAsync(configName, ct).ConfigureAwait(false);
+        var options = TunnelOptions.Read(configDns?.Servers, _routeTtlSeconds, configTransport);
         var failure = await _tunnel.UpAsync(config, routing, options, ct).ConfigureAwait(false);
         if (failure is not null)
         {
@@ -1337,17 +1338,20 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        var carrier = Carrier(text, transport);
         var options = new ChannelProbeOptions(
             config,
             _tunnel.Running,
             LocalGateway.Find(),
-            await ResolveEndpointAsync(text, ct).ConfigureAwait(false),
+            await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
             LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)),
             !string.Equals(_tunnel.Mode, "split", StringComparison.OrdinalIgnoreCase),
             true,
             _tunnel.Running ? _handshakeAge : -1,
             _tunnel.Running ? _link.HandshakesPerMinute : -1,
-            ConfiguredMtu: WgConfigEditor.GetMtu(text));
+            ConfiguredMtu: WgConfigEditor.GetMtu(text),
+            CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -1407,16 +1411,30 @@ internal sealed class LinuxAgent : IDisposable
     }
 
     // The server's address as the tunnel dials it.
-    private static async Task<string?> ResolveEndpointAsync(string text, CancellationToken ct)
+    // The host the tunnel dials and the port to knock on: a websocket carrier stands at its own address, and
+    // the endpoint in the config is only what the server hands the tunnel to behind it.
+    private static (string Host, int Port) Carrier(string text, ConfigTransport? transport)
     {
-        var endpoint = WgConfigEditor.GetEndpoint(text);
-        if (string.IsNullOrEmpty(endpoint))
+        var endpoint = WgConfigEditor.GetEndpoint(text) ?? string.Empty;
+        var colon = endpoint.LastIndexOf(':');
+        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
+        if (transport?.UseWebSocket != true)
+        {
+            return (host, 0);
+        }
+
+        var front = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, host);
+        return (front.Host, front.Port);
+    }
+
+    // One address for a host, as the tunnel resolves it.
+    private static async Task<string?> ResolveAsync(string host, CancellationToken ct)
+    {
+        if (host.Length == 0)
         {
             return null;
         }
 
-        var colon = endpoint.LastIndexOf(':');
-        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
         if (System.Net.IPAddress.TryParse(host, out var parsed))
         {
             return parsed.ToString();

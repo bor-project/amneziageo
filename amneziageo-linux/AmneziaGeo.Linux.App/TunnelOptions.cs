@@ -1,13 +1,15 @@
 using System.Net;
 using System.Net.Sockets;
+using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Linux.App;
 
 /// <summary>
 /// What a connection applies beyond its routing rules: the resolvers the destinations that stay on the machine's
-/// own network are looked up through, and the idle window a destination keeps the route it earned.
+/// own network are looked up through, the idle window a destination keeps the route it earned, and the transport
+/// the tunnel is carried over.
 /// </summary>
-internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, int RouteTtlSeconds)
+internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, int RouteTtlSeconds, ConfigTransport? Transport = null)
 {
     /// <summary>
     /// Idle window a route survives while the library names none.
@@ -22,7 +24,7 @@ internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, in
     /// <summary>
     /// Reads the resolver list stored for a configuration.
     /// </summary>
-    public static TunnelOptions Read(string? resolvers, int routeTtlSeconds)
+    public static TunnelOptions Read(string? resolvers, int routeTtlSeconds, ConfigTransport? transport = null)
     {
         var servers = new List<IPAddress>();
         foreach (var entry in (resolvers ?? string.Empty).Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -33,6 +35,6 @@ internal sealed record TunnelOptions(IReadOnlyList<IPAddress> LocalResolvers, in
             }
         }
 
-        return new TunnelOptions(servers, routeTtlSeconds);
+        return new TunnelOptions(servers, routeTtlSeconds, transport);
     }
 }

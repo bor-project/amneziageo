@@ -466,6 +466,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             intent.PutExtra(GeoVpnService.ExtraIpv6, transport.UseIpv6);
         }
 
+        if (transport is { UseWebSocket: true })
+        {
+            intent.PutExtra(GeoVpnService.ExtraWsHost, transport.WebSocketHost);
+            intent.PutExtra(GeoVpnService.ExtraWsPort, transport.WebSocketPort);
+        }
+
         if (foreground && Build.VERSION.SdkInt >= BuildVersionCodes.O)
         {
             context.StartForegroundService(intent);
@@ -1922,17 +1928,19 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var text = await _store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
         var running = VpnBridge.IsRunning(Application.Context);
         var transport = await _store.GetConfigTransportAsync(config, ct).ConfigureAwait(false);
+        var carrier = Carrier(text, transport);
         var options = new ChannelProbeOptions(
             config,
             running,
             LocalGateway.Find(),
-            await ResolveEndpointAsync(text, ct).ConfigureAwait(false),
+            await ResolveAsync(carrier.Host, ct).ConfigureAwait(false),
             LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)),
             true,
             false,
             running ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - _handshakeUnix)) : -1,
             running ? _link.HandshakesPerMinute : -1,
-            ConfiguredMtu: transport is { Mtu: > 0 } ? transport.Mtu : WgConfigEditor.GetMtu(text));
+            ConfiguredMtu: transport is { Mtu: > 0 } ? transport.Mtu : WgConfigEditor.GetMtu(text),
+            CarrierPort: carrier.Port);
 
         var report = await ChannelProbe.RunAsync(options, ct).ConfigureAwait(false);
         Record(report.Render(), report.Culprit.Length > 0, report.Advice);
@@ -1982,16 +1990,30 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     }
 
     // The server's address as the tunnel dials it.
-    private static async Task<string?> ResolveEndpointAsync(string text, CancellationToken ct)
+    // The host the tunnel dials and the port to knock on: a websocket carrier stands at its own address, and
+    // the endpoint in the config is only what the server hands the tunnel to behind it.
+    private static (string Host, int Port) Carrier(string text, ConfigTransport? transport)
     {
-        var endpoint = WgConfigEditor.GetEndpoint(text);
-        if (string.IsNullOrEmpty(endpoint))
+        var endpoint = WgConfigEditor.GetEndpoint(text) ?? string.Empty;
+        var colon = endpoint.LastIndexOf(':');
+        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
+        if (transport?.UseWebSocket != true)
+        {
+            return (host, 0);
+        }
+
+        var front = WsEndpoint.Parse(transport.WebSocketHost, transport.WebSocketPort, host);
+        return (front.Host, front.Port);
+    }
+
+    // One address for a host, as the tunnel resolves it.
+    private static async Task<string?> ResolveAsync(string host, CancellationToken ct)
+    {
+        if (host.Length == 0)
         {
             return null;
         }
 
-        var colon = endpoint.LastIndexOf(':');
-        var host = (colon > 0 ? endpoint[..colon] : endpoint).Trim('[', ']');
         if (System.Net.IPAddress.TryParse(host, out var parsed))
         {
             return parsed.ToString();

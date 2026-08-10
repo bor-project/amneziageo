@@ -175,12 +175,55 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public string LinkSpeedText => SpeedFormat.Pair(RxBitsPerSecond, TxBitsPerSecond);
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkLine))]
+    [NotifyPropertyChangedFor(nameof(LinkLossText))]
+    [NotifyPropertyChangedFor(nameof(LinkLossy))]
+    [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
+    private int _linkLossPercent = LinkHealth.LossUnknown;
+
+    /// <summary>
+    /// Whether the row carries a loss share at all: only a running tunnel measures one, and only against a target
+    /// that answers it.
+    /// </summary>
+    public bool ShowLinkLoss => LinkKnown && LinkHealth.LossKnown(LinkLossPercent);
+
+    /// <summary>
+    /// Whether the running tunnel drops enough for it to be felt.
+    /// </summary>
+    public bool LinkLossy => LinkHealth.Lossy(LinkLossPercent);
+
+    /// <summary>
+    /// The share of the tunnel's own probes that never came back.
+    /// </summary>
+    public string LinkLossText => Loc.Instance.Get("Main_LinkLoss", LinkLossPercent);
+
+    /// <summary>
+    /// Colour of the loss on the card: muted while the link is clean, the warning colour once it drops enough
+    /// to be felt.
+    /// </summary>
+    public IBrush LinkLossBrush => LinkLossy ? _slow : _idle;
+
+    /// <summary>
+    /// Whether the card carries the link line at all. A television keeps none: it shows one application at a
+    /// time, so nobody is there to read these numbers while the traffic they describe is being made.
+    /// </summary>
+    public bool ShowLinkLine => LinkShown && (ShowLinkSpeed || ShowLinkLoss);
+
+    /// <summary>
+    /// Whether this device shows what the tunnel carries and loses at all.
+    /// </summary>
+    public static bool LinkShown => !UiPlatform.IsTelevision;
+
     // Seconds since the running tunnel's peer last answered; -1 on every config that is not running.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
     [NotifyPropertyChangedFor(nameof(ShowLinkSpeed))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkLine))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private int _handshakeAgeSeconds = -1;
 

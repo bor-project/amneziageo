@@ -232,7 +232,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// <summary>
     /// Whether the home screen shows what the running tunnel carries.
     /// </summary>
-    public bool ShowLink => ConnState == 2 && BoundRow is not null;
+    public bool ShowLink => ConfigItemViewModel.LinkShown && ConnState == 2 && BoundRow is not null;
 
     /// <summary>
     /// Receive and send rates of the running tunnel.
@@ -253,6 +253,22 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// Colour of the re-establish warning.
     /// </summary>
     public IBrush LinkChurnBrush => _orange;
+
+    /// <summary>
+    /// Whether the home screen shows what the running tunnel loses.
+    /// </summary>
+    public bool ShowLinkLoss => ConfigItemViewModel.LinkShown && ConnState == 2 && BoundRow is { ShowLinkLoss: true };
+
+    /// <summary>
+    /// The share of the running tunnel's own probes that never came back.
+    /// </summary>
+    public string LinkLossText => BoundRow?.LinkLossText ?? string.Empty;
+
+    /// <summary>
+    /// Colour of the loss line: the hint it is written in while the link is clean, the warning colour once it
+    /// drops enough to be felt.
+    /// </summary>
+    public IBrush LinkLossBrush => BoundRow is { LinkLossy: true } ? _orange : _hintBrush;
 
     public string ConnectHint => ServerSilent
         ? Loc.Instance.Get("MainVm_ConnectHintServerSilent")
@@ -510,6 +526,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         OnPropertyChanged(nameof(LinkSpeedText));
         OnPropertyChanged(nameof(LinkChurning));
         OnPropertyChanged(nameof(LinkChurnText));
+        OnPropertyChanged(nameof(ShowLinkLoss));
+        OnPropertyChanged(nameof(LinkLossText));
+        OnPropertyChanged(nameof(LinkLossBrush));
         OnPropertyChanged(nameof(ConnectHint));
         OnPropertyChanged(nameof(ConnectCircleBrush));
         OnPropertyChanged(nameof(ConnectCircleBorderBrush));

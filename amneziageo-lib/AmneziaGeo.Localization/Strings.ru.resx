@@ -1799,6 +1799,9 @@
   <data name="Main_LinkChurn" xml:space="preserve">
     <value>сессия переустанавливается {0} раз в минуту</value>
   </data>
+  <data name="Main_LinkLoss" xml:space="preserve">
+    <value>потери в туннеле {0}%</value>
+  </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>
   </data>

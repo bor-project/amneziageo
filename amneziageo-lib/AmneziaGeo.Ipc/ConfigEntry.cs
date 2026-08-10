@@ -23,7 +23,10 @@ public sealed record ConfigEntry(
     // config that is not running.
     long RxBitsPerSecond = 0,
     long TxBitsPerSecond = 0,
-    int HandshakesPerMinute = 0);
+    int HandshakesPerMinute = 0,
+    // Share of its own probes the running tunnel lost over the last half minute; unknown on every config that is
+    // not running, and on one whose probe has found nothing inside the tunnel to answer it.
+    int LossPercent = LinkHealth.LossUnknown);
 
 /// <summary>
 /// Terms both sides read the handshake age by.

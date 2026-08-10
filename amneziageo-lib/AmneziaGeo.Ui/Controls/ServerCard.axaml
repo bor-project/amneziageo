@@ -33,9 +33,9 @@
                 Background="{DynamicResource AgAccentBrush}"
                 IsVisible="{Binding $parent[controls:ServerCard].Entered}" />
 
-        <!-- Three lines and the buttons beside them: the name, the address under it, the measurement under
-             that. -->
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" Margin="12,9">
+        <!-- Four lines and the buttons beside them: the name, the address under it, the measurement under that,
+             and what the running tunnel carries and drops on a line of its own. -->
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="12,9">
           <TextBlock x:Name="NamePart" Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="13"
                      FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
           <TextBlock x:Name="EndpointPart" Grid.Row="1" Grid.Column="0" Text="{Binding Endpoint}"
@@ -46,14 +46,20 @@
             <!-- The sweep's pick: fewest losses, then the shortest round trip. -->
             <TextBlock Text="{l:Tr Main_ProbeBest}" FontSize="11.5" FontWeight="SemiBold"
                        Foreground="{DynamicResource AgAccentBrush}" IsVisible="{Binding IsBest}" />
-            <!-- What the running tunnel carries right now. -->
-            <TextBlock Text="{Binding LinkSpeedText}" FontSize="11.5" Classes="muted"
-                       IsVisible="{Binding ShowLinkSpeed}" />
           </StackPanel>
+
+          <!-- What the running tunnel carries and what it drops: a line of its own, which breaks in two rather
+               than trimming when the card is too narrow to hold both. -->
+          <WrapPanel x:Name="LinkPart" Grid.Row="3" Grid.Column="0" IsVisible="{Binding ShowLinkLine}">
+            <TextBlock Text="{Binding LinkSpeedText}" FontSize="11.5" Classes="muted" Margin="0,0,8,0"
+                       IsVisible="{Binding ShowLinkSpeed}" />
+            <TextBlock Text="{Binding LinkLossText}" FontSize="11.5" Foreground="{Binding LinkLossBrush}"
+                       IsVisible="{Binding ShowLinkLoss}" />
+          </WrapPanel>
 
           <!-- The wide card stands the power button in its top corner and the menu in the bottom one; the
                narrow one carries the power button alone, centred, and keeps its pair under the swipe. -->
-          <DockPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" LastChildFill="False"
+          <DockPanel Grid.Row="0" Grid.RowSpan="4" Grid.Column="1" LastChildFill="False"
                      VerticalAlignment="Center">
             <!-- The glyph carries the state, not the action: grey while nothing runs on this configuration,
                  amber while it is being dialled or has gone quiet, blue while it is up - the colours the big
@@ -71,7 +77,7 @@
               </Border>
             </Button>
 
-            <!-- Menu the wide card carries: edit, and a delete that asks the whole screen. -->
+            <!-- The button that opens the pair the wide card keeps folded away. -->
             <Button x:Name="MorePart" DockPanel.Dock="Bottom" Classes="rowact" Width="44" Height="30"
                     HorizontalAlignment="Right" Foreground="{DynamicResource AgMutedBrush}"
                     IsVisible="{Binding !$parent[controls:ServerCard].Compact}"
@@ -79,26 +85,6 @@
               <PathIcon Data="{StaticResource AgCardMoreGeometry}" Width="19" Height="19"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         Foreground="{Binding $parent[Button].Foreground}" />
-              <Button.Flyout>
-                <MenuFlyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="cardmenu">
-                  <MenuItem x:Name="EditItem" Header="{l:Tr Main_EditButton}">
-                    <MenuItem.Icon>
-                      <Path Data="{StaticResource AgMenuEditGeometry}" Width="15" Height="15" Stretch="Uniform"
-                            Stroke="{DynamicResource AgAccentBrush}" StrokeThickness="1.5"
-                            StrokeLineCap="Round" StrokeJoin="Round" />
-                    </MenuItem.Icon>
-                  </MenuItem>
-                  <Separator />
-                  <MenuItem x:Name="DeleteItem" Header="{l:Tr Main_ConfirmDeleteButton}"
-                            Foreground="{DynamicResource AgDownBrush}">
-                    <MenuItem.Icon>
-                      <Path Data="{StaticResource AgMenuDeleteGeometry}" Width="15" Height="15" Stretch="Uniform"
-                            Stroke="{DynamicResource AgDownBrush}" StrokeThickness="1.5"
-                            StrokeLineCap="Round" StrokeJoin="Round" />
-                    </MenuItem.Icon>
-                  </MenuItem>
-                </MenuFlyout>
-              </Button.Flyout>
             </Button>
           </DockPanel>
         </Grid>
@@ -114,5 +100,31 @@
                 IsVisible="{Binding $parent[controls:ServerCard].Entered}" />
       </Panel>
     </Button>
+
+    <!-- The menu the button drops, built into the card rather than floated over it: a flyout on android is a
+         layer of its own that takes neither the focus nor the keys, and a remote finds it dead. -->
+    <Border x:Name="MenuPart" Classes="cardmenu" IsVisible="False"
+            HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10">
+      <StackPanel>
+        <Button x:Name="EditItem" Classes="cardmenurow">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Path Data="{StaticResource AgMenuEditGeometry}" Width="15" Height="15" Stretch="Uniform"
+                  Stroke="{DynamicResource AgAccentBrush}" StrokeThickness="1.5"
+                  StrokeLineCap="Round" StrokeJoin="Round" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_EditButton}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Border Classes="cardmenuline" />
+        <Button x:Name="DeleteItem" Classes="cardmenurow"
+                Foreground="{DynamicResource AgDownBrush}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Path Data="{StaticResource AgMenuDeleteGeometry}" Width="15" Height="15" Stretch="Uniform"
+                  Stroke="{DynamicResource AgDownBrush}" StrokeThickness="1.5"
+                  StrokeLineCap="Round" StrokeJoin="Round" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_ConfirmDeleteButton}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </Border>
   </Panel>
 </UserControl>

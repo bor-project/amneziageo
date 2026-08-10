@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
 using Microsoft.Extensions.Logging;
 
@@ -46,6 +47,10 @@ internal sealed class ConfigRunner(
     private static readonly TimeSpan _linkLogInterval = TimeSpan.FromSeconds(60);
     private DateTimeOffset _linkLoggedAt;
     private bool _churnLogged;
+
+    // Echoes inside the tunnel: the only thing that says what it loses, the peer counters keeping no trace of a
+    // packet that never arrived.
+    private LinkLossProbe? _loss;
 
     /// <summary>
     /// Runs sessions per target change.
@@ -171,6 +176,7 @@ internal sealed class ConfigRunner(
 
         _lastRxBytes = -1;
         _deadStreak = 0;
+        await StartLossProbeAsync(config, ct);
 
         try
         {
@@ -584,7 +590,7 @@ internal sealed class ConfigRunner(
             control.SignalStatus();
         }
 
-        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec);
+        var reading = _meter.Sample(status.RxBytes, status.TxBytes, status.HandshakeSec, _loss?.Percent ?? LinkHealth.LossUnknown);
         LogLink(member, reading);
         if (control.SetLink(reading))
         {
@@ -635,8 +641,24 @@ internal sealed class ConfigRunner(
         }
 
         _linkLoggedAt = now;
-        logger.LogInformation("{Member}: link receives {Rx} kbit/s, sends {Tx} kbit/s, handshakes {Rate}/min",
-            member, reading.RxBitsPerSecond / 1000, reading.TxBitsPerSecond / 1000, reading.HandshakesPerMinute);
+        logger.LogInformation("{Member}: link receives {Rx} kbit/s, sends {Tx} kbit/s, handshakes {Rate}/min, loses {Loss}",
+            member, reading.RxBitsPerSecond / 1000, reading.TxBitsPerSecond / 1000, reading.HandshakesPerMinute, LossText(reading.LossPercent));
+    }
+
+    // The measured share, or a word for a tunnel that has found nothing inside it to answer an echo.
+    private static string LossText(int percent)
+    {
+        return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
+    }
+
+    // Starts this session's loss probe: the resolvers the config declares and the peer's own address on the tunnel
+    // are echoed once a second, and what fails to come back is the loss the screen shows.
+    private async Task StartLossProbeAsync(string config, CancellationToken ct)
+    {
+        var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var probe = new LinkLossProbe(LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(text), WgConfigEditor.GetAddresses(text)));
+        _loss = probe;
+        _ = Task.Run(() => probe.RunAsync(ct), ct);
     }
 
     private void ReapForeignTunnels(string keep)
@@ -653,6 +675,7 @@ internal sealed class ConfigRunner(
     {
         control.SetHandshakeAge(-1);
         _meter.Reset();
+        _loss?.Reset();
         _churnLogged = false;
         control.SetLink(LinkReading.Empty);
 

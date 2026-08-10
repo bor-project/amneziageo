@@ -17,18 +17,49 @@ public static class LinkHealth
     public const int ChurnPerMinute = 3;
 
     /// <summary>
+    /// Loss share of a link no probe has been able to measure.
+    /// </summary>
+    public const int LossUnknown = -1;
+
+    /// <summary>
+    /// Loss share at which the link is called lossy: below it a stream repairs itself unnoticed, above it every
+    /// other retransmission is paid for in latency.
+    /// </summary>
+    public const int LossyPercent = 5;
+
+    /// <summary>
     /// Whether the rate names a link that keeps re-establishing.
     /// </summary>
     public static bool Churning(int handshakesPerMinute)
     {
         return handshakesPerMinute >= ChurnPerMinute;
     }
+
+    /// <summary>
+    /// Whether the share was measured at all.
+    /// </summary>
+    public static bool LossKnown(int lossPercent)
+    {
+        return lossPercent >= 0;
+    }
+
+    /// <summary>
+    /// Whether the share names a link that drops enough to be felt.
+    /// </summary>
+    public static bool Lossy(int lossPercent)
+    {
+        return lossPercent >= LossyPercent;
+    }
 }
 
 /// <summary>
-/// What the peer counters said over the last interval.
+/// What the peer counters said over the last interval, and what the tunnel lost while they said it.
 /// </summary>
-public sealed record LinkReading(long RxBitsPerSecond, long TxBitsPerSecond, int HandshakesPerMinute)
+public sealed record LinkReading(
+    long RxBitsPerSecond,
+    long TxBitsPerSecond,
+    int HandshakesPerMinute,
+    int LossPercent = LinkHealth.LossUnknown)
 {
     /// <summary>
     /// A link that has carried nothing yet.
@@ -44,6 +75,7 @@ public sealed record LinkReading(long RxBitsPerSecond, long TxBitsPerSecond, int
     public bool DiffersFrom(LinkReading other)
     {
         return HandshakesPerMinute != other.HandshakesPerMinute
+            || LossPercent != other.LossPercent
             || Math.Abs(RxBitsPerSecond - other.RxBitsPerSecond) >= Resolution
             || Math.Abs(TxBitsPerSecond - other.TxBitsPerSecond) >= Resolution;
     }
@@ -66,9 +98,10 @@ public sealed class LinkMeter
     public LinkReading Reading { get; private set; } = LinkReading.Empty;
 
     /// <summary>
-    /// Folds one peer reading into the rates and returns the result.
+    /// Folds one peer reading into the rates and returns the result. The loss share comes from the probe, the
+    /// counters carrying no trace of what never arrived.
     /// </summary>
-    public LinkReading Sample(long rxBytes, long txBytes, long handshakeUnix)
+    public LinkReading Sample(long rxBytes, long txBytes, long handshakeUnix, int lossPercent = LinkHealth.LossUnknown)
     {
         var now = Environment.TickCount64;
         if (handshakeUnix > _handshakeUnix)
@@ -102,7 +135,7 @@ public sealed class LinkMeter
         _rxBytes = rxBytes;
         _txBytes = txBytes;
         _tick = now;
-        Reading = new LinkReading(rx, tx, perMinute);
+        Reading = new LinkReading(rx, tx, perMinute, lossPercent);
         return Reading;
     }
 

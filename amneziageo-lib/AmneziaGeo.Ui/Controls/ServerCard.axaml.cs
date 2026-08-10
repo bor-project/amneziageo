@@ -67,9 +67,6 @@ internal sealed partial class ServerCard : UserControl
     // Ключ входа нажат: его отпускание карточка съедает сама.
     private bool _entering;
 
-    // Пункт меню выбран: фокус уходит на экран, который он открыл.
-    private bool _picked;
-
     /// <summary>
     /// ctor
     /// </summary>
@@ -79,18 +76,15 @@ internal sealed partial class ServerCard : UserControl
         _reorder = new ListReorder(this, vertical: false);
         HiddenTip.Watch(StripActions.Items);
         HiddenTip.Watch(FaceActions);
+        MorePart.Click += OnMorePicked;
         EditItem.Click += OnEditPicked;
         DeleteItem.Click += OnDeletePicked;
-        if (MorePart.Flyout is { } menu)
-        {
-            menu.Opened += OnMenuOpened;
-            menu.Closed += OnMenuClosed;
-        }
 
         FacePart.RenderTransform = _shift;
         NamePart.RenderTransform = _nameShift;
         EndpointPart.RenderTransform = _nameShift;
         ProbePart.RenderTransform = _nameShift;
+        LinkPart.RenderTransform = _nameShift;
 
         // The card is never dragged by hand across the buttons: every change of X is run by this transition,
         // short enough to keep up with the finger and eased out so it lands instead of stopping. The lines ride
@@ -220,6 +214,9 @@ internal sealed partial class ServerCard : UserControl
         return false;
     }
 
+    // Раскрыто ли меню карточки.
+    private bool MenuOpen => MenuPart.IsVisible;
+
     // How far the card slides: past the buttons it uncovers, gap included, so no button keeps a strip of the
     // card over it - a tap there would close the card instead of running the command.
     private double ActionsWidth =>
@@ -228,13 +225,13 @@ internal sealed partial class ServerCard : UserControl
     // Where the card stands for the state it is in.
     private double Offset => IsOpen ? -ActionsWidth : 0;
 
-    // Free width beside the three lines: how far they can follow the card back.
+    // Free width beside the lines: how far they can follow the card back.
     private double NameSlack
     {
         get
         {
             var text = Math.Max(
-                NamePart.DesiredSize.Width,
+                Math.Max(NamePart.DesiredSize.Width, LinkPart.DesiredSize.Width),
                 Math.Max(EndpointPart.DesiredSize.Width, ProbePart.DesiredSize.Width));
             return Math.Max(0, NamePart.Bounds.Width - text);
         }
@@ -277,9 +274,35 @@ internal sealed partial class ServerCard : UserControl
             return;
         }
 
+        if (MenuOpen && e.Key is Key.Enter or Key.Space)
+        {
+            // Строку жмёт сама карточка: рамка может стоять на кнопке, открывшей меню, и нажатие иначе просто
+            // закроет его.
+            if (DeleteItem.IsKeyboardFocusWithin)
+            {
+                OnDeletePicked(this, e);
+            }
+            else
+            {
+                OnEditPicked(this, e);
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key is Key.Escape)
         {
-            Leave();
+            // Открытое меню закрывается первым: «назад» из него возвращает на кнопку, а не выводит из карточки.
+            if (MenuOpen)
+            {
+                ShowMenu(false);
+            }
+            else
+            {
+                Leave();
+            }
+
             e.Handled = true;
         }
         else if (WalksWith(e.Key))
@@ -304,18 +327,27 @@ internal sealed partial class ServerCard : UserControl
         }
     }
 
-    // Ось, вдоль которой лежат кнопки: на широкой карточке они стоят столбиком, на узкой - в ряд под ней.
-    private bool WalksWith(Key key) => Compact ? key is Key.Left or Key.Right : key is Key.Up or Key.Down;
+    // Ось, вдоль которой лежат кнопки: строки меню идут сверху вниз, на широкой карточке кнопки стоят столбиком,
+    // на узкой - в ряд под ней.
+    private bool WalksWith(Key key) =>
+        MenuOpen ? key is Key.Up or Key.Down : Compact ? key is Key.Left or Key.Right : key is Key.Up or Key.Down;
 
     // Шаг вперёд по этой оси.
     private static bool Forward(Key key) => key is Key.Down or Key.Right;
 
-    // Focus taken elsewhere leaves the card behind: its buttons stop taking focus and go back under it.
+    // Focus taken elsewhere leaves the card behind: its menu closes, its buttons stop taking focus and go back
+    // under it.
     private void OnCardLostFocus(object? sender, RoutedEventArgs e)
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (Entered && !IsKeyboardFocusWithin && MorePart.Flyout is not { IsOpen: true })
+            if (IsKeyboardFocusWithin)
+            {
+                return;
+            }
+
+            MenuPart.IsVisible = false;
+            if (Entered)
             {
                 Entered = false;
                 Settle(false);
@@ -334,6 +366,7 @@ internal sealed partial class ServerCard : UserControl
     {
         _entering = false;
         Entered = false;
+        MenuPart.IsVisible = false;
         Settle(false);
         FacePart.Focus(NavigationMethod.Directional);
     }
@@ -350,9 +383,12 @@ internal sealed partial class ServerCard : UserControl
         }
     }
 
+    // Открытое меню держит пульт на своих строках, пока его не закроют.
     private List<Button> Buttons()
     {
-        return [ConnectPart, .. Actions().Where(button => button.IsVisible)];
+        return MenuOpen
+            ? [EditItem, DeleteItem]
+            : [ConnectPart, .. Actions().Where(button => button.IsVisible)];
     }
 
     // The buttons the card shows in the layout it stands in.
@@ -364,55 +400,47 @@ internal sealed partial class ServerCard : UserControl
     // Кнопка на лице карточки.
     private Button[] FaceActions => [MorePart];
 
-    // Открытое меню встречает пульт на «Изменить».
-    private void OnMenuOpened(object? sender, EventArgs e)
+    // Меню карточки: своя раскладка в дереве самой карточки. Всплывающее окно на андроиде не берёт ни фокус, ни
+    // клавиши пульта, и меню в нём глухое.
+    private void OnMorePicked(object? sender, RoutedEventArgs e)
     {
-        Dispatcher.UIThread.Post(() =>
-        {
-            EditItem.Focus(NavigationMethod.Directional);
-            EditItem.IsSelected = true;
-        });
+        ShowMenu(!MenuOpen);
     }
 
-    // Меню закрыто без выбора: рамка возвращается на кнопку, которая его открыла.
-    private void OnMenuClosed(object? sender, EventArgs e)
+    // Показывает или убирает меню и ведёт за собой рамку.
+    private void ShowMenu(bool open)
     {
-        if (_picked)
+        if (MenuPart.IsVisible == open)
         {
-            _picked = false;
             return;
         }
 
-        Dispatcher.UIThread.Post(
-            () =>
-            {
-                if (!Entered)
-                {
-                    return;
-                }
-
-                // Флаут уже вернул фокус на кнопку обычным способом, и рамки на ней нет: фокус уводится и
-                // ставится заново как от пульта.
-                ConnectPart.Focus(NavigationMethod.Directional);
-                MorePart.Focus(NavigationMethod.Directional);
-            },
-            DispatcherPriority.Background);
+        MenuPart.IsVisible = open;
+        if (open)
+        {
+            // Строка берёт фокус только разложенной, поэтому рамка ставится следующим проходом.
+            Dispatcher.UIThread.Post(() => EditItem.Focus(NavigationMethod.Directional), DispatcherPriority.Loaded);
+        }
+        else if (IsKeyboardFocusWithin)
+        {
+            MorePart.Focus(NavigationMethod.Directional);
+        }
     }
 
-    // Пункт меню «Изменить».
+    // Строка меню «Изменить».
     private void OnEditPicked(object? sender, RoutedEventArgs e)
     {
-        _picked = true;
+        MenuPart.IsVisible = false;
         if (EditCommand?.CanExecute(DataContext) == true)
         {
             EditCommand.Execute(DataContext);
         }
     }
 
-    // Пункт меню «Удалить»: спрашивает подтверждение.
+    // Строка меню «Удалить»: спрашивает подтверждение.
     private void OnDeletePicked(object? sender, RoutedEventArgs e)
     {
-        _picked = true;
+        MenuPart.IsVisible = false;
         if (AskDeleteCommand?.CanExecute(DataContext) == true)
         {
             AskDeleteCommand.Execute(DataContext);
@@ -427,6 +455,14 @@ internal sealed partial class ServerCard : UserControl
         var point = e.GetPosition(this);
         if (Bared(point) || !Contains(FacePart, e.Source))
         {
+            return;
+        }
+
+        // Нажатие мимо открытого меню его убирает.
+        if (MenuOpen && !Contains(MenuPart, e.Source))
+        {
+            ShowMenu(false);
+            e.Handled = true;
             return;
         }
 

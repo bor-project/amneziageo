@@ -67,6 +67,11 @@ public static class VpnBridge
     /// </summary>
     public const string ExtraChurn = "churn";
 
+    /// <summary>
+    /// Loss extra: share of the tunnel's own echoes that never came back.
+    /// </summary>
+    public const string ExtraLoss = "loss";
+
     private const string PlanFile = "plan.json";
     private const string ProcessSuffix = ":vpn";
 
@@ -100,6 +105,7 @@ public static class VpnBridge
         intent.PutExtra(ExtraRxBits, reading.RxBitsPerSecond);
         intent.PutExtra(ExtraTxBits, reading.TxBitsPerSecond);
         intent.PutExtra(ExtraChurn, reading.HandshakesPerMinute);
+        intent.PutExtra(ExtraLoss, reading.LossPercent);
         context.SendBroadcast(intent);
     }
 

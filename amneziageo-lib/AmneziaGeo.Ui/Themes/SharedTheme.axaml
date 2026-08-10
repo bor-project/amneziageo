@@ -350,19 +350,28 @@
     </Style>
 
     <!-- Menu the server card opens: a card of the same make, with room around its rows. -->
-    <Style Selector="MenuFlyoutPresenter.cardmenu">
+    <Style Selector="Border.cardmenu">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="12" />
       <Setter Property="Padding" Value="6" />
+      <Setter Property="BoxShadow" Value="0 8 20 0 #33000000" />
     </Style>
-    <Style Selector="MenuFlyoutPresenter.cardmenu MenuItem">
+    <Style Selector="Button.cardmenurow">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="10,7" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="FontSize" Value="13" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
     </Style>
-    <Style Selector="MenuFlyoutPresenter.cardmenu Separator">
+    <Style Selector="Button.cardmenurow:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+    </Style>
+    <Style Selector="Border.cardmenuline">
       <Setter Property="Background" Value="{DynamicResource AgBorderBrush}" />
       <Setter Property="Height" Value="1" />
       <Setter Property="Margin" Value="8,3" />

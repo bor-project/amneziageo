@@ -258,7 +258,11 @@ public sealed class GeoVpnService : VpnService
             VpnBridge.PublishLink(this, handshake, LinkReading.Empty);
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
-            _ = Task.Run(() => ReportLinkAsync(keepalive.Token));
+            // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the
+            // resolvers the config declares and the peer's own address on the tunnel are echoed once a second.
+            var loss = new LinkLossProbe(LinkLossProbe.TargetsFor(servers, WgConfigEditor.GetAddresses(resolved)));
+            _ = Task.Run(() => loss.RunAsync(keepalive.Token));
+            _ = Task.Run(() => ReportLinkAsync(loss, keepalive.Token));
             if (relay is not null && _proxyPort > 0)
             {
                 Report($"local proxy on {ProxyHost}:{_proxyPort} offered to the applications, "
@@ -627,7 +631,7 @@ public sealed class GeoVpnService : VpnService
 
     // Tells the head when the peer last answered, what the link carries, and how often the session is
     // re-established, so a tunnel that is up but dead shows as such there.
-    private async Task ReportLinkAsync(CancellationToken ct)
+    private async Task ReportLinkAsync(LinkLossProbe loss, CancellationToken ct)
     {
         var meter = new LinkMeter();
         var reported = LinkReading.Empty;
@@ -652,7 +656,7 @@ public sealed class GeoVpnService : VpnService
             var uapi = AwgEngine.GetConfig(handle);
             var seen = PeerHandshake(uapi);
             var (rx, tx) = PeerBytes(uapi);
-            var reading = meter.Sample(rx, tx, seen);
+            var reading = meter.Sample(rx, tx, seen, loss.Percent);
             if (seen == handshake && !reading.DiffersFrom(reported))
             {
                 continue;

@@ -465,7 +465,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _link = new LinkReading(
                 intent.GetLongExtra(VpnBridge.ExtraRxBits, 0),
                 intent.GetLongExtra(VpnBridge.ExtraTxBits, 0),
-                intent.GetIntExtra(VpnBridge.ExtraChurn, 0));
+                intent.GetIntExtra(VpnBridge.ExtraChurn, 0),
+                intent.GetIntExtra(VpnBridge.ExtraLoss, LinkHealth.LossUnknown));
             LogLink(_link);
             PushSnapshot();
             return;
@@ -553,7 +554,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _linkLoggedAt = now;
-        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min");
+        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min, loses {LossText(reading.LossPercent)}");
+    }
+
+    // The measured share, or a word for a tunnel that has found nothing inside it to answer an echo.
+    private static string LossText(int percent)
+    {
+        return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
     }
 
     // Marks the last connect as failed and names its cause for the notice.
@@ -646,7 +653,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             HandshakeAgeSeconds: handshake,
             RxBitsPerSecond: reading.RxBitsPerSecond,
             TxBitsPerSecond: reading.TxBitsPerSecond,
-            HandshakesPerMinute: reading.HandshakesPerMinute);
+            HandshakesPerMinute: reading.HandshakesPerMinute,
+            LossPercent: reading.LossPercent);
     }
 
     private string StatusFor(string target)

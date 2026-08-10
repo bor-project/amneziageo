@@ -51,6 +51,11 @@ internal sealed class LinuxAgent : IDisposable
     private int _handshakeAge = -1;
     private readonly LinkMeter _meter = new();
     private LinkReading _link = LinkReading.Empty;
+
+    // Echoes inside the tunnel: the only thing that says what it loses, the peer counters keeping no trace of a
+    // packet that never arrived.
+    private LinkLossProbe? _loss;
+    private CancellationTokenSource? _lossRun;
     private DateTimeOffset _linkLoggedAt;
     private bool _churnLogged;
     private DateTime _nextRetryUtc = DateTime.MinValue;
@@ -214,12 +219,13 @@ internal sealed class LinuxAgent : IDisposable
             age = peer.HandshakeUnix > 0
                 ? HandshakeAge.Step(Math.Max(0, DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix))
                 : -1;
-            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix);
+            reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown);
             LogLink(reading);
         }
         else
         {
             _meter.Reset();
+            _loss?.Reset();
             _churnLogged = false;
         }
 
@@ -286,7 +292,34 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         _linkLoggedAt = now;
-        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min");
+        _log.Info("link", $"receives {reading.RxBitsPerSecond / 1000} kbit/s, sends {reading.TxBitsPerSecond / 1000} kbit/s, handshakes {reading.HandshakesPerMinute}/min, loses {LossText(reading.LossPercent)}");
+    }
+
+    // The measured share, or a word for a tunnel that has found nothing inside it to answer an echo.
+    private static string LossText(int percent)
+    {
+        return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
+    }
+
+    // Starts this connection's loss probe: the resolvers the config declares and the peer's own address on the
+    // tunnel are echoed once a second, and what fails to come back is the loss the screen shows.
+    private void StartLossProbe(string config)
+    {
+        StopLossProbe();
+        var run = new CancellationTokenSource();
+        var probe = new LinkLossProbe(LinkLossProbe.TargetsFor(WgConfigEditor.GetDns(config), WgConfigEditor.GetAddresses(config)));
+        _loss = probe;
+        _lossRun = run;
+        _ = Task.Run(() => probe.RunAsync(run.Token));
+    }
+
+    // Ends the probe with the tunnel it measured.
+    private void StopLossProbe()
+    {
+        _lossRun?.Cancel();
+        _lossRun?.Dispose();
+        _lossRun = null;
+        _loss = null;
     }
 
     private async Task<IpcAck> RunAsync(IpcCommand command, CancellationToken ct)
@@ -449,6 +482,7 @@ internal sealed class LinuxAgent : IDisposable
             _boundStatus = ConnectionStatus.Disconnecting;
             await PushAsync(ct).ConfigureAwait(false);
             await _tunnel.DownAsync(ct).ConfigureAwait(false);
+            StopLossProbe();
             _boundTarget = null;
             _boundStatus = ConnectionStatus.Disconnected;
             await PushAsync(ct).ConfigureAwait(false);
@@ -497,6 +531,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         _boundStatus = ConnectionStatus.Connected;
+        StartLossProbe(config);
         _log.Info("agent", $"connected: {_boundTarget}");
         await PushAsync(ct).ConfigureAwait(false);
         return Ok();
@@ -1182,7 +1217,8 @@ internal sealed class LinuxAgent : IDisposable
             handshake,
             reading.RxBitsPerSecond,
             reading.TxBitsPerSecond,
-            reading.HandshakesPerMinute);
+            reading.HandshakesPerMinute,
+            reading.LossPercent);
     }
 
     private async Task<IReadOnlyList<SourceEntry>> BuildSourcesAsync(CancellationToken ct)
@@ -1281,6 +1317,7 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         _disposed = true;
+        StopLossProbe();
         _updater.Dispose();
         _tunnel.Dispose();
         _geoHttp.Dispose();

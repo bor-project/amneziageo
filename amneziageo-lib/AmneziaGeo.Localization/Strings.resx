@@ -1799,6 +1799,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_LinkChurn" xml:space="preserve">
     <value>the session is re-established {0} times a minute</value>
   </data>
+  <data name="Main_LinkLoss" xml:space="preserve">
+    <value>tunnel packet loss {0}%</value>
+  </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Use this configuration</value>
   </data>

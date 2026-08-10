@@ -17,6 +17,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 {
     private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
+    private readonly UiPreferences _prefs;
 
     private long? _pendingEditRoutingListId;
     private bool _suppressCatalogueRouting;
@@ -102,10 +103,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingViewModel(MainWindowViewModel host, IAgentConnection connection)
+    public RoutingViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
     {
         _host = host;
         _connection = connection;
+        _prefs = prefs;
         Loc.Instance.CultureChanged += OnCultureChanged;
     }
 
@@ -272,6 +274,19 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowNoListsHint));
     }
 
+    // Keeps the list that routes: the section lands on it next time, and turning routing off leaves it behind
+    // instead of sending the section back to the top of the catalogue.
+    partial void OnSelectedRoutingListIdChanged(long? value)
+    {
+        if (value is not { } id || _prefs.LastRoutingList == id)
+        {
+            return;
+        }
+
+        _prefs.LastRoutingList = id;
+        _prefs.Save();
+    }
+
     /// <summary>
     /// Reconciles the routing-list catalogue from the snapshot.
     /// </summary>
@@ -406,14 +421,26 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         SelectFirstIfNone();
     }
 
-    // Landing on the Routing section with nothing open: select the first list so it never opens empty. A
-    // new-list draft in progress is left alone.
+    // Landing on the Routing section with nothing open: open the list that routes so it never opens empty, and
+    // never on a list the user did not pick. A new-list draft in progress is left alone.
     public void SelectFirstIfNone()
     {
         if (EditRoutingList is null && RoutingEditor is not { IsNew: true } && RoutingLists.Count > 0)
         {
-            EditRoutingList = RoutingLists[0];
+            EditRoutingList = PreferredDefaultList();
         }
+    }
+
+    // The list every config routes by, else the one that did last, else the first in the catalogue.
+    private RoutingListSummaryViewModel PreferredDefaultList()
+    {
+        return CatalogueRow(SelectedRoutingListId) ?? CatalogueRow(_prefs.LastRoutingList) ?? RoutingLists[0];
+    }
+
+    // The catalogue row carrying this id, while it is still there.
+    private RoutingListSummaryViewModel? CatalogueRow(long? id)
+    {
+        return id is > 0 ? RoutingLists.FirstOrDefault(r => r.Id == id) : null;
     }
 
     // Reflect the globally selected routing list into this section: a real list opens there (its rule /

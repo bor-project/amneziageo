@@ -1,9 +1,9 @@
-namespace AmneziaGeo.Windows.App;
+namespace AmneziaGeo.Decl;
 
 /// <summary>
 /// Parsed wstunnel server target for a config: bare host or wss:// URL with optional path token and basic-auth.
 /// </summary>
-internal readonly record struct WsEndpoint(string Host, int Port, string PathPrefix, string Credentials)
+public readonly record struct WsEndpoint(string Host, int Port, string PathPrefix, string Credentials)
 {
     /// <summary>
     /// Parses the per-config WebSocket host field: empty, a bare host, or a full ws(s):// URL.

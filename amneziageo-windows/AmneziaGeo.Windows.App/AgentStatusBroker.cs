@@ -5,6 +5,7 @@ using AmneziaGeo.Dal;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Routing;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -12,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -232,6 +233,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
                 IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
+                IpcContract.OpCountRoutes => await CountRoutesAsync(command.Args, ct),
                 IpcContract.OpSetRoutingSettings => await SetRoutingSettingsAsync(command.Args, ct),
                 IpcContract.OpGetRoutingSettings => await GetRoutingSettingsAsync(command.Args, ct),
                 IpcContract.OpAssignRouting => await AssignRoutingAsync(command.Args, ct),
@@ -257,6 +259,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpCheckUpdate => await CheckUpdateAsync(command.Args, ct),
                 IpcContract.OpReportUpdateDownload => await ReportUpdateDownloadAsync(command.Args, ct),
                 IpcContract.OpCancelUpdateDownload => await CancelUpdateDownloadAsync(ct),
+                // The window owns the setup here: it pumps the bytes and runs the installer itself.
+                IpcContract.OpDownloadUpdate or IpcContract.OpApplyUpdate => new IpcAck(false, IpcMessage.Key("Agent_UpdateRunByWindow")),
                 IpcContract.OpDownloadGeo => await DownloadGeoAsync(ct),
                 IpcContract.OpCollectDiagnostics => await CollectDiagnosticsAsync(ct),
                 IpcContract.OpReadLog => await ReadLogAsync(command.Args, ct),
@@ -264,6 +268,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpExportLog => await ExportLogAsync(command.Args, ct),
                 IpcContract.OpGetRuntimeConfig => await GetRuntimeConfigAsync(ct),
                 IpcContract.OpGetCacheEntries => await GetCacheEntriesAsync(ct),
+                IpcContract.OpCheckChannel => await CheckChannelAsync(ct),
+                IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
@@ -1039,6 +1045,25 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return new IpcAck(true, await inspector.RenderAsync(store, config, applied, ct));
     }
 
+    // The channel ladder, run for the config this window reports on.
+    private async Task<IpcAck> CheckChannelAsync(CancellationToken ct)
+    {
+        var (config, _) = await InspectTargetAsync(ct);
+        return await checks.ChannelAsync(store, config, ct);
+    }
+
+    // Why one destination goes where it goes, under the rules in force for this window's config.
+    private async Task<IpcAck> CheckTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1)
+        {
+            return new IpcAck(false, "check-target requires a domain, an address, an app token or a geo rule");
+        }
+
+        var (config, _) = await InspectTargetAsync(ct);
+        return await checks.TargetAsync(store, config, args[0], ct);
+    }
+
     private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
     {
         var (config, _) = await InspectTargetAsync(ct);
@@ -1074,6 +1099,22 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         var lines = ProcessCatalog.List()
             .Select(e => string.Join('\t', e.Kind, e.Label, e.Value, e.Detail));
         return new IpcAck(true, string.Join('\n', lines));
+    }
+
+    // Counts the routes a rule set would put into the tunnel; a Windows host carries any number of them.
+    private async Task<IpcAck> CountRoutesAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1)
+        {
+            return new IpcAck(false, "count-routes requires a mode (full|split)");
+        }
+
+        var full = string.Equals(args[0], "full", StringComparison.OrdinalIgnoreCase);
+        var draft = await geo.MaterializeDraftAsync([.. args.Skip(1)], ct);
+        // A name carries no address until connect, where it resolves and cuts or adds about two routes.
+        var names = draft.Domains.Count + draft.DirectDomains.Count + draft.BlockDomains.Count;
+        var count = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
+        return new IpcAck(true, $"{{\"routes\":{count.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"limit\":0}}");
     }
 
     private static bool IsAppRule(string rule)
@@ -2023,7 +2064,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private static bool IsKnownTable(string name)
     {
-        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable;
+        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
     }
 
     private async Task<IpcAck> CheckUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)

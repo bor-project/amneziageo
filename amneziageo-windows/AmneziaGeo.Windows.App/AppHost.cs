@@ -97,6 +97,7 @@ internal static class AppHost
         services.AddSingleton<ConfigRunner>();
         services.AddSingleton<BackupService>();
         services.AddSingleton<DiagnosticsCollector>();
+        services.AddSingleton<CheckService>();
         services.AddSingleton<AgentStatusBroker>();
         services.AddSingleton<Cli>();
     }

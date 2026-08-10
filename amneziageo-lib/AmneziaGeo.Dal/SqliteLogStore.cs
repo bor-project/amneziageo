@@ -17,8 +17,8 @@ public readonly record struct LogRow(long Id, long UnixMs, string? Level, string
 public sealed record LogPage(IReadOnlyList<LogRow> Rows, bool HasOlder);
 
 /// <summary>
-/// SQLite-backed structured log store: the agent log (ageo, leveled) and the routing log (routes, levelless),
-/// each with a growing bigint key. Levels are normalized into a small log_levels dictionary (severity is the
+/// SQLite-backed structured log store: the agent log (ageo, leveled), the routing log (routes, levelless) and
+/// the diagnostic runs (checks, levelless), each with a growing bigint key. Levels are normalized into a small log_levels dictionary (severity is the
 /// id, so a "&gt;= level" viewer filter is a cheap range) and joined back for display. Appends are queued and
 /// flushed in batches by a single writer loop; reads/clear/prune/export open their own connections. WAL makes
 /// it safe across the agent and per-tunnel processes on the shared local disk.
@@ -37,6 +37,11 @@ public sealed class SqliteLogStore : IDisposable
     /// Table for the routing log (levelless route/DNS events).
     /// </summary>
     public const string RoutesTable = "routes";
+
+    /// <summary>
+    /// Table for the diagnostic runs (levelless; one row carries a whole rendered check).
+    /// </summary>
+    public const string ChecksTable = "checks";
 
     // Enqueued append not yet written; id is assigned by the table AUTOINCREMENT on insert. LevelId applies to
     // the agent table only (0 for routes).
@@ -133,6 +138,12 @@ public sealed class SqliteLogStore : IDisposable
                         ts  INTEGER NOT NULL,
                         msg TEXT NOT NULL
                     );
+
+                    CREATE TABLE IF NOT EXISTS checks (
+                        id  INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ts  INTEGER NOT NULL,
+                        msg TEXT NOT NULL
+                    );
                     """;
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -153,6 +164,15 @@ public sealed class SqliteLogStore : IDisposable
     public void AppendRoute(long unixMs, string message)
     {
         _queue.Writer.TryWrite(new Pending(RoutesTable, unixMs, 0, null, message));
+    }
+
+    /// <summary>
+    /// Queues one diagnostic run; the whole rendered report is the row, and no capture floor applies to it - a
+    /// check is run by hand and its answer is what support reads first.
+    /// </summary>
+    public void AppendCheck(long unixMs, string message)
+    {
+        _queue.Writer.TryWrite(new Pending(ChecksTable, unixMs, 0, null, message));
     }
 
     /// <summary>
@@ -493,6 +513,10 @@ public sealed class SqliteLogStore : IDisposable
                             {
                                 command.CommandText = "INSERT INTO routes (ts, msg) VALUES ($ts, $msg);";
                             }
+                            else if (row.Table == ChecksTable)
+                            {
+                                command.CommandText = "INSERT INTO checks (ts, msg) VALUES ($ts, $msg);";
+                            }
                             else
                             {
                                 continue;
@@ -526,13 +550,13 @@ public sealed class SqliteLogStore : IDisposable
         return connection;
     }
 
-    // The FROM clause and the fixed 5-column projection (id, ts, level, source, msg) for a table; routes has no
-    // level/source, so those columns come back NULL and ReadRow yields nulls for them.
+    // The FROM clause and the fixed 5-column projection (id, ts, level, source, msg) for a table; the levelless
+    // tables have no level/source, so those columns come back NULL and ReadRow yields nulls for them.
     private static (string From, string Columns) Projection(string table)
     {
         return table == AgentTable
             ? ("ageo a JOIN log_levels l ON a.level_id = l.id", "a.id, a.ts, l.name, a.source, a.msg")
-            : ("routes", "id, ts, NULL, NULL, msg");
+            : (table, "id, ts, NULL, NULL, msg");
     }
 
     // Qualified id column for ORDER BY / cursor: aliased in the agent join, bare for routes.
@@ -590,7 +614,7 @@ public sealed class SqliteLogStore : IDisposable
 
     private static string Validate(string table)
     {
-        return table is AgentTable or RoutesTable
+        return table is AgentTable or RoutesTable or ChecksTable
             ? table
             : throw new ArgumentException($"unknown log table: {table}", nameof(table));
     }

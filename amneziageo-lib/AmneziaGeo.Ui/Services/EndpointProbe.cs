@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Ui.Services;
@@ -58,8 +59,11 @@ internal static class EndpointProbe
         int webSocketPort,
         CancellationToken ct)
     {
-        var overWebSocket = webSocket && webSocketHost.Length > 0;
-        var address = await ResolveAsync(overWebSocket ? webSocketHost : HostOf(endpoint), ct).ConfigureAwait(false);
+        // The field may hold a bare host, a whole wss:// URL, or nothing at all, in which case the carrier
+        // stands at the endpoint's own host on the port beside it.
+        var carrier = WsEndpoint.Parse(webSocketHost, webSocketPort, HostOf(endpoint));
+        var overWebSocket = webSocket && carrier.Host.Length > 0;
+        var address = await ResolveAsync(overWebSocket ? carrier.Host : HostOf(endpoint), ct).ConfigureAwait(false);
         if (address is null)
         {
             return new ProbeResult(ProbeOutcome.NoAddress, 0, 100);
@@ -70,7 +74,7 @@ internal static class EndpointProbe
         for (var i = 0; i < Probes && !ct.IsCancellationRequested; i++)
         {
             var one = overWebSocket
-                ? await ConnectAsync(address, webSocketPort, ct).ConfigureAwait(false)
+                ? await ConnectAsync(address, carrier.Port, ct).ConfigureAwait(false)
                 : await EchoAsync(address, ct).ConfigureAwait(false);
             if (one.Outcome == ProbeOutcome.Alive)
             {

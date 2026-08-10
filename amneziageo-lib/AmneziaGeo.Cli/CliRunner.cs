@@ -147,16 +147,18 @@ public static class CliRunner
               periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds.
 
             logs and diagnostics
-              log tail [--table ageo|routes] [--limit <n>] [--level <token>] [--search <text>]
+              log tail [--table ageo|routes|checks] [--limit <n>] [--level <token>] [--search <text>]
               log follow [--table ...] [--level ...] [--search ...] [--interval <sec>]
-              log clear [--table ageo|routes]
-              log export [--table ageo|routes] [--out <path>]
+              log clear [--table ageo|routes|checks]
+              log export [--table ageo|routes|checks] [--out <path>]
               log say <text>                    mark the agent log from a test script
               runtime                           the configuration the next connect would use
               cache [--filter <text>]           resolutions, routes and addresses the agent holds
               subnets                           local subnets, ready to paste into exclusions
               apps [--filter <text>]            what per-app rules can address here
               doctor                            check the things a headless install gets wrong
+              check                             measure the channel leg by leg and name the culprit
+              check <target>                    why a domain, address, app: or geo rule goes where it goes
               diag collect                      write a redacted support bundle and print its path
               update check                      ask whether a newer application exists
 
@@ -188,7 +190,7 @@ public static class CliRunner
             "routing" => await RoutingCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             "settings" => await SettingsCommands.RunAsync(agent, arguments).ConfigureAwait(false),
-            "log" or "runtime" or "cache" or "subnets" or "doctor" or "diag" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
+            "log" or "runtime" or "cache" or "subnets" or "doctor" or "diag" or "check" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
             "bundle" => await BundleCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "ipc" or "ops" or "apps" or "update" => await OpsCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             _ => Reply.Usage($"unknown command '{rest[0]}'; run '{host.ExeName} help'"),

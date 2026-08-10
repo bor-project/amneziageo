@@ -305,7 +305,8 @@ internal static class OpsCommands
             or IpcContract.OpImportBundle or IpcContract.OpRemoveConfig
             or IpcContract.OpRemoveRoutingList or IpcContract.OpRemoveSource
             or IpcContract.OpReportUpdateDownload or IpcContract.OpCancelUpdateDownload
-            or IpcContract.OpDownloadUpdate or IpcContract.OpApplyUpdate;
+            or IpcContract.OpDownloadUpdate or IpcContract.OpApplyUpdate
+            or IpcContract.OpCheckChannel;
 
     // Both agents answer an unimplemented operation with their own resource key.
     private static bool Unwired(string message) =>

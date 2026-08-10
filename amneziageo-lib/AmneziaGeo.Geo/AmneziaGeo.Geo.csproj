@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
+    <ProjectReference Include="..\AmneziaGeo.Ipc\AmneziaGeo.Ipc.csproj" />
+    <ProjectReference Include="..\AmneziaGeo.Routing\AmneziaGeo.Routing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

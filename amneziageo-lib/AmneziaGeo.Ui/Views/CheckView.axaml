@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Views.CheckView"
+             x:CompileBindings="True"
+             x:DataType="vm:CheckViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgPulseGeometry">M3 12h4l3 8 4-16 3 8h4</StreamGeometry>
+  </UserControl.Resources>
+  <!-- What is run, the verdict it produced, and the rows behind the verdict. Only the rows scroll. -->
+  <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+    <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
+
+      <!-- The channel ladder; the target row is hidden until its search is reworked. -->
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <Button Grid.Column="0" Classes="accent" Command="{Binding RunChannelCommand}"
+                IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunChannel}" />
+        <TextBox Grid.Column="1" Classes="field" Text="{Binding Target, Mode=TwoWay}"
+                 Watermark="{l:Tr Check_TargetWatermark}" IsVisible="False" />
+        <Button Grid.Column="2" Classes="softbtn" Command="{Binding RunTargetCommand}"
+                IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunTarget}" IsVisible="False" />
+      </Grid>
+
+      <!-- The verdict in words, and the MTU to set when the one in force does not fit the path. -->
+      <Border Grid.Row="1" IsVisible="{Binding ShowVerdict}" CornerRadius="10" Padding="14,11"
+              Background="{DynamicResource AgInsetBrush}"
+              BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
+        <StackPanel Spacing="6">
+          <TextBlock Text="{Binding Verdict}" TextWrapping="Wrap" FontSize="13"
+                     Foreground="{DynamicResource AgTextBrush}" />
+          <TextBlock Text="{Binding Advice}" IsVisible="{Binding ShowAdvice}" TextWrapping="Wrap"
+                     FontSize="12.5" Foreground="{DynamicResource AgWarnBrush}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Rows: what each leg measured, or what was found about the target. -->
+      <Border Grid.Row="2" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+              Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
+        <Panel>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                        IsVisible="{Binding ShowBody}">
+            <SelectableTextBlock Text="{Binding BodyText}"
+                                 FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                 FontSize="11.5" LineHeight="18"
+                                 Foreground="{DynamicResource AgMutedBrush}"
+                                 TextWrapping="NoWrap" Margin="16,13" />
+          </ScrollViewer>
+          <!-- Empty state. -->
+          <StackPanel IsVisible="{Binding ShowEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Spacing="10" Margin="24">
+            <PathIcon Data="{StaticResource AgPulseGeometry}" Width="42" Height="42"
+                      Foreground="{DynamicResource AgMuted2Brush}" HorizontalAlignment="Center" />
+            <TextBlock Text="{l:Tr Check_EmptyTitle}" FontSize="14" FontWeight="SemiBold"
+                       Foreground="{DynamicResource AgMutedBrush}" HorizontalAlignment="Center" />
+            <TextBlock Text="{l:Tr Check_EmptyHint}" Classes="muted" FontSize="12"
+                       HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="360" />
+          </StackPanel>
+          <!-- The ladder takes about twenty seconds; the pane says so while it runs. -->
+          <StackPanel IsVisible="{Binding IsRunning}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+            <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
+            <TextBlock Text="{l:Tr Check_Running}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Panel>
+      </Border>
+
+    </Grid>
+  </Border>
+</UserControl>

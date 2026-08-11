@@ -61,16 +61,8 @@ internal sealed partial class CheckViewModel : ViewModelBase
     /// </summary>
     public bool IsSessionsMode => _kind == RunKind.Sessions;
 
-    /// <summary>
-    /// What the live pane says about itself: how to hold it still, or that it is being held.
-    /// </summary>
-    public string LiveHint => IsSessionsMode && !OperatingSystem.IsAndroid()
-        ? Loc.Instance.Get(LivePaused ? "Check_LivePaused" : "Check_LiveHold")
-        : string.Empty;
-
     // Whether the reader holds the rows still to look at them.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(LiveHint))]
     private bool _livePaused;
 
     // Narrow-window layout flag, pushed by the shell.
@@ -132,7 +124,7 @@ internal sealed partial class CheckViewModel : ViewModelBase
     public bool ShowAdvice => Advice.Length > 0;
 
     /// <summary>
-    /// Marks the pane shown or not; leaving it drops what was read.
+    /// Marks the pane shown or not: opening it reads what the tunnel carries, leaving it drops what was read.
     /// </summary>
     public void SetActive(bool active)
     {
@@ -151,7 +143,10 @@ internal sealed partial class CheckViewModel : ViewModelBase
             StatusMessage = string.Empty;
             LivePaused = false;
             Blamed = false;
+            return;
         }
+
+        _ = RunSessionsAsync();
     }
 
     /// <summary>
@@ -265,7 +260,6 @@ internal sealed partial class CheckViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsChannelMode));
         OnPropertyChanged(nameof(IsServersMode));
         OnPropertyChanged(nameof(IsSessionsMode));
-        OnPropertyChanged(nameof(LiveHint));
     }
 
     private void OnLiveTick(object? sender, EventArgs e)

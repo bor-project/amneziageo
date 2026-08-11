@@ -15,7 +15,7 @@
 
       <!-- The runs to pick from: the one shown wears the accent. The target row is hidden until its search is
            reworked. The three carry the same padding, size and border so the pick does not resize them. -->
-      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
         <!-- Where the traffic is going right now, without measuring anything: the run to open on. -->
         <Button Grid.Column="0" Classes="softbtn" Classes.accent="{Binding IsSessionsMode}"
                 Padding="11,5,11,6" FontSize="12" FontWeight="SemiBold" BorderThickness="1"
@@ -37,9 +37,6 @@
                    TextTrimming="CharacterEllipsis" />
         <Button Grid.Column="4" Classes="softbtn" Command="{Binding RunTargetCommand}"
                 IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunTarget}" IsVisible="False" />
-        <!-- How the live rows are held still, and that they are being held. -->
-        <TextBlock Grid.Column="5" Text="{Binding LiveHint}" Classes="muted" FontSize="11.5"
-                   VerticalAlignment="Center" />
       </Grid>
 
       <!-- The verdict in words, and the MTU to set when the one in force does not fit the path. -->

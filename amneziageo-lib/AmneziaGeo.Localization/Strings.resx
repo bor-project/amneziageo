@@ -1901,6 +1901,12 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_RunSessions" xml:space="preserve">
     <value>What is going now</value>
   </data>
+  <data name="Check_LiveHold" xml:space="preserve">
+    <value>Ctrl - hold the rows</value>
+  </data>
+  <data name="Check_LivePaused" xml:space="preserve">
+    <value>rows held</value>
+  </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
     <value>{0} destination(s), {1} undecided, {2} without movement, {3} carried.</value>
   </data>
@@ -1914,7 +1920,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>open {0} s</value>
   </data>
   <data name="Check_SessionIdle" xml:space="preserve">
-    <value>quiet {0} s</value>
+    <value>idle {0} s</value>
   </data>
   <data name="Check_SessionStalled" xml:space="preserve">
     <value>stalled</value>
@@ -1950,28 +1956,28 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>The channel check walks from the router out to the server and names the leg at fault.</value>
   </data>
   <data name="Check_Leg_gateway" xml:space="preserve">
-    <value>gateway</value>
+    <value>to the router</value>
   </data>
   <data name="Check_Leg_endpoint" xml:space="preserve">
-    <value>path to server</value>
+    <value>to server, outside tunnel</value>
   </data>
   <data name="Check_Leg_handshake" xml:space="preserve">
-    <value>session</value>
+    <value>tunnel session</value>
   </data>
   <data name="Check_Leg_peer" xml:space="preserve">
-    <value>server in tunnel</value>
+    <value>server inside tunnel</value>
   </data>
   <data name="Check_Leg_beyond" xml:space="preserve">
-    <value>past the exit</value>
+    <value>internet past the server</value>
   </data>
   <data name="Check_Leg_tunnel" xml:space="preserve">
-    <value>through tunnel</value>
+    <value>speed through tunnel</value>
   </data>
   <data name="Check_Leg_source" xml:space="preserve">
-    <value>your busiest destination</value>
+    <value>speed to your host</value>
   </data>
   <data name="Check_Leg_direct" xml:space="preserve">
-    <value>beside tunnel</value>
+    <value>speed beside tunnel</value>
   </data>
   <data name="Check_State_ok" xml:space="preserve">
     <value>ok</value>
@@ -1990,9 +1996,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Check_Rtt" xml:space="preserve">
     <value>rtt {0} ms</value>
-  </data>
-  <data name="Check_Jitter" xml:space="preserve">
-    <value>jitter {0} ms</value>
   </data>
   <data name="Check_Loss" xml:space="preserve">
     <value>loss {0}%</value>

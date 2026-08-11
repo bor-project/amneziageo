@@ -7,25 +7,39 @@
              x:DataType="vm:CheckViewModel">
   <UserControl.Resources>
     <StreamGeometry x:Key="AgPulseGeometry">M3 12h4l3 8 4-16 3 8h4</StreamGeometry>
+    <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
   </UserControl.Resources>
   <!-- What is run, the verdict it produced, and the rows behind the verdict. Only the rows scroll. -->
   <Border Classes="sect" Classes.compact="{Binding IsCompact}">
     <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
 
-      <!-- The channel ladder; the target row is hidden until its search is reworked. -->
-      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="8">
-        <Button Grid.Column="0" Classes="accent" Padding="11,5,11,6" Command="{Binding RunChannelCommand}"
+      <!-- The runs to pick from: the one shown wears the accent. The target row is hidden until its search is
+           reworked. The three carry the same padding, size and border so the pick does not resize them. -->
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+        <!-- Where the traffic is going right now, without measuring anything: the run to open on. -->
+        <Button Grid.Column="0" Classes="softbtn" Classes.accent="{Binding IsSessionsMode}"
+                Padding="11,5,11,6" FontSize="12" FontWeight="SemiBold" BorderThickness="1"
+                Command="{Binding RunSessionsCommand}"
+                IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunSessions}" />
+        <Button Grid.Column="1" Classes="softbtn" Classes.accent="{Binding IsChannelMode}"
+                Padding="11,5,11,6" FontSize="12" FontWeight="SemiBold" BorderThickness="1"
+                Command="{Binding RunChannelCommand}"
                 IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunChannel}" />
         <!-- The same light legs against every saved server: which one to be on right now. -->
-        <Button Grid.Column="1" Classes="softbtn" Command="{Binding RunServersCommand}"
+        <Button Grid.Column="2" Classes="softbtn" Classes.accent="{Binding IsServersMode}"
+                Padding="11,5,11,6" FontSize="12" FontWeight="SemiBold" BorderThickness="1"
+                Command="{Binding RunServersCommand}"
                 IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunServers}" />
-        <!-- Where the traffic is going right now, without measuring anything. -->
-        <Button Grid.Column="2" Classes="softbtn" Command="{Binding RunSessionsCommand}"
-                IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunSessions}" />
         <TextBox Grid.Column="3" Classes="field" Text="{Binding Target, Mode=TwoWay}"
                  Watermark="{l:Tr Check_TargetWatermark}" IsVisible="False" />
+        <TextBlock Grid.Column="3" Text="{Binding StatusMessage}" Classes="muted" FontSize="11.5"
+                   HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,0"
+                   TextTrimming="CharacterEllipsis" />
         <Button Grid.Column="4" Classes="softbtn" Command="{Binding RunTargetCommand}"
                 IsEnabled="{Binding !IsRunning}" Content="{l:Tr Check_RunTarget}" IsVisible="False" />
+        <!-- How the live rows are held still, and that they are being held. -->
+        <TextBlock Grid.Column="5" Text="{Binding LiveHint}" Classes="muted" FontSize="11.5"
+                   VerticalAlignment="Center" />
       </Grid>
 
       <!-- The verdict in words, and the MTU to set when the one in force does not fit the path. -->
@@ -46,11 +60,22 @@
         <Panel>
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                         IsVisible="{Binding ShowBody}">
-            <SelectableTextBlock Text="{Binding BodyText}"
+            <!-- The run on screen as text, for a support thread: the right button, or Ctrl+C. -->
+            <SelectableTextBlock x:Name="Report" Text="{Binding BodyText}"
                                  FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
                                  FontSize="11.5" LineHeight="18"
                                  Foreground="{DynamicResource AgMutedBrush}"
-                                 TextWrapping="NoWrap" Margin="16,13" />
+                                 TextWrapping="NoWrap" Margin="16,13">
+              <SelectableTextBlock.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="{l:Tr Main_CopyButton}" Click="OnCopyReport">
+                    <MenuItem.Icon>
+                      <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+                    </MenuItem.Icon>
+                  </MenuItem>
+                </ContextMenu>
+              </SelectableTextBlock.ContextMenu>
+            </SelectableTextBlock>
           </ScrollViewer>
           <!-- Empty state. -->
           <StackPanel IsVisible="{Binding ShowEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"

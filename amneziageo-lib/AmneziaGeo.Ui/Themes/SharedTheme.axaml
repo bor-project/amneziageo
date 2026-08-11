@@ -169,6 +169,10 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="Foreground" Value="White" />
     </Style>
+    <!-- Picked member of a row of soft buttons: it keeps the row's border box, so picking moves nothing. -->
+    <Style Selector="Button.softbtn.accent">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
 
     <!-- Question standing over the whole screen: a card of its own, a step above the ones behind it. -->
     <Style Selector="Border.dialogcard">

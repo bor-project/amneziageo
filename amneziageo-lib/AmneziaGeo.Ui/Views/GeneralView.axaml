@@ -144,7 +144,9 @@
                           HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
           </Grid>
 
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+          <!-- Hides survive reboot; it stays off unless the console sets it. -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8"
+                IsVisible="False">
             <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
               <TextBlock Text="{l:Tr General_SurviveReboot}" FontSize="13.5" />

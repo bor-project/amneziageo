@@ -164,7 +164,9 @@ internal sealed class TunnelController : IDisposable
         Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
         _split = split;
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
-        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"));
+        // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
+        // cache own its route and reclaim it as idle, taking the tunnel's own name lookups down with it.
+        var cache = new RoutingCache(applier, new ProcNet(), split, routing.ProxyRoutes, routing.DirectRoutes, routing.BlockRoutes, options.RouteTtlSeconds, new AgentLogger<RoutingCache>(_log, "route"), [.. tunnelResolvers.Select(server => server.ToString())]);
         _cache = cache;
         _sessionCts = new CancellationTokenSource();
         _ = Task.Run(() => cache.RunAsync(_sessionCts.Token));

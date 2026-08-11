@@ -18,6 +18,11 @@ public sealed record GeoRoutingPlan(
     int TtlSeconds = 300)
 {
     /// <summary>
+    /// Applications the list names: what no other rule decides for them rides the tunnel.
+    /// </summary>
+    public IReadOnlyList<string> TunnelApps { get; init; } = [];
+
+    /// <summary>
     /// Everything through the tunnel, nothing listed.
     /// </summary>
     public static GeoRoutingPlan Full { get; } = new([], [], [], [], [], [], true, false);

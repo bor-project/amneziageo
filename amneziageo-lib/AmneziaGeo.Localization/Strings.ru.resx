@@ -70,6 +70,21 @@
   <data name="General_NetworkRepairHint" xml:space="preserve">
     <value>Если после неудачного подключения или удаления приложения пропал интернет — сбросьте DNS, который оно прописало адаптерам. Конфигурации и маршруты не затрагиваются.</value>
   </data>
+  <data name="General_AlwaysOnSection" xml:space="preserve">
+    <value>Постоянная VPN</value>
+  </data>
+  <data name="General_AlwaysOnHint" xml:space="preserve">
+    <value>Система может поднимать туннель сама при загрузке и держать его без запуска приложения. Тумблер принадлежит Android: Настройки, Сеть, VPN, шестерёнка у AmneziaGeo. Включить его себе не может ни одно приложение.</value>
+  </data>
+  <data name="General_AlwaysOnActive" xml:space="preserve">
+    <value>Включена для этого приложения</value>
+  </data>
+  <data name="General_AlwaysOnLockdown" xml:space="preserve">
+    <value>Включена для этого приложения, трафик мимо туннеля блокируется</value>
+  </data>
+  <data name="General_AlwaysOnButton" xml:space="preserve">
+    <value>Системные настройки</value>
+  </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
     <value>Починить интернет</value>
   </data>
@@ -350,7 +365,7 @@
     <value>Файл:</value>
   </data>
   <data name="Main_LogFollowLabel" xml:space="preserve">
-    <value>Следить</value>
+    <value>Обновлять</value>
   </data>
   <data name="Main_LogLoadOlderButton" xml:space="preserve">
     <value>Загрузить ранее</value>
@@ -363,12 +378,6 @@
   </data>
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Более поздние записи</value>
-  </data>
-  <data name="Main_LogOlderShort" xml:space="preserve">
-    <value>Ранее</value>
-  </data>
-  <data name="Main_LogNewerShort" xml:space="preserve">
-    <value>Позднее</value>
   </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Поиск в логе</value>
@@ -1775,6 +1784,18 @@
   <data name="Main_HomeTabServers" xml:space="preserve">
     <value>Серверы</value>
   </data>
+  <data name="Main_AlwaysOnMode" xml:space="preserve">
+    <value>Постоянная VPN: кнопка открывает системный экран</value>
+  </data>
+  <data name="Main_HomeServerLabel" xml:space="preserve">
+    <value>Сервер</value>
+  </data>
+  <data name="Main_HomeManageServers" xml:space="preserve">
+    <value>Управлять</value>
+  </data>
+  <data name="Main_ServersCount" xml:space="preserve">
+    <value>Серверов: {0}</value>
+  </data>
   <data name="Main_ServerRowTooltip" xml:space="preserve">
     <value>Подключить эту конфигурацию</value>
   </data>
@@ -2083,6 +2104,12 @@
   </data>
   <data name="Check_TargetAppUnlisted" xml:space="preserve">
     <value>«{0}» не входит ни в один список, поэтому трафик идёт по маршруту по умолчанию.</value>
+  </data>
+  <data name="Check_TargetAppOutside" xml:space="preserve">
+    <value>«{0}» не назван ни одним правилом приложений, а туннель несёт только названные ({1}), поэтому трафик идёт мимо туннеля и правила списка к нему не применяются.</value>
+  </data>
+  <data name="Check_TargetProxyAppsOnly" xml:space="preserve">
+    <value>Правило «{0}» ведёт через туннель, но только для названных приложений ({1}); остальные идут мимо туннеля.</value>
   </data>
   <data name="Check_TargetAppBareIp" xml:space="preserve">
     <value>«{0}» ходит на {1} адрес(ов), не покрытых ни одним правилом: правило по приложению реактивно и не ловит голые адреса, добавьте правило geoip для этого сервиса.</value>

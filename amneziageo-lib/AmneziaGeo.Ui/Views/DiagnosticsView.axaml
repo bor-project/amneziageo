@@ -8,22 +8,23 @@
              x:CompileBindings="True"
              x:DataType="vm:DiagnosticsViewModel">
   <!-- Title, pane tabs, then the selected pane; only the pane body scrolls. -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="14">
+  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
 
     <TextBlock Grid.Row="0" Classes="section" Text="{l:Tr Main_DiagnosticsSection}" />
 
-    <!-- Pane tabs: log, configuration or check. Left when wide, full width in compact. Down steps into the
-         pane shown below, which directional focus walks past into the window header (#201). -->
-    <controls:SegmentedSelector x:Name="PaneTabs" Grid.Row="1" KeyDown="OnTabsKeyDown"
-                          Command="{Binding SelectTabCommand}" IsCompact="{Binding IsCompact}"
-                          Item1Text="{l:Tr Main_DiagTabLog}" Item1Param="log" Item1Active="{Binding IsLogTab}"
-                          Item2Text="{l:Tr Main_DiagTabConfig}" Item2Param="config" Item2Active="{Binding IsConfigTab}"
-                          Item3Text="{l:Tr Main_DiagTabCheck}" Item3Param="check" Item3Active="{Binding IsCheckTab}" />
+    <!-- Pane tabs: log or configuration. Left when wide, gone in compact, where the log is the only pane. Down
+         steps into the pane shown below, which directional focus walks past into the window header (#201). -->
+    <StackPanel Grid.Row="1" Spacing="14" IsVisible="{Binding ShowConfigTab}">
+      <controls:SegmentedSelector x:Name="PaneTabs" KeyDown="OnTabsKeyDown"
+                            Command="{Binding SelectTabCommand}" IsCompact="{Binding IsCompact}"
+                            Item1Text="{l:Tr Main_DiagTabLog}" Item1Param="log" Item1Active="{Binding IsLogTab}"
+                            Item2Text="{l:Tr Main_DiagTabConfig}" Item2Param="config" Item2Active="{Binding IsConfigTab}" />
 
-    <!-- Divider between the tabs and the pane. -->
-    <Border Grid.Row="2" Height="1" Background="{DynamicResource AgBorderBrush}" />
+      <!-- Divider between the tabs and the pane. -->
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
+    </StackPanel>
 
-    <Panel x:Name="Body" Grid.Row="3" KeyDown="OnBodyKeyDown">
+    <Panel x:Name="Body" Grid.Row="2" KeyDown="OnBodyKeyDown">
       <Panel IsVisible="{Binding IsLogTab}">
         <views:LogsView DataContext="{Binding Logs}" />
       </Panel>

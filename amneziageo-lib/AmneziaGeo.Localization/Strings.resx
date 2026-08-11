@@ -70,6 +70,21 @@
   <data name="General_NetworkRepairHint" xml:space="preserve">
     <value>If the internet stops working after a failed connection or removing the app, reset the DNS it set on your adapters. Configurations and routes are left untouched.</value>
   </data>
+  <data name="General_AlwaysOnSection" xml:space="preserve">
+    <value>Always-on VPN</value>
+  </data>
+  <data name="General_AlwaysOnHint" xml:space="preserve">
+    <value>The system can raise the tunnel by itself at boot and hold it up without the application open. The switch belongs to Android: Settings, Network, VPN, the gear next to AmneziaGeo. No application may turn it on for itself.</value>
+  </data>
+  <data name="General_AlwaysOnActive" xml:space="preserve">
+    <value>On for this application</value>
+  </data>
+  <data name="General_AlwaysOnLockdown" xml:space="preserve">
+    <value>On for this application, traffic outside the tunnel is blocked</value>
+  </data>
+  <data name="General_AlwaysOnButton" xml:space="preserve">
+    <value>System settings</value>
+  </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
     <value>Repair internet</value>
   </data>
@@ -350,7 +365,7 @@
     <value>File:</value>
   </data>
   <data name="Main_LogFollowLabel" xml:space="preserve">
-    <value>Follow</value>
+    <value>Refresh</value>
   </data>
   <data name="Main_LogLoadOlderButton" xml:space="preserve">
     <value>Load earlier</value>
@@ -363,12 +378,6 @@
   </data>
   <data name="Main_LogNewerTooltip" xml:space="preserve">
     <value>Later entries</value>
-  </data>
-  <data name="Main_LogOlderShort" xml:space="preserve">
-    <value>Older</value>
-  </data>
-  <data name="Main_LogNewerShort" xml:space="preserve">
-    <value>Newer</value>
   </data>
   <data name="Main_LogSearchWatermark" xml:space="preserve">
     <value>Search in log</value>
@@ -1775,6 +1784,18 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_HomeTabServers" xml:space="preserve">
     <value>Servers</value>
   </data>
+  <data name="Main_AlwaysOnMode" xml:space="preserve">
+    <value>Always-on VPN: the button opens the system screen</value>
+  </data>
+  <data name="Main_HomeServerLabel" xml:space="preserve">
+    <value>Server</value>
+  </data>
+  <data name="Main_HomeManageServers" xml:space="preserve">
+    <value>Manage</value>
+  </data>
+  <data name="Main_ServersCount" xml:space="preserve">
+    <value>Servers: {0}</value>
+  </data>
   <data name="Main_ServerRowTooltip" xml:space="preserve">
     <value>Connect this configuration</value>
   </data>
@@ -2083,6 +2104,12 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Check_TargetAppUnlisted" xml:space="preserve">
     <value>"{0}" is in no list, so its traffic follows the default route.</value>
+  </data>
+  <data name="Check_TargetAppOutside" xml:space="preserve">
+    <value>"{0}" is named by no app rule, and the tunnel carries only the {1} named application(s), so it leaves beside the tunnel past every rule in the list.</value>
+  </data>
+  <data name="Check_TargetProxyAppsOnly" xml:space="preserve">
+    <value>Carried by the tunnel under the rule "{0}", but only for the {1} named application(s); every other application leaves beside the tunnel.</value>
   </data>
   <data name="Check_TargetAppBareIp" xml:space="preserve">
     <value>"{0}" talks to {1} address(es) no rule covers: a rule by application is reactive and never catches a bare address, so add a geoip rule for the service.</value>

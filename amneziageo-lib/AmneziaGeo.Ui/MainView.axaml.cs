@@ -139,9 +139,21 @@ public sealed partial class MainView : UserControl
             return true;
         }
 
-        if (_vm is null || !_vm.IsSettings)
+        if (_vm is null)
         {
             return false;
+        }
+
+        // The server screen steps back to the connect one; home itself hands the key to the system.
+        if (!_vm.IsSettings)
+        {
+            if (!_vm.IsHomeServers)
+            {
+                return false;
+            }
+
+            _vm.SelectHomeTabCommand.Execute("main");
+            return true;
         }
 
         _vm.NavBackCommand.Execute(null);
@@ -192,8 +204,8 @@ public sealed partial class MainView : UserControl
 
             if (vm.IsHome)
             {
-                // The compact server tab hides the round button, so its tab takes the ring instead.
-                var connect = vm.ShowHomeConnect ? (Control)HomePowerButton : HomeServersTab;
+                // The server screen hides the round button, so the way back off it takes the ring instead.
+                var connect = vm.ShowHomeConnect ? (Control)HomePowerButton : HomeServersBack;
                 connect.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
             }
             else if (vm.IsSettings)

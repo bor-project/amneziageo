@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Avalonia.Layout;
 using Avalonia.Threading;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
@@ -65,7 +64,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
     [NotifyPropertyChangedFor(nameof(ShowServerStack))]
     [NotifyPropertyChangedFor(nameof(ShowServerGrid))]
-    [NotifyPropertyChangedFor(nameof(ServersHeaderAlign))]
     private double _windowWidth = 987;
 
     /// <summary>
@@ -211,13 +209,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool ShowHomeServers => IsHomeServers;
 
     /// <summary>
-    /// Where the server list's own buttons stand: beside the caption on a wide screen, at the far edge of the
-    /// compact list.
-    /// </summary>
-    public HorizontalAlignment ServersHeaderAlign =>
-        IsCompact ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-
-    /// <summary>
     /// Whether the server cards stand in one column: the compact layout, where each stretches to the width.
     /// </summary>
     public bool ShowServerStack => HasConfigs && IsCompact;
@@ -227,6 +218,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// arrows and steps into one to reach its buttons.
     /// </summary>
     public bool ShowServerGrid => HasConfigs && !IsCompact;
+
+    /// <summary>
+    /// How many servers stand under the picker.
+    /// </summary>
+    public string ServersCountText => Loc.Instance.Get("Main_ServersCount", Config.Configs.Count);
 
     /// <summary>
     /// Whether the settings section rail is shown: always in wide mode, and in compact mode only when no section
@@ -791,6 +787,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Routing.Apply(snapshot);
         Sources.Apply(snapshot);
         HasConfigs = Config.Configs.Count > 0;
+        OnPropertyChanged(nameof(ServersCountText));
         Config.NotifyHostFlagsChanged();
         Home.NotifyHostFlagsChanged();
         // The connection card matches the agent's target against the freshly-reconciled config rows, so it

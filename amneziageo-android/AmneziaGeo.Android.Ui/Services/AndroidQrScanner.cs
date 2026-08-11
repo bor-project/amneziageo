@@ -191,10 +191,15 @@ internal sealed class AndroidQrScanner(Action<AvBitmap> onPreview, Action<string
             var rowStride = plane.RowStride;
             var pixelStride = plane.PixelStride;
 
+            // Analysis frames come in sensor orientation; this turns them upright for the preview.
+            var turn = Turn(image.ImageInfo?.RotationDegrees ?? 0);
+            var sideways = turn is 90 or 270;
+
             var src = new byte[buffer.Remaining()];
             buffer.Get(src);
 
-            var bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Unpremul);
+            var size = new PixelSize(sideways ? height : width, sideways ? width : height);
+            var bitmap = new WriteableBitmap(size, new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Unpremul);
             using (var frame = bitmap.Lock())
             {
                 var dst = (byte*)frame.Address;
@@ -202,11 +207,10 @@ internal sealed class AndroidQrScanner(Action<AvBitmap> onPreview, Action<string
                 for (var y = 0; y < height; y++)
                 {
                     var srcRow = y * rowStride;
-                    var dstRow = y * dstStride;
                     for (var x = 0; x < width; x++)
                     {
                         var s = srcRow + (x * pixelStride);
-                        var d = dstRow + (x * 4);
+                        var d = Target(turn, x, y, width, height, dstStride);
                         // Source is RGBA; the Avalonia bitmap is BGRA.
                         dst[d + 0] = src[s + 2];
                         dst[d + 1] = src[s + 1];
@@ -218,6 +222,24 @@ internal sealed class AndroidQrScanner(Action<AvBitmap> onPreview, Action<string
 
             return bitmap;
         }
+
+        // Rounds the frame rotation to a right angle.
+        private static int Turn(int degrees) => (((degrees % 360) + 360) % 360) switch
+        {
+            >= 45 and < 135 => 90,
+            >= 135 and < 225 => 180,
+            >= 225 and < 315 => 270,
+            _ => 0,
+        };
+
+        // Places a source pixel in the turned bitmap.
+        private static int Target(int turn, int x, int y, int width, int height, int stride) => turn switch
+        {
+            90 => (x * stride) + ((height - 1 - y) * 4),
+            180 => ((height - 1 - y) * stride) + ((width - 1 - x) * 4),
+            270 => ((width - 1 - x) * stride) + (y * 4),
+            _ => (y * stride) + (x * 4),
+        };
     }
 
     // Self-driven lifecycle owner: CameraX binds a use case to it; the scanner moves it to Resumed on start and

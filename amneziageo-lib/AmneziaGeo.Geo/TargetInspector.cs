@@ -20,7 +20,7 @@ public sealed record TargetProbes(
 /// Answers "why does this address, name, application or category go where it goes". The active list decides it,
 /// and the matchers here are the ones the tunnel itself routes by, so the answer is the routing, not a guess.
 /// </summary>
-public sealed class TargetInspector(RoutingList? list, bool split)
+public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps = AppScope.None)
 {
     // Port a reachability probe knocks on when the target names none.
     private const int ProbePort = 443;
@@ -41,13 +41,9 @@ public sealed class TargetInspector(RoutingList? list, bool split)
     {
         var token = target.Trim();
         var kind = KindOf(token);
-        var facts = new List<CheckFact>
-        {
-            new("mode", list is null ? "no list" : list.Name, split ? "split" : "full",
-                split ? "only what the list names rides the tunnel" : "everything rides the tunnel except the direct bucket"),
-        };
+        var facts = new List<CheckFact> { Mode() };
 
-        var findings = new TargetFindings(kind, split, list is not null);
+        var findings = new TargetFindings(kind, split, list is not null, Apps: apps, AppCount: Named);
         findings = kind switch
         {
             CheckTargetKind.App => Application(token, facts, findings, probes),
@@ -64,6 +60,27 @@ public sealed class TargetInspector(RoutingList? list, bool split)
 
         var (key, args) = TargetVerdict.Decide(findings, token);
         return new TargetReport(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), config, token, facts, key, args);
+    }
+
+    // How many applications the list names.
+    private int Named => list?.Apps.Count ?? 0;
+
+    // The row that opens every check: what the list does with the traffic as a whole. An exclusive app split
+    // decides ahead of every rule, so it is what the mode says.
+    private CheckFact Mode()
+    {
+        var name = list is null ? "no list" : list.Name;
+        if (apps == AppScope.Exclusive)
+        {
+            return new CheckFact("mode", name, "apps",
+                $"only the {Named.ToString(CultureInfo.InvariantCulture)} named application(s) ride the tunnel, the rest pass every rule by");
+        }
+
+        var added = apps == AppScope.Additive
+            ? $", and the {Named.ToString(CultureInfo.InvariantCulture)} named application(s) ride it on top of that"
+            : string.Empty;
+        return new CheckFact("mode", name, split ? "split" : "full",
+            (split ? "only what the list names rides the tunnel" : "everything rides the tunnel except the direct bucket") + added);
     }
 
     /// <summary>
@@ -150,7 +167,14 @@ public sealed class TargetInspector(RoutingList? list, bool split)
                 $"{live.Count.ToString(CultureInfo.InvariantCulture)} live destination(s), {unlisted.ToString(CultureInfo.InvariantCulture)} covered by no rule"));
         }
 
-        return findings with { AppRule = rule, Addresses = live.Count, Unlisted = unlisted, Role = rule.Length > 0 ? RoleToken.Proxy : RoleToken.None };
+        return findings with
+        {
+            AppRule = rule,
+            MatchedRule = rule,
+            Addresses = live.Count,
+            Unlisted = unlisted,
+            Role = rule.Length > 0 ? RoleToken.Proxy : RoleToken.None,
+        };
     }
 
     // A geo category: whether the active list carries it, and in which bucket.

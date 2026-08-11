@@ -1,4 +1,4 @@
-﻿using AmneziaGeo.Ipc;
+using AmneziaGeo.Ipc;
 using AmneziaGeo.Ui.Services;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -7,8 +7,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Diagnostics screen: a tab per pane — the agent log, the configuration the agent runs on, and the checks it
-/// can run. Only the pane on screen reads the agent.
+/// Diagnostics screen: a tab per pane — the agent log and the configuration the agent runs on. The check pane
+/// is built but not offered. Only the pane on screen reads the agent.
 /// </summary>
 internal sealed partial class DiagnosticsViewModel : ViewModelBase
 {
@@ -44,6 +44,7 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowConfigTab))]
     private bool _isCompact;
 
     partial void OnIsCompactChanged(bool value)
@@ -51,7 +52,17 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
         Logs.IsCompact = value;
         Config.IsCompact = value;
         Check.IsCompact = value;
+        if (!ShowConfigTab)
+        {
+            Tab = "log";
+        }
     }
+
+    /// <summary>
+    /// Whether the configuration pane is offered: a narrow window carries the log alone, and the tabs go with it
+    /// because one pane has nothing to switch to.
+    /// </summary>
+    public bool ShowConfigTab => !IsCompact;
 
     // Which pane is showing.
     [ObservableProperty]
@@ -83,7 +94,7 @@ internal sealed partial class DiagnosticsViewModel : ViewModelBase
     [RelayCommand]
     private void SelectTab(string target)
     {
-        Tab = target is "config" or "check" ? target : "log";
+        Tab = target == "config" && ShowConfigTab ? "config" : "log";
     }
 
     /// <summary>

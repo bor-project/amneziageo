@@ -319,12 +319,9 @@ internal sealed partial class CheckViewModel : ViewModelBase
         if (kind == RunKind.Sessions)
         {
             var carried = SessionReport.Parse(payload);
-            BodyText = Destinations(carried);
+            BodyText = SessionRows.Text(carried);
             Blamed = carried.Stalled > 0;
-            Verdict = carried.Held == 0
-                ? Loc.Instance.Get("Check_SessionsNone")
-                : Loc.Instance.Get("Check_SessionsSummary", carried.Held, carried.Undecided, carried.Stalled,
-                    CheckFormat.Bytes(carried.TotalBytes));
+            Verdict = SessionRows.Summary(carried);
             return;
         }
 
@@ -358,71 +355,6 @@ internal sealed partial class CheckViewModel : ViewModelBase
         }
 
         return text.ToString();
-    }
-
-    // What the tunnel carries, busiest first: where each destination goes and what it holds.
-    private static string Destinations(SessionReport report)
-    {
-        var text = new StringBuilder();
-        foreach (var row in report.Sessions)
-        {
-            text.Append(row.Host.PadRight(34))
-                .Append(Word(row.Verdict).PadRight(16))
-                .Append(Carried(row))
-                .Append('\n');
-        }
-
-        return text.ToString();
-    }
-
-    // What one destination holds: how much has gone there, how fast it moves now and how long it has been idle.
-    private static string Carried(LiveSession row)
-    {
-        var parts = new List<string>();
-        if (row.App.Length > 0)
-        {
-            parts.Add(row.App);
-        }
-
-        if (row.Bytes > 0)
-        {
-            parts.Add(CheckFormat.Bytes(row.Bytes));
-        }
-
-        if (row.BitsPerSecond >= 0)
-        {
-            parts.Add(Loc.Instance.Get("Check_Rate", CheckFormat.Mbits(row.BitsPerSecond)));
-        }
-
-        if (row.Live > 0)
-        {
-            parts.Add(Loc.Instance.Get("Check_SessionLive", row.Live));
-        }
-
-        if (row.AgeSeconds >= 0)
-        {
-            parts.Add(Loc.Instance.Get("Check_SessionAge", row.AgeSeconds));
-        }
-
-        if (row.IdleSeconds >= 0)
-        {
-            parts.Add(Loc.Instance.Get("Check_SessionIdle", row.IdleSeconds));
-        }
-
-        if (row.Stalled)
-        {
-            parts.Add(Loc.Instance.Get("Check_SessionStalled"));
-        }
-
-        return parts.Count == 0 ? "-" : string.Join(" \u00b7 ", parts);
-    }
-
-    // The verdict in the window's language; an agent that says something else says it in its own words.
-    private static string Word(string verdict)
-    {
-        return verdict is "proxy" or "direct" or "block" or LiveSession.Undecided
-            ? Loc.Instance.Get($"Check_Verdict_{verdict}")
-            : verdict;
     }
 
     private static string Legs(CheckReport report)

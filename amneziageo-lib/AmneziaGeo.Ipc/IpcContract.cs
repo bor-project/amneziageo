@@ -366,4 +366,10 @@ public static class IpcContract
     /// session drops. Transient command clients never send this.
     /// </summary>
     public const string OpAttachUi = "attach-ui";
+
+    /// <summary>
+    /// Command to open the system VPN settings, where the user switches always-on on. No args. Android only:
+    /// no application may set always-on for itself.
+    /// </summary>
+    public const string OpOpenVpnSettings = "open-vpn-settings";
 }

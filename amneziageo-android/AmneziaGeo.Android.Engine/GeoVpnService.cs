@@ -29,7 +29,8 @@ public enum VpnStage
 /// <summary>
 /// Hosts the AmneziaWG tunnel over Android VpnService: builds the tun, applies the UAPI config to
 /// amneziawg-go, and protects the handshake socket. Runs in its own process, so what stays in memory
-/// behind a closed window is the tunnel alone.
+/// behind a closed window is the tunnel alone. Raises the last session by itself where the system starts
+/// it with a bare intent: always-on, a boot, and a process the system killed all arrive that way.
 /// </summary>
 [Service(
     Name = "org.amneziageo.android.GeoVpnService",
@@ -126,7 +127,7 @@ public sealed class GeoVpnService : VpnService
         base.OnCreate();
         _queries = new VpnBridge.Listener { Handler = _ => Publish(_stage, _detail, _reason) };
         VpnBridge.Listen(this, _queries, VpnBridge.ActionQuery);
-        _stops = new VpnBridge.Listener { Handler = _ => Teardown(VpnStage.Disconnected, null) };
+        _stops = new VpnBridge.Listener { Handler = _ => Stop() };
         VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
     }
 
@@ -137,29 +138,45 @@ public sealed class GeoVpnService : VpnService
         _exit.RemoveCallbacksAndMessages(null);
         if (intent?.Action == ActionDisconnect)
         {
-            Teardown(VpnStage.Disconnected, null);
+            Stop();
             return StartCommandResult.NotSticky;
         }
 
-        var config = intent?.GetStringExtra(ExtraConfig);
-        var name = intent?.GetStringExtra(ExtraName) ?? "AmneziaGeo";
-        var appMode = intent?.GetStringExtra(ExtraAppMode);
-        var appList = intent?.GetStringArrayExtra(ExtraAppList);
-        var mtu = intent?.GetIntExtra(ExtraMtu, 0) ?? 0;
-        var ipv6 = intent?.GetBooleanExtra(ExtraIpv6, false) ?? false;
-        var wsHost = intent?.GetStringExtra(ExtraWsHost);
-        var wsPort = intent?.GetIntExtra(ExtraWsPort, 0) ?? 0;
-        if (string.IsNullOrEmpty(config))
+        // Always-on starts the tunnel with a bare intent and the head is not there to fill it: what the last
+        // connect ran on comes off the disk instead.
+        var carried = FromIntent(intent);
+        var request = carried ?? VpnBridge.ReadRequest();
+        if (request is null)
         {
-            Teardown(VpnStage.Failed, "no config", nameof(ConnectFailureReason.ConfigMissing));
+            if (intent?.Action == ActionConnect)
+            {
+                Teardown(VpnStage.Failed, "no config", nameof(ConnectFailureReason.ConfigMissing));
+            }
+            else
+            {
+                // The user has no session to raise: a failure here would only make the system try again.
+                StopSelf();
+            }
+
             return StartCommandResult.NotSticky;
         }
 
-        StartForegroundNotification(name);
-        Publish(VpnStage.Connecting, name);
+        if (carried is not null)
+        {
+            VpnBridge.WriteRequest(carried);
+        }
+
+        if (!StartForegroundNotification(request.Name))
+        {
+            Teardown(VpnStage.Failed, "foreground refused", nameof(ConnectFailureReason.ServiceStartFailed));
+            return StartCommandResult.NotSticky;
+        }
+
+        Publish(VpnStage.Connecting, request.Name);
         var plan = VpnBridge.ReadPlan();
-        Task.Run(() => BringUpAsync(plan, config, name, appMode, appList, mtu, ipv6, wsHost, wsPort));
-        return StartCommandResult.NotSticky;
+        Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
+            request.Mtu, request.Ipv6, request.WsHost, request.WsPort));
+        return StartCommandResult.RedeliverIntent;
     }
 
     /// <inheritdoc/>
@@ -192,7 +209,7 @@ public sealed class GeoVpnService : VpnService
     /// <inheritdoc/>
     public override void OnRevoke()
     {
-        Teardown(VpnStage.Disconnected, null);
+        Stop();
         base.OnRevoke();
     }
 
@@ -434,7 +451,9 @@ public sealed class GeoVpnService : VpnService
         _stage = stage;
         _detail = detail;
         _reason = reason;
-        VpnBridge.Publish(this, stage, detail, reason);
+        // Only a running tunnel can be asked whether the system holds it as the always-on one.
+        var alwaysOn = Build.VERSION.SdkInt >= BuildVersionCodes.Q && IsAlwaysOn;
+        VpnBridge.Publish(this, stage, detail, reason, alwaysOn, alwaysOn && IsLockdownEnabled);
     }
 
     private static void Report(string text)
@@ -781,6 +800,14 @@ public sealed class GeoVpnService : VpnService
         }
 
         var exclude = string.Equals(mode, "exclude", StringComparison.Ordinal);
+        // The relay names the application behind every connection, so the named ones ride the tunnel from there and
+        // the tun keeps carrying them all. An allow list here would send every other application past every rule.
+        if (!exclude && _proxyPort > 0)
+        {
+            Report($"{packages.Length} named application(s) ride the tunnel by connection, not by an allow list");
+            return;
+        }
+
         var applied = 0;
         foreach (var package in packages)
         {
@@ -909,7 +936,7 @@ public sealed class GeoVpnService : VpnService
         return int.TryParse(cidr[(slash + 1)..], out var prefix) ? (ip, prefix) : (ip, ip.Contains(':') ? 128 : 32);
     }
 
-    private void StartForegroundNotification(string name)
+    private bool StartForegroundNotification(string name)
     {
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
         {
@@ -918,14 +945,25 @@ public sealed class GeoVpnService : VpnService
             manager?.CreateNotificationChannel(channel);
         }
 
-        var notification = BuildNotification(name);
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.UpsideDownCake)
+        // A start the system refuses ends the service within seconds; failing here names the cause instead.
+        try
         {
-            StartForeground(NotificationId, notification, ForegroundService.TypeSpecialUse);
+            var notification = BuildNotification(name);
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.UpsideDownCake)
+            {
+                StartForeground(NotificationId, notification, ForegroundService.TypeSpecialUse);
+            }
+            else
+            {
+                StartForeground(NotificationId, notification);
+            }
+
+            return true;
         }
-        else
+        catch (Exception ex)
         {
-            StartForeground(NotificationId, notification);
+            global::Android.Util.Log.Warn("GeoVpnService", "the foreground start was refused: " + ex);
+            return false;
         }
     }
 
@@ -940,6 +978,32 @@ public sealed class GeoVpnService : VpnService
             .SetSmallIcon(global::Android.Resource.Drawable.IcDialogInfo)
             .SetOngoing(true)
             .Build();
+    }
+
+    private static VpnRequest? FromIntent(Intent? intent)
+    {
+        var config = intent?.GetStringExtra(ExtraConfig);
+        if (intent is null || string.IsNullOrEmpty(config))
+        {
+            return null;
+        }
+
+        return new VpnRequest(
+            config,
+            intent.GetStringExtra(ExtraName) ?? "AmneziaGeo",
+            intent.GetStringExtra(ExtraAppMode),
+            intent.GetStringArrayExtra(ExtraAppList),
+            intent.GetIntExtra(ExtraMtu, 0),
+            intent.GetBooleanExtra(ExtraIpv6, false),
+            intent.GetStringExtra(ExtraWsHost),
+            intent.GetIntExtra(ExtraWsPort, 0));
+    }
+
+    // The stop the user asked for: what it takes down must not come back with always-on or after a kill.
+    private void Stop()
+    {
+        VpnBridge.ClearRequest();
+        Teardown(VpnStage.Disconnected, null);
     }
 
     private void Teardown(VpnStage stage, string? detail, string? reason = null)

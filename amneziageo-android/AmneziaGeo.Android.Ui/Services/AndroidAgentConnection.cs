@@ -71,6 +71,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _logLevel = "error";
     private bool _routeLog;
     private int _routeTtl = 300;
+    private bool _alwaysOn;
+    private bool _alwaysOnLockdown;
 
     public event Action? Connected;
 
@@ -367,6 +369,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpImportBundle:
                 return await ImportBundleAsync(args);
 
+            case IpcContract.OpOpenVpnSettings:
+                return OpenVpnSettings();
+
             default:
                 _log.Warn("agent", $"command '{command.Op}' is not wired in the Android agent");
                 return new IpcAck(false, IpcMessage.Key("Android_OpNotWired", command.Op));
@@ -429,7 +434,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         PushSnapshot();
         var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync();
         VpnBridge.WritePlan(await BuildPlanAsync().ConfigureAwait(false));
-        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app-split {appMode}");
+        _log.Info("agent", $"connect requested: config '{_selectedTarget}', app rules {AppRulesLine(appMode, appPkgs.Length)}");
         StartService(GeoVpnService.ActionConnect, configText, _selectedTarget,
             appMode == "off" ? null : appMode, appMode == "off" ? null : appPkgs,
             _transports.GetValueOrDefault(configName), foreground: true);
@@ -543,6 +548,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var stage = intent.GetIntExtra(VpnBridge.ExtraStage, -1);
         if (stage >= 0)
         {
+            _alwaysOn = intent.GetBooleanExtra(VpnBridge.ExtraAlwaysOn, false);
+            _alwaysOnLockdown = intent.GetBooleanExtra(VpnBridge.ExtraLockdown, false);
             OnVpnStateChanged((VpnStage)stage, intent.GetStringExtra(VpnBridge.ExtraDetail),
                 intent.GetStringExtra(VpnBridge.ExtraReason));
         }
@@ -573,6 +580,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _boundTarget = null;
                 _handshakeUnix = 0;
                 ResetLink();
+                ResetAlwaysOn();
                 break;
             case VpnStage.Failed:
                 _active = false;
@@ -581,12 +589,37 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _boundTarget = null;
                 _handshakeUnix = 0;
                 ResetLink();
+                ResetAlwaysOn();
                 SetConnectFailure(reason ?? nameof(ConnectFailureReason.Unknown), detail ?? string.Empty);
                 break;
         }
 
         LogVpnStage(stage, detail);
         PushSnapshot();
+    }
+
+    // Opens the system screen carrying the always-on switch; no application may set always-on for itself.
+    private IpcAck OpenVpnSettings()
+    {
+        try
+        {
+            var intent = new Intent(global::Android.Provider.Settings.ActionVpnSettings);
+            intent.AddFlags(ActivityFlags.NewTask);
+            Application.Context.StartActivity(intent);
+            return Ok();
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("agent", "the system vpn settings did not open: " + ex);
+            return new IpcAck(false, "vpn settings unavailable");
+        }
+    }
+
+    // Only a running tunnel is asked about always-on, so a stopped one leaves no answer behind.
+    private void ResetAlwaysOn()
+    {
+        _alwaysOn = false;
+        _alwaysOnLockdown = false;
     }
 
     // Drops the link view a stopped tunnel left behind.
@@ -691,7 +724,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             EngineVersion: string.Empty,
             LogLevel: _logLevel,
             RouteLog: _routeLog,
-            RouteTtlSeconds: _routeTtl);
+            RouteTtlSeconds: _routeTtl,
+            AlwaysOn: _alwaysOn,
+            AlwaysOnLockdown: _alwaysOnLockdown);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -1533,10 +1568,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var directDomains = new List<GeoDomain>(list.DirectDomains);
         SplitExclusions(settings?.Exclusions, directRoutes, directDomains);
 
-        // Naming applications is the split itself: only those reach the tunnel, so what they reach belongs in it
-        // unless another rule says otherwise. Read as a split by destination, a list of applications alone names
-        // nothing and sends them all direct.
-        var perApp = settings is not { UseGlobalProxy: true } && AppPackages(list.Apps).Length > 0;
+        // An application the list names rides the tunnel wherever no rule decided for the destination: the relay
+        // names the owner of every connection, so the rules keep deciding for everyone and the applications only
+        // add to them. Without a relay the owner is unreachable and the tunnel itself has to be restricted to them,
+        // which is what the whole tunnel below stands for.
+        var apps = AppPackages(list.Apps);
+        var perApp = settings is not { UseGlobalProxy: true } && apps.Length > 0;
+        var attributed = Build.VERSION.SdkInt >= BuildVersionCodes.Q;
         var plan = new GeoRoutingPlan(
             list.Routes,
             directRoutes,
@@ -1544,9 +1582,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             list.Domains,
             directDomains,
             list.BlockDomains,
-            settings is { UseGlobalProxy: true } || perApp,
+            settings is { UseGlobalProxy: true } || (perApp && !attributed),
             settings is { AllUdp: true },
-            _routeTtl);
+            _routeTtl)
+        {
+            TunnelApps = perApp && attributed ? apps : [],
+        };
 
         // A list that decides nothing would leave every destination off the tunnel; the whole tunnel is the safer read.
         if (!plan.HasRules && !perApp)
@@ -1557,17 +1598,20 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         _log.Info("geo", $"routing '{list.Name}': {plan.ProxyRoutes.Count}/{plan.DirectRoutes.Count}/{plan.BlockRoutes.Count} ranges, "
             + $"{plan.ProxyDomains.Count}/{plan.DirectDomains.Count}/{plan.BlockDomains.Count} names, "
-            + ModeName(perApp, plan.FullTunnel)
+            + ModeName(perApp ? apps.Length : 0, attributed, plan.FullTunnel)
             + (plan.AllUdp ? ", all udp tunneled" : string.Empty));
         return plan;
     }
 
-    // How the session reads in the log: applications named, everything tunneled, or rules deciding each destination.
-    private static string ModeName(bool perApp, bool fullTunnel)
+    // How the session reads in the log: rules deciding each destination with the named applications added to them,
+    // the tunnel restricted to those applications, everything tunneled, or the rules alone.
+    private static string ModeName(int apps, bool attributed, bool fullTunnel)
     {
-        if (perApp)
+        if (apps > 0)
         {
-            return "per-app tunnel";
+            return attributed
+                ? $"split, {apps} application(s) tunneled on top of the rules"
+                : "per-app tunnel";
         }
 
         return fullTunnel ? "full tunnel" : "split";
@@ -2033,7 +2077,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var settings = _selectedRoutingList is { } id
             ? await _store.GetRoutingSettingsAsync(id, ct).ConfigureAwait(false)
             : null;
-        var report = await new TargetInspector(list, !(settings?.UseGlobalProxy ?? false))
+        // A named application is added to the rules where the relay can name the owner of a connection, and below
+        // that the tunnel is built as an allow list of them instead - the check answers under the mode in force.
+        var report = await new TargetInspector(list, !(settings?.UseGlobalProxy ?? false),
+                AppMode(list, settings))
             .InspectAsync(args[0], _selectedTarget ?? string.Empty, new TargetProbes(), ct)
             .ConfigureAwait(false);
 
@@ -2258,6 +2305,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _selectedTarget = null;
         }
 
+        // Always-on raises the last session on its own: a config that is gone must not come back with it.
+        if (VpnBridge.ReadRequest() is { } stored && string.Equals(args[0], stored.Name, StringComparison.Ordinal))
+        {
+            VpnBridge.ClearRequest();
+        }
+
         Save();
         await EnsureInitAsync().ConfigureAwait(false);
         await _store.RemoveConfigTransportAsync(args[0]).ConfigureAwait(false);
@@ -2279,7 +2332,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
     }
 
-    // The include app set from the selected routing list's app:pkg rules; ("off", []) when none.
+    // The app set from the selected routing list's app:pkg rules, as the allow list the tunnel falls back to where
+    // a connection cannot be traced to its owner; ("off", []) when none.
     private async Task<(string Mode, string[] Packages)> ResolveAppSplitFromRoutingAsync()
     {
         if (_selectedRoutingList is not { } listId)
@@ -2297,6 +2351,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var list = await _store.GetRoutingListAsync(listId).ConfigureAwait(false);
         var packages = AppPackages(list?.Apps);
         return packages.Length > 0 ? ("include", packages) : ("off", []);
+    }
+
+    // What the app rules of a list do here: they add to the rules where a connection can be traced to its owner,
+    // and hold the tunnel to themselves where it cannot.
+    private static AppScope AppMode(RoutingList? list, RoutingSettings? settings)
+    {
+        if (settings is { UseGlobalProxy: true } || AppPackages(list?.Apps).Length == 0)
+        {
+            return AppScope.None;
+        }
+
+        return Build.VERSION.SdkInt >= BuildVersionCodes.Q ? AppScope.Additive : AppScope.Exclusive;
     }
 
     // The packages a routing list names, without the marker they are stored under.
@@ -2433,17 +2499,24 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var (appMode, appPkgs) = await ResolveAppSplitFromRoutingAsync();
-        report.Append("app split    : ").Append(appMode);
-        if (appMode != "off" && appPkgs is { Length: > 0 })
-        {
-            report.Append(" (").Append(appPkgs.Length).Append(" apps)");
-        }
-
-        report.Append('\n');
+        report.Append("app rules    : ").Append(AppRulesLine(appMode, appPkgs.Length)).Append('\n');
         AppendRoutingReport(report);
         report.Append("log level    : ").Append(_logLevel).Append('\n');
         report.Append("route log    : ").Append(_routeLog ? "on" : "off").Append('\n');
         return new IpcAck(true, report.ToString());
+    }
+
+    // What the applications a list names get in the session the next connect builds.
+    private static string AppRulesLine(string mode, int apps)
+    {
+        if (mode == "off" || apps == 0)
+        {
+            return "off";
+        }
+
+        return Build.VERSION.SdkInt >= BuildVersionCodes.Q
+            ? $"{apps} application(s) tunneled on top of the rules"
+            : $"{apps} application(s) alone ride the tunnel, the rest pass every rule by";
     }
 
     // Appends the selected routing list and its rule counts to the runtime report.

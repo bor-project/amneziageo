@@ -71,6 +71,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isCompact;
 
+    partial void OnIsCompactChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowStoredText));
+        OnPropertyChanged(nameof(ShowLiveText));
+        OnPropertyChanged(nameof(ShowStoredCards));
+        OnPropertyChanged(nameof(ShowLiveCards));
+        Render();
+    }
+
     // --- Segmented mode: viewer or capture settings ---
 
     [ObservableProperty]
@@ -97,9 +106,14 @@ internal sealed partial class LogsViewModel : ViewModelBase
     // --- Log type (shared: viewer + settings) ---
 
     /// <summary>
-    /// The selectable log tables. The tokens are the same in every language.
+    /// The live source: what the tunnel carries right now, asked of the agent instead of a stored table.
     /// </summary>
-    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", "checks"];
+    public const string LiveType = "active";
+
+    /// <summary>
+    /// The selectable sources. The tokens are the same in every language.
+    /// </summary>
+    public ObservableCollection<string> LogTypes { get; } = ["ageo", "routes", LiveType];
 
     [ObservableProperty]
     private string _selectedLogType = "ageo";
@@ -109,9 +123,33 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// </summary>
     public bool IsAgentLog => SelectedLogType == "ageo";
 
+    /// <summary>
+    /// Whether the viewer is on the routing log.
+    /// </summary>
+    public bool IsRouteLog => SelectedLogType == "routes";
+
+    /// <summary>
+    /// Whether the viewer is on what the tunnel carries right now.
+    /// </summary>
+    public bool IsLiveLog => SelectedLogType == LiveType;
+
+    /// <summary>
+    /// Whether the viewer is on a stored table, which is what can be searched, paged, cleared and exported.
+    /// </summary>
+    public bool IsStoredLog => !IsLiveLog;
+
     partial void OnSelectedLogTypeChanged(string value)
     {
         OnPropertyChanged(nameof(IsAgentLog));
+        OnPropertyChanged(nameof(IsRouteLog));
+        OnPropertyChanged(nameof(IsLiveLog));
+        OnPropertyChanged(nameof(IsStoredLog));
+        OnPropertyChanged(nameof(ShowEmpty));
+        OnPropertyChanged(nameof(ShowStoredText));
+        OnPropertyChanged(nameof(ShowLiveText));
+        OnPropertyChanged(nameof(ShowStoredCards));
+        OnPropertyChanged(nameof(ShowLiveCards));
+        ClearView();
         ResetAndReload();
     }
 
@@ -171,18 +209,44 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     // --- Log body ---
 
+    // What the last read brought, kept to render again when the window changes side.
+    private IReadOnlyList<string> _lines = [];
+    private SessionReport _carried = SessionReport.Empty;
+
     [ObservableProperty]
     private string _logText = string.Empty;
+
+    /// <summary>
+    /// Stored rows as cards, which is what a narrow window shows instead of the text.
+    /// </summary>
+    public ObservableCollection<LogEntryItem> Entries { get; } = [];
+
+    /// <summary>
+    /// Destinations as cards, which is what a narrow window shows instead of the text.
+    /// </summary>
+    public ObservableCollection<LiveRowItem> LiveRows { get; } = [];
+
+    // What the tunnel carries in one line, above the rows it counts.
+    [ObservableProperty]
+    private string _liveSummary = string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowBody))]
     [NotifyPropertyChangedFor(nameof(ShowEmpty))]
+    [NotifyPropertyChangedFor(nameof(ShowStoredText))]
+    [NotifyPropertyChangedFor(nameof(ShowLiveText))]
+    [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
+    [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _hasLogs;
 
     // Whether a window load is in flight; shows the loader in place of the body (not raised for the tail poll).
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowBody))]
     [NotifyPropertyChangedFor(nameof(ShowEmpty))]
+    [NotifyPropertyChangedFor(nameof(ShowStoredText))]
+    [NotifyPropertyChangedFor(nameof(ShowLiveText))]
+    [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
+    [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _isLoading;
 
     /// <summary>
@@ -191,9 +255,30 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool ShowBody => HasLogs && !IsLoading;
 
     /// <summary>
-    /// Whether the empty hint is shown: no content and no load in flight.
+    /// Whether the stored rows are shown as text, which is what a wide window carries.
     /// </summary>
-    public bool ShowEmpty => !HasLogs && !IsLoading;
+    public bool ShowStoredText => ShowBody && !IsCompact && IsStoredLog;
+
+    /// <summary>
+    /// Whether the destinations are shown as the padded table a wide window carries.
+    /// </summary>
+    public bool ShowLiveText => ShowBody && !IsCompact && IsLiveLog;
+
+    /// <summary>
+    /// Whether the stored rows are shown as cards, which is what a narrow window carries.
+    /// </summary>
+    public bool ShowStoredCards => ShowBody && IsCompact && IsStoredLog;
+
+    /// <summary>
+    /// Whether the destinations are shown as cards, which is what a narrow window carries.
+    /// </summary>
+    public bool ShowLiveCards => ShowBody && IsCompact && IsLiveLog;
+
+    /// <summary>
+    /// Whether the empty hint is shown: no content and no load in flight. The live source says the same thing
+    /// in its summary line, so it does not carry the hint as well.
+    /// </summary>
+    public bool ShowEmpty => !HasLogs && !IsLoading && !IsLiveLog;
 
     // Whether the view snaps to the live tail on each poll.
     [ObservableProperty]
@@ -264,7 +349,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
         _cursor = null;
         _cursorStack.Clear();
         _windowFirstId = 0;
+        _lines = [];
+        _carried = SessionReport.Empty;
         LogText = string.Empty;
+        LiveSummary = string.Empty;
+        Entries.Clear();
+        LiveRows.Clear();
         HasLogs = false;
         IsLoading = false;
         LogCanPageOlder = false;
@@ -285,7 +375,13 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     private void OnPollTick()
     {
-        if (IsActive && IsViewMode && LogFollow && _cursor is null && _cursorStack.Count == 0)
+        if (!IsActive || !IsViewMode || !LogFollow)
+        {
+            return;
+        }
+
+        // The live source has no history to walk, so a tick always re-reads it.
+        if (IsLiveLog || (_cursor is null && _cursorStack.Count == 0))
         {
             Reload(null, showLoader: false);
         }
@@ -341,6 +437,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [RelayCommand]
     private async Task ClearLog()
     {
+        if (IsLiveLog)
+        {
+            return;
+        }
+
         try
         {
             await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpClearLog, [SelectedLogType]));
@@ -379,6 +480,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// </summary>
     public async Task<string?> BuildExportTextAsync()
     {
+        if (IsLiveLog)
+        {
+            // Nothing is stored behind the live source: what travels is what is on screen.
+            return LiveSummary + "\n\n" + SessionRows.Text(_carried);
+        }
+
         IpcAck ack;
         try
         {
@@ -450,6 +557,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     private async Task LoadAsync(long? beforeId)
     {
+        if (IsLiveLog)
+        {
+            await LoadCarriedAsync();
+            return;
+        }
+
         var type = SelectedLogType;
         var args = new List<string>
         {
@@ -497,11 +610,126 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
 
         _windowFirstId = payload.FirstId;
-        LogText = payload.Lines.Count > 0 ? string.Join('\n', payload.Lines) : string.Empty;
         HasLogs = payload.Lines.Count > 0;
         SearchMatchCount = string.IsNullOrWhiteSpace(SearchQuery) ? 0 : payload.MatchCount;
         LogCanPageOlder = payload.HasOlder;
         LogCanPageNewer = beforeId is not null;
+        if (Same(_lines, payload.Lines))
+        {
+            return;
+        }
+
+        _lines = payload.Lines;
+        Render();
+    }
+
+    // Whether the window came back as it was: the tail poll asks every second and mostly gets the same rows.
+    private static bool Same(IReadOnlyList<string> left, IReadOnlyList<string> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!string.Equals(left[index], right[index], StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Reads what the relay holds right now; the live source has no stored table behind it and no history.
+    private async Task LoadCarriedAsync()
+    {
+        IpcAck ack;
+        try
+        {
+            ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetSessions, []));
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!ack.Ok || !IsActive || !IsLiveLog)
+        {
+            return;
+        }
+
+        _carried = SessionReport.Parse(ack.Message);
+        HasLogs = _carried.Sessions.Count > 0;
+        SearchMatchCount = 0;
+        LogCanPageOlder = false;
+        LogCanPageNewer = false;
+        Render();
+    }
+
+    // Puts what the viewer holds on screen the way the window is shaped: text when it is wide, cards when narrow.
+    private void Render()
+    {
+        if (IsLiveLog)
+        {
+            RenderCarried();
+            return;
+        }
+
+        LiveRows.Clear();
+        LiveSummary = string.Empty;
+        if (!IsCompact)
+        {
+            Entries.Clear();
+            LogText = _lines.Count > 0 ? string.Join('\n', _lines) : string.Empty;
+            return;
+        }
+
+        LogText = string.Empty;
+        var rows = new List<LogEntryItem>(_lines.Count);
+        foreach (var line in _lines)
+        {
+            rows.Add(LogEntryItem.Parse(line));
+        }
+
+        Fill(Entries, rows);
+    }
+
+    private void RenderCarried()
+    {
+        Entries.Clear();
+        LiveSummary = SessionRows.Summary(_carried);
+        if (!IsCompact)
+        {
+            LiveRows.Clear();
+            LogText = SessionRows.Text(_carried);
+            return;
+        }
+
+        LogText = string.Empty;
+        Fill(LiveRows, SessionRows.Cards(_carried));
+    }
+
+    // Replaces a card list row by row: a list rebuilt whole loses the place the reader is at in it.
+    private static void Fill<T>(ObservableCollection<T> rows, IReadOnlyList<T> next)
+    {
+        for (var index = 0; index < next.Count; index++)
+        {
+            if (index >= rows.Count)
+            {
+                rows.Add(next[index]);
+            }
+            else if (!Equals(rows[index], next[index]))
+            {
+                rows[index] = next[index];
+            }
+        }
+
+        while (rows.Count > next.Count)
+        {
+            rows.RemoveAt(rows.Count - 1);
+        }
     }
 
     // Falls an unrecognised token back to the default so the combo never goes null.

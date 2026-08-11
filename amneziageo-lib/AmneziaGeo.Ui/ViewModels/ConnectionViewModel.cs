@@ -147,6 +147,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _host = host;
         _connection = connection;
         _prefs = prefs;
+        _alwaysOnMode = prefs.AlwaysOnMode;
         Loc.Instance.CultureChanged += OnCultureChanged;
         _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _noticeTimer.Tick += (_, _) =>
@@ -198,7 +199,37 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     // Disabled in the stalled-disconnect half-state (tunnel still up but Active=false): the header power toggle
     // would otherwise send connect and reverse the disconnect - the retry is offered on the banner instead (#14).
-    public bool CanToggleConnection => !Reconnecting && !DisconnectFailed && IsConnected && (IsTunnelActive || ActiveConfig is not null);
+    // In always-on mode the button only leads to the system screen, so nothing about the tunnel bars it.
+    public bool CanToggleConnection => AlwaysOnRouting
+        ? IsConnected
+        : !Reconnecting && !DisconnectFailed && IsConnected && (IsTunnelActive || ActiveConfig is not null);
+
+    // Kept off the screen for now; the switch and everything it drives stay in place.
+    private const bool AlwaysOnToggleOffered = false;
+
+    /// <summary>
+    /// Whether the always-on switch is offered on the home screen: the system screen it leads to is Android's,
+    /// and a television has no room for it on the pad path.
+    /// </summary>
+    public static bool ShowAlwaysOnToggle => AlwaysOnToggleOffered && OperatingSystem.IsAndroid() && !UiPlatform.IsTelevision;
+
+    // The mode bites only while the switch is on the screen: hidden, the button dials as it always did.
+    private bool AlwaysOnRouting => ShowAlwaysOnToggle && AlwaysOnMode;
+
+    /// <summary>
+    /// Whether the power button leads to the system always-on screen instead of dialling. Always-on belongs to
+    /// the system: no application may switch it on for itself.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    private bool _alwaysOnMode;
+
+    partial void OnAlwaysOnModeChanged(bool value)
+    {
+        _prefs.AlwaysOnMode = value;
+        _prefs.Save();
+    }
 
     private static readonly IBrush _circleBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _circleBorderGray = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
@@ -232,7 +263,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// <summary>
     /// Whether the home screen shows what the running tunnel carries.
     /// </summary>
-    public bool ShowLink => ConfigItemViewModel.LinkShown && ConnState == 2 && BoundRow is not null;
+    public bool ShowLink => ConfigItemViewModel.SpeedShown && ConnState == 2 && BoundRow is not null;
 
     /// <summary>
     /// Receive and send rates of the running tunnel.
@@ -829,6 +860,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanToggleConnection))]
     private async Task ToggleConnection()
     {
+        // The switch is on: the button leads to the system screen carrying always-on, and dials nothing.
+        if (AlwaysOnRouting)
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpOpenVpnSettings, []));
+            return;
+        }
+
         var connect = !IsTunnelActive;
         IsTunnelActive = connect;
         BoundStatus = connect ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting;

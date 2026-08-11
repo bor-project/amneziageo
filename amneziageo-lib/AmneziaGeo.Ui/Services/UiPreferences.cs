@@ -65,6 +65,11 @@ internal sealed class UiPreferences
     /// </summary>
     public long LastRoutingList { get; set; }
 
+    /// <summary>
+    /// Whether the home button leads to the system always-on screen instead of dialling.
+    /// </summary>
+    public bool AlwaysOnMode { get; set; }
+
     private static string DbPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "AmneziaGeo",
@@ -134,6 +139,7 @@ internal sealed class UiPreferences
             ["language"] = Language,
             ["last-config"] = LastConfig,
             ["last-routing-list"] = LastRoutingList.ToString(CultureInfo.InvariantCulture),
+            ["always-on-mode"] = AlwaysOnMode ? "1" : "0",
         };
     }
 
@@ -168,6 +174,11 @@ internal sealed class UiPreferences
         if (values.TryGetValue("maximized", out var maximized))
         {
             prefs.Maximized = maximized == "1";
+        }
+
+        if (values.TryGetValue("always-on-mode", out var alwaysOn))
+        {
+            prefs.AlwaysOnMode = alwaysOn == "1";
         }
 
         if (values.TryGetValue("settings-section", out var section) && !string.IsNullOrEmpty(section))

@@ -223,6 +223,12 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public static bool LinkShown => !UiPlatform.IsTelevision;
 
+    /// <summary>
+    /// Whether the throughput reading is shown. Android keeps none: the tunnel there counts what its own relay
+    /// carries, which is a share of the traffic and no measure of the link.
+    /// </summary>
+    public static bool SpeedShown => LinkShown && !OperatingSystem.IsAndroid();
+
     // Seconds since the running tunnel's peer last answered; -1 on every config that is not running.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
@@ -237,7 +243,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// <summary>
     /// Whether the row carries a live throughput reading, which only the running tunnel does.
     /// </summary>
-    public bool ShowLinkSpeed => LinkKnown;
+    public bool ShowLinkSpeed => LinkKnown && SpeedShown;
 
     // Whether the running tunnel has timed its own echo. It stands ahead of the echo to the endpoint: that one
     // travels the tunnel it is measuring once the session takes the default route, and the answer it never gets

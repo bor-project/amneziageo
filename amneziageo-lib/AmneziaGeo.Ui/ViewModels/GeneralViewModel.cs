@@ -202,6 +202,33 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string _networkRepairStatus = string.Empty;
 
     /// <summary>
+    /// Whether the always-on card is offered (Android only: elsewhere the agent is a service of its own).
+    /// </summary>
+    public bool CanConfigureAlwaysOn => OperatingSystem.IsAndroid();
+
+    /// <summary>
+    /// Whether the system holds this application as its always-on VPN. Answered by the running tunnel, so it
+    /// says nothing while the tunnel is down.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AlwaysOnStatus))]
+    private bool _alwaysOn;
+
+    /// <summary>
+    /// Whether always-on also blocks what would leave outside the tunnel.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AlwaysOnStatus))]
+    private bool _alwaysOnLockdown;
+
+    /// <summary>
+    /// The always-on state in words; empty where the tunnel does not run and nothing can be told.
+    /// </summary>
+    public string AlwaysOnStatus => AlwaysOn
+        ? Loc.Instance.Get(AlwaysOnLockdown ? "General_AlwaysOnLockdown" : "General_AlwaysOnActive")
+        : string.Empty;
+
+    /// <summary>
     /// ctor
     /// </summary>
     public GeneralViewModel(MainWindowViewModel host, IAgentConnection connection, UiPreferences prefs)
@@ -307,6 +334,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         AppVersion = $"AmneziaGeo {(string.IsNullOrEmpty(snapshot.AgentVersion) ? "-" : snapshot.AgentVersion)}";
         EngineVersion = snapshot.EngineVersion;
         BuildTarget = snapshot.BuildTarget;
+        AlwaysOn = snapshot.AlwaysOn;
+        AlwaysOnLockdown = snapshot.AlwaysOnLockdown;
 
         // Seed the connection settings without echoing an autosave push back to the agent.
         _suppressSettingPush = true;
@@ -662,6 +691,15 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
 
         _downloadCts?.Cancel();
+    }
+
+    /// <summary>
+    /// Opens the system screen carrying the always-on switch.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenVpnSettingsAsync()
+    {
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpOpenVpnSettings, []));
     }
 
     // Relays an update command to the agent that owns the flow.

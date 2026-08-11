@@ -16,6 +16,15 @@
     <StreamGeometry x:Key="AgSearchGeometry">M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z</StreamGeometry>
     <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
   </UserControl.Resources>
+  <UserControl.Styles>
+    <!-- Narrow screen: the body frame only takes width off the cards, which carry their own. -->
+    <Style Selector="Border.logbody.bare">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Margin" Value="0,10,0,0" />
+    </Style>
+  </UserControl.Styles>
   <!-- Shared segment+source header, then a single content area; only the log body scrolls. -->
   <Grid RowDefinitions="Auto,*" RowSpacing="14">
 
@@ -63,7 +72,8 @@
               Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="18" MaxWidth="420"
                     HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-          <Panel>
+          <!-- The live source has nothing to tune: it is read from the tunnel, not captured into a table. -->
+          <Panel IsVisible="{Binding IsStoredLog}">
             <!-- ageo: maximum capture level (incl. none). -->
             <StackPanel Spacing="8" IsVisible="{Binding IsAgentLog}"
                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
@@ -78,16 +88,18 @@
             </StackPanel>
 
             <!-- routes: on/off (no level). -->
-            <controls:SettingSwitchRow IsVisible="{Binding !IsAgentLog}"
+            <controls:SettingSwitchRow IsVisible="{Binding IsRouteLog}"
                 Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
                 IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
           </Panel>
 
-          <Border Height="1" Background="{DynamicResource AgBorderBrush}" Opacity="0.6" />
+          <Border Height="1" Background="{DynamicResource AgBorderBrush}" Opacity="0.6"
+                  IsVisible="{Binding IsStoredLog}" />
 
           <!-- Log actions at their own width: a narrow card carries them onto the next line. -->
           <WrapPanel>
-            <Button Classes="methodpick" Margin="0,0,10,10" Padding="16,8" Command="{Binding ClearLogCommand}">
+            <Button Classes="methodpick" Margin="0,0,10,10" Padding="16,8" Command="{Binding ClearLogCommand}"
+                    IsVisible="{Binding IsStoredLog}">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
                 <TextBlock Text="{l:Tr Main_ClearLogButton}" />
@@ -113,11 +125,13 @@
       <!-- Viewer pane: full-width card. Body fills the rest under the control bar. -->
       <Border IsVisible="{Binding IsViewMode}"
               Classes="sect" Classes.compact="{Binding IsCompact}">
-        <Grid RowDefinitions="Auto,*">
+        <Grid RowDefinitions="Auto,Auto,*">
 
-          <!-- Wide control bar: search fills; arrows-only nav; follow. -->
+          <!-- Wide control bar: search fills; arrows-only nav; follow. The live source has no history to
+               search or to page through, so it carries the follow switch alone. -->
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding !IsCompact}">
             <TextBox Grid.Column="0" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
+                     IsVisible="{Binding IsStoredLog}"
                      Watermark="{l:Tr Main_LogSearchWatermark}">
               <TextBox.InnerLeftContent>
                 <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
@@ -130,11 +144,11 @@
               </TextBox.InnerRightContent>
             </TextBox>
             <Button Grid.Column="1" Classes="methodpick" Padding="10,7" Command="{Binding PageOlderCommand}"
-                    ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
+                    IsVisible="{Binding IsStoredLog}" ToolTip.Tip="{l:Tr Main_LogOlderTooltip}">
               <PathIcon Data="{StaticResource AgChevronLeftGeometry}" Width="14" Height="14" />
             </Button>
             <Button Grid.Column="2" Classes="methodpick" Padding="10,7" Command="{Binding PageNewerCommand}"
-                    ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
+                    IsVisible="{Binding IsStoredLog}" ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
               <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="14" Height="14" />
             </Button>
             <TextBlock Grid.Column="3" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5"
@@ -145,6 +159,7 @@
           <!-- Narrow control bar: search then nav + follow. -->
           <StackPanel Grid.Row="0" Spacing="10" IsVisible="{Binding IsCompact}">
             <TextBox Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
+                     IsVisible="{Binding IsStoredLog}"
                      Watermark="{l:Tr Main_LogSearchWatermark}">
               <TextBox.InnerLeftContent>
                 <PathIcon Data="{StaticResource AgSearchGeometry}" Width="14" Height="14"
@@ -157,50 +172,125 @@
               </TextBox.InnerRightContent>
             </TextBox>
 
-            <!-- Nav takes star columns so it yields width instead of pushing follow off the row. -->
-            <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
-              <!-- Grid, not StackPanel: the label needs a finite width for trimming to engage. -->
-              <Button Grid.Column="0" Classes="methodpick" Padding="12,7" HorizontalAlignment="Stretch" MaxWidth="180"
-                      Command="{Binding PageOlderCommand}">
-                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="5">
-                  <PathIcon Grid.Column="0" Data="{StaticResource AgChevronLeftGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
-                  <TextBlock Grid.Column="1" Text="{l:Tr Main_LogOlderShort}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                </Grid>
+            <!-- Arrows keep the nav at icon width; the caption and the switch take the free end of the row. -->
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+              <Grid.Resources>
+                <GridLength x:Key="ToggleSwitchPreContentMargin">0</GridLength>
+                <GridLength x:Key="ToggleSwitchPostContentMargin">0</GridLength>
+              </Grid.Resources>
+              <Button Grid.Column="0" Classes="methodpick" Padding="12,7"
+                      Command="{Binding PageOlderCommand}" IsVisible="{Binding IsStoredLog}">
+                <PathIcon Data="{StaticResource AgChevronLeftGeometry}" Width="14" Height="14" />
               </Button>
-              <Button Grid.Column="1" Classes="methodpick" Padding="12,7" HorizontalAlignment="Stretch" MaxWidth="180"
-                      Command="{Binding PageNewerCommand}">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="5">
-                  <TextBlock Grid.Column="0" Text="{l:Tr Main_LogNewerShort}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                             HorizontalAlignment="Right" />
-                  <PathIcon Grid.Column="1" Data="{StaticResource AgChevronRightGeometry}" Width="13" Height="13" VerticalAlignment="Center" />
-                </Grid>
+              <Button Grid.Column="1" Classes="methodpick" Padding="12,7"
+                      Command="{Binding PageNewerCommand}" IsVisible="{Binding IsStoredLog}">
+                <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="14" Height="14" />
               </Button>
-              <!-- Follow: caption over the switch. Zeroed padding rows drop the switch to its 20px track
-                   so the pair stays as tall as the nav buttons; -12 absorbs the template's gap column. -->
-              <StackPanel Grid.Column="2" Spacing="0" VerticalAlignment="Center" HorizontalAlignment="Right">
-                <StackPanel.Resources>
-                  <GridLength x:Key="ToggleSwitchPreContentMargin">0</GridLength>
-                  <GridLength x:Key="ToggleSwitchPostContentMargin">0</GridLength>
-                </StackPanel.Resources>
-                <TextBlock Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="10" LineHeight="11"
-                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="72" />
-                <ToggleSwitch IsChecked="{Binding LogFollow, Mode=TwoWay}" HorizontalAlignment="Center"
-                              Margin="0,0,-12,0" />
-              </StackPanel>
+              <TextBlock Grid.Column="3" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
             </Grid>
           </StackPanel>
 
-          <!-- Log body (shared): text / empty state / loader. Fills the pane width. -->
-          <Border Grid.Row="1" Margin="0,14,0,0" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+          <!-- What the tunnel carries in one line, over the destinations it counts. -->
+          <TextBlock Grid.Row="1" IsVisible="{Binding IsLiveLog}" Margin="2,12,2,0"
+                     Text="{Binding LiveSummary}" TextWrapping="Wrap" FontSize="12.5"
+                     Foreground="{DynamicResource AgFgBrush}" />
+
+          <!-- Log body (shared): text / cards / empty state / loader. Fills the pane width. -->
+          <Border Grid.Row="2" Classes="logbody" Classes.bare="{Binding IsCompact}"
+                  Margin="0,14,0,0" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                   Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
             <Panel>
               <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                            IsVisible="{Binding ShowBody}">
+                            IsVisible="{Binding ShowStoredText}">
                 <SelectableTextBlock Text="{Binding LogText}"
                                      FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
                                      FontSize="11.5" LineHeight="18"
                                      Foreground="{DynamicResource AgMutedBrush}"
                                      TextWrapping="Wrap" Margin="16,13" />
+              </ScrollViewer>
+
+              <!-- The destinations as a padded table: the columns only line up without wrapping. -->
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                            IsVisible="{Binding ShowLiveText}">
+                <SelectableTextBlock Text="{Binding LogText}"
+                                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                     FontSize="11.5" LineHeight="18"
+                                     Foreground="{DynamicResource AgMutedBrush}"
+                                     TextWrapping="NoWrap" Margin="16,13" />
+              </ScrollViewer>
+
+              <!-- Narrow: a card per row, so nothing has to be scrolled sideways to be read. -->
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                            IsVisible="{Binding ShowStoredCards}">
+                <ItemsControl ItemsSource="{Binding Entries}" Margin="0,0,0,2">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LogEntryItem">
+                      <Border Margin="0,0,0,8" Padding="12,9" CornerRadius="8"
+                              Background="{DynamicResource AgPanel2Brush}"
+                              BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
+                        <StackPanel Spacing="5">
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Time}" FontSize="11"
+                                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                       Foreground="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
+                            <Panel IsVisible="{Binding HasLevel}">
+                              <TextBlock Text="{Binding Level}" FontSize="11" FontWeight="SemiBold"
+                                         IsVisible="{Binding IsAlarm}"
+                                         Foreground="{DynamicResource AgDownBrush}" />
+                              <TextBlock Text="{Binding Level}" FontSize="11" FontWeight="SemiBold"
+                                         IsVisible="{Binding IsWarning}"
+                                         Foreground="{DynamicResource AgWarnBrush}" />
+                              <TextBlock Text="{Binding Level}" FontSize="11" FontWeight="SemiBold"
+                                         IsVisible="{Binding IsPlain}"
+                                         Foreground="{DynamicResource AgMuted2Brush}" />
+                            </Panel>
+                          </StackPanel>
+                          <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12.5"
+                                     Foreground="{DynamicResource AgFgBrush}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+
+              <!-- Narrow: a card per destination — where it goes over what it holds. -->
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                            IsVisible="{Binding ShowLiveCards}">
+                <ItemsControl ItemsSource="{Binding LiveRows}" Margin="0,0,0,2">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LiveRowItem">
+                      <Border Margin="0,0,0,8" Padding="12,9" CornerRadius="8"
+                              Background="{DynamicResource AgPanel2Brush}"
+                              BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
+                        <Grid ColumnDefinitions="Auto,*">
+                          <!-- A destination something is connected to that carries nothing wears the stripe. -->
+                          <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
+                                  Background="{DynamicResource AgWarnBrush}" IsVisible="{Binding Stalled}" />
+                          <StackPanel Grid.Column="1" Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                              <TextBlock Grid.Column="0" Text="{Binding Host}" FontSize="13" FontWeight="SemiBold"
+                                         TextTrimming="CharacterEllipsis"
+                                         Foreground="{DynamicResource AgFgBrush}" />
+                              <TextBlock Grid.Column="1" Text="{Binding Verdict}" FontSize="11.5"
+                                         VerticalAlignment="Center"
+                                         Foreground="{DynamicResource AgAccentBrush}" />
+                            </Grid>
+                            <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="11.5"
+                                       Foreground="{DynamicResource AgMutedBrush}" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </ScrollViewer>
               <!-- Empty state. -->
               <StackPanel IsVisible="{Binding ShowEmpty}" HorizontalAlignment="Center" VerticalAlignment="Center"

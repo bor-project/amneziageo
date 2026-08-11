@@ -7,6 +7,20 @@ using AmneziaGeo.Ipc;
 namespace AmneziaGeo.Android.Engine;
 
 /// <summary>
+/// Session the tunnel raises when no head asks for it: the system starts an always-on tunnel with a bare intent,
+/// and a tunnel the system killed comes back the same way.
+/// </summary>
+public sealed record VpnRequest(
+    string Config,
+    string Name,
+    string? AppMode,
+    string[]? AppList,
+    int Mtu,
+    bool Ipv6,
+    string? WsHost,
+    int WsPort);
+
+/// <summary>
 /// Carries the routing rules and the tunnel stage between the head and the tunnel, which run in separate
 /// processes: the head can then be unloaded whole while the tunnel keeps running.
 /// </summary>
@@ -77,17 +91,31 @@ public static class VpnBridge
     /// </summary>
     public const string ExtraRtt = "rtt";
 
+    /// <summary>
+    /// Always-on extra: whether the system runs this tunnel as its always-on VPN.
+    /// </summary>
+    public const string ExtraAlwaysOn = "alwayson";
+
+    /// <summary>
+    /// Lockdown extra: whether always-on also blocks what would leave outside the tunnel.
+    /// </summary>
+    public const string ExtraLockdown = "lockdown";
+
     private const string PlanFile = "plan.json";
     private const string SessionsFile = "sessions.txt";
+    private const string RequestFile = "session.json";
     private const string ProcessSuffix = ":vpn";
 
     /// <summary>
     /// Reports a stage to the head.
     /// </summary>
-    public static void Publish(Context context, VpnStage stage, string? detail, string? reason = null)
+    public static void Publish(Context context, VpnStage stage, string? detail, string? reason = null,
+        bool alwaysOn = false, bool lockdown = false)
     {
         var intent = Broadcast(context, ActionEvent);
         intent.PutExtra(ExtraStage, (int)stage);
+        intent.PutExtra(ExtraAlwaysOn, alwaysOn);
+        intent.PutExtra(ExtraLockdown, lockdown);
         if (detail is not null)
         {
             intent.PutExtra(ExtraDetail, detail);
@@ -209,6 +237,61 @@ public static class VpnBridge
     }
 
     /// <summary>
+    /// Writes the session to raise again without a head.
+    /// </summary>
+    public static void WriteRequest(VpnRequest request)
+    {
+        try
+        {
+            using var stream = File.Create(RequestPath());
+            JsonSerializer.Serialize(stream, request);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the session failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the session the last connect ran on, nothing once the user has taken the tunnel down.
+    /// </summary>
+    public static VpnRequest? ReadRequest()
+    {
+        try
+        {
+            var path = RequestPath();
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            using var stream = File.OpenRead(path);
+            var request = JsonSerializer.Deserialize<VpnRequest>(stream);
+            return request is { Config.Length: > 0 } ? request : null;
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the session failed: " + ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Drops the session, so a tunnel the user stopped stays down.
+    /// </summary>
+    public static void ClearRequest()
+    {
+        try
+        {
+            File.Delete(RequestPath());
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "dropping the session failed: " + ex);
+        }
+    }
+
+    /// <summary>
     /// Writes what the relay holds for the head to read; a broadcast carries a stage, not a table.
     /// </summary>
     public static void WriteSessions(SessionReport report)
@@ -274,6 +357,9 @@ public static class VpnBridge
 
     private static string SessionsPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", SessionsFile);
+
+    private static string RequestPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", RequestFile);
 
     /// <summary>
     /// Receiver handing every broadcast to a delegate.

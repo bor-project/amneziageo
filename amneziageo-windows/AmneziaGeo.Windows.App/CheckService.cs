@@ -93,7 +93,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
 
         var (list, split) = await ActiveListAsync(store, config, ct).ConfigureAwait(false);
         var held = Held(config);
-        var report = await new TargetInspector(list, split)
+        // An app rule here adds the addresses its application reaches; the rest of the list keeps deciding.
+        var apps = list is { Apps.Count: > 0 } ? AppScope.Additive : AppScope.None;
+        var report = await new TargetInspector(list, split, apps)
             .InspectAsync(target, config, new TargetProbes(address => held.GetValueOrDefault(address.ToString())), ct)
             .ConfigureAwait(false);
 

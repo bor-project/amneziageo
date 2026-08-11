@@ -314,9 +314,10 @@ public sealed class TargetCheckTests
         IReadOnlyList<string>? proxy = null,
         IReadOnlyList<GeoDomain>? domains = null,
         IReadOnlyList<string>? block = null,
-        IReadOnlyList<GeoDomain>? blockDomains = null)
+        IReadOnlyList<GeoDomain>? blockDomains = null,
+        IReadOnlyList<string>? apps = null)
     {
-        return new RoutingList(1, "main", rules ?? [], proxy ?? [], domains ?? [], [], [], [], block ?? [], blockDomains ?? []);
+        return new RoutingList(1, "main", rules ?? [], proxy ?? [], domains ?? [], apps ?? [], [], [], block ?? [], blockDomains ?? []);
     }
 
     [Fact]
@@ -372,6 +373,42 @@ public sealed class TargetCheckTests
             .InspectAsync("8.8.8.8", "srv", new TargetProbes(), CancellationToken.None);
 
         Assert.Equal(TargetVerdicts.NoRules, report.VerdictKey);
+    }
+
+    [Fact]
+    public async Task AnAppOutsideAnExclusiveSplit_IsToldNoRuleReachesIt()
+    {
+        var list = List(rules: [new GeoRule(GeoRuleKind.App, "pkg=org.telegram.messenger")], apps: ["pkg=org.telegram.messenger"]);
+
+        var report = await new TargetInspector(list, split: true, AppScope.Exclusive)
+            .InspectAsync("app:pkg=com.google.android.youtube", "srv", new TargetProbes(), CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.AppOutside, report.VerdictKey);
+        Assert.Equal("1", report.VerdictArgs[1]);
+        Assert.Contains(report.Facts, fact => fact.Kind == "mode" && fact.State == "apps");
+    }
+
+    [Fact]
+    public async Task ACategoryProxiedUnderAnExclusiveSplit_CarriesOnlyTheNamedApps()
+    {
+        var list = List(
+            rules: [new GeoRule(GeoRuleKind.GeoSite, "youtube"), new GeoRule(GeoRuleKind.App, "pkg=org.telegram.messenger")],
+            apps: ["pkg=org.telegram.messenger"]);
+
+        var report = await new TargetInspector(list, split: true, AppScope.Exclusive)
+            .InspectAsync("geosite:youtube", "srv", new TargetProbes(), CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.ProxyAppsOnly, report.VerdictKey);
+        Assert.Contains("only for the 1 named", TargetPhrase.English(report.VerdictKey, report.VerdictArgs), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ACategoryProxiedWithoutAnAppSplit_KeepsThePlainVerdict()
+    {
+        var report = await new TargetInspector(List(rules: [new GeoRule(GeoRuleKind.GeoSite, "youtube")]), split: true)
+            .InspectAsync("geosite:youtube", "srv", new TargetProbes(), CancellationToken.None);
+
+        Assert.Equal(TargetVerdicts.Proxy, report.VerdictKey);
     }
 
     [Fact]

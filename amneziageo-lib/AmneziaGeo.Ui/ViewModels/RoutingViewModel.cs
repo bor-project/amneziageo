@@ -63,6 +63,22 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [ObservableProperty]
     private RoutingListChoice? _selectedCatalogueRouting = RoutingListChoice.None;
 
+    // The list every config routes by, as the server screen picks it; a pick is applied at once.
+    [ObservableProperty]
+    private RoutingListChoice? _homeRoutingChoice = RoutingListChoice.None;
+
+    private bool _suppressHomeRouting;
+
+    partial void OnHomeRoutingChoiceChanged(RoutingListChoice? value)
+    {
+        if (_suppressHomeRouting || value is null || value.Id == SelectedRoutingListId)
+        {
+            return;
+        }
+
+        _ = AssignRoutingAsync(value.Id);
+    }
+
     [ObservableProperty]
     private bool _routingDeletePending;
 
@@ -94,6 +110,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public ObservableCollection<RoutingListSummaryViewModel> RoutingLists { get; } = [];
 
     public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [];
+
+    /// <summary>
+    /// The same catalogue behind the none choice: what the server screen offers as the list to route by.
+    /// </summary>
+    public ObservableCollection<RoutingListChoice> HomeRoutingOptions { get; } = [RoutingListChoice.None];
 
     /// <summary>
     /// Имена сохранённых списков маршрутизации.
@@ -278,6 +299,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     // instead of sending the section back to the top of the catalogue.
     partial void OnSelectedRoutingListIdChanged(long? value)
     {
+        SyncHomeRouting();
         if (value is not { } id || _prefs.LastRoutingList == id)
         {
             return;
@@ -358,15 +380,15 @@ internal sealed partial class RoutingViewModel : ViewModelBase
                 return;
             }
 
-            _ = AssignRoutingAsync(value);
+            _ = AssignRoutingAsync(value && EditRoutingList is { } open ? open.Id : null);
         }
     }
 
     // Sends the assignment, then re-reads the switch from the state the agent answered with.
-    private async Task AssignRoutingAsync(bool useOpenList)
+    private async Task AssignRoutingAsync(long? listId)
     {
-        var id = useOpenList && EditRoutingList is { } open
-            ? open.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        var id = listId is { } picked
+            ? picked.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : "none";
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpAssignRouting, [id]));
         OnPropertyChanged(nameof(UseOpenList));
@@ -618,13 +640,20 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     // strands the selection.
     private void ReconcileRoutingCatalogueOptions()
     {
-        const int head = 0;
+        ReconcileOptions(RoutingCatalogueOptions, head: 0);
+        ReconcileOptions(HomeRoutingOptions, head: 1);
+        SyncHomeRouting();
+    }
+
+    // The same reconcile over one option list; head is what stands ahead of the catalogue and is left alone.
+    private void ReconcileOptions(ObservableCollection<RoutingListChoice> options, int head)
+    {
         var present = RoutingLists.Select(r => r.Id).ToHashSet();
-        for (var i = RoutingCatalogueOptions.Count - 1; i >= head; i--)
+        for (var i = options.Count - 1; i >= head; i--)
         {
-            if (RoutingCatalogueOptions[i].Id is not long id || !present.Contains(id))
+            if (options[i].Id is not long id || !present.Contains(id))
             {
-                RoutingCatalogueOptions.RemoveAt(i);
+                options.RemoveAt(i);
             }
         }
 
@@ -632,25 +661,35 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         {
             var row = RoutingLists[i];
             var slot = head + i;
-            var existing = RoutingCatalogueOptions.Skip(head).FirstOrDefault(o => o.Id == row.Id);
+            var existing = options.Skip(head).FirstOrDefault(o => o.Id == row.Id);
             if (existing is null)
             {
-                RoutingCatalogueOptions.Insert(Math.Min(slot, RoutingCatalogueOptions.Count), new RoutingListChoice(row.Id, row.Name));
+                options.Insert(Math.Min(slot, options.Count), new RoutingListChoice(row.Id, row.Name));
                 continue;
             }
 
             if (!string.Equals(existing.Name, row.Name, StringComparison.Ordinal))
             {
-                RoutingCatalogueOptions[RoutingCatalogueOptions.IndexOf(existing)] = new RoutingListChoice(row.Id, row.Name);
-                existing = RoutingCatalogueOptions.Skip(head).First(o => o.Id == row.Id);
+                options[options.IndexOf(existing)] = new RoutingListChoice(row.Id, row.Name);
+                existing = options.Skip(head).First(o => o.Id == row.Id);
             }
 
-            var index = RoutingCatalogueOptions.IndexOf(existing);
+            var index = options.IndexOf(existing);
             if (index != slot)
             {
-                RoutingCatalogueOptions.Move(index, slot);
+                options.Move(index, slot);
             }
         }
+    }
+
+    // Mirrors the list that routes into the server screen's picker without echoing the pick back.
+    private void SyncHomeRouting()
+    {
+        _suppressHomeRouting = true;
+        HomeRoutingChoice = SelectedRoutingListId is { } id
+            ? HomeRoutingOptions.FirstOrDefault(o => o.IsReal && o.Id == id) ?? RoutingListChoice.None
+            : RoutingListChoice.None;
+        _suppressHomeRouting = false;
     }
 
     // Builds the Routing section's rule editor + per-routing settings for a real (saved) list. Independent of

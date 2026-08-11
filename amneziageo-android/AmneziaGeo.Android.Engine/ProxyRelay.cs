@@ -36,6 +36,7 @@ internal sealed class ProxyRelay : IDisposable
     private readonly GeoIpRanges _blockRanges;
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte> _owners = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _apps;
     private readonly ConcurrentDictionary<Socket, byte> _open = new();
     private readonly CancellationTokenSource _cts = new();
     private readonly Func<int, bool> _protect;
@@ -68,6 +69,7 @@ internal sealed class ProxyRelay : IDisposable
         _rules = $"{plan.ProxyRoutes.Count + plan.DirectRoutes.Count + plan.BlockRoutes.Count} range(s) and "
             + $"{plan.ProxyDomains.Count + plan.DirectDomains.Count + plan.BlockDomains.Count} name(s)";
         _undecided = plan.FullTunnel ? RouteVerdict.Proxy : RouteVerdict.Direct;
+        _apps = new HashSet<string>(plan.TunnelApps, StringComparer.Ordinal);
         _protect = protect;
         _log = log;
         _owner = owner;
@@ -180,10 +182,17 @@ internal sealed class ProxyRelay : IDisposable
         };
     }
 
-    // Turns an undecided destination into an action: the tunnel flag says where what no rule named belongs.
-    private RouteVerdict Effective(RouteVerdict verdict)
+    // Turns an undecided destination into an action: an application the list names rides the tunnel, and the tunnel
+    // flag says where what no rule named belongs for everyone else. A rule that decided wins over both, so a
+    // destination the list sends direct stays direct even for a named application.
+    private RouteVerdict Effective(RouteVerdict verdict, string app)
     {
-        return verdict == RouteVerdict.None ? _undecided : verdict;
+        if (verdict != RouteVerdict.None)
+        {
+            return verdict;
+        }
+
+        return app.Length > 0 && _apps.Contains(app) ? RouteVerdict.Proxy : _undecided;
     }
 
     private async Task AcceptAsync(Socket listener, CancellationToken ct)
@@ -229,7 +238,7 @@ internal sealed class ProxyRelay : IDisposable
             }
 
             entry = Touch(request.Host);
-            NoteOwner(client, entry);
+            var app = NoteOwner(client, entry);
             if (entry.Verdict == RouteVerdict.Block)
             {
                 Interlocked.Increment(ref _blocked);
@@ -239,7 +248,7 @@ internal sealed class ProxyRelay : IDisposable
 
             Interlocked.Increment(ref entry.Live);
             held = true;
-            target = await ConnectAsync(entry, request.Port, ct).ConfigureAwait(false);
+            target = await ConnectAsync(entry, request.Port, app, ct).ConfigureAwait(false);
             if (target is null)
             {
                 Interlocked.Increment(ref _refused);
@@ -395,8 +404,8 @@ internal sealed class ProxyRelay : IDisposable
     }
 
     // Opens the destination: a direct one on a protected socket, everything else on one the tun captures. An
-    // undecided destination keeps that state in its entry and is opened the way the tunnel flag says.
-    private async Task<Socket?> ConnectAsync(Entry entry, int port, CancellationToken ct)
+    // undecided destination keeps that state in its entry and is opened the way the application asking for it says.
+    private async Task<Socket?> ConnectAsync(Entry entry, int port, string app, CancellationToken ct)
     {
         var addresses = await ResolveAsync(entry, ct).ConfigureAwait(false);
         foreach (var address in addresses)
@@ -410,7 +419,7 @@ internal sealed class ProxyRelay : IDisposable
 
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
             Hold(socket);
-            if (Effective(verdict) == RouteVerdict.Direct)
+            if (Effective(verdict, app) == RouteVerdict.Direct)
             {
                 _protect(socket.Handle.ToInt32());
             }
@@ -578,26 +587,34 @@ internal sealed class ProxyRelay : IDisposable
         }
     }
 
-    // Names the application behind a loopback connection, once per destination: the lookup costs a system call
-    // and the answer does not change while the destination is held.
-    private void NoteOwner(Socket client, Entry entry)
+    // Names the application behind a loopback connection. While the list names applications the lookup runs per
+    // connection, because two of them share a destination and only the owner says where this one belongs; otherwise
+    // it costs a system call once per destination, whose answer does not change while the destination is held.
+    private string NoteOwner(Socket client, Entry entry)
     {
-        if (_owner is null || entry.App.Length > 0 || client.RemoteEndPoint is not IPEndPoint peer)
+        if (_owner is null || client.RemoteEndPoint is not IPEndPoint peer
+            || (_apps.Count == 0 && entry.App.Length > 0))
         {
-            return;
+            return entry.App;
         }
 
         var name = _owner(peer);
         if (name is null)
         {
-            return;
+            return entry.App;
         }
 
-        entry.App = name;
+        if (entry.App.Length == 0)
+        {
+            entry.App = name;
+        }
+
         if (_owners.TryAdd(name, 0))
         {
             _log($"relay: {name} -> {entry.Host}");
         }
+
+        return name;
     }
 
     // Keeps the socket where teardown can reach it.

@@ -1901,12 +1901,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_RunSessions" xml:space="preserve">
     <value>What is going now</value>
   </data>
-  <data name="Check_LiveHold" xml:space="preserve">
-    <value>Ctrl - hold the rows</value>
-  </data>
-  <data name="Check_LivePaused" xml:space="preserve">
-    <value>rows held</value>
-  </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
     <value>{0} destination(s), {1} undecided, {2} without movement, {3} carried.</value>
   </data>

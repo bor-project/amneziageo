@@ -1901,12 +1901,6 @@
   <data name="Check_RunSessions" xml:space="preserve">
     <value>Что идёт сейчас</value>
   </data>
-  <data name="Check_LiveHold" xml:space="preserve">
-    <value>Ctrl - остановить обновление</value>
-  </data>
-  <data name="Check_LivePaused" xml:space="preserve">
-    <value>обновление остановлено</value>
-  </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
     <value>Назначений: {0}, не определено {1}, без движения {2}, передано {3}.</value>
   </data>

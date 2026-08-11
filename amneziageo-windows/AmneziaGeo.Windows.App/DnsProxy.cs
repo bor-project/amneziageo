@@ -16,7 +16,9 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class DnsProxy
 {
-    private const int UpstreamTimeoutMs = 5000;
+    // Whole budget for one upstream query. The retransmits and the failover to the secondary resolver all fit
+    // inside it, and past it the name is resolved locally instead - waiting longer only holds the client still.
+    private const int UpstreamTimeoutMs = 2000;
     // Per-attempt wait before retransmitting a lost upstream query, within the overall timeout. Kept short
     // because the tunnel resolver rides a lossy underlay: a dropped datagram should recover in well under a
     // human-perceptible pause, not a near-half-second window.
@@ -94,6 +96,9 @@ internal sealed class DnsProxy
     private readonly AppDnsTracker? _appDns;
     // Direct-verdict addresses get their host route here, before the answer reaches the client.
     private readonly RoutingCache? _routing;
+    // Queries the tunnel resolver failed to answer and the local one took over, since it last answered. Kept so
+    // the takeover and the recovery are each said once instead of per query.
+    private int _rescued;
 
     /// <summary>
     /// ctor
@@ -567,6 +572,16 @@ internal sealed class DnsProxy
                     ? await ForwardCoalescedRacedAsync(name, type, query)
                     : await ForwardCoalescedAsync(name, type, query, upstream, secondary);
                 leader = result.Leader;
+                // The tunnel resolver went silent: ask the local one rather than leave the client without an
+                // answer. The addresses still take the tunnel below.
+                var rescued = false;
+                if (result.Error is not null && matched && !isLocal && !lanRace
+                    && await RescueAsync(name, type, query).ConfigureAwait(false) is { } local)
+                {
+                    result = new CoalescedResult(local, leader, Error: null);
+                    rescued = true;
+                }
+
                 if (result.Error is not null)
                 {
                     // Notes an upstream that did not answer.
@@ -589,6 +604,10 @@ internal sealed class DnsProxy
                 }
 
                 var shared = result.Response!;
+                if (matched && !rescued && Interlocked.Exchange(ref _rescued, 0) > 0)
+                {
+                    _logger.LogInformation("the resolver in the tunnel is answering again, so names are looked up there once more");
+                }
 
                 // The app-tunnel mark can land while this local forward was in flight. If the name flipped to
                 // app-tunneled, don't serve or cache the local (possibly poisoned) answer: drop it and fail
@@ -605,7 +624,12 @@ internal sealed class DnsProxy
                     return;
                 }
 
-                StoreInCache(name, type, shared);
+                // A rescued answer is served but never cached, so the tunnel resolver is asked again next time.
+                if (!rescued)
+                {
+                    StoreInCache(name, type, shared);
+                }
+
                 // Followers share the leader's buffer; answer each client with its own transaction id.
                 response = ApplyTransactionId(shared, query);
 
@@ -624,7 +648,9 @@ internal sealed class DnsProxy
                     RouteLog.Note(FormatRouteQuery(name, type, isLocal, matched, appDns, geoMatch, upstream, started, addresses, failure: null));
                 }
 
-                outcome = $"asked {ResolverLabel(isLocal, matched, lanRace, upstream)}, got {addresses.Count} address(es) in {ElapsedMs(started)} ms";
+                outcome = rescued
+                    ? $"the resolver in the tunnel did not answer, so your own network's resolver was asked instead: {addresses.Count} address(es) in {ElapsedMs(started)} ms"
+                    : $"asked {ResolverLabel(isLocal, matched, lanRace, upstream)}, got {addresses.Count} address(es) in {ElapsedMs(started)} ms";
             }
 
             // Route a matched domain before answering, or the client's first SYN egresses off-tunnel.
@@ -1095,6 +1121,39 @@ internal sealed class DnsProxy
     private Task<CoalescedResult> ForwardCoalescedRacedAsync(string? name, int type, byte[] query)
     {
         return CoalesceAsync(name, type, () => ForwardRacedAsync(query, _lanPool));
+    }
+
+    // Resolves a tunneled name on the LAN resolver once the tunnel one has gone silent, so a resolver that died -
+    // or a route to it that went away - costs one slow query instead of leaving the client with no answer at all.
+    // Null when there is no LAN resolver or it does not answer either.
+    private async Task<byte[]?> RescueAsync(string? name, int type, byte[] query)
+    {
+        IReadOnlyList<IPAddress> pool = _lanPool;
+        if (pool.Count == 0 && _lanUpstream is not null)
+        {
+            pool = [_lanUpstream];
+        }
+
+        if (pool.Count == 0)
+        {
+            return null;
+        }
+
+        if (Interlocked.Increment(ref _rescued) == 1)
+        {
+            _logger.LogWarning("the resolver in the tunnel stopped answering; names are looked up on your own network's resolver until it responds again, so browsing keeps working");
+        }
+
+        var result = pool.Count > 1
+            ? await CoalesceAsync(name, type, () => ForwardRacedAsync(query, pool)).ConfigureAwait(false)
+            : await CoalesceAsync(name, type, () => ForwardAsync(query, pool[0])).ConfigureAwait(false);
+        if (result.Error is not null)
+        {
+            _logger.LogDebug("{Name}: your own network's resolver did not answer either ({Reason})", name, result.Error.Message);
+            return null;
+        }
+
+        return result.Response;
     }
 
     private async Task<CoalescedResult> CoalesceAsync(string? name, int type, Func<Task<byte[]>> forward)

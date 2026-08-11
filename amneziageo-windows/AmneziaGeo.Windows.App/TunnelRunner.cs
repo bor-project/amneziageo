@@ -388,7 +388,9 @@ internal sealed class TunnelRunner(
         // The probe attributes each live connection to its process, so a matched app's destination is never taken
         // for ordinary traffic and settled onto the physical path.
         var liveDestinations = new TcpTableProbe();
-        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>());
+        // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
+        // cache own its route and reclaim it as idle, because the agent's own queries are attributed to no process.
+        var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), tunnelResolver);
         session.SetCache(routing);
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
         // announced the same way instead of being polled for.

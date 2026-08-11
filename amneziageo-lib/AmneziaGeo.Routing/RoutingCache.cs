@@ -86,6 +86,10 @@ public sealed class RoutingCache
         new BoundedChannelOptions(4096) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
     private readonly ConcurrentDictionary<uint, Entry> _entries = new();
+    // Addresses the cache neither installs nor reclaims: the tunnel resolver, routed as infrastructure at bring-up.
+    // Its route must outlive every idle window - the agent's own queries to it are not attributed to any process,
+    // so nothing here would ever refresh it and a sweep would take the tunnel's DNS down with it.
+    private readonly HashSet<uint> _pinned;
     private readonly IRouteApplier _applier;
     private readonly ILiveDestinations _live;
     private readonly bool _split;
@@ -106,7 +110,7 @@ public sealed class RoutingCache
     /// <summary>
     /// ctor
     /// </summary>
-    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger)
+    public RoutingCache(IRouteApplier applier, ILiveDestinations live, bool split, IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int ttlSeconds, ILogger<RoutingCache> logger, IReadOnlyCollection<string>? pinned = null)
     {
         _applier = applier;
         _live = live;
@@ -114,6 +118,11 @@ public sealed class RoutingCache
         SetTtl(ttlSeconds);
         _logger = logger;
         _rules = Build(proxy, direct, block);
+        _pinned = BuildPinned(pinned);
+        if (_pinned.Count > 0)
+        {
+            _logger.LogDebug("{Count} resolver address(es) are held outside the cache: their path through the tunnel is set up with the connection and stays for as long as it lasts", _pinned.Count);
+        }
     }
 
     /// <summary>
@@ -232,6 +241,11 @@ public sealed class RoutingCache
     /// </summary>
     public void Note(uint address, bool app)
     {
+        if (_pinned.Contains(address))
+        {
+            return;
+        }
+
         var now = Environment.TickCount64;
         if (_entries.TryGetValue(address, out var existing))
         {
@@ -260,6 +274,11 @@ public sealed class RoutingCache
     /// </summary>
     public void Note(uint address, RouteVerdict verdict)
     {
+        if (_pinned.Contains(address))
+        {
+            return;
+        }
+
         var now = Environment.TickCount64;
         if (!_entries.TryGetValue(address, out var existing))
         {
@@ -560,7 +579,7 @@ public sealed class RoutingCache
         var now = Environment.TickCount64;
         foreach (var address in addresses)
         {
-            if (!GeoIpRanges.TryToNumeric(address, out var value))
+            if (!GeoIpRanges.TryToNumeric(address, out var value) || _pinned.Contains(value))
             {
                 continue;
             }
@@ -916,6 +935,29 @@ public sealed class RoutingCache
     private static RuleSet Build(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block)
     {
         return new RuleSet(GeoIpRanges.Build(proxy), GeoIpRanges.Build(direct), GeoIpRanges.Build(block));
+    }
+
+    // Reads the addresses to be held outside the cache; a prefix length is accepted so a caller can pass the
+    // resolver routes it already built.
+    private static HashSet<uint> BuildPinned(IReadOnlyCollection<string>? addresses)
+    {
+        var result = new HashSet<uint>();
+        if (addresses is null)
+        {
+            return result;
+        }
+
+        foreach (var entry in addresses)
+        {
+            var slash = entry.IndexOf('/');
+            var text = slash < 0 ? entry : entry[..slash];
+            if (IPAddress.TryParse(text, out var parsed) && GeoIpRanges.TryToNumeric(parsed, out var value))
+            {
+                result.Add(value);
+            }
+        }
+
+        return result;
     }
 
     private static IPAddress ToAddress(uint address)

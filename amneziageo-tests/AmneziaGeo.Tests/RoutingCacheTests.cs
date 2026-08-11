@@ -115,9 +115,9 @@ public sealed class RoutingCacheTests
         public LiveDestinations Snapshot() => new([], []);
     }
 
-    private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300)
+    private static RoutingCache Cache(FakeApplier applier, bool split, IReadOnlyList<string>? proxy = null, IReadOnlyList<string>? direct = null, IReadOnlyList<string>? block = null, int ttlSeconds = 300, IReadOnlyCollection<string>? pinned = null)
     {
-        return new RoutingCache(applier, new IdleLive(), split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance);
+        return new RoutingCache(applier, new IdleLive(), split, proxy ?? [], direct ?? [], block ?? [], ttlSeconds, NullLogger<RoutingCache>.Instance, pinned);
     }
 
     private static uint Numeric(string address)
@@ -679,5 +679,57 @@ public sealed class RoutingCacheTests
 
         Assert.False(cache.HasRules);
         Assert.Equal(RouteVerdict.None, cache.Classify(IPAddress.Parse("1.2.3.4")));
+    }
+
+    // The tunnel resolver: its route is installed with the connection, and the queries that keep it alive belong
+    // to the agent itself, which is attributed to no process - so an unpinned resolver is reclaimed as idle and
+    // the tunnel's own name lookups stop dead until some other traffic happens to restore it.
+    [Fact]
+    public void PinnedResolverCoveredByAProxyRange_IsNeverTakenIntoTheCache()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["1.1.1.0/24"], pinned: ["1.1.1.1/32"]);
+
+        cache.Note(IPAddress.Parse("1.1.1.1"));
+
+        Assert.Empty(applier.Tunneled);
+        Assert.Equal(0, cache.Size);
+    }
+
+    [Fact]
+    public void PinnedResolver_KeepsItsRouteThroughASweep()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["1.1.1.0/24"], pinned: ["1.1.1.1"]);
+        cache.Note(IPAddress.Parse("1.1.1.1"));
+
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Empty(applier.Untunneled);
+        Assert.Empty(applier.Removed);
+    }
+
+    [Fact]
+    public void UnpinnedResolver_IsStillDecidedByTheRanges()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["1.1.1.0/24"], pinned: ["9.9.9.9"]);
+
+        cache.Note(IPAddress.Parse("1.1.1.1"));
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Equal(new[] { "1.1.1.1" }, applier.Tunneled);
+        Assert.Equal(new[] { "1.1.1.1" }, applier.Untunneled);
+    }
+
+    [Fact]
+    public void PinnedResolver_IsNotAdoptedFromTheDomainTracker()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: ["1.1.1.0/24"], pinned: ["1.1.1.1"]);
+
+        cache.Adopt([IPAddress.Parse("1.1.1.1"), IPAddress.Parse("1.1.1.2")]);
+
+        Assert.Equal(1, cache.Size);
     }
 }

@@ -20,7 +20,7 @@ usage() {
 usage: build-apk.sh [options]
 
   --config <name>     Release or Debug (default: $CONFIGURATION)
-  --version N.N.N.N   package version (default: 0.0.1.<commit count>); the last field is the versionCode
+  --version N.N.N.N   package version (default: 0.0.1.<commit count>); all four fields make the versionCode
   --abi <list>        runtime identifiers, comma separated: android-arm, android-arm64, android-x64
                       (default: every ABI the project declares)
   --help              this help
@@ -50,12 +50,20 @@ if [ -z "$VERSION" ]; then
   VERSION="0.0.1.$(git -C "$ANDROID_DIR" rev-list --count HEAD 2>/dev/null || echo 0)"
 fi
 
-if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-  echo "invalid version '$VERSION' (expected N.N.N.N)" >&2
+if ! printf '%s' "$VERSION" | grep -Eq '^([0-9]|1[0-9]|20)\.[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,4}$'; then
+  echo "invalid version '$VERSION' (expected N.N.N.N, up to 20.99.99.9999)" >&2
   exit 2
 fi
 
-CODE="${VERSION##*.}"
+# Packs all four fields into the versionCode, which Android requires to grow with every update: taking the
+# last field alone made a release reset it, and the device turned the new package down as a downgrade.
+version_code() {
+  local IFS='.'
+  set -- $1
+  echo $((10#$1 * 100000000 + 10#$2 * 1000000 + 10#$3 * 10000 + 10#$4))
+}
+
+CODE="$(version_code "$VERSION")"
 if [ "$CODE" -lt 1 ]; then
   CODE=1
 fi

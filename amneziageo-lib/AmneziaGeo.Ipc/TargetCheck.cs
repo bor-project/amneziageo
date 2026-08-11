@@ -101,6 +101,17 @@ public static class TargetVerdicts
     public const string AppBareIp = "Check_TargetAppBareIp";
 
     /// <summary>
+    /// The tunnel carries only the named applications and this one is not among them, so no rule reaches it.
+    /// Args: the application, how many applications are named.
+    /// </summary>
+    public const string AppOutside = "Check_TargetAppOutside";
+
+    /// <summary>
+    /// A proxy rule carries it, but only for the named applications. Args: the rule, how many are named.
+    /// </summary>
+    public const string ProxyAppsOnly = "Check_TargetProxyAppsOnly";
+
+    /// <summary>
     /// No rule covers it and the tunnel carries only what is listed: it leaves through the physical path.
     /// </summary>
     public const string UnlistedSplit = "Check_TargetUnlistedSplit";
@@ -109,6 +120,27 @@ public static class TargetVerdicts
     /// No rule covers it and the tunnel is the default: it rides the tunnel anyway.
     /// </summary>
     public const string UnlistedFull = "Check_TargetUnlistedFull";
+}
+
+/// <summary>
+/// What the app rules of the active list do on the platform that answers the check.
+/// </summary>
+public enum AppScope
+{
+    /// <summary>
+    /// The list names no application, or the platform passes app rules over.
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// An app rule adds the addresses its application reaches, and every other rule keeps deciding as it did.
+    /// </summary>
+    Additive,
+
+    /// <summary>
+    /// Only the named applications reach the tunnel; every other one leaves beside it, past every rule.
+    /// </summary>
+    Exclusive,
 }
 
 /// <summary>
@@ -124,7 +156,9 @@ public sealed record TargetFindings(
     int Unlisted = 0,
     bool Resolved = true,
     bool Reachable = true,
-    string AppRule = "");
+    string AppRule = "",
+    AppScope Apps = AppScope.None,
+    int AppCount = 0);
 
 /// <summary>
 /// A finished targeted check: everything found about one address, name, application or category, and the phrase
@@ -239,11 +273,14 @@ public static class TargetVerdict
             return (TargetVerdicts.Blocked, [found.MatchedRule]);
         }
 
+        var named = found.AppCount.ToString(CultureInfo.InvariantCulture);
         if (found.Kind == CheckTargetKind.App)
         {
             if (found.AppRule.Length == 0)
             {
-                return (TargetVerdicts.AppUnlisted, [target]);
+                return found.Apps == AppScope.Exclusive
+                    ? (TargetVerdicts.AppOutside, [target, named])
+                    : (TargetVerdicts.AppUnlisted, [target]);
             }
 
             if (found.Unlisted > 0)
@@ -259,9 +296,14 @@ public static class TargetVerdict
 
         if (found.Role == RoleToken.Proxy)
         {
-            return found.Reachable
-                ? (TargetVerdicts.Proxy, [found.MatchedRule])
-                : (TargetVerdicts.Unreachable, [target]);
+            if (!found.Reachable)
+            {
+                return (TargetVerdicts.Unreachable, [target]);
+            }
+
+            return found.Apps == AppScope.Exclusive
+                ? (TargetVerdicts.ProxyAppsOnly, [found.MatchedRule, named])
+                : (TargetVerdicts.Proxy, [found.MatchedRule]);
         }
 
         return found.Split ? (TargetVerdicts.UnlistedSplit, [target]) : (TargetVerdicts.UnlistedFull, [target]);
@@ -313,6 +355,8 @@ public static class TargetPhrase
             TargetVerdicts.Proxy => $"carried by the tunnel under the rule \"{Arg(args, 0)}\"",
             TargetVerdicts.Unreachable => $"in the tunnel by rule and still nothing answers at {Arg(args, 0)}: the fault is past the tunnel",
             TargetVerdicts.AppUnlisted => $"\"{Arg(args, 0)}\" is in no list, so its traffic follows the default route",
+            TargetVerdicts.AppOutside => $"\"{Arg(args, 0)}\" is named by no app rule, and the tunnel carries only the {Arg(args, 1)} application(s) that are: it leaves beside the tunnel, past every rule in the list",
+            TargetVerdicts.ProxyAppsOnly => $"carried by the tunnel under the rule \"{Arg(args, 0)}\", but only for the {Arg(args, 1)} named application(s): every other application leaves beside the tunnel",
             TargetVerdicts.AppBareIp => $"\"{Arg(args, 0)}\" talks to {Arg(args, 1)} address(es) no rule covers: an app rule is reactive and never catches a bare address, so add a geoip rule for the service",
             TargetVerdicts.UnlistedSplit => $"no rule covers \"{Arg(args, 0)}\" and the tunnel carries only what is listed, so it leaves through the physical path",
             TargetVerdicts.UnlistedFull => $"no rule covers \"{Arg(args, 0)}\" and the tunnel is the default route, so it rides the tunnel",

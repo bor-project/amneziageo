@@ -37,46 +37,58 @@
     <Border Classes="card" Margin="12" Padding="0" IsVisible="{Binding IsHome}">
       <DockPanel LastChildFill="True">
 
-        <!-- Top row: gear pinned left, title centered, exit pinned right where the shell has no window frame. -->
+        <!-- Top row, one per pane: the connect pane carries the gear and the app name, the server pane carries
+             the way back and its own actions. -->
         <Border DockPanel.Dock="Top" Height="48" Padding="12,0">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <Button Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                    Command="{Binding NavSettingsCommand}" ToolTip.Tip="{l:Tr Main_SettingsTooltip}">
-              <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"
-                        Foreground="{DynamicResource AgMutedBrush}" />
-            </Button>
-            <TextBlock Grid.Column="1" Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" Margin="8,0"
-                       VerticalAlignment="Center" HorizontalAlignment="Center"
-                       Foreground="{DynamicResource AgMutedBrush}" />
-            <Button Grid.Column="2" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                    IsVisible="{Binding CanExit}"
-                    Command="{Binding ExitCommand}" ToolTip.Tip="{l:Tr Main_ExitTooltip}">
-              <!-- Smaller than the gear: the cross reaches its corners, the gear stays inscribed. -->
-              <PathIcon Data="{DynamicResource AgCloseGeometry}" Width="15" Height="15"
-                        Foreground="{DynamicResource AgMutedBrush}" />
-            </Button>
-          </Grid>
+          <Panel>
+            <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding IsHomeMain}">
+              <Button Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
+                      Command="{Binding NavSettingsCommand}" ToolTip.Tip="{l:Tr Main_SettingsTooltip}">
+                <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"
+                          Foreground="{DynamicResource AgMutedBrush}" />
+              </Button>
+              <TextBlock Grid.Column="1" Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" Margin="8,0"
+                         VerticalAlignment="Center" HorizontalAlignment="Center"
+                         Foreground="{DynamicResource AgMutedBrush}" />
+              <Button Grid.Column="2" Classes="icon" Padding="6,4" VerticalAlignment="Center"
+                      IsVisible="{Binding CanExit}"
+                      Command="{Binding ExitCommand}" ToolTip.Tip="{l:Tr Main_ExitTooltip}">
+                <!-- Smaller than the gear: the cross reaches its corners, the gear stays inscribed. -->
+                <PathIcon Data="{DynamicResource AgCloseGeometry}" Width="15" Height="15"
+                          Foreground="{DynamicResource AgMutedBrush}" />
+              </Button>
+            </Grid>
+
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding IsHomeServers}">
+              <Button x:Name="HomeServersBack" Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
+                      Command="{Binding SelectHomeTabCommand}" CommandParameter="main"
+                      ToolTip.Tip="{l:Tr Main_BackTooltip}">
+                <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
+                          Foreground="{DynamicResource AgMutedBrush}" />
+              </Button>
+              <TextBlock Grid.Column="1" Text="{l:Tr Main_HomeTabServers}" FontSize="15" FontWeight="SemiBold"
+                         Margin="8,0" VerticalAlignment="Center" HorizontalAlignment="Center"
+                         Foreground="{DynamicResource AgMutedBrush}" />
+              <Button Grid.Column="2" Classes="icon" Padding="6,4" VerticalAlignment="Center"
+                      IsVisible="{Binding HasConfigs}"
+                      Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
+                      ToolTip.Tip="{l:Tr Main_ProbeTooltip}">
+                <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="18" Height="18"
+                          Foreground="{DynamicResource AgMutedBrush}" />
+              </Button>
+              <Button Grid.Column="3" Classes="icon" Padding="6,4" VerticalAlignment="Center"
+                      Command="{Binding AddServerCommand}" ToolTip.Tip="{l:Tr Main_AddConfigButton}">
+                <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="18" Height="18"
+                          Foreground="{DynamicResource AgMutedBrush}" />
+              </Button>
+            </Grid>
+          </Panel>
         </Border>
 
         <Panel>
-          <!-- Body: the connect control and the servers, one tab at a time. A loader stands in until the
+          <!-- Body: the connect control on one screen, the servers on the other. A loader stands in until the
                first agent snapshot, so the indeterminate power button never flashes on open. -->
-          <Grid RowDefinitions="Auto,*" Margin="12,4,12,12" IsVisible="{Binding Home.IsReady}">
-
-            <!-- Tabs over the two panes. -->
-            <Border Grid.Row="0" Classes="segtrack sub" Margin="0,0,0,10" MaxWidth="420"
-                    HorizontalAlignment="Left">
-              <UniformGrid Columns="2">
-                <Button Classes="seg" Classes.active="{Binding IsHomeMain}"
-                        Command="{Binding SelectHomeTabCommand}" CommandParameter="main"
-                        Content="{l:Tr Main_HomeTabMain}" />
-                <Button x:Name="HomeServersTab" Classes="seg" Classes.active="{Binding IsHomeServers}"
-                        Command="{Binding SelectHomeTabCommand}" CommandParameter="servers"
-                        Content="{l:Tr Main_HomeTabServers}" />
-              </UniformGrid>
-            </Border>
-
-            <Grid Grid.Row="1">
+          <Grid Margin="12,4,12,12" IsVisible="{Binding Home.IsReady}">
 
               <!-- Connect pane: the round control, the status and the config picker. -->
               <StackPanel Width="290" Spacing="14"
@@ -152,8 +164,24 @@
                              IsVisible="{Binding Home.LinkChurning}" />
                 </StackPanel>
 
-                <!-- Config picker: the same pick the server table carries a tab away. -->
+                <!-- Always-on switch: the switch itself belongs to the system, so while it is on the power button
+                     leads to the system screen instead of dialling. -->
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Home.ShowAlwaysOnToggle}">
+                  <TextBlock Grid.Column="0" Text="{l:Tr Main_AlwaysOnMode}" Classes="muted"
+                             FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                IsChecked="{Binding Home.AlwaysOnMode, Mode=TwoWay}" />
+                </Grid>
+
+                <!-- Config picker: the same pick the server screen carries, with the way to that screen over it. -->
                 <StackPanel Spacing="6">
+                  <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasConfigs}">
+                    <TextBlock Grid.Column="0" Text="{l:Tr Main_HomeServerLabel}" Classes="muted"
+                               FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="linkbtn" Padding="4,0" FontSize="12"
+                            Command="{Binding SelectHomeTabCommand}" CommandParameter="servers"
+                            Content="{l:Tr Main_HomeManageServers}" />
+                  </Grid>
                   <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                             IsVisible="{Binding HasConfigs}"
                             ItemsSource="{Binding Config.HomeConfigOptions}"
@@ -179,27 +207,24 @@
               </StackPanel>
 
               <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding ShowHomeServers}">
-                <!-- Table head: the caption, the button that re-measures every server, and the one that adds
-                     a configuration and comes back here. -->
-                <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="2,0,0,2" IsVisible="{Binding HasConfigs}">
-                  <TextBlock Grid.Column="0" Text="{l:Tr Main_ServersTitle}" Classes="muted"
-                             FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                  <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="4,0,0,0"
-                              HorizontalAlignment="{Binding ServersHeaderAlign}">
-                    <Button Classes="icon" Padding="8,6" VerticalAlignment="Center"
-                            Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
-                            ToolTip.Tip="{l:Tr Main_ProbeTooltip}">
-                      <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="18" Height="18"
-                                Foreground="{DynamicResource AgMutedBrush}" />
-                    </Button>
-                    <Button Classes="icon" Padding="8,6" VerticalAlignment="Center"
-                            Command="{Binding AddServerCommand}"
-                            ToolTip.Tip="{l:Tr Main_AddConfigButton}">
-                      <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="18" Height="18"
-                                Foreground="{DynamicResource AgMutedBrush}" />
-                    </Button>
-                  </StackPanel>
-                </Grid>
+                <!-- Over the table: the list every config routes by, picked here and applied at once, then how
+                     many servers stand under it. -->
+                <StackPanel Grid.Row="0" Spacing="6" Margin="2,0,0,10" IsVisible="{Binding HasConfigs}">
+                  <TextBlock Text="{l:Tr Main_RoutingSection}" Classes="muted"
+                             FontSize="11.5" FontWeight="SemiBold" />
+                  <controls:AdaptiveComboBox Classes="field"
+                            MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW220}"
+                            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+                            ItemsSource="{Binding Routing.HomeRoutingOptions}"
+                            SelectedItem="{Binding Routing.HomeRoutingChoice, Mode=TwoWay}">
+                    <controls:AdaptiveComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:RoutingListChoice">
+                        <TextBlock Text="{Binding Name}" />
+                      </DataTemplate>
+                    </controls:AdaptiveComboBox.ItemTemplate>
+                  </controls:AdaptiveComboBox>
+                  <TextBlock Text="{Binding ServersCountText}" Classes="muted" FontSize="11.5" Margin="0,4,0,0" />
+                </StackPanel>
 
                 <Panel Grid.Row="1">
                   <!-- Narrow: the cards stand in one column, each stretched to the width. -->
@@ -266,7 +291,6 @@
                            HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,6,0,0"
                            Text="{l:Tr Main_HomeSelectConfigHint}" />
               </Grid>
-            </Grid>
           </Grid>
 
           <!-- Loader until the first snapshot. -->

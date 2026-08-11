@@ -79,4 +79,9 @@ public sealed record StatusSnapshot(
     // Build target (win-<arch> for self-contained, win-<arch>-fdd for framework-dependent) baked at build time; drives the About build-type row.
     string BuildTarget = "",
     // Whether the package manager is installing the downloaded update; only the agent-owned flow (Linux) sets it.
-    bool UpdateInstalling = false);
+    bool UpdateInstalling = false,
+    // Whether the system runs this application as its always-on VPN. Only a running Android tunnel can be asked,
+    // so it stays false while the tunnel is down.
+    bool AlwaysOn = false,
+    // Whether always-on also blocks what would leave outside the tunnel.
+    bool AlwaysOnLockdown = false);

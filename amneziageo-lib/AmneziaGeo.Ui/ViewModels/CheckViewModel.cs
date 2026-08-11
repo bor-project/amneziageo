@@ -4,6 +4,8 @@ using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 
+using Avalonia.Threading;
+
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -16,7 +18,18 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal sealed partial class CheckViewModel : ViewModelBase
 {
+    // How often the shown destinations are re-read. What the tunnel carries changes between one glance and the
+    // next, so the pane showing it has to move on its own.
+    private static readonly TimeSpan LiveInterval = TimeSpan.FromMilliseconds(300);
+
     private readonly IAgentConnection _connection;
+    private readonly DispatcherTimer _live;
+
+    // The run on screen; its button wears the accent and the others do not.
+    private RunKind? _kind;
+
+    // Whether a live re-read is in flight; a slow agent must not queue reads behind itself.
+    private bool _reading;
 
     /// <summary>
     /// ctor
@@ -24,12 +37,41 @@ internal sealed partial class CheckViewModel : ViewModelBase
     public CheckViewModel(IAgentConnection connection)
     {
         _connection = connection;
+        _live = new DispatcherTimer { Interval = LiveInterval };
+        _live.Tick += OnLiveTick;
     }
 
     /// <summary>
     /// Whether the pane is the one currently shown.
     /// </summary>
     public bool IsActive { get; private set; }
+
+    /// <summary>
+    /// Whether the channel ladder is the run on screen.
+    /// </summary>
+    public bool IsChannelMode => _kind == RunKind.Channel;
+
+    /// <summary>
+    /// Whether the sweep over every saved server is the run on screen.
+    /// </summary>
+    public bool IsServersMode => _kind == RunKind.Servers;
+
+    /// <summary>
+    /// Whether what the tunnel carries is the run on screen.
+    /// </summary>
+    public bool IsSessionsMode => _kind == RunKind.Sessions;
+
+    /// <summary>
+    /// What the live pane says about itself: how to hold it still, or that it is being held.
+    /// </summary>
+    public string LiveHint => IsSessionsMode && !OperatingSystem.IsAndroid()
+        ? Loc.Instance.Get(LivePaused ? "Check_LivePaused" : "Check_LiveHold")
+        : string.Empty;
+
+    // Whether the reader holds the rows still to look at them.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LiveHint))]
+    private bool _livePaused;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
@@ -58,6 +100,10 @@ internal sealed partial class CheckViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowAdvice))]
     private string _advice = string.Empty;
+
+    // What the last copy came to; the next run clears it.
+    [ObservableProperty]
+    private string _statusMessage = string.Empty;
 
     // What was measured, one row per leg or per fact.
     [ObservableProperty]
@@ -98,11 +144,38 @@ internal sealed partial class CheckViewModel : ViewModelBase
         IsActive = active;
         if (!active)
         {
+            SetKind(null);
             BodyText = string.Empty;
             Verdict = string.Empty;
             Advice = string.Empty;
+            StatusMessage = string.Empty;
+            LivePaused = false;
             Blamed = false;
         }
+    }
+
+    /// <summary>
+    /// Renders what is on screen as text: the verdict, the advice under it and every measured row.
+    /// </summary>
+    public string BuildReportText()
+    {
+        var text = new StringBuilder();
+        if (Verdict.Length > 0)
+        {
+            text.Append(Verdict).Append('\n');
+        }
+
+        if (Advice.Length > 0)
+        {
+            text.Append(Advice).Append('\n');
+        }
+
+        if (text.Length > 0)
+        {
+            text.Append('\n');
+        }
+
+        return text.Append(BodyText).ToString();
     }
 
     [RelayCommand]
@@ -142,10 +215,12 @@ internal sealed partial class CheckViewModel : ViewModelBase
             return;
         }
 
+        SetKind(kind);
         IsRunning = true;
         BodyText = string.Empty;
         Verdict = string.Empty;
         Advice = string.Empty;
+        StatusMessage = string.Empty;
         IpcAck ack;
         try
         {
@@ -171,6 +246,58 @@ internal sealed partial class CheckViewModel : ViewModelBase
         }
 
         Show(ack.Message, kind);
+        if (kind == RunKind.Sessions)
+        {
+            _live.Start();
+        }
+    }
+
+    // Switches the pane to another run; only what the tunnel carries is re-read on its own.
+    private void SetKind(RunKind? kind)
+    {
+        _live.Stop();
+        if (_kind == kind)
+        {
+            return;
+        }
+
+        _kind = kind;
+        OnPropertyChanged(nameof(IsChannelMode));
+        OnPropertyChanged(nameof(IsServersMode));
+        OnPropertyChanged(nameof(IsSessionsMode));
+        OnPropertyChanged(nameof(LiveHint));
+    }
+
+    private void OnLiveTick(object? sender, EventArgs e)
+    {
+        if (!IsActive || IsRunning || LivePaused || _reading || _kind != RunKind.Sessions)
+        {
+            return;
+        }
+
+        _ = RefreshSessionsAsync();
+    }
+
+    // Re-reads the destinations under the shown rows: nothing is blanked, the rows are replaced by the new ones.
+    private async Task RefreshSessionsAsync()
+    {
+        _reading = true;
+        try
+        {
+            var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetSessions, []));
+            if (ack.Ok && IsActive && !IsRunning && _kind == RunKind.Sessions)
+            {
+                Show(ack.Message, RunKind.Sessions);
+            }
+        }
+        catch
+        {
+            // Агент мог уйти; следующий тик прочитает снова.
+        }
+        finally
+        {
+            _reading = false;
+        }
     }
 
     // Fills the pane from the ack: the rows as measured, then the verdict in words.
@@ -254,7 +381,7 @@ internal sealed partial class CheckViewModel : ViewModelBase
         return text.ToString();
     }
 
-    // What one destination holds: how much has gone there, how fast it moves now, and how long it has been quiet.
+    // What one destination holds: how much has gone there, how fast it moves now and how long it has been idle.
     private static string Carried(LiveSession row)
     {
         var parts = new List<string>();
@@ -309,7 +436,7 @@ internal sealed partial class CheckViewModel : ViewModelBase
         var text = new StringBuilder();
         foreach (var leg in report.Legs)
         {
-            text.Append(Loc.Instance.Get($"Check_Leg_{leg.Name}").PadRight(22))
+            text.Append(Loc.Instance.Get($"Check_Leg_{leg.Name}").PadRight(26))
                 .Append(Loc.Instance.Get($"Check_State_{leg.State}").PadRight(16))
                 .Append(Measured(leg))
                 .Append('\n');
@@ -318,7 +445,8 @@ internal sealed partial class CheckViewModel : ViewModelBase
         return text.ToString();
     }
 
-    // What one leg measured, in the units of the window.
+    // What one leg measured, in the units of the window. A measurement that says the leg is well is left out: the
+    // pane carries what a reader has to act on, and the whole of it travels in the copied text anyway.
     private static string Measured(CheckLeg leg)
     {
         var parts = new List<string>();
@@ -327,17 +455,12 @@ internal sealed partial class CheckViewModel : ViewModelBase
             parts.Add(Loc.Instance.Get("Check_Rtt", leg.RttMs));
         }
 
-        if (leg.JitterMs > 0)
-        {
-            parts.Add(Loc.Instance.Get("Check_Jitter", leg.JitterMs));
-        }
-
         if (LinkHealth.LossKnown(leg.LossPercent))
         {
             parts.Add(Loc.Instance.Get("Check_Loss", leg.LossPercent));
         }
 
-        if (leg.MaxPacketBytes > 0)
+        if (leg.MaxPacketBytes is > 0 and < ChannelProbe.FullPayloadBytes)
         {
             parts.Add(Loc.Instance.Get("Check_Size", leg.MaxPacketBytes));
         }
@@ -347,7 +470,7 @@ internal sealed partial class CheckViewModel : ViewModelBase
             parts.Add(Loc.Instance.Get("Check_Age", leg.AgeSeconds));
         }
 
-        if (leg.RekeysPerMinute >= 0)
+        if (LinkHealth.Churning(leg.RekeysPerMinute))
         {
             parts.Add(Loc.Instance.Get("Check_Rekeys", leg.RekeysPerMinute));
         }

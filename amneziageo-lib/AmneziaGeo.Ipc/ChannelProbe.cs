@@ -48,8 +48,13 @@ public static class ChannelProbe
     // Attempts a dead target is given before the leg is abandoned; without it a dead leg costs the whole budget.
     private const int DeadAfter = 3;
 
+    /// <summary>
+    /// Payload a path of the usual 1500-byte MTU carries whole.
+    /// </summary>
+    public const int FullPayloadBytes = 1472;
+
     // Payloads the path is asked to carry, largest first; the first that passes names the step it breaks at.
-    private static readonly int[] _sizes = [1472, 1400, 1280, 1000];
+    private static readonly int[] _sizes = [FullPayloadBytes, 1400, 1280, 1000];
 
     // How close to the byte the size between two ladder steps is narrowed down.
     private const int SizeStep = 8;

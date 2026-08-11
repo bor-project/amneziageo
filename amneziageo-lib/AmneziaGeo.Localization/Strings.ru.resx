@@ -1901,6 +1901,12 @@
   <data name="Check_RunSessions" xml:space="preserve">
     <value>Что идёт сейчас</value>
   </data>
+  <data name="Check_LiveHold" xml:space="preserve">
+    <value>Ctrl - остановить обновление</value>
+  </data>
+  <data name="Check_LivePaused" xml:space="preserve">
+    <value>обновление остановлено</value>
+  </data>
   <data name="Check_SessionsSummary" xml:space="preserve">
     <value>Назначений: {0}, не определено {1}, без движения {2}, передано {3}.</value>
   </data>
@@ -1914,7 +1920,7 @@
     <value>держится {0} с</value>
   </data>
   <data name="Check_SessionIdle" xml:space="preserve">
-    <value>тишина {0} с</value>
+    <value>простой {0} с</value>
   </data>
   <data name="Check_SessionStalled" xml:space="preserve">
     <value>застой</value>
@@ -1950,28 +1956,28 @@
     <value>Проверка канала проходит путь от роутера до сервера и называет виноватый участок.</value>
   </data>
   <data name="Check_Leg_gateway" xml:space="preserve">
-    <value>шлюз</value>
+    <value>до роутера</value>
   </data>
   <data name="Check_Leg_endpoint" xml:space="preserve">
-    <value>канал до сервера</value>
+    <value>до сервера мимо туннеля</value>
   </data>
   <data name="Check_Leg_handshake" xml:space="preserve">
-    <value>сессия</value>
+    <value>сессия туннеля</value>
   </data>
   <data name="Check_Leg_peer" xml:space="preserve">
-    <value>сервер в туннеле</value>
+    <value>сервер внутри туннеля</value>
   </data>
   <data name="Check_Leg_beyond" xml:space="preserve">
-    <value>за выходом</value>
+    <value>интернет за сервером</value>
   </data>
   <data name="Check_Leg_tunnel" xml:space="preserve">
-    <value>через туннель</value>
+    <value>скорость через туннель</value>
   </data>
   <data name="Check_Leg_source" xml:space="preserve">
-    <value>ваш верхний адрес</value>
+    <value>скорость до вашего хоста</value>
   </data>
   <data name="Check_Leg_direct" xml:space="preserve">
-    <value>мимо туннеля</value>
+    <value>скорость мимо туннеля</value>
   </data>
   <data name="Check_State_ok" xml:space="preserve">
     <value>в порядке</value>
@@ -1990,9 +1996,6 @@
   </data>
   <data name="Check_Rtt" xml:space="preserve">
     <value>задержка {0} мс</value>
-  </data>
-  <data name="Check_Jitter" xml:space="preserve">
-    <value>джиттер {0} мс</value>
   </data>
   <data name="Check_Loss" xml:space="preserve">
     <value>потери {0}%</value>

@@ -286,12 +286,15 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
           # Legacy fallback entry point = x64 framework-dependent. New clients ignore update.json.setup and
           # build their own per-build installer name; setup only serves clients with no baked build target.
-          SETUP=$(ls release/AmneziaGeo-*-win-x64-fdd.exe 2>/dev/null | head -1 || true)
-          if [ -z "$SETUP" ]; then
-            SETUP=$(ls release/*.exe 2>/dev/null | head -1 || true)
-            echo "WARNING: x64-fdd absent; auto-update entry = ${SETUP:-none}"
+          # Matched through globs, not `ls`: nullglob drops an unmatched pattern, and a bare `ls` would then
+          # list the work directory and hand its first entry over as the installer.
+          setups=(release/AmneziaGeo-*-win-x64-fdd.exe)
+          if [ ${#setups[@]} -eq 0 ]; then
+            setups=(release/*.exe)
+            echo "WARNING: x64-fdd absent; auto-update entry = ${setups[0]:-none}"
           fi
-          SETUP_NAME=$([ -n "$SETUP" ] && basename "$SETUP" || echo '')
+          SETUP_NAME=''
+          if [ ${#setups[@]} -gt 0 ]; then SETUP_NAME=$(basename "${setups[0]}"); fi
           # Self-describing manifest: version + channel (stable vs prerelease from the tag) + an installers
           # array (one per published asset: platform/arch/variant) so the check is scoped to the installed
           # distribution. `setup` stays a legacy fallback; new clients build their own per-build name.

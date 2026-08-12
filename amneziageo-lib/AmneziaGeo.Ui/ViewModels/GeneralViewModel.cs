@@ -33,9 +33,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private DispatcherTimer? _autoUpdateTimer;
     private bool _autoCheckArmed;
 
-    // The Linux agent owns the update: it downloads the packages and hands them to the package manager, so the
+    // The Linux and Android agents own the update: they download the package and hand it to the installer, so the
     // window only relays the commands and mirrors the state the snapshot carries.
-    private readonly bool _agentUpdates = OperatingSystem.IsLinux();
+    private readonly bool _agentUpdates = OperatingSystem.IsLinux() || OperatingSystem.IsAndroid();
     private string _agentPhase = string.Empty;
     private string? _installingVersion;
 

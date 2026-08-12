@@ -196,6 +196,8 @@ jobs:
             ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
             args+=(--version "$ver")
           fi
+          # A prerelease tag bakes the beta channel so the package does not offer the stable latest.
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
           amneziageo-android/tools/build-apk.sh "${args[@]}"
 
       - name: Upload the APK

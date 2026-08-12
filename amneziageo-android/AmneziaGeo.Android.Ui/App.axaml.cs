@@ -90,6 +90,7 @@ public sealed partial class App : Avalonia.Application
             {
                 var agentClock = Stopwatch.StartNew();
                 viewModel.Start();
+                viewModel.General.BeginAutoUpdateChecks();
                 Stage("agent", agentClock);
             }, DispatcherPriority.Background);
         }

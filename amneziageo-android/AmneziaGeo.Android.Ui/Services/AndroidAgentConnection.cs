@@ -74,6 +74,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private int _routeTtl = 300;
     private bool _alwaysOn;
     private bool _alwaysOnLockdown;
+    private LocalProxyOptions _proxyOptions = new();
 
     public event Action? Connected;
 
@@ -718,6 +719,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private void PushSnapshot()
     {
         var configs = OrderedNames().Select(name => Entry(name, _configs[name])).ToList();
+        var proxy = VpnBridge.ReadProxyState();
 
         Latest = new StatusSnapshot(
             AgentVersion: AppVersion,
@@ -754,7 +756,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             UpdateCheckFailed: _updater.CheckFailed,
             UpdateInstalling: _updater.Installing,
             AlwaysOn: _alwaysOn,
-            AlwaysOnLockdown: _alwaysOnLockdown);
+            AlwaysOnLockdown: _alwaysOnLockdown,
+            ProxyEnabled: _proxyOptions.Enabled,
+            ProxySocksPort: _proxyOptions.SocksPort,
+            ProxyHttpPort: _proxyOptions.HttpPort,
+            ProxyLan: _proxyOptions.AllowLan,
+            ProxyUser: _proxyOptions.User,
+            ProxyPassword: _proxyOptions.Password,
+            ProxyRunning: proxy.Running,
+            ProxyError: proxy.Error,
+            ProxyAddress: proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.LanAddress("tun") : string.Empty);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -1726,6 +1737,13 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _routeTtl = seconds;
             }
 
+            if (document.RootElement.TryGetProperty("Proxy", out var proxy) && proxy.ValueKind == JsonValueKind.Object)
+            {
+                _proxyOptions = JsonSerializer.Deserialize<LocalProxyOptions>(proxy.GetRawText()) ?? new LocalProxyOptions();
+                // The tunnel runs in its own process and listens by its own copy; a restored library brings it back.
+                VpnBridge.WriteProxy(_proxyOptions);
+            }
+
             var target = document.RootElement.TryGetProperty("Selected", out var selected) && selected.ValueKind == JsonValueKind.String
                 ? selected.GetString()
                 : null;
@@ -1808,6 +1826,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
+            builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
             builder.Append('}');
@@ -2508,9 +2527,69 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 Save();
                 PushSnapshot();
                 return Ok();
+            case SettingKeys.ProxyEnabled:
+            case SettingKeys.ProxyLan:
+            case SettingKeys.ProxySocksPort:
+            case SettingKeys.ProxyHttpPort:
+            case SettingKeys.ProxyUser:
+            case SettingKeys.ProxyPassword:
+                if (!TryProxySetting(args[0], args[1], out var options))
+                {
+                    return Fail();
+                }
+
+                _proxyOptions = options;
+                Save();
+                PublishProxy();
+                PushSnapshot();
+                return Ok();
             default:
                 return Ok();
         }
+    }
+
+    // One proxy setting on top of the ones in force.
+    private bool TryProxySetting(string key, string value, out LocalProxyOptions options)
+    {
+        options = _proxyOptions;
+        switch (key)
+        {
+            case SettingKeys.ProxyEnabled:
+                options = options with { Enabled = IsOn(value) };
+                return true;
+            case SettingKeys.ProxyLan:
+                options = options with { AllowLan = IsOn(value) };
+                return true;
+            case SettingKeys.ProxySocksPort:
+                if (!SettingKeys.TryParseProxyPort(value, out var socks))
+                {
+                    return false;
+                }
+
+                options = options with { SocksPort = socks };
+                return true;
+            case SettingKeys.ProxyHttpPort:
+                if (!SettingKeys.TryParseProxyPort(value, out var http))
+                {
+                    return false;
+                }
+
+                options = options with { HttpPort = http };
+                return true;
+            case SettingKeys.ProxyUser:
+                options = options with { User = value.Trim() };
+                return true;
+            default:
+                options = options with { Password = value };
+                return true;
+        }
+    }
+
+    // The tunnel process owns the listener: it takes the settings now if it runs, and at its next start if not.
+    private void PublishProxy()
+    {
+        VpnBridge.WriteProxy(_proxyOptions);
+        VpnBridge.RequestProxy(Application.Context);
     }
 
     // Records a UI diagnostic line in the agent log.

@@ -124,6 +124,79 @@
         </Border>
       </Grid>
 
+      <!-- Local proxy card: the port other applications and devices point at (#238). -->
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{l:Tr General_ProxySection}" FontWeight="SemiBold" FontSize="15" />
+
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
+                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+              <TextBlock Text="{l:Tr General_ProxyEnabled}" FontSize="13.5" />
+              <TextBlock Text="{l:Tr General_ProxyEnabledHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+              <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                         IsVisible="{Binding ProxyNeedsTunnel}" />
+            </StackPanel>
+            <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding ProxyEnabled, Mode=TwoWay}"
+                          Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                          Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
+          </Grid>
+
+          <TextBlock Text="{Binding ProxyAddressText}" Classes="muted mono" FontSize="12.5" TextWrapping="Wrap"
+                     IsVisible="{Binding ProxyAddressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+          <StackPanel Spacing="12" IsVisible="{Binding ProxyEnabled}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" VerticalAlignment="Center"
+                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxySocksPort, Mode=TwoWay}"
+                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" VerticalAlignment="Center"
+                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxyHttpPort, Mode=TwoWay}"
+                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
+                          Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                <TextBlock Text="{l:Tr General_ProxyLan}" FontSize="13.5" />
+                <TextBlock Text="{l:Tr General_ProxyLanHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+              </StackPanel>
+              <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding ProxyLan, Mode=TwoWay}"
+                            Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
+                          Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                <TextBlock Text="{l:Tr General_ProxyUser}" FontSize="13.5" />
+                <TextBlock Text="{l:Tr General_ProxyAuthHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                          Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                          Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
+                <TextBox Classes="field" Width="130" Text="{Binding ProxyUser, Mode=TwoWay}"
+                         Watermark="{l:Tr General_ProxyUser}" />
+                <TextBox Classes="field" Width="130" Text="{Binding ProxyPassword, Mode=TwoWay}"
+                         Watermark="{l:Tr General_ProxyPassword}" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
       <!-- Connection resilience card: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
            the Android agent does not apply these settings. -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}"

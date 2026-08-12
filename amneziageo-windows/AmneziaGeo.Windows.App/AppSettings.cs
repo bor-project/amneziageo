@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Reflection;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Windows.App;
 
@@ -125,4 +126,50 @@ internal sealed record AppSettings
     /// Show tray notifications for connection state changes.
     /// </summary>
     public bool ShowNotifications { get; init; } = true;
+
+    /// <summary>
+    /// Whether the local proxy listens.
+    /// </summary>
+    public bool ProxyEnabled { get; init; }
+
+    /// <summary>
+    /// SOCKS5 port of the local proxy.
+    /// </summary>
+    public int ProxySocksPort { get; init; } = LocalProxyOptions.DefaultSocksPort;
+
+    /// <summary>
+    /// HTTP port of the local proxy.
+    /// </summary>
+    public int ProxyHttpPort { get; init; } = LocalProxyOptions.DefaultHttpPort;
+
+    /// <summary>
+    /// Whether the local proxy takes clients from the local network.
+    /// </summary>
+    public bool ProxyLan { get; init; }
+
+    /// <summary>
+    /// User the local proxy asks for; empty asks for no credentials.
+    /// </summary>
+    public string ProxyUser { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Password that goes with the user.
+    /// </summary>
+    public string ProxyPassword { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The local proxy as the listener takes it.
+    /// </summary>
+    public LocalProxyOptions Proxy()
+    {
+        return new LocalProxyOptions
+        {
+            Enabled = ProxyEnabled,
+            SocksPort = ProxySocksPort,
+            HttpPort = ProxyHttpPort,
+            AllowLan = ProxyLan,
+            User = ProxyUser,
+            Password = ProxyPassword,
+        };
+    }
 }

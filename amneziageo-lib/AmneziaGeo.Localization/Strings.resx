@@ -91,6 +91,39 @@
   <data name="General_AllowPrereleaseHint" xml:space="preserve">
     <value>Offer beta builds in the update check, not only stable releases.</value>
   </data>
+  <data name="General_ProxySection" xml:space="preserve">
+    <value>Local proxy</value>
+  </data>
+  <data name="General_ProxyEnabled" xml:space="preserve">
+    <value>Offer a proxy on a fixed port</value>
+  </data>
+  <data name="General_ProxyEnabledHint" xml:space="preserve">
+    <value>SOCKS5 and HTTP on the ports the v2ray family uses, so a client set up for it finds this one too.</value>
+  </data>
+  <data name="General_ProxyTunnelHint" xml:space="preserve">
+    <value>Here the proxy carries traffic only while the tunnel is up.</value>
+  </data>
+  <data name="General_ProxySocksPort" xml:space="preserve">
+    <value>SOCKS5 port</value>
+  </data>
+  <data name="General_ProxyHttpPort" xml:space="preserve">
+    <value>HTTP port</value>
+  </data>
+  <data name="General_ProxyLan" xml:space="preserve">
+    <value>Allow from the local network</value>
+  </data>
+  <data name="General_ProxyLanHint" xml:space="preserve">
+    <value>Off, only this device reaches the proxy. On, so does every device on this network - set a password.</value>
+  </data>
+  <data name="General_ProxyUser" xml:space="preserve">
+    <value>User</value>
+  </data>
+  <data name="General_ProxyPassword" xml:space="preserve">
+    <value>Password</value>
+  </data>
+  <data name="General_ProxyAuthHint" xml:space="preserve">
+    <value>An empty user asks for no credentials.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>
   </data>

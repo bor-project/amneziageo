@@ -13,7 +13,7 @@ namespace AmneziaGeo.Windows.App;
 /// <summary>
 /// Status snapshots broker for UI clients.
 /// </summary>
-internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, ILogger<AgentStatusBroker> logger)
+internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdateChecker geoUpdateChecker, AgentControl control, SettingsStore settingsStore, UpdateChecker updateChecker, UpdateState updateState, RouteManager routes, LogLevelController logLevel, DiagnosticsCollector diagnostics, SqliteLogStore logStore, ScopedStoreFactory storeFactory, IGeoFileStore geoFiles, ServiceManager serviceManager, UserStoreRegistry registry, ActiveTunnelScope activeScope, RuntimeInspector inspector, CheckService checks, LocalProxyService proxy, ILogger<AgentStatusBroker> logger)
 {
     private readonly List<PipeConnection> _clients = [];
     private readonly Lock _gate = new();
@@ -2019,6 +2019,16 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return new IpcAck(true, $"route lifetime = {args[1]} s");
         }
 
+        // The local proxy applies live: the listener moves to the new settings before the answer goes back.
+        if (key.StartsWith("proxy-", StringComparison.Ordinal))
+        {
+            await proxy.RefreshAsync(ct);
+            logger.LogInformation("set setting {Key}", key);
+            return proxy.Error.Length > 0
+                ? new IpcAck(false, $"the local proxy did not start: {proxy.Error}")
+                : new IpcAck(true, $"set {key}");
+        }
+
         logger.LogInformation("set setting {Key} = {Value}", key, args[1]);
         return new IpcAck(true, $"set {key} = {args[1]} (applies on reconnect)");
     }
@@ -2438,7 +2448,16 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             updateState.Checking,
             updateState.CheckFailed,
             Volatile.Read(ref _geoUpdatedTick),
-            AppSettings.BuildTarget);
+            AppSettings.BuildTarget,
+            ProxyEnabled: settings.ProxyEnabled,
+            ProxySocksPort: settings.ProxySocksPort,
+            ProxyHttpPort: settings.ProxyHttpPort,
+            ProxyLan: settings.ProxyLan,
+            ProxyUser: settings.ProxyUser,
+            ProxyPassword: settings.ProxyPassword,
+            ProxyRunning: proxy.Running,
+            ProxyError: proxy.Error,
+            ProxyAddress: proxy.Address);
     }
 
     private static string DisplayStatus(string profileStatus)

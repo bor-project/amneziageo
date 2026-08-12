@@ -42,7 +42,10 @@ internal sealed class LinuxAgent : IDisposable
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
+    private readonly LocalProxyServer _proxy;
+    private readonly string _interfaceName;
 
+    private LocalProxyOptions _proxyOptions = new();
     private string? _selectedTarget;
     private string? _boundTarget;
     private string _boundStatus = ConnectionStatus.Disconnected;
@@ -86,6 +89,8 @@ internal sealed class LinuxAgent : IDisposable
         _tunnel = new TunnelController(enginePath, interfaceName, log);
         _bundles = new BundleCommands(_store, _geo);
         _updater = new LinuxUpdater(_httpClient, log, PushAsync);
+        _interfaceName = interfaceName;
+        _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
     }
 
     /// <summary>
@@ -110,6 +115,8 @@ internal sealed class LinuxAgent : IDisposable
         _periodicReconnect = settings.TryGetValue(PeriodicReconnectKey, out var periodic) && IsOn(periodic);
         _reconnectIntervalSeconds = ReconnectInterval(settings.TryGetValue(ReconnectIntervalKey, out var interval) ? interval : null);
         _routeTtlSeconds = settings.TryGetValue(RouteTtlKey, out var ttl) && SettingKeys.TryParseRouteTtl(ttl, out var seconds) ? seconds : TunnelOptions.DefaultRouteTtlSeconds;
+        _proxyOptions = ReadProxyOptions(settings);
+        _proxy.Apply(_proxyOptions);
         _log.SetCaptureLevel(_logLevel);
         _log.SetRouteLog(_routeLog);
         _updater.CollectInstallResult();
@@ -211,7 +218,81 @@ internal sealed class LinuxAgent : IDisposable
             UpdateCancelRequested: _updater.CancelRequested,
             UpdateChecking: _updater.Checking,
             UpdateCheckFailed: _updater.CheckFailed,
-            UpdateInstalling: _updater.Installing);
+            UpdateInstalling: _updater.Installing,
+            ProxyEnabled: _proxyOptions.Enabled,
+            ProxySocksPort: _proxyOptions.SocksPort,
+            ProxyHttpPort: _proxyOptions.HttpPort,
+            ProxyLan: _proxyOptions.AllowLan,
+            ProxyUser: _proxyOptions.User,
+            ProxyPassword: _proxyOptions.Password,
+            ProxyRunning: _proxy.Running,
+            ProxyError: _proxy.Error,
+            ProxyAddress: _proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.LanAddress(_interfaceName) : string.Empty);
+    }
+
+    // One proxy setting on top of the ones in force.
+    private bool TryProxySetting(string key, string value, out LocalProxyOptions options)
+    {
+        options = _proxyOptions;
+        switch (key)
+        {
+            case SettingKeys.ProxyEnabled:
+                options = options with { Enabled = IsOn(value) };
+                return true;
+            case SettingKeys.ProxyLan:
+                options = options with { AllowLan = IsOn(value) };
+                return true;
+            case SettingKeys.ProxySocksPort:
+                if (!SettingKeys.TryParseProxyPort(value, out var socks))
+                {
+                    return false;
+                }
+
+                options = options with { SocksPort = socks };
+                return true;
+            case SettingKeys.ProxyHttpPort:
+                if (!SettingKeys.TryParseProxyPort(value, out var http))
+                {
+                    return false;
+                }
+
+                options = options with { HttpPort = http };
+                return true;
+            case SettingKeys.ProxyUser:
+                options = options with { User = value.Trim() };
+                return true;
+            default:
+                options = options with { Password = value };
+                return true;
+        }
+    }
+
+    // What goes into the store: the toggles keep one spelling, the rest is stored as it came.
+    private static string ProxyValue(string key, string value)
+    {
+        return key is SettingKeys.ProxyEnabled or SettingKeys.ProxyLan
+            ? (IsOn(value) ? "on" : "off")
+            : value.Trim();
+    }
+
+    // The proxy as the settings left it.
+    private static LocalProxyOptions ReadProxyOptions(IReadOnlyDictionary<string, string> settings)
+    {
+        return new LocalProxyOptions
+        {
+            Enabled = settings.TryGetValue(SettingKeys.ProxyEnabled, out var on) && IsOn(on),
+            AllowLan = settings.TryGetValue(SettingKeys.ProxyLan, out var lan) && IsOn(lan),
+            SocksPort = settings.TryGetValue(SettingKeys.ProxySocksPort, out var socks)
+                && SettingKeys.TryParseProxyPort(socks, out var socksPort)
+                    ? socksPort
+                    : LocalProxyOptions.DefaultSocksPort,
+            HttpPort = settings.TryGetValue(SettingKeys.ProxyHttpPort, out var http)
+                && SettingKeys.TryParseProxyPort(http, out var httpPort)
+                    ? httpPort
+                    : LocalProxyOptions.DefaultHttpPort,
+            User = settings.TryGetValue(SettingKeys.ProxyUser, out var user) ? user : string.Empty,
+            Password = settings.TryGetValue(SettingKeys.ProxyPassword, out var password) ? password : string.Empty,
+        };
     }
 
     // Notices a tunnel that went down under us and redials it while periodic reconnect is on, and carries the
@@ -1134,6 +1215,27 @@ internal sealed class LinuxAgent : IDisposable
                 _tunnel.SetRouteTtl(ttlSeconds);
                 await _store.SetSettingAsync(RouteTtlKey, _routeTtlSeconds.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
                 break;
+            case SettingKeys.ProxyEnabled:
+            case SettingKeys.ProxyLan:
+            case SettingKeys.ProxySocksPort:
+            case SettingKeys.ProxyHttpPort:
+            case SettingKeys.ProxyUser:
+            case SettingKeys.ProxyPassword:
+                if (!TryProxySetting(args[0], args[1], out var proxy))
+                {
+                    return Fail();
+                }
+
+                _proxyOptions = proxy;
+                _proxy.Apply(proxy);
+                await _store.SetSettingAsync(args[0], ProxyValue(args[0], args[1]), ct).ConfigureAwait(false);
+                if (_proxy.Error.Length > 0)
+                {
+                    await PushAsync(ct).ConfigureAwait(false);
+                    return new IpcAck(false, $"the local proxy did not start: {_proxy.Error}");
+                }
+
+                break;
             default:
                 await _store.SetSettingAsync(args[0], args[1], ct).ConfigureAwait(false);
                 break;
@@ -1705,6 +1807,7 @@ internal sealed class LinuxAgent : IDisposable
 
         _disposed = true;
         StopLossProbe();
+        _proxy.Dispose();
         _updater.Dispose();
         _tunnel.Dispose();
         _geoHttp.Dispose();

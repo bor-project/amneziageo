@@ -17,7 +17,7 @@ namespace AmneziaGeo.Android.Engine;
 /// A plain request carries one destination, so its connection ends with the response and the next request is decided
 /// on its own; a tunnel opened by CONNECT carries the one name it was opened for.
 /// </summary>
-internal sealed class ProxyRelay : IDisposable
+internal sealed class ProxyRelay : IProxyOutbound, IDisposable
 {
     private const int HeadLimit = 8192;
     private const int BufferSize = 16384;
@@ -106,6 +106,45 @@ internal sealed class ProxyRelay : IDisposable
             global::Android.Util.Log.Error("ProxyRelay", "listener did not bind: " + ex);
             return 0;
         }
+    }
+
+    /// <summary>
+    /// Opens a destination for the proxy the application offers on its own port: the same rules decide it, and
+    /// what it carries is held and counted with everything else.
+    /// </summary>
+    public async Task<(IProxyLink? Link, ProxyOutcome Outcome)> ConnectAsync(string host, int port, CancellationToken ct)
+    {
+        var entry = Touch(host);
+        if (entry.Verdict == RouteVerdict.Block)
+        {
+            Interlocked.Increment(ref _blocked);
+            return (null, ProxyOutcome.Blocked);
+        }
+
+        Interlocked.Increment(ref entry.Live);
+        var socket = await ConnectAsync(entry, port, string.Empty, ct).ConfigureAwait(false);
+        if (socket is not null)
+        {
+            Interlocked.Increment(ref _served);
+            return (new Lease(this, entry, socket), ProxyOutcome.Ok);
+        }
+
+        Release(entry);
+        if (entry.Verdict == RouteVerdict.Block)
+        {
+            Interlocked.Increment(ref _blocked);
+            return (null, ProxyOutcome.Blocked);
+        }
+
+        Interlocked.Increment(ref _refused);
+        return (null, ProxyOutcome.Failed);
+    }
+
+    // Lets a destination age again once nothing holds it.
+    private static void Release(Entry entry)
+    {
+        Interlocked.Decrement(ref entry.Live);
+        Volatile.Write(ref entry.LastTouch, Environment.TickCount64);
     }
 
     /// <summary>
@@ -775,6 +814,28 @@ internal sealed class ProxyRelay : IDisposable
     /// What one proxied request asks for.
     /// </summary>
     private sealed record Request(string Host, int Port, bool Connect, byte[] Head);
+
+    /// <summary>
+    /// One destination the local proxy holds open, counted against the entry that decided it.
+    /// </summary>
+    private sealed class Lease(ProxyRelay relay, Entry entry, Socket socket) : IProxyLink
+    {
+        /// <inheritdoc/>
+        public Socket Socket { get; } = socket;
+
+        /// <inheritdoc/>
+        public void Count(int bytes)
+        {
+            relay.Count(entry, bytes);
+        }
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            Release(entry);
+            relay.Close(Socket);
+        }
+    }
 
     /// <summary>
     /// What one destination decided and when it was last used.

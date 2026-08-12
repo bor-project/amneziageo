@@ -14,9 +14,9 @@ using CommunityToolkit.Mvvm.Input;
 namespace AmneziaGeo.Ui.ViewModels;
 
 /// <summary>
-/// Logs screen: a view/settings segmented toggle. View reads a window of the selected log table from the DB on
-/// demand (nothing is cached across a page change); Settings tunes capture verbosity (ageo) or the routing-log
-/// switch (routes).
+/// Logs screen: one viewer over the selected source. A window of the log table is read from the DB on demand
+/// (nothing is cached across a page change); the header carries what the source records - capture verbosity
+/// (ageo) or the routing-log switch (routes).
 /// </summary>
 internal sealed partial class LogsViewModel : ViewModelBase
 {
@@ -80,30 +80,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         Render();
     }
 
-    // --- Segmented mode: viewer or capture settings ---
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsViewMode))]
-    private bool _isSettingsMode;
-
-    /// <summary>
-    /// Whether the viewer pane is showing.
-    /// </summary>
-    public bool IsViewMode => !IsSettingsMode;
-
-    [RelayCommand]
-    private void ShowView()
-    {
-        IsSettingsMode = false;
-    }
-
-    [RelayCommand]
-    private void ShowSettings()
-    {
-        IsSettingsMode = true;
-    }
-
-    // --- Log type (shared: viewer + settings) ---
+    // --- Log type ---
 
     /// <summary>
     /// The live source: what the tunnel carries right now, asked of the agent instead of a stored table.
@@ -153,7 +130,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         ResetAndReload();
     }
 
-    // --- Capture level (settings, ageo): none disables capture entirely ---
+    // --- Capture level (ageo): none disables capture entirely ---
 
     /// <summary>
     /// Agent-log capture level options; none stops logging.
@@ -171,7 +148,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         }
     }
 
-    // --- Routing log toggle (settings, routes) ---
+    // --- Routing log toggle (routes) ---
 
     [ObservableProperty]
     private bool _routeLogEnabled;
@@ -375,7 +352,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     private void OnPollTick()
     {
-        if (!IsActive || !IsViewMode || !LogFollow)
+        if (!IsActive || !LogFollow)
         {
             return;
         }

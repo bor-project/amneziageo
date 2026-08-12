@@ -70,21 +70,6 @@
   <data name="General_NetworkRepairHint" xml:space="preserve">
     <value>Если после неудачного подключения или удаления приложения пропал интернет — сбросьте DNS, который оно прописало адаптерам. Конфигурации и маршруты не затрагиваются.</value>
   </data>
-  <data name="General_AlwaysOnSection" xml:space="preserve">
-    <value>Постоянная VPN</value>
-  </data>
-  <data name="General_AlwaysOnHint" xml:space="preserve">
-    <value>Система может поднимать туннель сама при загрузке и держать его без запуска приложения. Тумблер принадлежит Android: Настройки, Сеть, VPN, шестерёнка у AmneziaGeo. Включить его себе не может ни одно приложение.</value>
-  </data>
-  <data name="General_AlwaysOnActive" xml:space="preserve">
-    <value>Включена для этого приложения</value>
-  </data>
-  <data name="General_AlwaysOnLockdown" xml:space="preserve">
-    <value>Включена для этого приложения, трафик мимо туннеля блокируется</value>
-  </data>
-  <data name="General_AlwaysOnButton" xml:space="preserve">
-    <value>Системные настройки</value>
-  </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
     <value>Починить интернет</value>
   </data>
@@ -272,7 +257,7 @@
     <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Отправляет в туннель весь UDP-трафик. Включите, если не работают звонки или игры: они находят свои серверы в обход DNS, поэтому обычные правила их не ловят. Локальная сеть не затрагивается.</value>
+    <value>Включите, если не работают звонки, игры или видеосвязь. Локальная сеть не затрагивается.</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
@@ -281,7 +266,7 @@
     <value>Время жизни маршрута</value>
   </data>
   <data name="Main_RouteTtlHint" xml:space="preserve">
-    <value>Сколько адрес держится в кеше маршрутизации без обращений. По истечении маршрут и правила снимаются, а при следующем обращении адрес определяется заново.</value>
+    <value>Сколько адрес хранится в кеше без обращений. Потом маршрут для него определяется заново.</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Пускает в туннель ещё и IPv6. Включайте, только если у вашего сервера есть IPv6-адрес, иначе оставьте выключенным. Применится при следующем подключении.</value>
@@ -326,7 +311,7 @@
     <value>Назад</value>
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
-    <value>Выберите конфигурации и списки маршрутизации для переноса на другое устройство, или импортируйте ранее экспортированный файл.</value>
+    <value>Перенос конфигураций и списков маршрутизации на другое устройство.</value>
   </data>
   <data name="Main_AppsLabel" xml:space="preserve">
     <value>Приложения (раздельный туннель)</value>
@@ -591,9 +576,6 @@
   </data>
   <data name="Main_LogEmptyTitle" xml:space="preserve">
     <value>Журнал пока пуст</value>
-  </data>
-  <data name="Main_LogVerbosityHint" xml:space="preserve">
-    <value>Определяет подробность журналирования. none - не логировать.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Уровень</value>
@@ -1565,12 +1547,6 @@
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>После закрытия приложение останется в трее.</value>
   </data>
-  <data name="Main_LogTabView" xml:space="preserve">
-    <value>Просмотр</value>
-  </data>
-  <data name="Main_LogTabSettings" xml:space="preserve">
-    <value>Настройки</value>
-  </data>
   <data name="Main_DiagTabLog" xml:space="preserve">
     <value>Журнал</value>
   </data>
@@ -1603,9 +1579,6 @@
   </data>
   <data name="Main_ExportLogButton" xml:space="preserve">
     <value>Экспорт</value>
-  </data>
-  <data name="Main_LogCaptureLevelTitle" xml:space="preserve">
-    <value>Максимальный уровень</value>
   </data>
   <data name="Android_EngineNotReady" xml:space="preserve">
     <value>Android VPN-движок пока не подключён.</value>
@@ -1791,7 +1764,7 @@
     <value>Сервер</value>
   </data>
   <data name="Main_HomeManageServers" xml:space="preserve">
-    <value>Управлять</value>
+    <value>Дополнительно</value>
   </data>
   <data name="Main_ServersCount" xml:space="preserve">
     <value>Серверов: {0}</value>

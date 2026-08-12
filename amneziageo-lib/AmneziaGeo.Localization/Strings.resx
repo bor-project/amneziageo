@@ -98,7 +98,7 @@
     <value>Offer a proxy on a fixed port</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>SOCKS5 and HTTP on the ports the v2ray family uses, so a client set up for it finds this one too.</value>
+    <value>Let other applications and devices in over SOCKS5 {0} and HTTP {1}.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
     <value>Here the proxy carries traffic only while the tunnel is up.</value>

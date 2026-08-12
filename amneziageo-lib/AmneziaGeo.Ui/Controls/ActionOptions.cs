@@ -1,5 +1,7 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -34,10 +36,13 @@ internal static class ActionOptions
         var menu = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
         foreach (var option in options)
         {
+            // Иконка меню в акценте, как в шторке; свой цвет темы PathIcon мимо палитры приложения.
+            var icon = new PathIcon { Data = option.Icon, Width = 14, Height = 14 };
+            icon[!TemplatedControl.ForegroundProperty] = new DynamicResourceExtension("AgAccentBrush");
             var item = new MenuItem
             {
                 Header = option.Text,
-                Icon = new PathIcon { Data = option.Icon, Width = 14, Height = 14 },
+                Icon = icon,
             };
             var run = option.Run;
             item.Click += (_, _) => run();

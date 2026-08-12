@@ -98,7 +98,7 @@
     <value>Раздавать прокси на своём порту</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>SOCKS5 и HTTP на портах семейства v2ray, чтобы клиент, настроенный на них, нашёл и этот.</value>
+    <value>Пускать другие программы и устройства через SOCKS5 {0} и HTTP {1}.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
     <value>Здесь прокси передаёт трафик только при поднятом туннеле.</value>

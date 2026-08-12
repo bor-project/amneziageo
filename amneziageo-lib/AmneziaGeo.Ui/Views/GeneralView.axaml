@@ -133,7 +133,7 @@
             <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
               <TextBlock Text="{l:Tr General_ProxyEnabled}" FontSize="13.5" />
-              <TextBlock Text="{l:Tr General_ProxyEnabledHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding ProxyEnabledHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
               <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                          IsVisible="{Binding ProxyNeedsTunnel}" />
             </StackPanel>

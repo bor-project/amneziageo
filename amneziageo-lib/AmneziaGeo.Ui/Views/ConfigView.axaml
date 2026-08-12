@@ -9,10 +9,7 @@
              x:CompileBindings="True"
              x:DataType="vm:ConfigViewModel">
   <UserControl.Resources>
-    <StreamGeometry x:Key="AgFileGeometry">M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z</StreamGeometry>
-    <StreamGeometry x:Key="AgQrGeometry">M3,11H5V13H3V11M11,5H13V9H11V5M9,11H13V15H11V13H9V11M15,11H17V13H19V11H21V13H19V15H21V19H19V21H17V19H13V21H11V17H15V15H17V13H15V11M19,19V15H17V19H19M15,3H21V9H15V3M17,5V7H19V5H17M3,3H9V9H3V3M5,5V7H7V5H5M3,15H9V21H3V15M5,17V19H7V17H5Z</StreamGeometry>
-    <StreamGeometry x:Key="AgPencilGeometry">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
-    <StreamGeometry x:Key="AgSwapGeometry">M6.99,11L3,15L6.99,19V16H14V14H6.99V11M21,9L17.01,5V8H10V10H17.01V13L21,9Z</StreamGeometry>
+    <StreamGeometry x:Key="AgPlusGeometry">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
@@ -20,152 +17,64 @@
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Last row stars to fill the pane with the import config-text box. Cards stretch the full pane width. -->
-  <Grid RowDefinitions="Auto,Auto,Auto,*">
+  <Grid RowDefinitions="Auto,*">
 
-    <!-- Section tabs + catalogue combo. HeaderReflow keeps them side by side while they fit and drops the combo
-         to its own row when the pane is too narrow (or compact). The caption floats above the combo. -->
-    <Grid x:Name="HeaderGrid" Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" Margin="0,12,0,0">
-      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no config exists. -->
-      <controls:SegmentedSelector x:Name="HeaderTabs" Grid.Row="0" Grid.Column="0"
-                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
-                            Command="{Binding SelectConfigSectionCommand}" IsCompact="{Binding IsCompact}"
-                            Item1Text="{l:Tr Main_SettingsTab}" Item1Param="config" Item1Active="{Binding SegConfigActive}" Item1Enabled="{Binding CanConfigSection}"
-                            Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
-                            Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
+    <!-- Шапка: выбор конфигурации и два равных действия под ним. Способы «Добавить» и «Экспорт» выпадают
+         списком у кнопки, а на телефоне приходят шторкой снизу. -->
+    <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
+                IsVisible="{Binding ShowHeaderActions}">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="label" Text="{l:Tr Main_ConfigPickerLabel}" />
+        <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding ConfigCatalogueOptions}"
+                  SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
+          <controls:AdaptiveComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ConfigChoice">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </controls:AdaptiveComboBox.ItemTemplate>
+        </controls:AdaptiveComboBox>
+      </StackPanel>
 
-      <!-- Catalogue combo: «- не выбрано -» then saved configs. Row/column/width set by HeaderReflow. Hidden while importing. -->
-      <Panel x:Name="PickerHost" Grid.Row="0" Grid.Column="1" ClipToBounds="False"
-             VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="260"
-             IsVisible="{Binding !IsSectionImport}">
-        <!-- Floating caption above the combo (zero layout height) so the combo stays centred against the tabs. -->
-        <TextBlock x:Name="PickerLabelFloat" Classes="muted" FontSize="11.5" Text="{l:Tr Main_ConfigPickerLabel}"
-                   VerticalAlignment="Top" HorizontalAlignment="Left">
-          <TextBlock.RenderTransform>
-            <TranslateTransform Y="-18" />
-          </TextBlock.RenderTransform>
-        </TextBlock>
-        <StackPanel Spacing="6">
-          <!-- Inline caption when the combo drops to its own row. -->
-          <TextBlock x:Name="PickerLabelInline" Classes="muted" FontSize="11.5" Text="{l:Tr Main_ConfigPickerLabel}" IsVisible="False" />
-          <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch" Width="160"
-                    ItemsSource="{Binding ConfigCatalogueOptions}"
-                    SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
-            <controls:AdaptiveComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:ConfigChoice">
-                <TextBlock Text="{Binding Name}" />
-              </DataTemplate>
-            </controls:AdaptiveComboBox.ItemTemplate>
-          </controls:AdaptiveComboBox>
-        </StackPanel>
-      </Panel>
-    </Grid>
+      <!-- Обе кнопки делят строку поровну; на широком экране строка стоит слева своей шириной. -->
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8"
+            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+        <Button x:Name="AddButton" Grid.Column="0" Classes="accent" MinHeight="40"
+                HorizontalAlignment="Stretch" Click="OnAddOptions"
+                MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
+          <StackPanel Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+            <PathIcon Data="{StaticResource AgPlusGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_AddButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="1" Classes="methodpick" MinHeight="40"
+                HorizontalAlignment="Stretch" Click="OnExportOptions"
+                IsEnabled="{Binding CanExportOpenConfig}"
+                MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
+          <StackPanel Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+            <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_ExportTab}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </Grid>
 
-    <!-- Divider between the header (tabs + picker) and the content. -->
-    <Border Grid.Row="1" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="0,14,0,0" />
+      <!-- Каталог пуст: настроек ещё нет, добавление - единственный шаг. -->
+      <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                 Text="{l:Tr Main_ConfigCatalogueEmpty}" IsVisible="{Binding ShowNoConfigsHint}" />
+    </StackPanel>
 
-    <!-- Import section (last row, stars). Imported with the footer Save once text parses + name is set (#143). -->
-    <Border Grid.Row="3" Margin="0,14,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
-            IsVisible="{Binding IsSectionImport}">
-      <DockPanel LastChildFill="True">
-        <StackPanel DockPanel.Dock="Top" Spacing="6">
-          <!-- Title + (method label + change button) reflow: the method group drops to its own line when the
-               pane is too narrow to keep it beside the title, so the button never runs off the right edge. -->
-          <WrapPanel>
-            <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" VerticalAlignment="Center" Margin="0,0,12,4" />
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                        IsVisible="{Binding !IsImportPicker}">
-              <TextBlock Classes="muted" FontSize="12" VerticalAlignment="Center" Text="{Binding SectionMethodLabel}" />
-              <Button Classes="methodpick" Command="{Binding ChangeMethodCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <PathIcon Data="{StaticResource AgSwapGeometry}" Width="14" Height="14" />
-                  <TextBlock Text="{l:Tr Main_ChangeMethodButton}" />
-                </StackPanel>
-              </Button>
-            </StackPanel>
-          </WrapPanel>
-          <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
-                   Text="{Binding SectionConfigName, Mode=TwoWay}"
-                   Watermark="{l:Tr Main_ConfigNameWatermark}" />
-          <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
-                     Text="{l:Tr Main_RequiredEmptyWarning}" />
-        </StackPanel>
-        <TextBlock DockPanel.Dock="Bottom" Text="{Binding SectionConfigStatus}" Classes="fieldwarn"
-                   FontSize="11.5" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
-                   Margin="0,10,0,0"
-                   IsVisible="{Binding SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-        <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
-             configuration. Shown beside the text, where there is something to apply them to. -->
-        <Border DockPanel.Dock="Bottom" Classes="sect" Classes.compact="{Binding IsCompact}" Margin="0,14,0,0"
-                IsVisible="{Binding IsImportManual}">
-          <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
-        </Border>
-
-        <!-- Source: method picker / manual entry / live scanner, swapped inline. -->
-        <Panel MinHeight="220" Margin="0,12,0,0">
-
-          <Border IsVisible="{Binding IsImportPicker}"
-                  Background="{DynamicResource AgPanelBrush}"
-                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="9">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4" Margin="16">
-              <TextBlock Text="{l:Tr Main_AddConfigTitle}" FontSize="16" FontWeight="SemiBold"
-                         HorizontalAlignment="Center" />
-              <TextBlock Text="{l:Tr Main_AddConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                         HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12" />
-              <WrapPanel HorizontalAlignment="Center">
-                <Button Classes="methodpick" Margin="4" Click="OnSectionConfigBrowse" Width="160">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <PathIcon Data="{StaticResource AgFileGeometry}" Width="15" Height="15" />
-                    <TextBlock Text="{l:Tr Main_FileButton}" />
-                  </StackPanel>
-                </Button>
-                <Button Classes="methodpick" Margin="4" Command="{Binding BeginCameraImportCommand}" Width="160"
-                        IsVisible="{Binding CameraScanAvailable}">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <PathIcon Data="{StaticResource AgQrGeometry}" Width="15" Height="15" />
-                    <TextBlock Text="{l:Tr Main_CameraButton}" />
-                  </StackPanel>
-                </Button>
-                <Button Classes="methodpick" Margin="4" Command="{Binding BeginManualImportCommand}" Width="160">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <PathIcon Data="{StaticResource AgPencilGeometry}" Width="15" Height="15" />
-                    <TextBlock Text="{l:Tr Main_ConfigEditButton}" />
-                  </StackPanel>
-                </Button>
-              </WrapPanel>
-            </StackPanel>
-          </Border>
-
-          <Border IsVisible="{Binding IsImportManual}"
-                  BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                  CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
-            <TextBox Text="{Binding SectionConfigText, Mode=TwoWay}"
-                     AcceptsReturn="True" TextWrapping="NoWrap"
-                     VerticalContentAlignment="Top" MinHeight="200"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     BorderThickness="0" Background="Transparent"
-                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
-                     Watermark="[Interface]&#x0a;PrivateKey = ...&#x0a;Address = ...&#x0a;&#x0a;[Peer]&#x0a;PublicKey = ...&#x0a;Endpoint = host:port" />
-          </Border>
-
-          <Panel IsVisible="{Binding IsImportCamera}">
-            <views:ScanView DataContext="{Binding SectionScan}" />
-          </Panel>
-
-        </Panel>
-      </DockPanel>
-    </Border>
-
-    <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
     <!-- Catalogue loader: the agent has not reported its configs yet (#137). -->
-    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding ShowCatalogueLoader}"
+    <StackPanel Grid.Row="1" Margin="0,14,0,0" IsVisible="{Binding ShowCatalogueLoader}"
                 HorizontalAlignment="Center" Spacing="12">
       <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
       <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
     </StackPanel>
 
-    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionConfig}" Spacing="14">
+    <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
+    <StackPanel x:Name="SettingsSection" Grid.Row="1" Margin="0,14,0,0"
+                IsVisible="{Binding IsSectionConfig}" Spacing="14">
       <!-- Active card: makes this config the one the next connect binds to. The switch only turns on -
            the active config is replaced by picking another, never left unpicked. The link under the notice
            dials it, and is gone once a tunnel runs. -->
@@ -265,14 +174,65 @@
       </Border>
     </StackPanel>
 
+    <!-- Черновик новой конфигурации: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере.
+         Imported with the footer Save once text parses + name is set (#143). -->
+    <Border x:Name="ImportSection" Grid.Row="1" Margin="0,12,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
+            IsVisible="{Binding IsSectionImport}">
+      <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Top" Spacing="6">
+          <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" Margin="0,0,0,4" />
+          <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
+                   Text="{Binding SectionConfigName, Mode=TwoWay}"
+                   Watermark="{l:Tr Main_ConfigNameWatermark}" />
+          <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
+                     Text="{l:Tr Main_RequiredEmptyWarning}" />
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding SectionConfigStatus}" Classes="fieldwarn"
+                   FontSize="11.5" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center"
+                   Margin="0,10,0,0"
+                   IsVisible="{Binding SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
+             configuration. Shown beside the text, where there is something to apply them to. -->
+        <Border DockPanel.Dock="Bottom" Classes="sect" Classes.compact="{Binding IsCompact}" Margin="0,14,0,0"
+                IsVisible="{Binding IsImportManual}">
+          <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
+        </Border>
+
+        <!-- Источник: набранный текст либо живой сканер. -->
+        <Panel MinHeight="220" Margin="0,12,0,0">
+
+          <Border IsVisible="{Binding IsImportManual}"
+                  BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                  CornerRadius="8" Background="{DynamicResource AgPanelBrush}">
+            <TextBox Text="{Binding SectionConfigText, Mode=TwoWay}"
+                     AcceptsReturn="True" TextWrapping="NoWrap"
+                     VerticalContentAlignment="Top" MinHeight="200"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     BorderThickness="0" Background="Transparent"
+                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12"
+                     Watermark="[Interface]&#x0a;PrivateKey = ...&#x0a;Address = ...&#x0a;&#x0a;[Peer]&#x0a;PublicKey = ...&#x0a;Endpoint = host:port" />
+          </Border>
+
+          <Panel IsVisible="{Binding IsImportCamera}">
+            <views:ScanView DataContext="{Binding SectionScan}" />
+          </Panel>
+
+        </Panel>
+      </DockPanel>
+    </Border>
+
     <!-- Export section: read-only QR of the .conf / of the vpn:// link, with copy / save. -->
-    <StackPanel Grid.Row="2" Margin="0,14,0,0" IsVisible="{Binding IsSectionExport}" Spacing="14">
+    <StackPanel x:Name="ExportSection" Grid.Row="1" Margin="0,12,0,0"
+                IsVisible="{Binding IsSectionExport}" Spacing="12">
+      <!-- Экран экспорта занимает пану целиком; возвращает с него стрелка «назад» в шапке окна. -->
+      <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15"
+                 TextWrapping="Wrap" VerticalAlignment="Center" />
+
       <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
-          <StackPanel Spacing="2">
-            <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-            <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-          </StackPanel>
+          <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
           <Border Background="{DynamicResource AgInsetBrush}"
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                   CornerRadius="9" Padding="3" MaxWidth="480" HorizontalAlignment="Center">

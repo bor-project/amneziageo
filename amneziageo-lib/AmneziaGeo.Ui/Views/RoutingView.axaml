@@ -9,66 +9,62 @@
              x:CompileBindings="True"
              x:DataType="vm:RoutingViewModel">
   <UserControl.Resources>
+    <StreamGeometry x:Key="AgPlusGeometry">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
-    <StreamGeometry x:Key="AgPasteGeometry">M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M7,7H17V5H19V19H5V5H7V7Z</StreamGeometry>
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
-    <StreamGeometry x:Key="AgFileGeometry">M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V16H6V18H15M18,14V12H6V14H18Z</StreamGeometry>
-    <StreamGeometry x:Key="AgQrGeometry">M3,11H5V13H3V11M11,5H13V9H11V5M9,11H13V15H11V13H9V11M15,11H17V13H19V11H21V13H19V15H21V19H19V21H17V19H13V21H11V17H15V15H17V13H15V11M19,19V15H17V19H19M15,3H21V9H15V3M17,5V7H19V5H17M3,3H9V9H3V3M5,5V7H7V5H5M3,15H9V21H3V15M5,17V19H7V17H5Z</StreamGeometry>
-    <StreamGeometry x:Key="AgPencilGeometry">M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z</StreamGeometry>
     <StreamGeometry x:Key="AgRouteGeometry">M21.71,11.29L12.71,2.29C12.32,1.9 11.69,1.9 11.3,2.29L2.3,11.29C1.91,11.68 1.91,12.31 2.3,12.7L11.3,21.7C11.69,22.09 12.32,22.09 12.71,21.7L21.71,12.7C22.1,12.32 22.1,11.68 21.71,11.29M14,14.5V12H10V15H8V11A1,1 0 0,1 9,10H14V7.5L17.5,11L14,14.5Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Cards stretch the full pane width. -->
-  <Grid RowDefinitions="Auto,Auto,*">
+  <Grid RowDefinitions="Auto,*">
 
-    <!-- Section tabs + catalogue combo. HeaderReflow keeps them side by side while they fit and drops the combo
-         to its own row when the pane is too narrow (or compact). The caption floats above the combo. -->
-    <Grid x:Name="HeaderGrid" Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" Margin="0,12,0,0">
-      <!-- Section menu: Settings / Import / Export. Settings and Export disable while no list exists. Down
-           steps into the section shown below: each one starts in a different place, so directional focus lands
-           in the rail or skips to the card's last row instead (#201). -->
-      <controls:SegmentedSelector x:Name="HeaderTabs" Grid.Row="0" Grid.Column="0"
-                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}"
-                            KeyDown="OnHeaderTabsKeyDown"
-                            Command="{Binding SelectRoutingSectionCommand}" IsCompact="{Binding IsCompact}"
-                            Item1Text="{l:Tr Main_SettingsTab}" Item1Param="settings" Item1Active="{Binding SegSettingsActive}" Item1Enabled="{Binding CanSettingsSection}"
-                            Item2Text="{l:Tr Main_ImportTab}" Item2Param="import" Item2Active="{Binding SegImportActive}"
-                            Item3Text="{l:Tr Main_ExportTab}" Item3Param="export" Item3Active="{Binding SegExportActive}" Item3Enabled="{Binding CanExportSection}" />
+    <!-- Шапка: выбор списка и два равных действия под ним. Способы «Добавить» и «Экспорт» выпадают списком
+         у кнопки, а на телефоне приходят шторкой снизу. -->
+    <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
+                IsVisible="{Binding ShowHeaderActions}">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="label" Text="{l:Tr Main_RoutingPickerLabel}" />
+        <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding RoutingCatalogueOptions}"
+                  SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
+          <controls:AdaptiveComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:RoutingListChoice">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </controls:AdaptiveComboBox.ItemTemplate>
+        </controls:AdaptiveComboBox>
+      </StackPanel>
 
-      <!-- Catalogue combo: «- не выбрано -» then saved lists. Row/column/width set by HeaderReflow. Hidden while importing. -->
-      <Panel x:Name="PickerHost" Grid.Row="0" Grid.Column="1" ClipToBounds="False"
-             VerticalAlignment="Center" HorizontalAlignment="Right" MaxWidth="260"
-             IsVisible="{Binding !IsSectionImport}">
-        <!-- Floating caption above the combo (zero layout height) so the combo stays centred against the tabs. -->
-        <TextBlock x:Name="PickerLabelFloat" Classes="muted" FontSize="11.5" Text="{l:Tr Main_RoutingPickerLabel}"
-                   VerticalAlignment="Top" HorizontalAlignment="Left">
-          <TextBlock.RenderTransform>
-            <TranslateTransform Y="-18" />
-          </TextBlock.RenderTransform>
-        </TextBlock>
-        <StackPanel Spacing="6">
-          <!-- Inline caption when the combo drops to its own row. -->
-          <TextBlock x:Name="PickerLabelInline" Classes="muted" FontSize="11.5" Text="{l:Tr Main_RoutingPickerLabel}" IsVisible="False" />
-          <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch" Width="160"
-                    ItemsSource="{Binding RoutingCatalogueOptions}"
-                    SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
-            <controls:AdaptiveComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:RoutingListChoice">
-                <TextBlock Text="{Binding Name}" />
-              </DataTemplate>
-            </controls:AdaptiveComboBox.ItemTemplate>
-          </controls:AdaptiveComboBox>
-          <TextBlock IsVisible="{Binding ShowNoListsHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     Text="{l:Tr Main_NoRoutingListsHint}" />
-        </StackPanel>
-      </Panel>
-    </Grid>
+      <!-- Обе кнопки делят строку поровну; на широком экране строка стоит слева своей шириной. -->
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8"
+            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+        <Button x:Name="AddButton" Grid.Column="0" Classes="accent" MinHeight="40"
+                HorizontalAlignment="Stretch" Click="OnAddOptions"
+                MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
+          <StackPanel Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+            <PathIcon Data="{StaticResource AgPlusGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_AddButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="1" Classes="methodpick" MinHeight="40"
+                HorizontalAlignment="Stretch" Click="OnExportOptions"
+                IsEnabled="{Binding CanExportOpenList}"
+                MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
+          <StackPanel Orientation="Horizontal" Spacing="6"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+            <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" VerticalAlignment="Center" />
+            <TextBlock Text="{l:Tr Main_ExportTab}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </Grid>
 
-    <!-- Divider between the header (tabs + picker) and the content. -->
-    <Border Grid.Row="1" Height="1" Background="{DynamicResource AgBorderBrush}" Margin="0,14,0,0" />
+      <TextBlock IsVisible="{Binding ShowNoListsHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                 Margin="0,4,0,0" Text="{l:Tr Main_NoRoutingListsHint}" />
+    </StackPanel>
 
-    <!-- Content: one section shown at a time. Up from its top row returns to the tabs, not to the window header. -->
-    <Panel x:Name="Body" Grid.Row="2" Margin="0,14,0,0" KeyDown="OnBodyKeyDown">
+    <!-- Content: one section shown at a time. Up from its top row returns to the header, not to the window one. -->
+    <Panel x:Name="Body" Grid.Row="1" Margin="0,14,0,0" KeyDown="OnBodyKeyDown">
 
       <!-- Catalogue loader: the agent has not reported its routing lists yet (#134). -->
       <StackPanel IsVisible="{Binding ShowCatalogueLoader}" HorizontalAlignment="Center" Spacing="12" Margin="0,24">
@@ -131,131 +127,86 @@
       </StackPanel>
 
       <!-- Export section: QR / raw payload of the list, with copy / save. -->
-      <Border x:Name="ExportSection" IsVisible="{Binding IsSectionExport}"
-              Classes="sect" Classes.compact="{Binding IsCompact}">
-        <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-          <StackPanel Spacing="2">
-            <TextBlock Text="{l:Tr Main_ExportListTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+      <StackPanel x:Name="ExportSection" IsVisible="{Binding IsSectionExport}" Spacing="12">
+        <!-- Экран экспорта занимает пану целиком; возвращает с него стрелка «назад» в шапке окна. -->
+        <TextBlock Text="{l:Tr Main_ExportListTitle}" FontWeight="SemiBold" FontSize="15"
+                   TextWrapping="Wrap" VerticalAlignment="Center" />
+
+        <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+          <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
             <TextBlock Text="{l:Tr Main_TransferSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-          </StackPanel>
 
-          <!-- Segmented [QR | Конфиг]. -->
-          <Border Background="{DynamicResource AgInsetBrush}"
-                  BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                  CornerRadius="9" Padding="3" MaxWidth="420" HorizontalAlignment="Center">
-            <UniformGrid Columns="2">
-              <Button Classes="seg" Classes.active="{Binding IsTransferQr}" Command="{Binding ShowTransferQrCommand}"
-                      Content="{l:Tr Main_TransferQrTab}" HorizontalAlignment="Stretch" Padding="20,6" />
-              <Button Classes="seg" Classes.active="{Binding IsTransferText}" Command="{Binding ShowTransferTextCommand}"
-                      Content="{l:Tr Main_TransferTextTab}" HorizontalAlignment="Stretch" Padding="20,6" />
-            </UniformGrid>
-          </Border>
-
-          <!-- QR tab: fixed 240x240 stage so the image (or notice) appearing never reflows the card. -->
-          <Panel Height="240" IsVisible="{Binding IsTransferQr}">
-            <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
-                    IsVisible="{Binding RoutingQrImage, Converter={x:Static ObjectConverters.IsNotNull}}">
-              <Image Source="{Binding RoutingQrImage}" Width="220" Height="220" />
-            </Border>
-            <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+            <!-- Segmented [QR | Конфиг]. -->
+            <Border Background="{DynamicResource AgInsetBrush}"
                     BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
-              <TextBlock Text="{l:Tr Main_QrUnavailableHint}" Classes="muted" FontSize="12"
-                         TextAlignment="Center" TextWrapping="Wrap" />
+                    CornerRadius="9" Padding="3" MaxWidth="420" HorizontalAlignment="Center">
+              <UniformGrid Columns="2">
+                <Button Classes="seg" Classes.active="{Binding IsTransferQr}" Command="{Binding ShowTransferQrCommand}"
+                        Content="{l:Tr Main_TransferQrTab}" HorizontalAlignment="Stretch" Padding="20,6" />
+                <Button Classes="seg" Classes.active="{Binding IsTransferText}" Command="{Binding ShowTransferTextCommand}"
+                        Content="{l:Tr Main_TransferTextTab}" HorizontalAlignment="Stretch" Padding="20,6" />
+              </UniformGrid>
             </Border>
-          </Panel>
 
-          <!-- Config tab: the raw transfer payload, read-only and selectable. -->
-          <TextBox Classes="field" Text="{Binding TransferText}" IsReadOnly="True" AcceptsReturn="True"
-                   TextWrapping="NoWrap" IsVisible="{Binding IsTransferText}"
-                   VerticalContentAlignment="Top" Height="200"
-                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                   ScrollViewer.VerticalScrollBarVisibility="Auto"
-                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+            <!-- QR tab: fixed 240x240 stage so the image (or notice) appearing never reflows the card. -->
+            <Panel Height="240" IsVisible="{Binding IsTransferQr}">
+              <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
+                      IsVisible="{Binding RoutingQrImage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Image Source="{Binding RoutingQrImage}" Width="220" Height="220" />
+              </Border>
+              <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="{DynamicResource AgInsetBrush}"
+                      BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
+                      CornerRadius="8" Padding="16" Width="240" IsVisible="{Binding QrUnavailable}">
+                <TextBlock Text="{l:Tr Main_QrUnavailableHint}" Classes="muted" FontSize="12"
+                           TextAlignment="Center" TextWrapping="Wrap" />
+              </Border>
+            </Panel>
 
-          <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     HorizontalAlignment="Center" TextAlignment="Center"
-                     IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <!-- Config tab: the raw transfer payload, read-only and selectable. -->
+            <TextBox Classes="field" Text="{Binding TransferText}" IsReadOnly="True" AcceptsReturn="True"
+                     TextWrapping="NoWrap" IsVisible="{Binding IsTransferText}"
+                     VerticalContentAlignment="Top" Height="200"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
 
-          <!-- Export actions: copy, save and send all take the open form - the QR as a picture, the config
-               as text. Sending shows up where the platform carries it. -->
-          <WrapPanel HorizontalAlignment="Center">
-            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingExportCopy"
-                    IsEnabled="{Binding TransferReady}"
-                    ToolTip.Tip="{l:Tr Main_RoutingCopyTooltip}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_CopyButton}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="accent" Margin="4" Padding="14,6" Click="OnRoutingExportSave"
-                    IsEnabled="{Binding TransferReady}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_SaveToFileButton}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingExportSend"
-                    IsVisible="{Binding CanSendExport}" IsEnabled="{Binding TransferReady}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
-                <TextBlock Text="{l:Tr Main_SendToAppButton}" />
-              </StackPanel>
-            </Button>
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+            <TextBlock Text="{Binding StatusMessage}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       HorizontalAlignment="Center" TextAlignment="Center"
+                       IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-      <!-- Import section - method picker: blank / file / paste / QR. -->
-      <Border x:Name="ImportPicker" IsVisible="{Binding ShowImportPicker}"
-              Background="{DynamicResource AgPanelBrush}"
-              BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="9" MinHeight="220">
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="4" Margin="16">
-          <TextBlock Text="{l:Tr Main_AddListTitle}" FontSize="16" FontWeight="SemiBold"
-                     HorizontalAlignment="Center" />
-          <TextBlock Text="{l:Tr Main_AddConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,12" />
-          <!-- «Новый» (пустой список) в конце, после способов импорта. -->
-          <WrapPanel HorizontalAlignment="Center">
-            <Button Classes="methodpick" Margin="4" Click="OnRoutingImportFile" Width="160">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgFileGeometry}" Width="15" Height="15" />
-                <TextBlock Text="{l:Tr Main_FileButton}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="methodpick" Margin="4" Click="OnRoutingImportPaste" Width="160">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgPasteGeometry}" Width="15" Height="15" />
-                <TextBlock Text="{l:Tr Main_PasteButton}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="methodpick" Margin="4" Command="{Binding BeginCameraImportCommand}" Width="160"
-                    IsVisible="{Binding CameraScanAvailable}">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgQrGeometry}" Width="15" Height="15" />
-                <TextBlock Text="{l:Tr Main_CameraButton}" />
-              </StackPanel>
-            </Button>
-            <Button Classes="methodpick" Margin="4" Command="{Binding BeginManualImportCommand}" Width="160">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <PathIcon Data="{StaticResource AgPencilGeometry}" Width="15" Height="15" />
-                <TextBlock Text="{l:Tr Main_BlankListButton}" />
-              </StackPanel>
-            </Button>
-          </WrapPanel>
-        </StackPanel>
-      </Border>
+            <!-- Export actions: copy, save and send all take the open form - the QR as a picture, the config
+                 as text. Sending shows up where the platform carries it. -->
+            <WrapPanel HorizontalAlignment="Center">
+              <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingExportCopy"
+                      IsEnabled="{Binding TransferReady}"
+                      ToolTip.Tip="{l:Tr Main_RoutingCopyTooltip}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_CopyButton}" />
+                </StackPanel>
+              </Button>
+              <Button Classes="accent" Margin="4" Padding="14,6" Click="OnRoutingExportSave"
+                      IsEnabled="{Binding TransferReady}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_SaveToFileButton}" />
+                </StackPanel>
+              </Button>
+              <Button Classes="methodpick" Margin="4" Padding="14,6" Click="OnRoutingExportSend"
+                      IsVisible="{Binding CanSendExport}" IsEnabled="{Binding TransferReady}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
+                  <TextBlock Text="{l:Tr Main_SendToAppButton}" />
+                </StackPanel>
+              </Button>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
 
-      <!-- Import section - draft editor (blank or prefilled from file / paste / QR). -->
+      <!-- Черновик нового списка: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере. -->
       <StackPanel x:Name="ImportEditor" IsVisible="{Binding ShowImportEditor}" Spacing="14">
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_NewListLabel}" VerticalAlignment="Center" />
-          <Button Grid.Column="1" Classes="methodpick" Command="{Binding ChangeMethodCommand}" Width="160">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock Text="{l:Tr Main_ChangeMethodButton}" />
-            </StackPanel>
-          </Button>
-        </Grid>
+        <TextBlock Classes="label" Text="{l:Tr Main_NewListLabel}" />
         <views:RoutingEditorView />
       </StackPanel>
 

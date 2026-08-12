@@ -9,6 +9,7 @@ using Avalonia.Controls.Presenters;
 using Avalonia.VisualTree;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
+using AmneziaGeo.Android.Ui.Services;
 
 namespace AmneziaGeo.Android.Ui;
 
@@ -144,6 +145,9 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
         base.OnCreate(savedInstanceState);
+
+        // Avalonia is up by now, so the theme it opened with is the one the bars are painted in.
+        AndroidSystemBars.Attach(this);
         App.Stage("activity", clock);
     }
 
@@ -159,6 +163,7 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     protected override void OnDestroy()
     {
         base.OnDestroy();
+        AndroidSystemBars.Detach(this);
 
         // Unloads the head: the tunnel runs in a process of its own, so nothing here has to be kept around after
         // the user has closed the window. A system-driven restart (a configuration change) is left alone.

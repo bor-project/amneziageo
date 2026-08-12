@@ -394,14 +394,20 @@
   <data name="Main_ConfigSection" xml:space="preserve">
     <value>Configurations</value>
   </data>
-  <data name="Main_ConfigEditButton" xml:space="preserve">
-    <value>New</value>
-  </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
     <value>The configuration will appear here</value>
   </data>
   <data name="Main_CopyButton" xml:space="preserve">
     <value>Copy</value>
+  </data>
+  <data name="Main_CopyLinkButton" xml:space="preserve">
+    <value>Copy link</value>
+  </data>
+  <data name="Main_CreateManuallyButton" xml:space="preserve">
+    <value>Create manually</value>
+  </data>
+  <data name="Main_ConfigCatalogueEmpty" xml:space="preserve">
+    <value>No configurations yet. Add the first one.</value>
   </data>
   <data name="Main_ShowButton" xml:space="preserve">
     <value>Show</value>
@@ -483,18 +489,6 @@
   </data>
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
     <value>Choose a method</value>
-  </data>
-  <data name="Main_ChangeMethodButton" xml:space="preserve">
-    <value>Change method</value>
-  </data>
-  <data name="Main_MethodLabel" xml:space="preserve">
-    <value>Method: {0}</value>
-  </data>
-  <data name="Main_MethodManual" xml:space="preserve">
-    <value>manual</value>
-  </data>
-  <data name="Main_MethodCamera" xml:space="preserve">
-    <value>camera</value>
   </data>
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Unsaved changes</value>
@@ -1601,26 +1595,17 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Android_UpdateUnsupported" xml:space="preserve">
     <value>This build is updated by installing the package by hand.</value>
   </data>
-  <data name="Main_SettingsTab" xml:space="preserve">
-    <value>Settings</value>
-  </data>
   <data name="Main_ExportListTitle" xml:space="preserve">
     <value>Export list</value>
   </data>
   <data name="Main_AddListTitle" xml:space="preserve">
     <value>Add a list</value>
   </data>
-  <data name="Main_BlankListButton" xml:space="preserve">
-    <value>New</value>
-  </data>
   <data name="Main_NewListLabel" xml:space="preserve">
     <value>New list</value>
   </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Config</value>
-  </data>
-  <data name="Main_ImportTab" xml:space="preserve">
-    <value>New</value>
   </data>
   <data name="Main_ExportTab" xml:space="preserve">
     <value>Export</value>
@@ -1808,6 +1793,9 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_LinkLoss" xml:space="preserve">
     <value>tunnel packet loss {0}%</value>
   </data>
+  <data name="Main_LinkLossUnknown" xml:space="preserve">
+    <value>tunnel packet loss: no data yet</value>
+  </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Use this configuration</value>
   </data>
@@ -1818,7 +1806,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Connect now</value>
   </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
-    <value>Use this configuration</value>
+    <value>Use this list</value>
   </data>
   <data name="Main_RoutingActiveNotice" xml:space="preserve">
     <value>These rules are in force now.</value>

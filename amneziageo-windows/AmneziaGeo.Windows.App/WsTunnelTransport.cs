@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
 namespace AmneziaGeo.Windows.App;
@@ -11,6 +12,10 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class WsTunnelTransport : IAsyncDisposable
 {
+    private const int AfInet = 2;
+    private const int TcpTableOwnerPidAll = 5;
+    private const int TcpStateEstablished = 5;
+
     private readonly string _serverHost;
     private readonly int _wsPort;
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
@@ -22,6 +27,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private Process? _process;
     private Task? _supervisor;
     private int _rejectionReported;
+    private int _redials;
 
     private WsTunnelTransport(string serverHost, int wsPort, int targetPort, string pathPrefix, string credentials, int localPort, Action<string>? onRejected, ILogger logger)
     {
@@ -39,6 +45,112 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     /// Loopback UDP port the WG engine dials instead of the blocked public endpoint.
     /// </summary>
     public int LocalPort { get; }
+
+    /// <summary>
+    /// How many times the carrier has been re-dialled during this session.
+    /// </summary>
+    public int Redials => Volatile.Read(ref _redials);
+
+    /// <summary>
+    /// Drops the carrier process; the supervisor dials a fresh websocket on the same local port a second later.
+    /// The WG engine keeps its session: it goes on addressing the same loopback port throughout.
+    /// </summary>
+    public void Redial(string reason)
+    {
+        var process = _process;
+        if (process is null)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _redials);
+        _logger.LogWarning("the websocket carrier is being re-dialled ({Reason}); the tunnel keeps its session and traffic resumes once the new carrier is up", reason);
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            _logger.LogWarning(ex, "the websocket carrier would not stop for a re-dial, so the stalled one stays in place");
+        }
+    }
+
+    /// <summary>
+    /// TCP connections the carrier process holds, and how many of them are established. A carrier with no
+    /// established connection carries nothing, whatever its process is doing.
+    /// </summary>
+    public (int Total, int Established) Sessions()
+    {
+        var process = _process;
+        if (process is null)
+        {
+            return (0, 0);
+        }
+
+        var pid = TryGetPid(process);
+        return pid == 0 ? (0, 0) : CountSessions(pid);
+    }
+
+    private static uint TryGetPid(Process process)
+    {
+        try
+        {
+            return process.HasExited ? 0 : (uint)process.Id;
+        }
+        catch (InvalidOperationException)
+        {
+            return 0;
+        }
+    }
+
+    private static (int Total, int Established) CountSessions(uint pid)
+    {
+        var size = 0;
+        GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
+        if (size <= 0)
+        {
+            return (0, 0);
+        }
+
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (GetExtendedTcpTable(buffer, ref size, false, AfInet, TcpTableOwnerPidAll, 0) != 0)
+            {
+                return (0, 0);
+            }
+
+            var total = 0;
+            var established = 0;
+            var count = Marshal.ReadInt32(buffer);
+            var basePtr = buffer + 4;
+            for (var i = 0; i < count; i++)
+            {
+                // MIB_TCPROW_OWNER_PID: state at offset 0, owning pid at 20, each row 24 bytes.
+                var row = basePtr + (i * 24);
+                if ((uint)Marshal.ReadInt32(row, 20) != pid)
+                {
+                    continue;
+                }
+
+                total++;
+                if (Marshal.ReadInt32(row) == TcpStateEstablished)
+                {
+                    established++;
+                }
+            }
+
+            return (total, established);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
 
     /// <summary>
     /// Starts a wstunnel client and waits until its local UDP listener is bound; null on missing binary or timeout.
@@ -312,4 +424,7 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         _cts.Dispose();
         _logger.LogInformation("the websocket carrier is stopped");
     }
+
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    private static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int pdwSize, [MarshalAs(UnmanagedType.Bool)] bool bOrder, int ulAf, int tableClass, int reserved);
 }

@@ -117,6 +117,9 @@ public sealed class GeoVpnService : VpnService
     private CancellationTokenSource? _keepalive;
     private VpnBridge.Listener? _queries;
     private VpnBridge.Listener? _stops;
+    private ConnectivityManager.NetworkCallback? _underlay;
+    private List<string> _carved = [];
+    private int _reraising;
     private VpnStage _stage = VpnStage.Disconnected;
     private string? _detail;
     private string? _reason;
@@ -129,6 +132,7 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _queries, VpnBridge.ActionQuery);
         _stops = new VpnBridge.Listener { Handler = _ => Stop() };
         VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
+        WatchUnderlay();
     }
 
     /// <inheritdoc/>
@@ -202,6 +206,8 @@ public sealed class GeoVpnService : VpnService
             _stops = null;
         }
 
+        DropUnderlayWatch();
+
         base.OnDestroy();
         _exit.PostDelayed(Exit, ExitDelayMs);
     }
@@ -211,6 +217,112 @@ public sealed class GeoVpnService : VpnService
     {
         Stop();
         base.OnRevoke();
+    }
+
+    // Follows the networks under the tunnel. Android fixes a tun's routes when it is established, so the carve-out
+    // that keeps the device on its own segment goes stale as soon as the box joins another network.
+    private void WatchUnderlay()
+    {
+        try
+        {
+            var manager = (ConnectivityManager?)GetSystemService(ConnectivityService);
+            if (manager is null)
+            {
+                return;
+            }
+
+            var watch = new UnderlayWatch { Changed = OnUnderlayChanged };
+            manager.RegisterDefaultNetworkCallback(watch);
+            _underlay = watch;
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "watching the network under the tunnel failed: " + ex);
+        }
+    }
+
+    private void DropUnderlayWatch()
+    {
+        if (_underlay is null)
+        {
+            return;
+        }
+
+        try
+        {
+            ((ConnectivityManager?)GetSystemService(ConnectivityService))?.UnregisterNetworkCallback(_underlay);
+        }
+        catch (Java.Lang.Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "dropping the network watch failed: " + ex);
+        }
+
+        _underlay = null;
+    }
+
+    // Only a local network the tun swallows is worth acting on: a carve-out left over from the previous network costs
+    // nothing, while a segment the tun covers takes away the router, the printer and everything else beside the box.
+    private void OnUnderlayChanged()
+    {
+        if (_stage != VpnStage.Connected || _handle < 0)
+        {
+            return;
+        }
+
+        var swallowed = new List<string>(LocalSubnets()).FindAll(subnet => !_carved.Contains(subnet));
+        if (swallowed.Count == 0)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _reraising, 1) == 1)
+        {
+            return;
+        }
+
+        var request = VpnBridge.ReadRequest();
+        if (request is null)
+        {
+            Interlocked.Exchange(ref _reraising, 0);
+            return;
+        }
+
+        Report($"the device now sits on {string.Join(", ", swallowed)}, which this tunnel carries; raising the "
+            + "session again so the network around the device stays reachable");
+        Publish(VpnStage.Connecting, request.Name);
+        var plan = VpnBridge.ReadPlan();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList, request.Mtu,
+                    request.Ipv6, request.WsHost, request.WsPort).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _reraising, 0);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Callback handing every change of the network under the tunnel to a delegate.
+    /// </summary>
+    private sealed class UnderlayWatch : ConnectivityManager.NetworkCallback
+    {
+        /// <summary>
+        /// Called on each change.
+        /// </summary>
+        public Action? Changed { get; set; }
+
+        /// <inheritdoc/>
+        public override void OnAvailable(Network network) => Changed?.Invoke();
+
+        /// <inheritdoc/>
+        public override void OnLost(Network network) => Changed?.Invoke();
+
+        /// <inheritdoc/>
+        public override void OnLinkPropertiesChanged(Network network, LinkProperties linkProperties) => Changed?.Invoke();
     }
 
     private async Task BringUpAsync(GeoRoutingPlan plan, string config, string name, string? appMode, string[]? appList, int mtu, bool ipv6, string? wsHost, int wsPort)
@@ -262,6 +374,10 @@ public sealed class GeoVpnService : VpnService
                     nameof(ConnectFailureReason.TunnelSetupFailed));
                 return;
             }
+
+            // What this tun leaves outside itself, held for as long as it lives: its route list is fixed now and the
+            // networks under it are not.
+            _carved = new List<string>(rules.Local);
 
             var tunFd = pfd.DetachFd();
             var handle = AwgEngine.TurnOn(Restrict(uapi, rules.Allowed), tunFd);
@@ -327,9 +443,9 @@ public sealed class GeoVpnService : VpnService
     }
 
     /// <summary>
-    /// The route lists a session is built from.
+    /// The route lists a session is built from, and the local networks it keeps out of the tun.
     /// </summary>
-    private readonly record struct Materialized(IReadOnlyList<string> Tunneled, IReadOnlyList<string> Allowed);
+    private readonly record struct Materialized(IReadOnlyList<string> Tunneled, IReadOnlyList<string> Allowed, IReadOnlyList<string> Local);
 
     // Turns the rules into the two address lists a tunnel is built from. Behind the relay the tun carries everything
     // and every destination is decided while the session runs, so no name is resolved and no range becomes a route at
@@ -405,7 +521,7 @@ public sealed class GeoVpnService : VpnService
         var allowed = plan.FullTunnel || relayed || block.Count > 0 ? SystemRoutes.Allowed(block) : [];
         Report($"{Mode(plan)}: {tunneled.Count} route(s) into the tunnel, {block.Count} range(s) blocked, "
             + $"peer carries {(allowed.Count == 0 ? "what the config says" : allowed.Count + " range(s)")}");
-        return new Materialized(tunneled, allowed);
+        return new Materialized(tunneled, allowed, local);
     }
 
     private static string Mode(GeoRoutingPlan plan) => plan.FullTunnel ? "full" : "split";
@@ -561,7 +677,7 @@ public sealed class GeoVpnService : VpnService
                 foreach (var unicast in adapter.GetIPProperties().UnicastAddresses)
                 {
                     var cidr = Subnet(unicast);
-                    if (cidr is not null)
+                    if (cidr is not null && !found.Contains(cidr))
                     {
                         found.Add(cidr);
                     }
@@ -583,14 +699,22 @@ public sealed class GeoVpnService : VpnService
             return null;
         }
 
+        // /31 and /32 name a host and /0 the whole internet; neither is a network the device shares with anything.
         var prefix = unicast.PrefixLength;
-        if (prefix is <= 0 or > 32 || !GeoIpRanges.TryToNumeric(unicast.Address, out var value))
+        if (prefix is <= 0 or >= 31 || !GeoIpRanges.TryToNumeric(unicast.Address, out var value))
         {
             return null;
         }
 
-        var mask = prefix == 32 ? uint.MaxValue : uint.MaxValue << (32 - prefix);
-        return GeoIpRanges.Format(value & mask) + "/" + prefix;
+        var network = value & (uint.MaxValue << (32 - prefix));
+
+        // APIPA 169.254/16 is a link with nothing behind it.
+        if ((network & 0xFFFF0000u) == 0xA9FE0000u)
+        {
+            return null;
+        }
+
+        return GeoIpRanges.Format(network) + "/" + prefix;
     }
 
     // Names the application behind a loopback connection to the proxy; null when the system will not tell.

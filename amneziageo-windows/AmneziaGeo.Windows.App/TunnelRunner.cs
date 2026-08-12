@@ -29,18 +29,15 @@ internal sealed class TunnelRunner(
     // Effective MTU when a config has no explicit value.
     private const int DefaultMtu = 1420;
 
-    // Former default; a config storing exactly this follows DefaultMtu.
-    private const int LegacyDefaultMtu = 1280;
-
     // Proactively refresh the peer handshake/NAT mapping so a lossy underlay can't let the session age out.
     internal const int DefaultKeepaliveSeconds = 25;
 
     /// <summary>
-    /// MTU a stored value resolves to; unset and the former default both follow the current default.
+    /// MTU a stored value resolves to; unset follows the current default.
     /// </summary>
     public static int EffectiveMtu(int stored)
     {
-        return stored > 0 && stored != LegacyDefaultMtu ? stored : DefaultMtu;
+        return stored > 0 ? stored : DefaultMtu;
     }
 
     /// <summary>
@@ -611,6 +608,16 @@ internal sealed class TunnelRunner(
         // forced re-dial; only injected when the imported config didn't already specify its own keepalive.
         config = WgConfigEditor.EnsurePersistentKeepalive(config, DefaultKeepaliveSeconds);
         logger.LogInformation("{Name}: packet size set to {Mtu} and a keepalive every {Keepalive}s, so a quiet link is not dropped by the provider", name, effectiveMtu, DefaultKeepaliveSeconds);
+
+        // A carrier that stops carrying leaves the session standing, so the link is measured from inside the tunnel
+        // and the carrier re-dialled on what the echoes say - the tunnel, its routes and its DNS all stay up.
+        if (wsTransport is not null)
+        {
+            var probe = new LinkLossProbe(LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(config)));
+            var watchdog = new CarrierWatchdog(wsTransport, uapi, probe, name, loggerFactory.CreateLogger<CarrierWatchdog>());
+            _ = Task.Run(() => probe.RunAsync(sessionCts.Token));
+            _ = Task.Run(() => watchdog.RunAsync(sessionCts.Token));
+        }
 
         logger.LogInformation("{Name}: everything is prepared in {Elapsed} ms, starting the tunnel", name, connectSw.ElapsedMilliseconds);
 

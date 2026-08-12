@@ -19,6 +19,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
 
     private const int SchemaVersion = 1;
 
+    // Marks the one-time rewrite of the former MTU default to "unset".
+    private const string LegacyMtuCleared = "schema-legacy-mtu-cleared";
+
     /// <inheritdoc/>
     /// <remarks>
     /// Corruption self-heal, escalating: first quarantine only the -wal/-shm sidecars (a stale pair from a
@@ -110,7 +113,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         use_ws     INTEGER NOT NULL DEFAULT 0,
                         ws_host    TEXT NOT NULL DEFAULT '',
                         ws_port    INTEGER NOT NULL DEFAULT 443,
-                        mtu        INTEGER NOT NULL DEFAULT 1280,
+                        mtu        INTEGER NOT NULL DEFAULT 0,
                         use_ipv6   INTEGER NOT NULL DEFAULT 0,
                         updated_at TEXT NOT NULL
                     );
@@ -224,10 +227,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // WebSocket transport host.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
 
-            // Tunnel MTU (default 1280, valid 576-1500). A stored 1380 (the former default) is treated as
-            // "follow the current default" at connect time (TunnelRunner.LegacyDefaultMtu), so existing
-            // default-valued configs pick up the lowered MTU without clobbering an explicit user choice.
-            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 1280;", ct).ConfigureAwait(false);
+            // Tunnel MTU, valid 576-1500; 0 is unset and follows the agent's default at connect time.
+            await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN mtu INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+            await ClearLegacyMtuAsync(connection, ct).ConfigureAwait(false);
 
             // Per-config IPv6 opt-in; off keeps the tunnel v4-only. Moved off the routing list (was per-list #149).
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN use_ipv6 INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
@@ -364,6 +366,48 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
         catch (UnauthorizedAccessException)
         {
+        }
+    }
+
+    /// <remarks>
+    /// One-time move off the former MTU default. The column shipped with 1280, and the agent rewrote exactly that
+    /// value to the current default at connect - which left no way to ask for 1280. Those rows become "unset" and
+    /// keep the same effective MTU, while an explicit 1280 now reaches the tunnel. The marker is the guard.
+    /// </remarks>
+    private static async Task ClearLegacyMtuAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var marker = connection.CreateCommand();
+        await using (marker.ConfigureAwait(false))
+        {
+            marker.CommandText = "SELECT 1 FROM settings WHERE key = $key;";
+            marker.Parameters.AddWithValue("$key", LegacyMtuCleared);
+            if (await marker.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null)
+            {
+                return;
+            }
+        }
+
+        var clear = connection.CreateCommand();
+        await using (clear.ConfigureAwait(false))
+        {
+            clear.CommandText = "UPDATE config_transport SET mtu = 0 WHERE mtu = 1280;";
+            await clear.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        var mark = connection.CreateCommand();
+        await using (mark.ConfigureAwait(false))
+        {
+            mark.CommandText =
+                """
+                INSERT INTO settings (key, value, updated_at)
+                VALUES ($key, '1', $updated)
+                ON CONFLICT(key) DO UPDATE SET
+                    value      = excluded.value,
+                    updated_at = excluded.updated_at;
+                """;
+            mark.Parameters.AddWithValue("$key", LegacyMtuCleared);
+            mark.Parameters.AddWithValue("$updated", Timestamp());
+            await mark.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
 

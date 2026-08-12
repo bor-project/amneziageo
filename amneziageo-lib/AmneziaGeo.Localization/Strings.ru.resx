@@ -394,14 +394,20 @@
   <data name="Main_ConfigSection" xml:space="preserve">
     <value>Конфигурации</value>
   </data>
-  <data name="Main_ConfigEditButton" xml:space="preserve">
-    <value>Новый</value>
-  </data>
   <data name="Main_ConfigTextWatermark" xml:space="preserve">
     <value>Здесь появится конфигурация</value>
   </data>
   <data name="Main_CopyButton" xml:space="preserve">
     <value>Копировать</value>
+  </data>
+  <data name="Main_CopyLinkButton" xml:space="preserve">
+    <value>Скопировать ссылку</value>
+  </data>
+  <data name="Main_CreateManuallyButton" xml:space="preserve">
+    <value>Создать вручную</value>
+  </data>
+  <data name="Main_ConfigCatalogueEmpty" xml:space="preserve">
+    <value>Конфигураций пока нет. Добавьте первую.</value>
   </data>
   <data name="Main_ShowButton" xml:space="preserve">
     <value>Показать</value>
@@ -483,18 +489,6 @@
   </data>
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
     <value>Выберите удобный способ</value>
-  </data>
-  <data name="Main_ChangeMethodButton" xml:space="preserve">
-    <value>Изменить способ</value>
-  </data>
-  <data name="Main_MethodLabel" xml:space="preserve">
-    <value>Способ: {0}</value>
-  </data>
-  <data name="Main_MethodManual" xml:space="preserve">
-    <value>вручную</value>
-  </data>
-  <data name="Main_MethodCamera" xml:space="preserve">
-    <value>камера</value>
   </data>
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Есть несохранённые изменения</value>
@@ -1601,26 +1595,17 @@
   <data name="Android_UpdateUnsupported" xml:space="preserve">
     <value>Эта сборка обновляется установкой пакета вручную.</value>
   </data>
-  <data name="Main_SettingsTab" xml:space="preserve">
-    <value>Настройки</value>
-  </data>
   <data name="Main_ExportListTitle" xml:space="preserve">
     <value>Экспорт списка</value>
   </data>
   <data name="Main_AddListTitle" xml:space="preserve">
     <value>Добавить список</value>
   </data>
-  <data name="Main_BlankListButton" xml:space="preserve">
-    <value>Новый</value>
-  </data>
   <data name="Main_NewListLabel" xml:space="preserve">
     <value>Новый список</value>
   </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Конфиг</value>
-  </data>
-  <data name="Main_ImportTab" xml:space="preserve">
-    <value>Новый</value>
   </data>
   <data name="Main_ExportTab" xml:space="preserve">
     <value>Экспорт</value>
@@ -1808,6 +1793,9 @@
   <data name="Main_LinkLoss" xml:space="preserve">
     <value>потери в туннеле {0}%</value>
   </data>
+  <data name="Main_LinkLossUnknown" xml:space="preserve">
+    <value>потери в туннеле: пока нет данных</value>
+  </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>
   </data>
@@ -1818,7 +1806,7 @@
     <value>Выполнить подключение</value>
   </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
-    <value>Использовать эту конфигурацию</value>
+    <value>Использовать этот список</value>
   </data>
   <data name="Main_RoutingActiveNotice" xml:space="preserve">
     <value>Эти правила сейчас действуют.</value>

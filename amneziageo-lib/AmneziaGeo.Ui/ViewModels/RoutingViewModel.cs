@@ -143,6 +143,11 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Набор способов оболочки: шторка «Добавить» / «Экспорт».
+    /// </summary>
+    public ActionSheetViewModel Sheet => _host.Sheet;
+
+    /// <summary>
     /// Whether a rule editor exists (a list is selected or a new draft is open).
     /// </summary>
     public bool HasRoutingEditor => RoutingEditor is not null;
@@ -155,15 +160,16 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     public bool IsSectionExport => !IsCreatingSectionRouting && RoutingEditor is not null && ManageSection == RoutingSection.Export;
 
-    public bool SegSettingsActive => !IsCreatingSectionRouting && ManageSection == RoutingSection.Settings;
+    /// <summary>
+    /// Стоит ли на экране выбор списка с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт занимают
+    /// экран целиком и возвращают сюда сами.
+    /// </summary>
+    public bool ShowHeaderActions => !IsCreatingSectionRouting && !IsSectionExport && !ShowCatalogueLoader;
 
-    public bool SegImportActive => IsCreatingSectionRouting;
-
-    public bool SegExportActive => !IsCreatingSectionRouting && ManageSection == RoutingSection.Export;
-
-    public bool CanSettingsSection => HasRoutingLists;
-
-    public bool CanExportSection => HasRoutingLists;
+    /// <summary>
+    /// Есть ли что экспортировать.
+    /// </summary>
+    public bool CanExportOpenList => !IsCreatingSectionRouting && RoutingEditor is { IsNew: false };
 
     /// <summary>
     /// Whether the section loader is shown in place of the editor while an opened list loads (#193).
@@ -179,11 +185,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// Whether the Delete card is shown (a real, saved list in the Settings section).
     /// </summary>
     public bool ShowDeleteCard => IsSectionSettings && RoutingEditor is { IsNew: false } && !SectionLoading;
-
-    /// <summary>
-    /// Whether the import method picker (blank / file / paste / QR) is shown.
-    /// </summary>
-    public bool ShowImportPicker => IsSectionImport && IsImportPicker;
 
     /// <summary>
     /// Whether the import draft rule + traffic editor is shown.
@@ -263,18 +264,16 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSectionImport));
         OnPropertyChanged(nameof(IsSectionSettings));
         OnPropertyChanged(nameof(IsSectionExport));
-        OnPropertyChanged(nameof(SegSettingsActive));
-        OnPropertyChanged(nameof(SegImportActive));
-        OnPropertyChanged(nameof(SegExportActive));
         OnPropertyChanged(nameof(ShowSettingsLoader));
         OnPropertyChanged(nameof(ShowSettingsEditor));
         OnPropertyChanged(nameof(ShowDeleteCard));
-        OnPropertyChanged(nameof(ShowImportPicker));
         OnPropertyChanged(nameof(ShowImportEditor));
         OnPropertyChanged(nameof(ShowImportCamera));
         OnPropertyChanged(nameof(IsImportPicker));
         OnPropertyChanged(nameof(IsImportManual));
         OnPropertyChanged(nameof(IsImportCamera));
+        OnPropertyChanged(nameof(ShowHeaderActions));
+        OnPropertyChanged(nameof(CanExportOpenList));
         RefreshEditBar();
     }
 
@@ -290,8 +289,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     partial void OnHasRoutingListsChanged(bool value)
     {
-        OnPropertyChanged(nameof(CanSettingsSection));
-        OnPropertyChanged(nameof(CanExportSection));
         OnPropertyChanged(nameof(ShowNoListsHint));
     }
 
@@ -355,6 +352,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
         _enterDeferred = false;
         OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(ShowHeaderActions));
         if (IsActiveSection)
         {
             EnterSection();
@@ -399,6 +397,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         _catalogueKnown = false;
         _enterDeferred = false;
         OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(ShowHeaderActions));
         OnPropertyChanged(nameof(ShowNoListsHint));
         RoutingLists.Clear();
         HasRoutingLists = false;
@@ -433,6 +432,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             {
                 _enterDeferred = true;
                 OnPropertyChanged(nameof(ShowCatalogueLoader));
+                OnPropertyChanged(nameof(ShowHeaderActions));
                 return;
             }
 
@@ -503,6 +503,26 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         {
             RoutingEditor?.EnsureTransfer();
         }
+    }
+
+    /// <summary>
+    /// Возвращает с экрана экспорта и из черновика импорта туда, откуда их открыли. Отдаёт, сделан ли шаг.
+    /// </summary>
+    public bool TryNavigateBack()
+    {
+        if (IsSectionExport)
+        {
+            SelectRoutingSection("settings");
+            return true;
+        }
+
+        if (!IsCreatingSectionRouting)
+        {
+            return false;
+        }
+
+        AbandonCreate();
+        return true;
     }
 
     // Discard an in-progress draft before switching to Settings / Export.
@@ -862,14 +882,32 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         IsCreatingSectionRouting = true;
     }
 
-    // Switch the import form to the manual (rule editor) entry.
-    [RelayCommand]
-    private void BeginManualImport()
+    // Открывает черновик, если он ещё не начат: способ выбирается в шторке «Добавить», а не вкладкой.
+    private void EnsureSectionRouting()
     {
+        if (!IsCreatingSectionRouting)
+        {
+            BeginSectionRouting();
+        }
+    }
+
+    /// <summary>
+    /// Открывает черновик под разобранный файл, буфер обмена или снимок.
+    /// </summary>
+    public void BeginImportDraft()
+    {
+        EnsureSectionRouting();
         ImportMethod = RoutingImportMethod.Manual;
     }
 
-    // Switch the import form to the live QR scanner.
+    // Способ «Создать вручную».
+    [RelayCommand]
+    private void BeginManualImport()
+    {
+        BeginImportDraft();
+    }
+
+    // Способ «Сканировать QR-код».
     [RelayCommand]
     private void BeginCameraImport()
     {
@@ -878,16 +916,9 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             return;
         }
 
+        EnsureSectionRouting();
         SectionScan = new ScanViewModel(TryAcceptScannedRouting);
         ImportMethod = RoutingImportMethod.Camera;
-    }
-
-    // Return to the method picker from manual / camera.
-    [RelayCommand]
-    private void ChangeMethod()
-    {
-        SectionScan = null;
-        ImportMethod = RoutingImportMethod.Picker;
     }
 
     // Applies an imported blob (from file / clipboard / QR) into the draft editor and reveals it for review.
@@ -1012,7 +1043,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         if (IsCreatingSectionRouting)
         {
-            ResetImportDraft();
+            AbandonCreate();
         }
         else
         {
@@ -1106,21 +1137,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         {
             SyncCatalogueRouting();
         }
-    }
-
-    // Footer Cancel (import draft): discard the drafted rules / scan and return to the method picker in place,
-    // without leaving the import section (parity with the Config screen). CancelNewList still fully abandons the
-    // draft when the section is left via the top tabs / home.
-    private void ResetImportDraft()
-    {
-        SectionScan = null;
-        RoutingSettings = null;
-        RoutingEditor = null;
-        var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
-        RoutingEditor = editor;
-        _ = editor.LoadAsync();
-        RoutingSettings = new RoutingSettingsViewModel(_connection, 0);
-        ImportMethod = RoutingImportMethod.Picker;
     }
 
     /// <summary>

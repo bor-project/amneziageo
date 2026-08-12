@@ -39,6 +39,7 @@ public sealed partial class App : Avalonia.Application
             UiPlatform.IsTelevision = global::Android.App.Application.Context.PackageManager?
                 .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
             UiPlatform.SupportsGeoPreview = false;
+            UiPlatform.UsesActionSheets = true;
             if (!UiPlatform.IsTelevision)
             {
                 Styles.Add(new StyleInclude(new Uri("avares://AmneziaGeo.Android.Ui/"))

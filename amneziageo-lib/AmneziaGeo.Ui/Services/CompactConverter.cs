@@ -25,9 +25,11 @@ internal sealed class CompactConverter : IValueConverter
         return (parameter as string) switch
         {
             "row" => compact ? 1 : 0,
+            "row2" => compact ? 2 : 0,
             "col" => compact ? 0 : 1,
             "col2" => compact ? 0 : 2,
             "span2" => compact ? 2 : 1,
+            "span3" => compact ? 3 : 1,
             "alignRL" => compact ? HorizontalAlignment.Left : HorizontalAlignment.Right,
             "alignLC" => compact ? HorizontalAlignment.Center : HorizontalAlignment.Left,
             "stretchL" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
@@ -39,7 +41,9 @@ internal sealed class CompactConverter : IValueConverter
             "w170" => compact ? double.NaN : 170d,
             "w180" => compact ? double.NaN : 180d,
             "w240" => compact ? double.NaN : 240d,
-            // Width floor that lifts in compact so a narrow card cannot be overflowed.
+            "w300" => compact ? double.NaN : 300d,
+            // Width floors that lift in compact so a narrow card cannot be overflowed.
+            "minW130" => compact ? 0d : 130d,
             "minW220" => compact ? 0d : 220d,
             // Width caps that lift in compact so the segment track / catalogue combo fills the row.
             "maxW260" => compact ? double.PositiveInfinity : 260d,
@@ -47,6 +51,8 @@ internal sealed class CompactConverter : IValueConverter
             // Top gap under the tabs when the catalogue combo drops to its own row in compact.
             "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
+            // Gap between side-by-side field blocks; it drops when they stack in compact.
+            "fieldGap" => compact ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 12, 10),
             // Column widths for an even-split row: a fixed control becomes a star column in compact so it
             // shares the width, and the spacer/other-content column collapses.
             "colAutoStar" => compact ? new GridLength(1, GridUnitType.Star) : GridLength.Auto,

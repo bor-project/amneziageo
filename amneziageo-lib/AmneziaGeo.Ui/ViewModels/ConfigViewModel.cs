@@ -59,6 +59,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsOpenConfigActive))]
     [NotifyPropertyChangedFor(nameof(UseOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowConnectOpenConfig))]
+    [NotifyPropertyChangedFor(nameof(CanExportOpenConfig))]
+    [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -88,23 +90,21 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSectionImport))]
     [NotifyPropertyChangedFor(nameof(IsSectionConfig))]
     [NotifyPropertyChangedFor(nameof(IsSectionExport))]
-    [NotifyPropertyChangedFor(nameof(SegImportActive))]
-    [NotifyPropertyChangedFor(nameof(SegConfigActive))]
-    [NotifyPropertyChangedFor(nameof(SegExportActive))]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     [NotifyPropertyChangedFor(nameof(ShowSaveButton))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
+    [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
     private bool _isCreatingSectionConfig;
 
     // Manage sub-section shown by the top menu (Config vs Export). Import is IsCreatingSectionConfig.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSectionConfig))]
     [NotifyPropertyChangedFor(nameof(IsSectionExport))]
-    [NotifyPropertyChangedFor(nameof(SegConfigActive))]
-    [NotifyPropertyChangedFor(nameof(SegExportActive))]
     [NotifyPropertyChangedFor(nameof(IsEditDirty))]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
     private ConfigSection _manageSection = ConfigSection.Config;
 
     [ObservableProperty]
@@ -125,7 +125,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsImportPicker))]
     [NotifyPropertyChangedFor(nameof(IsImportManual))]
     [NotifyPropertyChangedFor(nameof(IsImportCamera))]
-    [NotifyPropertyChangedFor(nameof(SectionMethodLabel))]
     [NotifyPropertyChangedFor(nameof(ShowSaveButton))]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     private ConfigImportMethod _importMethod = ConfigImportMethod.Picker;
@@ -152,8 +151,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private void OnCultureChanged()
     {
         OnPropertyChanged(nameof(DeleteConfigPrompt));
-        OnPropertyChanged(nameof(SectionMethodLabel));
     }
+
+    /// <summary>
+    /// Набор способов оболочки: шторка «Добавить» / «Экспорт».
+    /// </summary>
+    public ActionSheetViewModel Sheet => _host.Sheet;
 
     /// <summary>
     /// Configuration rows.
@@ -183,16 +186,21 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     public bool IsSectionExport => !IsCreatingSectionConfig && OpenConfig is not null && ManageSection == ConfigSection.Export;
 
-    // Segment highlight, independent of an open config so the pill still marks the section when none is selected.
-    public bool SegImportActive => IsCreatingSectionConfig;
+    /// <summary>
+    /// Стоит ли на экране выбор конфигурации с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт
+    /// занимают экран целиком и возвращают сюда сами.
+    /// </summary>
+    public bool ShowHeaderActions => !IsCreatingSectionConfig && !IsSectionExport && !ShowCatalogueLoader;
 
-    public bool SegConfigActive => !IsCreatingSectionConfig && ManageSection == ConfigSection.Config;
+    /// <summary>
+    /// Есть ли что экспортировать.
+    /// </summary>
+    public bool CanExportOpenConfig => OpenConfig is not null;
 
-    public bool SegExportActive => !IsCreatingSectionConfig && ManageSection == ConfigSection.Export;
-
-    public bool CanConfigSection => HasConfigs;
-
-    public bool CanExportSection => HasConfigs;
+    /// <summary>
+    /// Пуст ли каталог: подсказка вместо настроек, пока конфигурации не добавлены.
+    /// </summary>
+    public bool ShowNoConfigsHint => !ShowCatalogueLoader && !IsCreatingSectionConfig && OpenConfig is null;
 
     /// <summary>
     /// Delete-card prompt naming the open config.
@@ -220,13 +228,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// Whether a live camera QR scanner is available on this platform.
     /// </summary>
     public bool CameraScanAvailable => QrCameraScannerHost.IsAvailable;
-
-    public string SectionMethodLabel => ImportMethod switch
-    {
-        ConfigImportMethod.Manual => Loc.Instance.Get("Main_MethodLabel", Loc.Instance.Get("Main_MethodManual")),
-        ConfigImportMethod.Camera => Loc.Instance.Get("Main_MethodLabel", Loc.Instance.Get("Main_MethodCamera")),
-        _ => string.Empty,
-    };
 
     // ---- Section Save/Cancel bar (#143): the open-config edits (name / .conf text / transport) are held and
     // committed atomically on the footer Save, reverted on Cancel; the same footer serves the import draft. ----
@@ -391,6 +392,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             {
                 _enterDeferred = true;
                 OnPropertyChanged(nameof(ShowCatalogueLoader));
+                OnPropertyChanged(nameof(ShowHeaderActions));
+                OnPropertyChanged(nameof(ShowNoConfigsHint));
                 return;
             }
 
@@ -424,6 +427,33 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         {
             ConfigExport?.RefreshExport();
         }
+    }
+
+    /// <summary>
+    /// Возвращает с экрана экспорта и из черновика импорта туда, откуда их открыли. Отдаёт, сделан ли шаг.
+    /// </summary>
+    public bool TryNavigateBack()
+    {
+        if (IsSectionExport)
+        {
+            SelectConfigSection("config");
+            return true;
+        }
+
+        if (!IsCreatingSectionConfig)
+        {
+            return false;
+        }
+
+        // Черновик снимает возврат к списку серверов, так что цель запоминается до отмены.
+        var toServers = _returnToServers;
+        AbandonCreate();
+        if (toServers)
+        {
+            _host.ReturnToServerList();
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -555,6 +585,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _catalogueKnown = false;
         _enterDeferred = false;
         OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(ShowHeaderActions));
+        OnPropertyChanged(nameof(ShowNoConfigsHint));
         Configs.Clear();
         OpenConfig = null;
         _pendingOpenConfig = null;
@@ -604,6 +636,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         _enterDeferred = false;
         OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(ShowHeaderActions));
+        OnPropertyChanged(nameof(ShowNoConfigsHint));
         if (IsActiveSection)
         {
             EnterSection();
@@ -613,8 +647,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private void NotifyHasConfigsChanged()
     {
         OnPropertyChanged(nameof(HasConfigs));
-        OnPropertyChanged(nameof(CanConfigSection));
-        OnPropertyChanged(nameof(CanExportSection));
     }
 
     partial void OnOpenConfigChanged(string? value)
@@ -951,14 +983,32 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _returnToServers = false;
     }
 
-    // Switch the create form to manual entry.
-    [RelayCommand]
-    private void BeginManualImport()
+    // Открывает черновик, если он ещё не начат: способ выбирается в шторке «Добавить», а не вкладкой.
+    private void EnsureSectionConfig()
     {
+        if (!IsCreatingSectionConfig)
+        {
+            BeginSectionConfig();
+        }
+    }
+
+    /// <summary>
+    /// Открывает черновик под разобранный файл или снимок.
+    /// </summary>
+    public void BeginImportDraft()
+    {
+        EnsureSectionConfig();
         ImportMethod = ConfigImportMethod.Manual;
     }
 
-    // Switch the create form to the live QR scanner.
+    // Способ «Создать вручную».
+    [RelayCommand]
+    private void BeginManualImport()
+    {
+        BeginImportDraft();
+    }
+
+    // Способ «Сканировать QR-код».
     [RelayCommand]
     private void BeginCameraImport()
     {
@@ -967,6 +1017,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return;
         }
 
+        EnsureSectionConfig();
         SectionScan = new ScanViewModel(TryAcceptScannedConfig);
         ImportMethod = ConfigImportMethod.Camera;
     }
@@ -984,16 +1035,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         return true;
     }
 
-    // Return to the method picker from manual / camera, discarding the drafted text.
-    [RelayCommand]
-    private void ChangeMethod()
-    {
-        SectionConfigText = string.Empty;
-        SectionConfigStatus = string.Empty;
-        SectionScan = null;
-        ImportMethod = ConfigImportMethod.Picker;
-    }
-
     // Footer Save/Cancel: the same bar serves the import draft and the open-config edits.
     [RelayCommand]
     private async Task SaveSection()
@@ -1009,28 +1050,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
     }
 
-    // Footer Cancel: an import draft returns to the method picker in place (discards the drafted text and name, no
-    // navigation); an open-config edit reverts to its baseline. Leaving the import section fully is the top tabs.
+    // Footer Cancel: an import draft is dropped whole and the section returns to the open configuration; an
+    // open-config edit reverts to its baseline.
     [RelayCommand]
     private void CancelSection()
     {
         if (IsCreatingSectionConfig)
         {
-            ResetImportDraft();
+            AbandonCreate();
         }
         else
         {
             CancelConfigEdit();
         }
-    }
-
-    // Discards the whole draft - text and name - and returns to the method picker (mirrors the Routing screen).
-    private void ResetImportDraft()
-    {
-        _sectionConfigDefaultName = UniqueConfigName();
-        SectionConfigName = _sectionConfigDefaultName;
-        SectionTransport = NewSectionTransport();
-        ChangeMethod();
     }
 
     // Footer Save (open config): commit the dirty .conf text, transport, and rename atomically. A rejected step

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -8,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Localization;
+using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -18,17 +20,105 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class ConfigView : UserControl
 {
-    private readonly HeaderReflow _header;
-
     /// <summary>
     /// ctor
     /// </summary>
     public ConfigView()
     {
         InitializeComponent();
-        _header = new HeaderReflow(HeaderGrid, HeaderTabs, PickerHost, Picker, PickerLabelFloat, PickerLabelInline,
-            () => (DataContext as ConfigViewModel)?.IsCompact ?? false);
-        DataContextChanged += (_, _) => _header.Apply();
+    }
+
+    // Способы добавления: файл, живой сканер QR и ручной ввод.
+    private void OnAddOptions(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ConfigViewModel vm)
+        {
+            return;
+        }
+
+        var options = new List<ActionOption>
+        {
+            new(Loc.Instance.Get("Main_FileButton"), Glyphs.File, ImportFromFile),
+        };
+        if (vm.CameraScanAvailable)
+        {
+            options.Add(new ActionOption(
+                Loc.Instance.Get("Main_CameraButton"),
+                Glyphs.Qr,
+                () => vm.BeginCameraImportCommand.Execute(null)));
+        }
+
+        options.Add(new ActionOption(
+            Loc.Instance.Get("Main_CreateManuallyButton"),
+            Glyphs.Pencil,
+            () => vm.BeginManualImportCommand.Execute(null)));
+
+        ActionOptions.Present(
+            sender as Control,
+            vm.Sheet,
+            Loc.Instance.Get("Main_AddConfigTitle"),
+            Loc.Instance.Get("Main_AddConfigSubtitle"),
+            options);
+    }
+
+    // Способы экспорта: экран QR, ссылка в буфер и файл конфигурации.
+    private void OnExportOptions(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ConfigViewModel vm)
+        {
+            return;
+        }
+
+        var options = new List<ActionOption>
+        {
+            new(
+                Loc.Instance.Get("Main_ShowQrButton"),
+                Glyphs.Qr,
+                () => vm.SelectConfigSectionCommand.Execute("export")),
+            new(Loc.Instance.Get("Main_CopyLinkButton"), Glyphs.Link, CopyExportLink),
+            new(Loc.Instance.Get("Main_SaveToFileButton"), Glyphs.Download, SaveExportFile),
+        };
+
+        ActionOptions.Present(
+            sender as Control,
+            vm.Sheet,
+            Loc.Instance.Get("Main_ExportConfigTitle"),
+            Loc.Instance.Get("Main_ExportConfigSubtitle"),
+            options);
+    }
+
+    // Копирует ссылку vpn:// открытой конфигурации.
+    private async void CopyExportLink()
+    {
+        if (DataContext is not ConfigViewModel { ConfigExport: { } export })
+        {
+            return;
+        }
+
+        export.ShowQrLinkCommand.Execute(null);
+        if (await ExportActions.CopyToClipboardAsync(this, export.Payload))
+        {
+            export.StatusMessage = Loc.Instance.Get("QrCode_CopiedToClipboard");
+        }
+    }
+
+    // Сохраняет текст конфигурации файлом.
+    private async void SaveExportFile()
+    {
+        if (DataContext is not ConfigViewModel { ConfigExport: { } export })
+        {
+            return;
+        }
+
+        var saved = await ExportActions.SaveTextAsync(
+            this,
+            export.ConfText,
+            Loc.Instance.Get("QrCode_SaveTitle"),
+            export.ConfigName + ".conf");
+        if (saved)
+        {
+            export.StatusMessage = Loc.Instance.Get("MainCode_Saved");
+        }
     }
 
     // Copy the export payload (vpn link or .conf text) to the clipboard.
@@ -77,8 +167,9 @@ internal sealed partial class ConfigView : UserControl
         await ExportActions.SendImageAsync(qr, vm.ConfigName + ".png");
     }
 
-    // Standalone config-import: adds a config to the shared catalogue.
-    private async void OnSectionConfigBrowse(object? sender, RoutedEventArgs e)
+    // Standalone config-import: adds a config to the shared catalogue. Черновик открывается по выбранному
+    // файлу - отменённый выбор не оставляет пустую форму.
+    private async void ImportFromFile()
     {
         if (DataContext is not ConfigViewModel vm)
         {
@@ -93,6 +184,7 @@ internal sealed partial class ConfigView : UserControl
             return;
         }
 
+        vm.BeginImportDraft();
         await ReadIntoSectionConfigAsync(vm, file);
         // A system picker drops focus on the way back; the name is what the user checks first.
         SectionConfigNameBox.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);

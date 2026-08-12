@@ -62,6 +62,10 @@ internal sealed partial class ConfigTransportViewModel : ViewModelBase, IEditSco
     [ObservableProperty]
     private bool _isBusy;
 
+    // Narrow-pane layout flag, pushed by the view from its own width.
+    [ObservableProperty]
+    private bool _isCompact;
+
     /// <summary>
     /// ctor
     /// </summary>

@@ -1,3 +1,4 @@
+using AmneziaGeo.Decl;
 using AmneziaGeo.Windows.App;
 using Xunit;
 
@@ -64,6 +65,30 @@ public sealed class UpdateCheckerTests
     public void ReturnsNullWhenNothingIsPublishable()
     {
         Assert.Null(UpdateChecker.SelectManifestUrl("[]"));
+    }
+
+    [Fact]
+    public void OffersAHigherVersion()
+    {
+        Assert.True(UpdateFeed.IsUpdate("1.2.8.0", "1.2.7.3"));
+    }
+
+    [Fact]
+    public void SaysNothingAboutTheSameVersion()
+    {
+        Assert.False(UpdateFeed.IsUpdate("1.2.7.3", "1.2.7.3"));
+    }
+
+    [Fact]
+    public void SaysNothingAboutAnOlderVersion()
+    {
+        Assert.False(UpdateFeed.IsUpdate("1.2.7.0", "1.2.7.3"));
+    }
+
+    [Fact]
+    public void TakesAVersionItCannotReadAsAnOffer()
+    {
+        Assert.True(UpdateFeed.IsUpdate("nightly", "1.2.7.3"));
     }
 
     private static string Releases(params string[] releases)

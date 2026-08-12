@@ -312,6 +312,9 @@ internal sealed class DomainTracker(
     // Reports destinations a matched app reached, so they are remembered and routed before it asks again.
     private volatile Action<IReadOnlyList<string>>? _onAppDestinations;
 
+    // Tells whether an address is one the app memory holds; such an address is never reclaimed for being idle.
+    private volatile Func<string, bool>? _remembered;
+
     // Aborts the half-open connections that left before these routes existed: their source address was chosen
     // without the route and cannot be changed, so the app has to open them again.
     private void Reset(IReadOnlyList<string> cidrs)
@@ -336,6 +339,15 @@ internal sealed class DomainTracker(
     public void SetForgetSink(Action<IReadOnlyList<string>> sink)
     {
         _onForgotten = sink;
+    }
+
+    /// <summary>
+    /// Attaches the test that says whether an app destination is remembered; without it such an address ages on the
+    /// ordinary idle clock like any other.
+    /// </summary>
+    public void SetAppMemoryCheck(Func<string, bool> check)
+    {
+        _remembered = check;
     }
 
     private static List<IPAddress> Hosts(IReadOnlyList<string> cidrs)
@@ -708,10 +720,12 @@ internal sealed class DomainTracker(
                 }
             }
 
-            // An app destination ages like a name: its clock is the traffic to it, whatever routed it here.
+            // An app destination ages like a name: its clock is the traffic to it, whatever routed it here. A
+            // remembered one is exempt - the app dials it by address, so the attempt that would earn the route back
+            // is the very attempt that loses its answer.
             foreach (var pair in _appIps)
             {
-                if (now - LastTrafficLocked(pair.Key, pair.Value) > idleTtlMs)
+                if (now - LastTrafficLocked(pair.Key, pair.Value) > idleTtlMs && !Remembered(pair.Key))
                 {
                     apps.Add(pair.Key);
                 }
@@ -755,6 +769,25 @@ internal sealed class DomainTracker(
     private long LastTrafficLocked(string ip, long routed)
     {
         return routing?.LastContact([ip]) is { } contact ? Math.Max(routed, contact) : routed;
+    }
+
+    // Whether the app memory holds this address.
+    private bool Remembered(string ip)
+    {
+        if (_remembered is not { } check)
+        {
+            return false;
+        }
+
+        try
+        {
+            return check(ip);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "the remembered app destinations could not be consulted for {Ip}", ip);
+            return false;
+        }
     }
 
     /// <summary>

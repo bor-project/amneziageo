@@ -1592,8 +1592,8 @@
   <data name="Android_PerConfigResolverUnsupported" xml:space="preserve">
     <value>Свой DNS и свои исключения у конфигурации на Android ни на что не влияют: имена разрешаются внутри туннеля, а исключения задаются в списке маршрутизации.</value>
   </data>
-  <data name="Android_UpdateUnsupported" xml:space="preserve">
-    <value>Эта сборка обновляется установкой пакета вручную.</value>
+  <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
+    <value>Разрешите AmneziaGeo устанавливать приложения и нажмите «Установить» ещё раз.</value>
   </data>
   <data name="Main_ExportListTitle" xml:space="preserve">
     <value>Экспорт списка</value>

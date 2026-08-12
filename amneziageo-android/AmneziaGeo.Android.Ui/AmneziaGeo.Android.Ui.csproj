@@ -17,6 +17,24 @@
     <RuntimeIdentifiers Condition="'$(AndroidRuntimeIdentifiers)' != ''">$(AndroidRuntimeIdentifiers)</RuntimeIdentifiers>
   </PropertyGroup>
 
+  <!-- Update URL baked at build time (build-apk.ps1 and build-apk.sh pass -p:UpdateUrl). AndroidBuild reads it
+       back as the manifest the check reads; absent => the update section stays hidden. -->
+  <ItemGroup Condition="'$(UpdateUrl)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.UpdateUrl</_Parameter1>
+      <_Parameter2>$(UpdateUrl)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Prerelease channel baked from the tag (the build scripts pass -p:AllowPrerelease). "1" => the check also
+       offers prereleases. -->
+  <ItemGroup Condition="'$(AllowPrerelease)' != ''">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadata">
+      <_Parameter1>AmneziaGeo.AllowPrerelease</_Parameter1>
+      <_Parameter2>$(AllowPrerelease)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <!-- Compiles every assembly ahead of time: the stock profile covers none of the Avalonia startup path, and
        a TV box spends about twenty seconds jitting it. -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

@@ -41,6 +41,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly AndroidAgentLog _log;
     private readonly GeoHttp _geoHttp;
     private readonly HttpClient _httpClient = new();
+    private readonly AndroidUpdater _updater;
     // Null until the store has been read: the snapshot says "not loaded yet", not "no lists".
     private IReadOnlyList<RoutingListEntry>? _routingSummaries;
     private IReadOnlyDictionary<string, ConfigTransport> _transports = new Dictionary<string, ConfigTransport>(StringComparer.Ordinal);
@@ -113,6 +114,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         _geoChecker = new GeoUpdateChecker(_store, _geoHttp, geoFiles);
         _geo = new GeoConfigurator(_store, geoFiles);
         _log = new AndroidAgentLog(System.IO.Path.Combine(dir, "log.db"));
+        _updater = new AndroidUpdater(_httpClient, _log, PushSnapshot, AppVersion);
         Current = this;
     }
 
@@ -172,6 +174,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _events = null;
         }
 
+        _updater.Dispose();
         _geoHttp.Dispose();
         _httpClient.Dispose();
         _log.Dispose();
@@ -319,14 +322,23 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpCollectDiagnostics:
                 return await CollectDiagnosticsAsync();
 
-            // The package is replaced by hand here: nothing in the application downloads or installs itself.
             case IpcContract.OpCheckUpdate:
-            case IpcContract.OpDownloadUpdate:
-            case IpcContract.OpApplyUpdate:
-            case IpcContract.OpCancelUpdateDownload:
-                return new IpcAck(false, IpcMessage.Key("Android_UpdateUnsupported"));
+                return await _updater.CheckAsync(args.Count > 0 && args[0] == "silent", CancellationToken.None).ConfigureAwait(false);
 
-            // Nothing downloads here, so a report from the window changes nothing.
+            case IpcContract.OpDownloadUpdate:
+            {
+                var started = _updater.StartDownload(CancellationToken.None);
+                PushSnapshot();
+                return started;
+            }
+
+            case IpcContract.OpCancelUpdateDownload:
+                return _updater.Cancel();
+
+            case IpcContract.OpApplyUpdate:
+                return await _updater.InstallAsync(CancellationToken.None).ConfigureAwait(false);
+
+            // The agent owns the download here, so a client report changes nothing.
             case IpcContract.OpReportUpdateDownload:
                 return Ok();
 
@@ -725,6 +737,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             LogLevel: _logLevel,
             RouteLog: _routeLog,
             RouteTtlSeconds: _routeTtl,
+            UpdateUrl: _updater.Url,
+            UpdateAvailable: _updater.Available,
+            UpdateVersion: _updater.Version,
+            UpdateSetupUrl: _updater.SetupUrl,
+            UpdateDescription: _updater.Description,
+            AllowPrerelease: _updater.AllowPrerelease,
+            UpdateSetupSha256: _updater.Sha256,
+            UpdateSetupPath: _updater.SetupPath,
+            UpdateDownloading: _updater.Downloading,
+            UpdateDownloaded: _updater.Downloaded,
+            UpdateDownloadPercent: _updater.Percent,
+            UpdateDownloadFailed: _updater.Failed,
+            UpdateCancelRequested: _updater.CancelRequested,
+            UpdateChecking: _updater.Checking,
+            UpdateCheckFailed: _updater.CheckFailed,
+            UpdateInstalling: _updater.Installing,
             AlwaysOn: _alwaysOn,
             AlwaysOnLockdown: _alwaysOnLockdown);
 
@@ -1685,6 +1713,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 _routeLog = route.ValueKind == JsonValueKind.True;
             }
 
+            if (document.RootElement.TryGetProperty("AllowPrerelease", out var prerelease)
+                && prerelease.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                _updater.AllowPrerelease = prerelease.ValueKind == JsonValueKind.True;
+            }
+
             if (document.RootElement.TryGetProperty("RouteTtl", out var ttl)
                 && ttl.ValueKind == JsonValueKind.Number
                 && SettingKeys.TryParseRouteTtl(ttl.GetRawText(), out var seconds))
@@ -1773,6 +1807,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"LogLevel\":").Append(JsonSerializer.Serialize(_logLevel));
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
+            builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
             builder.Append('}');
@@ -2465,6 +2500,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 }
 
                 _routeTtl = ttl;
+                Save();
+                PushSnapshot();
+                return Ok();
+            case "allow-prerelease":
+                _updater.AllowPrerelease = IsOn(args[1]);
                 Save();
                 PushSnapshot();
                 return Ok();

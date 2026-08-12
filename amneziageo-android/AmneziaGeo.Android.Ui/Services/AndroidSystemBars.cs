@@ -45,6 +45,14 @@ internal static class AndroidSystemBars
         }
     }
 
+    /// <summary>
+    /// Re-applies the theme to the bars, for the window coming back to the foreground.
+    /// </summary>
+    public static void Refresh()
+    {
+        Apply();
+    }
+
     private static void Release()
     {
         if (_themeChanged is not null && Avalonia.Application.Current is { } app)
@@ -72,6 +80,13 @@ internal static class AndroidSystemBars
         {
             window.SetStatusBarColor(color);
             window.SetNavigationBarColor(color);
+        }
+
+        // Drops the strip the system lays behind the navigation bar for contrast: with three-button navigation it
+        // is opaque and keeps its own colour, so under a dark theme the row of buttons stays light.
+        if (OperatingSystem.IsAndroidVersionAtLeast(29))
+        {
+            window.NavigationBarContrastEnforced = false;
         }
 
         if (window.DecorView is { } decor && WindowCompat.GetInsetsController(window, decor) is { } bars)

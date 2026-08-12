@@ -213,29 +213,6 @@
         </Grid>
       </Border>
 
-      <!-- Always-on card: the switch itself belongs to the system, so this only explains it and opens the screen
-           it lives on. The state line shows only what a running tunnel could confirm. Android only. -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}"
-              IsVisible="{Binding CanConfigureAlwaysOn}">
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
-          <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"
-                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-            <TextBlock Text="{l:Tr General_AlwaysOnSection}" FontWeight="SemiBold" FontSize="15" />
-            <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{l:Tr General_AlwaysOnHint}" />
-            <TextBlock Text="{Binding AlwaysOnStatus}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"
-                       Foreground="{DynamicResource AgUpBrush}"
-                       IsVisible="{Binding AlwaysOnStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-          </StackPanel>
-          <StackPanel VerticalAlignment="Center"
-                      Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                      Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
-            <Button Classes="softbtn" Padding="16,7" HorizontalAlignment="Stretch"
-                    Command="{Binding OpenVpnSettingsCommand}" Content="{l:Tr General_AlwaysOnButton}" />
-          </StackPanel>
-        </Grid>
-      </Border>
-
       <!-- Import / export card (full width): hint left, actions right. Opens the bundle sub-views inline. -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <!-- Compact drops the export / import buttons under the hint. -->

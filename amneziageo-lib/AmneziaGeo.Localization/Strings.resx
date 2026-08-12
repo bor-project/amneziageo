@@ -70,21 +70,6 @@
   <data name="General_NetworkRepairHint" xml:space="preserve">
     <value>If the internet stops working after a failed connection or removing the app, reset the DNS it set on your adapters. Configurations and routes are left untouched.</value>
   </data>
-  <data name="General_AlwaysOnSection" xml:space="preserve">
-    <value>Always-on VPN</value>
-  </data>
-  <data name="General_AlwaysOnHint" xml:space="preserve">
-    <value>The system can raise the tunnel by itself at boot and hold it up without the application open. The switch belongs to Android: Settings, Network, VPN, the gear next to AmneziaGeo. No application may turn it on for itself.</value>
-  </data>
-  <data name="General_AlwaysOnActive" xml:space="preserve">
-    <value>On for this application</value>
-  </data>
-  <data name="General_AlwaysOnLockdown" xml:space="preserve">
-    <value>On for this application, traffic outside the tunnel is blocked</value>
-  </data>
-  <data name="General_AlwaysOnButton" xml:space="preserve">
-    <value>System settings</value>
-  </data>
   <data name="General_NetworkRepairButton" xml:space="preserve">
     <value>Repair internet</value>
   </data>
@@ -272,7 +257,7 @@
     <value>Line format: time · [level] · component · message.  Levels low to high: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Sends all UDP traffic through the tunnel. Turn this on if calls or games do not work: they find their servers without DNS, so the usual rules never catch them. Your local network is not affected.</value>
+    <value>Turn this on if calls, games or video chat do not work. Your local network is not affected.</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>All UDP through the tunnel</value>
@@ -281,7 +266,7 @@
     <value>Route lifetime</value>
   </data>
   <data name="Main_RouteTtlHint" xml:space="preserve">
-    <value>How long an address stays in the routing cache without traffic. Once it expires the route and its filters are reclaimed, and the next contact decides the address again.</value>
+    <value>How long an address is kept in the cache without traffic. After that its route is decided again.</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Sends IPv6 through the tunnel as well. Turn this on only if your server has an IPv6 address, otherwise leave it off. Applies on the next connect.</value>
@@ -326,7 +311,7 @@
     <value>Back</value>
   </data>
   <data name="Main_BundleHint" xml:space="preserve">
-    <value>Select configurations and routing lists to transfer to another device, or import a previously exported file.</value>
+    <value>Transfer configurations and routing lists to another device.</value>
   </data>
   <data name="Main_AppsLabel" xml:space="preserve">
     <value>Apps (split tunneling)</value>
@@ -591,9 +576,6 @@
   </data>
   <data name="Main_LogEmptyTitle" xml:space="preserve">
     <value>The log is empty</value>
-  </data>
-  <data name="Main_LogVerbosityHint" xml:space="preserve">
-    <value>Determines the logging verbosity. none disables logging.</value>
   </data>
   <data name="Main_LogVerbosityTitle" xml:space="preserve">
     <value>Level</value>
@@ -1565,12 +1547,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Launcher_TrayHint" xml:space="preserve">
     <value>The app stays in the tray after closing.</value>
   </data>
-  <data name="Main_LogTabView" xml:space="preserve">
-    <value>View</value>
-  </data>
-  <data name="Main_LogTabSettings" xml:space="preserve">
-    <value>Settings</value>
-  </data>
   <data name="Main_DiagTabLog" xml:space="preserve">
     <value>Log</value>
   </data>
@@ -1603,9 +1579,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Main_ExportLogButton" xml:space="preserve">
     <value>Export</value>
-  </data>
-  <data name="Main_LogCaptureLevelTitle" xml:space="preserve">
-    <value>Maximum level</value>
   </data>
   <data name="Android_EngineNotReady" xml:space="preserve">
     <value>The Android VPN engine is not connected yet.</value>
@@ -1791,7 +1764,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Server</value>
   </data>
   <data name="Main_HomeManageServers" xml:space="preserve">
-    <value>Manage</value>
+    <value>More</value>
   </data>
   <data name="Main_ServersCount" xml:space="preserve">
     <value>Servers: {0}</value>

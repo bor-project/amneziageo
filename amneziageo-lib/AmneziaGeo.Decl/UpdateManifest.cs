@@ -108,13 +108,14 @@ public static class UpdateFeed
     }
 
     /// <summary>
-    /// Whether a remote version differs from the installed one; a downgrade counts as an update.
+    /// Whether a remote version is newer than the installed one.
     /// </summary>
     public static bool IsUpdate(string remote, string current)
     {
+        // An older release is not an offer: Android turns the downgrade down, and the check would keep offering it.
         if (Version.TryParse(remote, out var r) && Version.TryParse(current, out var c))
         {
-            return r.CompareTo(c) != 0;
+            return r.CompareTo(c) > 0;
         }
 
         return !string.Equals(remote.Trim(), current.Trim(), StringComparison.OrdinalIgnoreCase);

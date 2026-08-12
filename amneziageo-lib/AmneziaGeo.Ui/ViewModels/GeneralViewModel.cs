@@ -185,12 +185,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// SOCKS5 port of the local proxy.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
     private string _proxySocksPort = "10808";
 
     /// <summary>
     /// HTTP port of the local proxy.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
     private string _proxyHttpPort = "10809";
 
     /// <summary>
@@ -216,6 +218,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     private string _proxyAddressText = string.Empty;
+
+    /// <summary>
+    /// Who may use the proxy and on which ports.
+    /// </summary>
+    public string ProxyEnabledHint => Loc.Instance.Get("General_ProxyEnabledHint", ProxySocksPort, ProxyHttpPort);
 
     /// <summary>
     /// Whether the proxy only carries traffic while the tunnel is up, as it does on Android.

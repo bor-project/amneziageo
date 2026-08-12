@@ -84,4 +84,22 @@ public sealed record StatusSnapshot(
     // so it stays false while the tunnel is down.
     bool AlwaysOn = false,
     // Whether always-on also blocks what would leave outside the tunnel.
-    bool AlwaysOnLockdown = false);
+    bool AlwaysOnLockdown = false,
+    // Whether the local proxy listens on its ports.
+    bool ProxyEnabled = false,
+    // SOCKS5 port of the local proxy; the v2ray family looks for it here.
+    int ProxySocksPort = 10808,
+    // HTTP port of the local proxy.
+    int ProxyHttpPort = 10809,
+    // Whether the local proxy takes clients from the local network as well as from this machine.
+    bool ProxyLan = false,
+    // User the local proxy asks for; empty asks for no credentials.
+    string ProxyUser = "",
+    // Password that goes with the user.
+    string ProxyPassword = "",
+    // Whether the listener is up; false while enabled means it could not bind.
+    bool ProxyRunning = false,
+    // Why the local proxy is not listening; empty while it holds.
+    string ProxyError = "",
+    // Address other machines reach the proxy at; empty while it stays on this machine.
+    string ProxyAddress = "");

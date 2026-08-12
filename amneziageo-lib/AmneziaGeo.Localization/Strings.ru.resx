@@ -91,6 +91,39 @@
   <data name="General_AllowPrereleaseHint" xml:space="preserve">
     <value>Предлагать бета-сборки при проверке обновлений, не только стабильные релизы.</value>
   </data>
+  <data name="General_ProxySection" xml:space="preserve">
+    <value>Локальный прокси</value>
+  </data>
+  <data name="General_ProxyEnabled" xml:space="preserve">
+    <value>Раздавать прокси на своём порту</value>
+  </data>
+  <data name="General_ProxyEnabledHint" xml:space="preserve">
+    <value>SOCKS5 и HTTP на портах семейства v2ray, чтобы клиент, настроенный на них, нашёл и этот.</value>
+  </data>
+  <data name="General_ProxyTunnelHint" xml:space="preserve">
+    <value>Здесь прокси передаёт трафик только при поднятом туннеле.</value>
+  </data>
+  <data name="General_ProxySocksPort" xml:space="preserve">
+    <value>Порт SOCKS5</value>
+  </data>
+  <data name="General_ProxyHttpPort" xml:space="preserve">
+    <value>Порт HTTP</value>
+  </data>
+  <data name="General_ProxyLan" xml:space="preserve">
+    <value>Разрешить из локальной сети</value>
+  </data>
+  <data name="General_ProxyLanHint" xml:space="preserve">
+    <value>Выключено — прокси доступен только этому устройству. Включено — любому в этой сети, задайте пароль.</value>
+  </data>
+  <data name="General_ProxyUser" xml:space="preserve">
+    <value>Пользователь</value>
+  </data>
+  <data name="General_ProxyPassword" xml:space="preserve">
+    <value>Пароль</value>
+  </data>
+  <data name="General_ProxyAuthHint" xml:space="preserve">
+    <value>Пустой пользователь — вход без пароля.</value>
+  </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Восстанавливать после перезагрузки</value>
   </data>

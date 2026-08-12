@@ -59,6 +59,7 @@ internal static class AppHost
             builder.Services.AddHostedService<GeoBootstrapService>();
             builder.Services.AddHostedService<LogLevelBackgroundWatcher>();
             builder.Services.AddHostedService<LogMaintenanceService>();
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<LocalProxyService>());
         }
 
         return builder.Build();
@@ -98,6 +99,7 @@ internal static class AppHost
         services.AddSingleton<BackupService>();
         services.AddSingleton<DiagnosticsCollector>();
         services.AddSingleton<CheckService>();
+        services.AddSingleton<LocalProxyService>();
         services.AddSingleton<AgentStatusBroker>();
         services.AddSingleton<Cli>();
     }

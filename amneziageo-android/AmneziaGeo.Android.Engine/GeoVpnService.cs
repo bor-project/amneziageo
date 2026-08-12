@@ -113,6 +113,8 @@ public sealed class GeoVpnService : VpnService
     private int _proxyPort;
     private WsCarrier? _carrier;
     private ProxyRelay? _relay;
+    private LocalProxyServer? _proxy;
+    private VpnBridge.Listener? _proxySettings;
     private CancellationTokenSource? _reports;
     private CancellationTokenSource? _keepalive;
     private VpnBridge.Listener? _queries;
@@ -132,6 +134,8 @@ public sealed class GeoVpnService : VpnService
         VpnBridge.Listen(this, _queries, VpnBridge.ActionQuery);
         _stops = new VpnBridge.Listener { Handler = _ => Stop() };
         VpnBridge.Listen(this, _stops, VpnBridge.ActionStop);
+        _proxySettings = new VpnBridge.Listener { Handler = _ => ApplyProxy() };
+        VpnBridge.Listen(this, _proxySettings, VpnBridge.ActionProxy);
         WatchUnderlay();
     }
 
@@ -426,6 +430,10 @@ public sealed class GeoVpnService : VpnService
                 _reports = reports;
                 _ = Task.Run(() => ReportShareAsync(relay, reports.Token));
             }
+
+            // The port the user set up: it opens with the tunnel, because everything it carries leaves through it.
+            _proxy = new LocalProxyServer((IProxyOutbound?)relay ?? new DirectProxyOutbound(), Report);
+            ApplyProxy();
         }
         catch (Exception ex)
         {
@@ -1144,6 +1152,24 @@ public sealed class GeoVpnService : VpnService
         global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
     }
 
+    // Moves the listener to the settings the head last wrote and tells it whether the ports were taken.
+    private void ApplyProxy()
+    {
+        var proxy = _proxy;
+        if (proxy is null)
+        {
+            return;
+        }
+
+        var options = VpnBridge.ReadProxy();
+        proxy.Apply(options);
+        VpnBridge.WriteProxyState(proxy.Running, proxy.Error);
+        if (options.Enabled && !proxy.Running)
+        {
+            Report($"the local proxy did not start: {proxy.Error}");
+        }
+    }
+
     private void Release()
     {
         _reports?.Cancel();
@@ -1154,6 +1180,9 @@ public sealed class GeoVpnService : VpnService
         _keepalive = null;
         _relay?.Dispose();
         _relay = null;
+        _proxy?.Dispose();
+        _proxy = null;
+        VpnBridge.WriteProxyState(false, string.Empty);
         VpnBridge.ClearSessions();
         _proxyPort = 0;
         _carrier?.Dispose();

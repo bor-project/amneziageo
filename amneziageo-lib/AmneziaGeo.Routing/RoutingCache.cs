@@ -762,6 +762,13 @@ public sealed class RoutingCache
                 continue;
             }
 
+            // A destination an app rule claimed keeps its route: no name resolves it back into the tunnel, so the
+            // attempt that would earn the route again is the very attempt that loses its answer.
+            if (pair.Value.ByApp)
+            {
+                continue;
+            }
+
             stale.Add(pair);
             if (stale.Count >= SweepBatch)
             {

@@ -544,7 +544,7 @@ internal sealed class TunnelRunner(
         if (redirectServers.Count > 0)
         {
             applied = true;
-            dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, sessionCts.Token));
+            dnsApplyTask = Task.Run(() => ApplyDnsWhenTunnelUpAsync(name, redirectServers, proxy?.BoundV4, sessionCts.Token));
         }
 
         if (stripV6 && redirectServers.Count > 0)
@@ -965,20 +965,42 @@ internal sealed class TunnelRunner(
         }
     }
 
+    // How long the proxy has to answer its own health query, and how often the answer is asked for again.
+    private const int DnsProbeTimeoutMs = 2000;
+    private static readonly TimeSpan DnsProbeRetryDelay = TimeSpan.FromSeconds(15);
+
     // Applies the host DNS redirect once the peer first answers, then flushes so pre-redirect answers are
     // re-queried through the proxy. Before the handshake the OS keeps its own resolvers, so a dial that never
     // completes cannot strand the machine's DNS; the teardown reverts whatever this applied.
-    private async Task ApplyDnsWhenTunnelUpAsync(string name, IReadOnlyList<string> redirectServers, CancellationToken ct)
+    private async Task ApplyDnsWhenTunnelUpAsync(string name, IReadOnlyList<string> redirectServers, IPAddress? proxyAddress, CancellationToken ct)
     {
         try
         {
             await WaitForHandshakeAsync(name, ct);
+
+            // Ask the proxy before handing it every lookup on this machine. Another program can hold loopback:53
+            // without the bind failing (a corporate VPN client intercepts it whole), and pointing the adapters at
+            // a resolver that answers nothing leaves the machine with no DNS at all. Keep asking, so a conflict
+            // that goes away later still gets the redirect.
+            var warned = false;
+            while (proxyAddress is not null && !await DnsHealthProbe.AnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false))
+            {
+                if (!warned)
+                {
+                    warned = true;
+                    logger.LogWarning("{Name}: the name proxy on {Address} answers nothing, so another program holds DNS on this machine; the adapters keep their own resolvers and rules by domain do not apply — only rules by address", name, proxyAddress);
+                }
+
+                await Task.Delay(DnsProbeRetryDelay, ct).ConfigureAwait(false);
+            }
+
             using (logger.Step("apply DNS + flush cache"))
             {
                 dns.Apply(name, redirectServers);
                 dns.FlushCache();
             }
 
+            session.SetNamesRedirected(true);
             logger.LogDebug("{Name}: the server answered, so name lookups now go to {Servers} and the cached ones were cleared", name, string.Join(",", redirectServers));
         }
         catch (OperationCanceledException)
@@ -1018,7 +1040,28 @@ internal sealed class TunnelRunner(
             return inspector.Sessions().ToPayload();
         }
 
+        if (op == RuntimeSnapshotPipe.OpDns)
+        {
+            return await DnsVerdictAsync(ct).ConfigureAwait(false);
+        }
+
         return System.Text.Json.JsonSerializer.Serialize(inspector.Collect());
+    }
+
+    // Whether names still resolve through this session's proxy: every rule by domain rides on it, and it is the
+    // one thing no other signal shows - the tunnel stays up and carries traffic either way. Asked the way an
+    // application asks, so a proxy that serves while the system prefers another adapter's resolvers reads as what
+    // it is.
+    private async Task<string> DnsVerdictAsync(CancellationToken ct)
+    {
+        if (session.Proxy?.BoundV4 is null || !session.NamesRedirected)
+        {
+            return RuntimeSnapshotPipe.DnsUnrouted;
+        }
+
+        return await DnsHealthProbe.SystemAnswersAsync(ct).ConfigureAwait(false)
+            ? RuntimeSnapshotPipe.DnsServed
+            : RuntimeSnapshotPipe.DnsUnrouted;
     }
 
     // Re-reads the stored lifetime and hands it to what already holds routes. The store is the one both processes

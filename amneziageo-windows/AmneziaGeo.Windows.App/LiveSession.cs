@@ -13,6 +13,7 @@ internal sealed class LiveSession
     private volatile RoutingCache? _cache;
     private volatile DomainTracker? _tracker;
     private volatile DnsProxy? _proxy;
+    private volatile bool _namesRedirected;
 
     /// <summary>
     /// Per-destination verdict cache of the session in flight.
@@ -28,6 +29,12 @@ internal sealed class LiveSession
     /// Name proxy of the session in flight.
     /// </summary>
     public DnsProxy? Proxy => _proxy;
+
+    /// <summary>
+    /// Whether the adapters were pointed at this session's proxy. Until they are, names are resolved outside it
+    /// and rules by domain do not apply.
+    /// </summary>
+    public bool NamesRedirected => _namesRedirected;
 
     /// <summary>
     /// Publishes the session's verdict cache.
@@ -54,6 +61,14 @@ internal sealed class LiveSession
     }
 
     /// <summary>
+    /// Records that the adapters now send their lookups to the session's proxy.
+    /// </summary>
+    public void SetNamesRedirected(bool redirected)
+    {
+        _namesRedirected = redirected;
+    }
+
+    /// <summary>
     /// Drops every slot at teardown.
     /// </summary>
     public void Clear()
@@ -61,5 +76,6 @@ internal sealed class LiveSession
         _cache = null;
         _tracker = null;
         _proxy = null;
+        _namesRedirected = false;
     }
 }

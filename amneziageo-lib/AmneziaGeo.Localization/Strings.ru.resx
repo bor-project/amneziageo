@@ -1853,6 +1853,9 @@
   <data name="Main_LinkLossUnknown" xml:space="preserve">
     <value>потери в туннеле: пока нет данных</value>
   </data>
+  <data name="Main_NamesUnrouted" xml:space="preserve">
+    <value>имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Правила по доменам не действуют, эти сайты идут мимо туннеля</value>
+  </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Использовать эту конфигурацию</value>
   </data>

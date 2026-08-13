@@ -50,6 +50,18 @@ internal sealed class DnsProxy
     // Fallback loopback aliases when 127.0.0.1:53 is taken by another resolver.
     private static readonly IPAddress[] V4Candidates = [IPAddress.Loopback, IPAddress.Parse("127.0.0.2")];
 
+    /// <summary>
+    /// Name the liveness probe asks for. Answered here without an upstream, so a slow resolver never reads as a
+    /// proxy that stopped serving.
+    /// </summary>
+    public const string HealthName = "health.ageo.arpa";
+
+    /// <summary>
+    /// Address the health name answers with. It names this proxy: another resolver in its place returns NXDOMAIN
+    /// for a name that exists nowhere, so an answer is proof the query reached here.
+    /// </summary>
+    public const string HealthAddress = "127.0.0.53";
+
     // Suffixes resolved via the LAN resolver and never tunneled.
     private static readonly string[] BuiltinLocalSuffixes =
         ["local", "lan", "home", "home.arpa", "internal", "intranet", "corp", "localdomain", "localhost"];
@@ -466,6 +478,19 @@ internal sealed class DnsProxy
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
             var name = DnsMessage.QuestionName(query);
             var type = DnsMessage.QuestionType(query);
+
+            // Liveness probe: answered on the spot, ahead of every rule, so the answer proves only that queries
+            // still reach this socket and are served.
+            if (name is not null && string.Equals(name.TrimEnd('.'), HealthName, StringComparison.OrdinalIgnoreCase))
+            {
+                var alive = type == TypeA ? DnsMessage.BuildAAnswer(query, [HealthAddress], 0) : DnsMessage.BuildNoData(query);
+                lock (server)
+                {
+                    server.Send(alive, alive.Length, client);
+                }
+
+                return;
+            }
 
             // Block bucket wins over everything: a matched name is refused (NXDOMAIN) before any tunnel/bypass
             // decision, so it never resolves and its connection is dropped.

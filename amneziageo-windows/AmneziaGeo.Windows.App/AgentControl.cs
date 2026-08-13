@@ -27,6 +27,7 @@ internal sealed class AgentControl
     private volatile int _handshakeAge = -1;
     private volatile LinkReading _link = LinkReading.Empty;
     private volatile bool _awaitingRetry;
+    private volatile bool _dnsUnreachable;
     private volatile bool _wakePending;
     private CancellationTokenSource _change = new();
     private CancellationTokenSource _wake = new();
@@ -65,6 +66,21 @@ internal sealed class AgentControl
         var previous = _link;
         _link = reading;
         return reading.DiffersFrom(previous);
+    }
+
+    /// <summary>
+    /// Whether the resolver this machine sends its lookups to stopped answering while a tunnel is up.
+    /// </summary>
+    public bool DnsUnreachable => _dnsUnreachable;
+
+    /// <summary>
+    /// Records the resolver verdict and reports whether it moved.
+    /// </summary>
+    public bool SetDnsUnreachable(bool unreachable)
+    {
+        var moved = _dnsUnreachable != unreachable;
+        _dnsUnreachable = unreachable;
+        return moved;
     }
 
     /// <summary>

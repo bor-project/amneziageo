@@ -172,7 +172,8 @@ internal static unsafe class Program
             () => Native.PostMessageW(_hwnd, Native.WM_UPDATEFAILED, 0, 0),
             () => Native.PostMessageW(_hwnd, Native.WM_CHECKDONE, (nuint)(AgentLink.CheckFailed ? 2 : AgentLink.UpdateAvailable ? 1 : 0), 0),
             () => Native.PostMessageW(_hwnd, Native.WM_GEOUPDATED, 0, 0),
-            () => Native.PostMessageW(_hwnd, Native.WM_OWNEDBYOTHER, 0, 0));
+            () => Native.PostMessageW(_hwnd, Native.WM_OWNEDBYOTHER, 0, 0),
+            () => Native.PostMessageW(_hwnd, Native.WM_NAMESUNROUTED, 0, 0));
         SingleInstance.ListenForActivation(_hwnd, Native.WM_OPENUI);
         SingleInstance.ListenForQuit(_hwnd, Native.WM_QUITTRAY);
 
@@ -314,6 +315,12 @@ internal static unsafe class Program
             if (msg == Native.WM_UPDATEFAILED)
             {
                 OnDownloadFailedSignal();
+                return 0;
+            }
+
+            if (msg == Native.WM_NAMESUNROUTED)
+            {
+                OnNamesUnroutedSignal();
                 return 0;
             }
 
@@ -744,6 +751,17 @@ internal static unsafe class Program
         {
             _lastBalloonAction = BalloonAction.None;
             ShowBalloon(Labels.UpdateDownloadFailedInfo, BalloonLevel.Warning);
+        }
+    }
+
+    // The resolver stopped answering on a live tunnel (the agent link reports the edge): warn once per verdict,
+    // unless a window is on screen - it carries the same line inline.
+    private static void OnNamesUnroutedSignal()
+    {
+        if (NotificationGate.CanNotify() && !NotificationGate.IsUiVisible())
+        {
+            _lastBalloonAction = BalloonAction.None;
+            ShowBalloon(Labels.NamesUnroutedInfo, BalloonLevel.Warning);
         }
     }
 

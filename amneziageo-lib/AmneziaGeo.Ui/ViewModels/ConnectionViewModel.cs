@@ -285,6 +285,28 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// </summary>
     public IBrush LinkChurnBrush => _orange;
 
+    // Whether the resolver this machine sends its lookups to stopped answering.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowNamesUnrouted))]
+    [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
+    [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
+    private bool _namesUnrouted;
+
+    /// <summary>
+    /// Whether the running tunnel resolves no names here, so its rules by domain no longer apply.
+    /// </summary>
+    public bool ShowNamesUnrouted => ConnState == 2 && NamesUnrouted;
+
+    /// <summary>
+    /// What a silent resolver costs, and what puts it back.
+    /// </summary>
+    public string NamesUnroutedText => Loc.Instance.Get("Main_NamesUnrouted");
+
+    /// <summary>
+    /// Colour of the silent-resolver warning.
+    /// </summary>
+    public IBrush NamesUnroutedBrush => _orange;
+
     /// <summary>
     /// Whether the home screen shows what the running tunnel loses.
     /// </summary>
@@ -351,7 +373,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _ => _glyphGray,
     };
 
-    public IBrush ConnectStatusBrush => ServerSilent ? _orange : ConnState switch
+    public IBrush ConnectStatusBrush => ServerSilent || ShowNamesUnrouted ? _orange : ConnState switch
     {
         2 => _textBlue,
         1 => _orange,
@@ -360,7 +382,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     public IBrush ConnectHintBrush => _hintBrush;
 
-    public Color TrayStatusColor => ServerSilent ? Color.FromRgb(0xE0, 0x90, 0x2F) : ConnState switch
+    public Color TrayStatusColor => ServerSilent || ShowNamesUnrouted ? Color.FromRgb(0xE0, 0x90, 0x2F) : ConnState switch
     {
         2 => Color.FromRgb(0x2A, 0x6F, 0xDB),
         1 => Color.FromRgb(0xE0, 0x90, 0x2F),
@@ -405,6 +427,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         ConnectFailed = false;
         DisconnectFailed = false;
         TakeoverPending = false;
+        NamesUnrouted = false;
     }
 
     /// <summary>
@@ -419,6 +442,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         BoundStatus = snapshot.BoundStatus;
         RetryAttempt = snapshot.RetryAttempt;
         RestartPending = snapshot.RestartRequired;
+        NamesUnrouted = snapshot.DnsUnreachable;
         if (!_toggleInFlight)
         {
             IsTunnelActive = snapshot.Active;
@@ -557,6 +581,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         OnPropertyChanged(nameof(LinkSpeedText));
         OnPropertyChanged(nameof(LinkChurning));
         OnPropertyChanged(nameof(LinkChurnText));
+        OnPropertyChanged(nameof(ShowNamesUnrouted));
         OnPropertyChanged(nameof(ShowLinkLoss));
         OnPropertyChanged(nameof(LinkLossText));
         OnPropertyChanged(nameof(LinkLossBrush));

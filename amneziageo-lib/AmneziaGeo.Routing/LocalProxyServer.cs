@@ -137,9 +137,9 @@ public sealed class LocalProxyServer : IDisposable
     public sealed record AdapterView(NetworkInterfaceType Type, bool HasGateway, IReadOnlyList<IPAddress> Addresses);
 
     /// <summary>
-    /// Addresses of this machine a client elsewhere can point at, the ones on a routed link first. Only a link
-    /// of this machine's own is taken: an address handed out by a tunnel or a dial-up answers to nobody here,
-    /// which is what makes it unreachable for the neighbour asked to use it.
+    /// Addresses of this machine a client elsewhere can point at. Only a link of this machine's own is taken:
+    /// an address handed out by a tunnel or a dial-up answers to nobody here, which is what makes it
+    /// unreachable for the neighbour asked to use it.
     /// </summary>
     public static IReadOnlyList<string> UsableAddresses()
     {
@@ -170,7 +170,9 @@ public sealed class LocalProxyServer : IDisposable
     }
 
     /// <summary>
-    /// Picks the reachable addresses out of the adapters given.
+    /// Picks the reachable addresses out of the adapters given: those on a routed link, and the rest only where
+    /// no link is routed. A gateway is what tells the network this machine shares with its neighbours from the
+    /// virtual switches a host keeps to itself, which carry an address nobody outside this machine dials.
     /// </summary>
     public static IReadOnlyList<string> Usable(IEnumerable<AdapterView> adapters)
     {
@@ -194,7 +196,10 @@ public sealed class LocalProxyServer : IDisposable
             }
         }
 
-        return [.. routed.Concat(rest).Distinct(StringComparer.Ordinal)];
+        // Where the gateway of every link is out of reach, as it is for an application on Android, the whole
+        // list goes out rather than nothing at all.
+        var offered = routed.Count > 0 ? routed : rest;
+        return [.. offered.Distinct(StringComparer.Ordinal)];
     }
 
     /// <summary>

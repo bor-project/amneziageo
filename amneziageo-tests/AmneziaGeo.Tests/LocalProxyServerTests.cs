@@ -215,6 +215,7 @@ public sealed class LocalProxyServerTests : IDisposable
     public void TheAddressOffered_IsARoutedLinkOfThisMachineAndNeverTheTunnels()
     {
         var lan = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, true, [IPAddress.Parse("10.0.110.22")]);
+        // A virtual switch of a hypervisor reports itself as ethernet and keeps its segment to this machine.
         var host = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, false, [IPAddress.Parse("172.23.144.1")]);
         // A WireGuard adapter reports itself as a proprietary virtual link (ifType 53), a dial-up as PPP.
         var tunnel = new LocalProxyServer.AdapterView((NetworkInterfaceType)53, false, [IPAddress.Parse("10.8.2.29")]);
@@ -222,7 +223,18 @@ public sealed class LocalProxyServerTests : IDisposable
 
         var usable = LocalProxyServer.Usable([tunnel, host, dialup, lan]);
 
-        Assert.Equal(["10.0.110.22", "172.23.144.1"], usable);
+        Assert.Equal(["10.0.110.22"], usable);
+    }
+
+    [Fact]
+    public void WithNoLinkRouted_TheAddressesOfThisMachineAreOfferedAnyway()
+    {
+        var wifi = new LocalProxyServer.AdapterView(NetworkInterfaceType.Wireless80211, false, [IPAddress.Parse("192.168.1.47")]);
+        var wired = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, false, [IPAddress.Parse("192.168.137.1")]);
+
+        var usable = LocalProxyServer.Usable([wifi, wired]);
+
+        Assert.Equal(["192.168.1.47", "192.168.137.1"], usable);
     }
 
     [Fact]

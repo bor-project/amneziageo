@@ -70,6 +70,11 @@ internal sealed class UiPreferences
     /// </summary>
     public bool AlwaysOnMode { get; set; }
 
+    /// <summary>
+    /// The update version whose banner has already been offered; empty until the first one.
+    /// </summary>
+    public string ShownUpdateVersion { get; set; } = string.Empty;
+
     private static string DbPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "AmneziaGeo",
@@ -140,6 +145,7 @@ internal sealed class UiPreferences
             ["last-config"] = LastConfig,
             ["last-routing-list"] = LastRoutingList.ToString(CultureInfo.InvariantCulture),
             ["always-on-mode"] = AlwaysOnMode ? "1" : "0",
+            ["shown-update"] = ShownUpdateVersion,
         };
     }
 
@@ -189,6 +195,11 @@ internal sealed class UiPreferences
         if (values.TryGetValue("language", out var language))
         {
             prefs.Language = language;
+        }
+
+        if (values.TryGetValue("shown-update", out var shownUpdate))
+        {
+            prefs.ShownUpdateVersion = shownUpdate;
         }
 
         if (values.TryGetValue("last-config", out var lastConfig))

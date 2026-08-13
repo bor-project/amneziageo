@@ -27,6 +27,10 @@ internal static unsafe class Program
     // Uptime ceiling for treating a tray start as a post-reboot logon autostart.
     private const long BootConnectWindowMs = 300_000;
 
+    // Where the announced update version is kept, next to the UI preferences.
+    private const string TrayScope = "tray";
+    private const string ShownUpdateKey = "shown-update";
+
     private static nint _hwnd;
     private static nint[] _icons = [];
     private static int _current;
@@ -37,8 +41,10 @@ internal static unsafe class Program
     private static bool _showConsole;
 
     // App-update notifications: the last found / downloaded versions announced (so a transient re-report does
-    // not re-notify), and which action a click on the most recent balloon takes.
+    // not re-notify), and which action a click on the most recent balloon takes. The found version also lives in
+    // the state database, so a logon that starts the tray again does not announce the same version once more.
     private static string _lastNotifiedUpdateVersion = string.Empty;
+    private static bool _notifiedVersionRead;
     private static string _lastDownloadedNotifiedVersion = string.Empty;
     private static BalloonAction _lastBalloonAction;
 
@@ -651,18 +657,60 @@ internal static unsafe class Program
         }
 
         var version = AgentLink.UpdateVersion;
-        if (string.Equals(version, _lastNotifiedUpdateVersion, StringComparison.Ordinal))
+        if (string.Equals(version, NotifiedUpdateVersion(), StringComparison.Ordinal))
         {
             return;
         }
 
         if (NotificationGate.CanNotify() && !IsUiForeground())
         {
-            _lastNotifiedUpdateVersion = version;
+            RememberNotifiedUpdate(version);
             _lastBalloonAction = BalloonAction.Download;
             ShowBalloon(string.Format(Labels.UpdateFoundInfo, version));
         }
     }
+
+    // The version the tray has already announced, read from the state database on the first ask.
+    private static string NotifiedUpdateVersion()
+    {
+        if (_notifiedVersionRead)
+        {
+            return _lastNotifiedUpdateVersion;
+        }
+
+        _notifiedVersionRead = true;
+        try
+        {
+            _lastNotifiedUpdateVersion = new LocalKeyValueStore(StateDbPath()).Read(TrayScope, ShownUpdateKey)?.Trim() ?? string.Empty;
+        }
+        catch
+        {
+        }
+
+        return _lastNotifiedUpdateVersion;
+    }
+
+    private static void RememberNotifiedUpdate(string version)
+    {
+        _lastNotifiedUpdateVersion = version;
+        _notifiedVersionRead = true;
+        try
+        {
+            var path = StateDbPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            new LocalKeyValueStore(path).Save(
+                TrayScope,
+                new Dictionary<string, string>(StringComparer.Ordinal) { [ShownUpdateKey] = version });
+        }
+        catch
+        {
+        }
+    }
+
+    private static string StateDbPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "AmneziaGeo",
+        "state.db");
 
     // A download-completed edge from the agent link: balloon once per newly-downloaded version (when
     // notifications are on and the GUI is not in front), so a click starts the install. Dedup is by version so

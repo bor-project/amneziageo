@@ -614,7 +614,9 @@ internal sealed class TunnelRunner(
         // and the carrier re-dialled on what the echoes say - the tunnel, its routes and its DNS all stay up.
         if (wsTransport is not null)
         {
-            var probe = new LinkLossProbe(LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(config)));
+            // The config's own DNS is gone from it by now, so the resolvers come from what was read out of it
+            // earlier: those are the addresses the tunnel is given routes to, and an echo needs one of them.
+            var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), tunnelResolver));
             var watchdog = new CarrierWatchdog(wsTransport, uapi, probe, name, loggerFactory.CreateLogger<CarrierWatchdog>());
             _ = Task.Run(() => probe.RunAsync(sessionCts.Token));
             _ = Task.Run(() => watchdog.RunAsync(sessionCts.Token));

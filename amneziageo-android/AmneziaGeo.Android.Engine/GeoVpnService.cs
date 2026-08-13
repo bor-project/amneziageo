@@ -417,9 +417,10 @@ public sealed class GeoVpnService : VpnService
             VpnBridge.PublishLink(this, handshake, LinkReading.Empty);
             var keepalive = new CancellationTokenSource();
             _keepalive = keepalive;
-            // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the peer's
-            // own address on the tunnel is echoed once a second.
-            var loss = new LinkLossProbe(LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(resolved)));
+            // What the tunnel loses: the peer counters keep no trace of a packet that never arrived, so the far
+            // end is echoed once a second - the peer where the server gives it an address, and otherwise the
+            // resolvers, which the tunnel carries even where it carries nothing else of that subnet.
+            var loss = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(resolved), WgConfigEditor.GetDns(resolved)));
             _ = Task.Run(() => loss.RunAsync(keepalive.Token));
             _ = Task.Run(() => ReportLinkAsync(loss, keepalive.Token));
             if (relay is not null && _proxyPort > 0)

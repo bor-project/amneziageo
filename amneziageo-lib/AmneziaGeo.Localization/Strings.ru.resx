@@ -1628,6 +1628,9 @@
   <data name="Android_UpdateAllowInstallSources" xml:space="preserve">
     <value>Разрешите AmneziaGeo устанавливать приложения и нажмите «Установить» ещё раз.</value>
   </data>
+  <data name="Android_UpdateReopen" xml:space="preserve">
+    <value>Обновление установлено. Нажмите, чтобы открыть AmneziaGeo.</value>
+  </data>
   <data name="Main_ExportListTitle" xml:space="preserve">
     <value>Экспорт списка</value>
   </data>

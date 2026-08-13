@@ -254,6 +254,9 @@ internal sealed class AndroidUpdater : IDisposable
             Installing = true;
             Failed = false;
             _push();
+
+            // Установку начал человек из окна, поэтому после замены пакета окно возвращается.
+            UpdateReplacedReceiver.Arm(context);
             var session = await CommitAsync(context, ct).ConfigureAwait(false);
             _log.Info("update", $"installing {Version} in session {session}");
             return new IpcAck(true, IpcMessage.Key("Agent_UpdateInstallStarted", Version));

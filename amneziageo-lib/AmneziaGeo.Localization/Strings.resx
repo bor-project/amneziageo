@@ -1854,7 +1854,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>tunnel packet loss: no data yet</value>
   </data>
   <data name="Main_NamesUnrouted" xml:space="preserve">
-    <value>names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Rules by domain do not apply, and those sites go outside the tunnel</value>
+    <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
     <value>Use this configuration</value>

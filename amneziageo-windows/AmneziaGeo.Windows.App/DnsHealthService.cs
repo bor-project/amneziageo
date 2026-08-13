@@ -1,21 +1,20 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Watches whether names still resolve through the running tunnel's own proxy and hands the verdict to the
-/// snapshot. Its silence is invisible otherwise: rules by domain simply stop applying, every name resolves
-/// outside the tunnel, and the connection goes on looking healthy.
+/// Watches whether this machine resolves names through the running tunnel's own proxy and hands the verdict to
+/// the snapshot. Its silence is invisible otherwise: rules by domain simply stop applying, so those sites either
+/// leave outside the tunnel or are cut off by the leak protection, while the connection looks healthy.
 /// </summary>
 internal sealed class DnsHealthService(
     AgentControl control,
     AgentStatusBroker broker,
     ILogger<DnsHealthService> logger) : BackgroundService
 {
-    private static readonly TimeSpan _initialDelay = TimeSpan.FromSeconds(20);
-    private static readonly TimeSpan _interval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _initialDelay = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan _interval = TimeSpan.FromSeconds(20);
     // Silent answers in a row before the verdict turns; one lost datagram is not a broken resolver.
     private const int Strikes = 2;
 
@@ -37,39 +36,43 @@ internal sealed class DnsHealthService(
             try
             {
                 await CheckOnceAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Only the stop token ends this watch: an inner cancellation is one failed check, not a reason
+                // to leave the machine unwatched for the rest of the session.
+                logger.LogDebug(ex, "the resolver check could not run");
+            }
+
+            try
+            {
                 await Task.Delay(_interval, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return;
             }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "the resolver check could not run");
-            }
         }
     }
 
     private async Task CheckOnceAsync(CancellationToken ct)
     {
-        var tunnel = control.RunningTarget;
-        if (!control.Running || string.IsNullOrEmpty(tunnel))
+        if (!control.Running)
         {
             _misses = 0;
             await ReportAsync(false, ct).ConfigureAwait(false);
             return;
         }
 
-        // The tunnel runs in its own process and owns both the proxy and the redirect, so the verdict is its to
-        // give. A quiet logger: an unreachable pipe is a tunnel in transition, not news.
-        var verdict = await Task.Run(
-            () => RuntimeSnapshotPipe.Send(tunnel, RuntimeSnapshotPipe.OpDns, NullLogger.Instance), ct).ConfigureAwait(false);
-        if (verdict is null)
-        {
-            return;
-        }
-
-        if (verdict.Trim() != RuntimeSnapshotPipe.DnsUnrouted)
+        // Asked the way an application asks, in the agent itself: the resolver a machine uses is chosen per
+        // machine, so this answer is the one every program on it gets.
+        var served = await DnsHealthProbe.SystemAnswersAsync(ct).ConfigureAwait(false);
+        logger.LogDebug("resolver check: names resolve through the tunnel: {Served}, misses {Misses}", served, _misses);
+        if (served)
         {
             if (control.DnsUnreachable)
             {
@@ -89,7 +92,7 @@ internal sealed class DnsHealthService(
 
         if (!control.DnsUnreachable)
         {
-            logger.LogWarning("names on this machine are resolved by another program, not by {Tunnel}: rules by domain no longer apply and those names leave outside the tunnel", tunnel);
+            logger.LogWarning("names on this machine are not resolved through {Tunnel}: rules by domain no longer apply, so those sites either leave outside the tunnel or are cut off by the leak protection", control.RunningTarget ?? control.Target);
         }
 
         await ReportAsync(true, ct).ConfigureAwait(false);

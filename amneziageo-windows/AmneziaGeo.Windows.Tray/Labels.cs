@@ -75,7 +75,7 @@ internal static class Labels
     /// machine stops resolving through the app, so rules by domain no longer apply.
     /// </summary>
     public static string NamesUnroutedInfo { get; private set; } =
-        "Another program resolves names on this machine. Rules by domain do not apply";
+        "Rules by domain are not working: another program resolves names on this machine";
 
     /// <summary>
     /// «Отключение…» / "Disconnecting…": balloon body when the tunnel starts coming down (#12).
@@ -206,7 +206,7 @@ internal static class Labels
             ConnectedInfo = "Подключение установлено";
             ConnectFailedInfo = "Не удалось установить подключение";
             ConnectionLostInfo = "Соединение разорвано";
-            NamesUnroutedInfo = "Имена на этой машине разрешает другая программа. Правила по доменам не действуют";
+            NamesUnroutedInfo = "Правила по доменам не работают: имена на этой машине разрешает другая программа";
             DisconnectingInfo = "Отключение…";
             DisconnectedInfo = "Отключено";
             DisconnectFailedInfo = "Не удалось завершить отключение";

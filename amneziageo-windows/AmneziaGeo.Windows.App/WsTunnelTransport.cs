@@ -16,6 +16,19 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
     private const int TcpTableOwnerPidAll = 5;
     private const int TcpStateEstablished = 5;
 
+    // TCP_ESTATS_TYPE: the data counters and the path counters.
+    private const int EstatsData = 1;
+    private const int EstatsPath = 3;
+
+    // sizeof(TCP_ESTATS_DATA_ROD_v0) and sizeof(TCP_ESTATS_PATH_ROD_v0); a size the kernel does not recognise is
+    // refused outright rather than filled in part.
+    private const int DataRodBytes = 96;
+    private const int PathRodBytes = 160;
+
+    // DataBytesOut and BytesRetrans within those two.
+    private const int BytesOutOffset = 0;
+    private const int BytesRetransOffset = 24;
+
     private readonly string _serverHost;
     private readonly int _wsPort;
     private readonly int _targetPort;   // server-side AmneziaWG UDP port (original Endpoint port)
@@ -95,6 +108,23 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         return pid == 0 ? (0, 0) : CountSessions(pid);
     }
 
+    /// <summary>
+    /// Bytes the carrier's established connections have sent, and how many of them the network made it send
+    /// again. A carrier deep in retransmission still passes the small packets a session lives on while a
+    /// transfer inside it never finishes, which no other counter here shows.
+    /// </summary>
+    public (long BytesOut, long BytesRetrans) Retransmission()
+    {
+        var process = _process;
+        if (process is null)
+        {
+            return (0, 0);
+        }
+
+        var pid = TryGetPid(process);
+        return pid == 0 ? (0, 0) : CountWire(pid);
+    }
+
     private static uint TryGetPid(Process process)
     {
         try
@@ -109,11 +139,61 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     private static (int Total, int Established) CountSessions(uint pid)
     {
+        var rows = Rows(pid);
+        var established = 0;
+        foreach (var row in rows)
+        {
+            if (row.State == TcpStateEstablished)
+            {
+                established++;
+            }
+        }
+
+        return (rows.Count, established);
+    }
+
+    // Per-connection statistics Windows keeps once collection is turned on for that connection; enabling it
+    // again on one already collecting costs nothing and covers a carrier that has re-dialled since.
+    private static (long BytesOut, long BytesRetrans) CountWire(uint pid)
+    {
+        var sent = 0L;
+        var again = 0L;
+        var enable = new byte[] { 1 };
+        var data = new byte[DataRodBytes];
+        var path = new byte[PathRodBytes];
+        foreach (var row in Rows(pid))
+        {
+            if (row.State != TcpStateEstablished)
+            {
+                continue;
+            }
+
+            var one = row;
+            _ = SetPerTcpConnectionEStats(ref one, EstatsData, enable, 0, 1, 0);
+            _ = SetPerTcpConnectionEStats(ref one, EstatsPath, enable, 0, 1, 0);
+            if (GetPerTcpConnectionEStats(ref one, EstatsData, null, 0, 0, null, 0, 0, data, 0, DataRodBytes) == 0)
+            {
+                sent += (long)BitConverter.ToUInt64(data, BytesOutOffset);
+            }
+
+            if (GetPerTcpConnectionEStats(ref one, EstatsPath, null, 0, 0, null, 0, 0, path, 0, PathRodBytes) == 0)
+            {
+                again += BitConverter.ToUInt32(path, BytesRetransOffset);
+            }
+        }
+
+        return (sent, again);
+    }
+
+    // The connections one process holds.
+    private static List<TcpRow> Rows(uint pid)
+    {
+        var rows = new List<TcpRow>();
         var size = 0;
         GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
         if (size <= 0)
         {
-            return (0, 0);
+            return rows;
         }
 
         var buffer = Marshal.AllocHGlobal(size);
@@ -121,30 +201,22 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
         {
             if (GetExtendedTcpTable(buffer, ref size, false, AfInet, TcpTableOwnerPidAll, 0) != 0)
             {
-                return (0, 0);
+                return rows;
             }
 
-            var total = 0;
-            var established = 0;
             var count = Marshal.ReadInt32(buffer);
             var basePtr = buffer + 4;
             for (var i = 0; i < count; i++)
             {
-                // MIB_TCPROW_OWNER_PID: state at offset 0, owning pid at 20, each row 24 bytes.
+                // MIB_TCPROW_OWNER_PID: MIB_TCPROW itself, then the owning pid at 20, each row 24 bytes.
                 var row = basePtr + (i * 24);
-                if ((uint)Marshal.ReadInt32(row, 20) != pid)
+                if ((uint)Marshal.ReadInt32(row, 20) == pid)
                 {
-                    continue;
-                }
-
-                total++;
-                if (Marshal.ReadInt32(row) == TcpStateEstablished)
-                {
-                    established++;
+                    rows.Add(Marshal.PtrToStructure<TcpRow>(row));
                 }
             }
 
-            return (total, established);
+            return rows;
         }
         finally
         {
@@ -427,4 +499,21 @@ internal sealed class WsTunnelTransport : IAsyncDisposable
 
     [DllImport("iphlpapi.dll", SetLastError = true)]
     private static extern uint GetExtendedTcpTable(IntPtr pTcpTable, ref int pdwSize, [MarshalAs(UnmanagedType.Bool)] bool bOrder, int ulAf, int tableClass, int reserved);
+
+    [DllImport("iphlpapi.dll")]
+    private static extern uint SetPerTcpConnectionEStats(ref TcpRow row, int estatsType, byte[] rw, uint rwVersion, uint rwSize, uint offset);
+
+    [DllImport("iphlpapi.dll")]
+    private static extern uint GetPerTcpConnectionEStats(ref TcpRow row, int estatsType, byte[]? rw, uint rwVersion, uint rwSize, byte[]? ros, uint rosVersion, uint rosSize, byte[] rod, uint rodVersion, uint rodSize);
+
+    // MIB_TCPROW: the five fields that name one connection, its ports in network order.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TcpRow
+    {
+        public uint State;
+        public uint LocalAddress;
+        public uint LocalPort;
+        public uint RemoteAddress;
+        public uint RemotePort;
+    }
 }

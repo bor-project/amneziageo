@@ -79,6 +79,37 @@ public sealed class LinkLossProbeTests
     }
 
     [Fact]
+    public void TheEchoedAddresses_PutThePeerBeforeTheResolversBehindIt()
+    {
+        var targets = LinkLossProbe.Targets(["10.8.2.29/32"], ["1.1.1.1", "1.0.0.1"]);
+
+        Assert.Equal(["10.8.2.1", "1.1.1.1", "1.0.0.1"], targets);
+    }
+
+    [Fact]
+    public void NoMoreThanThreeAddresses_AreWorthLookingForAResponderIn()
+    {
+        var targets = LinkLossProbe.Targets(["10.8.2.29/32"], ["1.1.1.1", "1.0.0.1", "9.9.9.9"]);
+
+        Assert.Equal(3, targets.Count);
+    }
+
+    [Fact]
+    public void AResolverOnLoopback_IsThisMachinesOwnProxyAndMeasuresNothing()
+    {
+        Assert.Equal(["1.1.1.1"], LinkLossProbe.BeyondTargets(["127.0.0.1", "1.1.1.1"]));
+    }
+
+    [Fact]
+    public void BeforeAnyEchoIsSent_NothingIsAnswering()
+    {
+        var probe = new LinkLossProbe(["10.0.0.1"]);
+
+        Assert.False(probe.Answering);
+        Assert.Equal(0, probe.Attempts);
+    }
+
+    [Fact]
     public void ASingleHostAddress_IsReadAsOneSubnetOfTheServer()
     {
         var targets = LinkLossProbe.PeerTargets(["10.8.2.21/32"]);

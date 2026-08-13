@@ -11,26 +11,22 @@ namespace AmneziaGeo.Windows.App;
 /// </summary>
 internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi, LinkLossProbe probe, string tunnelName, ILogger logger)
 {
-    // Seconds of outgoing traffic with nothing coming back before the carrier counts as dead.
-    private const int StallSeconds = 12;
-
-    // Loss and round trip inside the tunnel that mark a channel no longer able to carry a transfer.
-    private const int LossPercentLimit = 40;
-    private const int RttMsLimit = 2000;
-
-    // Seconds a degraded reading holds before it is acted on.
-    private const int DegradedSeconds = 20;
+    // Echoes without one answer after which the link is declared unmeasurable. A probe whose target is not
+    // carried by the tunnel never answers, and the reading it then never produces passes for perfect health.
+    private const int UnmeasurableAttempts = 60;
 
     // Shortest gap between re-dials, so a genuinely bad underlay is not dialled in a loop.
     private static readonly TimeSpan _redialCooldown = TimeSpan.FromMinutes(2);
 
     private static readonly TimeSpan _traceInterval = TimeSpan.FromSeconds(60);
 
+    private readonly CarrierHealth _health = new();
     private long _lastRx = -1;
     private long _lastTx = -1;
-    private int _stalled;
-    private int _degraded;
+    private long _lastBytesOut = -1;
+    private long _lastBytesRetrans = -1;
     private bool _degradedLogged;
+    private bool _unmeasurableLogged;
     private DateTimeOffset _redialledAt = DateTimeOffset.MinValue;
     private DateTimeOffset _tracedAt = DateTimeOffset.MinValue;
 
@@ -39,8 +35,8 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
     {
-        logger.LogInformation("{Name}: watching the websocket carrier — it is re-dialled if nothing comes back for {Stall}s, or if the channel loses {Loss}% or answers slower than {Rtt} ms for {Degraded}s",
-            tunnelName, StallSeconds, LossPercentLimit, RttMsLimit, DegradedSeconds);
+        logger.LogInformation("{Name}: watching the websocket carrier - it is re-dialled if nothing comes back while the tunnel keeps sending, if the channel degrades, or if the carrier has to send its traffic again",
+            tunnelName);
 
         while (!ct.IsCancellationRequested)
         {
@@ -67,11 +63,15 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
         _lastRx = status.RxBytes;
         _lastTx = status.TxBytes;
 
-        _stalled = txMoved && !rxMoved ? _stalled + 1 : 0;
-        _degraded = Degraded() ? _degraded + 1 : 0;
-        Trace(status);
+        var wire = carrier.Retransmission();
+        var bytesOut = Moved(_lastBytesOut, wire.BytesOut);
+        var bytesRetrans = Moved(_lastBytesRetrans, wire.BytesRetrans);
+        _lastBytesOut = wire.BytesOut;
+        _lastBytesRetrans = wire.BytesRetrans;
 
-        var reason = Verdict();
+        var reason = _health.Verdict(txMoved, rxMoved, bytesOut, bytesRetrans, probe.Percent, probe.RttMs);
+        Unmeasurable();
+        Trace(status);
         if (reason.Length == 0)
         {
             return;
@@ -84,44 +84,39 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
         }
 
         _redialledAt = now;
-        _stalled = 0;
-        _degraded = 0;
+        _health.Clear();
         carrier.Redial($"{tunnelName}: {reason}");
         probe.Reset();
     }
 
-    // What the echoes inside the tunnel say about the channel right now.
-    private bool Degraded()
+    // A counter that went backwards belongs to a connection the carrier has since replaced.
+    private static long Moved(long last, long now)
     {
-        var loss = probe.Percent;
-        return (LinkHealth.LossKnown(loss) && loss >= LossPercentLimit) || probe.RttMs >= RttMsLimit;
+        return last >= 0 && now >= last ? now - last : 0;
     }
 
-    // The reason to re-dial, or nothing while the channel still carries.
-    private string Verdict()
+    // A probe nothing answers is worth saying once: the loss and the round trip stay unknown for the session, so
+    // the channel is judged on silence and on what the carrier repeats, and on nothing else.
+    private void Unmeasurable()
     {
-        if (_stalled >= StallSeconds)
+        if (_unmeasurableLogged || probe.Answering || probe.Attempts < UnmeasurableAttempts)
         {
-            return $"nothing has come back for {_stalled}s while the tunnel kept sending";
+            return;
         }
 
-        if (_degraded >= DegradedSeconds)
-        {
-            return $"the channel has been losing {probe.Percent}% at {probe.RttMs} ms for {_degraded}s";
-        }
-
-        return string.Empty;
+        _unmeasurableLogged = true;
+        logger.LogWarning("{Name}: nothing has answered {Attempts} echoes inside the tunnel, so the channel's loss and round trip stay unknown for this session; check that the probe's target is carried by the tunnel",
+            tunnelName, probe.Attempts);
     }
 
     // Writes the channel to the journal: on every crossing into and out of a degraded reading, and once a minute
     // regardless, so a stalled transfer leaves a record of what the carrier held while it stalled.
     private void Trace(UapiClient.PeerStatus status)
     {
-        var degraded = _degraded > 0;
-        if (degraded != _degradedLogged)
+        if (_health.Degrading != _degradedLogged)
         {
-            _degradedLogged = degraded;
-            LogCrossing(degraded);
+            _degradedLogged = _health.Degrading;
+            LogCrossing(_health.Degrading);
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -132,8 +127,8 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
 
         _tracedAt = now;
         var sessions = carrier.Sessions();
-        logger.LogInformation("{Name}: the carrier holds {Established} of {Total} connection(s) and has been re-dialled {Redials} time(s); the tunnel received {Rx} B, sent {Tx} B, loses {Loss}% at {Rtt} ms",
-            tunnelName, sessions.Established, sessions.Total, carrier.Redials, status.RxBytes, status.TxBytes, probe.Percent, probe.RttMs);
+        logger.LogInformation("{Name}: the carrier holds {Established} of {Total} connection(s), has been re-dialled {Redials} time(s) and repeats {Retrans}% of what it sends; the tunnel received {Rx} B, sent {Tx} B, loses {Loss}% at {Rtt} ms",
+            tunnelName, sessions.Established, sessions.Total, carrier.Redials, _health.RetransPercent, status.RxBytes, status.TxBytes, probe.Percent, probe.RttMs);
     }
 
     private void LogCrossing(bool degraded)
@@ -141,11 +136,11 @@ internal sealed class CarrierWatchdog(WsTunnelTransport carrier, UapiClient uapi
         var sessions = carrier.Sessions();
         if (degraded)
         {
-            logger.LogWarning("{Name}: the channel is degrading — losing {Loss}% at {Rtt} ms while the carrier holds {Established} of {Total} connection(s)",
+            logger.LogWarning("{Name}: the channel is degrading - losing {Loss}% at {Rtt} ms while the carrier holds {Established} of {Total} connection(s)",
                 tunnelName, probe.Percent, probe.RttMs, sessions.Established, sessions.Total);
             return;
         }
 
-        logger.LogInformation("{Name}: the channel carries again — losing {Loss}% at {Rtt} ms", tunnelName, probe.Percent, probe.RttMs);
+        logger.LogInformation("{Name}: the channel carries again - losing {Loss}% at {Rtt} ms", tunnelName, probe.Percent, probe.RttMs);
     }
 }

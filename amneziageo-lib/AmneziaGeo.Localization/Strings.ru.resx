@@ -122,7 +122,28 @@
     <value>Пароль</value>
   </data>
   <data name="General_ProxyAuthHint" xml:space="preserve">
-    <value>Пустой пользователь — вход без пароля.</value>
+    <value>Клиент входит под любой из них; без учётных записей — вход без пароля.</value>
+  </data>
+  <data name="General_ProxyAccounts" xml:space="preserve">
+    <value>Учётные записи</value>
+  </data>
+  <data name="General_ProxyClients" xml:space="preserve">
+    <value>Подключения</value>
+  </data>
+  <data name="General_ProxyClientsTooltip" xml:space="preserve">
+    <value>Показать, кто подключён</value>
+  </data>
+  <data name="General_ProxyNoClients" xml:space="preserve">
+    <value>Прокси сейчас никто не использует.</value>
+  </data>
+  <data name="General_ProxyClientConnections" xml:space="preserve">
+    <value>подключений: {0}</value>
+  </data>
+  <data name="General_ProxyCopyTooltip" xml:space="preserve">
+    <value>Скопировать адрес</value>
+  </data>
+  <data name="General_ProxyRevealTooltip" xml:space="preserve">
+    <value>Показать пароль</value>
   </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Восстанавливать после перезагрузки</value>

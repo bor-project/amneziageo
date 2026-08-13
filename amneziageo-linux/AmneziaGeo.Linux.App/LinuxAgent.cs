@@ -43,7 +43,6 @@ internal sealed class LinuxAgent : IDisposable
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
     private readonly LocalProxyServer _proxy;
-    private readonly string _interfaceName;
 
     private LocalProxyOptions _proxyOptions = new();
     private string? _selectedTarget;
@@ -89,7 +88,6 @@ internal sealed class LinuxAgent : IDisposable
         _tunnel = new TunnelController(enginePath, interfaceName, log);
         _bundles = new BundleCommands(_store, _geo);
         _updater = new LinuxUpdater(_httpClient, log, PushAsync);
-        _interfaceName = interfaceName;
         _proxy = new LocalProxyServer(new DirectProxyOutbound(), line => _log.Info("proxy", line));
     }
 
@@ -223,11 +221,11 @@ internal sealed class LinuxAgent : IDisposable
             ProxySocksPort: _proxyOptions.SocksPort,
             ProxyHttpPort: _proxyOptions.HttpPort,
             ProxyLan: _proxyOptions.AllowLan,
-            ProxyUser: _proxyOptions.User,
-            ProxyPassword: _proxyOptions.Password,
+            ProxyCredentials: _proxyOptions.Credentials,
             ProxyRunning: _proxy.Running,
             ProxyError: _proxy.Error,
-            ProxyAddress: _proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.LanAddress(_interfaceName) : string.Empty);
+            ProxyAddresses: _proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.UsableAddresses() : [],
+            ProxyClients: ProxyClients());
     }
 
     // One proxy setting on top of the ones in force.
@@ -258,13 +256,20 @@ internal sealed class LinuxAgent : IDisposable
 
                 options = options with { HttpPort = http };
                 return true;
-            case SettingKeys.ProxyUser:
-                options = options with { User = value.Trim() };
-                return true;
             default:
-                options = options with { Password = value };
+                options = options with { Credentials = value.Trim() };
                 return true;
         }
+    }
+
+    // One entry per client address, the busiest first.
+    private IReadOnlyList<ProxyClientEntry> ProxyClients()
+    {
+        return [.. _proxy.Peers()
+            .GroupBy(peer => peer.Address, StringComparer.Ordinal)
+            .Select(group => new ProxyClientEntry(group.Key, string.Empty, group.Count(), group.Min(peer => peer.Since)))
+            .OrderByDescending(entry => entry.Connections)
+            .ThenBy(entry => entry.Address, StringComparer.Ordinal)];
     }
 
     // What goes into the store: the toggles keep one spelling, the rest is stored as it came.
@@ -290,9 +295,24 @@ internal sealed class LinuxAgent : IDisposable
                 && SettingKeys.TryParseProxyPort(http, out var httpPort)
                     ? httpPort
                     : LocalProxyOptions.DefaultHttpPort,
-            User = settings.TryGetValue(SettingKeys.ProxyUser, out var user) ? user : string.Empty,
-            Password = settings.TryGetValue(SettingKeys.ProxyPassword, out var password) ? password : string.Empty,
+            Credentials = ReadCredentials(settings),
         };
+    }
+
+    // The single user/password pair became a list; a pair left over from an earlier version becomes its first account.
+    private static string ReadCredentials(IReadOnlyDictionary<string, string> settings)
+    {
+        if (settings.TryGetValue(SettingKeys.ProxyCredentials, out var stored) && stored.Length > 0)
+        {
+            return stored;
+        }
+
+        if (!settings.TryGetValue(SettingKeys.ProxyUser, out var user) || user.Trim().Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return $"{user.Trim()}:{(settings.TryGetValue(SettingKeys.ProxyPassword, out var password) ? password : string.Empty)}";
     }
 
     // Notices a tunnel that went down under us and redials it while periodic reconnect is on, and carries the
@@ -1219,8 +1239,7 @@ internal sealed class LinuxAgent : IDisposable
             case SettingKeys.ProxyLan:
             case SettingKeys.ProxySocksPort:
             case SettingKeys.ProxyHttpPort:
-            case SettingKeys.ProxyUser:
-            case SettingKeys.ProxyPassword:
+            case SettingKeys.ProxyCredentials:
                 if (!TryProxySetting(args[0], args[1], out var proxy))
                 {
                     return Fail();

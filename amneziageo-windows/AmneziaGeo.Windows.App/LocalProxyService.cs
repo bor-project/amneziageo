@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 using AmneziaGeo.Routing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,10 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
     private readonly LocalProxyServer _server = new(new DirectProxyOutbound(), line => logger.LogInformation("{Line}", line));
     private readonly SemaphoreSlim _gate = new(1, 1);
     private LocalProxyOptions _applied = new();
+    // Walking the adapters costs hundreds of milliseconds, so the list is rebuilt on a network change and read
+    // from here in between.
+    private volatile IReadOnlyList<string> _addresses = [];
+    private int _addressesStale = 1;
 
     /// <summary>
     /// Whether the listener is up.
@@ -30,9 +35,17 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
     public string Error => _server.Error;
 
     /// <summary>
-    /// Address other machines reach the proxy at; empty while it stays on this machine.
+    /// Addresses other machines reach the proxy at; empty while it stays on this machine.
     /// </summary>
-    public string Address => _server.Running && _applied.AllowLan ? LocalProxyServer.LanAddress("AmneziaGeo") : string.Empty;
+    public IReadOnlyList<string> Addresses => _server.Running && _applied.AllowLan ? _addresses : [];
+
+    /// <summary>
+    /// Clients holding a connection right now, one entry per connection.
+    /// </summary>
+    public IReadOnlyList<ProxyPeer> Peers()
+    {
+        return _server.Peers();
+    }
 
     /// <summary>
     /// Reads the settings and moves the listener to them.
@@ -42,6 +55,11 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (Interlocked.Exchange(ref _addressesStale, 0) == 1)
+            {
+                _addresses = LocalProxyServer.UsableAddresses();
+            }
+
             var wanted = (await settings.LoadAsync(ct).ConfigureAwait(false)).Proxy();
             if (wanted == _applied)
             {
@@ -69,6 +87,7 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        NetworkChange.NetworkAddressChanged += OnAddressChanged;
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -82,6 +101,7 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
         }
         finally
         {
+            NetworkChange.NetworkAddressChanged -= OnAddressChanged;
             _server.Stop();
             Firewall(new LocalProxyOptions());
         }
@@ -93,6 +113,12 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
         _server.Dispose();
         _gate.Dispose();
         base.Dispose();
+    }
+
+    // An address added or dropped anywhere on the machine marks the list for a rebuild on the next poll.
+    private void OnAddressChanged(object? sender, EventArgs e)
+    {
+        Interlocked.Exchange(ref _addressesStale, 1);
     }
 
     // The rule is rewritten whole on every change, so the ports it names are the ports in force.

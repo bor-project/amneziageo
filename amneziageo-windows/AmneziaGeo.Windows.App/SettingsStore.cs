@@ -36,9 +36,23 @@ internal sealed class SettingsStore(IStateStore store)
             ProxySocksPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, defaults.ProxySocksPort),
             ProxyHttpPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort, defaults.ProxyHttpPort),
             ProxyLan = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyLan, defaults.ProxyLan),
-            ProxyUser = ReadText(values, AmneziaGeo.Ipc.SettingKeys.ProxyUser, defaults.ProxyUser),
-            ProxyPassword = ReadText(values, AmneziaGeo.Ipc.SettingKeys.ProxyPassword, defaults.ProxyPassword),
+            ProxyCredentials = ReadCredentials(values, defaults.ProxyCredentials),
         };
+    }
+
+    // The single user/password pair became a list; a pair left over from an earlier version becomes its first account.
+    private static string ReadCredentials(IReadOnlyDictionary<string, string> values, string fallback)
+    {
+        var stored = ReadText(values, AmneziaGeo.Ipc.SettingKeys.ProxyCredentials, string.Empty);
+        if (stored.Length > 0)
+        {
+            return stored;
+        }
+
+        var user = ReadText(values, AmneziaGeo.Ipc.SettingKeys.ProxyUser, string.Empty).Trim();
+        return user.Length > 0
+            ? $"{user}:{ReadText(values, AmneziaGeo.Ipc.SettingKeys.ProxyPassword, string.Empty)}"
+            : fallback;
     }
 
     /// <summary>
@@ -139,7 +153,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyLan];
 
     // Validated string settings; log-level is constrained to verbosity tokens.
-    private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyUser, AmneziaGeo.Ipc.SettingKeys.ProxyPassword];
+    private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyCredentials];
 
     private static int ReadInt(IReadOnlyDictionary<string, string> values, string key, int fallback)
         => values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : fallback;

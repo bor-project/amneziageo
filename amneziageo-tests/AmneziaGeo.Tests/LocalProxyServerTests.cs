@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Routing;
 using Xunit;
 
@@ -41,7 +43,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Socks5_WithAPassword_TakesTheRightOneAndRefusesTheWrongOne()
     {
-        var options = Options() with { User = "bor", Password = "secret" };
+        var options = Options() with { Credentials = "bor:secret" };
         Listen(new TestOutbound(_destination), options);
 
         var wrong = await DialAsync(options.SocksPort);
@@ -62,7 +64,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Socks5_WithoutTheMethodTheProxyAsksFor_IsTurnedAway()
     {
-        var options = Options() with { User = "bor", Password = "secret" };
+        var options = Options() with { Credentials = "bor:secret" };
         Listen(new TestOutbound(_destination), options);
         var client = await DialAsync(options.SocksPort);
 
@@ -126,7 +128,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Http_WithAPassword_AsksForCredentialsAndThenTakesThem()
     {
-        var options = Options() with { User = "bor", Password = "secret" };
+        var options = Options() with { Credentials = "bor:secret" };
         Listen(new TestOutbound(_destination), options);
 
         var bare = await DialAsync(options.HttpPort);
@@ -158,6 +160,103 @@ public sealed class LocalProxyServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Socks5_WithSeveralAccounts_TakesEveryOneOfThem()
+    {
+        var options = Options() with { Credentials = "bor:secret\nguest:letmein" };
+        Listen(new TestOutbound(_destination), options);
+
+        foreach (var (user, password) in new[] { ("bor", "secret"), ("guest", "letmein") })
+        {
+            var client = await DialAsync(options.SocksPort);
+            await client.SendAsync(new byte[] { 5, 1, 2 }, SocketFlags.None);
+            Assert.Equal([5, 2], await ReadAsync(client, 2));
+            await client.SendAsync(Credentials(user, password), SocketFlags.None);
+            Assert.Equal([1, 0], await ReadAsync(client, 2));
+        }
+
+        var crossed = await DialAsync(options.SocksPort);
+        await crossed.SendAsync(new byte[] { 5, 1, 2 }, SocketFlags.None);
+        await ReadAsync(crossed, 2);
+        await crossed.SendAsync(Credentials("bor", "letmein"), SocketFlags.None);
+        Assert.Equal([1, 1], await ReadAsync(crossed, 2));
+    }
+
+    [Fact]
+    public async Task Http_TakesTheSecondAccountAsReadilyAsTheFirst()
+    {
+        var options = Options() with { Credentials = "bor:secret\nguest:letmein" };
+        Listen(new TestOutbound(_destination), options);
+        var client = await DialAsync(options.HttpPort);
+
+        var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes("guest:letmein"));
+        await SendTextAsync(client, "CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\n"
+            + $"Proxy-Authorization: Basic {basic}\r\n\r\n");
+
+        Assert.StartsWith("HTTP/1.1 200", Encoding.ASCII.GetString(await ReadAsync(client, 12)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AConnectedClient_IsListedWhileItHoldsTheConnection()
+    {
+        var options = Options();
+        var server = Listen(new TestOutbound(_destination), options);
+        var client = await DialAsync(options.SocksPort);
+
+        await client.SendAsync(new byte[] { 5, 1, 0 }, SocketFlags.None);
+        await ReadAsync(client, 2);
+        var peers = server.Peers();
+
+        Assert.Single(peers);
+        Assert.Equal(IPAddress.Loopback.ToString(), peers[0].Address);
+        Assert.Equal(((IPEndPoint)client.LocalEndPoint!).Port, peers[0].Port);
+    }
+
+    [Fact]
+    public void TheAddressOffered_IsARoutedLinkOfThisMachineAndNeverTheTunnels()
+    {
+        var lan = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, true, [IPAddress.Parse("10.0.110.22")]);
+        var host = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, false, [IPAddress.Parse("172.23.144.1")]);
+        // A WireGuard adapter reports itself as a proprietary virtual link (ifType 53), a dial-up as PPP.
+        var tunnel = new LocalProxyServer.AdapterView((NetworkInterfaceType)53, false, [IPAddress.Parse("10.8.2.29")]);
+        var dialup = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ppp, false, [IPAddress.Parse("172.16.3.50")]);
+
+        var usable = LocalProxyServer.Usable([tunnel, host, dialup, lan]);
+
+        Assert.Equal(["10.0.110.22", "172.23.144.1"], usable);
+    }
+
+    [Fact]
+    public void APublicAddress_IsNeverOffered()
+    {
+        var wan = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, true, [IPAddress.Parse("46.8.237.222")]);
+
+        Assert.Empty(LocalProxyServer.Usable([wan]));
+    }
+
+    [Fact]
+    public void AccountsSurviveTheTextTheyAreStoredIn()
+    {
+        var accounts = new[] { new ProxyAccount("bor", "se:cret"), new ProxyAccount(" guest ", "letmein") };
+
+        var text = ProxyCredentials.Compose(accounts);
+        var read = ProxyCredentials.Parse(text);
+
+        Assert.Equal(2, read.Count);
+        Assert.Equal("bor", read[0].User);
+        Assert.Equal("se:cret", read[0].Password);
+        Assert.Equal("guest", read[1].User);
+        Assert.Empty(ProxyCredentials.Parse("nameless"));
+    }
+
+    [Fact]
+    public void AnAccountWithoutAName_IsNotStored()
+    {
+        Assert.Empty(ProxyCredentials.Compose([new ProxyAccount("  ", "secret")]));
+        Assert.False(new LocalProxyOptions().RequiresAuth);
+        Assert.True((new LocalProxyOptions { Credentials = "bor:secret" }).RequiresAuth);
+    }
+
+    [Fact]
     public void OnePortForBothFronts_IsBoundOnce()
     {
         var port = FreePort();
@@ -180,12 +279,13 @@ public sealed class LocalProxyServerTests : IDisposable
         Assert.Contains("taken", second.Error, StringComparison.Ordinal);
     }
 
-    private void Listen(IProxyOutbound outbound, LocalProxyOptions options)
+    private LocalProxyServer Listen(IProxyOutbound outbound, LocalProxyOptions options)
     {
         var server = new LocalProxyServer(outbound, _ => { });
         _servers.Add(server);
         Assert.True(server.Apply(options));
         Assert.True(server.Running);
+        return server;
     }
 
     private LocalProxyOptions Options()

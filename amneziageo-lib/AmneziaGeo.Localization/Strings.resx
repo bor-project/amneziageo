@@ -122,7 +122,28 @@
     <value>Password</value>
   </data>
   <data name="General_ProxyAuthHint" xml:space="preserve">
-    <value>An empty user asks for no credentials.</value>
+    <value>A client is admitted under any of these; no account asks for no credentials.</value>
+  </data>
+  <data name="General_ProxyAccounts" xml:space="preserve">
+    <value>Accounts</value>
+  </data>
+  <data name="General_ProxyClients" xml:space="preserve">
+    <value>Connections</value>
+  </data>
+  <data name="General_ProxyClientsTooltip" xml:space="preserve">
+    <value>Show who is connected</value>
+  </data>
+  <data name="General_ProxyNoClients" xml:space="preserve">
+    <value>Nobody is using the proxy right now.</value>
+  </data>
+  <data name="General_ProxyClientConnections" xml:space="preserve">
+    <value>{0} connection(s)</value>
+  </data>
+  <data name="General_ProxyCopyTooltip" xml:space="preserve">
+    <value>Copy the address</value>
+  </data>
+  <data name="General_ProxyRevealTooltip" xml:space="preserve">
+    <value>Show the password</value>
   </data>
   <data name="General_SurviveReboot" xml:space="preserve">
     <value>Reconnect after reboot</value>

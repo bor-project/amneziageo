@@ -5,6 +5,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AmneziaGeo.Decl\AmneziaGeo.Decl.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="AmneziaGeo.Tests" />
   </ItemGroup>
 

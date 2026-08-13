@@ -5,6 +5,7 @@ using System.Net.Http;
 using Avalonia;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
@@ -51,6 +52,12 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     // Set while Apply seeds the connection settings from the snapshot; suppresses their autosave push.
     private bool _suppressSettingPush;
+
+    // How long after an edit of the accounts a snapshot is left to catch up before it may reseed the rows.
+    private const int AccountEditWindowMs = 3000;
+
+    // When the accounts were last edited here.
+    private long _accountsTouchedAt;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
@@ -202,22 +209,49 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private bool _proxyLan;
 
     /// <summary>
-    /// User the local proxy asks for; empty asks for no credentials.
+    /// Why the listener is down; empty while it holds.
     /// </summary>
     [ObservableProperty]
-    private string _proxyUser = string.Empty;
+    private string _proxyErrorText = string.Empty;
 
     /// <summary>
-    /// Password that goes with the user.
+    /// Whether the clients of the proxy are listed under their count.
     /// </summary>
     [ObservableProperty]
-    private string _proxyPassword = string.Empty;
+    [NotifyPropertyChangedFor(nameof(ProxyClientsGlyph))]
+    private bool _isProxyClientsExpanded;
 
     /// <summary>
-    /// Where a client should point, or why the listener is down.
+    /// How many connections the clients hold right now.
     /// </summary>
     [ObservableProperty]
-    private string _proxyAddressText = string.Empty;
+    private int _proxyClientCount;
+
+    /// <summary>
+    /// Whether anyone is using the proxy right now.
+    /// </summary>
+    [ObservableProperty]
+    private bool _hasProxyClients;
+
+    /// <summary>
+    /// Addresses a client points at, one row per front and address; every one of them is copyable.
+    /// </summary>
+    public ObservableCollection<ProxyEndpointRow> ProxyEndpoints { get; } = [];
+
+    /// <summary>
+    /// Clients holding a connection right now.
+    /// </summary>
+    public ObservableCollection<ProxyClientRow> ProxyClients { get; } = [];
+
+    /// <summary>
+    /// Accounts the proxy admits clients under.
+    /// </summary>
+    public ObservableCollection<ProxyAccountViewModel> ProxyAccounts { get; } = [];
+
+    /// <summary>
+    /// Collapse arrow, turned down while the clients are shown.
+    /// </summary>
+    public string ProxyClientsGlyph => IsProxyClientsExpanded ? "▾" : "◂";
 
     /// <summary>
     /// Who may use the proxy and on which ports.
@@ -374,10 +408,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         ProxyLan = snapshot.ProxyLan;
         ProxySocksPort = snapshot.ProxySocksPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ProxyHttpPort = snapshot.ProxyHttpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        ProxyUser = snapshot.ProxyUser;
-        ProxyPassword = snapshot.ProxyPassword;
+        ApplyProxyAccounts(snapshot.ProxyCredentials);
         _suppressSettingPush = false;
-        ProxyAddressText = ProxyAddress(snapshot);
+        ApplyProxyEndpoints(snapshot);
+        ApplyProxyClients(snapshot);
+        ProxyErrorText = snapshot.ProxyEnabled ? snapshot.ProxyError : string.Empty;
 
         UpdateUrl = snapshot.UpdateUrl;
 
@@ -1096,22 +1131,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         PushPort(SettingKeys.ProxyHttpPort, value);
     }
 
-    partial void OnProxyUserChanged(string value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync(SettingKeys.ProxyUser, value.Trim());
-        }
-    }
-
-    partial void OnProxyPasswordChanged(string value)
-    {
-        if (!_suppressSettingPush)
-        {
-            _ = SetSettingAsync(SettingKeys.ProxyPassword, value);
-        }
-    }
-
     // A half-typed port is not a port; the agent keeps the last one until a whole number arrives.
     private void PushPort(string key, string value)
     {
@@ -1121,21 +1140,121 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
-    // Where a client points: the address of this machine on the network when it is shared, loopback otherwise.
-    private static string ProxyAddress(StatusSnapshot snapshot)
+    /// <summary>
+    /// Adds an empty account row for the editor to fill in.
+    /// </summary>
+    [RelayCommand]
+    private void AddProxyAccount()
     {
-        if (!snapshot.ProxyEnabled)
+        ProxyAccounts.Add(NewProxyAccount(string.Empty, string.Empty));
+        _accountsTouchedAt = Environment.TickCount64;
+    }
+
+    /// <summary>
+    /// Drops one account row.
+    /// </summary>
+    [RelayCommand]
+    private void RemoveProxyAccount(ProxyAccountViewModel account)
+    {
+        ProxyAccounts.Remove(account);
+        PushProxyAccounts();
+    }
+
+    /// <summary>
+    /// Shows or hides the clients under their count.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleProxyClients()
+    {
+        IsProxyClientsExpanded = !IsProxyClientsExpanded;
+    }
+
+    private ProxyAccountViewModel NewProxyAccount(string user, string password)
+    {
+        return new ProxyAccountViewModel(user, password, PushProxyAccounts);
+    }
+
+    // The whole list travels as one setting, so any edit sends all of it.
+    private void PushProxyAccounts()
+    {
+        _accountsTouchedAt = Environment.TickCount64;
+        if (!_suppressSettingPush)
         {
-            return string.Empty;
+            _ = SetSettingAsync(SettingKeys.ProxyCredentials, ComposeProxyAccounts());
+        }
+    }
+
+    private string ComposeProxyAccounts()
+    {
+        return ProxyCredentials.Compose(ProxyAccounts.Select(a => new ProxyAccount(a.User, a.Password)));
+    }
+
+    // The rows are rebuilt only when the agent carries something else, and not while an edit of the last seconds
+    // may still be on its way there - a snapshot that crossed it would take the row out from under the caret.
+    private void ApplyProxyAccounts(string credentials)
+    {
+        if (Environment.TickCount64 - _accountsTouchedAt < AccountEditWindowMs
+            || string.Equals(ComposeProxyAccounts(), credentials, StringComparison.Ordinal))
+        {
+            return;
         }
 
-        if (snapshot.ProxyError.Length > 0)
+        ProxyAccounts.Clear();
+        foreach (var account in ProxyCredentials.Parse(credentials))
         {
-            return snapshot.ProxyError;
+            ProxyAccounts.Add(NewProxyAccount(account.User, account.Password));
+        }
+    }
+
+    // Where a client points: this machine always, plus every address of it the neighbours can reach once the
+    // proxy is shared.
+    private void ApplyProxyEndpoints(StatusSnapshot snapshot)
+    {
+        var rows = new List<ProxyEndpointRow>();
+        if (snapshot.ProxyEnabled && snapshot.ProxyError.Length == 0)
+        {
+            var hosts = new List<string> { "127.0.0.1" };
+            hosts.AddRange(snapshot.ProxyAddresses ?? []);
+            foreach (var host in hosts)
+            {
+                rows.Add(new ProxyEndpointRow("SOCKS5", $"{host}:{snapshot.ProxySocksPort}"));
+                rows.Add(new ProxyEndpointRow("HTTP", $"{host}:{snapshot.ProxyHttpPort}"));
+            }
         }
 
-        var host = snapshot.ProxyAddress.Length > 0 ? snapshot.ProxyAddress : "127.0.0.1";
-        return $"SOCKS5 {host}:{snapshot.ProxySocksPort}    HTTP {host}:{snapshot.ProxyHttpPort}";
+        Sync(ProxyEndpoints, rows);
+    }
+
+    private void ApplyProxyClients(StatusSnapshot snapshot)
+    {
+        var clients = snapshot.ProxyClients ?? [];
+        var rows = new List<ProxyClientRow>();
+        foreach (var client in clients)
+        {
+            var count = Loc.Instance.Get("General_ProxyClientConnections", client.Connections);
+            var since = client.Since.ToLocalTime().ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+            var name = client.Name.Length > 0 ? $"{client.Name} · " : string.Empty;
+            rows.Add(new ProxyClientRow(client.Address, $"{name}{count} · {since}"));
+        }
+
+        ProxyClientCount = clients.Sum(client => client.Connections);
+        HasProxyClients = rows.Count > 0;
+        Sync(ProxyClients, rows);
+    }
+
+    // Replaces the rows only when they differ, so a snapshot every couple of seconds does not blink the list.
+    private static void Sync<T>(ObservableCollection<T> target, IReadOnlyList<T> rows)
+    {
+        if (target.SequenceEqual(rows))
+        {
+            return;
+        }
+
+        target.Clear();
+        foreach (var row in rows)
+        {
+            target.Add(row);
+        }
     }
 
     partial void OnSurviveRebootChanged(bool value)

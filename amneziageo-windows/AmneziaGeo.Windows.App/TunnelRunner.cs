@@ -978,17 +978,20 @@ internal sealed class TunnelRunner(
         {
             await WaitForHandshakeAsync(name, ct);
 
-            // Ask the proxy before handing it every lookup on this machine. Another program can hold loopback:53
-            // without the bind failing (a corporate VPN client intercepts it whole), and pointing the adapters at
-            // a resolver that answers nothing leaves the machine with no DNS at all. Keep asking, so a conflict
-            // that goes away later still gets the redirect.
-            var warned = false;
+            // Ask the proxy before handing it every lookup on this machine: pointing the adapters at a resolver
+            // that answers nothing leaves the machine with no DNS at all. Keep asking, so a proxy that starts
+            // answering later still gets the redirect.
+            var attempt = 0;
             while (proxyAddress is not null && !await DnsHealthProbe.AnswersAsync(proxyAddress, DnsProbeTimeoutMs, ct).ConfigureAwait(false))
             {
-                if (!warned)
+                attempt++;
+                if (attempt == 1)
                 {
-                    warned = true;
-                    logger.LogWarning("{Name}: the name proxy on {Address} answers nothing, so another program holds DNS on this machine; the adapters keep their own resolvers and rules by domain do not apply — only rules by address", name, proxyAddress);
+                    logger.LogWarning("{Name}: the name proxy on {Address} does not answer its own query, so the adapters keep their own resolvers; rules by domain do not apply, only rules by address", name, proxyAddress);
+                }
+                else
+                {
+                    logger.LogDebug("{Name}: the name proxy on {Address} still answers nothing (attempt {Attempt})", name, proxyAddress, attempt);
                 }
 
                 await Task.Delay(DnsProbeRetryDelay, ct).ConfigureAwait(false);
@@ -1000,7 +1003,6 @@ internal sealed class TunnelRunner(
                 dns.FlushCache();
             }
 
-            session.SetNamesRedirected(true);
             logger.LogDebug("{Name}: the server answered, so name lookups now go to {Servers} and the cached ones were cleared", name, string.Join(",", redirectServers));
         }
         catch (OperationCanceledException)
@@ -1040,28 +1042,7 @@ internal sealed class TunnelRunner(
             return inspector.Sessions().ToPayload();
         }
 
-        if (op == RuntimeSnapshotPipe.OpDns)
-        {
-            return await DnsVerdictAsync(ct).ConfigureAwait(false);
-        }
-
         return System.Text.Json.JsonSerializer.Serialize(inspector.Collect());
-    }
-
-    // Whether names still resolve through this session's proxy: every rule by domain rides on it, and it is the
-    // one thing no other signal shows - the tunnel stays up and carries traffic either way. Asked the way an
-    // application asks, so a proxy that serves while the system prefers another adapter's resolvers reads as what
-    // it is.
-    private async Task<string> DnsVerdictAsync(CancellationToken ct)
-    {
-        if (session.Proxy?.BoundV4 is null || !session.NamesRedirected)
-        {
-            return RuntimeSnapshotPipe.DnsUnrouted;
-        }
-
-        return await DnsHealthProbe.SystemAnswersAsync(ct).ConfigureAwait(false)
-            ? RuntimeSnapshotPipe.DnsServed
-            : RuntimeSnapshotPipe.DnsUnrouted;
     }
 
     // Re-reads the stored lifetime and hands it to what already holds routes. The store is the one both processes

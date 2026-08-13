@@ -34,7 +34,10 @@ public static class PortableBundle
         IReadOnlyList<ConfigBlock> Configs,
         IReadOnlyList<RoutingBlock> RoutingLists,
         // Version 1 pairings; read on import, never written.
-        IReadOnlyList<ProfileBlock>? Profiles = null);
+        IReadOnlyList<ProfileBlock>? Profiles = null,
+        // What was in use when the bundle was written, so a restore comes back to the same server and list.
+        string? ActiveConfig = null,
+        string? ActiveRoutingList = null);
 
     /// <summary>
     /// A standalone config: wg-quick text, WebSocket transport, geo split, DNS and bypass entries.

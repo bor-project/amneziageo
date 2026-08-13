@@ -36,6 +36,7 @@ public sealed partial class MainView : UserControl
         {
             _vm.PropertyChanged -= OnViewModelPropertyChanged;
             _vm.Home.PropertyChanged -= OnHomePropertyChanged;
+            _vm.Sheet.PropertyChanged -= OnSheetPropertyChanged;
         }
 
         _vm = DataContext as MainWindowViewModel;
@@ -44,7 +45,30 @@ public sealed partial class MainView : UserControl
             _vm.WindowWidth = Bounds.Width > 0 ? Bounds.Width : 987;
             _vm.PropertyChanged += OnViewModelPropertyChanged;
             _vm.Home.PropertyChanged += OnHomePropertyChanged;
+            _vm.Sheet.PropertyChanged += OnSheetPropertyChanged;
             ApplySettingsLayout();
+        }
+    }
+
+    // Пульту и клавиатуре нужна точка входа в шторку: иначе стрелки ходят по экрану за ней.
+    private void OnSheetPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not nameof(ActionSheetViewModel.IsOpen) || _vm?.Sheet.IsOpen != true)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(
+            () => Controls.PaneFocus.FocusFirst(SheetOptions),
+            DispatcherPriority.Loaded);
+    }
+
+    // Нажатие мимо карточки убирает шторку.
+    private void OnSheetScrimPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (ReferenceEquals(e.Source, sender))
+        {
+            _vm?.Sheet.CloseCommand.Execute(null);
         }
     }
 
@@ -128,6 +152,12 @@ public sealed partial class MainView : UserControl
     // the section detail, then home.
     private bool NavigateBack()
     {
+        if (_vm?.Sheet.IsOpen == true)
+        {
+            _vm.Sheet.CloseCommand.Execute(null);
+            return true;
+        }
+
         if (_vm?.ShowDeleteAsk == true)
         {
             _vm.CancelDeleteAskCommand.Execute(null);

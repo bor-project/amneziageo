@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
 
@@ -8,12 +9,26 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class ConfigTransportView : UserControl
 {
+    // Width the proxy fields need side by side; below it they stack.
+    private const double FieldRowWidth = 920;
+
     /// <summary>
     /// ctor
     /// </summary>
     public ConfigTransportView()
     {
         InitializeComponent();
+        SizeChanged += (_, e) => ApplyWidth(e.NewSize.Width);
+        DataContextChanged += (_, _) => ApplyWidth(Bounds.Width);
+    }
+
+    // The pane is narrower than the window, so the row layout follows this view, not the shell flag.
+    private void ApplyWidth(double width)
+    {
+        if (DataContext is ConfigTransportViewModel vm)
+        {
+            vm.IsCompact = width < FieldRowWidth;
+        }
     }
 
     // Toggle masking of the access-token field.

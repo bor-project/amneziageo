@@ -176,8 +176,6 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public string LinkSpeedText => SpeedFormat.Pair(RxBitsPerSecond, TxBitsPerSecond);
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
-    [NotifyPropertyChangedFor(nameof(ShowLinkLine))]
     [NotifyPropertyChangedFor(nameof(LinkLossText))]
     [NotifyPropertyChangedFor(nameof(LinkLossy))]
     [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
@@ -191,10 +189,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private int _linkRttMs = -1;
 
     /// <summary>
-    /// Whether the row carries a loss share at all: only a running tunnel measures one, and only against a target
-    /// that answers it.
+    /// Whether the row carries a loss line: the running tunnel carries one from the moment it is up, so the line
+    /// no longer appears out of nowhere once the probe window fills.
     /// </summary>
-    public bool ShowLinkLoss => LinkKnown && LinkHealth.LossKnown(LinkLossPercent);
+    public bool ShowLinkLoss => LinkKnown;
 
     /// <summary>
     /// Whether the running tunnel drops enough for it to be felt.
@@ -202,9 +200,11 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public bool LinkLossy => LinkHealth.Lossy(LinkLossPercent);
 
     /// <summary>
-    /// The share of the tunnel's own probes that never came back.
+    /// The share of the tunnel's own probes that never came back; names the absence while nothing has answered.
     /// </summary>
-    public string LinkLossText => Loc.Instance.Get("Main_LinkLoss", LinkLossPercent);
+    public string LinkLossText => LinkHealth.LossKnown(LinkLossPercent)
+        ? Loc.Instance.Get("Main_LinkLoss", LinkLossPercent)
+        : Loc.Instance.Get("Main_LinkLossUnknown");
 
     /// <summary>
     /// Colour of the loss on the card: muted while the link is clean, the warning colour once it drops enough

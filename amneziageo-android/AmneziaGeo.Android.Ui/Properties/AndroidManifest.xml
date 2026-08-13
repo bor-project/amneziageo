@@ -6,6 +6,8 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.CAMERA" />
+  <!-- Install the downloaded package: the update replaces this very application. -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <!-- Read configs the user copied into shared storage: a TV has no document picker, and scoped storage
        hides every file the app does not own. -->
   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
@@ -24,6 +26,11 @@
     <!-- Resolve the all-files-access screen before offering it. -->
     <intent>
       <action android:name="android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" />
+      <data android:scheme="package" />
+    </intent>
+    <!-- Same for the screen that lets this application install packages. -->
+    <intent>
+      <action android:name="android.settings.MANAGE_UNKNOWN_APP_SOURCES" />
       <data android:scheme="package" />
     </intent>
   </queries>

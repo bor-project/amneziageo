@@ -18,6 +18,7 @@ namespace AmneziaGeo.Android.Ui;
 /// </summary>
 public sealed partial class App : Avalonia.Application
 {
+    private static UiPreferences? _preferences;
     private AndroidAgentConnection? _connection;
 
     /// <inheritdoc/>
@@ -39,6 +40,7 @@ public sealed partial class App : Avalonia.Application
             UiPlatform.IsTelevision = global::Android.App.Application.Context.PackageManager?
                 .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
             UiPlatform.SupportsGeoPreview = false;
+            UiPlatform.UsesActionSheets = true;
             if (!UiPlatform.IsTelevision)
             {
                 Styles.Add(new StyleInclude(new Uri("avares://AmneziaGeo.Android.Ui/"))
@@ -58,6 +60,7 @@ public sealed partial class App : Avalonia.Application
             AppExitHost.Register(() => MainActivity.Current?.FinishAndRemoveTask());
 
             var prefs = UiPreferences.Load();
+            _preferences = prefs;
             RequestedThemeVariant = prefs.Theme switch
             {
                 "light" => ThemeVariant.Light,
@@ -87,11 +90,31 @@ public sealed partial class App : Avalonia.Application
             {
                 var agentClock = Stopwatch.StartNew();
                 viewModel.Start();
+                viewModel.General.BeginAutoUpdateChecks();
                 Stage("agent", agentClock);
             }, DispatcherPriority.Background);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Takes the theme from the system night mode while the settings leave it to the system. The activity handles
+    /// the ui mode change itself, so the variant is re-resolved from here and nowhere else.
+    /// </summary>
+    internal static void FollowSystemTheme(global::Android.Content.Res.Configuration? configuration)
+    {
+        if (Current is not { } app || _preferences is null || _preferences.Theme.Length > 0)
+        {
+            return;
+        }
+
+        var night = configuration?.UiMode & global::Android.Content.Res.UiMode.NightMask;
+        var variant = night == global::Android.Content.Res.UiMode.NightYes ? ThemeVariant.Dark : ThemeVariant.Light;
+        if (app.RequestedThemeVariant != variant)
+        {
+            app.RequestedThemeVariant = variant;
+        }
     }
 
     // Times one startup step into logcat: a weak TV spends seconds here and only the device shows which step.

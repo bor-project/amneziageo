@@ -139,6 +139,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ConnectionViewModel Home { get; }
 
     /// <summary>
+    /// Набор способов «Добавить» / «Экспорт», показанный шторкой поверх всего экрана.
+    /// </summary>
+    public ActionSheetViewModel Sheet { get; } = new();
+
+    /// <summary>
     /// Diagnostics screen: the agent log and the runtime configuration.
     /// </summary>
     public DiagnosticsViewModel Diagnostics { get; }
@@ -337,10 +342,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RefreshLogsActive();
     }
 
-    // Back arrow: in a compact section detail step back to the rail, otherwise return home.
+    // Back arrow: сначала шаг внутри открытого раздела, затем в компакте к списку разделов, иначе домой.
     [RelayCommand]
     private void NavBack()
     {
+        if (IsSettings && SectionSteppedBack())
+        {
+            return;
+        }
+
         if (IsCompact && SettingsDetailOpen)
         {
             SettingsDetailOpen = false;
@@ -350,6 +360,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
         NavHome();
     }
+
+    // Экран экспорта и черновик импорта возвращают туда, откуда открыты.
+    private bool SectionSteppedBack() => SettingsSection switch
+    {
+        "config" => Config.TryNavigateBack(),
+        "routing" => Routing.TryNavigateBack(),
+        _ => false,
+    };
 
     /// <summary>
     /// Opens the settings General section, where the app-update status line lives, so a windowless update that

@@ -146,6 +146,11 @@ public static class CliRunner
               survive-reboot (on|off, connect at agent start), periodic-reconnect-enabled (on|off),
               periodic-reconnect-interval-seconds (5..3600), route-ttl-seconds.
 
+            local proxy
+              proxy show                        where it listens and what it asks for
+              proxy on [--socks <port>] [--http <port>] [--lan on|off] [--auth <user:password>|off]
+              proxy off
+
             logs and diagnostics
               log tail [--table ageo|routes|checks] [--limit <n>] [--level <token>] [--search <text>]
               log follow [--table ...] [--level ...] [--search ...] [--interval <sec>]
@@ -192,6 +197,7 @@ public static class CliRunner
             "routing" => await RoutingCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "geo" or "source" => await GeoCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),
             "settings" => await SettingsCommands.RunAsync(agent, arguments).ConfigureAwait(false),
+            "proxy" => await ProxyCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "log" or "runtime" or "cache" or "sessions" or "subnets" or "doctor" or "diag" or "check" => await DiagCommands.RunAsync(agent, host, rest[0], arguments, ct).ConfigureAwait(false),
             "bundle" => await BundleCommands.RunAsync(agent, arguments).ConfigureAwait(false),
             "ipc" or "ops" or "apps" or "update" => await OpsCommands.RunAsync(agent, rest[0], arguments).ConfigureAwait(false),

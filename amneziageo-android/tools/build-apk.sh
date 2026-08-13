@@ -14,6 +14,8 @@ DIST="$HERE/dist"
 CONFIGURATION="Release"
 VERSION=""
 ABIS=""
+UPDATE_URL="https://github.com/bor-project/amneziageo/releases/latest/download/update.json"
+PRERELEASE=""
 
 usage() {
   cat <<EOF
@@ -23,6 +25,8 @@ usage: build-apk.sh [options]
   --version N.N.N.N   package version (default: 0.0.1.<commit count>); all four fields make the versionCode
   --abi <list>        runtime identifiers, comma separated: android-arm, android-arm64, android-x64
                       (default: every ABI the project declares)
+  --update-url <url>  update metadata baked into the package (default: $UPDATE_URL)
+  --prerelease        keep the build on the prerelease channel
   --help              this help
 
 Both configurations install as-is; Release is AOT-compiled and starts about twice as fast on a weak TV,
@@ -36,6 +40,8 @@ while [ $# -gt 0 ]; do
     --config|-c) CONFIGURATION="$2"; shift 2 ;;
     --version|-v) VERSION="$2"; shift 2 ;;
     --abi) ABIS="$(printf '%s' "$2" | tr ',' ';')"; shift 2 ;;
+    --update-url) UPDATE_URL="$2"; shift 2 ;;
+    --prerelease) PRERELEASE="1"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument '$1'" >&2; usage >&2; exit 2 ;;
   esac
@@ -80,6 +86,8 @@ args=(
   -p:EmbedAssembliesIntoApk=true
   "-p:ApplicationDisplayVersion=$VERSION"
   "-p:ApplicationVersion=$CODE"
+  "-p:UpdateUrl=$UPDATE_URL"
+  "-p:AllowPrerelease=$PRERELEASE"
 )
 
 if [ -n "$ABIS" ]; then

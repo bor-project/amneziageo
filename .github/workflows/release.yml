@@ -196,6 +196,8 @@ jobs:
             ver="${GITHUB_REF_NAME#v}"; ver="${ver%%-*}"
             args+=(--version "$ver")
           fi
+          # A prerelease tag bakes the beta channel so the package does not offer the stable latest.
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
           amneziageo-android/tools/build-apk.sh "${args[@]}"
 
       - name: Upload the APK
@@ -332,6 +334,47 @@ jobs:
           echo "--- release/ ---"; ls -la release
           echo "--- update.json ---"; cat release/update.json
 
+      # A table of every asset, so the reader picks a platform instead of a file name: the Assets block
+      # GitHub renders below the notes is a flat list and takes no layout of ours. A row shows up only when
+      # its target built, and an arch that did not build gets a dash instead of a dead link. The closing
+      # marker proves the table was written whole; without it the notes fall back to the bare version line,
+      # so a broken row costs a table and never the release.
+      - name: Compose the release notes
+        shell: bash
+        run: |
+          set -uo pipefail
+          VER="${GITHUB_REF_NAME#v}"; VER="${VER%%-*}"
+          BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          cell() {
+            if [ -e "release/$1" ]; then printf '[%s](%s/%s)' "$1" "$BASE" "$1"; else printf -- '-'; fi
+          }
+          row() {
+            if [ -e "release/$2" ] || [ -e "release/$3" ]; then
+              printf '| %s | %s | %s |\n' "$1" "$(cell "$2")" "$(cell "$3")"
+            fi
+          }
+          {
+            echo "## AmneziaGeo $VER"
+            echo
+            echo '| Package | x64 / amd64 | arm64 |'
+            echo '| --- | --- | --- |'
+            row 'Windows installer, needs .NET 10 Desktop Runtime' "AmneziaGeo-$VER-win-x64-fdd.exe" "AmneziaGeo-$VER-win-arm64-fdd.exe"
+            row 'Windows installer, runtime included' "AmneziaGeo-$VER-win-x64.exe" "AmneziaGeo-$VER-win-arm64.exe"
+            row 'Linux service, deb' "amneziageo_${VER}_amd64.deb" "amneziageo_${VER}_arm64.deb"
+            row 'Linux application, deb' "amneziageo-gui_${VER}_amd64.deb" "amneziageo-gui_${VER}_arm64.deb"
+            row 'Android apk, every ABI in one package' "AmneziaGeo-$VER-android.apk" "AmneziaGeo-$VER-android.apk"
+            echo
+            echo '<details><summary>SHA-256</summary>'
+            echo
+            echo '```'
+            ( cd release && sha256sum * )
+            echo '```'
+            echo
+            echo '</details>'
+          } > notes.md || true
+          grep -q '</details>' notes.md || printf 'AmneziaGeo %s\n' "$VER" > notes.md
+          echo "--- notes.md ---"; cat notes.md
+
       - name: Create or update the GitHub Release
         # This job does not checkout the repo, so gh has no git context: GH_REPO tells it the target repo.
         # Delete-then-create makes the publish idempotent so a re-run yields a pristine asset set.
@@ -346,4 +389,4 @@ jobs:
           # A suffixed tag (v1.2.3.4-beta.1) ships as a prerelease so it never becomes the stable "latest";
           # only allowPrerelease builds discover it, via the GitHub releases API. Plain tags mark --latest.
           if [[ "$TAG" == *-* ]]; then CHANNEL="--prerelease"; else CHANNEL="--latest"; fi
-          gh release create "$TAG" $CHANNEL --title "AmneziaGeo ${TAG#v}" --notes "AmneziaGeo ${TAG#v}" release/*
+          gh release create "$TAG" $CHANNEL --title "AmneziaGeo ${TAG#v}" --notes-file notes.md release/*

@@ -3,6 +3,7 @@ using Android.App;
 using Android.Content;
 using Android.OS;
 using AmneziaGeo.Ipc;
+using AmneziaGeo.Routing;
 
 namespace AmneziaGeo.Android.Engine;
 
@@ -101,7 +102,14 @@ public static class VpnBridge
     /// </summary>
     public const string ExtraLockdown = "lockdown";
 
+    /// <summary>
+    /// Broadcast that makes a running tunnel take the local proxy settings again.
+    /// </summary>
+    public const string ActionProxy = "org.amneziageo.android.VPN_PROXY";
+
     private const string PlanFile = "plan.json";
+    private const string ProxyFile = "proxy.json";
+    private const string ProxyStateFile = "proxy-state.json";
     private const string SessionsFile = "sessions.txt";
     private const string RequestFile = "session.json";
     private const string ProcessSuffix = ":vpn";
@@ -292,6 +300,88 @@ public static class VpnBridge
     }
 
     /// <summary>
+    /// Writes the local proxy settings for the tunnel to listen by.
+    /// </summary>
+    public static void WriteProxy(LocalProxyOptions options)
+    {
+        try
+        {
+            using var stream = File.Create(ProxyPath());
+            JsonSerializer.Serialize(stream, options);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the proxy settings failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the local proxy settings; a tunnel that never got any listens on nothing.
+    /// </summary>
+    public static LocalProxyOptions ReadProxy()
+    {
+        try
+        {
+            var path = ProxyPath();
+            if (!File.Exists(path))
+            {
+                return new LocalProxyOptions();
+            }
+
+            using var stream = File.OpenRead(path);
+            return JsonSerializer.Deserialize<LocalProxyOptions>(stream) ?? new LocalProxyOptions();
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the proxy settings failed: " + ex);
+            return new LocalProxyOptions();
+        }
+    }
+
+    /// <summary>
+    /// Asks a running tunnel to take the proxy settings again; a tunnel that is not running takes them at start.
+    /// </summary>
+    public static void RequestProxy(Context context) => context.SendBroadcast(Broadcast(context, ActionProxy));
+
+    /// <summary>
+    /// Writes whether the listener came up, for the head to show.
+    /// </summary>
+    public static void WriteProxyState(bool running, string error)
+    {
+        try
+        {
+            File.WriteAllText(ProxyStatePath(), $"{(running ? "1" : "0")}\n{error}");
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "writing the proxy state failed: " + ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads what the tunnel said about its listener.
+    /// </summary>
+    public static (bool Running, string Error) ReadProxyState()
+    {
+        try
+        {
+            var path = ProxyStatePath();
+            if (!File.Exists(path))
+            {
+                return (false, string.Empty);
+            }
+
+            var lines = File.ReadAllLines(path);
+            return (lines.Length > 0 && lines[0] == "1", lines.Length > 1 ? lines[1] : string.Empty);
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("VpnBridge", "reading the proxy state failed: " + ex);
+            return (false, string.Empty);
+        }
+    }
+
+    /// <summary>
     /// Writes what the relay holds for the head to read; a broadcast carries a stage, not a table.
     /// </summary>
     public static void WriteSessions(SessionReport report)
@@ -354,6 +444,12 @@ public static class VpnBridge
 
     private static string PlanPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", PlanFile);
+
+    private static string ProxyPath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", ProxyFile);
+
+    private static string ProxyStatePath() =>
+        Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", ProxyStateFile);
 
     private static string SessionsPath() =>
         Path.Combine(Application.Context.FilesDir?.AbsolutePath ?? ".", SessionsFile);

@@ -102,4 +102,6 @@ public sealed record StatusSnapshot(
     // Addresses other machines reach the proxy at, the ones on a routed link first; empty while it stays on this machine.
     IReadOnlyList<string>? ProxyAddresses = null,
     // Clients holding a connection to the local proxy right now.
-    IReadOnlyList<ProxyClientEntry>? ProxyClients = null);
+    IReadOnlyList<ProxyClientEntry>? ProxyClients = null,
+    // Whether the resolver this machine sends its lookups to stopped answering, so rules by domain no longer apply.
+    bool DnsUnreachable = false);

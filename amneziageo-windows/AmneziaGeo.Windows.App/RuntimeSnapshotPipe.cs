@@ -43,6 +43,21 @@ internal static class RuntimeSnapshotPipe
     public const string OpSessions = "sessions";
 
     /// <summary>
+    /// Asks whether names still resolve through the tunnel's own proxy, so rules by domain still apply.
+    /// </summary>
+    public const string OpDns = "dns";
+
+    /// <summary>
+    /// <see cref="OpDns"/> reply: the proxy serves and the adapters send their lookups to it.
+    /// </summary>
+    public const string DnsServed = "served";
+
+    /// <summary>
+    /// <see cref="OpDns"/> reply: names are resolved outside the proxy, so rules by domain do not apply.
+    /// </summary>
+    public const string DnsUnrouted = "unrouted";
+
+    /// <summary>
     /// Pipe a tunnel's service process serves on.
     /// </summary>
     public static string Name(string tunnel)

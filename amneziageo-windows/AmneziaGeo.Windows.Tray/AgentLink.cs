@@ -35,10 +35,14 @@ internal static class AgentLink
     private static Action? _onCheckFinished;
     private static Action? _onGeoUpdated;
     private static Action? _onOwnedByOther;
+    private static Action? _onNamesUnrouted;
 
     // Persists across pipe reconnects so a still-latched download failure does not re-fire the balloon each time
     // the tray reconnects to the agent (#8).
     private static bool _prevDownloadFailed;
+
+    // Same for the silent-resolver verdict: it holds while the conflict holds, so only its rising edge warns.
+    private static bool _prevDnsUnreachable;
 
     /// <summary>
     /// Whether the agent has a configuration selected/bound, so a connect can be issued from the tray.
@@ -107,6 +111,12 @@ internal static class AgentLink
     public static volatile int GeoUpdatedTick;
 
     /// <summary>
+    /// Whether the resolver this machine sends its lookups to stopped answering while the tunnel is up, so rules
+    /// by domain no longer apply; its rising edge fires the tray warning balloon.
+    /// </summary>
+    public static volatile bool DnsUnreachable;
+
+    /// <summary>
     /// Starts the connection loop; <paramref name="onState"/> receives 0 (disconnected) / 1 (transitioning) /
     /// 2 (connected), whether the agent latched a connect failure, whether the transition is a user
     /// disconnect (the agent reports "disconnecting" only for that, not for a re-dial), whether the last
@@ -117,9 +127,10 @@ internal static class AgentLink
     /// download-failure edge; <paramref name="onCheckFinished"/> fires when a manual update check finishes (the
     /// checking-flag falling edge); <paramref name="onGeoUpdated"/> fires when the agent's geo-updated tick rises
     /// (the local bases changed); <paramref name="onOwnedByOther"/> fires when a connect is refused because
-    /// another account owns the tunnel. All fire off a background thread.
+    /// another account owns the tunnel; <paramref name="onNamesUnrouted"/> fires when the agent starts reporting
+    /// that names are no longer resolved here. All fire off a background thread.
     /// </summary>
-    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed, Action onCheckFinished, Action onGeoUpdated, Action onOwnedByOther)
+    public static void Start(Action<int, bool, bool, bool, bool> onState, Action<bool, string> onUpdate, Action onDownloaded, Action onDownloadFailed, Action onCheckFinished, Action onGeoUpdated, Action onOwnedByOther, Action onNamesUnrouted)
     {
         _onState = onState;
         _onUpdate = onUpdate;
@@ -128,6 +139,7 @@ internal static class AgentLink
         _onCheckFinished = onCheckFinished;
         _onGeoUpdated = onGeoUpdated;
         _onOwnedByOther = onOwnedByOther;
+        _onNamesUnrouted = onNamesUnrouted;
         var thread = new Thread(Loop) { IsBackground = true, Name = "agent-link" };
         thread.Start();
     }
@@ -259,6 +271,15 @@ internal static class AgentLink
                         }
 
                         prevGeoTick = GeoUpdatedTick;
+
+                        // Silent-resolver edge: the verdict holds while the conflict holds, so only its rise
+                        // warns. The prev flag is static, so a reconnect over a standing verdict stays quiet.
+                        if (DnsUnreachable && !_prevDnsUnreachable)
+                        {
+                            _onNamesUnrouted?.Invoke();
+                        }
+
+                        _prevDnsUnreachable = DnsUnreachable;
                     }
                     else if (line.Length > 0 && line.Contains(OwnedByOtherKey, StringComparison.Ordinal))
                     {
@@ -274,6 +295,7 @@ internal static class AgentLink
 
             _writer = null;
             HasActiveConfig = false;
+            DnsUnreachable = false;
             DownloadInProgress = false;
             DownloadPercent = 0;
             CheckInProgress = false;
@@ -306,6 +328,7 @@ internal static class AgentLink
         var geoUpdatedTick = 0;
         var updateVer = default(string);
         var updateUrl = default(string);
+        var namesUnrouted = false;
 
         var reader = new Utf8JsonReader(_utf8.GetBytes(json));
         var prop = default(string);
@@ -384,6 +407,10 @@ internal static class AgentLink
             {
                 updateUrl = reader.GetString();
             }
+            else if (prop == "dnsUnreachable" && reader.TokenType is JsonTokenType.True or JsonTokenType.False)
+            {
+                namesUnrouted = reader.TokenType == JsonTokenType.True;
+            }
         }
 
         if (!haveStatus)
@@ -404,6 +431,7 @@ internal static class AgentLink
         CheckInProgress = updateChecking;
         CheckFailed = updateCheckFailed;
         GeoUpdatedTick = geoUpdatedTick;
+        DnsUnreachable = namesUnrouted;
         UpdateVersion = updateVer ?? string.Empty;
         HasUpdateUrl = !string.IsNullOrWhiteSpace(updateUrl);
         HasActiveConfig = !string.IsNullOrEmpty(selected) || !string.IsNullOrEmpty(bound);

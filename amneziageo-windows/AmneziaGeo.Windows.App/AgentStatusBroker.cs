@@ -2457,7 +2457,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,
             ProxyAddresses: proxy.Addresses,
-            ProxyClients: ProxyClientNames.Describe(proxy.Peers()));
+            ProxyClients: ProxyClientNames.Describe(proxy.Peers()),
+            DnsUnreachable: owned && control.Running && control.DnsUnreachable);
     }
 
     private static string DisplayStatus(string profileStatus)

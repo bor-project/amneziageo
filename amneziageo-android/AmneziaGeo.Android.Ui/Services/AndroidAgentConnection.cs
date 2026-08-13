@@ -1303,6 +1303,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var routingBlocks = new List<PortableBundle.RoutingBlock>();
+        var activeList = default(string);
         if (routingNames.Count > 0)
         {
             var all = await _store.ListRoutingListsAsync().ConfigureAwait(false);
@@ -1312,6 +1313,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 if (list is null)
                 {
                     continue;
+                }
+
+                if (_selectedRoutingList == list.Id)
+                {
+                    activeList = name;
                 }
 
                 // Role-tagged tokens: bare ones would re-import every rule as Proxy.
@@ -1330,11 +1336,18 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
         }
 
+        var activeConfig = _selectedTarget is { Length: > 0 } selected
+            && configBlocks.Exists(block => string.Equals(block.Name, selected, StringComparison.Ordinal))
+                ? selected
+                : null;
+
         var bundle = new PortableBundle.Bundle(
             PortableBundle.FormatTag,
             PortableBundle.CurrentVersion,
             configBlocks,
-            routingBlocks);
+            routingBlocks,
+            ActiveConfig: activeConfig,
+            ActiveRoutingList: activeList);
         _log.Info("agent", $"exported bundle: {configBlocks.Count} configs, {routingBlocks.Count} routing lists");
         return new IpcAck(true, PortableBundle.Serialize(bundle));
     }
@@ -1384,6 +1397,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var configNames = new HashSet<string>(_configs.Keys, StringComparer.Ordinal);
         var listNames = new HashSet<string>(existingLists.Keys, StringComparer.Ordinal);
         var renames = new List<string>();
+        var importedConfigs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var importedLists = new Dictionary<string, long>(StringComparer.Ordinal);
 
         foreach (var block in bundle.Configs)
         {
@@ -1395,6 +1410,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     await ApplyTransportAsync(block.Name, block.Transport).ConfigureAwait(false);
                 }
 
+                importedConfigs[block.Name] = block.Name;
                 continue;
             }
 
@@ -1406,6 +1422,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
 
             _configs[finalName] = block.ConfigText;
+            importedConfigs[block.Name] = finalName;
             await ApplyTransportAsync(finalName, block.Transport).ConfigureAwait(false);
         }
 
@@ -1422,6 +1439,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                     await ApplyRoutingSettingsAsync(existing.Id, block.Settings).ConfigureAwait(false);
                 }
 
+                importedLists[block.Name] = existing.Id;
                 continue;
             }
 
@@ -1433,6 +1451,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
 
             var newId = await _geo.ApplyToRoutingListAsync(0, finalName, block.Rules).ConfigureAwait(false);
+            importedLists[block.Name] = newId;
             await ApplyRoutingSettingsAsync(newId, block.Settings).ConfigureAwait(false);
         }
 
@@ -1441,6 +1460,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _log.Info("agent", $"the bundle carries {legacy.Count} profile(s) from an older build; their pairings are dropped");
         }
 
+        RestoreBundleSelection(bundle, importedConfigs, importedLists);
         Save();
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         PushSnapshot();
@@ -1467,6 +1487,29 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             "Agent_BundleImportedRenamedMany",
             bundle.Configs.Count,
             bundle.RoutingLists.Count));
+    }
+
+    // Ставит выбор из бандла, пока своего нет: чужой выбор при восстановлении не трогается.
+    private void RestoreBundleSelection(
+        PortableBundle.Bundle bundle,
+        IReadOnlyDictionary<string, string> configs,
+        IReadOnlyDictionary<string, long> lists)
+    {
+        if (string.IsNullOrEmpty(_selectedTarget)
+            && bundle.ActiveConfig is { Length: > 0 } config
+            && configs.TryGetValue(config, out var name))
+        {
+            _selectedTarget = name;
+            _log.Info("agent", $"the bundle's server is selected again: {name}");
+        }
+
+        if (_selectedRoutingList is null
+            && bundle.ActiveRoutingList is { Length: > 0 } list
+            && lists.TryGetValue(list, out var id))
+        {
+            _selectedRoutingList = id;
+            _log.Info("agent", $"the bundle's routing list is applied again: {list}");
+        }
     }
 
     // Подбирает свободное имя импортируемому блоку; пустое заменяет запасным.

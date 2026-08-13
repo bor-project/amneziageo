@@ -1,4 +1,5 @@
 using System.Globalization;
+using AmneziaGeo.Decl;
 using AmneziaGeo.Ipc;
 
 namespace AmneziaGeo.Cli;
@@ -9,7 +10,7 @@ namespace AmneziaGeo.Cli;
 internal static class ProxyCommands
 {
     private const string Usage =
-        "usage: amneziageo proxy [show|on|off] [--socks <port>] [--http <port>] [--lan on|off] [--auth <user:password>|off]";
+        "usage: amneziageo proxy [show|on|off] [--socks <port>] [--http <port>] [--lan on|off] [--auth <user:password>]... [--auth off]";
 
     /// <summary>
     /// Runs one proxy command.
@@ -32,15 +33,15 @@ internal static class ProxyCommands
     private static int Show(IAgentLink agent)
     {
         var snapshot = agent.Snapshot;
-        var host = snapshot.ProxyAddress.Length > 0 ? snapshot.ProxyAddress : "127.0.0.1";
+        var accounts = ProxyCredentials.Parse(snapshot.ProxyCredentials);
         var values = new (string Key, string Value)[]
         {
             ("state", State(snapshot)),
-            ("socks5", $"{host}:{snapshot.ProxySocksPort.ToString(CultureInfo.InvariantCulture)}"),
-            ("http", $"{host}:{snapshot.ProxyHttpPort.ToString(CultureInfo.InvariantCulture)}"),
+            ("socks5", Endpoints(snapshot, snapshot.ProxySocksPort)),
+            ("http", Endpoints(snapshot, snapshot.ProxyHttpPort)),
             ("lan", snapshot.ProxyLan ? "on" : "off"),
-            ("user", snapshot.ProxyUser.Length > 0 ? snapshot.ProxyUser : "-"),
-            ("password", snapshot.ProxyPassword.Length > 0 ? snapshot.ProxyPassword : "-"),
+            ("accounts", accounts.Count > 0 ? string.Join(", ", accounts.Select(a => $"{a.User}:{a.Password}")) : "-"),
+            ("clients", Clients(snapshot)),
         };
 
         if (Output.Json)
@@ -50,13 +51,34 @@ internal static class ProxyCommands
         }
 
         Output.Pairs(values);
-        if (snapshot.ProxyEnabled && snapshot.ProxyLan && snapshot.ProxyUser.Length == 0)
+        if (snapshot.ProxyEnabled && snapshot.ProxyLan && accounts.Count == 0)
         {
             Output.Info(string.Empty);
             Output.Info("every machine on this network can use the proxy; set --auth to ask for a password.");
         }
 
         return Exit.Ok;
+    }
+
+    // Loopback always works; the addresses of this machine come with it once the proxy is shared.
+    private static string Endpoints(StatusSnapshot snapshot, int port)
+    {
+        var hosts = new List<string> { "127.0.0.1" };
+        hosts.AddRange(snapshot.ProxyAddresses ?? []);
+        return string.Join(", ", hosts.Select(host => $"{host}:{port.ToString(CultureInfo.InvariantCulture)}"));
+    }
+
+    private static string Clients(StatusSnapshot snapshot)
+    {
+        var clients = snapshot.ProxyClients ?? [];
+        if (clients.Count == 0)
+        {
+            return "-";
+        }
+
+        return string.Join(", ", clients.Select(client =>
+            $"{client.Address} x{client.Connections.ToString(CultureInfo.InvariantCulture)}"
+            + (client.Name.Length > 0 ? $" ({client.Name})" : string.Empty)));
     }
 
     private static string State(StatusSnapshot snapshot)
@@ -78,6 +100,8 @@ internal static class ProxyCommands
     private static async Task<int> SetAsync(IAgentLink agent, bool on, IReadOnlyList<string> args)
     {
         var updates = new List<(string Key, string Value)>();
+        var accounts = new List<ProxyAccount>();
+        var authGiven = false;
         for (var i = 0; i < args.Count; i++)
         {
             switch (args[i])
@@ -112,10 +136,10 @@ internal static class ProxyCommands
                         return Reply.Usage("--auth takes user:password or off");
                     }
 
+                    authGiven = true;
                     if (raw == "off")
                     {
-                        updates.Add((SettingKeys.ProxyUser, string.Empty));
-                        updates.Add((SettingKeys.ProxyPassword, string.Empty));
+                        accounts.Clear();
                         break;
                     }
 
@@ -125,14 +149,19 @@ internal static class ProxyCommands
                         return Reply.Usage("--auth takes user:password or off");
                     }
 
-                    updates.Add((SettingKeys.ProxyUser, raw[..colon]));
-                    updates.Add((SettingKeys.ProxyPassword, raw[(colon + 1)..]));
+                    accounts.Add(new ProxyAccount(raw[..colon], raw[(colon + 1)..]));
                     break;
                 }
 
                 default:
                     return Reply.Usage(Usage);
             }
+        }
+
+        // The accounts named replace the stored ones whole; a command that names none leaves them alone.
+        if (authGiven)
+        {
+            updates.Add((SettingKeys.ProxyCredentials, ProxyCredentials.Compose(accounts)));
         }
 
         updates.Add((SettingKeys.ProxyEnabled, Toggle.Text(on)));

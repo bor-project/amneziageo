@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Routing;
 
@@ -36,11 +37,12 @@ public sealed class LocalProxyServer : IDisposable
     private readonly IProxyOutbound _outbound;
     private readonly Action<string> _log;
     private readonly ConcurrentDictionary<Socket, byte> _open = new();
+    private readonly ConcurrentDictionary<Socket, ProxyPeer> _clients = new();
     private readonly object _sync = new();
     private readonly List<Socket> _listeners = [];
     private CancellationTokenSource? _cts;
     private LocalProxyOptions _options = new();
-    private string _credentials = string.Empty;
+    private volatile Admission _admission = Admission.Of([]);
     private long _accepted;
     private long _served;
     private long _refused;
@@ -81,9 +83,7 @@ public sealed class LocalProxyServer : IDisposable
         {
             Halt();
             _options = options;
-            _credentials = options.RequiresAuth
-                ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.User}:{options.Password}"))
-                : string.Empty;
+            _admission = Admission.Of(options.Accounts());
             if (!options.Enabled || _disposed)
             {
                 Error = string.Empty;
@@ -112,7 +112,7 @@ public sealed class LocalProxyServer : IDisposable
             Running = true;
             Error = string.Empty;
             _log($"proxy: listening on {address}:{string.Join(", :", options.Ports)}"
-                + (options.RequiresAuth ? " with a password" : " without a password"));
+                + (_admission.Required ? $" for {_admission.Accounts.Count} account(s)" : " without a password"));
             return true;
         }
     }
@@ -129,31 +129,80 @@ public sealed class LocalProxyServer : IDisposable
     }
 
     /// <summary>
-    /// Address of this machine on the local network, empty when it has none; the adapters named are passed over,
-    /// so the tunnel's own address is not taken for it.
+    /// One adapter as the address pick reads it.
     /// </summary>
-    public static string LanAddress(params string[] skip)
+    /// <param name="Type">What the link is.</param>
+    /// <param name="HasGateway">Whether the link has a gateway.</param>
+    /// <param name="Addresses">The IPv4 addresses it carries.</param>
+    public sealed record AdapterView(NetworkInterfaceType Type, bool HasGateway, IReadOnlyList<IPAddress> Addresses);
+
+    /// <summary>
+    /// Addresses of this machine a client elsewhere can point at, the ones on a routed link first. Only a link
+    /// of this machine's own is taken: an address handed out by a tunnel or a dial-up answers to nobody here,
+    /// which is what makes it unreachable for the neighbour asked to use it.
+    /// </summary>
+    public static IReadOnlyList<string> UsableAddresses()
     {
+        var adapters = new List<AdapterView>();
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (adapter.OperationalStatus != OperationalStatus.Up
-                || adapter.NetworkInterfaceType == NetworkInterfaceType.Loopback
-                || skip.Any(name => adapter.Name.Contains(name, StringComparison.OrdinalIgnoreCase)
-                    || adapter.Description.Contains(name, StringComparison.OrdinalIgnoreCase)))
+            if (adapter.OperationalStatus != OperationalStatus.Up)
             {
                 continue;
             }
 
-            foreach (var address in adapter.GetIPProperties().UnicastAddresses)
+            var properties = adapter.GetIPProperties();
+            var addresses = properties.UnicastAddresses
+                .Select(a => a.Address)
+                .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+                .ToList();
+            if (addresses.Count == 0)
             {
-                if (address.Address.AddressFamily == AddressFamily.InterNetwork && IsPrivate(address.Address))
+                continue;
+            }
+
+            var gateway = properties.GatewayAddresses
+                .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any));
+            adapters.Add(new AdapterView(adapter.NetworkInterfaceType, gateway, addresses));
+        }
+
+        return Usable(adapters);
+    }
+
+    /// <summary>
+    /// Picks the reachable addresses out of the adapters given.
+    /// </summary>
+    public static IReadOnlyList<string> Usable(IEnumerable<AdapterView> adapters)
+    {
+        var routed = new List<string>();
+        var rest = new List<string>();
+        foreach (var adapter in adapters)
+        {
+            if (!IsOwnLink(adapter.Type))
+            {
+                continue;
+            }
+
+            foreach (var address in adapter.Addresses)
+            {
+                if (!IsPrivate(address))
                 {
-                    return address.Address.ToString();
+                    continue;
                 }
+
+                (adapter.HasGateway ? routed : rest).Add(address.ToString());
             }
         }
 
-        return string.Empty;
+        return [.. routed.Concat(rest).Distinct(StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// Clients holding a connection right now, one entry per connection.
+    /// </summary>
+    public IReadOnlyList<ProxyPeer> Peers()
+    {
+        return [.. _clients.Values];
     }
 
     /// <summary>
@@ -210,6 +259,7 @@ public sealed class LocalProxyServer : IDisposable
             {
                 var client = await listener.AcceptAsync(ct).ConfigureAwait(false);
                 _open.TryAdd(client, 0);
+                Track(client);
                 Interlocked.Increment(ref _accepted);
                 _ = Task.Run(() => ServeAsync(client, ct), CancellationToken.None);
             }
@@ -297,7 +347,7 @@ public sealed class LocalProxyServer : IDisposable
             return;
         }
 
-        var wanted = _options.RequiresAuth ? UserPass : NoAuth;
+        var wanted = _admission.Required ? UserPass : NoAuth;
         if (Array.IndexOf(methods, wanted) < 0)
         {
             await SendAsync(client, [Version5, NoMethod], ct).ConfigureAwait(false);
@@ -352,15 +402,15 @@ public sealed class LocalProxyServer : IDisposable
         }
     }
 
-    // RFC 1929: one user and one password, compared whole.
+    // RFC 1929: the pair is compared whole against every account the settings name.
     private async Task<bool> AuthenticateAsync(Socket client, CancellationToken ct)
     {
         var version = await ReadByteAsync(client, ct).ConfigureAwait(false);
         var user = await ReadStringAsync(client, ct).ConfigureAwait(false);
         var password = await ReadStringAsync(client, ct).ConfigureAwait(false);
         var ok = version == 0x01
-            && string.Equals(user, _options.User, StringComparison.Ordinal)
-            && string.Equals(password, _options.Password, StringComparison.Ordinal);
+            && _admission.Accounts.Any(a => string.Equals(user, a.User, StringComparison.Ordinal)
+                && string.Equals(password, a.Password, StringComparison.Ordinal));
         await SendAsync(client, [0x01, ok ? ReplyOk : ReplyFailure], ct).ConfigureAwait(false);
         return ok;
     }
@@ -384,7 +434,7 @@ public sealed class LocalProxyServer : IDisposable
             // What arrived with the head is the start of the body and goes on with it.
             var tail = buffer[end..used];
             var text = Encoding.ASCII.GetString(buffer, 0, end);
-            if (_options.RequiresAuth && !Authorized(text))
+            if (_admission.Required && !Authorized(text))
             {
                 await SendTextAsync(client, "HTTP/1.1 407 Proxy Authentication Required\r\n"
                     + "Proxy-Authenticate: Basic realm=\"AmneziaGeo\"\r\nConnection: close\r\n\r\n", ct).ConfigureAwait(false);
@@ -509,6 +559,45 @@ public sealed class LocalProxyServer : IDisposable
         return _options.AllowLan && IsPrivate(address);
     }
 
+    /// <summary>
+    /// Who the listener admits, in the form both fronts compare against. One instance carries the whole answer,
+    /// so a settings change is a single swap and no session can read half of it.
+    /// </summary>
+    /// <param name="Accounts">The pairs SOCKS5 compares.</param>
+    /// <param name="Basic">The same pairs as HTTP sends them.</param>
+    private sealed record Admission(IReadOnlyList<ProxyAccount> Accounts, HashSet<string> Basic)
+    {
+        /// <summary>
+        /// Whether a client has to authenticate.
+        /// </summary>
+        public bool Required => Accounts.Count > 0;
+
+        /// <summary>
+        /// Takes the accounts as both fronts need them.
+        /// </summary>
+        public static Admission Of(IReadOnlyList<ProxyAccount> accounts)
+        {
+            return new Admission(
+                accounts,
+                [.. accounts.Select(a => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{a.User}:{a.Password}")))]);
+        }
+    }
+
+    // A link of this machine: a wire or a radio it is itself attached to. A tunnel, a dial-up and the virtual
+    // links a VPN raises are left out - their address belongs to the far end's network, not to this one.
+    private static bool IsOwnLink(NetworkInterfaceType type)
+    {
+        return type is NetworkInterfaceType.Ethernet
+            or NetworkInterfaceType.Ethernet3Megabit
+            or NetworkInterfaceType.FastEthernetT
+            or NetworkInterfaceType.FastEthernetFx
+            or NetworkInterfaceType.GigabitEthernet
+            or NetworkInterfaceType.Wireless80211
+            or NetworkInterfaceType.Wman
+            or NetworkInterfaceType.Wwanpp
+            or NetworkInterfaceType.Wwanpp2;
+    }
+
     // Only the private ranges are let in: on a public network an open port is an open proxy.
     private static bool IsPrivate(IPAddress address)
     {
@@ -534,7 +623,7 @@ public sealed class LocalProxyServer : IDisposable
 
             var value = line["Proxy-Authorization:".Length..].Trim();
             return value.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(value["Basic ".Length..].Trim(), _credentials, StringComparison.Ordinal);
+                && _admission.Basic.Contains(value["Basic ".Length..].Trim());
         }
 
         return false;
@@ -754,15 +843,29 @@ public sealed class LocalProxyServer : IDisposable
         await socket.SendAsync(Encoding.ASCII.GetBytes(text), SocketFlags.None, ct).ConfigureAwait(false);
     }
 
+    // Notes who the connection came from, so the count can be broken down by client.
+    private void Track(Socket client)
+    {
+        if (client.RemoteEndPoint is not IPEndPoint peer)
+        {
+            return;
+        }
+
+        var address = peer.Address.IsIPv4MappedToIPv6 ? peer.Address.MapToIPv4() : peer.Address;
+        _clients.TryAdd(client, new ProxyPeer(address.ToString(), peer.Port, DateTimeOffset.UtcNow));
+    }
+
     private void Close(Socket socket)
     {
         _open.TryRemove(socket, out _);
+        _clients.TryRemove(socket, out _);
         socket.Dispose();
     }
 
     // Resets what is still open: a graceful close waits for an acknowledgement a torn tunnel no longer carries.
     private void Drop()
     {
+        _clients.Clear();
         foreach (var pair in _open)
         {
             _open.TryRemove(pair.Key, out _);

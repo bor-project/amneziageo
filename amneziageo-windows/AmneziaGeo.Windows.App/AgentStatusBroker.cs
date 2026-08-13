@@ -2453,11 +2453,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             ProxySocksPort: settings.ProxySocksPort,
             ProxyHttpPort: settings.ProxyHttpPort,
             ProxyLan: settings.ProxyLan,
-            ProxyUser: settings.ProxyUser,
-            ProxyPassword: settings.ProxyPassword,
+            ProxyCredentials: settings.ProxyCredentials,
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,
-            ProxyAddress: proxy.Address);
+            ProxyAddresses: proxy.Addresses,
+            ProxyClients: ProxyClientNames.Describe(proxy.Peers()));
     }
 
     private static string DisplayStatus(string profileStatus)

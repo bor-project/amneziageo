@@ -33,12 +33,17 @@ public static class SettingKeys
     public const string ProxyLan = "proxy-lan";
 
     /// <summary>
-    /// User the local proxy asks for.
+    /// Accounts the local proxy admits clients under, one "user:password" per line.
+    /// </summary>
+    public const string ProxyCredentials = "proxy-credentials";
+
+    /// <summary>
+    /// User the local proxy asks for; superseded by the account list and read only to carry an old setting over.
     /// </summary>
     public const string ProxyUser = "proxy-user";
 
     /// <summary>
-    /// Password the local proxy asks for.
+    /// Password the local proxy asks for; superseded by the account list.
     /// </summary>
     public const string ProxyPassword = "proxy-password";
 

@@ -1,4 +1,4 @@
-using System.Globalization;
+using AmneziaGeo.Decl;
 
 namespace AmneziaGeo.Routing;
 
@@ -39,24 +39,27 @@ public sealed record LocalProxyOptions
     public bool AllowLan { get; init; }
 
     /// <summary>
-    /// User clients authenticate as; empty asks for no credentials.
+    /// Accounts clients authenticate as, one "user:password" per line; empty asks for no credentials.
     /// </summary>
-    public string User { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Password that goes with the user.
-    /// </summary>
-    public string Password { get; init; } = string.Empty;
+    public string Credentials { get; init; } = string.Empty;
 
     /// <summary>
     /// Whether clients have to authenticate.
     /// </summary>
-    public bool RequiresAuth => User.Length > 0;
+    public bool RequiresAuth => Accounts().Count > 0;
 
     /// <summary>
     /// Ports the listener takes, without the duplicate when both settings name one port.
     /// </summary>
     public IReadOnlyList<int> Ports => SocksPort == HttpPort ? [SocksPort] : [SocksPort, HttpPort];
+
+    /// <summary>
+    /// The accounts the credentials name.
+    /// </summary>
+    public IReadOnlyList<ProxyAccount> Accounts()
+    {
+        return ProxyCredentials.Parse(Credentials);
+    }
 
     /// <summary>
     /// Whether a port can be listened on.

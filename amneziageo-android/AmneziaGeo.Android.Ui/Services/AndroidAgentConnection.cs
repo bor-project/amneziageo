@@ -761,11 +761,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxySocksPort: _proxyOptions.SocksPort,
             ProxyHttpPort: _proxyOptions.HttpPort,
             ProxyLan: _proxyOptions.AllowLan,
-            ProxyUser: _proxyOptions.User,
-            ProxyPassword: _proxyOptions.Password,
+            ProxyCredentials: _proxyOptions.Credentials,
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,
-            ProxyAddress: proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.LanAddress("tun") : string.Empty);
+            ProxyAddresses: proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.UsableAddresses() : []);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -1782,7 +1781,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             if (document.RootElement.TryGetProperty("Proxy", out var proxy) && proxy.ValueKind == JsonValueKind.Object)
             {
-                _proxyOptions = JsonSerializer.Deserialize<LocalProxyOptions>(proxy.GetRawText()) ?? new LocalProxyOptions();
+                _proxyOptions = ReadProxy(proxy);
                 // The tunnel runs in its own process and listens by its own copy; a restored library brings it back.
                 VpnBridge.WriteProxy(_proxyOptions);
             }
@@ -2574,8 +2573,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case SettingKeys.ProxyLan:
             case SettingKeys.ProxySocksPort:
             case SettingKeys.ProxyHttpPort:
-            case SettingKeys.ProxyUser:
-            case SettingKeys.ProxyPassword:
+            case SettingKeys.ProxyCredentials:
                 if (!TryProxySetting(args[0], args[1], out var options))
                 {
                     return Fail();
@@ -2589,6 +2587,21 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             default:
                 return Ok();
         }
+    }
+
+    // The single user/password pair became a list; a pair stored by an earlier version becomes its first account.
+    private static LocalProxyOptions ReadProxy(JsonElement stored)
+    {
+        var options = JsonSerializer.Deserialize<LocalProxyOptions>(stored.GetRawText()) ?? new LocalProxyOptions();
+        if (options.Credentials.Length > 0
+            || !stored.TryGetProperty("User", out var user)
+            || user.GetString() is not { Length: > 0 } name)
+        {
+            return options;
+        }
+
+        var password = stored.TryGetProperty("Password", out var secret) ? secret.GetString() ?? string.Empty : string.Empty;
+        return options with { Credentials = $"{name}:{password}" };
     }
 
     // One proxy setting on top of the ones in force.
@@ -2619,11 +2632,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
                 options = options with { HttpPort = http };
                 return true;
-            case SettingKeys.ProxyUser:
-                options = options with { User = value.Trim() };
-                return true;
             default:
-                options = options with { Password = value };
+                options = options with { Credentials = value.Trim() };
                 return true;
         }
     }

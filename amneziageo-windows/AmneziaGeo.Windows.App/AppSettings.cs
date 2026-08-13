@@ -148,14 +148,9 @@ internal sealed record AppSettings
     public bool ProxyLan { get; init; }
 
     /// <summary>
-    /// User the local proxy asks for; empty asks for no credentials.
+    /// Accounts the local proxy admits clients under, one "user:password" per line; empty asks for no credentials.
     /// </summary>
-    public string ProxyUser { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Password that goes with the user.
-    /// </summary>
-    public string ProxyPassword { get; init; } = string.Empty;
+    public string ProxyCredentials { get; init; } = string.Empty;
 
     /// <summary>
     /// The local proxy as the listener takes it.
@@ -168,8 +163,7 @@ internal sealed record AppSettings
             SocksPort = ProxySocksPort,
             HttpPort = ProxyHttpPort,
             AllowLan = ProxyLan,
-            User = ProxyUser,
-            Password = ProxyPassword,
+            Credentials = ProxyCredentials,
         };
     }
 }

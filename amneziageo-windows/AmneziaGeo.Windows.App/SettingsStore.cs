@@ -32,6 +32,12 @@ internal sealed class SettingsStore(IStateStore store)
             PeriodicReconnectIntervalSeconds = ReadInt(values, "periodic-reconnect-interval-seconds", defaults.PeriodicReconnectIntervalSeconds),
             ShowNotifications = ReadBool(values, "show-notifications", defaults.ShowNotifications),
             AllowPrerelease = ReadBool(values, "allow-prerelease", defaults.AllowPrerelease),
+            ProxyEnabled = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, defaults.ProxyEnabled),
+            ProxySocksPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, defaults.ProxySocksPort),
+            ProxyHttpPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort, defaults.ProxyHttpPort),
+            ProxyLan = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyLan, defaults.ProxyLan),
+            ProxyUser = ReadText(values, AmneziaGeo.Ipc.SettingKeys.ProxyUser, defaults.ProxyUser),
+            ProxyPassword = ReadText(values, AmneziaGeo.Ipc.SettingKeys.ProxyPassword, defaults.ProxyPassword),
         };
     }
 
@@ -50,6 +56,17 @@ internal sealed class SettingsStore(IStateStore store)
             }
 
             await store.SetSettingAsync(key, ttl.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
+            return true;
+        }
+
+        if (ProxyPortKeys.Contains(key))
+        {
+            if (!AmneziaGeo.Ipc.SettingKeys.TryParseProxyPort(value, out var port))
+            {
+                return false;
+            }
+
+            await store.SetSettingAsync(key, port.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
             return true;
         }
 
@@ -106,7 +123,7 @@ internal sealed class SettingsStore(IStateStore store)
     /// </summary>
     public static IReadOnlyList<string> Keys()
     {
-        return [.. IntKeys, .. BoolKeys, .. StringKeys];
+        return [.. IntKeys, .. ProxyPortKeys, .. BoolKeys, .. StringKeys];
     }
 
     private static readonly string[] IntKeys =
@@ -115,16 +132,23 @@ internal sealed class SettingsStore(IStateStore store)
     // Integer settings that accept 0.
     private static readonly string[] ZeroableIntKeys = [AppSettings.RouteTtlKey];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease"];
+    // Listening ports, which take their own range instead of the positive-integer rule.
+    private static readonly string[] ProxyPortKeys =
+        [AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort];
+
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyLan];
 
     // Validated string settings; log-level is constrained to verbosity tokens.
-    private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey];
+    private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyUser, AmneziaGeo.Ipc.SettingKeys.ProxyPassword];
 
     private static int ReadInt(IReadOnlyDictionary<string, string> values, string key, int fallback)
         => values.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : fallback;
 
     private static bool ReadBool(IReadOnlyDictionary<string, string> values, string key, bool fallback)
         => values.TryGetValue(key, out var value) && TryParseBool(value, out var parsed) ? parsed : fallback;
+
+    private static string ReadText(IReadOnlyDictionary<string, string> values, string key, string fallback)
+        => values.TryGetValue(key, out var value) ? value : fallback;
 
     private static string ReadLogLevel(IReadOnlyDictionary<string, string> values, string fallback)
         => values.TryGetValue(LogLevelWatcher.SettingKey, out var value) && LogLevelController.IsValid(value) ? value : fallback;

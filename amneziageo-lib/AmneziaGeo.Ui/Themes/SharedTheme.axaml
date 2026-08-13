@@ -381,6 +381,20 @@
       <Setter Property="Margin" Value="8,3" />
     </Style>
 
+    <!-- Строка способа в шторке «Добавить» / «Экспорт». -->
+    <Style Selector="Button.sheetrow">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="MinHeight" Value="46" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+
     <!-- Connect button on a server card, bigger on the narrow screen a finger works. -->
     <Style Selector="Button.cardact">
       <Setter Property="Width" Value="44" />

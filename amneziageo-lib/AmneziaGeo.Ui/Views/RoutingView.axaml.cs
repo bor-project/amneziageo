@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Avalonia;
@@ -18,31 +19,15 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class RoutingView : UserControl
 {
-    private readonly HeaderReflow _header;
-
     /// <summary>
     /// ctor
     /// </summary>
     public RoutingView()
     {
         InitializeComponent();
-        _header = new HeaderReflow(HeaderGrid, HeaderTabs, PickerHost, Picker, PickerLabelFloat, PickerLabelInline,
-            () => (DataContext as RoutingViewModel)?.IsCompact ?? false);
-        DataContextChanged += (_, _) => _header.Apply();
     }
 
-    // Steps from the tabs into the section under them.
-    private void OnHeaderTabsKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Handled || e.Key is not Key.Down)
-        {
-            return;
-        }
-
-        e.Handled = PaneFocus.FocusFirst(PaneFocus.Shown(SettingsSection, ExportSection, ImportPicker, ImportEditor));
-    }
-
-    // Returns to the tabs from the section's top row.
+    // Returns to the header from the section's top row.
     private void OnBodyKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled || e.Key is not Key.Up)
@@ -56,7 +41,100 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
-        e.Handled = PaneFocus.FocusFirst(HeaderTabs);
+        e.Handled = PaneFocus.FocusFirst(HeaderActions);
+    }
+
+    // Способы добавления: файл, буфер обмена, живой сканер QR и пустой список.
+    private void OnAddOptions(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not RoutingViewModel vm)
+        {
+            return;
+        }
+
+        var options = new List<ActionOption>
+        {
+            new(Loc.Instance.Get("Main_FileButton"), Glyphs.File, ImportFromFile),
+            new(Loc.Instance.Get("Main_PasteButton"), Glyphs.Paste, ImportFromClipboard),
+        };
+        if (vm.CameraScanAvailable)
+        {
+            options.Add(new ActionOption(
+                Loc.Instance.Get("Main_CameraButton"),
+                Glyphs.Qr,
+                () => vm.BeginCameraImportCommand.Execute(null)));
+        }
+
+        options.Add(new ActionOption(
+            Loc.Instance.Get("Main_CreateManuallyButton"),
+            Glyphs.Pencil,
+            () => vm.BeginManualImportCommand.Execute(null)));
+
+        ActionOptions.Present(
+            sender as Control,
+            vm.Sheet,
+            Loc.Instance.Get("Main_AddListTitle"),
+            Loc.Instance.Get("Main_AddConfigSubtitle"),
+            options);
+    }
+
+    // Способы экспорта: экран QR, текст списка в буфер и файл.
+    private void OnExportOptions(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not RoutingViewModel vm)
+        {
+            return;
+        }
+
+        var options = new List<ActionOption>
+        {
+            new(
+                Loc.Instance.Get("Main_ShowQrButton"),
+                Glyphs.Qr,
+                () => vm.SelectRoutingSectionCommand.Execute("export")),
+            new(Loc.Instance.Get("Main_CopyButton"), Glyphs.Copy, CopyListPayload),
+            new(Loc.Instance.Get("Main_SaveToFileButton"), Glyphs.Download, SaveListPayload),
+        };
+
+        ActionOptions.Present(
+            sender as Control,
+            vm.Sheet,
+            Loc.Instance.Get("Main_ExportListTitle"),
+            Loc.Instance.Get("Main_TransferSubtitle"),
+            options);
+    }
+
+    // Копирует текст открытого списка.
+    private async void CopyListPayload()
+    {
+        if (DataContext is not RoutingViewModel { RoutingEditor: { } editor })
+        {
+            return;
+        }
+
+        if (await ExportActions.CopyToClipboardAsync(this, editor.BuildTransferPayload()))
+        {
+            editor.StatusMessage = Loc.Instance.Get("MainCode_CopiedToClipboard");
+        }
+    }
+
+    // Сохраняет текст открытого списка файлом.
+    private async void SaveListPayload()
+    {
+        if (DataContext is not RoutingViewModel { RoutingEditor: { } editor })
+        {
+            return;
+        }
+
+        var saved = await ExportActions.SaveTextAsync(
+            this,
+            editor.BuildTransferPayload(),
+            Loc.Instance.Get("MainCode_SaveRoutingListTitle"),
+            editor.SuggestedFileName);
+        if (saved)
+        {
+            editor.StatusMessage = Loc.Instance.Get("MainCode_Saved");
+        }
     }
 
     // Routing-list export: copies the open form - the QR as a picture, the config as text.
@@ -133,8 +211,8 @@ internal sealed partial class RoutingView : UserControl
     // Picture name of the list.
     private static string QrName(RoutingListEditorViewModel vm) => Path.ChangeExtension(vm.SuggestedFileName, "png");
 
-    // Routing-list import: paste from the clipboard / load from a file into the draft editor.
-    private async void OnRoutingImportPaste(object? sender, RoutedEventArgs e)
+    // Routing-list import: paste from the clipboard into a fresh draft.
+    private async void ImportFromClipboard()
     {
         if (DataContext is not RoutingViewModel vm)
         {
@@ -150,6 +228,7 @@ internal sealed partial class RoutingView : UserControl
         var text = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
+            vm.BeginImportDraft();
             if (vm.RoutingEditor is { } editor)
             {
                 editor.StatusMessage = Loc.Instance.Get("MainCode_ClipboardNoText");
@@ -158,10 +237,12 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
+        vm.BeginImportDraft();
         vm.ApplyImportText(text);
     }
 
-    private async void OnRoutingImportFile(object? sender, RoutedEventArgs e)
+    // Routing-list import: load from a file into a fresh draft. Отменённый выбор черновик не открывает.
+    private async void ImportFromFile()
     {
         if (DataContext is not RoutingViewModel vm)
         {
@@ -176,6 +257,7 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
+        vm.BeginImportDraft();
         try
         {
             // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
@@ -183,7 +265,7 @@ internal sealed partial class RoutingView : UserControl
             var raw = await file.ReadAllBytesAsync();
             if (!FileContent.LooksLikeImage(raw))
             {
-                vm.ApplyImportText(new UTF8Encoding(false, false).GetString(raw).TrimStart('\ufeff'));
+                vm.ApplyImportText(new UTF8Encoding(false, false).GetString(raw).TrimStart('﻿'));
                 return;
             }
 

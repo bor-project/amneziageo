@@ -33,9 +33,9 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private DispatcherTimer? _autoUpdateTimer;
     private bool _autoCheckArmed;
 
-    // The Linux agent owns the update: it downloads the packages and hands them to the package manager, so the
+    // The Linux and Android agents own the update: they download the package and hand it to the installer, so the
     // window only relays the commands and mirrors the state the snapshot carries.
-    private readonly bool _agentUpdates = OperatingSystem.IsLinux();
+    private readonly bool _agentUpdates = OperatingSystem.IsLinux() || OperatingSystem.IsAndroid();
     private string _agentPhase = string.Empty;
     private string? _installingVersion;
 
@@ -174,6 +174,60 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     private bool _allowPrerelease;
+
+    /// <summary>
+    /// Whether the local proxy listens on its ports.
+    /// </summary>
+    [ObservableProperty]
+    private bool _proxyEnabled;
+
+    /// <summary>
+    /// SOCKS5 port of the local proxy.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
+    private string _proxySocksPort = "10808";
+
+    /// <summary>
+    /// HTTP port of the local proxy.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProxyEnabledHint))]
+    private string _proxyHttpPort = "10809";
+
+    /// <summary>
+    /// Whether other machines on this network may use the proxy.
+    /// </summary>
+    [ObservableProperty]
+    private bool _proxyLan;
+
+    /// <summary>
+    /// User the local proxy asks for; empty asks for no credentials.
+    /// </summary>
+    [ObservableProperty]
+    private string _proxyUser = string.Empty;
+
+    /// <summary>
+    /// Password that goes with the user.
+    /// </summary>
+    [ObservableProperty]
+    private string _proxyPassword = string.Empty;
+
+    /// <summary>
+    /// Where a client should point, or why the listener is down.
+    /// </summary>
+    [ObservableProperty]
+    private string _proxyAddressText = string.Empty;
+
+    /// <summary>
+    /// Who may use the proxy and on which ports.
+    /// </summary>
+    public string ProxyEnabledHint => Loc.Instance.Get("General_ProxyEnabledHint", ProxySocksPort, ProxyHttpPort);
+
+    /// <summary>
+    /// Whether the proxy only carries traffic while the tunnel is up, as it does on Android.
+    /// </summary>
+    public bool ProxyNeedsTunnel => OperatingSystem.IsAndroid();
 
     /// <summary>
     /// Auto-reconnect interval presets, in seconds.
@@ -316,7 +370,14 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         PeriodicReconnect = snapshot.PeriodicReconnect;
         EnsureReconnectInterval(snapshot.PeriodicReconnectIntervalSeconds);
         ReconnectIntervalSeconds = snapshot.PeriodicReconnectIntervalSeconds;
+        ProxyEnabled = snapshot.ProxyEnabled;
+        ProxyLan = snapshot.ProxyLan;
+        ProxySocksPort = snapshot.ProxySocksPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        ProxyHttpPort = snapshot.ProxyHttpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        ProxyUser = snapshot.ProxyUser;
+        ProxyPassword = snapshot.ProxyPassword;
         _suppressSettingPush = false;
+        ProxyAddressText = ProxyAddress(snapshot);
 
         UpdateUrl = snapshot.UpdateUrl;
 
@@ -994,6 +1055,74 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             _ = SetSettingAsync("allow-prerelease", value ? "on" : "off");
         }
+    }
+
+    partial void OnProxyEnabledChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.ProxyEnabled, value ? "on" : "off");
+        }
+    }
+
+    partial void OnProxyLanChanged(bool value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.ProxyLan, value ? "on" : "off");
+        }
+    }
+
+    partial void OnProxySocksPortChanged(string value)
+    {
+        PushPort(SettingKeys.ProxySocksPort, value);
+    }
+
+    partial void OnProxyHttpPortChanged(string value)
+    {
+        PushPort(SettingKeys.ProxyHttpPort, value);
+    }
+
+    partial void OnProxyUserChanged(string value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.ProxyUser, value.Trim());
+        }
+    }
+
+    partial void OnProxyPasswordChanged(string value)
+    {
+        if (!_suppressSettingPush)
+        {
+            _ = SetSettingAsync(SettingKeys.ProxyPassword, value);
+        }
+    }
+
+    // A half-typed port is not a port; the agent keeps the last one until a whole number arrives.
+    private void PushPort(string key, string value)
+    {
+        if (!_suppressSettingPush && SettingKeys.TryParseProxyPort(value, out var port))
+        {
+            _ = SetSettingAsync(key, port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+    }
+
+    // Where a client points: the address of this machine on the network when it is shared, loopback otherwise.
+    private static string ProxyAddress(StatusSnapshot snapshot)
+    {
+        if (!snapshot.ProxyEnabled)
+        {
+            return string.Empty;
+        }
+
+        if (snapshot.ProxyError.Length > 0)
+        {
+            return snapshot.ProxyError;
+        }
+
+        var host = snapshot.ProxyAddress.Length > 0 ? snapshot.ProxyAddress : "127.0.0.1";
+        return $"SOCKS5 {host}:{snapshot.ProxySocksPort}    HTTP {host}:{snapshot.ProxyHttpPort}";
     }
 
     partial void OnSurviveRebootChanged(bool value)

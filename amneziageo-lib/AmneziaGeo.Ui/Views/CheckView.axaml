@@ -67,7 +67,8 @@
                 <ContextMenu>
                   <MenuItem Header="{l:Tr Main_CopyButton}" Click="OnCopyReport">
                     <MenuItem.Icon>
-                      <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+                      <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14"
+                                Foreground="{DynamicResource AgAccentBrush}" />
                     </MenuItem.Icon>
                   </MenuItem>
                 </ContextMenu>

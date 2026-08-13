@@ -11,6 +11,12 @@ internal static class UiPlatform
     public static bool IsTelevision { get; set; }
 
     /// <summary>
+    /// Whether the add / export choices open as a bottom sheet. Off on desktop, where the same choices drop out
+    /// of the button as a menu.
+    /// </summary>
+    public static bool UsesActionSheets { get; set; }
+
+    /// <summary>
     /// Whether a geo rule can be unfolded into the entries it covers. Off on Android, where a country's tens of
     /// thousands of rows cost more memory than the device has to spare.
     /// </summary>

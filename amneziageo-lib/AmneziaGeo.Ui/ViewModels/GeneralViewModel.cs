@@ -408,7 +408,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             if (!string.Equals(snapshot.UpdateVersion, _bannerUpdateVersion, StringComparison.Ordinal))
             {
                 _bannerUpdateVersion = snapshot.UpdateVersion;
-                UpdateBannerVisible = true;
+                UpdateBannerVisible = TakeBannerTurn(snapshot.UpdateVersion);
             }
         }
         else
@@ -416,6 +416,19 @@ internal sealed partial class GeneralViewModel : ViewModelBase
             UpdateBannerVisible = false;
             _bannerUpdateVersion = null;
         }
+    }
+
+    // Offers the banner once per version: the mark is kept in the preferences, so a restart brings it back no more.
+    private bool TakeBannerTurn(string version)
+    {
+        if (string.Equals(version, _prefs.ShownUpdateVersion, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _prefs.ShownUpdateVersion = version;
+        _prefs.Save();
+        return true;
     }
 
     // Windows: this process owns the setup byte-pump, so the snapshot only carries what another window did.

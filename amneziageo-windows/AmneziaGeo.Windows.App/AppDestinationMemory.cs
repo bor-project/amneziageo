@@ -19,6 +19,8 @@ internal sealed class AppDestinationMemory
     private const int TickMs = 1_000;
     private const int PersistEveryTicks = 5;
     private const int MaxArmAttempts = 60;
+    // Repeats the arm: a route released by a sweep or a filter rearm returns without waiting for a reconnect.
+    private const int RearmEveryTicks = 30;
 
     private readonly IStateStore _store;
     private readonly DomainTracker _tracker;
@@ -90,6 +92,18 @@ internal sealed class AppDestinationMemory
     }
 
     /// <summary>
+    /// Whether this address is one of the remembered destinations. Such an address keeps its route through an idle
+    /// window: the app reaches it without a name, so the attempt that would earn the route back is the one that fails.
+    /// </summary>
+    public bool Holds(string ip)
+    {
+        lock (_lock)
+        {
+            return _index.Contains(ip);
+        }
+    }
+
+    /// <summary>
     /// Restores the remembered addresses, routes them, and writes back what this session adds.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
@@ -111,14 +125,21 @@ internal sealed class AppDestinationMemory
         {
             while (!ct.IsCancellationRequested)
             {
+                ticks++;
+
                 // Bounded: the adapter is ready within a second or two, and an address that refuses to route is
                 // left to the ordinary path instead of being retried for the whole session.
                 if (!_armed && ++attempts <= MaxArmAttempts)
                 {
                     _armed = Arm();
                 }
+                else if (_armed && ticks % RearmEveryTicks == 0)
+                {
+                    // Only the addresses without a route are installed, so a repeat costs a dictionary pass.
+                    Arm();
+                }
 
-                if (++ticks % PersistEveryTicks == 0 && Interlocked.Exchange(ref _dirty, 0) == 1)
+                if (ticks % PersistEveryTicks == 0 && Interlocked.Exchange(ref _dirty, 0) == 1)
                 {
                     await PersistAsync(ct).ConfigureAwait(false);
                 }

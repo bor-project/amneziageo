@@ -444,6 +444,7 @@ internal sealed class TunnelRunner(
             var appMemory = new AppDestinationMemory(store, tracker, name, apps, loggerFactory.CreateLogger<AppDestinationMemory>());
             routing.AppDestination += appMemory.Note;
             tracker.SetAppDestinationSink(appMemory.Note);
+            tracker.SetAppMemoryCheck(appMemory.Holds);
             _ = Task.Run(() => appMemory.RunAsync(sessionCts.Token));
         }
 

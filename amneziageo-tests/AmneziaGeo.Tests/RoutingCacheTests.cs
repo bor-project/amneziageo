@@ -443,6 +443,20 @@ public sealed class RoutingCacheTests
     }
 
     [Fact]
+    public void InSplit_IdleAppOwnedDestination_KeepsItsRoute()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true);
+        cache.Note(Numeric(YandexAddress), app: true);
+
+        cache.Sweep([], Environment.TickCount64 + (16 * 60 * 1000));
+
+        Assert.Empty(applier.Untunneled);
+        Assert.Equal(1, cache.Active);
+        Assert.Equal(1, cache.Size);
+    }
+
+    [Fact]
     public void InSplit_ManyIdleTunnelledAddresses_AreWithdrawnInOneCall()
     {
         var applier = new FakeApplier { Generation = 1 };

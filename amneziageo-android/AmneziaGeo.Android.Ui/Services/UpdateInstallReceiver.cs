@@ -5,8 +5,8 @@ using Android.Content.PM;
 namespace AmneziaGeo.Android.Ui.Services;
 
 /// <summary>
-/// Result of an install session: shows the system confirmation the installer asks for and reports the terminal
-/// status back to the updater.
+/// Result of an install session: shows the system confirmation the installer asks for, reports the terminal
+/// status back to the updater and brings the window back once the package is replaced.
 /// </summary>
 [BroadcastReceiver(Name = "org.amneziageo.android.UpdateInstallReceiver", Exported = false)]
 internal sealed class UpdateInstallReceiver : BroadcastReceiver
@@ -32,7 +32,13 @@ internal sealed class UpdateInstallReceiver : BroadcastReceiver
         }
 
         var message = intent.GetStringExtra(PackageInstaller.ExtraStatusMessage) ?? status.ToString();
-        Finished?.Invoke(status == PackageInstallStatus.Success, message);
+        var installed = status == PackageInstallStatus.Success;
+        Finished?.Invoke(installed, message);
+        if (installed && context is not null)
+        {
+            // Статус своей сессии доходит и туда, где автозапуск не пускает рассылку о замене пакета.
+            UpdateReopen.Run(this, context);
+        }
     }
 
     // The installer asks the user itself, and hands the screen over as an intent to start.

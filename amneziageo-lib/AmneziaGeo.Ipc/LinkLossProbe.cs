@@ -31,6 +31,7 @@ public sealed class LinkLossProbe
     private readonly Queue<int> _window = new();
     private readonly object _lock = new();
     private IPAddress? _chosen;
+    private int _attempts;
     private int _percent = LinkHealth.LossUnknown;
     private int _rttMs = -1;
 
@@ -64,6 +65,18 @@ public sealed class LinkLossProbe
     public int RttMs => Volatile.Read(ref _rttMs);
 
     /// <summary>
+    /// Whether any target has answered. Nothing here separates a target the tunnel does not carry from one that
+    /// simply never replies, and both leave the share unknown for the whole session - a state worth reading,
+    /// because an unknown share is not a healthy one.
+    /// </summary>
+    public bool Answering => Volatile.Read(ref _chosen) is not null;
+
+    /// <summary>
+    /// Echoes sent since the session started.
+    /// </summary>
+    public int Attempts => Volatile.Read(ref _attempts);
+
+    /// <summary>
     /// Echoes the target once a second for as long as the session runs.
     /// </summary>
     public async Task RunAsync(CancellationToken ct)
@@ -87,6 +100,7 @@ public sealed class LinkLossProbe
 
             var target = _chosen ?? _targets[attempt++ % _targets.Length];
             var trip = await IcmpEcho.RoundTripAsync(target, TimeoutMs, ct).ConfigureAwait(false);
+            Interlocked.Increment(ref _attempts);
 
             // The first target that answers is the one measured from here on: alternating between them would fold
             // two paths into one share.
@@ -152,6 +166,28 @@ public sealed class LinkLossProbe
     }
 
     /// <summary>
+    /// Every address worth echoing, the peer first. The peer alone measures the channel and nothing behind it,
+    /// but a server that hands its clients a single-host address answers at no peer address at all, and a
+    /// tunnel carrying named destinations routes none of that subnet into itself either - so the resolvers the
+    /// config declares follow, measuring more than the channel but carried by it, and answering.
+    /// </summary>
+    public static IReadOnlyList<string> Targets(IEnumerable<string> interfaceAddresses, IEnumerable<string> dnsServers)
+    {
+        var targets = new List<string>();
+        foreach (var peer in PeerTargets(interfaceAddresses))
+        {
+            Keep(targets, peer);
+        }
+
+        foreach (var server in BeyondTargets(dnsServers))
+        {
+            Keep(targets, server);
+        }
+
+        return targets;
+    }
+
+    /// <summary>
     /// The far end of the tunnel: the peer's own address on every subnet the interface sits in. Nothing else
     /// measures the tunnel, every other address being reached through it and out the far side.
     /// </summary>
@@ -178,7 +214,11 @@ public sealed class LinkLossProbe
         var targets = new List<string>();
         foreach (var server in dnsServers)
         {
-            if (IPAddress.TryParse(server.Trim(), out var parsed) && parsed.AddressFamily == AddressFamily.InterNetwork)
+            // A resolver on loopback is this machine's own proxy: it answers an echo without the tunnel carrying
+            // anything, which is worse than measuring nothing at all.
+            if (IPAddress.TryParse(server.Trim(), out var parsed)
+                && parsed.AddressFamily == AddressFamily.InterNetwork
+                && !IPAddress.IsLoopback(parsed))
             {
                 Keep(targets, parsed.ToString());
             }

@@ -1076,7 +1076,7 @@
     <value>Проверка…</value>
   </data>
   <data name="MainVm_UpdateDownloading" xml:space="preserve">
-    <value>Загрузка установщика…</value>
+    <value>Скачивание обновления…</value>
   </data>
   <data name="MainVm_UpdateError" xml:space="preserve">
     <value>Ошибка: {0}</value>

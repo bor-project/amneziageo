@@ -1076,7 +1076,7 @@
     <value>Checking…</value>
   </data>
   <data name="MainVm_UpdateDownloading" xml:space="preserve">
-    <value>Downloading installer…</value>
+    <value>Downloading the update…</value>
   </data>
   <data name="MainVm_UpdateError" xml:space="preserve">
     <value>Error: {0}</value>

@@ -12,8 +12,8 @@ namespace AmneziaGeo.Routing;
 /// <summary>
 /// Proxy the application offers on a fixed port. Both ports take either protocol - the first byte a client sends
 /// tells SOCKS5 from HTTP - and every destination is opened by the outbound the platform supplies, so what leaves
-/// through the tunnel is decided in one place for the whole application. Only loopback reaches it until the local
-/// network is allowed, and then only private addresses, with the credentials the settings name.
+/// through the tunnel is decided in one place for the whole application. This machine and the private addresses
+/// of its network reach it, under the accounts the settings name or without one where they allow it.
 /// </summary>
 public sealed class LocalProxyServer : IDisposable
 {
@@ -41,8 +41,7 @@ public sealed class LocalProxyServer : IDisposable
     private readonly object _sync = new();
     private readonly List<Socket> _listeners = [];
     private CancellationTokenSource? _cts;
-    private LocalProxyOptions _options = new();
-    private volatile Admission _admission = Admission.Of([]);
+    private volatile Admission _admission = Admission.Of(new LocalProxyOptions());
     private long _accepted;
     private long _served;
     private long _refused;
@@ -82,8 +81,7 @@ public sealed class LocalProxyServer : IDisposable
         lock (_sync)
         {
             Halt();
-            _options = options;
-            _admission = Admission.Of(options.Accounts());
+            _admission = Admission.Of(options);
             if (!options.Enabled || _disposed)
             {
                 Error = string.Empty;
@@ -96,11 +94,10 @@ public sealed class LocalProxyServer : IDisposable
                 return false;
             }
 
-            var address = options.AllowLan ? IPAddress.Any : IPAddress.Loopback;
             var cts = new CancellationTokenSource();
             foreach (var port in options.Ports)
             {
-                if (!Bind(address, port, cts.Token))
+                if (!Bind(IPAddress.Any, port, cts.Token))
                 {
                     Halt();
                     cts.Dispose();
@@ -111,8 +108,9 @@ public sealed class LocalProxyServer : IDisposable
             _cts = cts;
             Running = true;
             Error = string.Empty;
-            _log($"proxy: listening on {address}:{string.Join(", :", options.Ports)}"
-                + (_admission.Required ? $" for {_admission.Accounts.Count} account(s)" : " without a password"));
+            _log($"proxy: listening on :{string.Join(", :", options.Ports)}"
+                + $" for {_admission.Accounts.Count} account(s)"
+                + (_admission.Anonymous ? " and without a password" : string.Empty));
             return true;
         }
     }
@@ -350,8 +348,8 @@ public sealed class LocalProxyServer : IDisposable
             return;
         }
 
-        var wanted = _admission.Required ? UserPass : NoAuth;
-        if (Array.IndexOf(methods, wanted) < 0)
+        var wanted = _admission.Method(methods);
+        if (wanted == NoMethod)
         {
             await SendAsync(client, [Version5, NoMethod], ct).ConfigureAwait(false);
             Interlocked.Increment(ref _refused);
@@ -437,7 +435,7 @@ public sealed class LocalProxyServer : IDisposable
             // What arrived with the head is the start of the body and goes on with it.
             var tail = buffer[end..used];
             var text = Encoding.ASCII.GetString(buffer, 0, end);
-            if (_admission.Required && !Authorized(text))
+            if (!_admission.Anonymous && !Authorized(text))
             {
                 await SendTextAsync(client, "HTTP/1.1 407 Proxy Authentication Required\r\n"
                     + "Proxy-Authenticate: Basic realm=\"AmneziaGeo\"\r\nConnection: close\r\n\r\n", ct).ConfigureAwait(false);
@@ -559,7 +557,7 @@ public sealed class LocalProxyServer : IDisposable
             return true;
         }
 
-        return _options.AllowLan && IsPrivate(address);
+        return IsPrivate(address);
     }
 
     /// <summary>
@@ -568,21 +566,33 @@ public sealed class LocalProxyServer : IDisposable
     /// </summary>
     /// <param name="Accounts">The pairs SOCKS5 compares.</param>
     /// <param name="Basic">The same pairs as HTTP sends them.</param>
-    private sealed record Admission(IReadOnlyList<ProxyAccount> Accounts, HashSet<string> Basic)
+    /// <param name="Anonymous">Whether a client without an account is admitted too.</param>
+    private sealed record Admission(IReadOnlyList<ProxyAccount> Accounts, HashSet<string> Basic, bool Anonymous)
     {
         /// <summary>
-        /// Whether a client has to authenticate.
+        /// The SOCKS5 method for a client offering these: the open one where it is allowed, the password where
+        /// an account answers for it, and none where neither holds.
         /// </summary>
-        public bool Required => Accounts.Count > 0;
+        public byte Method(byte[] offered)
+        {
+            if (Anonymous && Array.IndexOf(offered, NoAuth) >= 0)
+            {
+                return NoAuth;
+            }
+
+            return Accounts.Count > 0 && Array.IndexOf(offered, UserPass) >= 0 ? UserPass : NoMethod;
+        }
 
         /// <summary>
         /// Takes the accounts as both fronts need them.
         /// </summary>
-        public static Admission Of(IReadOnlyList<ProxyAccount> accounts)
+        public static Admission Of(LocalProxyOptions options)
         {
+            var accounts = options.Accounts();
             return new Admission(
                 accounts,
-                [.. accounts.Select(a => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{a.User}:{a.Password}")))]);
+                [.. accounts.Select(a => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{a.User}:{a.Password}")))],
+                options.AllowAnonymous);
         }
     }
 

@@ -2452,7 +2452,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             ProxyEnabled: settings.ProxyEnabled,
             ProxySocksPort: settings.ProxySocksPort,
             ProxyHttpPort: settings.ProxyHttpPort,
-            ProxyLan: settings.ProxyLan,
+            ProxyAnonymous: settings.ProxyAnonymous,
             ProxyCredentials: settings.ProxyCredentials,
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,

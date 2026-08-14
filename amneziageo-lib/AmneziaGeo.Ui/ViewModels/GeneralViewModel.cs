@@ -203,10 +203,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private string _proxyHttpPort = "10809";
 
     /// <summary>
-    /// Whether other machines on this network may use the proxy.
+    /// Whether the proxy admits a client without an account.
     /// </summary>
     [ObservableProperty]
-    private bool _proxyLan;
+    [NotifyPropertyChangedFor(nameof(ProxyAdmitsNobody))]
+    private bool _proxyAnonymous;
 
     /// <summary>
     /// Why the listener is down; empty while it holds.
@@ -262,6 +263,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// Whether the proxy only carries traffic while the tunnel is up, as it does on Android.
     /// </summary>
     public bool ProxyNeedsTunnel => OperatingSystem.IsAndroid();
+
+    /// <summary>
+    /// Whether the proxy admits nobody: a password is asked for and no account answers it.
+    /// </summary>
+    public bool ProxyAdmitsNobody => !ProxyAnonymous && !ProxyAccounts.Any(account => account.User.Trim().Length > 0);
 
     /// <summary>
     /// Auto-reconnect interval presets, in seconds.
@@ -405,7 +411,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         EnsureReconnectInterval(snapshot.PeriodicReconnectIntervalSeconds);
         ReconnectIntervalSeconds = snapshot.PeriodicReconnectIntervalSeconds;
         ProxyEnabled = snapshot.ProxyEnabled;
-        ProxyLan = snapshot.ProxyLan;
+        ProxyAnonymous = snapshot.ProxyAnonymous;
         ProxySocksPort = snapshot.ProxySocksPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ProxyHttpPort = snapshot.ProxyHttpPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
         ApplyProxyAccounts(snapshot.ProxyCredentials);
@@ -1113,11 +1119,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         }
     }
 
-    partial void OnProxyLanChanged(bool value)
+    partial void OnProxyAnonymousChanged(bool value)
     {
         if (!_suppressSettingPush)
         {
-            _ = SetSettingAsync(SettingKeys.ProxyLan, value ? "on" : "off");
+            _ = SetSettingAsync(SettingKeys.ProxyAnonymous, value ? "on" : "off");
         }
     }
 
@@ -1148,6 +1154,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     {
         ProxyAccounts.Add(NewProxyAccount(string.Empty, string.Empty));
         _accountsTouchedAt = Environment.TickCount64;
+        OnPropertyChanged(nameof(ProxyAdmitsNobody));
     }
 
     /// <summary>
@@ -1178,6 +1185,7 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     private void PushProxyAccounts()
     {
         _accountsTouchedAt = Environment.TickCount64;
+        OnPropertyChanged(nameof(ProxyAdmitsNobody));
         if (!_suppressSettingPush)
         {
             _ = SetSettingAsync(SettingKeys.ProxyCredentials, ComposeProxyAccounts());
@@ -1204,6 +1212,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             ProxyAccounts.Add(NewProxyAccount(account.User, account.Password));
         }
+
+        OnPropertyChanged(nameof(ProxyAdmitsNobody));
     }
 
     // Where a client points: this machine always, plus every address of it the neighbours can reach once the

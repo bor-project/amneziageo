@@ -43,7 +43,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Socks5_WithAPassword_TakesTheRightOneAndRefusesTheWrongOne()
     {
-        var options = Options() with { Credentials = "bor:secret" };
+        var options = Secured("bor:secret");
         Listen(new TestOutbound(_destination), options);
 
         var wrong = await DialAsync(options.SocksPort);
@@ -64,7 +64,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Socks5_WithoutTheMethodTheProxyAsksFor_IsTurnedAway()
     {
-        var options = Options() with { Credentials = "bor:secret" };
+        var options = Secured("bor:secret");
         Listen(new TestOutbound(_destination), options);
         var client = await DialAsync(options.SocksPort);
 
@@ -128,7 +128,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Http_WithAPassword_AsksForCredentialsAndThenTakesThem()
     {
-        var options = Options() with { Credentials = "bor:secret" };
+        var options = Secured("bor:secret");
         Listen(new TestOutbound(_destination), options);
 
         var bare = await DialAsync(options.HttpPort);
@@ -162,7 +162,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Socks5_WithSeveralAccounts_TakesEveryOneOfThem()
     {
-        var options = Options() with { Credentials = "bor:secret\nguest:letmein" };
+        var options = Secured("bor:secret\nguest:letmein");
         Listen(new TestOutbound(_destination), options);
 
         foreach (var (user, password) in new[] { ("bor", "secret"), ("guest", "letmein") })
@@ -184,7 +184,7 @@ public sealed class LocalProxyServerTests : IDisposable
     [Fact]
     public async Task Http_TakesTheSecondAccountAsReadilyAsTheFirst()
     {
-        var options = Options() with { Credentials = "bor:secret\nguest:letmein" };
+        var options = Secured("bor:secret\nguest:letmein");
         Listen(new TestOutbound(_destination), options);
         var client = await DialAsync(options.HttpPort);
 
@@ -264,8 +264,49 @@ public sealed class LocalProxyServerTests : IDisposable
     public void AnAccountWithoutAName_IsNotStored()
     {
         Assert.Empty(ProxyCredentials.Compose([new ProxyAccount("  ", "secret")]));
-        Assert.False(new LocalProxyOptions().RequiresAuth);
-        Assert.True((new LocalProxyOptions { Credentials = "bor:secret" }).RequiresAuth);
+        Assert.True(new LocalProxyOptions().RequiresAuth);
+        Assert.False((new LocalProxyOptions { AllowAnonymous = true }).RequiresAuth);
+    }
+
+    [Fact]
+    public void WithAPasswordAskedForAndNoAccount_TheSettingsAdmitNobody()
+    {
+        Assert.True(new LocalProxyOptions().AdmitsNobody);
+        Assert.False((new LocalProxyOptions { AllowAnonymous = true }).AdmitsNobody);
+        Assert.False((new LocalProxyOptions { Credentials = "bor:secret" }).AdmitsNobody);
+    }
+
+    [Fact]
+    public async Task AnonymousAndAnAccount_BothGetIn()
+    {
+        var options = Options() with { Credentials = "bor:secret" };
+        Listen(new TestOutbound(_destination), options);
+
+        var bare = await DialAsync(options.SocksPort);
+        await bare.SendAsync(new byte[] { 5, 1, 0 }, SocketFlags.None);
+        Assert.Equal([5, 0], await ReadAsync(bare, 2));
+
+        var named = await DialAsync(options.SocksPort);
+        await named.SendAsync(new byte[] { 5, 1, 2 }, SocketFlags.None);
+        Assert.Equal([5, 2], await ReadAsync(named, 2));
+        await named.SendAsync(Credentials("bor", "secret"), SocketFlags.None);
+        Assert.Equal([1, 0], await ReadAsync(named, 2));
+
+        var http = await DialAsync(options.HttpPort);
+        await SendTextAsync(http, "CONNECT example.test:443 HTTP/1.1\r\nHost: example.test:443\r\n\r\n");
+        Assert.StartsWith("HTTP/1.1 200", Encoding.ASCII.GetString(await ReadAsync(http, 12)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WithNoAccountAndNoAnonymousAccess_NobodyIsAdmitted()
+    {
+        var options = Options() with { AllowAnonymous = false };
+        Listen(new TestOutbound(_destination), options);
+
+        var client = await DialAsync(options.SocksPort);
+        await client.SendAsync(new byte[] { 5, 2, 0, 2 }, SocketFlags.None);
+
+        Assert.Equal([5, 0xFF], await ReadAsync(client, 2));
     }
 
     [Fact]
@@ -302,7 +343,13 @@ public sealed class LocalProxyServerTests : IDisposable
 
     private LocalProxyOptions Options()
     {
-        return new LocalProxyOptions { Enabled = true, SocksPort = FreePort(), HttpPort = FreePort() };
+        return new LocalProxyOptions { Enabled = true, AllowAnonymous = true, SocksPort = FreePort(), HttpPort = FreePort() };
+    }
+
+    // The same listener with a password asked for.
+    private LocalProxyOptions Secured(string credentials)
+    {
+        return Options() with { AllowAnonymous = false, Credentials = credentials };
     }
 
     private static int FreePort()

@@ -220,11 +220,11 @@ internal sealed class LinuxAgent : IDisposable
             ProxyEnabled: _proxyOptions.Enabled,
             ProxySocksPort: _proxyOptions.SocksPort,
             ProxyHttpPort: _proxyOptions.HttpPort,
-            ProxyLan: _proxyOptions.AllowLan,
+            ProxyAnonymous: _proxyOptions.AllowAnonymous,
             ProxyCredentials: _proxyOptions.Credentials,
             ProxyRunning: _proxy.Running,
             ProxyError: _proxy.Error,
-            ProxyAddresses: _proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.UsableAddresses() : [],
+            ProxyAddresses: _proxy.Running ? LocalProxyServer.UsableAddresses() : [],
             ProxyClients: ProxyClients());
     }
 
@@ -237,8 +237,8 @@ internal sealed class LinuxAgent : IDisposable
             case SettingKeys.ProxyEnabled:
                 options = options with { Enabled = IsOn(value) };
                 return true;
-            case SettingKeys.ProxyLan:
-                options = options with { AllowLan = IsOn(value) };
+            case SettingKeys.ProxyAnonymous:
+                options = options with { AllowAnonymous = IsOn(value) };
                 return true;
             case SettingKeys.ProxySocksPort:
                 if (!SettingKeys.TryParseProxyPort(value, out var socks))
@@ -275,7 +275,7 @@ internal sealed class LinuxAgent : IDisposable
     // What goes into the store: the toggles keep one spelling, the rest is stored as it came.
     private static string ProxyValue(string key, string value)
     {
-        return key is SettingKeys.ProxyEnabled or SettingKeys.ProxyLan
+        return key is SettingKeys.ProxyEnabled or SettingKeys.ProxyAnonymous
             ? (IsOn(value) ? "on" : "off")
             : value.Trim();
     }
@@ -286,7 +286,7 @@ internal sealed class LinuxAgent : IDisposable
         return new LocalProxyOptions
         {
             Enabled = settings.TryGetValue(SettingKeys.ProxyEnabled, out var on) && IsOn(on),
-            AllowLan = settings.TryGetValue(SettingKeys.ProxyLan, out var lan) && IsOn(lan),
+            AllowAnonymous = settings.TryGetValue(SettingKeys.ProxyAnonymous, out var anon) && IsOn(anon),
             SocksPort = settings.TryGetValue(SettingKeys.ProxySocksPort, out var socks)
                 && SettingKeys.TryParseProxyPort(socks, out var socksPort)
                     ? socksPort
@@ -1236,7 +1236,7 @@ internal sealed class LinuxAgent : IDisposable
                 await _store.SetSettingAsync(RouteTtlKey, _routeTtlSeconds.ToString(CultureInfo.InvariantCulture), ct).ConfigureAwait(false);
                 break;
             case SettingKeys.ProxyEnabled:
-            case SettingKeys.ProxyLan:
+            case SettingKeys.ProxyAnonymous:
             case SettingKeys.ProxySocksPort:
             case SettingKeys.ProxyHttpPort:
             case SettingKeys.ProxyCredentials:

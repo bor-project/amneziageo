@@ -98,7 +98,7 @@
     <value>Offer a proxy on a fixed port</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>Let other applications and devices in over SOCKS5 {0} and HTTP {1}.</value>
+    <value>Open to this device and to the local network: SOCKS5 {0}, HTTP {1}.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
     <value>Here the proxy carries traffic only while the tunnel is up.</value>
@@ -109,11 +109,17 @@
   <data name="General_ProxyHttpPort" xml:space="preserve">
     <value>HTTP port</value>
   </data>
-  <data name="General_ProxyLan" xml:space="preserve">
-    <value>Allow from the local network</value>
+  <data name="General_ProxyAnonymous" xml:space="preserve">
+    <value>Admit without a password</value>
   </data>
-  <data name="General_ProxyLanHint" xml:space="preserve">
-    <value>Off, only this device reaches the proxy. On, so does every device on this network - set a password.</value>
+  <data name="General_ProxyAnonymousHint" xml:space="preserve">
+    <value>A client needs no account, only the address and the port. The accounts keep working.</value>
+  </data>
+  <data name="General_ProxyOpenWarning" xml:space="preserve">
+    <value>The proxy is open to everyone on this network.</value>
+  </data>
+  <data name="General_ProxyNoAccountWarning" xml:space="preserve">
+    <value>No account is set, so nobody can connect.</value>
   </data>
   <data name="General_ProxyUser" xml:space="preserve">
     <value>User</value>
@@ -122,7 +128,7 @@
     <value>Password</value>
   </data>
   <data name="General_ProxyAuthHint" xml:space="preserve">
-    <value>A client is admitted under any of these; no account asks for no credentials.</value>
+    <value>A client is admitted under any one of these.</value>
   </data>
   <data name="General_ProxyAccounts" xml:space="preserve">
     <value>Accounts</value>

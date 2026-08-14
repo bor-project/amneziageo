@@ -5,12 +5,12 @@ using AmneziaGeo.Ipc;
 namespace AmneziaGeo.Cli;
 
 /// <summary>
-/// Local proxy the agent offers to this machine and, when it is allowed, to the local network.
+/// Local proxy the agent offers to this machine and to the local network.
 /// </summary>
 internal static class ProxyCommands
 {
     private const string Usage =
-        "usage: amneziageo proxy [show|on|off] [--socks <port>] [--http <port>] [--lan on|off] [--auth <user:password>]... [--auth off]";
+        "usage: amneziageo proxy [show|on|off] [--socks <port>] [--http <port>] [--anon on|off] [--auth <user:password>]... [--auth off]";
 
     /// <summary>
     /// Runs one proxy command.
@@ -39,7 +39,7 @@ internal static class ProxyCommands
             ("state", State(snapshot)),
             ("socks5", Endpoints(snapshot, snapshot.ProxySocksPort)),
             ("http", Endpoints(snapshot, snapshot.ProxyHttpPort)),
-            ("lan", snapshot.ProxyLan ? "on" : "off"),
+            ("anonymous", snapshot.ProxyAnonymous ? "on" : "off"),
             ("accounts", accounts.Count > 0 ? string.Join(", ", accounts.Select(a => $"{a.User}:{a.Password}")) : "-"),
             ("clients", Clients(snapshot)),
         };
@@ -51,16 +51,33 @@ internal static class ProxyCommands
         }
 
         Output.Pairs(values);
-        if (snapshot.ProxyEnabled && snapshot.ProxyLan && accounts.Count == 0)
-        {
-            Output.Info(string.Empty);
-            Output.Info("every machine on this network can use the proxy; set --auth to ask for a password.");
-        }
-
+        Warn(snapshot, accounts.Count);
         return Exit.Ok;
     }
 
-    // Loopback always works; the addresses of this machine come with it once the proxy is shared.
+    // What the settings let through: everyone on this network, or nobody at all.
+    private static void Warn(StatusSnapshot snapshot, int accounts)
+    {
+        if (!snapshot.ProxyEnabled)
+        {
+            return;
+        }
+
+        if (snapshot.ProxyAnonymous)
+        {
+            Output.Info(string.Empty);
+            Output.Info("every machine on this network can use the proxy; set --auth to ask for a password.");
+            return;
+        }
+
+        if (accounts == 0)
+        {
+            Output.Info(string.Empty);
+            Output.Info("no account is set, so nobody is admitted; add --auth user:password or --anon on.");
+        }
+    }
+
+    // Loopback always works; the addresses of this machine come with it.
     private static string Endpoints(StatusSnapshot snapshot, int port)
     {
         var hosts = new List<string> { "127.0.0.1" };
@@ -118,14 +135,14 @@ internal static class ProxyCommands
                     break;
                 }
 
-                case "--lan":
+                case "--anon":
                 {
                     if (!Next(args, ref i, out var raw) || !Toggle.TryParse(raw, out var allow))
                     {
-                        return Reply.Usage("--lan takes on or off");
+                        return Reply.Usage("--anon takes on or off");
                     }
 
-                    updates.Add((SettingKeys.ProxyLan, Toggle.Text(allow)));
+                    updates.Add((SettingKeys.ProxyAnonymous, Toggle.Text(allow)));
                     break;
                 }
 

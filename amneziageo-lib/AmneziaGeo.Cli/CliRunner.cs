@@ -148,7 +148,7 @@ public static class CliRunner
 
             local proxy
               proxy show                        where it listens and what it asks for
-              proxy on [--socks <port>] [--http <port>] [--lan on|off] [--auth <user:password>|off]
+              proxy on [--socks <port>] [--http <port>] [--anon on|off] [--auth <user:password>|off]
               proxy off
 
             logs and diagnostics

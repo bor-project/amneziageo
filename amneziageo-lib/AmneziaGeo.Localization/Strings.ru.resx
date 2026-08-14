@@ -98,7 +98,7 @@
     <value>Раздавать прокси на своём порту</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
-    <value>Пускать другие программы и устройства через SOCKS5 {0} и HTTP {1}.</value>
+    <value>Доступен этому устройству и локальной сети: SOCKS5 {0}, HTTP {1}.</value>
   </data>
   <data name="General_ProxyTunnelHint" xml:space="preserve">
     <value>Здесь прокси передаёт трафик только при поднятом туннеле.</value>
@@ -109,11 +109,17 @@
   <data name="General_ProxyHttpPort" xml:space="preserve">
     <value>Порт HTTP</value>
   </data>
-  <data name="General_ProxyLan" xml:space="preserve">
-    <value>Разрешить из локальной сети</value>
+  <data name="General_ProxyAnonymous" xml:space="preserve">
+    <value>Пускать без пароля</value>
   </data>
-  <data name="General_ProxyLanHint" xml:space="preserve">
-    <value>Выключено — прокси доступен только этому устройству. Включено — любому в этой сети, задайте пароль.</value>
+  <data name="General_ProxyAnonymousHint" xml:space="preserve">
+    <value>Клиенту не нужна учётная запись — только адрес и порт. Учётные записи продолжают работать.</value>
+  </data>
+  <data name="General_ProxyOpenWarning" xml:space="preserve">
+    <value>Прокси открыт всем в этой сети.</value>
+  </data>
+  <data name="General_ProxyNoAccountWarning" xml:space="preserve">
+    <value>Ни одной учётной записи — подключиться не сможет никто.</value>
   </data>
   <data name="General_ProxyUser" xml:space="preserve">
     <value>Пользователь</value>
@@ -122,7 +128,7 @@
     <value>Пароль</value>
   </data>
   <data name="General_ProxyAuthHint" xml:space="preserve">
-    <value>Клиент входит под любой из них; без учётных записей — вход без пароля.</value>
+    <value>Клиент входит под любой из них.</value>
   </data>
   <data name="General_ProxyAccounts" xml:space="preserve">
     <value>Учётные записи</value>

@@ -3,8 +3,10 @@ using AmneziaGeo.Decl;
 namespace AmneziaGeo.Routing;
 
 /// <summary>
-/// What the local proxy listens on and who may reach it. The ports are the ones the v2ray family uses, so a
-/// client set up for a neighbouring application finds this one where it expects it.
+/// What the local proxy listens on and who may reach it. It is offered to the local network as a matter of
+/// course - an application of this machine follows the routing rules on its own - so what the settings decide
+/// is the ports and whether an account is asked for. The ports are the ones the v2ray family uses, so a client
+/// set up for a neighbouring application finds this one where it expects it.
 /// </summary>
 public sealed record LocalProxyOptions
 {
@@ -34,19 +36,24 @@ public sealed record LocalProxyOptions
     public int HttpPort { get; init; } = DefaultHttpPort;
 
     /// <summary>
-    /// Whether other machines on the local network may use the proxy; off keeps it on loopback.
+    /// Whether a client is admitted without an account.
     /// </summary>
-    public bool AllowLan { get; init; }
+    public bool AllowAnonymous { get; init; }
 
     /// <summary>
-    /// Accounts clients authenticate as, one "user:password" per line; empty asks for no credentials.
+    /// Accounts clients authenticate as, one "user:password" per line.
     /// </summary>
     public string Credentials { get; init; } = string.Empty;
 
     /// <summary>
     /// Whether clients have to authenticate.
     /// </summary>
-    public bool RequiresAuth => Accounts().Count > 0;
+    public bool RequiresAuth => !AllowAnonymous;
+
+    /// <summary>
+    /// Whether the settings admit nobody: a password is asked for and no account answers it.
+    /// </summary>
+    public bool AdmitsNobody => RequiresAuth && Accounts().Count == 0;
 
     /// <summary>
     /// Ports the listener takes, without the duplicate when both settings name one port.

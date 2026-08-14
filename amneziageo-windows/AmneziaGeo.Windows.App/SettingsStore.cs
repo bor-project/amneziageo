@@ -35,7 +35,7 @@ internal sealed class SettingsStore(IStateStore store)
             ProxyEnabled = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, defaults.ProxyEnabled),
             ProxySocksPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, defaults.ProxySocksPort),
             ProxyHttpPort = ReadInt(values, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort, defaults.ProxyHttpPort),
-            ProxyLan = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyLan, defaults.ProxyLan),
+            ProxyAnonymous = ReadBool(values, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous, defaults.ProxyAnonymous),
             ProxyCredentials = ReadCredentials(values, defaults.ProxyCredentials),
         };
     }
@@ -150,7 +150,7 @@ internal sealed class SettingsStore(IStateStore store)
     private static readonly string[] ProxyPortKeys =
         [AmneziaGeo.Ipc.SettingKeys.ProxySocksPort, AmneziaGeo.Ipc.SettingKeys.ProxyHttpPort];
 
-    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyLan];
+    private static readonly string[] BoolKeys = ["geo-auto-check", "tunnel-all-udp", RouteLog.SettingKey, "survive-reboot", "periodic-reconnect-enabled", "show-notifications", "allow-prerelease", AmneziaGeo.Ipc.SettingKeys.ProxyEnabled, AmneziaGeo.Ipc.SettingKeys.ProxyAnonymous];
 
     // Validated string settings; log-level is constrained to verbosity tokens.
     private static readonly string[] StringKeys = [LogLevelWatcher.SettingKey, AmneziaGeo.Ipc.SettingKeys.ProxyCredentials];

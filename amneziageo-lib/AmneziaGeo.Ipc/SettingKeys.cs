@@ -28,9 +28,9 @@ public static class SettingKeys
     public const string ProxyHttpPort = "proxy-http-port";
 
     /// <summary>
-    /// Whether the local proxy takes clients from the local network.
+    /// Whether the local proxy admits a client without an account.
     /// </summary>
-    public const string ProxyLan = "proxy-lan";
+    public const string ProxyAnonymous = "proxy-anonymous";
 
     /// <summary>
     /// Accounts the local proxy admits clients under, one "user:password" per line.

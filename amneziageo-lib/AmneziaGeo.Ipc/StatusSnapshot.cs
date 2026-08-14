@@ -91,15 +91,15 @@ public sealed record StatusSnapshot(
     int ProxySocksPort = 10808,
     // HTTP port of the local proxy.
     int ProxyHttpPort = 10809,
-    // Whether the local proxy takes clients from the local network as well as from this machine.
-    bool ProxyLan = false,
-    // Accounts the local proxy admits clients under, one "user:password" per line; empty asks for no credentials.
+    // Whether the local proxy admits a client without an account.
+    bool ProxyAnonymous = false,
+    // Accounts the local proxy admits clients under, one "user:password" per line.
     string ProxyCredentials = "",
     // Whether the listener is up; false while enabled means it could not bind.
     bool ProxyRunning = false,
     // Why the local proxy is not listening; empty while it holds.
     string ProxyError = "",
-    // Addresses other machines reach the proxy at, the ones on a routed link first; empty while it stays on this machine.
+    // Addresses other machines reach the proxy at, the ones on a routed link first; empty while it is not listening.
     IReadOnlyList<string>? ProxyAddresses = null,
     // Clients holding a connection to the local proxy right now.
     IReadOnlyList<ProxyClientEntry>? ProxyClients = null,

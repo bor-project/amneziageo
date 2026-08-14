@@ -760,11 +760,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxyEnabled: _proxyOptions.Enabled,
             ProxySocksPort: _proxyOptions.SocksPort,
             ProxyHttpPort: _proxyOptions.HttpPort,
-            ProxyLan: _proxyOptions.AllowLan,
+            ProxyAnonymous: _proxyOptions.AllowAnonymous,
             ProxyCredentials: _proxyOptions.Credentials,
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,
-            ProxyAddresses: proxy.Running && _proxyOptions.AllowLan ? LocalProxyServer.UsableAddresses() : []);
+            ProxyAddresses: proxy.Running ? LocalProxyServer.UsableAddresses() : []);
 
         SnapshotReceived?.Invoke(Latest);
     }
@@ -2570,7 +2570,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 PushSnapshot();
                 return Ok();
             case SettingKeys.ProxyEnabled:
-            case SettingKeys.ProxyLan:
+            case SettingKeys.ProxyAnonymous:
             case SettingKeys.ProxySocksPort:
             case SettingKeys.ProxyHttpPort:
             case SettingKeys.ProxyCredentials:
@@ -2613,8 +2613,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case SettingKeys.ProxyEnabled:
                 options = options with { Enabled = IsOn(value) };
                 return true;
-            case SettingKeys.ProxyLan:
-                options = options with { AllowLan = IsOn(value) };
+            case SettingKeys.ProxyAnonymous:
+                options = options with { AllowAnonymous = IsOn(value) };
                 return true;
             case SettingKeys.ProxySocksPort:
                 if (!SettingKeys.TryParseProxyPort(value, out var socks))

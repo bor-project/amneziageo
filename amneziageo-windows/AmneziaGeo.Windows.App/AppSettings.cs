@@ -143,12 +143,12 @@ internal sealed record AppSettings
     public int ProxyHttpPort { get; init; } = LocalProxyOptions.DefaultHttpPort;
 
     /// <summary>
-    /// Whether the local proxy takes clients from the local network.
+    /// Whether the local proxy admits a client without an account.
     /// </summary>
-    public bool ProxyLan { get; init; }
+    public bool ProxyAnonymous { get; init; }
 
     /// <summary>
-    /// Accounts the local proxy admits clients under, one "user:password" per line; empty asks for no credentials.
+    /// Accounts the local proxy admits clients under, one "user:password" per line.
     /// </summary>
     public string ProxyCredentials { get; init; } = string.Empty;
 
@@ -162,7 +162,7 @@ internal sealed record AppSettings
             Enabled = ProxyEnabled,
             SocksPort = ProxySocksPort,
             HttpPort = ProxyHttpPort,
-            AllowLan = ProxyLan,
+            AllowAnonymous = ProxyAnonymous,
             Credentials = ProxyCredentials,
         };
     }

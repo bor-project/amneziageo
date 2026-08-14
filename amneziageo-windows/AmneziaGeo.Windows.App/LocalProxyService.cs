@@ -7,9 +7,9 @@ using Microsoft.Extensions.Logging;
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
-/// Local proxy of this machine: holds the listener to what the settings say and opens the firewall for as long
-/// as the local network is allowed in. What the proxy opens leaves like any other socket here, so the routing
-/// table decides whether it rides the tunnel.
+/// Local proxy of this machine: holds the listener to what the settings say and opens the firewall while it
+/// runs. What the proxy opens leaves like any other socket here, so the routing table decides whether it rides
+/// the tunnel.
 /// </summary>
 internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalProxyService> logger) : BackgroundService
 {
@@ -35,9 +35,9 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
     public string Error => _server.Error;
 
     /// <summary>
-    /// Addresses other machines reach the proxy at; empty while it stays on this machine.
+    /// Addresses other machines reach the proxy at; empty while it is not listening.
     /// </summary>
-    public IReadOnlyList<string> Addresses => _server.Running && _applied.AllowLan ? _addresses : [];
+    public IReadOnlyList<string> Addresses => _server.Running ? _addresses : [];
 
     /// <summary>
     /// Clients holding a connection right now, one entry per connection.
@@ -125,7 +125,7 @@ internal sealed class LocalProxyService(SettingsStore settings, ILogger<LocalPro
     private void Firewall(LocalProxyOptions options)
     {
         Netsh($"advfirewall firewall delete rule name=\"{RuleName}\"");
-        if (!options.Enabled || !options.AllowLan)
+        if (!options.Enabled)
         {
             return;
         }

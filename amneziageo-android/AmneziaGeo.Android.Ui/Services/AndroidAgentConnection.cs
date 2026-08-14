@@ -75,6 +75,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private bool _alwaysOn;
     private bool _alwaysOnLockdown;
     private LocalProxyOptions _proxyOptions = new();
+    private string _proxyOfferLine = string.Empty;
 
     public event Action? Connected;
 
@@ -720,6 +721,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         var configs = OrderedNames().Select(name => Entry(name, _configs[name])).ToList();
         var proxy = VpnBridge.ReadProxyState();
+        var proxyAddresses = ProxyAddresses(proxy.Running);
+        LogProxyOffer(proxy.Running, proxyAddresses);
 
         Latest = new StatusSnapshot(
             AgentVersion: AppVersion,
@@ -764,9 +767,46 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             ProxyCredentials: _proxyOptions.Credentials,
             ProxyRunning: proxy.Running,
             ProxyError: proxy.Error,
-            ProxyAddresses: proxy.Running ? LocalProxyServer.UsableAddresses() : []);
+            ProxyAddresses: proxyAddresses);
 
         SnapshotReceived?.Invoke(Latest);
+    }
+
+    // Addresses the proxy answers on while it listens.
+    private static IReadOnlyList<string> ProxyAddresses(bool running)
+    {
+        return running ? LocalProxyServer.UsableAddresses() : [];
+    }
+
+    // Writes where the proxy is offered, and the links behind the answer when it is offered nowhere.
+    private void LogProxyOffer(bool running, IReadOnlyList<string> addresses)
+    {
+        var line = (running ? "up" : "down") + " " + (addresses.Count > 0 ? string.Join(", ", addresses) : "nowhere");
+        if (string.Equals(line, _proxyOfferLine, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _proxyOfferLine = line;
+        global::Android.Util.Log.Info("AmneziaGeo", "proxy offered " + line);
+        if (!running || addresses.Count > 0)
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                var found = adapter.GetIPProperties().UnicastAddresses.Select(a => a.Address.ToString());
+                global::Android.Util.Log.Info("AmneziaGeo",
+                    $"link {adapter.Name} {adapter.NetworkInterfaceType} {adapter.OperationalStatus} {string.Join(" ", found)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("AmneziaGeo", "listing links failed: " + ex);
+        }
     }
 
     // The names in the order the user set, with anything it does not name after them.

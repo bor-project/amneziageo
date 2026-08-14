@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using AmneziaGeo.Android.Ui.Services;
@@ -18,6 +20,9 @@ namespace AmneziaGeo.Android.Ui;
 /// </summary>
 public sealed partial class App : Avalonia.Application
 {
+    // The shared sizes are set for a monitor: on a phone they land a third under what the system draws itself.
+    private const double HandScale = 1.3;
+
     private static UiPreferences? _preferences;
     private AndroidAgentConnection? _connection;
 
@@ -81,7 +86,7 @@ public sealed partial class App : Avalonia.Application
             };
             Stage("views", clock);
 
-            singleView.MainView = new MobileSelectHost(mainView);
+            singleView.MainView = Enlarged(new MobileSelectHost(mainView));
             Stage("host", clock);
 
             // Brings the agent up after the first frame: opening the stores and projecting the first snapshot
@@ -96,6 +101,21 @@ public sealed partial class App : Avalonia.Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // Draws the head larger in the hand, layout and all. A television keeps the size its own screen was laid out at.
+    private static Control Enlarged(Control view)
+    {
+        if (UiPlatform.IsTelevision)
+        {
+            return view;
+        }
+
+        return new LayoutTransformControl
+        {
+            Child = view,
+            LayoutTransform = new ScaleTransform(HandScale, HandScale),
+        };
     }
 
     /// <summary>

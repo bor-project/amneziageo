@@ -34,6 +34,9 @@ public sealed class LocalProxyServer : IDisposable
     private const byte ReplyDenied = 0x02;
     private const byte ReplyNoCommand = 0x07;
 
+    // Link names android gives to what carries an address of somebody else's network.
+    private static readonly string[] ForeignLinks = ["tun", "ppp", "sit", "ip6tnl", "dummy"];
+
     private readonly IProxyOutbound _outbound;
     private readonly Action<string> _log;
     private readonly ConcurrentDictionary<Socket, byte> _open = new();
@@ -144,7 +147,7 @@ public sealed class LocalProxyServer : IDisposable
         var adapters = new List<AdapterView>();
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (adapter.OperationalStatus != OperationalStatus.Up)
+            if (!IsUp(adapter))
             {
                 continue;
             }
@@ -159,7 +162,7 @@ public sealed class LocalProxyServer : IDisposable
                 continue;
             }
 
-            adapters.Add(new AdapterView(adapter.NetworkInterfaceType, HasGateway(properties), addresses));
+            adapters.Add(new AdapterView(Kind(adapter), HasGateway(properties), addresses));
         }
 
         return Usable(adapters);
@@ -609,6 +612,25 @@ public sealed class LocalProxyServer : IDisposable
         {
             return false;
         }
+    }
+
+    // Whether the link carries traffic - android does not answer for the state of a link.
+    private static bool IsUp(NetworkInterface adapter)
+    {
+        return OperatingSystem.IsAndroid() || adapter.OperationalStatus == OperationalStatus.Up;
+    }
+
+    // What the link is - android names no kind either, so the name tells a tunnel from a radio.
+    private static NetworkInterfaceType Kind(NetworkInterface adapter)
+    {
+        if (!OperatingSystem.IsAndroid())
+        {
+            return adapter.NetworkInterfaceType;
+        }
+
+        return ForeignLinks.Any(name => adapter.Name.StartsWith(name, StringComparison.Ordinal))
+            ? NetworkInterfaceType.Tunnel
+            : NetworkInterfaceType.Ethernet;
     }
 
     // A link of this machine: a wire or a radio it is itself attached to. A tunnel, a dial-up and the virtual

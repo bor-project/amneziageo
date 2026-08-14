@@ -77,11 +77,15 @@ internal static class ProxyCommands
         }
     }
 
-    // Loopback always works; the addresses of this machine come with it.
+    // The addresses of this machine; loopback only where it has none.
     private static string Endpoints(StatusSnapshot snapshot, int port)
     {
-        var hosts = new List<string> { "127.0.0.1" };
-        hosts.AddRange(snapshot.ProxyAddresses ?? []);
+        var hosts = snapshot.ProxyAddresses ?? [];
+        if (hosts.Count == 0)
+        {
+            hosts = ["127.0.0.1"];
+        }
+
         return string.Join(", ", hosts.Select(host => $"{host}:{port.ToString(CultureInfo.InvariantCulture)}"));
     }
 

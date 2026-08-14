@@ -95,7 +95,7 @@
     <value>Local proxy</value>
   </data>
   <data name="General_ProxyEnabled" xml:space="preserve">
-    <value>Offer a proxy on a fixed port</value>
+    <value>Allow connections from the LAN</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
     <value>Open to this device and to the local network: SOCKS5 {0}, HTTP {1}.</value>

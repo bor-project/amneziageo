@@ -161,9 +161,7 @@ public sealed class LocalProxyServer : IDisposable
                 continue;
             }
 
-            var gateway = properties.GatewayAddresses
-                .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any));
-            adapters.Add(new AdapterView(adapter.NetworkInterfaceType, gateway, addresses));
+            adapters.Add(new AdapterView(adapter.NetworkInterfaceType, HasGateway(properties), addresses));
         }
 
         return Usable(adapters);
@@ -585,6 +583,21 @@ public sealed class LocalProxyServer : IDisposable
             return new Admission(
                 accounts,
                 [.. accounts.Select(a => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{a.User}:{a.Password}")))]);
+        }
+    }
+
+    // Whether the link declares an IPv4 gateway - android declares none and refuses the question instead of
+    // answering it with an empty list.
+    private static bool HasGateway(IPInterfaceProperties properties)
+    {
+        try
+        {
+            return properties.GatewayAddresses
+                .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any));
+        }
+        catch (Exception ex) when (ex is NetworkInformationException or PlatformNotSupportedException)
+        {
+            return false;
         }
     }
 

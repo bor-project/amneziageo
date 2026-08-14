@@ -1216,15 +1216,19 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         OnPropertyChanged(nameof(ProxyAdmitsNobody));
     }
 
-    // Where a client points: this machine always, plus every address of it the neighbours can reach once the
-    // proxy is shared.
+    // Where a client points: every address of this machine the neighbours can reach, and loopback only where
+    // there is none.
     private void ApplyProxyEndpoints(StatusSnapshot snapshot)
     {
         var rows = new List<ProxyEndpointRow>();
         if (snapshot.ProxyEnabled && snapshot.ProxyError.Length == 0)
         {
-            var hosts = new List<string> { "127.0.0.1" };
-            hosts.AddRange(snapshot.ProxyAddresses ?? []);
+            var hosts = snapshot.ProxyAddresses ?? [];
+            if (hosts.Count == 0)
+            {
+                hosts = ["127.0.0.1"];
+            }
+
             foreach (var host in hosts)
             {
                 rows.Add(new ProxyEndpointRow("SOCKS5", $"{host}:{snapshot.ProxySocksPort}"));

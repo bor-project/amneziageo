@@ -95,7 +95,7 @@
     <value>Локальный прокси</value>
   </data>
   <data name="General_ProxyEnabled" xml:space="preserve">
-    <value>Раздавать прокси на своём порту</value>
+    <value>Разрешить подключения из LAN</value>
   </data>
   <data name="General_ProxyEnabledHint" xml:space="preserve">
     <value>Доступен этому устройству и локальной сети: SOCKS5 {0}, HTTP {1}.</value>

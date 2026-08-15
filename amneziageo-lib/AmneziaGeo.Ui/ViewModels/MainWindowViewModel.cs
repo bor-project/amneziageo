@@ -24,10 +24,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // master-detail drilldown. Above it the columns keep their MinWidth without overflow.
     private const double CompactBreakpoint = 760;
 
-    // From this window width the config catalogue stands as a card list beside the open configuration:
-    // rail(260) + splitter(5) + shell margins(24) + pane inset(36) + cards(240) leaves the properties their room.
-    private const double LargeBreakpoint = 960;
-
     /// <summary>
     /// Whether the app is showing a window ("settings") or running a windowless background update ("none"),
     /// carried into the installer as UPDATEORIGIN.
@@ -60,7 +56,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCompact))]
-    [NotifyPropertyChangedFor(nameof(IsLarge))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
@@ -192,11 +187,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Whether the window is narrow enough for the compact single-column drilldown.
     /// </summary>
     public bool IsCompact => WindowWidth < CompactBreakpoint;
-
-    /// <summary>
-    /// Whether the window is wide enough to stand the config catalogue as cards beside the section content.
-    /// </summary>
-    public bool IsLarge => WindowWidth >= LargeBreakpoint;
 
     /// <summary>
     /// Whether a section detail is open in compact mode; the header then shows the section name.
@@ -795,9 +785,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Sources.IsCompact = compact;
         Diagnostics.IsCompact = compact;
         General.IsCompact = compact;
-
-        // The config catalogue stands as cards beside its properties only on a window wide enough for both.
-        Config.NotifyLargeChanged();
 
         // A width flip can reveal or hide the logs content (compact rail vs wide content), so re-evaluate.
         RefreshLogsActive();

@@ -10,7 +10,7 @@
              x:DataType="vm:RoutingViewModel">
   <UserControl.Resources>
     <StreamGeometry x:Key="AgSourcesGeometry">M12,3C7.58,3 4,4.79 4,7C4,9.21 7.58,11 12,11C16.42,11 20,9.21 20,7C20,4.79 16.42,3 12,3M4,9V12C4,14.21 7.58,16 12,16C16.42,16 20,14.21 20,12V9C20,11.21 16.42,13 12,13C7.58,13 4,11.21 4,9M4,14V17C4,19.21 7.58,21 12,21C16.42,21 20,19.21 20,17V14C20,16.21 16.42,18 12,18C7.58,18 4,16.21 4,14Z</StreamGeometry>
-    <StreamGeometry x:Key="AgRuleDeleteGeometry">M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z</StreamGeometry>
+    <StreamGeometry x:Key="AgRuleDeleteGeometry">M18 6L6 18 M6 6L18 18</StreamGeometry>
     <StreamGeometry x:Key="AgRuleSortGeometry">M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z</StreamGeometry>
   </UserControl.Resources>
 
@@ -202,7 +202,12 @@
             <Button Grid.Column="3" Classes="linkbtn" Command="{Binding ClearRulesCommand}"
                     VerticalAlignment="Center" HorizontalAlignment="Right"
                     ToolTip.Tip="{l:Tr Main_ClearRulesTooltip}">
-              <TextBlock Text="{l:Tr Main_ClearButton}" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Path Data="{StaticResource AgRuleDeleteGeometry}" Width="8" Height="8" Stretch="Uniform"
+                      Stroke="{DynamicResource AgAccentBrush}" StrokeThickness="1.4"
+                      StrokeLineCap="Round" StrokeJoin="Round" VerticalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_ClearButton}" VerticalAlignment="Center" />
+              </StackPanel>
             </Button>
           </Grid>
           <Border Classes="rulebox"
@@ -230,7 +235,9 @@
                         <Button Grid.Column="2" Classes="icon"
                                 Command="{Binding $parent[ItemsControl].((vm:RoutingListEditorViewModel)DataContext).RemoveRuleCommand}"
                                 CommandParameter="{Binding Token}">
-                          <PathIcon Data="{StaticResource AgRuleDeleteGeometry}" Width="14" Height="14" />
+                          <Path Data="{StaticResource AgRuleDeleteGeometry}" Width="9" Height="9" Stretch="Uniform"
+                                Stroke="{DynamicResource AgMutedBrush}" StrokeThickness="1.4"
+                                StrokeLineCap="Round" StrokeJoin="Round" VerticalAlignment="Center" />
                         </Button>
                       </Grid>
                     </Border>
@@ -317,6 +324,7 @@
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
             <TextBox Classes="field" Classes.invalid="{Binding RouteTtlInvalid}" Width="90"
+                     controls:NumericInput.Minimum="0" controls:NumericInput.Maximum="86400"
                      VerticalAlignment="Center" Text="{Binding RouteTtl, Mode=TwoWay}" />
             <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" VerticalAlignment="Center" />
           </StackPanel>

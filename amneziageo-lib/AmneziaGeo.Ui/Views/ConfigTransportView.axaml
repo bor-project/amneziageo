@@ -83,7 +83,8 @@
         <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
         <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
       </StackPanel>
-      <TextBox Grid.Column="1" Classes="field" Width="90" VerticalAlignment="Center" Text="{Binding Mtu}" />
+      <TextBox Grid.Column="1" Classes="field" Width="90" VerticalAlignment="Center"
+               controls:NumericInput.Minimum="576" controls:NumericInput.Maximum="1500" Text="{Binding Mtu}" />
     </Grid>
 
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />

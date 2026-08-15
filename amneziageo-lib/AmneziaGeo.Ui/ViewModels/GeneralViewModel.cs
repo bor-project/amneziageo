@@ -272,11 +272,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool ProxyAdmitsNobody => !ProxyAnonymous && !ProxyAccounts.Any(account => account.User.Trim().Length > 0);
 
     /// <summary>
-    /// Auto-reconnect interval presets, in seconds.
-    /// </summary>
-    public ObservableCollection<int> ReconnectIntervals { get; } = [10, 15, 30, 60, 120, 300];
-
-    /// <summary>
     /// The interval input is editable only while periodic reconnect is on.
     /// </summary>
     public bool PeriodicReconnectIntervalEnabled => PeriodicReconnect;
@@ -421,7 +416,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         AllowPrerelease = snapshot.AllowPrerelease;
         SurviveReboot = snapshot.SurviveReboot;
         PeriodicReconnect = snapshot.PeriodicReconnect;
-        EnsureReconnectInterval(snapshot.PeriodicReconnectIntervalSeconds);
         ReconnectIntervalSeconds = snapshot.PeriodicReconnectIntervalSeconds;
         ProxyEnabled = snapshot.ProxyEnabled;
         ProxyAnonymous = snapshot.ProxyAnonymous;
@@ -1335,24 +1329,6 @@ internal sealed partial class GeneralViewModel : ViewModelBase
         {
             _ = SetSettingAsync("periodic-reconnect-interval-seconds", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
-    }
-
-    // Keeps the interval combo able to display an out-of-band value (e.g. set via CLI): a non-preset is
-    // inserted in order so the ComboBox SelectedItem never goes null and writes 0 back into the property.
-    private void EnsureReconnectInterval(int seconds)
-    {
-        if (seconds <= 0 || ReconnectIntervals.Contains(seconds))
-        {
-            return;
-        }
-
-        var index = 0;
-        while (index < ReconnectIntervals.Count && ReconnectIntervals[index] < seconds)
-        {
-            index++;
-        }
-
-        ReconnectIntervals.Insert(index, seconds);
     }
 
     private async Task SetSettingAsync(string key, string value)

@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
@@ -27,7 +28,7 @@ internal sealed partial class ConfigTransportView : UserControl
     {
         if (DataContext is ConfigTransportViewModel vm)
         {
-            vm.IsCompact = width < FieldRowWidth;
+            vm.IsCompact = UiPlatform.UsesCompactLayout && width < FieldRowWidth;
         }
     }
 

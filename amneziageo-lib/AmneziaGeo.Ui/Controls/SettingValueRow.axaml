@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AmneziaGeo.Ui.Controls.SettingValueRow"
+             x:Name="Root">
+  <!-- Text setting: label left, current value right, and a tap opens the editor. Nothing is typed in place -
+       on a phone a stray touch lands in the field and changes the setting with no way back. -->
+  <StackPanel Spacing="4">
+    <Grid ColumnDefinitions="*,Auto" MinHeight="40" Background="Transparent" Cursor="Hand"
+          IsVisible="{Binding #Root.Label, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+          Tapped="OnRowTapped">
+      <!-- Both weights share one cell: a row that opens a section carries its heading, the rest a plain label. -->
+      <Panel Grid.Column="0" Margin="0,0,12,0">
+        <TextBlock Text="{Binding #Root.Label}" FontSize="13.5" IsVisible="{Binding !#Root.Heading}"
+                   Foreground="{DynamicResource AgFgBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+        <StackPanel Spacing="2" IsVisible="{Binding #Root.Heading}" VerticalAlignment="Center">
+          <TextBlock Text="{Binding #Root.Label}" FontSize="15" FontWeight="SemiBold"
+                     Foreground="{DynamicResource AgFgBrush}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                     IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </Panel>
+      <!-- A long value goes to the block below; here it would push the label off the row. -->
+      <TextBlock Grid.Column="1" Text="{Binding #Root.Value}" Classes="muted"
+                 Classes.mono="{Binding #Root.Mono}" FontSize="13.5" MaxWidth="190"
+                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                 IsVisible="{Binding !#Root.Multiline}" />
+    </Grid>
+
+    <Panel IsVisible="{Binding !#Root.Heading}">
+      <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5"
+                 TextWrapping="Wrap" MaxWidth="430" HorizontalAlignment="Left"
+                 IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    </Panel>
+
+    <!-- Multi-line value shown whole, read-only: the same frame it used to be edited in. -->
+    <Border IsVisible="{Binding #Root.Multiline}" Cursor="Hand" Tapped="OnRowTapped"
+            Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorder2Brush}"
+            BorderThickness="1" CornerRadius="8" Padding="10,8" ClipToBounds="True">
+      <TextBlock Text="{Binding #Root.Value}" Classes.mono="{Binding #Root.Mono}" FontSize="12"
+                 MaxLines="12" TextTrimming="CharacterEllipsis" />
+    </Border>
+  </StackPanel>
+</UserControl>

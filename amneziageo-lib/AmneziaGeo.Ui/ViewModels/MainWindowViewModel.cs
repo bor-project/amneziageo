@@ -144,6 +144,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public ActionSheetViewModel Sheet { get; } = new();
 
     /// <summary>
+    /// Правка одного значения диалогом поверх всего экрана.
+    /// </summary>
+    public ValueEditorViewModel Editor { get; } = new();
+
+    /// <summary>
     /// Diagnostics screen: the agent log and the runtime configuration.
     /// </summary>
     public DiagnosticsViewModel Diagnostics { get; }

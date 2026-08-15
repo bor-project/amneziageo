@@ -49,6 +49,8 @@
         <Border x:Name="AboutCard"
                 Classes="sect" Classes.compact="{Binding IsCompact}">
           <StackPanel Spacing="12">
+            <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
+            <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
             <TextBlock Text="{l:Tr About_Section}" FontWeight="SemiBold" FontSize="15" />
 
             <!-- Compact drops each value under its label (left-aligned); wide keeps label-left / value-right. -->
@@ -86,27 +88,24 @@
             <StackPanel Spacing="9" IsVisible="{Binding HasUpdateUrl}">
               <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Margin="0,2,0,0" />
               <TextBlock Text="{l:Tr Main_UpdateSection}" FontWeight="SemiBold" FontSize="13.5" />
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
-                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-                  <TextBlock Text="{l:Tr General_AllowPrerelease}" FontSize="13" TextWrapping="Wrap" />
-                  <TextBlock Text="{l:Tr General_AllowPrereleaseHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-                </StackPanel>
-                <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding AllowPrerelease, Mode=TwoWay}"
-                              Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                              Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                              HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-              </Grid>
+              <!-- Тумблер стоит в строке подписи: отдельная строка под ней стоила экрана на телефоне. -->
+              <controls:SettingSwitchRow Label="{l:Tr General_AllowPrerelease}"
+                                         Description="{l:Tr General_AllowPrereleaseHint}"
+                                         IsChecked="{Binding AllowPrerelease, Mode=TwoWay}" />
               <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold"
                          IsVisible="{Binding UpdateAvailable}" />
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+              <!-- Compact drops the buttons under the status line, across the row. -->
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2"
+                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
                   <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                              IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                              IsVisible="{Binding UpdateAvailable}" />
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                            Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}">
                   <Button Classes="softbtn" Content="{l:Tr Main_CheckUpdatesButton}" Command="{Binding CheckUpdateCommand}"
                           IsVisible="{Binding ShowCheckUpdateButton}" />
                   <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding UpdateAvailable}">
@@ -127,24 +126,20 @@
         </Border>
       </Grid>
 
+      <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
       <!-- Local proxy card: the port other applications and devices point at (#238). -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="12">
           <TextBlock Text="{l:Tr General_ProxySection}" FontWeight="SemiBold" FontSize="15" />
 
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
-                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-              <TextBlock Text="{l:Tr General_ProxyEnabled}" FontSize="13.5" />
-              <TextBlock Text="{Binding ProxyEnabledHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-              <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                         IsVisible="{Binding ProxyNeedsTunnel}" />
-            </StackPanel>
-            <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding ProxyEnabled, Mode=TwoWay}"
-                          Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                          Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-          </Grid>
+          <StackPanel Spacing="4">
+            <controls:SettingSwitchRow Label="{l:Tr General_ProxyEnabled}" Description="{Binding ProxyEnabledHint}"
+                                       IsChecked="{Binding ProxyEnabled, Mode=TwoWay}" />
+            <TextBlock Text="{l:Tr General_ProxyTunnelHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                       IsVisible="{Binding ProxyNeedsTunnel}" />
+          </StackPanel>
 
           <TextBlock Text="{Binding ProxyErrorText}" Classes="mono" FontSize="12.5" TextWrapping="Wrap"
                      Foreground="{DynamicResource AgWarnBrush}"
@@ -170,23 +165,13 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" VerticalAlignment="Center"
-                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
-              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxySocksPort, Mode=TwoWay}"
-                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-            </Grid>
+            <!-- Порт стоит значением в строке подписи, а правится в диалоге: касание строки на телефоне
+                 иначе сразу уводит в поле и меняет настройку. -->
+            <controls:SettingValueRow Label="{l:Tr General_ProxySocksPort}"
+                                      Value="{Binding ProxySocksPort, Mode=TwoWay}" />
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" VerticalAlignment="Center"
-                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
-              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxyHttpPort, Mode=TwoWay}"
-                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-            </Grid>
+            <controls:SettingValueRow Label="{l:Tr General_ProxyHttpPort}"
+                                      Value="{Binding ProxyHttpPort, Mode=TwoWay}" />
 
             <!-- Clients: the count first, and who holds them under the arrow. -->
             <StackPanel Spacing="6">
@@ -223,17 +208,9 @@
             </StackPanel>
 
             <!-- Who is let in: the accounts below, and on top of them a client without one where it is allowed. -->
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-              <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
-                          Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-                <TextBlock Text="{l:Tr General_ProxyAnonymous}" FontSize="13.5" />
-                <TextBlock Text="{l:Tr General_ProxyAnonymousHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-              </StackPanel>
-              <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}"
-                            Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-            </Grid>
+            <controls:SettingSwitchRow Label="{l:Tr General_ProxyAnonymous}"
+                                       Description="{l:Tr General_ProxyAnonymousHint}"
+                                       IsChecked="{Binding ProxyAnonymous, Mode=TwoWay}" />
 
             <TextBlock Text="{l:Tr General_ProxyOpenWarning}" FontSize="12" TextWrapping="Wrap"
                        Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding ProxyAnonymous}" />
@@ -285,58 +262,31 @@
         </StackPanel>
       </Border>
 
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding ShowConnectionDivider}" />
+
       <!-- Connection resilience card: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
            the Android agent does not apply these settings. -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}"
               IsVisible="{Binding CanConfigureConnection}">
-        <!-- Compact drops each toggle / control under its title + description. -->
         <StackPanel Spacing="12">
           <TextBlock Text="{l:Tr General_ConnectionSection}" FontWeight="SemiBold" FontSize="15" />
 
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
-                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-              <TextBlock Text="{l:Tr General_ShowNotifications}" FontSize="13.5" />
-              <TextBlock Text="{l:Tr General_ShowNotificationsHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-            </StackPanel>
-            <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding ShowNotifications, Mode=TwoWay}"
-                          Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                          Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-          </Grid>
+          <controls:SettingSwitchRow Label="{l:Tr General_ShowNotifications}"
+                                     Description="{l:Tr General_ShowNotificationsHint}"
+                                     IsChecked="{Binding ShowNotifications, Mode=TwoWay}" />
 
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
-                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-              <TextBlock Text="{l:Tr General_SurviveReboot}" FontSize="13.5" />
-              <TextBlock Text="{l:Tr General_SurviveRebootHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-            </StackPanel>
-            <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding SurviveReboot, Mode=TwoWay}"
-                          Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                          Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-          </Grid>
+          <controls:SettingSwitchRow Label="{l:Tr General_SurviveReboot}"
+                                     Description="{l:Tr General_SurviveRebootHint}"
+                                     IsChecked="{Binding SurviveReboot, Mode=TwoWay}" />
 
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center"
-                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
-              <TextBlock Text="{l:Tr General_PeriodicReconnect}" FontSize="13.5" />
-              <TextBlock Text="{l:Tr General_PeriodicReconnectHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-            </StackPanel>
-            <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding PeriodicReconnect, Mode=TwoWay}"
-                          Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                          Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-          </Grid>
+          <controls:SettingSwitchRow Label="{l:Tr General_PeriodicReconnect}"
+                                     Description="{l:Tr General_PeriodicReconnectHint}"
+                                     IsChecked="{Binding PeriodicReconnect, Mode=TwoWay}" />
 
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8"
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10"
                 IsEnabled="{Binding PeriodicReconnectIntervalEnabled}">
-            <TextBlock Grid.Column="0" Text="{l:Tr General_ReconnectInterval}" FontSize="13.5" VerticalAlignment="Center"
-                       Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                        Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                        Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                        HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}">
+            <TextBlock Grid.Column="0" Text="{l:Tr General_ReconnectInterval}" FontSize="13.5" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
               <controls:AdaptiveComboBox Classes="field" Width="92" VerticalAlignment="Center"
                         ItemsSource="{Binding ReconnectIntervals}"
                         SelectedItem="{Binding ReconnectIntervalSeconds, Mode=TwoWay}">
@@ -351,6 +301,8 @@
           </Grid>
         </StackPanel>
       </Border>
+
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding ShowRepairDivider}" />
 
       <!-- Network repair card: elevated one-shot that clears a leftover DNS redirect so the internet works
            again after a failed connect or a removal stranded the resolver. Windows only. -->
@@ -373,6 +325,8 @@
           </StackPanel>
         </Grid>
       </Border>
+
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
       <!-- Import / export card (full width): hint left, actions right. Opens the bundle sub-views inline. -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}">

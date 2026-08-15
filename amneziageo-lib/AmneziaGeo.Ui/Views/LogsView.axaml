@@ -18,6 +18,16 @@
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
   </UserControl.Resources>
   <UserControl.Styles>
+    <!-- Inset frame the log body sits in. Set by style, not on the element: a local value outranks the
+         narrow-screen override below. -->
+    <Style Selector="Border.logbody">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Margin" Value="0,14,0,0" />
+    </Style>
+
     <!-- Narrow screen: the body frame only takes width off the cards, which carry their own. -->
     <Style Selector="Border.logbody.bare">
       <Setter Property="Background" Value="Transparent" />
@@ -57,13 +67,13 @@
     <!-- Narrow header: source and level share a row, the routing switch takes the next one. -->
     <StackPanel Grid.Row="0" Spacing="10" IsVisible="{Binding IsCompact}">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-        <StackPanel Grid.Column="0" Spacing="6">
-          <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" />
+        <StackPanel Grid.Column="0" Spacing="4">
+          <TextBlock Text="{l:Tr Main_LogTypeLabel}" FontWeight="SemiBold" FontSize="15" />
           <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                     ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
         </StackPanel>
-        <StackPanel Grid.Column="1" Spacing="6" Width="132" IsVisible="{Binding IsAgentLog}">
-          <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" Classes="muted" FontSize="11.5" />
+        <StackPanel Grid.Column="1" Spacing="4" Width="132" IsVisible="{Binding IsAgentLog}">
+          <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontWeight="SemiBold" FontSize="15" />
           <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                     ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
         </StackPanel>
@@ -71,6 +81,8 @@
       <controls:SettingSwitchRow IsVisible="{Binding IsRouteLog}"
           Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
           IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+      <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
     </StackPanel>
 
     <!-- Viewer: full-width card. Body fills the rest under the control bar. -->
@@ -132,9 +144,7 @@
                    Foreground="{DynamicResource AgFgBrush}" />
 
         <!-- Log body (shared): text / cards / empty state / loader. Fills the pane width. -->
-        <Border Grid.Row="3" Classes="logbody" Classes.bare="{Binding IsCompact}"
-                Margin="0,14,0,0" BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
-                Background="{DynamicResource AgInsetBrush}" CornerRadius="10">
+        <Border Grid.Row="3" Classes="logbody" Classes.bare="{Binding IsCompact}">
           <Panel>
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           IsVisible="{Binding ShowStoredText}">

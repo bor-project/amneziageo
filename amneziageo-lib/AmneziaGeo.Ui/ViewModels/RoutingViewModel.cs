@@ -32,6 +32,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCompactActive))]
     private bool _isCompact;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
@@ -52,6 +53,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsOpenListActive))]
     [NotifyPropertyChangedFor(nameof(UseOpenList))]
+    [NotifyPropertyChangedFor(nameof(DeleteListPrompt))]
     private RoutingListSummaryViewModel? _editRoutingList;
 
     // The routing list every config uses, mirrored from the snapshot; null leaves each config on its own settings.
@@ -140,6 +142,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         RoutingEditor?.RefreshLocalizedLabels();
+        OnPropertyChanged(nameof(DeleteListPrompt));
     }
 
     /// <summary>
@@ -161,10 +164,21 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool IsSectionExport => !IsCreatingSectionRouting && RoutingEditor is not null && ManageSection == RoutingSection.Export;
 
     /// <summary>
+    /// Стоит ли тумблер применения в шапке: на узком экране карточка под выбором стоила пол-экрана, и её
+    /// содержимое ужато в строку у самого выбора.
+    /// </summary>
+    public bool ShowCompactActive => IsCompact && IsSectionSettings;
+
+    /// <summary>
     /// Стоит ли на экране выбор списка с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт занимают
     /// экран целиком и возвращают сюда сами.
     /// </summary>
     public bool ShowHeaderActions => !IsCreatingSectionRouting && !IsSectionExport && !ShowCatalogueLoader;
+
+    /// <summary>
+    /// Delete-card prompt naming the open list.
+    /// </summary>
+    public string DeleteListPrompt => Loc.Instance.Get("Main_DeleteListPrompt", EditRoutingList?.Name ?? string.Empty);
 
     /// <summary>
     /// Есть ли что экспортировать.
@@ -273,6 +287,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportManual));
         OnPropertyChanged(nameof(IsImportCamera));
         OnPropertyChanged(nameof(ShowHeaderActions));
+        OnPropertyChanged(nameof(ShowCompactActive));
         OnPropertyChanged(nameof(CanExportOpenList));
         RefreshEditBar();
     }

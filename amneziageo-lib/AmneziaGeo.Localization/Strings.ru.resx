@@ -296,7 +296,7 @@
     <value>Добавить базу</value>
   </data>
   <data name="Main_AddEntryLabel" xml:space="preserve">
-    <value>ДОБАВИТЬ ЗАПИСЬ (ГЕО-КАТЕГОРИЯ, ДОМЕН ИЛИ CIDR)</value>
+    <value>Добавить запись</value>
   </data>
   <data name="Main_AddEntryWatermark" xml:space="preserve">
     <value>напр. geosite:категория, example.com, www.example.com, https://example.com, 1.2.3.0/24</value>
@@ -317,7 +317,7 @@
     <value>Формат строки: время · [уровень] · компонент · сообщение.  Уровни по возрастанию: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Включите, если не работают звонки, игры или видеосвязь. Локальная сеть не затрагивается.</value>
+    <value>Для звонков, игр и видеосвязи</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>Весь UDP через туннель</value>
@@ -326,7 +326,7 @@
     <value>Время жизни маршрута</value>
   </data>
   <data name="Main_RouteTtlHint" xml:space="preserve">
-    <value>Сколько адрес хранится в кеше без обращений. Потом маршрут для него определяется заново.</value>
+    <value>Сколько адрес живёт в кеше</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Использовать IPv6</value>
@@ -491,10 +491,7 @@
     <value>Удаление списка</value>
   </data>
   <data name="Main_DeleteListPrompt" xml:space="preserve">
-    <value>Удалить этот список маршрутизации из каталога. Это действие нельзя отменить.</value>
-  </data>
-  <data name="Main_DeleteListHint" xml:space="preserve">
-    <value>Если удалить выбранный список, маршрутизация выключится.</value>
+    <value>Удалить «{0}» насовсем</value>
   </data>
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Список маршрутизации</value>
@@ -527,7 +524,7 @@
     <value>Скачать</value>
   </data>
   <data name="Main_EntriesLabel" xml:space="preserve">
-    <value>ЗАПИСИ</value>
+    <value>Записи</value>
   </data>
   <data name="Main_ExclusionsHint" xml:space="preserve">
     <value>Адреса, которые не заворачивать в VPN. По одному в строке. IP/подсеть идут напрямую мимо туннеля; домен резолвится локальным DNS (уходит напрямую, только если адрес локальный).</value>
@@ -572,7 +569,7 @@
     <value>Импорт / экспорт</value>
   </data>
   <data name="Main_TransferSubtitle" xml:space="preserve">
-    <value>Выберите формат передачи</value>
+    <value>Выбор способа</value>
   </data>
   <data name="Main_TransferQrTab" xml:space="preserve">
     <value>QR</value>
@@ -584,7 +581,7 @@
     <value>Установить</value>
   </data>
   <data name="Main_ListNameLabel" xml:space="preserve">
-    <value>ИМЯ СПИСКА</value>
+    <value>Имя списка</value>
   </data>
   <data name="Main_ListNameWatermark" xml:space="preserve">
     <value>напр. мой-список</value>
@@ -617,7 +614,7 @@
     <value>Глобальный прокси</value>
   </data>
   <data name="Main_GlobalProxyHint" xml:space="preserve">
-    <value>Заворачивать в туннель всё, кроме списка «Директ».</value>
+    <value>Заворачивать в туннель всё, кроме «Директ»</value>
   </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Загрузить файл…</value>
@@ -680,7 +677,7 @@
     <value>Вставить</value>
   </data>
   <data name="Main_PerAppRoutingLabel" xml:space="preserve">
-    <value>МАРШРУТИЗАЦИЯ СЕТЕВЫХ ЗАПРОСОВ ПРИЛОЖЕНИЯ</value>
+    <value>Приложение</value>
   </data>
   <data name="Main_AddByAddressTab" xml:space="preserve">
     <value>Адрес</value>
@@ -689,10 +686,10 @@
     <value>Приложение</value>
   </data>
   <data name="Main_AddMethodLabel" xml:space="preserve">
-    <value>ТИП ЗАПИСИ</value>
+    <value>Тип записи</value>
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
-    <value>ПРАВИЛА</value>
+    <value>Правила</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
     <value>Прокси</value>
@@ -1869,10 +1866,10 @@
     <value>Использовать этот список</value>
   </data>
   <data name="Main_RoutingActiveNotice" xml:space="preserve">
-    <value>Эти правила сейчас действуют.</value>
+    <value>Действуют</value>
   </data>
   <data name="Main_RoutingIdleNotice" xml:space="preserve">
-    <value>Эти правила пока не действуют.</value>
+    <value>Пока не действуют</value>
   </data>
   <data name="Main_ConfigIdleNotice" xml:space="preserve">
     <value>Пока не активна</value>

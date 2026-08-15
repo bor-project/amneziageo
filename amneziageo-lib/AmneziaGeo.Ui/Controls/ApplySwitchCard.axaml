@@ -29,7 +29,6 @@
         </Border>
 
         <StackPanel Grid.Column="1" Spacing="3" Margin="12,0" VerticalAlignment="Center"
-                    IsVisible="{Binding !#Root.Compact}"
                     Background="Transparent" Cursor="Hand" Tapped="OnLabelTapped">
           <TextBlock Text="{Binding #Root.Title}" FontWeight="SemiBold" FontSize="13.5" TextWrapping="Wrap" />
           <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
@@ -46,14 +45,6 @@
                         IsEnabled="{Binding #Root.SwitchEnabled}" />
         </StackPanel>
       </Grid>
-
-      <!-- Narrow screen: the label stands under the row as a description, so it never crowds the switch. -->
-      <StackPanel Spacing="3" IsVisible="{Binding #Root.Compact}"
-                  Background="Transparent" Cursor="Hand" Tapped="OnLabelTapped">
-        <TextBlock Text="{Binding #Root.Title}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
-        <TextBlock Text="{Binding #Root.Description}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                   IsVisible="{Binding #Root.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-      </StackPanel>
 
       <StackPanel Spacing="10" IsVisible="{Binding #Root.ShowNotice}">
         <Border Height="1" Background="{DynamicResource AgBorderBrush}" />

@@ -58,9 +58,6 @@ internal sealed partial class ApplySwitchCard : UserControl
     public static readonly StyledProperty<bool> ShowOffNoticeProperty =
         AvaloniaProperty.Register<ApplySwitchCard, bool>(nameof(ShowOffNotice));
 
-    public static readonly StyledProperty<bool> CompactProperty =
-        AvaloniaProperty.Register<ApplySwitchCard, bool>(nameof(Compact));
-
     /// <summary>
     /// ctor
     /// </summary>
@@ -149,15 +146,6 @@ internal sealed partial class ApplySwitchCard : UserControl
     {
         get => GetValue(IsActionVisibleProperty);
         set => SetValue(IsActionVisibleProperty, value);
-    }
-
-    /// <summary>
-    /// Ставит подпись под строку с тумблером, а не рядом с ним.
-    /// </summary>
-    public bool Compact
-    {
-        get => GetValue(CompactProperty);
-        set => SetValue(CompactProperty, value);
     }
 
     /// <summary>

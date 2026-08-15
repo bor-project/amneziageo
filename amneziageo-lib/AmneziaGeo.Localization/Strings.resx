@@ -296,7 +296,7 @@
     <value>Add a database</value>
   </data>
   <data name="Main_AddEntryLabel" xml:space="preserve">
-    <value>ADD AN ENTRY (GEO CATEGORY, DOMAIN OR CIDR)</value>
+    <value>Add an entry</value>
   </data>
   <data name="Main_AddEntryWatermark" xml:space="preserve">
     <value>e.g. geosite:category, example.com, www.example.com, https://example.com, 1.2.3.0/24</value>
@@ -317,7 +317,7 @@
     <value>Line format: time · [level] · component · message.  Levels low to high: VRB · DBG · INF · WRN · ERR · FTL.</value>
   </data>
   <data name="Main_AllUdpHint" xml:space="preserve">
-    <value>Turn this on if calls, games or video chat do not work. Your local network is not affected.</value>
+    <value>For calls, games and video chat</value>
   </data>
   <data name="Main_AllUdpTitle" xml:space="preserve">
     <value>All UDP through the tunnel</value>
@@ -326,7 +326,7 @@
     <value>Route lifetime</value>
   </data>
   <data name="Main_RouteTtlHint" xml:space="preserve">
-    <value>How long an address is kept in the cache without traffic. After that its route is decided again.</value>
+    <value>How long an address stays cached</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
     <value>Use IPv6</value>
@@ -491,10 +491,7 @@
     <value>Delete list</value>
   </data>
   <data name="Main_DeleteListPrompt" xml:space="preserve">
-    <value>Remove this routing list from the catalogue. This cannot be undone.</value>
-  </data>
-  <data name="Main_DeleteListHint" xml:space="preserve">
-    <value>Deleting the selected list turns routing off.</value>
+    <value>Deletes "{0}" for good</value>
   </data>
   <data name="Main_RoutingListCardTitle" xml:space="preserve">
     <value>Routing list</value>
@@ -527,7 +524,7 @@
     <value>Download</value>
   </data>
   <data name="Main_EntriesLabel" xml:space="preserve">
-    <value>ENTRIES</value>
+    <value>Entries</value>
   </data>
   <data name="Main_ExclusionsHint" xml:space="preserve">
     <value>Addresses not to route into the VPN. One per line. An IP/subnet goes directly, bypassing the tunnel; a domain is resolved via the local DNS (goes directly only if the address is local).</value>
@@ -572,7 +569,7 @@
     <value>Import / export</value>
   </data>
   <data name="Main_TransferSubtitle" xml:space="preserve">
-    <value>Choose a transfer format</value>
+    <value>Choose a method</value>
   </data>
   <data name="Main_TransferQrTab" xml:space="preserve">
     <value>QR</value>
@@ -584,7 +581,7 @@
     <value>Install</value>
   </data>
   <data name="Main_ListNameLabel" xml:space="preserve">
-    <value>LIST NAME</value>
+    <value>List name</value>
   </data>
   <data name="Main_ListNameWatermark" xml:space="preserve">
     <value>e.g. my-list</value>
@@ -617,7 +614,7 @@
     <value>Global proxy</value>
   </data>
   <data name="Main_GlobalProxyHint" xml:space="preserve">
-    <value>Route everything through the tunnel except the Direct list.</value>
+    <value>Route everything through the tunnel except Direct</value>
   </data>
   <data name="Main_LoadFileButton" xml:space="preserve">
     <value>Load file…</value>
@@ -680,7 +677,7 @@
     <value>Paste</value>
   </data>
   <data name="Main_PerAppRoutingLabel" xml:space="preserve">
-    <value>ROUTING OF AN APP'S NETWORK REQUESTS</value>
+    <value>Application</value>
   </data>
   <data name="Main_AddByAddressTab" xml:space="preserve">
     <value>Address</value>
@@ -689,10 +686,10 @@
     <value>Application</value>
   </data>
   <data name="Main_AddMethodLabel" xml:space="preserve">
-    <value>ENTRY TYPE</value>
+    <value>Entry type</value>
   </data>
   <data name="Main_RoleLabel" xml:space="preserve">
-    <value>RULES</value>
+    <value>Rules</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
     <value>Proxy</value>
@@ -1869,10 +1866,10 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Use this list</value>
   </data>
   <data name="Main_RoutingActiveNotice" xml:space="preserve">
-    <value>These rules are in force now.</value>
+    <value>In effect</value>
   </data>
   <data name="Main_RoutingIdleNotice" xml:space="preserve">
-    <value>These rules are not active yet.</value>
+    <value>Not in effect yet</value>
   </data>
   <data name="Main_ConfigIdleNotice" xml:space="preserve">
     <value>Not active yet</value>

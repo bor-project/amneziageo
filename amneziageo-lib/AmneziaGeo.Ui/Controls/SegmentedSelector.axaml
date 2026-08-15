@@ -7,9 +7,13 @@
        item count sets the columns. Track is content-width and left when wide, full-width in compact. -->
   <StackPanel Spacing="8">
 
-    <!-- Field-style caption above the control: without one a segment reads as action buttons. -->
-    <TextBlock Classes="label" Text="{Binding #Root.Label}"
-               IsVisible="{Binding #Root.Label, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <!-- Caption above the control: without one a segment reads as action buttons. A row that opens a section
+         carries its heading, the rest a field-style label. -->
+    <Panel IsVisible="{Binding #Root.Label, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+      <TextBlock Classes="label" Text="{Binding #Root.Label}" IsVisible="{Binding !#Root.Heading}" />
+      <TextBlock Text="{Binding #Root.Label}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap"
+                 IsVisible="{Binding #Root.Heading}" />
+    </Panel>
 
     <Border Classes="segtrack" Classes.compact="{Binding #Root.IsCompact}"
             HorizontalAlignment="{Binding #Root.IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"

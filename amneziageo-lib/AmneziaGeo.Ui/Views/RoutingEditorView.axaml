@@ -14,9 +14,11 @@
     <!-- Rules card: name + per-app tunneling + geo/domain/cidr entries. -->
     <Border Classes="sect" Classes.compact="{Binding IsCompact}">
       <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-        <!-- Card title. The global-proxy switch lives in the traffic card below as a full-width setting row. -->
+        <!-- Card title. The global-proxy switch lives in the traffic card below as a full-width setting row.
+             A narrow screen drops the frame, and with it the umbrella title over the headings under it. -->
         <TextBlock Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15"
-                   TextWrapping="Wrap" VerticalAlignment="Center" />
+                   TextWrapping="Wrap" VerticalAlignment="Center"
+                   IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
 
         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
           <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
@@ -25,19 +27,23 @@
         </StackPanel>
 
         <StackPanel Spacing="2">
-          <TextBlock Classes="label" Text="{l:Tr Main_ListNameLabel}" />
+          <TextBlock Text="{l:Tr Main_ListNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
           <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
                    Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
           <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
 
+        <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
+        <Border Height="1" Background="{DynamicResource AgBorderBrush}"
+                IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
+
         <!-- Add an entry by address (geo / domain / cidr) or per-application. Content-width when wide,
              full-width in compact. -->
         <StackPanel Spacing="6">
 
           <!-- Per-application entries are Windows-only; on Android the method selector is hidden and entries are address-only. -->
-          <controls:SegmentedSelector Label="{l:Tr Main_AddMethodLabel}"
+          <controls:SegmentedSelector Label="{l:Tr Main_AddMethodLabel}" Heading="True"
               IsVisible="{Binding IsAppMethodAvailable}"
               Command="{Binding SelectAddMethodCommand}"
               IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
@@ -46,7 +52,7 @@
 
           <!-- Address entry: geo category / domain / cidr. -->
           <StackPanel Spacing="6" Margin="0,4,0,0" IsVisible="{Binding IsAddressMethod}">
-            <TextBlock Classes="label" Text="{l:Tr Main_AddEntryLabel}" />
+            <TextBlock Text="{l:Tr Main_AddEntryLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
             <!-- Wide: input + add button inline. -->
             <Grid ColumnDefinitions="*,Auto"
                   IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
@@ -96,7 +102,7 @@
 
           <!-- Per-application entry. -->
           <StackPanel Spacing="8" Margin="0,4,0,0" IsVisible="{Binding IsAppMethod}">
-            <TextBlock Classes="label" Text="{l:Tr Main_PerAppRoutingLabel}" />
+            <TextBlock Text="{l:Tr Main_PerAppRoutingLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
 
             <!-- Windows: running / installed / folder / file source picker. -->
             <StackPanel Spacing="8" IsVisible="{Binding IsAppSourceWindows}">
@@ -176,11 +182,14 @@
         <TextBlock Text="{Binding ValidationMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
                    IsVisible="{Binding ValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+        <Border Height="1" Background="{DynamicResource AgBorderBrush}"
+                IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
+
         <!-- Role segment [Прокси | Директ | Блок]: which bucket the add rows target and the list below shows. -->
         <StackPanel Spacing="6">
           <!-- The link below sits far to the right, so directional focus walks past it down the left edge;
                naming it as the down target puts it on the way. -->
-          <controls:SegmentedSelector x:Name="RoleSegments" Label="{l:Tr Main_RoleLabel}"
+          <controls:SegmentedSelector x:Name="RoleSegments" Label="{l:Tr Main_RoleLabel}" Heading="True"
               Command="{Binding SelectRoleCommand}"
               XYFocus.Down="{Binding #AddLocalSubnetsLink}"
               IsCompact="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}"
@@ -204,8 +213,11 @@
         </StackPanel>
 
         <StackPanel Spacing="6" IsVisible="{Binding Rules.Count}">
+          <Border Height="1" Background="{DynamicResource AgBorderBrush}" Margin="0,0,0,8"
+                  IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
           <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-            <TextBlock Grid.Column="0" Classes="label" Text="{l:Tr Main_EntriesLabel}" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="0" Text="{l:Tr Main_EntriesLabel}" FontWeight="SemiBold" FontSize="15"
+                       VerticalAlignment="Center" />
             <Button Grid.Column="1" Classes="icon" Content="⇅" FontSize="13" Margin="6,0,0,0"
                     VerticalAlignment="Center"
                     Command="{Binding SortRulesCommand}"
@@ -300,21 +312,34 @@
     <Border Classes="sect" Classes.compact="{Binding IsCompact}"
             IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
       <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
-        <TextBlock Text="{l:Tr Main_RoutingOptionsLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+        <Border Height="1" Background="{DynamicResource AgBorderBrush}"
+                IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
 
-        <controls:SettingSwitchRow Label="{l:Tr Main_GlobalProxyTitle}" Description="{l:Tr Main_GlobalProxyHint}"
-                                   IsChecked="{Binding UseGlobalProxy, Mode=TwoWay}" />
+        <TextBlock Text="{l:Tr Main_RoutingOptionsLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap"
+                   IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
 
-        <controls:SettingSwitchRow Label="{l:Tr Main_AllUdpTitle}" Description="{l:Tr Main_AllUdpHint}"
-                                   IsChecked="{Binding AllUdp, Mode=TwoWay}" />
+        <!-- The section heading carries the switch itself: a separate row under it only said the heading again. -->
+        <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_GlobalProxyTitle}"
+                                   Description="{l:Tr Main_GlobalProxyHint}"
+                                   IsChecked="{Binding UseGlobalProxy, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+        <Border Height="1" Background="{DynamicResource AgBorderBrush}"
+                IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
+
+        <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_AllUdpTitle}" Description="{l:Tr Main_AllUdpHint}"
+                                   IsChecked="{Binding AllUdp, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+        <Border Height="1" Background="{DynamicResource AgBorderBrush}"
+                IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
+
+        <!-- The box stands beside its heading, where a switch stands in the rows around it. -->
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MinHeight="40">
           <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-            <TextBlock Text="{l:Tr Main_RouteTtlTitle}" FontSize="13.5" />
-            <TextBlock Text="{l:Tr Main_RouteTtlHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+            <TextBlock Text="{l:Tr Main_RouteTtlTitle}" FontWeight="SemiBold" FontSize="15" />
+            <TextBlock Text="{l:Tr Main_RouteTtlHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <TextBox Classes="field" Classes.invalid="{Binding RouteTtlInvalid}" Width="110"
+            <TextBox Classes="field" Classes.invalid="{Binding RouteTtlInvalid}" Width="90"
                      VerticalAlignment="Center" Text="{Binding RouteTtl, Mode=TwoWay}" />
             <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" VerticalAlignment="Center" />
           </StackPanel>

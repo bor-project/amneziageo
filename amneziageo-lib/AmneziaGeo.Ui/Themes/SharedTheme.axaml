@@ -29,6 +29,20 @@
       <Setter Property="Padding" Value="0" />
     </Style>
 
+    <!-- Frame around a list of rows. A narrow screen drops it: the rows carry their own outlines. -->
+    <Style Selector="Border.rulebox">
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+    </Style>
+
+    <Style Selector="Border.rulebox.compact">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+
     <Style Selector="Border.subcard">
       <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />

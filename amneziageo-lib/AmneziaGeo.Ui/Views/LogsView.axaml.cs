@@ -20,6 +20,17 @@ internal sealed partial class LogsView : UserControl
         InitializeComponent();
     }
 
+    // Puts one log row on the clipboard whole: time, level and text.
+    private async void OnCopyEntry(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is not LogEntryItem entry)
+        {
+            return;
+        }
+
+        await ExportActions.CopyToClipboardAsync(this, entry.Line);
+    }
+
     // Exports the whole selected log table to a text file the user picks; the agent writes it.
     private async void OnExportLog(object? sender, RoutedEventArgs e)
     {

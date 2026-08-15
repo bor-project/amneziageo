@@ -422,24 +422,7 @@
                 </Grid>
               </Button>
 
-              <Button Classes="rowselect" Classes.active="{Binding IsSettingsSources}" Margin="0,3"
-                      Command="{Binding SelectSettingsCommand}" CommandParameter="sources">
-                <Grid ColumnDefinitions="Auto,*" Margin="12,7">
-                  <Grid Grid.Column="0" Classes="railradio" Width="18" Height="18" VerticalAlignment="Center">
-                    <Ellipse Width="16" Height="16" StrokeThickness="2"
-                             Stroke="{DynamicResource AgBorder2Brush}" Fill="Transparent"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgAccentBrush}"
-                             IsVisible="{Binding IsSettingsSources}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Grid>
-                  <StackPanel Grid.Column="1" Classes="railtext" VerticalAlignment="Center">
-                    <TextBlock Text="{l:Tr Main_RailSourcesTitle}" FontWeight="SemiBold" FontSize="13.5" />
-                    <TextBlock Text="{l:Tr Main_RailSourcesSubtitle}" FontSize="11.5" Classes="muted"
-                               TextTrimming="CharacterEllipsis" />
-                  </StackPanel>
-                </Grid>
-              </Button>
+              <!-- Гео-источники стоят за ссылкой в маршрутизации: собственного пункта у них нет. -->
 
               <Button Classes="rowselect" Classes.active="{Binding IsSettingsLogs}" Margin="0,3"
                       Command="{Binding SelectSettingsCommand}" CommandParameter="logs">

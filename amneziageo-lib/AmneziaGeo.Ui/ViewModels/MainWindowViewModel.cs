@@ -351,6 +351,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        // Источники гео открываются ссылкой из маршрутизации и возвращают туда же.
+        if (IsSettings && IsSettingsSources)
+        {
+            SettingsSection = "routing";
+            RefreshLogsActive();
+            return;
+        }
+
         if (IsCompact && SettingsDetailOpen)
         {
             SettingsDetailOpen = false;
@@ -413,6 +421,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SettingsSection = "config";
         SettingsDetailOpen = true;
         Config.EnterImportSection();
+    }
+
+    /// <summary>
+    /// Открывает управление источниками гео.
+    /// </summary>
+    public void ShowGeoSources()
+    {
+        Nav = "settings";
+        SettingsSection = "sources";
+        SettingsDetailOpen = true;
+        RefreshLogsActive();
     }
 
     // Закрывает оболочку. Туннель не трогаем: он живёт своим сервисом и переживает закрытие интерфейса.

@@ -26,6 +26,11 @@ internal sealed record LogEntryItem(string Time, string Level, string Text)
     public bool IsPlain => HasLevel && !IsAlarm && !IsWarning;
 
     /// <summary>
+    /// The row as one line, the way the log file holds it.
+    /// </summary>
+    public string Line => HasLevel ? $"{Time} [{Level}] {Text}".TrimStart() : $"{Time} {Text}".TrimStart();
+
+    /// <summary>
     /// Splits a rendered line into its parts: "yyyy-MM-dd HH:mm:ss.fff [LVL] rest" as the agents write it, and
     /// anything shaped otherwise goes in whole.
     /// </summary>

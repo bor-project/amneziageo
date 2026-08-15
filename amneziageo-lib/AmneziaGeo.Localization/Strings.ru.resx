@@ -742,9 +742,6 @@
   <data name="Main_RailRoutingTitle" xml:space="preserve">
     <value>Маршрутизация</value>
   </data>
-  <data name="Main_RailSourcesSubtitle" xml:space="preserve">
-    <value>Базы доменов и стран</value>
-  </data>
   <data name="Main_RailSourcesTitle" xml:space="preserve">
     <value>Источники geo</value>
   </data>

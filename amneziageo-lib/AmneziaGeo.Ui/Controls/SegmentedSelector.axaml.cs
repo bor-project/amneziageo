@@ -19,6 +19,9 @@ internal sealed partial class SegmentedSelector : UserControl
     public static readonly StyledProperty<string?> HintProperty =
         AvaloniaProperty.Register<SegmentedSelector, string?>(nameof(Hint));
 
+    public static readonly StyledProperty<bool> HeadingProperty =
+        AvaloniaProperty.Register<SegmentedSelector, bool>(nameof(Heading));
+
     public static readonly StyledProperty<HorizontalAlignment> AlignProperty =
         AvaloniaProperty.Register<SegmentedSelector, HorizontalAlignment>(nameof(Align), HorizontalAlignment.Left);
 
@@ -97,6 +100,15 @@ internal sealed partial class SegmentedSelector : UserControl
     {
         get => GetValue(HintProperty);
         set => SetValue(HintProperty, value);
+    }
+
+    /// <summary>
+    /// Подаёт подпись как заголовок раздела, а не как строку внутри него.
+    /// </summary>
+    public bool Heading
+    {
+        get => GetValue(HeadingProperty);
+        set => SetValue(HeadingProperty, value);
     }
 
     public HorizontalAlignment Align

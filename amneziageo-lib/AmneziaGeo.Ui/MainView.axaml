@@ -93,126 +93,129 @@
                first agent snapshot, so the indeterminate power button never flashes on open. -->
           <Grid Margin="12,1,12,3" IsVisible="{Binding Home.IsReady}">
 
-              <!-- Connect pane: the round control, the status and the config picker. -->
-              <StackPanel Width="290" Spacing="14"
-                          HorizontalAlignment="Center" VerticalAlignment="Center"
-                          IsVisible="{Binding ShowHomeConnect}">
-                <Button x:Name="HomePowerButton" Classes="powerbig" HorizontalAlignment="Center"
-                        FocusAdorner="{x:Null}"
-                        Command="{Binding Home.ToggleConnectionCommand}"
-                        IsEnabled="{Binding Home.CanToggleConnection}"
-                        ToolTip.Tip="{Binding Home.ConnectHint}">
-                  <Grid Width="168" Height="168">
-                    <Ellipse Width="168" Height="168" Stroke="{DynamicResource AgBorderBrush}"
-                             StrokeThickness="1" Opacity="0.7" />
-                    <Ellipse Width="140" Height="140" Stroke="{DynamicResource AgBorderBrush}"
-                             StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Ellipse Width="112" Height="112" Stroke="{DynamicResource AgBorder2Brush}"
-                             StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <!-- Accent ring-wave overlays during connect / disconnect. -->
-                    <Ellipse Classes="ring r1" Classes.waveout="{Binding Home.IsConnectingOut}"
-                             Classes.wavein="{Binding Home.IsConnectingIn}"
-                             Width="112" Height="112" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Ellipse Classes="ring r2" Classes.waveout="{Binding Home.IsConnectingOut}"
-                             Classes.wavein="{Binding Home.IsConnectingIn}"
-                             Width="140" Height="140" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Ellipse Classes="ring r3" Classes.waveout="{Binding Home.IsConnectingOut}"
-                             Classes.wavein="{Binding Home.IsConnectingIn}"
-                             Width="168" Height="168" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Border Width="94" Height="94" CornerRadius="47"
-                            Background="{Binding Home.ConnectCircleBrush}"
-                            BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="2"
-                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                            BoxShadow="0 6 18 0 #1F000000">
-                      <Panel>
-                        <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="38" Height="38"
-                                  Foreground="{Binding Home.ConnectCircleForeground}"
-                                  IsVisible="{Binding !Home.IsConnecting}"
-                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        <Ellipse Classes.pulse="{Binding Home.IsConnecting}" Width="32" Height="32"
-                                 IsVisible="{Binding Home.IsConnecting}" Fill="{Binding Home.ConnectCircleForeground}"
-                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
-                      </Panel>
-                    </Border>
-                    <!-- Focus ring in the current status colour. -->
-                    <Ellipse Classes="focusring" Width="168" Height="168" StrokeThickness="3"
-                             Stroke="{Binding Home.ConnectStatusBrush}"
-                             HorizontalAlignment="Center" VerticalAlignment="Center" />
-                  </Grid>
-                </Button>
-
-                <!-- Status and hint wrap inside the column, so a long hint neither clips nor widens it. -->
-                <StackPanel HorizontalAlignment="Center" Spacing="4">
-                  <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="17" FontWeight="SemiBold"
-                             TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}" />
-                  <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
-                             TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectHintBrush}" />
-                  <!-- Retry counter while a stalled connect keeps trying (#197). -->
-                  <TextBlock Text="{Binding Home.RetryText}" FontSize="12" FontWeight="SemiBold"
-                             TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}"
-                             IsVisible="{Binding Home.ShowRetry}" />
-                  <!-- What the live tunnel carries, what it loses on the way, and the warning that it keeps
-                       re-establishing the session instead of carrying anything. -->
-                  <TextBlock Text="{Binding Home.LinkSpeedText}" FontSize="12"
-                             TextAlignment="Center" Foreground="{Binding Home.ConnectHintBrush}"
-                             IsVisible="{Binding Home.ShowLink}" />
-                  <TextBlock Text="{Binding Home.LinkLossText}" FontSize="12"
-                             TextAlignment="Center" Foreground="{Binding Home.LinkLossBrush}"
-                             IsVisible="{Binding Home.ShowLinkLoss}" />
-                  <TextBlock Text="{Binding Home.LinkChurnText}" FontSize="12" FontWeight="SemiBold"
-                             TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.LinkChurnBrush}"
-                             IsVisible="{Binding Home.LinkChurning}" />
-                  <!-- The resolver the machine sends its lookups to stopped answering, so rules by domain no
-                       longer apply. -->
-                  <TextBlock Text="{Binding Home.NamesUnroutedText}" FontSize="12" FontWeight="SemiBold"
-                             TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.NamesUnroutedBrush}"
-                             IsVisible="{Binding Home.ShowNamesUnrouted}" />
-                </StackPanel>
-
-                <!-- Always-on switch: the switch itself belongs to the system, so while it is on the power button
-                     leads to the system screen instead of dialling. -->
-                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Home.ShowAlwaysOnToggle}">
-                  <TextBlock Grid.Column="0" Text="{l:Tr Main_AlwaysOnMode}" Classes="muted"
-                             FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
-                  <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
-                                IsChecked="{Binding Home.AlwaysOnMode, Mode=TwoWay}" />
-                </Grid>
-
-                <!-- Config picker: the same pick the server screen carries, with the way to that screen over it. -->
-                <StackPanel Spacing="6">
-                  <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasConfigs}">
-                    <TextBlock Grid.Column="0" Text="{l:Tr Main_HomeServerLabel}" Classes="muted"
-                               FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Classes="linkbtn" Padding="4,0" FontSize="12"
-                            Command="{Binding SelectHomeTabCommand}" CommandParameter="servers"
-                            Content="{l:Tr Main_HomeManageServers}" />
-                  </Grid>
-                  <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                            IsVisible="{Binding HasConfigs}"
-                            ItemsSource="{Binding Config.HomeConfigOptions}"
-                            SelectedItem="{Binding Home.ActiveConfigChoice, Mode=TwoWay}">
-                    <controls:AdaptiveComboBox.ItemTemplate>
-                      <DataTemplate x:DataType="vm:ConfigChoice">
-                        <TextBlock Text="{Binding Name}" />
-                      </DataTemplate>
-                    </controls:AdaptiveComboBox.ItemTemplate>
-                  </controls:AdaptiveComboBox>
-                  <!-- No configs: add-config button (opens the config settings section) and its hint. -->
-                  <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
-                          IsVisible="{Binding !HasConfigs}" Command="{Binding AddConfigCommand}">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                      <TextBlock Text="+" />
-                      <TextBlock Text="{l:Tr Main_AddConfigButton}" />
-                    </StackPanel>
+              <!-- Connect pane: the round control, the status and the config picker. It scrolls once the status
+                   lines and the picker outgrow a short screen; while it fits, it stands centred. -->
+              <ScrollViewer IsVisible="{Binding ShowHomeConnect}"
+                            VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Width="290" Spacing="14"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Button x:Name="HomePowerButton" Classes="powerbig" HorizontalAlignment="Center"
+                          FocusAdorner="{x:Null}"
+                          Command="{Binding Home.ToggleConnectionCommand}"
+                          IsEnabled="{Binding Home.CanToggleConnection}"
+                          ToolTip.Tip="{Binding Home.ConnectHint}">
+                    <Grid Width="168" Height="168">
+                      <Ellipse Width="168" Height="168" Stroke="{DynamicResource AgBorderBrush}"
+                               StrokeThickness="1" Opacity="0.7" />
+                      <Ellipse Width="140" Height="140" Stroke="{DynamicResource AgBorderBrush}"
+                               StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Width="112" Height="112" Stroke="{DynamicResource AgBorder2Brush}"
+                               StrokeThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <!-- Accent ring-wave overlays during connect / disconnect. -->
+                      <Ellipse Classes="ring r1" Classes.waveout="{Binding Home.IsConnectingOut}"
+                               Classes.wavein="{Binding Home.IsConnectingIn}"
+                               Width="112" Height="112" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Classes="ring r2" Classes.waveout="{Binding Home.IsConnectingOut}"
+                               Classes.wavein="{Binding Home.IsConnectingIn}"
+                               Width="140" Height="140" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Ellipse Classes="ring r3" Classes.waveout="{Binding Home.IsConnectingOut}"
+                               Classes.wavein="{Binding Home.IsConnectingIn}"
+                               Width="168" Height="168" Stroke="{Binding Home.ConnectCircleForeground}" StrokeThickness="2"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Border Width="94" Height="94" CornerRadius="47"
+                              Background="{Binding Home.ConnectCircleBrush}"
+                              BorderBrush="{Binding Home.ConnectCircleBorderBrush}" BorderThickness="2"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              BoxShadow="0 6 18 0 #1F000000">
+                        <Panel>
+                          <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="38" Height="38"
+                                    Foreground="{Binding Home.ConnectCircleForeground}"
+                                    IsVisible="{Binding !Home.IsConnecting}"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          <Ellipse Classes.pulse="{Binding Home.IsConnecting}" Width="32" Height="32"
+                                   IsVisible="{Binding Home.IsConnecting}" Fill="{Binding Home.ConnectCircleForeground}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Panel>
+                      </Border>
+                      <!-- Focus ring in the current status colour. -->
+                      <Ellipse Classes="focusring" Width="168" Height="168" StrokeThickness="3"
+                               Stroke="{Binding Home.ConnectStatusBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
                   </Button>
-                  <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12"
-                             HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
-                             Text="{l:Tr Main_NoConfigsHint}" />
+
+                  <!-- Status and hint wrap inside the column, so a long hint neither clips nor widens it. -->
+                  <StackPanel HorizontalAlignment="Center" Spacing="4">
+                    <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="17" FontWeight="SemiBold"
+                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}" />
+                    <TextBlock Text="{Binding Home.ConnectHint}" FontSize="12.5"
+                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectHintBrush}" />
+                    <!-- Retry counter while a stalled connect keeps trying (#197). -->
+                    <TextBlock Text="{Binding Home.RetryText}" FontSize="12" FontWeight="SemiBold"
+                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.ConnectStatusBrush}"
+                               IsVisible="{Binding Home.ShowRetry}" />
+                    <!-- What the live tunnel carries, what it loses on the way, and the warning that it keeps
+                         re-establishing the session instead of carrying anything. -->
+                    <TextBlock Text="{Binding Home.LinkSpeedText}" FontSize="12"
+                               TextAlignment="Center" Foreground="{Binding Home.ConnectHintBrush}"
+                               IsVisible="{Binding Home.ShowLink}" />
+                    <TextBlock Text="{Binding Home.LinkLossText}" FontSize="12"
+                               TextAlignment="Center" Foreground="{Binding Home.LinkLossBrush}"
+                               IsVisible="{Binding Home.ShowLinkLoss}" />
+                    <TextBlock Text="{Binding Home.LinkChurnText}" FontSize="12" FontWeight="SemiBold"
+                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.LinkChurnBrush}"
+                               IsVisible="{Binding Home.LinkChurning}" />
+                    <!-- The resolver the machine sends its lookups to stopped answering, so rules by domain no
+                         longer apply. -->
+                    <TextBlock Text="{Binding Home.NamesUnroutedText}" FontSize="12" FontWeight="SemiBold"
+                               TextAlignment="Center" TextWrapping="Wrap" Foreground="{Binding Home.NamesUnroutedBrush}"
+                               IsVisible="{Binding Home.ShowNamesUnrouted}" />
+                  </StackPanel>
+
+                  <!-- Always-on switch: the switch itself belongs to the system, so while it is on the power button
+                       leads to the system screen instead of dialling. -->
+                  <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Home.ShowAlwaysOnToggle}">
+                    <TextBlock Grid.Column="0" Text="{l:Tr Main_AlwaysOnMode}" Classes="muted"
+                               FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                  IsChecked="{Binding Home.AlwaysOnMode, Mode=TwoWay}" />
+                  </Grid>
+
+                  <!-- Config picker: the same pick the server screen carries, with the way to that screen over it. -->
+                  <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasConfigs}">
+                      <TextBlock Grid.Column="0" Text="{l:Tr Main_HomeServerLabel}" Classes="muted"
+                                 FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="linkbtn" Padding="4,0" FontSize="12"
+                              Command="{Binding SelectHomeTabCommand}" CommandParameter="servers"
+                              Content="{l:Tr Main_HomeManageServers}" />
+                    </Grid>
+                    <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                              IsVisible="{Binding HasConfigs}"
+                              ItemsSource="{Binding Config.HomeConfigOptions}"
+                              SelectedItem="{Binding Home.ActiveConfigChoice, Mode=TwoWay}">
+                      <controls:AdaptiveComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ConfigChoice">
+                          <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                      </controls:AdaptiveComboBox.ItemTemplate>
+                    </controls:AdaptiveComboBox>
+                    <!-- No configs: add-config button (opens the config settings section) and its hint. -->
+                    <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
+                            IsVisible="{Binding !HasConfigs}" Command="{Binding AddConfigCommand}">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="+" />
+                        <TextBlock Text="{l:Tr Main_AddConfigButton}" />
+                      </StackPanel>
+                    </Button>
+                    <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12"
+                               HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                               Text="{l:Tr Main_NoConfigsHint}" />
+                  </StackPanel>
                 </StackPanel>
-              </StackPanel>
+              </ScrollViewer>
 
               <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding ShowHomeServers}">
                 <!-- Over the table: the list every config routes by, picked here and applied at once, then how

@@ -41,7 +41,8 @@
           <TextBox Classes="field" Text="{Binding WebSocketPort}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="2"
-                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}">
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
           <TextBlock Classes="label" Text="{l:Tr Main_AuthLabel}" />
           <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch" SelectedIndex="{Binding AuthMode, Mode=TwoWay}">
             <ComboBoxItem Content="{l:Tr Main_AuthNone}" />
@@ -77,8 +78,7 @@
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
     <!-- The box stands beside its heading, where a switch stands in the rows around it. -->
-    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MaxWidth="520" MinHeight="40"
-          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MinHeight="40" HorizontalAlignment="Stretch">
       <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
         <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
         <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />

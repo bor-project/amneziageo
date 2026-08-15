@@ -46,7 +46,6 @@
         <StackPanel Grid.Column="0" Spacing="4">
           <TextBlock Text="{l:Tr Main_LogTypeLabel}" FontWeight="SemiBold" FontSize="15" />
           <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
-                    MaxWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW260}"
                     ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="4" Width="132" IsVisible="{Binding IsAgentLog}">

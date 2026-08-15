@@ -79,6 +79,7 @@
            the active config is replaced by picking another, never left unpicked. The link under the notice
            dials it, and is gone once a tunnel runs. -->
       <controls:ApplySwitchCard x:Name="ActiveConfigCard" Icon="{StaticResource AgLockGeometry}"
+                                Compact="{Binding IsCompact}"
                                 Title="{l:Tr Main_SetActiveTitle}"
                                 OnText="{l:Tr Main_SwitchOn}" OffText="{l:Tr Main_SwitchOff}"
                                 OnNotice="{l:Tr Main_IsActiveBadge}"

@@ -3,6 +3,7 @@
              xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
              xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             xmlns:svc="clr-namespace:AmneziaGeo.Ui.Services"
              x:Class="AmneziaGeo.Ui.Views.LogsView"
              x:CompileBindings="True"
              x:DataType="vm:LogsViewModel">
@@ -138,7 +139,7 @@
                           IsVisible="{Binding ShowStoredText}">
               <SelectableTextBlock Text="{Binding LogText}"
                                    FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                   FontSize="11.5" LineHeight="18"
+                                   FontSize="{svc:Unscaled 11.5}" LineHeight="{svc:Unscaled 18}"
                                    Foreground="{DynamicResource AgMutedBrush}"
                                    TextWrapping="Wrap" Margin="16,13" />
             </ScrollViewer>
@@ -169,22 +170,22 @@
                             BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
                       <StackPanel Spacing="5">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                          <TextBlock Text="{Binding Time}" FontSize="11"
+                          <TextBlock Text="{Binding Time}" FontSize="{svc:Unscaled 11}"
                                      FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
                                      Foreground="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
                           <Panel IsVisible="{Binding HasLevel}">
-                            <TextBlock Text="{Binding Level}" FontSize="11" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
                                        IsVisible="{Binding IsAlarm}"
                                        Foreground="{DynamicResource AgDownBrush}" />
-                            <TextBlock Text="{Binding Level}" FontSize="11" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
                                        IsVisible="{Binding IsWarning}"
                                        Foreground="{DynamicResource AgWarnBrush}" />
-                            <TextBlock Text="{Binding Level}" FontSize="11" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
                                        IsVisible="{Binding IsPlain}"
                                        Foreground="{DynamicResource AgMuted2Brush}" />
                           </Panel>
                         </StackPanel>
-                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12.5"
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
                                    Foreground="{DynamicResource AgFgBrush}" />
                       </StackPanel>
                     </Border>

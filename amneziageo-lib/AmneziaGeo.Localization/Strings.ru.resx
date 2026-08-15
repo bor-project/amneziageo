@@ -1434,7 +1434,7 @@
     <value>Запустить AmneziaGeo после установки</value>
   </data>
   <data name="InstallerUi_AutoConnect" xml:space="preserve">
-    <value>Выполнить подключение</value>
+    <value>Подключиться</value>
   </data>
   <data name="InstallerUi_DesktopShortcut" xml:space="preserve">
     <value>Ярлык на рабочем столе</value>
@@ -1863,13 +1863,13 @@
     <value>правила по доменам не работают: имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Эти сайты идут мимо туннеля или вовсе не открываются</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
-    <value>Использовать эту конфигурацию</value>
+    <value>Сделать активной</value>
   </data>
   <data name="Main_IsActiveBadge" xml:space="preserve">
-    <value>Активна сейчас</value>
+    <value>Активна</value>
   </data>
   <data name="Main_ConnectNowLink" xml:space="preserve">
-    <value>Выполнить подключение</value>
+    <value>Подключиться</value>
   </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Использовать этот список</value>
@@ -1881,7 +1881,7 @@
     <value>Эти правила пока не действуют.</value>
   </data>
   <data name="Main_ConfigIdleNotice" xml:space="preserve">
-    <value>Эта конфигурация пока не активна.</value>
+    <value>Пока не активна</value>
   </data>
   <data name="Main_SwitchOn" xml:space="preserve">
     <value>Вкл</value>

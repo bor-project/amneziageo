@@ -82,6 +82,7 @@
       <StackPanel x:Name="SettingsSection" IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
         <!-- On: every config routes by the open list. Off: none of them routes at all. -->
         <controls:ApplySwitchCard x:Name="UseListCard" Icon="{StaticResource AgRouteGeometry}"
+                                  Compact="{Binding IsCompact}"
                                   Title="{l:Tr Main_UseRoutingToggle}"
                                   OnText="{l:Tr Main_SwitchOn}" OffText="{l:Tr Main_SwitchOff}"
                                   OnNotice="{l:Tr Main_RoutingActiveNotice}"

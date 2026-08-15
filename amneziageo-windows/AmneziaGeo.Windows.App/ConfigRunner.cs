@@ -38,12 +38,16 @@ internal sealed class ConfigRunner(
     private string _config = string.Empty;
     private AppSettings _settings = new();
 
-    // Liveness tracking. rx progress proves the tunnel is carrying data even mid-rekey; a re-dial only fires
-    // after several consecutive dead polls so a single lost handshake on a lossy link can't tear down a live
-    // session. -1 forces the first poll after (re)connect to seed the baseline rather than count as progress.
+    // Liveness tracking. -1 forces the first poll after (re)connect to seed the baseline rather than count as
+    // progress.
     private long _lastRxBytes = -1;
-    private int _deadStreak;
-    private const int DeadStreakLimit = 3;
+    private long _lastTxBytes = -1;
+
+    // The ladder a link that has stopped carrying is repaired by. The rungs below the reconnect leave the
+    // session, its routes, its DNS and its firewall standing, so a NAT that dropped the mapping or a server that
+    // moved costs a second instead of a full bring-up.
+    private static readonly RecoveryStep[] _ladder = [RecoveryStep.Rebind, RecoveryStep.Resolve, RecoveryStep.Restart];
+    private LinkRecovery _recovery = new(_ladder);
 
     // Launches that failed in a row. A busy machine misses the window once or twice; one that keeps missing it
     // has something wrong with the tunnel process itself, and the user hears that instead of dialling forever.
@@ -187,7 +191,8 @@ internal sealed class ConfigRunner(
         await SetStateAsync("connected");
 
         _lastRxBytes = -1;
-        _deadStreak = 0;
+        _lastTxBytes = -1;
+        _recovery = new LinkRecovery(_ladder, _settings.DeadThresholdSeconds);
         await StartLossProbeAsync(config, ct);
 
         try
@@ -200,41 +205,45 @@ internal sealed class ConfigRunner(
                     break;
                 }
 
-                if (!IsAlive(config))
+                if (Sample(config) is not { } repair)
                 {
-                    if (++_deadStreak < DeadStreakLimit)
-                    {
-                        logger.LogDebug("{Config}: nothing received from the server since the last check ({Streak} of {Limit} before reconnecting)", config, _deadStreak, DeadStreakLimit);
-                        continue;
-                    }
-
-                    logger.LogWarning("{Config}: nothing received from the server for {Streak} checks in a row, the tunnel is treated as dead; reconnecting now", config, _deadStreak);
-                    _deadStreak = 0;
-                    _lastRxBytes = -1;
-                    await SetStateAsync("connecting");
-                    Stop(config);
-
-                    // A live config rename may have moved the config; re-resolve and re-project before re-dialing.
-                    var current = await ReresolveConfigAsync(config, ct);
-                    if (!string.Equals(current, config, StringComparison.Ordinal))
-                    {
-                        logger.LogInformation("configuration {Old} was renamed to {New} while connected; reconnecting under the new name", config, current);
-                        await ProjectRoutingAsync(current, ct);
-                        config = current;
-                    }
-
-                    if (!await ConnectWithRetryAsync(config, ct))
-                    {
-                        return;
-                    }
-
-                    await SetStateAsync("connected");
-                    _lastRxBytes = -1;
+                    continue;
                 }
-                else
+
+                if (repair != RecoveryStep.Restart)
                 {
-                    _deadStreak = 0;
+                    await RepairAsync(config, repair, ct);
+                    continue;
                 }
+
+                logger.LogWarning("{Config}: {Reason}, and the repairs that keep the session standing did not bring it back; reconnecting now (attempt {Attempt})",
+                    config, _recovery.Reason, _recovery.Attempt);
+                _lastRxBytes = -1;
+                _lastTxBytes = -1;
+                await SetStateAsync("connecting");
+                Stop(config);
+
+                // A live config rename may have moved the config; re-resolve and re-project before re-dialing.
+                var current = await ReresolveConfigAsync(config, ct);
+                if (!string.Equals(current, config, StringComparison.Ordinal))
+                {
+                    logger.LogInformation("configuration {Old} was renamed to {New} while connected; reconnecting under the new name", config, current);
+                    await ProjectRoutingAsync(current, ct);
+                    config = current;
+                }
+
+                if (!await ConnectWithRetryAsync(config, ct))
+                {
+                    return;
+                }
+
+                await SetStateAsync("connected");
+                _lastRxBytes = -1;
+                _lastTxBytes = -1;
+
+                // The session that follows is a new one: it is judged from the bottom of the ladder again.
+                _recovery.Reset();
+                _loss?.Reset();
             }
         }
         finally
@@ -644,12 +653,14 @@ internal sealed class ConfigRunner(
         _ => $"code {code}",
     };
 
-    private bool IsAlive(string member)
+    // Reads the peer counters into the ladder and returns the repair it asks for. The same reading feeds the
+    // screen: the connect control is coloured from the handshake age and the rates.
+    private RecoveryStep? Sample(string member)
     {
         if (uapi.TryGetPeerStatus(member) is not { } status)
         {
-            // UAPI momentarily unreadable - inconclusive, not a reason to tear down a live session.
-            return true;
+            // UAPI momentarily unreadable - inconclusive, not a reason to touch a live session.
+            return null;
         }
 
         // Hand the keepalive view to the snapshot: the UI colours the connect control from it. Only a moved
@@ -669,21 +680,95 @@ internal sealed class ConfigRunner(
             control.SignalStatus();
         }
 
-        // Data still arriving is definitive liveness, even while a rekey handshake is in flight on a lossy link.
-        if (status.RxBytes > _lastRxBytes)
-        {
-            _lastRxBytes = status.RxBytes;
-            return true;
-        }
+        var moved = new LinkSample(
+            status.TxBytes > _lastTxBytes,
+            status.RxBytes > _lastRxBytes,
+            reading.LossPercent,
+            reading.HandshakesPerMinute,
+            status.HandshakeSec > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec) : 0);
+        _lastRxBytes = status.RxBytes;
+        _lastTxBytes = status.TxBytes;
 
         // No handshake recorded yet (e.g. right after a re-dial) - give it time rather than declaring dead.
         if (status.HandshakeSec <= 0)
         {
-            return true;
+            return null;
         }
 
-        var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - status.HandshakeSec;
-        return age < _settings.DeadThresholdSeconds;
+        return _recovery.Sample(moved, Environment.TickCount64);
+    }
+
+    // Repairs the link without taking the session down: another source port for a NAT that has dropped the
+    // mapping, the endpoint resolved again for a server that has moved. A carried tunnel dials its carrier on
+    // loopback, and the address in its config belongs to the carrier - re-pointing the peer at it would take the
+    // tunnel off the carrier, so that one is left to the carrier's own watchdog.
+    private async Task<bool> RepairAsync(string config, RecoveryStep step, CancellationToken ct)
+    {
+        if (step == RecoveryStep.Rebind)
+        {
+            var rebound = uapi.Rebind(config);
+            logger.LogWarning("{Config}: {Reason}; binding the tunnel to another source port (attempt {Attempt}){Outcome}",
+                config, _recovery.Reason, _recovery.Attempt, rebound ? string.Empty : " - the tunnel would not take it");
+            return rebound;
+        }
+
+        var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
+        var declared = WgConfigEditor.GetEndpoint(text);
+        var key = WgConfigEditor.GetPeerPublicKey(text);
+        if (string.IsNullOrEmpty(declared) || string.IsNullOrEmpty(key) || Carried(config))
+        {
+            return false;
+        }
+
+        var resolved = await ResolveEndpointAsync(declared, ct);
+        if (resolved is null)
+        {
+            logger.LogWarning("{Config}: {Reason}, and the server's address {Endpoint} does not resolve; the name itself is unreachable from here",
+                config, _recovery.Reason, declared);
+            return false;
+        }
+
+        var pointed = uapi.SetEndpoint(config, key, resolved);
+        logger.LogWarning("{Config}: {Reason}; the server's address was resolved again to {Endpoint} and handed to the tunnel (attempt {Attempt}){Outcome}",
+            config, _recovery.Reason, resolved, _recovery.Attempt, pointed ? string.Empty : " - the tunnel would not take it");
+        return pointed;
+    }
+
+    private bool Carried(string config)
+    {
+        return uapi.TryGetEndpoint(config) is { } running
+            && IPAddress.TryParse(Host(running), out var address)
+            && IPAddress.IsLoopback(address);
+    }
+
+    // Resolves the endpoint a config declares. A host that is already an address resolves to itself, which costs
+    // one rung and nothing else.
+    private static async Task<string?> ResolveEndpointAsync(string endpoint, CancellationToken ct)
+    {
+        var colon = endpoint.LastIndexOf(':');
+        if (colon <= 0)
+        {
+            return null;
+        }
+
+        var host = endpoint[..colon].Trim('[', ']');
+        var port = endpoint[colon..];
+        try
+        {
+            var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, ct).ConfigureAwait(false);
+            return addresses.Length == 0 ? null : addresses[0] + port;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    // The host half of a "host:port", brackets and all; an address that carries none is returned whole.
+    private static string Host(string endpoint)
+    {
+        var colon = endpoint.LastIndexOf(':');
+        return colon <= 0 ? endpoint : endpoint[..colon];
     }
 
     // Gas any other per-tunnel service before raising this target, so two adapters never fight over routes (#168).

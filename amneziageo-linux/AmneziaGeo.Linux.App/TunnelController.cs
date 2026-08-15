@@ -36,6 +36,7 @@ internal sealed class TunnelController : IDisposable
     private RoutingCache? _cache;
     private CancellationTokenSource? _sessionCts;
     private string? _pinnedEndpoint;
+    private string _sessionConfig = string.Empty;
     private bool _split;
     private bool _resolverApplied;
     private bool _disposed;
@@ -161,6 +162,7 @@ internal sealed class TunnelController : IDisposable
         }
 
         Advertised = allowedIps;
+        _sessionConfig = configText;
         Mode = split ? $"split ({routing.ListName})" : routing.HasRules ? $"full ({routing.ListName})" : "full";
         _split = split;
         var applier = new LinuxRouteApplier(_iface, PeerKeyHex(config), daemon, hop.Via, hop.Dev, allowedIps, endpointIp, _log);
@@ -180,6 +182,62 @@ internal sealed class TunnelController : IDisposable
     /// Sets how long a destination keeps its route on the running connection.
     /// </summary>
     public void SetRouteTtl(int seconds) => _cache?.SetTtl(seconds);
+
+    /// <summary>
+    /// Binds the tunnel socket to another source port, leaving the session, its routes and its DNS standing. A
+    /// NAT that has dropped the mapping keeps discarding what the old port sends.
+    /// </summary>
+    public async Task<bool> RebindAsync(CancellationToken ct)
+    {
+        if (_daemon is not { Running: true } daemon)
+        {
+            return false;
+        }
+
+        try
+        {
+            await daemon.ConfigureAsync("listen_port=0", ct).ConfigureAwait(false);
+            _log.Info("tunnel", $"{_iface} is bound to another source port");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("tunnel", $"binding {_iface} to another source port failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the server's address again and hands it to the peer, for a server that has moved. A carried
+    /// tunnel dials its carrier on loopback and is left to the carrier.
+    /// </summary>
+    public async Task<bool> RepointAsync(CancellationToken ct)
+    {
+        if (_daemon is not { Running: true } daemon || _carrier is not null || _sessionConfig.Length == 0)
+        {
+            return false;
+        }
+
+        var (resolved, endpointIp) = await ResolveEndpointAsync(_sessionConfig, ct).ConfigureAwait(false);
+        var endpoint = WgConfigEditor.GetEndpoint(resolved);
+        var peer = PeerKeyHex(resolved);
+        if (endpointIp is null || string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(peer))
+        {
+            return false;
+        }
+
+        try
+        {
+            await daemon.ConfigureAsync($"public_key={peer}\nendpoint={endpoint}", ct).ConfigureAwait(false);
+            _log.Info("tunnel", $"{_iface} now dials {endpoint}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("tunnel", $"pointing {_iface} at {endpoint} failed: {ex.Message}");
+            return false;
+        }
+    }
 
     /// <summary>
     /// Applies edited rules to the running tunnel and drops every verdict taken under the old ones; false when

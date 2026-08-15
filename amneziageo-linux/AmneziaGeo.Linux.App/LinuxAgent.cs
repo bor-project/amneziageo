@@ -63,6 +63,14 @@ internal sealed class LinuxAgent : IDisposable
     // packet that never arrived.
     private LinkLossProbe? _loss;
     private CancellationTokenSource? _lossRun;
+
+    // The ladder a link that has stopped carrying is repaired by. The rungs below the reconnect leave the
+    // session, its routes and its resolver standing.
+    private static readonly RecoveryStep[] _ladder = [RecoveryStep.Rebind, RecoveryStep.Resolve, RecoveryStep.Restart];
+    private readonly LinkRecovery _recovery = new(_ladder);
+    private long _lastRxBytes = -1;
+    private long _lastTxBytes = -1;
+    private bool _gaveUpLogged;
     private DateTimeOffset _linkLoggedAt;
     private bool _churnLogged;
     private DateTime _nextRetryUtc = DateTime.MinValue;
@@ -329,11 +337,15 @@ internal sealed class LinuxAgent : IDisposable
                 : -1;
             reading = _meter.Sample(peer.RxBytes, peer.TxBytes, peer.HandshakeUnix, _loss?.Percent ?? LinkHealth.LossUnknown, _loss?.RttMs ?? -1);
             LogLink(reading);
+            await RepairAsync(peer, reading, ct).ConfigureAwait(false);
         }
         else
         {
             _meter.Reset();
             _loss?.Reset();
+            _recovery.Reset();
+            _lastRxBytes = -1;
+            _lastTxBytes = -1;
             _churnLogged = false;
         }
 
@@ -372,6 +384,54 @@ internal sealed class LinuxAgent : IDisposable
         {
             _log.Warn("agent", $"reconnect failed: {ack.Message}");
         }
+    }
+
+    // Repairs a tunnel that is up and no longer carrying. The counters alone never say it: a session that keeps
+    // being re-established holds a young handshake while nothing crosses it.
+    private async Task RepairAsync(PeerCounters peer, LinkReading reading, CancellationToken ct)
+    {
+        var moved = new LinkSample(
+            peer.TxBytes > _lastTxBytes,
+            peer.RxBytes > _lastRxBytes,
+            reading.LossPercent,
+            reading.HandshakesPerMinute,
+            peer.HandshakeUnix > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - peer.HandshakeUnix) : 0);
+        _lastRxBytes = peer.RxBytes;
+        _lastTxBytes = peer.TxBytes;
+
+        // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
+        if (peer.HandshakeUnix <= 0 || _recovery.Sample(moved, Environment.TickCount64) is not { } step)
+        {
+            if (_recovery.GivenUp && !_gaveUpLogged)
+            {
+                _gaveUpLogged = true;
+                _log.Warn("agent", $"{_recovery.Reason}, and {_recovery.Attempt} repairs did not bring it back; "
+                    + "nothing further is tried until you connect again");
+            }
+
+            return;
+        }
+
+        if (step != RecoveryStep.Restart)
+        {
+            _log.Warn("agent", $"{_recovery.Reason}; repairing the link without taking the tunnel down (attempt {_recovery.Attempt})");
+            _ = step == RecoveryStep.Rebind
+                ? await _tunnel.RebindAsync(ct).ConfigureAwait(false)
+                : await _tunnel.RepointAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
+        _log.Warn("agent", $"{_recovery.Reason}, and the repairs that keep the tunnel standing did not bring it back; "
+            + $"raising the session again (attempt {_recovery.Attempt})");
+        var ack = await DispatchAsync(new IpcCommand(IpcContract.OpSetConnection, ["connect"]), ct).ConfigureAwait(false);
+        if (!ack.Ok)
+        {
+            _log.Warn("agent", $"raising the session again failed: {ack.Message}");
+            return;
+        }
+
+        _lastRxBytes = -1;
+        _lastTxBytes = -1;
     }
 
     // Writes the link to the journal: a line a minute while it runs, and a warning when it starts or stops
@@ -645,6 +705,7 @@ internal sealed class LinuxAgent : IDisposable
         _desiredConnected = true;
         _connectFailed = false;
         _restartRequired = false;
+        _gaveUpLogged = false;
         _connectFailReason = string.Empty;
         _connectFailDetail = string.Empty;
         _boundTarget = _selectedTarget;

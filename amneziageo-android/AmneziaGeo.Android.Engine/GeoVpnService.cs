@@ -122,6 +122,12 @@ public sealed class GeoVpnService : VpnService
     private ConnectivityManager.NetworkCallback? _underlay;
     private List<string> _carved = [];
     private int _reraising;
+
+    // The ladder a link that has stopped carrying is repaired by. This platform hands the engine a tun and a
+    // config and takes nothing back: neither the socket nor the endpoint of a running session can be moved from
+    // here, so the one repair left is raising the session again - and the ladder is what keeps that from becoming
+    // a loop, spacing the attempts and standing down when they stop helping.
+    private readonly LinkRecovery _recovery = new([RecoveryStep.Restart]);
     private VpnStage _stage = VpnStage.Disconnected;
     private string? _detail;
     private string? _reason;
@@ -181,6 +187,9 @@ public sealed class GeoVpnService : VpnService
         }
 
         Publish(VpnStage.Connecting, request.Name);
+
+        // A connect the user asked for is a fresh start, whatever the previous session was being repaired for.
+        _recovery.Reset();
         var plan = VpnBridge.ReadPlan();
         Task.Run(() => BringUpAsync(plan, request.Config, request.Name, request.AppMode, request.AppList,
             request.Mtu, request.Ipv6, request.WsHost, request.WsPort));
@@ -273,26 +282,48 @@ public sealed class GeoVpnService : VpnService
             return;
         }
 
+        // The network under the tunnel is another one now, so a link that was being repaired is worth one
+        // attempt straight away rather than at the end of a wait the old network earned.
+        if (_recovery.Repairing)
+        {
+            _recovery.Reset();
+            Reraise("the network under the tunnel changed while the link was being repaired; raising the session again");
+            return;
+        }
+
+        _recovery.Reset();
         var swallowed = new List<string>(LocalSubnets()).FindAll(subnet => !_carved.Contains(subnet));
         if (swallowed.Count == 0)
         {
             return;
         }
 
+        Reraise($"the device now sits on {string.Join(", ", swallowed)}, which this tunnel carries; raising the "
+            + "session again so the network around the device stays reachable");
+    }
+
+    // Raises the running session again, one at a time. What asks for it differs - the device changed networks, or
+    // the link stopped carrying - and what it takes does not.
+    private bool Reraise(string why)
+    {
+        if (_stage != VpnStage.Connected || _handle < 0)
+        {
+            return false;
+        }
+
         if (Interlocked.Exchange(ref _reraising, 1) == 1)
         {
-            return;
+            return false;
         }
 
         var request = VpnBridge.ReadRequest();
         if (request is null)
         {
             Interlocked.Exchange(ref _reraising, 0);
-            return;
+            return false;
         }
 
-        Report($"the device now sits on {string.Join(", ", swallowed)}, which this tunnel carries; raising the "
-            + "session again so the network around the device stays reachable");
+        Report(why);
         Publish(VpnStage.Connecting, request.Name);
         var plan = VpnBridge.ReadPlan();
         _ = Task.Run(async () =>
@@ -307,6 +338,8 @@ public sealed class GeoVpnService : VpnService
                 Interlocked.Exchange(ref _reraising, 0);
             }
         });
+
+        return true;
     }
 
     /// <summary>
@@ -811,6 +844,9 @@ public sealed class GeoVpnService : VpnService
         var meter = new LinkMeter();
         var reported = LinkReading.Empty;
         var handshake = 0L;
+        var lastRx = -1L;
+        var lastTx = -1L;
+        var gaveUp = false;
         while (!ct.IsCancellationRequested)
         {
             try
@@ -832,6 +868,26 @@ public sealed class GeoVpnService : VpnService
             var seen = PeerHandshake(uapi);
             var (rx, tx) = PeerBytes(uapi);
             var reading = meter.Sample(rx, tx, seen, loss.Percent, loss.RttMs);
+            var moved = new LinkSample(tx > lastTx, rx > lastRx, loss.Percent, reading.HandshakesPerMinute,
+                seen > 0 ? (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - seen) : 0);
+            lastRx = rx;
+            lastTx = tx;
+
+            // A session that has not been answered yet is still coming up, and the ladder judges nothing until it is.
+            if (seen > 0
+                && _recovery.Sample(moved, System.Environment.TickCount64) is not null
+                && Reraise($"{_recovery.Reason}; raising the session again (attempt {_recovery.Attempt})"))
+            {
+                return;
+            }
+
+            if (_recovery.GivenUp && !gaveUp)
+            {
+                gaveUp = true;
+                Report($"{_recovery.Reason}, and {_recovery.Attempt} attempts to raise the session again did not "
+                    + "bring it back; nothing further is tried until the network changes or you connect again");
+            }
+
             if (seen == handshake && !reading.DiffersFrom(reported))
             {
                 continue;

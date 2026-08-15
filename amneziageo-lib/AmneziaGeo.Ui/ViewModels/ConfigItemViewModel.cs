@@ -88,6 +88,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
     private bool _isSelected;
 
+    // Whether the settings catalogue stands this configuration's properties beside the list.
+    [ObservableProperty]
+    private bool _isOpened;
+
     // Whether the swipe uncovered the row's edit and delete buttons.
     [ObservableProperty]
     private bool _swipeOpen;

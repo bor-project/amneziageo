@@ -13,7 +13,6 @@
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
     <StreamGeometry x:Key="AgDownloadGeometry">M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z</StreamGeometry>
     <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
-    <StreamGeometry x:Key="AgRouteGeometry">M21.71,11.29L12.71,2.29C12.32,1.9 11.69,1.9 11.3,2.29L2.3,11.29C1.91,11.68 1.91,12.31 2.3,12.7L11.3,21.7C11.69,22.09 12.32,22.09 12.71,21.7L21.71,12.7C22.1,12.32 22.1,11.68 21.71,11.29M14,14.5V12H10V15H8V11A1,1 0 0,1 9,10H14V7.5L17.5,11L14,14.5Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Cards stretch the full pane width. -->
   <Grid RowDefinitions="Auto,*">
@@ -36,12 +35,12 @@
             </controls:AdaptiveComboBox.ItemTemplate>
           </controls:AdaptiveComboBox>
           <ToggleSwitch Grid.Column="1" MinWidth="0" VerticalAlignment="Center"
-                        IsVisible="{Binding ShowCompactActive}"
+                        IsVisible="{Binding ShowHeaderActive}"
                         IsChecked="{Binding UseOpenList, Mode=TwoWay}" />
         </Grid>
 
         <!-- Действуют ли правила - одной строкой под выбором. -->
-        <WrapPanel IsVisible="{Binding ShowCompactActive}">
+        <WrapPanel IsVisible="{Binding ShowHeaderActive}">
           <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
                    Fill="{DynamicResource AgUpBrush}" IsVisible="{Binding UseOpenList}" />
           <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
@@ -98,16 +97,6 @@
 
       <!-- Settings section: the picked-list switch + the shared editor + delete card. -->
       <StackPanel x:Name="SettingsSection" IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
-        <!-- On: every config routes by the open list. Off: none of them routes at all. A narrow screen carries
-             all of it in the header instead. -->
-        <controls:ApplySwitchCard x:Name="UseListCard" Icon="{StaticResource AgRouteGeometry}"
-                                  IsVisible="{Binding !IsCompact}"
-                                  Title="{l:Tr Main_UseRoutingToggle}"
-                                  OnText="{l:Tr Main_SwitchOn}" OffText="{l:Tr Main_SwitchOff}"
-                                  OnNotice="{l:Tr Main_RoutingActiveNotice}"
-                                  OffNotice="{l:Tr Main_RoutingIdleNotice}"
-                                  IsChecked="{Binding UseOpenList, Mode=TwoWay}" />
-
         <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
         <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
@@ -119,16 +108,15 @@
              the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
         <Border Classes="sect" Classes.compact="{Binding IsCompact}" IsVisible="{Binding ShowDeleteCard}">
           <StackPanel Spacing="10">
+            <!-- The trigger stands under the description. -->
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-              <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
-                          Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+              <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="4" VerticalAlignment="Center">
                 <TextBlock Text="{l:Tr Main_DeleteListTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding DeleteListPrompt}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
               </StackPanel>
-              <Grid VerticalAlignment="Center"
-                    Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                    Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+              <Grid Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
                     Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
                     ColumnDefinitions="*,*" ColumnSpacing="8">
                 <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
                         Content="{l:Tr Main_DeleteListButton}"

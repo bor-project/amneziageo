@@ -32,7 +32,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowCompactActive))]
     private bool _isCompact;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
@@ -164,10 +163,10 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     public bool IsSectionExport => !IsCreatingSectionRouting && RoutingEditor is not null && ManageSection == RoutingSection.Export;
 
     /// <summary>
-    /// Стоит ли тумблер применения в шапке: на узком экране карточка под выбором стоила пол-экрана, и её
-    /// содержимое ужато в строку у самого выбора.
+    /// Стоит ли тумблер применения в шапке: отдельная карточка под выбором стоила пол-экрана, и её содержимое
+    /// ужато в строку у самого выбора.
     /// </summary>
-    public bool ShowCompactActive => IsCompact && IsSectionSettings;
+    public bool ShowHeaderActive => IsSectionSettings;
 
     /// <summary>
     /// Стоит ли на экране выбор списка с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт занимают
@@ -287,7 +286,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportManual));
         OnPropertyChanged(nameof(IsImportCamera));
         OnPropertyChanged(nameof(ShowHeaderActions));
-        OnPropertyChanged(nameof(ShowCompactActive));
+        OnPropertyChanged(nameof(ShowHeaderActive));
         OnPropertyChanged(nameof(CanExportOpenList));
         RefreshEditBar();
     }

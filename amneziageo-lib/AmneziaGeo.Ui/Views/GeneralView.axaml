@@ -22,13 +22,11 @@
     <StackPanel IsVisible="{Binding IsGeneralMain}" Spacing="14">
       <TextBlock Classes="section" Text="{l:Tr General_Section}" />
 
-      <!-- Appearance + About: two columns when wide, stacked when narrow; side by side they share the row
-           height so both cards render equal-height (Stretch). Reflowed in ReflowTopCards. -->
-      <Grid x:Name="TopCards" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
+      <!-- Appearance + About: one card under the other at every width. -->
+      <StackPanel Spacing="14">
 
         <!-- Appearance card: theme + language (live switch). -->
-        <Border x:Name="AppearanceCard" Grid.Row="0" Grid.Column="0"
-                Classes="sect" Classes.compact="{Binding IsCompact}">
+        <Border Classes="sect" Classes.compact="{Binding IsCompact}">
           <StackPanel Spacing="12">
             <TextBlock Text="{l:Tr Main_AppearanceTitle}" FontWeight="SemiBold" FontSize="15" />
 
@@ -46,43 +44,30 @@
         </Border>
 
         <!-- About card: versions + app self-update. -->
-        <Border x:Name="AboutCard"
-                Classes="sect" Classes.compact="{Binding IsCompact}">
+        <Border Classes="sect" Classes.compact="{Binding IsCompact}">
           <StackPanel Spacing="12">
             <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
             <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
             <TextBlock Text="{l:Tr About_Section}" FontWeight="SemiBold" FontSize="15" />
 
-            <!-- Compact drops each value under its label (left-aligned); wide keeps label-left / value-right. -->
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr About_Version}" FontSize="13.5" VerticalAlignment="Center"
-                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+            <!-- Each value stands under its label, left-aligned. -->
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:Tr About_Version}" FontSize="13.5" />
               <TextBlock Text="{Binding AppVersion}" Classes="muted mono" FontSize="12.5"
-                         Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                         Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}"
-                         VerticalAlignment="Center" TextWrapping="Wrap" />
-            </Grid>
+                         HorizontalAlignment="Left" TextWrapping="Wrap" />
+            </StackPanel>
 
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" VerticalAlignment="Center"
-                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+            <StackPanel Spacing="2">
+              <TextBlock Text="{l:Tr Main_AmneziaEngineVersion}" FontSize="13.5" />
               <TextBlock Text="{Binding AmneziaVersion}" Classes="muted mono" FontSize="12.5"
-                         Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                         Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}"
-                         VerticalAlignment="Center" TextWrapping="Wrap" />
-            </Grid>
+                         HorizontalAlignment="Left" TextWrapping="Wrap" />
+            </StackPanel>
 
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2" IsVisible="{Binding HasBuildType}">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="{l:Tr About_BuildType}" FontSize="13.5" VerticalAlignment="Center"
-                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+            <StackPanel Spacing="2" IsVisible="{Binding HasBuildType}">
+              <TextBlock Text="{l:Tr About_BuildType}" FontSize="13.5" />
               <TextBlock Text="{Binding BuildType}" Classes="muted mono" FontSize="12.5"
-                         Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                         Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                         HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}"
-                         VerticalAlignment="Center" TextWrapping="Wrap" />
-            </Grid>
+                         HorizontalAlignment="Left" TextWrapping="Wrap" />
+            </StackPanel>
 
             <!-- Update sub-block: found -> downloading -> downloaded; installing is an explicit second click (#154). -->
             <StackPanel Spacing="9" IsVisible="{Binding HasUpdateUrl}">
@@ -94,18 +79,16 @@
                                          IsChecked="{Binding AllowPrerelease, Mode=TwoWay}" />
               <TextBlock Text="{Binding UpdateVersionBadgeText}" FontSize="13" FontWeight="SemiBold"
                          IsVisible="{Binding UpdateAvailable}" />
-              <!-- Compact drops the buttons under the status line, across the row. -->
+              <!-- The buttons stand under the status line. -->
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2"
-                            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+                <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" VerticalAlignment="Center" Spacing="2">
                   <TextBlock Text="{Binding UpdateStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                              IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   <TextBlock Text="{Binding UpdateDescription}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                              IsVisible="{Binding UpdateAvailable}" />
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                            Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}">
+                <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                            VerticalAlignment="Center">
                   <Button Classes="softbtn" Content="{l:Tr Main_CheckUpdatesButton}" Command="{Binding CheckUpdateCommand}"
                           IsVisible="{Binding ShowCheckUpdateButton}" />
                   <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" IsVisible="{Binding UpdateAvailable}">
@@ -124,7 +107,7 @@
             </StackPanel>
           </StackPanel>
         </Border>
-      </Grid>
+      </StackPanel>
 
       <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
@@ -165,23 +148,18 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" VerticalAlignment="Center"
-                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
-              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxySocksPort, Mode=TwoWay}"
-                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-            </Grid>
+            <!-- Each port box stands under its label, left-aligned. -->
+            <StackPanel Spacing="6">
+              <TextBlock Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" />
+              <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
+                       Text="{Binding ProxySocksPort, Mode=TwoWay}" />
+            </StackPanel>
 
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
-              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" VerticalAlignment="Center"
-                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
-              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxyHttpPort, Mode=TwoWay}"
-                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
-            </Grid>
+            <StackPanel Spacing="6">
+              <TextBlock Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" />
+              <TextBox Classes="field" Width="110" HorizontalAlignment="Left"
+                       Text="{Binding ProxyHttpPort, Mode=TwoWay}" />
+            </StackPanel>
 
             <!-- Clients: the count first, and who holds them under the arrow. -->
             <StackPanel Spacing="6">
@@ -318,18 +296,16 @@
            again after a failed connect or a removal stranded the resolver. Windows only. -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}"
               IsVisible="{Binding CanRepairNetwork}">
+        <!-- The button stands under the hint. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
-          <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"
-                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+          <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="6" VerticalAlignment="Center">
             <TextBlock Text="{l:Tr General_NetworkRepairSection}" FontWeight="SemiBold" FontSize="15" />
             <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{l:Tr General_NetworkRepairHint}" />
             <TextBlock Text="{Binding NetworkRepairStatus}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                        IsVisible="{Binding NetworkRepairStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           </StackPanel>
-          <StackPanel VerticalAlignment="Center"
-                      Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                      Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
+          <StackPanel Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
+                      HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
             <Button Classes="softbtn" Padding="16,7" HorizontalAlignment="Stretch"
                     Command="{Binding RepairNetworkCommand}" Content="{l:Tr General_NetworkRepairButton}" />
           </StackPanel>
@@ -340,18 +316,15 @@
 
       <!-- Import / export card (full width): hint left, actions right. Opens the bundle sub-views inline. -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}">
-        <!-- Compact drops the export / import buttons under the hint. -->
+        <!-- The export / import buttons stand under the hint. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
-          <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center"
-                      Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+          <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="6" VerticalAlignment="Center">
             <TextBlock Text="{l:Tr Main_ImportExportSection}" FontWeight="SemiBold" FontSize="15" />
             <TextBlock Classes="muted" FontSize="12.5" TextWrapping="Wrap" Text="{l:Tr Main_BundleHint}" />
           </StackPanel>
-          <!-- Compact splits export / import evenly across the row; wide keeps them natural-width on the right. -->
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="8" VerticalAlignment="Center"
-                Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-                HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchR}">
+          <!-- Compact splits export / import evenly across the row; wide keeps them at their own width. -->
+          <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,*" ColumnSpacing="8" VerticalAlignment="Center"
+                HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
             <Button Grid.Column="0" Classes="softbtn" Padding="16,7" HorizontalAlignment="Stretch"
                     Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}"
                     Command="{Binding OpenBundleExportCommand}">

@@ -39,37 +39,14 @@
   <!-- Source and what it records over one viewer; only the log body scrolls. -->
   <Grid RowDefinitions="Auto,*" RowSpacing="14">
 
-    <!-- Wide header: the source and what it records, captions ahead of the pickers. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="14" IsVisible="{Binding !IsCompact}">
-      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-        <TextBlock Text="{l:Tr Main_LogTypeLabel}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-        <controls:AdaptiveComboBox Classes="field" Width="140"
-                  ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
-      </StackPanel>
-      <!-- ageo records up to a level; routes is on or off; the live source is read from the tunnel, not recorded. -->
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                  IsVisible="{Binding IsAgentLog}">
-        <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-        <controls:AdaptiveComboBox Classes="field" Width="120"
-                  ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
-      </StackPanel>
-      <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                  IsVisible="{Binding IsRouteLog}">
-        <StackPanel.Resources>
-          <GridLength x:Key="ToggleSwitchPreContentMargin">0</GridLength>
-          <GridLength x:Key="ToggleSwitchPostContentMargin">0</GridLength>
-        </StackPanel.Resources>
-        <TextBlock Text="{l:Tr Main_RouteLogTitle}" Classes="muted" FontSize="11.5" VerticalAlignment="Center" />
-        <ToggleSwitch IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" VerticalAlignment="Center" />
-      </StackPanel>
-    </Grid>
-
-    <!-- Narrow header: source and level share a row, the routing switch takes the next one. -->
-    <StackPanel Grid.Row="0" Spacing="10" IsVisible="{Binding IsCompact}">
+    <!-- Header: source and level share a row under their headings, the routing switch takes the next one.
+         ageo records up to a level; routes is on or off; the live source is read from the tunnel, not recorded. -->
+    <StackPanel Grid.Row="0" Spacing="10">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
         <StackPanel Grid.Column="0" Spacing="4">
           <TextBlock Text="{l:Tr Main_LogTypeLabel}" FontWeight="SemiBold" FontSize="15" />
           <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                    MaxWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=maxW260}"
                     ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="4" Width="132" IsVisible="{Binding IsAgentLog}">
@@ -82,7 +59,7 @@
           Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
           IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
       <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" />
+      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
     </StackPanel>
 
     <!-- Viewer: full-width card. Body fills the rest under the control bar. -->

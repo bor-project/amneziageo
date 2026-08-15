@@ -17,17 +17,39 @@
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Last row stars to fill the pane with the import config-text box. Cards stretch the full pane width. -->
-  <Grid RowDefinitions="Auto,*">
+  <Grid RowDefinitions="Auto,*" ColumnDefinitions="Auto,*">
+
+    <!-- Широкое окно: каталог стоит карточками слева, свойства открытой конфигурации - справа от них.
+         Карточка ведёт себя как на главной: выбирает конфигурацию, подключает её и переставляется драгом. -->
+    <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Width="240" Margin="0,12,16,0"
+                IsVisible="{Binding ShowConfigCards}">
+      <ItemsControl ItemsSource="{Binding Configs}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ConfigItemViewModel">
+            <controls:ServerCard Margin="0,0,0,8" HasMenu="False" Marked="{Binding IsOpened}"
+                    IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
+                    SelectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
+                    ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
+                    DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
 
     <!-- Шапка: выбор конфигурации и два равных действия под ним. Способы «Добавить» и «Экспорт» выпадают
          списком у кнопки, а на телефоне приходят шторкой снизу. -->
-    <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
+    <StackPanel x:Name="HeaderActions" Grid.Row="0" Grid.Column="1" Margin="0,12,0,0" Spacing="8"
                 IsVisible="{Binding ShowHeaderActions}">
       <StackPanel Spacing="4">
-        <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+        <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"
+                   IsVisible="{Binding ShowConfigPicker}" />
         <!-- Тумблер активности стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <!-- Выбор ушёл в карточки: на его место к тумблеру встаёт подпись. -->
+          <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15"
+                     VerticalAlignment="Center" IsVisible="{Binding ShowConfigCards}" />
           <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
+                    IsVisible="{Binding ShowConfigPicker}"
                     ItemsSource="{Binding ConfigCatalogueOptions}"
                     SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
             <controls:AdaptiveComboBox.ItemTemplate>
@@ -37,12 +59,12 @@
             </controls:AdaptiveComboBox.ItemTemplate>
           </controls:AdaptiveComboBox>
           <ToggleSwitch Grid.Column="1" MinWidth="0" VerticalAlignment="Center"
-                        IsVisible="{Binding ShowCompactActive}"
+                        IsVisible="{Binding ShowHeaderActive}"
                         IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
         </Grid>
 
         <!-- Действует ли конфигурация - одной строкой под выбором, вместе со ссылкой на подключение. -->
-        <WrapPanel IsVisible="{Binding ShowCompactActive}">
+        <WrapPanel IsVisible="{Binding ShowHeaderActive}">
           <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
                    Fill="{DynamicResource AgUpBrush}" IsVisible="{Binding UseOpenConfig}" />
           <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
@@ -89,29 +111,15 @@
     </StackPanel>
 
     <!-- Catalogue loader: the agent has not reported its configs yet (#137). -->
-    <StackPanel Grid.Row="1" Margin="0,14,0,0" IsVisible="{Binding ShowCatalogueLoader}"
+    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,14,0,0" IsVisible="{Binding ShowCatalogueLoader}"
                 HorizontalAlignment="Center" Spacing="12">
       <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
       <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
     </StackPanel>
 
     <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
-    <StackPanel x:Name="SettingsSection" Grid.Row="1" Margin="0,14,0,0"
+    <StackPanel x:Name="SettingsSection" Grid.Row="1" Grid.Column="1" Margin="0,14,0,0"
                 IsVisible="{Binding IsSectionConfig}" Spacing="14">
-      <!-- Active card: makes this config the one the next connect binds to. The switch only turns on -
-           the active config is replaced by picking another, never left unpicked. The link under the notice
-           dials it, and is gone once a tunnel runs. A narrow screen carries all of it in the header instead. -->
-      <controls:ApplySwitchCard x:Name="ActiveConfigCard" Icon="{StaticResource AgLockGeometry}"
-                                IsVisible="{Binding !IsCompact}"
-                                Title="{l:Tr Main_SetActiveTitle}"
-                                OnText="{l:Tr Main_SwitchOn}" OffText="{l:Tr Main_SwitchOff}"
-                                OnNotice="{l:Tr Main_IsActiveBadge}"
-                                OffNotice="{l:Tr Main_ConfigIdleNotice}"
-                                ActionText="{l:Tr Main_ConnectNowLink}"
-                                ActionCommand="{Binding ConnectOpenConfigCommand}"
-                                IsActionVisible="{Binding ShowConnectOpenConfig}"
-                                IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
-
       <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
@@ -175,17 +183,15 @@
            the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
       <Border Classes="sect" Classes.compact="{Binding IsCompact}">
         <StackPanel Spacing="10">
-          <!-- Compact stacks the trigger under the description; wide keeps them side by side. -->
+          <!-- The trigger stands under the description. -->
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-            <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0"
-                        Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}">
+            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="4" VerticalAlignment="Center">
               <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
               <TextBlock Text="{Binding DeleteConfigPrompt}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
             </StackPanel>
-            <Grid VerticalAlignment="Center"
-                  Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-                  Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+            <Grid Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
                   Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                  HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
                   ColumnDefinitions="*,*" ColumnSpacing="8">
               <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
                       Content="{l:Tr Main_DeleteConfigButton}"
@@ -209,8 +215,8 @@
 
     <!-- Черновик новой конфигурации: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере.
          Imported with the footer Save once text parses + name is set (#143). -->
-    <Border x:Name="ImportSection" Grid.Row="1" Margin="0,12,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
-            IsVisible="{Binding IsSectionImport}">
+    <Border x:Name="ImportSection" Grid.Row="1" Grid.Column="1" Margin="0,12,0,0" Classes="sect"
+            Classes.compact="{Binding IsCompact}" IsVisible="{Binding IsSectionImport}">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Spacing="6">
           <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" Margin="0,0,0,4" />
@@ -257,7 +263,7 @@
     </Border>
 
     <!-- Export section: read-only QR of the .conf / of the vpn:// link, with copy / save. -->
-    <StackPanel x:Name="ExportSection" Grid.Row="1" Margin="0,12,0,0"
+    <StackPanel x:Name="ExportSection" Grid.Row="1" Grid.Column="1" Margin="0,12,0,0"
                 IsVisible="{Binding IsSectionExport}" Spacing="12">
       <!-- Экран экспорта занимает пану целиком; возвращает с него стрелка «назад» в шапке окна. -->
       <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15"
@@ -270,25 +276,10 @@
                   BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1"
                   CornerRadius="9" Padding="3" MaxWidth="480" HorizontalAlignment="Center">
             <UniformGrid Columns="2">
-              <!-- Compact shortens the two QR tab labels so both fit the narrow segment. -->
               <Button Classes="seg" Classes.active="{Binding IsQrConf}" Command="{Binding ShowQrConfCommand}"
-                      HorizontalAlignment="Stretch" Padding="20,6">
-                <Panel>
-                  <TextBlock Text="{l:Tr Main_QrConfTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                  <TextBlock Text="{l:Tr Main_QrConfTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                </Panel>
-              </Button>
+                      Content="{l:Tr Main_QrConfTabShort}" HorizontalAlignment="Stretch" Padding="20,6" />
               <Button Classes="seg" Classes.active="{Binding IsQrLink}" Command="{Binding ShowQrLinkCommand}"
-                      HorizontalAlignment="Stretch" Padding="20,6">
-                <Panel>
-                  <TextBlock Text="{l:Tr Main_QrLinkTab}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                  <TextBlock Text="{l:Tr Main_QrLinkTabShort}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                </Panel>
-              </Button>
+                      Content="{l:Tr Main_QrLinkTabShort}" HorizontalAlignment="Stretch" Padding="20,6" />
             </UniformGrid>
           </Border>
           <Border HorizontalAlignment="Center" Background="White" CornerRadius="8" Padding="10"
@@ -320,13 +311,7 @@
                     Click="OnCopyExport" IsEnabled="{Binding IsReady}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
-                <!-- Compact drops the label to just "Copy". -->
-                <Panel>
-                  <TextBlock Text="{l:Tr Main_CopyContentButton}"
-                             IsVisible="{Binding !$parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                  <TextBlock Text="{l:Tr Main_CopyContentButtonShort}"
-                             IsVisible="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).IsCompact}" />
-                </Panel>
+                <TextBlock Text="{l:Tr Main_CopyContentButtonShort}" />
               </StackPanel>
             </Button>
             <Button Classes="accent" Margin="4" Padding="16,6"

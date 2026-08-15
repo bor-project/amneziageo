@@ -56,6 +56,12 @@ internal sealed partial class ServerCard : UserControl
     public static readonly StyledProperty<bool> CompactProperty =
         AvaloniaProperty.Register<ServerCard, bool>(nameof(Compact));
 
+    public static readonly StyledProperty<bool> MarkedProperty =
+        AvaloniaProperty.Register<ServerCard, bool>(nameof(Marked));
+
+    public static readonly StyledProperty<bool> HasMenuProperty =
+        AvaloniaProperty.Register<ServerCard, bool>(nameof(HasMenu), defaultValue: true);
+
     private readonly TranslateTransform _shift = new();
     private readonly TranslateTransform _nameShift = new();
     private readonly ListReorder _reorder;
@@ -73,6 +79,7 @@ internal sealed partial class ServerCard : UserControl
     public ServerCard()
     {
         InitializeComponent();
+        ShowMenuButton();
         _reorder = new ListReorder(this, vertical: false);
         HiddenTip.Watch(StripActions.Items);
         HiddenTip.Watch(FaceActions);
@@ -198,6 +205,24 @@ internal sealed partial class ServerCard : UserControl
     }
 
     /// <summary>
+    /// Открыта ли карточка в списке: её свойства стоят рядом с ним.
+    /// </summary>
+    public bool Marked
+    {
+        get => GetValue(MarkedProperty);
+        set => SetValue(MarkedProperty, value);
+    }
+
+    /// <summary>
+    /// Носит ли карточка меню «Изменить» и «Удалить».
+    /// </summary>
+    public bool HasMenu
+    {
+        get => GetValue(HasMenuProperty);
+        set => SetValue(HasMenuProperty, value);
+    }
+
+    /// <summary>
     /// Выводит пульт из карточки, в которой он стоит. Возвращает, была ли такая карточка.
     /// </summary>
     public static bool LeaveEntered(IInputElement? focused)
@@ -254,7 +279,18 @@ internal sealed partial class ServerCard : UserControl
         {
             // Only the narrow card swipes, and only there does the drag have to keep off that axis.
             _reorder.HoldFirst = Compact;
+            ShowMenuButton();
         }
+        else if (change.Property == HasMenuProperty)
+        {
+            ShowMenuButton();
+        }
+    }
+
+    // Показывает кнопку меню: на лице широкой карточки и только там, где меню есть.
+    private void ShowMenuButton()
+    {
+        MorePart.IsVisible = !Compact && HasMenu;
     }
 
     // The centre key steps into the card and uncovers its buttons, the arrows walk them, and the back key steps

@@ -27,6 +27,12 @@
             Command="{Binding $parent[controls:ServerCard].SelectCommand}" CommandParameter="{Binding}"
             ToolTip.Tip="{l:Tr Main_ServerRowSelect}">
       <Panel>
+        <!-- The card whose properties stand beside the list wears the soft fill the section rail gives its
+             open row. -->
+        <Border CornerRadius="12" IsHitTestVisible="False"
+                Background="{DynamicResource AgAccentSoftBrush}"
+                IsVisible="{Binding $parent[controls:ServerCard].Marked}" />
+
         <!-- Card the remote has stepped into wears a wash under its lines: a frame alone reads as one more
              border among the frames the card already carries. -->
         <Border CornerRadius="12" IsHitTestVisible="False" Opacity="0.14"
@@ -80,7 +86,6 @@
             <!-- The button that opens the pair the wide card keeps folded away. -->
             <Button x:Name="MorePart" DockPanel.Dock="Bottom" Classes="rowact" Width="44" Height="30"
                     HorizontalAlignment="Right" Foreground="{DynamicResource AgMutedBrush}"
-                    IsVisible="{Binding !$parent[controls:ServerCard].Compact}"
                     Focusable="{Binding $parent[controls:ServerCard].Entered}">
               <PathIcon Data="{StaticResource AgCardMoreGeometry}" Width="19" Height="19"
                         HorizontalAlignment="Center" VerticalAlignment="Center"

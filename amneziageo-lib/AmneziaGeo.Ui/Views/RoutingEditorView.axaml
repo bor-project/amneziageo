@@ -21,12 +21,6 @@
     <!-- Rules card: name + per-app tunneling + geo/domain/cidr entries. -->
     <Border Classes="sect" Classes.compact="{Binding IsCompact}">
       <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
-        <!-- Card title. The global-proxy switch lives in the traffic card below as a full-width setting row.
-             A narrow screen drops the frame, and with it the umbrella title over the headings under it. -->
-        <TextBlock Text="{l:Tr Main_RoutingListCardTitle}" FontWeight="SemiBold" FontSize="15"
-                   TextWrapping="Wrap" VerticalAlignment="Center"
-                   IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
-
         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
           <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
                     Width="14" Height="14" Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
@@ -75,28 +69,14 @@
                 </StackPanel>
               </Button>
             </Grid>
-            <!-- Wide: input + add button inline. -->
-            <Grid ColumnDefinitions="*,Auto"
-                  IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-              <TextBox Grid.Column="0" Classes="field" Margin="0,0,8,0"
-                       Watermark="{l:Tr Main_AddEntryWatermark}"
-                       Text="{Binding RuleInput, Mode=TwoWay}" />
-              <Button Grid.Column="1" Classes="accent" Width="130" Command="{Binding AddRuleCommand}"
-                      KeyDown="OnAddEntryKeyDown">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock Text="+" />
-                  <TextBlock Text="{l:Tr Main_AddButton}" />
-                </StackPanel>
-              </Button>
-            </Grid>
-            <!-- Compact: input full-width, add button drops to its own row. -->
-            <StackPanel Spacing="8"
-                        IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
+            <!-- Input takes the row, the add button drops under it. -->
+            <StackPanel Spacing="8">
               <TextBox Classes="field"
                        Watermark="{l:Tr Main_AddEntryWatermark}"
                        Text="{Binding RuleInput, Mode=TwoWay}" />
-              <Button Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddRuleCommand}"
-                      KeyDown="OnAddEntryKeyDown">
+              <Button Classes="accent" Command="{Binding AddRuleCommand}" KeyDown="OnAddEntryKeyDown"
+                      Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}"
+                      HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
                 <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                   <TextBlock Text="+" />
                   <TextBlock Text="{l:Tr Main_AddButton}" />
@@ -129,40 +109,12 @@
             <!-- Windows: running / installed / folder / file source picker. -->
             <StackPanel Spacing="8" IsVisible="{Binding IsAppSourceWindows}">
 
-            <!-- Wide: source picker, app input, and add button inline. -->
-            <Grid ColumnDefinitions="Auto,*,Auto"
-                  IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-              <Button Grid.Column="0" Classes="softbtn" Width="130" Margin="0,0,8,0" Content="{l:Tr Main_SourceDropdown}">
-                <Button.Flyout>
-                  <MenuFlyout>
-                    <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
-                    <MenuItem Header="{l:Tr Main_AppSourceInstalled}" Click="OnAppSourceInstalled" />
-                    <MenuItem Header="{l:Tr Main_AppSourceFolder}" Click="OnAppSourceFolder" />
-                    <MenuItem Header="{l:Tr Main_AppSourceFile}" Click="OnAppSourceFile" />
-                  </MenuFlyout>
-                </Button.Flyout>
-              </Button>
-              <AutoCompleteBox Grid.Column="1" Classes="field" Margin="0,0,8,0"
-                               Watermark="{Binding AppWatermark}"
-                               Text="{Binding AppInput, Mode=TwoWay}"
-                               SelectedItem="{Binding AppSelected, Mode=TwoWay}"
-                               ItemsSource="{Binding AppSuggestions}"
-                               FilterMode="ContainsOrdinal" MaxDropDownHeight="220"
-                               IsEnabled="{Binding IsAppPickerActive}" />
-              <Button Grid.Column="2" Classes="accent" Width="130" Command="{Binding AddAppCommand}"
-                      IsEnabled="{Binding IsAppPickerActive}">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock Text="+" />
-                  <TextBlock Text="{l:Tr Main_AddButton}" />
-                </StackPanel>
-              </Button>
-            </Grid>
-
-            <!-- Compact: source picker and add button split the row evenly; app input drops to its own row. -->
-            <StackPanel Spacing="8"
-                        IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}">
-              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
-                <Button Grid.Column="0" Classes="softbtn" HorizontalAlignment="Stretch" Content="{l:Tr Main_SourceDropdown}">
+            <!-- Source picker and add button share the row; the app input takes its own. -->
+            <StackPanel Spacing="8">
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="8"
+                    HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+                <Button Grid.Column="0" Classes="softbtn" HorizontalAlignment="Stretch" Content="{l:Tr Main_SourceDropdown}"
+                        Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}">
                   <Button.Flyout>
                     <MenuFlyout>
                       <MenuItem Header="{l:Tr Main_AppSourceRunning}" Click="OnAppSourceRunning" />
@@ -173,7 +125,8 @@
                   </Button.Flyout>
                 </Button>
                 <Button Grid.Column="1" Classes="accent" HorizontalAlignment="Stretch" Command="{Binding AddAppCommand}"
-                        IsEnabled="{Binding IsAppPickerActive}">
+                        IsEnabled="{Binding IsAppPickerActive}"
+                        Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w130}">
                   <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Text="+" />
                     <TextBlock Text="{l:Tr Main_AddButton}" />
@@ -341,9 +294,6 @@
       <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
         <Border Height="1" Background="{DynamicResource AgBorderBrush}"
                 IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
-
-        <TextBlock Text="{l:Tr Main_RoutingOptionsLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap"
-                   IsVisible="{Binding !$parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />
 
         <!-- The section heading carries the switch itself: a separate row under it only said the heading again. -->
         <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_GlobalProxyTitle}"

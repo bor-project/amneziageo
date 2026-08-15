@@ -205,6 +205,66 @@ internal sealed class UapiClient(ILogger<UapiClient> logger) : IDisposable
     }
 
     /// <summary>
+    /// Binds the tunnel socket to another source port. A zero asks the device for one of its own, which is what
+    /// a NAT that has forgotten the session needs: the same port keeps landing in the same discarded mapping.
+    /// </summary>
+    public bool Rebind(string tunnelName)
+    {
+        try
+        {
+            return Send(tunnelName, "set=1\nlisten_port=0\n\n");
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "uapi: rebinding the socket of {Tunnel} failed", tunnelName);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Points the peer at the address given, for a server that has moved since the session was raised.
+    /// </summary>
+    public bool SetEndpoint(string tunnelName, string peerPublicKeyBase64, string endpoint)
+    {
+        try
+        {
+            var peerHex = Convert.ToHexStringLower(Convert.FromBase64String(peerPublicKeyBase64));
+            return Send(tunnelName, $"set=1\npublic_key={peerHex}\nendpoint={endpoint}\n\n");
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "uapi: pointing {Tunnel} at {Endpoint} failed", tunnelName, endpoint);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The address the running tunnel dials, or null when the device is unreachable or names none.
+    /// </summary>
+    public string? TryGetEndpoint(string tunnelName)
+    {
+        string state;
+        try
+        {
+            state = Get(tunnelName);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        foreach (var line in state.Split('\n'))
+        {
+            if (line.StartsWith("endpoint=", StringComparison.Ordinal))
+            {
+                return line["endpoint=".Length..].Trim();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Returns the most recent peer handshake as unix seconds, or null when the device is unreachable.
     /// </summary>
     public long? TryGetLastHandshake(string tunnelName)

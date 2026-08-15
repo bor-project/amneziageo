@@ -900,6 +900,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             return;
         }
 
+        await PersistAsync();
+    }
+
+    // Persists the list, queueing an edit behind the commit in flight.
+    private async Task PersistAsync()
+    {
         if (Name.Trim().Length == 0 || TotalRules == 0)
         {
             return;
@@ -1051,11 +1057,13 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     private bool _reordering;
 
     /// <summary>
-    /// Reorders entries by name, flipping direction on each invocation.
+    /// Reorders entries by name, flipping direction on each invocation. A saved list stores the order at once;
+    /// a list with edits under way carries it into their save.
     /// </summary>
     [RelayCommand]
     private void SortRules()
     {
+        var wasSaved = !IsDirty;
         _sortDescending = !_sortDescending;
         var ordered = (_sortDescending
                 ? Rules.OrderByDescending(rule => rule, StringComparer.OrdinalIgnoreCase)
@@ -1081,6 +1089,12 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
         RebuildRuleItems();
         MarkDirty();
+        if (wasSaved)
+        {
+            _ = PersistAsync();
+            return;
+        }
+
         FireAutoSave();
     }
 

@@ -184,9 +184,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool CanExit => AppExitHost.IsAvailable;
 
     /// <summary>
-    /// Whether the window is narrow enough for the compact single-column drilldown.
+    /// Whether the phone screen is narrow enough for the compact single-column drilldown.
     /// </summary>
-    public bool IsCompact => WindowWidth < CompactBreakpoint;
+    public bool IsCompact => UiPlatform.UsesCompactLayout && WindowWidth < CompactBreakpoint;
 
     /// <summary>
     /// Whether a section detail is open in compact mode; the header then shows the section name.
@@ -779,7 +779,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // Push the compact-layout flag to every section screen so their rows restack for the narrow window.
     partial void OnWindowWidthChanged(double value)
     {
-        var compact = value < CompactBreakpoint;
+        var compact = UiPlatform.UsesCompactLayout && value < CompactBreakpoint;
         Config.IsCompact = compact;
         Routing.IsCompact = compact;
         Sources.IsCompact = compact;

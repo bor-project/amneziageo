@@ -329,10 +329,10 @@
     <value>Сколько адрес хранится в кеше без обращений. Потом маршрут для него определяется заново.</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
-    <value>Пускает в туннель ещё и IPv6. Включайте, только если у вашего сервера есть IPv6-адрес, иначе оставьте выключенным. Применится при следующем подключении.</value>
+    <value>Использовать IPv6</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
-    <value>Использовать IPv6</value>
+    <value>IPv6</value>
   </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Версия движка Amnezia</value>
@@ -449,7 +449,7 @@
     <value>Конфигурация</value>
   </data>
   <data name="Main_ConfigNameLabel" xml:space="preserve">
-    <value>ИМЯ КОНФИГУРАЦИИ</value>
+    <value>Имя конфигурации</value>
   </data>
   <data name="Main_ConfigSection" xml:space="preserve">
     <value>Конфигурации</value>
@@ -478,14 +478,11 @@
   <data name="Main_DeleteConfigButton" xml:space="preserve">
     <value>Удалить конфигурацию</value>
   </data>
-  <data name="Main_DeleteConfigHint" xml:space="preserve">
-    <value>Сначала остановите использующий её туннель.</value>
-  </data>
   <data name="Main_DeleteConfigTitle" xml:space="preserve">
     <value>Удаление конфигурации</value>
   </data>
   <data name="Main_DeleteConfigPrompt" xml:space="preserve">
-    <value>Удалить конфигурацию «{0}» из каталога. Это действие нельзя отменить.</value>
+    <value>Удалить «{0}» насовсем</value>
   </data>
   <data name="Main_DeleteListButton" xml:space="preserve">
     <value>Удалить список</value>
@@ -545,10 +542,10 @@
     <value>Загрузить файл</value>
   </data>
   <data name="Main_AddConfigTitle" xml:space="preserve">
-    <value>Добавьте конфигурацию</value>
+    <value>Добавить конфигурацию</value>
   </data>
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
-    <value>Выберите удобный способ</value>
+    <value>Выбор способа добавления</value>
   </data>
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Есть несохранённые изменения</value>
@@ -641,7 +638,7 @@
     <value>логин</value>
   </data>
   <data name="Main_MtuHint" xml:space="preserve">
-    <value>576-1500, по умолчанию 1420. При использовании прокси рекомендуется 1280.</value>
+    <value>Размер пакета</value>
   </data>
   <data name="Main_NameLabel" xml:space="preserve">
     <value>НАЗВАНИЕ</value>
@@ -698,19 +695,16 @@
     <value>ПРАВИЛА</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
-    <value>WebSocket-прокси</value>
+    <value>Прокси</value>
   </data>
   <data name="Main_ProxyWebSocketHint" xml:space="preserve">
-    <value>Передаёт UDP поверх TCP и помогает при блокировке UDP.</value>
-  </data>
-  <data name="Main_UseWebSocketToggle" xml:space="preserve">
-    <value>Использовать прокси</value>
+    <value>Использовать WS там, где UDP недоступен</value>
   </data>
   <data name="Main_ExportConfigTitle" xml:space="preserve">
     <value>Экспорт конфигурации</value>
   </data>
   <data name="Main_ExportConfigSubtitle" xml:space="preserve">
-    <value>Выберите формат передачи</value>
+    <value>Выбор способа</value>
   </data>
   <data name="Main_QrPrivateKeyWarning" xml:space="preserve">
     <value>QR-код содержит приватный ключ. Не передавайте его посторонним.</value>
@@ -833,7 +827,7 @@
     <value>Источники geo</value>
   </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
-    <value>MTU ТУННЕЛЯ</value>
+    <value>MTU</value>
   </data>
   <data name="Main_UpdateAllButton" xml:space="preserve">
     <value>Обновить все</value>
@@ -1674,7 +1668,7 @@
     <value>Экспорт</value>
   </data>
   <data name="Main_ConfigTextLabel" xml:space="preserve">
-    <value>ТЕКСТ КОНФИГУРАЦИИ</value>
+    <value>Текст конфигурации</value>
   </data>
   <data name="Agent_TunnelOwnedByOther" xml:space="preserve">
     <value>VPN используется другой учётной записью.</value>

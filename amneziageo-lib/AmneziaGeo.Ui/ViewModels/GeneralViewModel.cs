@@ -61,6 +61,8 @@ internal sealed partial class GeneralViewModel : ViewModelBase
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowConnectionDivider))]
+    [NotifyPropertyChangedFor(nameof(ShowRepairDivider))]
     private bool _isCompact;
 
     partial void OnIsCompactChanged(bool value)
@@ -288,6 +290,17 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     /// Показывает карточку настроек соединения только на Windows (Android-агент их не применяет).
     /// </summary>
     public bool CanConfigureConnection => OperatingSystem.IsWindows();
+
+    /// <summary>
+    /// Ставит разделитель перед карточкой соединения: на узком экране рамок у карточек нет, а сама она
+    /// есть не на каждой платформе.
+    /// </summary>
+    public bool ShowConnectionDivider => IsCompact && CanConfigureConnection;
+
+    /// <summary>
+    /// Ставит разделитель перед карточкой починки сети.
+    /// </summary>
+    public bool ShowRepairDivider => IsCompact && CanRepairNetwork;
 
     /// <summary>
     /// Transient result line for the network-repair action.

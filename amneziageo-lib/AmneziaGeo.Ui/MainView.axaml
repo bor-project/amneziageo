@@ -32,6 +32,24 @@
     <StreamGeometry x:Key="AgChevronGeometry">M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z</StreamGeometry>
   </UserControl.Resources>
 
+  <UserControl.Styles>
+    <!-- Field of the value editor. Its multi-line shape is set by style, not on the element: a local value
+         outranks the class the dialog switches on. -->
+    <Style Selector="TextBox.editorbox.multi">
+      <Setter Property="AcceptsReturn" Value="True" />
+      <Setter Property="TextWrapping" Value="NoWrap" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="MinHeight" Value="150" />
+      <Setter Property="MaxHeight" Value="270" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+    </Style>
+    <Style Selector="TextBox.editorbox.mono">
+      <Setter Property="FontFamily" Value="IBM Plex Mono, Cascadia Mono, Consolas, monospace" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </UserControl.Styles>
+
   <Grid>
 
     <!-- HOME screen: gear left, centered title, the connect control and the servers. A pair of tabs shows one
@@ -758,6 +776,32 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+        </StackPanel>
+      </Border>
+    </Panel>
+
+    <!-- Правка одного значения поверх всего экрана: строка настройки открывает поле здесь, а не пускает набор
+         в себя. Случайное касание строки стоит одной «Отмены», а не изменённой настройки. -->
+    <Panel ZIndex="80" Background="#66000000" IsVisible="{Binding Editor.IsOpen}"
+           PointerPressed="OnEditorScrimPressed">
+      <Border Classes="dialogcard" MaxWidth="520" Margin="12" Padding="18,16"
+              HorizontalAlignment="Stretch" VerticalAlignment="Center"
+              DataContext="{Binding Editor}" x:DataType="vm:ValueEditorViewModel">
+        <StackPanel Spacing="10">
+          <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Description}" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                     Margin="0,-6,0,0"
+                     IsVisible="{Binding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBox x:Name="EditorBox" Classes="field editorbox"
+                   Classes.multi="{Binding Multiline}" Classes.mono="{Binding Mono}"
+                   Text="{Binding Text, Mode=TwoWay}" Watermark="{Binding Watermark}"
+                   KeyDown="OnEditorKeyDown" />
+          <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,4,0,0">
+            <Button Classes="outline" Content="{l:Tr Main_CancelButton}" Width="124" Padding="6,9"
+                    Command="{Binding CancelCommand}" />
+            <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Width="124" Padding="6,9"
+                    Command="{Binding SaveCommand}" />
+          </StackPanel>
         </StackPanel>
       </Border>
     </Panel>

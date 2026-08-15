@@ -915,6 +915,13 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         ImportMethod = RoutingImportMethod.Manual;
     }
 
+    // Ссылка «Источники geo» над записями: гео-базы правятся оттуда, куда их подставляют.
+    [RelayCommand]
+    private void OpenGeoSources()
+    {
+        _host.ShowGeoSources();
+    }
+
     // Способ «Создать вручную».
     [RelayCommand]
     private void BeginManualImport()

@@ -742,9 +742,6 @@
   <data name="Main_RailRoutingTitle" xml:space="preserve">
     <value>Routing</value>
   </data>
-  <data name="Main_RailSourcesSubtitle" xml:space="preserve">
-    <value>Domain and country databases</value>
-  </data>
   <data name="Main_RailSourcesTitle" xml:space="preserve">
     <value>Geo sources</value>
   </data>

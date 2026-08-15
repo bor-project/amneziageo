@@ -56,6 +56,8 @@ internal sealed class CompactConverter : IValueConverter
             // Top gap under the tabs when the catalogue combo drops to its own row in compact.
             "gapTop14" => compact ? new Thickness(0, 14, 0, 0) : new Thickness(0),
             "inputMargin" => compact ? new Thickness(0) : new Thickness(0, 0, 8, 0),
+            // Inset of a list inside its frame; without the frame the rows stand at the edge.
+            "boxPad" => compact ? new Thickness(0) : new Thickness(8),
             // Gap between side-by-side field blocks; it drops when they stack in compact.
             "fieldGap" => compact ? new Thickness(0, 0, 0, 10) : new Thickness(0, 0, 12, 10),
             // Column widths for an even-split row: a fixed control becomes a star column in compact so it

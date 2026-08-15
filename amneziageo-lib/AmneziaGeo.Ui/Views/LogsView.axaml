@@ -15,6 +15,7 @@
     <StreamGeometry x:Key="AgShareGeometry">M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L15.96,7.19C16.5,7.69 17.21,8 18,8A3,3 0 0,0 21,5A3,3 0 0,0 18,2A3,3 0 0,0 15,5C15,5.24 15.04,5.47 15.09,5.7L8.04,9.81C7.5,9.31 6.79,9 6,9A3,3 0 0,0 3,12A3,3 0 0,0 6,15C6.79,15 7.5,14.69 8.04,14.19L15.16,18.34C15.11,18.55 15.08,18.77 15.08,19C15.08,20.61 16.39,21.91 18,21.91C19.61,21.91 20.92,20.61 20.92,19A2.92,2.92 0 0,0 18,16.08Z</StreamGeometry>
     <StreamGeometry x:Key="AgSearchGeometry">M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z</StreamGeometry>
     <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
+    <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
   </UserControl.Resources>
   <UserControl.Styles>
     <!-- Narrow screen: the body frame only takes width off the cards, which carry their own. -->
@@ -169,24 +170,32 @@
                             Background="{DynamicResource AgPanel2Brush}"
                             BorderThickness="1" BorderBrush="{DynamicResource AgBorderBrush}">
                       <StackPanel Spacing="5">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                          <TextBlock Text="{Binding Time}" FontSize="{svc:Unscaled 11}"
-                                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                     Foreground="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
-                          <Panel IsVisible="{Binding HasLevel}">
-                            <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
-                                       IsVisible="{Binding IsAlarm}"
-                                       Foreground="{DynamicResource AgDownBrush}" />
-                            <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
-                                       IsVisible="{Binding IsWarning}"
-                                       Foreground="{DynamicResource AgWarnBrush}" />
-                            <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
-                                       IsVisible="{Binding IsPlain}"
-                                       Foreground="{DynamicResource AgMuted2Brush}" />
-                          </Panel>
-                        </StackPanel>
-                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
-                                   Foreground="{DynamicResource AgFgBrush}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Time}" FontSize="{svc:Unscaled 11}"
+                                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                       Foreground="{DynamicResource AgMuted2Brush}" VerticalAlignment="Center" />
+                            <Panel IsVisible="{Binding HasLevel}">
+                              <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
+                                         IsVisible="{Binding IsAlarm}"
+                                         Foreground="{DynamicResource AgDownBrush}" />
+                              <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
+                                         IsVisible="{Binding IsWarning}"
+                                         Foreground="{DynamicResource AgWarnBrush}" />
+                              <TextBlock Text="{Binding Level}" FontSize="{svc:Unscaled 11}" FontWeight="SemiBold"
+                                         IsVisible="{Binding IsPlain}"
+                                         Foreground="{DynamicResource AgMuted2Brush}" />
+                            </Panel>
+                          </StackPanel>
+                          <!-- A finger scrolls the card rather than selecting inside it, so the whole row goes
+                               to the clipboard by button. -->
+                          <Button Grid.Column="1" Classes="icon" Click="OnCopyEntry"
+                                  VerticalAlignment="Center" ToolTip.Tip="{l:Tr Main_CopyButton}">
+                            <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
+                          </Button>
+                        </Grid>
+                        <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
+                                             Foreground="{DynamicResource AgFgBrush}" />
                       </StackPanel>
                     </Border>
                   </DataTemplate>

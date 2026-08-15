@@ -32,6 +32,10 @@ internal sealed class TunnelRunner(
     // Proactively refresh the peer handshake/NAT mapping so a lossy underlay can't let the session age out.
     internal const int DefaultKeepaliveSeconds = 25;
 
+    // How long the leftover cleanup may hold bring-up: several times what it costs on a busy machine, and a
+    // small share of the 30s the service manager allows a service to report running.
+    private static readonly TimeSpan _reconcileBudget = TimeSpan.FromSeconds(8);
+
     /// <summary>
     /// MTU a stored value resolves to; unset follows the current default.
     /// </summary>
@@ -110,9 +114,17 @@ internal sealed class TunnelRunner(
         var connectSw = Stopwatch.StartNew();
         logger.LogInformation("{Name}: setting up the connection", name);
 
+        // Bound the cleanup: it runs inside the service manager's start deadline, and a WMI call hung behind a
+        // restarting service holds it past that deadline, so the tunnel never reports running at all (#247).
+        // Whatever is left behind the agent reverts on its own pass.
         using (logger.Step("reconcile leftovers"))
         {
-            reconciler.Reconcile();
+            var cleanup = Task.Run(() => reconciler.Reconcile());
+            if (await Task.WhenAny(cleanup, Task.Delay(_reconcileBudget)).ConfigureAwait(false) != cleanup)
+            {
+                logger.LogWarning("cleaning up after an earlier session has taken more than {Sec}s, so the tunnel comes up without waiting for it; leftover routes or DNS settings are reverted on a later pass",
+                    (int)_reconcileBudget.TotalSeconds);
+            }
         }
 
         var config = await store.GetConfigTextAsync(name)

@@ -22,22 +22,20 @@
     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{l:Tr Android_WebSocketUnsupported}"
                IsVisible="{Binding WebSocketUnavailable}" />
 
-    <!-- Fixed-width blocks side by side on a wide card; on a narrow one they stack full width instead of clipping. -->
+    <!-- Blocks stand one under the other; each keeps its own width on a wide card. -->
     <Grid IsVisible="{Binding ShowWebSocketFields}" MaxWidth="980"
           ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto,Auto"
           HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-      <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2"
-                  Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
+      <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Spacing="2"
                   Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w300}"
-                  Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=fieldGap}">
+                  HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+                  Margin="0,0,0,10">
         <TextBlock Classes="label" Text="{l:Tr Main_ServerHostLabel}" />
         <TextBox Classes="field" Text="{Binding WebSocketHost}" Watermark="{l:Tr Main_ServerHostWatermark}" />
       </StackPanel>
-      <Grid ColumnDefinitions="Auto,*"
-            Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
-            Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
-            Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
-            Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=fieldGap}">
+      <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" ColumnDefinitions="Auto,*"
+            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+            Margin="0,0,0,10">
         <StackPanel Grid.Column="0" Width="100" Spacing="2" Margin="0,0,12,0">
           <TextBlock Classes="label" Text="{l:Tr Main_ServerPortLabel}" />
           <TextBox Classes="field" Text="{Binding WebSocketPort}" />
@@ -52,10 +50,8 @@
           </controls:AdaptiveComboBox>
         </StackPanel>
       </Grid>
-      <Panel Margin="0,0,0,10"
-             Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row2}"
-             Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col2}"
-             Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span3}"
+      <Panel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,10"
+             HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
              Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w300}">
         <StackPanel Spacing="2" IsVisible="{Binding IsTokenAuth}">
           <TextBlock Classes="label" Text="{l:Tr Main_AccessTokenLabel}" />

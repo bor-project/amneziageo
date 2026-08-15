@@ -1,8 +1,11 @@
 using System.Diagnostics;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Documents;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using AmneziaGeo.Android.Ui.Services;
@@ -18,6 +21,14 @@ namespace AmneziaGeo.Android.Ui;
 /// </summary>
 public sealed partial class App : Avalonia.Application
 {
+    // The shared sizes are set for a monitor: in a hand they land under what the system draws itself, and a phone
+    // is further under than a tablet.
+    private const double PhoneScale = 1.3;
+    private const double TabletScale = 1.15;
+
+    // The narrow side from which android calls a device a tablet.
+    private const int TabletWidthDp = 600;
+
     private static UiPreferences? _preferences;
     private AndroidAgentConnection? _connection;
 
@@ -41,6 +52,7 @@ public sealed partial class App : Avalonia.Application
                 .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
             UiPlatform.SupportsGeoPreview = false;
             UiPlatform.UsesActionSheets = true;
+            UiPlatform.HandScale = HandScale();
             if (!UiPlatform.IsTelevision)
             {
                 Styles.Add(new StyleInclude(new Uri("avares://AmneziaGeo.Android.Ui/"))
@@ -81,7 +93,7 @@ public sealed partial class App : Avalonia.Application
             };
             Stage("views", clock);
 
-            singleView.MainView = new MobileSelectHost(mainView);
+            singleView.MainView = Framed(Enlarged(new MobileSelectHost(mainView)));
             Stage("host", clock);
 
             // Brings the agent up after the first frame: opening the stores and projecting the first snapshot
@@ -96,6 +108,62 @@ public sealed partial class App : Avalonia.Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // Holds the head clear of the status and navigation bars. From target sdk 35 android lays the window edge to
+    // edge and leaves the inset to the application; the frame stands outside the scale, so it keeps the size the
+    // bars are drawn at.
+    private static Control Framed(Control view)
+    {
+        var frame = new Border
+        {
+            Child = view,
+        };
+
+        frame.AttachedToVisualTree += (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(frame)?.InsetsManager is not { } insets)
+            {
+                return;
+            }
+
+            frame.Padding = insets.SafeAreaPadding;
+            insets.SafeAreaChanged += (_, changed) => frame.Padding = changed.SafeAreaPadding;
+        };
+
+        return frame;
+    }
+
+    // Draws the head larger in the hand, layout and all. A television keeps the size its own screen was laid out at.
+    private static Control Enlarged(Control view)
+    {
+        var scale = UiPlatform.HandScale;
+        if (scale <= 1)
+        {
+            return view;
+        }
+
+        var scaled = new LayoutTransformControl
+        {
+            Child = view,
+            LayoutTransform = new ScaleTransform(scale, scale),
+        };
+
+        // Weight the letters up: the shared sizes are thin on a screen held in the hand.
+        TextElement.SetFontWeight(scaled, FontWeight.SemiBold);
+        return scaled;
+    }
+
+    // How much over the laid-out size the head is drawn on this device.
+    private static double HandScale()
+    {
+        if (UiPlatform.IsTelevision)
+        {
+            return 1;
+        }
+
+        var width = global::Android.App.Application.Context.Resources?.Configuration?.SmallestScreenWidthDp ?? 0;
+        return width >= TabletWidthDp ? TabletScale : PhoneScale;
     }
 
     /// <summary>

@@ -27,4 +27,10 @@ internal static class UiPlatform
     /// wstunnel, so the editor states that instead of offering a switch that cannot hold.
     /// </summary>
     public static bool SupportsWebSocket { get; set; } = true;
+
+    /// <summary>
+    /// How much over the laid-out size the head is drawn on this device. A block that has to keep the size it
+    /// was laid out at divides by it.
+    /// </summary>
+    public static double HandScale { get; set; } = 1;
 }

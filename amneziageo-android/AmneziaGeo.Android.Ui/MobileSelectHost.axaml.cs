@@ -37,6 +37,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private Control? _lastFocus;
     private Control? _sheetFocus;
     private Control? _disabledFocus;
+    private bool _keyboardAtPress;
     private int _transitionVersion;
 
     public MobileSelectHost(Control content)
@@ -98,6 +99,7 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.AddHandler(KeyDownEvent, OnTopLevelKeyDown, RoutingStrategies.Bubble);
             _topLevel.AddHandler(GotFocusEvent, OnTopLevelGotFocus, RoutingStrategies.Bubble);
             _topLevel.AddHandler(LostFocusEvent, OnTopLevelLostFocus, RoutingStrategies.Bubble);
+            _topLevel.AddHandler(PointerPressedEvent, OnTopLevelPointerPressed, RoutingStrategies.Tunnel);
             _topLevel.AddHandler(PointerReleasedEvent, OnTopLevelPointerReleased, RoutingStrategies.Tunnel);
         }
 
@@ -121,6 +123,7 @@ internal sealed partial class MobileSelectHost : UserControl
             _topLevel.RemoveHandler(KeyDownEvent, OnTopLevelKeyDown);
             _topLevel.RemoveHandler(GotFocusEvent, OnTopLevelGotFocus);
             _topLevel.RemoveHandler(LostFocusEvent, OnTopLevelLostFocus);
+            _topLevel.RemoveHandler(PointerPressedEvent, OnTopLevelPointerPressed);
             _topLevel.RemoveHandler(PointerReleasedEvent, OnTopLevelPointerReleased);
             _topLevel = null;
         }
@@ -326,10 +329,20 @@ internal sealed partial class MobileSelectHost : UserControl
         _keyboardTarget = null;
     }
 
+    // Marks the press that started with the keyboard up: the press itself may take the keyboard down, and the
+    // control under it must not step back as well.
+    private void OnTopLevelPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _keyboardAtPress = IsKeyboardOpen();
+    }
+
     // Raises the keyboard again on a tap into the field that already holds focus: Avalonia offers it on a focus
     // change only, so the field the back button silenced would otherwise stay mute.
     private void OnTopLevelPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        // Ends the press once the control under it has had the release: the mark belongs to that press alone.
+        Dispatcher.UIThread.Post(() => _keyboardAtPress = false);
+
         if (_topLevel?.FocusManager?.GetFocusedElement() is TextBox box
             && !InputMethod.GetIsInputMethodEnabled(box)
             && e.Source is Visual source
@@ -505,9 +518,7 @@ internal sealed partial class MobileSelectHost : UserControl
         return false;
     }
 
-    // Takes the keyboard off the field being edited, reporting whether there was one. The pane answers what the
-    // platform really shows: the field's own flag comes back to its default once the field is focused again, and
-    // a second press would spend itself on a keyboard that is already down.
+    // Takes the keyboard off the field being edited, reporting whether there was one.
     private bool DismissKeyboard()
     {
         if (_topLevel is not { } top)
@@ -515,17 +526,13 @@ internal sealed partial class MobileSelectHost : UserControl
             return false;
         }
 
-        var typing = top.FocusManager?.GetFocusedElement() as TextBox;
-        var open = top.InputPane is { } pane
-            ? pane.State == InputPaneState.Open
-            : typing is not null && InputMethod.GetIsInputMethodEnabled(typing);
-
-        if (!open)
+        if (!IsKeyboardOpen())
         {
-            return false;
+            // A press that began with the keyboard up has already spent itself on putting it away.
+            return _keyboardAtPress;
         }
 
-        if (typing is not null)
+        if (top.FocusManager?.GetFocusedElement() is TextBox typing)
         {
             CloseKeyboard(typing);
         }
@@ -535,6 +542,21 @@ internal sealed partial class MobileSelectHost : UserControl
         }
 
         return true;
+    }
+
+    // Whether the keyboard is up. The pane answers what the platform really shows: the field's own flag comes
+    // back to its default once the field is focused again, and a second press would spend itself on a keyboard
+    // that is already down.
+    private bool IsKeyboardOpen()
+    {
+        if (_topLevel is not { } top)
+        {
+            return false;
+        }
+
+        return top.InputPane is { } pane
+            ? pane.State == InputPaneState.Open
+            : top.FocusManager?.GetFocusedElement() is TextBox typing && InputMethod.GetIsInputMethodEnabled(typing);
     }
 
     // Whether a real activity handles the intent: Android TV images ship only a stub that toasts and returns.

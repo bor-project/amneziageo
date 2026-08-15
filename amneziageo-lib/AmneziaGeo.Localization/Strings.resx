@@ -1863,13 +1863,13 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
   </data>
   <data name="Main_SetActiveTitle" xml:space="preserve">
-    <value>Use this configuration</value>
+    <value>Make active</value>
   </data>
   <data name="Main_IsActiveBadge" xml:space="preserve">
-    <value>Active now</value>
+    <value>Active</value>
   </data>
   <data name="Main_ConnectNowLink" xml:space="preserve">
-    <value>Connect now</value>
+    <value>Connect</value>
   </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Use this list</value>
@@ -1881,7 +1881,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>These rules are not active yet.</value>
   </data>
   <data name="Main_ConfigIdleNotice" xml:space="preserve">
-    <value>This configuration is not active yet.</value>
+    <value>Not active yet</value>
   </data>
   <data name="Main_SwitchOn" xml:space="preserve">
     <value>On</value>

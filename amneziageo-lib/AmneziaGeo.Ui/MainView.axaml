@@ -36,7 +36,8 @@
 
     <!-- HOME screen: gear left, centered title, the connect control and the servers. A pair of tabs shows one
          of the two at a time, at every width. -->
-    <Border Classes="card" Margin="12" Padding="0" IsVisible="{Binding IsHome}">
+    <Border Classes="card" Padding="0" IsVisible="{Binding IsHome}"
+            Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHome}">
       <DockPanel LastChildFill="True">
 
         <!-- Top row, one per pane: the connect pane carries the gear and the app name, the server pane carries
@@ -90,7 +91,7 @@
         <Panel>
           <!-- Body: the connect control on one screen, the servers on the other. A loader stands in until the
                first agent snapshot, so the indeterminate power button never flashes on open. -->
-          <Grid Margin="12,4,12,12" IsVisible="{Binding Home.IsReady}">
+          <Grid Margin="12,1,12,3" IsVisible="{Binding Home.IsReady}">
 
               <!-- Connect pane: the round control, the status and the config picker. -->
               <StackPanel Width="290" Spacing="14"
@@ -314,7 +315,8 @@
 
     <!-- SETTINGS screen: back to home (left), title centered, connect control (right), over the section rail
          and content pane. -->
-      <Border Classes="card" Height="48" Margin="12,12,12,0" Padding="12,0"
+      <Border Classes="card" Height="48" Padding="12,0"
+              Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHead}"
               VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <!-- Back: compact section detail steps back to the rail, otherwise home. Every screen autosaves, so
@@ -357,7 +359,8 @@
         </Grid>
       </Border>
 
-    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" Margin="12,4,12,12" RowDefinitions="48,*">
+    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" RowDefinitions="48,*"
+          Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellBody}">
       <Grid.ColumnDefinitions>
         <!-- Section rail column, drag-resizable via the GridSplitter.
              MaxWidth capped so that even at the rail's widest the content pane keeps its MinWidth at the
@@ -372,7 +375,7 @@
       </Grid.ColumnDefinitions>
 
       <!-- Section rail. -->
-      <Border x:Name="RailPane" Grid.Column="0" Grid.Row="1" Classes="card" Margin="0,12,0,0" Padding="0"
+      <Border x:Name="RailPane" Grid.Column="0" Grid.Row="1" Classes="card" Margin="0,3,0,0" Padding="0"
               IsVisible="{Binding ShowRail}">
         <ScrollViewer>
           <StackPanel x:Name="RailMenu" Classes="railmenu" Classes.compact="{Binding IsCompact}" Margin="12,12"
@@ -483,10 +486,10 @@
                     ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                     Focusable="False" IsTabStop="False"
-                    Background="Transparent" Margin="0,12,0,0" />
+                    Background="Transparent" Margin="0,3,0,0" />
 
       <!-- Content pane. -->
-      <Border x:Name="ContentPane" Grid.Column="2" Grid.Row="1" Classes="card" Margin="0,12,0,0" Padding="0"
+      <Border x:Name="ContentPane" Grid.Column="2" Grid.Row="1" Classes="card" Margin="0,3,0,0" Padding="0"
               IsVisible="{Binding ShowContent}" KeyDown="OnContentKeyDown"
               controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
         <!-- Rows rather than a DockPanel: tab order follows the declaration, so the footer comes after
@@ -500,7 +503,7 @@
              both passes, so the top+bottom inset survives and the last control always scrolls fully into view. -->
         <!-- Never scroll sideways: long values (source URLs) trim/wrap instead of overflowing the card. -->
         <ScrollViewer Grid.Row="0" x:Name="ContentScroll" HorizontalScrollBarVisibility="Disabled">
-          <Grid Margin="18,16">
+          <Grid Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=paneInset}">
 
             <!-- Each section is built when it is first opened, not when the shell loads: six section trees cost
                  seconds on a TV and a session opens one or two. A hidden control is never measured, so the
@@ -511,7 +514,7 @@
             <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 32px inset. -->
             <ContentControl IsVisible="{Binding IsSettingsConfig}" Content="{Binding Config}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}">
+                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=8}">
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:ConfigViewModel">
                   <views:ConfigView />
@@ -542,7 +545,7 @@
             <!-- DIAGNOSTICS SECTION: fixed to the viewport (minus the Grid's 32px inset) so only the pane body scrolls. -->
             <ContentControl IsVisible="{Binding IsSettingsLogs}" Content="{Binding Diagnostics}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                            Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=32}">
+                            Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=8}">
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:DiagnosticsViewModel">
                   <views:DiagnosticsView />

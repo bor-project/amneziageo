@@ -37,7 +37,6 @@ public sealed partial class MainView : UserControl
             _vm.PropertyChanged -= OnViewModelPropertyChanged;
             _vm.Home.PropertyChanged -= OnHomePropertyChanged;
             _vm.Sheet.PropertyChanged -= OnSheetPropertyChanged;
-            _vm.Editor.PropertyChanged -= OnEditorPropertyChanged;
         }
 
         _vm = DataContext as MainWindowViewModel;
@@ -47,8 +46,6 @@ public sealed partial class MainView : UserControl
             _vm.PropertyChanged += OnViewModelPropertyChanged;
             _vm.Home.PropertyChanged += OnHomePropertyChanged;
             _vm.Sheet.PropertyChanged += OnSheetPropertyChanged;
-            _vm.Editor.PropertyChanged += OnEditorPropertyChanged;
-            ValueEditorHost.Register(_vm.Editor.EditAsync);
             ApplySettingsLayout();
         }
     }
@@ -72,56 +69,6 @@ public sealed partial class MainView : UserControl
         if (ReferenceEquals(e.Source, sender))
         {
             _vm?.Sheet.CloseCommand.Execute(null);
-        }
-    }
-
-    // Открытый диалог ведёт в поле: на телефоне это и поднимает клавиатуру, на телевизоре ставит фокус,
-    // откуда её открывает нажатие пульта.
-    private void OnEditorPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName is not nameof(ValueEditorViewModel.IsOpen) || _vm?.Editor.IsOpen != true)
-        {
-            return;
-        }
-
-        Dispatcher.UIThread.Post(
-            () =>
-            {
-                EditorBox.Focus(NavigationMethod.Directional);
-                // Однострочное значение набирают заново, поэтому оно выделено целиком. В многострочном
-                // выделение стёрло бы весь конфиг первой же буквой, там каретка встаёт в конец.
-                if (_vm?.Editor.Multiline == true)
-                {
-                    EditorBox.CaretIndex = EditorBox.Text?.Length ?? 0;
-                }
-                else
-                {
-                    EditorBox.SelectAll();
-                }
-            },
-            DispatcherPriority.Loaded);
-    }
-
-    // Нажатие мимо карточки оставляет настройку прежней.
-    private void OnEditorScrimPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (ReferenceEquals(e.Source, sender))
-        {
-            _vm?.Editor.CancelCommand.Execute(null);
-        }
-    }
-
-    // Enter в однострочном поле применяет правку. На телевизоре до появления клавиатуры он принадлежит ей:
-    // тем же нажатием её и открывают.
-    private void OnEditorKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (!e.Handled
-            && e.Key is Key.Enter
-            && _vm?.Editor is { IsOpen: true, Multiline: false }
-            && InputMethod.GetIsInputMethodEnabled(EditorBox))
-        {
-            e.Handled = true;
-            _vm.Editor.SaveCommand.Execute(null);
         }
     }
 
@@ -205,18 +152,6 @@ public sealed partial class MainView : UserControl
     // the section detail, then home.
     private bool NavigateBack()
     {
-        if (_vm?.Editor.IsOpen == true)
-        {
-            // Клавиатура уходит первой: иначе одно нажатие и убирает её, и теряет набранное.
-            if (SoftInputBridge.Dismiss())
-            {
-                return true;
-            }
-
-            _vm.Editor.CancelCommand.Execute(null);
-            return true;
-        }
-
         if (_vm?.Sheet.IsOpen == true)
         {
             _vm.Sheet.CloseCommand.Execute(null);

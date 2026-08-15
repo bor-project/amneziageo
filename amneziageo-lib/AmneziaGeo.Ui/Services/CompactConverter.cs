@@ -34,6 +34,7 @@ internal sealed class CompactConverter : IValueConverter
             "alignLC" => compact ? HorizontalAlignment.Center : HorizontalAlignment.Left,
             "stretchL" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
             "stretchR" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Right,
+            "stretchC" => compact ? HorizontalAlignment.Stretch : HorizontalAlignment.Center,
             "w100" => compact ? double.NaN : 100d,
             "w110" => compact ? double.NaN : 110d,
             "w130" => compact ? double.NaN : 130d,
@@ -41,6 +42,7 @@ internal sealed class CompactConverter : IValueConverter
             "w170" => compact ? double.NaN : 170d,
             "w180" => compact ? double.NaN : 180d,
             "w240" => compact ? double.NaN : 240d,
+            "w290" => compact ? double.NaN : 290d,
             "w300" => compact ? double.NaN : 300d,
             // Width floors that lift in compact so a narrow card cannot be overflowed.
             "minW130" => compact ? 0d : 130d,

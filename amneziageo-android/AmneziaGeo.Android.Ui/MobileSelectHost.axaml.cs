@@ -37,6 +37,7 @@ internal sealed partial class MobileSelectHost : UserControl
     private Control? _lastFocus;
     private Control? _sheetFocus;
     private Control? _disabledFocus;
+    private Control? _focusAtPress;
     private bool _keyboardAtPress;
     private int _transitionVersion;
 
@@ -49,15 +50,14 @@ internal sealed partial class MobileSelectHost : UserControl
         AdaptiveComboBox.SelectPresenter = _showSelect;
         RootGrid.Children.Insert(0, content);
 
-        // A remote drives focus across the whole screen, so a text field must not summon the keyboard just by
-        // being focused - it would swallow every key, Escape included. The select press raises it instead.
-        if (UiPlatform.IsTelevision)
+        // A text field must not summon the keyboard just by being focused: on TV the remote drives focus across
+        // the whole screen and the keyboard would swallow every key, Escape included; on a phone a stray touch
+        // would land in the field and start editing a live setting. The select press raises it on TV, the second
+        // tap into the focused field on a phone.
+        Styles.Add(new Style(x => x.OfType<TextBox>())
         {
-            Styles.Add(new Style(x => x.OfType<TextBox>())
-            {
-                Setters = { new Setter(InputMethod.IsInputMethodEnabledProperty, false) },
-            });
-        }
+            Setters = { new Setter(InputMethod.IsInputMethodEnabledProperty, false) },
+        });
 
         SizeChanged += OnHostSizeChanged;
     }
@@ -330,20 +330,29 @@ internal sealed partial class MobileSelectHost : UserControl
     }
 
     // Marks the press that started with the keyboard up: the press itself may take the keyboard down, and the
-    // control under it must not step back as well.
+    // control under it must not step back as well. Keeps who held the focus before the press: that is what tells
+    // a tap into a field apart from a tap that only reached it.
     private void OnTopLevelPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         _keyboardAtPress = IsKeyboardOpen();
+        _focusAtPress = _topLevel?.FocusManager?.GetFocusedElement() as Control;
     }
 
-    // Raises the keyboard again on a tap into the field that already holds focus: Avalonia offers it on a focus
-    // change only, so the field the back button silenced would otherwise stay mute.
+    // Raises the keyboard on a tap into the field that already held the focus. The tap that brings the focus in
+    // leaves it at that: a stray touch then costs nothing, and the field the back button silenced comes back with
+    // one more tap.
     private void OnTopLevelPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
         // Ends the press once the control under it has had the release: the mark belongs to that press alone.
-        Dispatcher.UIThread.Post(() => _keyboardAtPress = false);
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _keyboardAtPress = false;
+                _focusAtPress = null;
+            });
 
         if (_topLevel?.FocusManager?.GetFocusedElement() is TextBox box
+            && ReferenceEquals(_focusAtPress, box)
             && !InputMethod.GetIsInputMethodEnabled(box)
             && e.Source is Visual source
             && ReferenceEquals(source.FindAncestorOfType<TextBox>(true), box))

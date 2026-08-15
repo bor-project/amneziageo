@@ -1941,8 +1941,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     """
                     SELECT rl.id, rl.name,
                            (SELECT COUNT(*) FROM routing_list_rules r WHERE r.list_id = rl.id),
-                           json_array_length(NULLIF(rl.routes_json, '')),
-                           json_array_length(NULLIF(rl.domains_json, ''))
+                           COALESCE(json_array_length(NULLIF(rl.routes_json, '')), 0)
+                             + COALESCE(json_array_length(NULLIF(rl.direct_routes_json, '')), 0)
+                             + COALESCE(json_array_length(NULLIF(rl.block_routes_json, '')), 0),
+                           COALESCE(json_array_length(NULLIF(rl.domains_json, '')), 0)
+                             + COALESCE(json_array_length(NULLIF(rl.direct_domains_json, '')), 0)
+                             + COALESCE(json_array_length(NULLIF(rl.block_domains_json, '')), 0)
                     FROM routing_lists rl ORDER BY rl.name;
                     """;
 

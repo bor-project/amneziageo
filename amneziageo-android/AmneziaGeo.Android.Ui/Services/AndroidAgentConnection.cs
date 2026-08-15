@@ -2742,11 +2742,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
         var summary = _routingSummaries?.FirstOrDefault(r => r.Id == listId);
         report.Append("routing list : ").Append(summary?.Name ?? listId.ToString(CultureInfo.InvariantCulture)).Append('\n');
-        report.Append("  geoip routes   : ").Append(summary?.RouteCount ?? 0).Append('\n');
-        report.Append("  geosite domains: ").Append(summary?.DomainCount ?? 0).Append('\n');
+        report.Append("  routes         : ").Append(summary?.RouteCount ?? 0).Append('\n');
+        report.Append("  domains        : ").Append(summary?.DomainCount ?? 0).Append('\n');
     }
 
-    // Returns the routing list's own rules; on Android a verdict lives in the tun's route table, not in a cache.
+    // Returns the routing list's own rules, bucket by bucket; the verdicts a running session holds are in
+    // 'sessions', which reads them from the relay.
     private async Task<IpcAck> GetCacheEntriesAsync()
     {
         await EnsureInitAsync().ConfigureAwait(false);
@@ -2754,21 +2755,33 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         if (_selectedRoutingList is { } listId
             && await _store.GetRoutingListAsync(listId).ConfigureAwait(false) is { } list)
         {
-            foreach (var route in list.Routes)
-            {
-                rows.Add(new { kind = "proxy", key = route, value = "geoip" });
-            }
-
-            if (list.Domains is not null)
-            {
-                foreach (var domain in list.Domains)
-                {
-                    rows.Add(new { kind = "domain", key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() });
-                }
-            }
+            AddRoutes(rows, "proxy", list.Routes);
+            AddRoutes(rows, "direct", list.DirectRoutes);
+            AddRoutes(rows, "block", list.BlockRoutes);
+            AddDomains(rows, "proxy", list.Domains);
+            AddDomains(rows, "direct", list.DirectDomains);
+            AddDomains(rows, "block", list.BlockDomains);
         }
 
         return Rows(rows);
+    }
+
+    // Addresses one bucket carries.
+    private static void AddRoutes(List<object> rows, string bucket, IReadOnlyList<string>? routes)
+    {
+        foreach (var route in routes ?? [])
+        {
+            rows.Add(new { kind = bucket, key = route, value = "route" });
+        }
+    }
+
+    // Names one bucket carries, each with the way it is matched.
+    private static void AddDomains(List<object> rows, string bucket, IReadOnlyList<GeoDomain>? domains)
+    {
+        foreach (var domain in domains ?? [])
+        {
+            rows.Add(new { kind = bucket, key = domain.Value, value = domain.Kind.ToString().ToLowerInvariant() });
+        }
     }
 
     private static IpcAck Rows(List<object> rows)

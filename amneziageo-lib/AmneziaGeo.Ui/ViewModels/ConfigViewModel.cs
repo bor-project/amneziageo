@@ -40,6 +40,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCompactActive))]
     private bool _isCompact;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar so a
@@ -61,6 +62,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowConnectOpenConfig))]
     [NotifyPropertyChangedFor(nameof(CanExportOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
+    [NotifyPropertyChangedFor(nameof(ShowCompactActive))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -95,6 +97,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
+    [NotifyPropertyChangedFor(nameof(ShowCompactActive))]
     private bool _isCreatingSectionConfig;
 
     // Manage sub-section shown by the top menu (Config vs Export). Import is IsCreatingSectionConfig.
@@ -105,6 +108,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
+    [NotifyPropertyChangedFor(nameof(ShowCompactActive))]
     private ConfigSection _manageSection = ConfigSection.Config;
 
     [ObservableProperty]
@@ -185,6 +189,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public bool IsSectionConfig => !IsCreatingSectionConfig && OpenConfig is not null && ManageSection == ConfigSection.Config;
 
     public bool IsSectionExport => !IsCreatingSectionConfig && OpenConfig is not null && ManageSection == ConfigSection.Export;
+
+    /// <summary>
+    /// Стоит ли тумблер активности в шапке: на узком экране карточка под выбором стоила пол-экрана, и её
+    /// содержимое ужато в строку у самого выбора.
+    /// </summary>
+    public bool ShowCompactActive => IsCompact && IsSectionConfig;
 
     /// <summary>
     /// Стоит ли на экране выбор конфигурации с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт
@@ -891,6 +901,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         var config = OpenConfig;
+
+        // The tunnel running on it is taken down first: the agent refuses to remove the config it runs, and
+        // stopping it by hand is a step the user should not have to take (#248).
+        if (IsOpenConfigActive && _host.Home.IsTunnelActive)
+        {
+            await _host.Home.StopTunnelAsync();
+        }
+
         var ack = await RemoveConfigAsync(config);
         if (!ack.Ok)
         {

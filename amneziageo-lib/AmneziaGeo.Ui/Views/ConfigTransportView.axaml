@@ -12,9 +12,9 @@
   </UserControl.Resources>
   <!-- MTU + WebSocket proxy editor. Fields stay left, capped so they do not stretch across a wide card. -->
   <StackPanel Spacing="14">
-    <TextBlock Text="{l:Tr Main_ProxyWebSocketLabel}" FontWeight="SemiBold" FontSize="15" />
-
-    <controls:SettingSwitchRow Label="{l:Tr Main_UseWebSocketToggle}" Description="{l:Tr Main_ProxyWebSocketHint}"
+    <!-- The section heading carries the switch itself: a separate row under it only said the heading again. -->
+    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_ProxyWebSocketLabel}"
+                               Description="{l:Tr Main_ProxyWebSocketHint}"
                                IsChecked="{Binding UseWebSocket, Mode=TwoWay}" HorizontalAlignment="Stretch"
                                IsVisible="{Binding SupportsWebSocket}" />
 
@@ -77,18 +77,22 @@
       </Panel>
     </Grid>
 
-    <StackPanel Spacing="4" MaxWidth="980" HorizontalAlignment="Left">
-      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
-        <StackPanel Grid.Column="0" Spacing="2">
-          <TextBlock Classes="label" Text="{l:Tr Main_TunnelMtuLabel}" />
-          <TextBox Classes="field" Width="90" Text="{Binding Mtu}" />
-        </StackPanel>
-        <TextBlock Grid.Column="1" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                   VerticalAlignment="Bottom" Margin="0,0,0,6" Text="{l:Tr Main_MtuHint}" />
-      </Grid>
-    </StackPanel>
+    <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
-    <controls:SettingSwitchRow Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
+    <!-- The box stands beside its heading, where a switch stands in the rows around it. -->
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MaxWidth="520" MinHeight="40"
+          HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+      <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+        <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
+        <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
+      </StackPanel>
+      <TextBox Grid.Column="1" Classes="field" Width="90" VerticalAlignment="Center" Text="{Binding Mtu}" />
+    </Grid>
+
+    <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
+    <controls:SettingSwitchRow Heading="True" Label="{l:Tr Main_UseIpv6Title}" Description="{l:Tr Main_UseIpv6Hint}"
                                IsChecked="{Binding UseIpv6, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
     <TextBlock Text="{Binding StatusMessage}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"

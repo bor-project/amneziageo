@@ -22,6 +22,9 @@ internal sealed partial class SettingSwitchRow : UserControl
     public static readonly StyledProperty<bool> SwitchEnabledProperty =
         AvaloniaProperty.Register<SettingSwitchRow, bool>(nameof(SwitchEnabled), true);
 
+    public static readonly StyledProperty<bool> HeadingProperty =
+        AvaloniaProperty.Register<SettingSwitchRow, bool>(nameof(Heading));
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -52,6 +55,15 @@ internal sealed partial class SettingSwitchRow : UserControl
     {
         get => GetValue(SwitchEnabledProperty);
         set => SetValue(SwitchEnabledProperty, value);
+    }
+
+    /// <summary>
+    /// Подаёт подпись как заголовок раздела, а не как строку внутри него.
+    /// </summary>
+    public bool Heading
+    {
+        get => GetValue(HeadingProperty);
+        set => SetValue(HeadingProperty, value);
     }
 
     // Tapping the label toggles the switch, so the whole row is the target, not the knob alone.

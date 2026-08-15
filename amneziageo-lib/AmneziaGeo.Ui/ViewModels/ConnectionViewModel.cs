@@ -1121,6 +1121,26 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Takes the running tunnel down and waits for the teardown, for an operation the agent refuses while it runs.
+    /// </summary>
+    public async Task<bool> StopTunnelAsync()
+    {
+        if (ConnState == 0)
+        {
+            return true;
+        }
+
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
+        if (!ack.Ok)
+        {
+            return false;
+        }
+
+        await WaitForDisconnectAsync();
+        return ConnState == 0;
+    }
+
     // Switches the single machine-wide tunnel to this account after the owned-by-other prompt is accepted.
     private async Task TakeoverAsync()
     {

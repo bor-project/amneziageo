@@ -329,10 +329,10 @@
     <value>How long an address is kept in the cache without traffic. After that its route is decided again.</value>
   </data>
   <data name="Main_UseIpv6Hint" xml:space="preserve">
-    <value>Sends IPv6 through the tunnel as well. Turn this on only if your server has an IPv6 address, otherwise leave it off. Applies on the next connect.</value>
+    <value>Use IPv6</value>
   </data>
   <data name="Main_UseIpv6Title" xml:space="preserve">
-    <value>Use IPv6</value>
+    <value>IPv6</value>
   </data>
   <data name="Main_AmneziaEngineVersion" xml:space="preserve">
     <value>Amnezia engine version</value>
@@ -449,7 +449,7 @@
     <value>Configuration</value>
   </data>
   <data name="Main_ConfigNameLabel" xml:space="preserve">
-    <value>CONFIGURATION NAME</value>
+    <value>Configuration name</value>
   </data>
   <data name="Main_ConfigSection" xml:space="preserve">
     <value>Configurations</value>
@@ -478,14 +478,11 @@
   <data name="Main_DeleteConfigButton" xml:space="preserve">
     <value>Delete configuration</value>
   </data>
-  <data name="Main_DeleteConfigHint" xml:space="preserve">
-    <value>First stop the tunnel using it.</value>
-  </data>
   <data name="Main_DeleteConfigTitle" xml:space="preserve">
     <value>Delete configuration</value>
   </data>
   <data name="Main_DeleteConfigPrompt" xml:space="preserve">
-    <value>Remove the configuration "{0}" from the catalogue. This action cannot be undone.</value>
+    <value>Deletes "{0}" for good</value>
   </data>
   <data name="Main_DeleteListButton" xml:space="preserve">
     <value>Delete list</value>
@@ -548,7 +545,7 @@
     <value>Add a configuration</value>
   </data>
   <data name="Main_AddConfigSubtitle" xml:space="preserve">
-    <value>Choose a method</value>
+    <value>Choose how to add it</value>
   </data>
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Unsaved changes</value>
@@ -641,7 +638,7 @@
     <value>login</value>
   </data>
   <data name="Main_MtuHint" xml:space="preserve">
-    <value>576-1500, default 1420. With a proxy, 1280 is recommended.</value>
+    <value>Packet size</value>
   </data>
   <data name="Main_NameLabel" xml:space="preserve">
     <value>NAME</value>
@@ -698,19 +695,16 @@
     <value>RULES</value>
   </data>
   <data name="Main_ProxyWebSocketLabel" xml:space="preserve">
-    <value>WebSocket proxy</value>
+    <value>Proxy</value>
   </data>
   <data name="Main_ProxyWebSocketHint" xml:space="preserve">
-    <value>Carries UDP over TCP and helps when UDP is blocked.</value>
-  </data>
-  <data name="Main_UseWebSocketToggle" xml:space="preserve">
-    <value>Use proxy</value>
+    <value>Use WS where UDP is not available</value>
   </data>
   <data name="Main_ExportConfigTitle" xml:space="preserve">
     <value>Export configuration</value>
   </data>
   <data name="Main_ExportConfigSubtitle" xml:space="preserve">
-    <value>Choose a transfer format</value>
+    <value>Choose a method</value>
   </data>
   <data name="Main_QrPrivateKeyWarning" xml:space="preserve">
     <value>The QR code contains a private key. Do not share it with anyone.</value>
@@ -833,7 +827,7 @@
     <value>Geo sources</value>
   </data>
   <data name="Main_TunnelMtuLabel" xml:space="preserve">
-    <value>TUNNEL MTU</value>
+    <value>MTU</value>
   </data>
   <data name="Main_UpdateAllButton" xml:space="preserve">
     <value>Update all</value>
@@ -1674,7 +1668,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Export</value>
   </data>
   <data name="Main_ConfigTextLabel" xml:space="preserve">
-    <value>CONFIGURATION TEXT</value>
+    <value>Configuration text</value>
   </data>
   <data name="Agent_TunnelOwnedByOther" xml:space="preserve">
     <value>The VPN is in use by another account.</value>

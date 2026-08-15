@@ -165,13 +165,23 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- Порт стоит значением в строке подписи, а правится в диалоге: касание строки на телефоне
-                 иначе сразу уводит в поле и меняет настройку. -->
-            <controls:SettingValueRow Label="{l:Tr General_ProxySocksPort}"
-                                      Value="{Binding ProxySocksPort, Mode=TwoWay}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxySocksPort}" FontSize="13.5" VerticalAlignment="Center"
+                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxySocksPort, Mode=TwoWay}"
+                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
+            </Grid>
 
-            <controls:SettingValueRow Label="{l:Tr General_ProxyHttpPort}"
-                                      Value="{Binding ProxyHttpPort, Mode=TwoWay}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" RowDefinitions="Auto,Auto" RowSpacing="8">
+              <TextBlock Grid.Column="0" Text="{l:Tr General_ProxyHttpPort}" FontSize="13.5" VerticalAlignment="Center"
+                         Grid.ColumnSpan="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=span2}" />
+              <TextBox Classes="field" Width="110" VerticalAlignment="Center" Text="{Binding ProxyHttpPort, Mode=TwoWay}"
+                       Grid.Row="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=row}"
+                       Grid.Column="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=col}"
+                       HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=alignRL}" />
+            </Grid>
 
             <!-- Clients: the count first, and who holds them under the arrow. -->
             <StackPanel Spacing="6">

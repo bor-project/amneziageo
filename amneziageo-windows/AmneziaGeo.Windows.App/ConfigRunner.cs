@@ -1,4 +1,7 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using AmneziaGeo.Decl;
 using AmneziaGeo.Geo;
 using AmneziaGeo.Ipc;
@@ -41,6 +44,14 @@ internal sealed class ConfigRunner(
     private long _lastRxBytes = -1;
     private int _deadStreak;
     private const int DeadStreakLimit = 3;
+
+    // Launches that failed in a row. A busy machine misses the window once or twice; one that keeps missing it
+    // has something wrong with the tunnel process itself, and the user hears that instead of dialling forever.
+    private int _launchStreak;
+    private const int LaunchStreakLimit = 5;
+
+    // The service manager's own start deadline; the service is still coming up when it elapses.
+    private const int ScStartTimeout = 1053;
 
     // Throughput and handshake rate of the running tunnel, and the journal line that keeps their history.
     private readonly LinkMeter _meter = new();
@@ -165,6 +176,7 @@ internal sealed class ConfigRunner(
         ReapForeignTunnels(config);
         Stop(config);
 
+        _launchStreak = 0;
         await SetStateAsync("connecting");
         if (!await ConnectWithRetryAsync(config, ct))
         {
@@ -254,6 +266,7 @@ internal sealed class ConfigRunner(
             if (outcome.Ok)
             {
                 control.ClearRetry();
+                _launchStreak = 0;
                 return true;
             }
 
@@ -262,9 +275,10 @@ internal sealed class ConfigRunner(
                 return false;
             }
 
-            if (!IsTransient(outcome.Reason))
+            _launchStreak = outcome.Reason == ConnectFailureReason.ServiceLaunchFailed ? _launchStreak + 1 : 0;
+            if (!IsTransient(outcome.Reason) || _launchStreak > LaunchStreakLimit)
             {
-                logger.LogWarning("could not connect through {Config}: {Reason} {Detail}; this is not something a retry fixes, so dialling stops here", config, outcome.Reason, outcome.Detail);
+                logger.LogWarning("could not connect through {Config}: {Reason} {Detail}; a retry does not get past this, so dialling stops here", config, outcome.Reason, outcome.Detail);
                 Stop(config);
                 await SetStateAsync("disconnected");
                 control.FailConnect(outcome.Reason, outcome.Detail);
@@ -302,11 +316,13 @@ internal sealed class ConfigRunner(
 
     // A transient failure is a network/server condition worth retrying; the rest are local/config faults that
     // need user action. WireGuard-over-UDP cannot tell "server unreachable" from "keys rejected" (both silence
-    // the handshake), so NoHandshake counts as transient.
+    // the handshake), so NoHandshake counts as transient. A tunnel service that was too slow to answer counts
+    // as well: a machine that has just booted misses the window and comes up on the next attempt (#247).
     private static bool IsTransient(ConnectFailureReason reason) => reason switch
     {
         ConnectFailureReason.NoHandshake or ConnectFailureReason.UnderlayUnreachable
-            or ConnectFailureReason.Timeout or ConnectFailureReason.Unknown => true,
+            or ConnectFailureReason.Timeout or ConnectFailureReason.ServiceLaunchFailed
+            or ConnectFailureReason.Unknown => true,
         _ => false,
     };
 
@@ -413,6 +429,15 @@ internal sealed class ConfigRunner(
         // Clear prior reason so this run's failure isn't stale.
         await store.SetSettingAsync(TunnelPaths.ConnectMessageKey(member), string.Empty, ct);
         await store.SetSettingAsync(TunnelPaths.ConnectReasonKey(member), string.Empty, ct);
+
+        // Hold the tunnel back while the machine has no network of its own. Right after a restart the agent is
+        // up seconds before the adapters are, and a tunnel raised into a machine with nowhere to send its
+        // handshake only burns the attempt; the network watcher wakes this dial the moment an address appears.
+        if (!UnderlayReady())
+        {
+            logger.LogInformation("{Member}: this machine is not on a network yet, so the tunnel is not started; it is dialled as soon as one is there", member);
+            return new ConnectOutcome(false, ConnectFailureReason.UnderlayUnreachable, string.Empty);
+        }
 
         logger.LogInformation("{Member}: starting the tunnel process", member);
         var created = serviceManager.CreateService(member, activeScope.OwnerRoot);
@@ -538,12 +563,15 @@ internal sealed class ConfigRunner(
             return new ConnectOutcome(false, stored, TrimDetail(storedMessage));
         }
 
-        if (startFailed)
+        // A start that ran out of the service manager's own patience is the same slow launch as one that
+        // answered nothing at all - the process is on its way up and the next attempt finds it. Only a refused
+        // create, or a start refused outright, is the user's to fix.
+        if (startFailed && (created != 0 || started != ScStartTimeout))
         {
             return new ConnectOutcome(false, ConnectFailureReason.ServiceStartFailed, ScError(started != 0 ? started : created));
         }
 
-        return new ConnectOutcome(false, ConnectFailureReason.ServiceLaunchFailed, ScError(started));
+        return new ConnectOutcome(false, ConnectFailureReason.ServiceLaunchFailed, started == 0 ? string.Empty : ScError(started));
     }
 
     // Keep the surfaced detail short; the message never carries secrets but may be long.
@@ -558,13 +586,57 @@ internal sealed class ConfigRunner(
         return trimmed.Length > 160 ? trimmed[..160] : trimmed;
     }
 
+    // Whether this machine has a network of its own: an adapter that is up, is neither loopback nor a tunnel,
+    // and carries an address it can be reached at. A gateway is not asked for - a server on the same network
+    // needs none - so the address is the whole test.
+    private static bool UnderlayReady()
+    {
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != OperationalStatus.Up
+                || ni.NetworkInterfaceType == NetworkInterfaceType.Loopback
+                || RouteManager.IsTunnelAdapter(ni))
+            {
+                continue;
+            }
+
+            try
+            {
+                foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (IsRoutable(ua.Address))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (NetworkInformationException)
+            {
+            }
+        }
+
+        return false;
+    }
+
+    // An address the machine gave itself because nothing handed it one is not a network.
+    private static bool IsRoutable(IPAddress address)
+    {
+        if (address.IsIPv6LinkLocal || IPAddress.IsLoopback(address))
+        {
+            return false;
+        }
+
+        var octets = address.AddressFamily == AddressFamily.InterNetwork ? address.GetAddressBytes() : null;
+        return octets is not [169, 254, _, _];
+    }
+
     // sc.exe error code names.
     private static string ScError(int code) => code switch
     {
         0 => "ok",
         2 => "file not found",
         5 => "access denied",
-        1053 => "service did not report running in time (timeout)",
+        ScStartTimeout => "service did not report running in time (timeout)",
         1056 => "service already running",
         1060 => "service does not exist",
         1072 => "service marked for deletion",

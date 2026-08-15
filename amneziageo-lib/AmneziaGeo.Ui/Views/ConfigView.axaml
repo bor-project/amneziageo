@@ -17,39 +17,17 @@
     <StreamGeometry x:Key="AgLockGeometry">M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z</StreamGeometry>
   </UserControl.Resources>
   <!-- Last row stars to fill the pane with the import config-text box. Cards stretch the full pane width. -->
-  <Grid RowDefinitions="Auto,*" ColumnDefinitions="Auto,*">
-
-    <!-- Широкое окно: каталог стоит карточками слева, свойства открытой конфигурации - справа от них.
-         Карточка ведёт себя как на главной: выбирает конфигурацию, подключает её и переставляется драгом. -->
-    <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Width="240" Margin="0,12,16,0"
-                IsVisible="{Binding ShowConfigCards}">
-      <ItemsControl ItemsSource="{Binding Configs}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:ConfigItemViewModel">
-            <controls:ServerCard Margin="0,0,0,8" HasMenu="False" Marked="{Binding IsOpened}"
-                    IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
-                    SelectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
-                    ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"
-                    DropCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).ApplyOrderCommand}" />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </StackPanel>
+  <Grid RowDefinitions="Auto,*">
 
     <!-- Шапка: выбор конфигурации и два равных действия под ним. Способы «Добавить» и «Экспорт» выпадают
          списком у кнопки, а на телефоне приходят шторкой снизу. -->
-    <StackPanel x:Name="HeaderActions" Grid.Row="0" Grid.Column="1" Margin="0,12,0,0" Spacing="8"
+    <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
                 IsVisible="{Binding ShowHeaderActions}">
       <StackPanel Spacing="4">
-        <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"
-                   IsVisible="{Binding ShowConfigPicker}" />
+        <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
         <!-- Тумблер активности стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-          <!-- Выбор ушёл в карточки: на его место к тумблеру встаёт подпись. -->
-          <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15"
-                     VerticalAlignment="Center" IsVisible="{Binding ShowConfigCards}" />
           <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
-                    IsVisible="{Binding ShowConfigPicker}"
                     ItemsSource="{Binding ConfigCatalogueOptions}"
                     SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
             <controls:AdaptiveComboBox.ItemTemplate>
@@ -111,14 +89,14 @@
     </StackPanel>
 
     <!-- Catalogue loader: the agent has not reported its configs yet (#137). -->
-    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,14,0,0" IsVisible="{Binding ShowCatalogueLoader}"
+    <StackPanel Grid.Row="1" Margin="0,14,0,0" IsVisible="{Binding ShowCatalogueLoader}"
                 HorizontalAlignment="Center" Spacing="12">
       <ProgressBar IsIndeterminate="True" Width="150" HorizontalAlignment="Center" />
       <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
     </StackPanel>
 
     <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
-    <StackPanel x:Name="SettingsSection" Grid.Row="1" Grid.Column="1" Margin="0,14,0,0"
+    <StackPanel x:Name="SettingsSection" Grid.Row="1" Margin="0,14,0,0"
                 IsVisible="{Binding IsSectionConfig}" Spacing="14">
       <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
@@ -215,8 +193,8 @@
 
     <!-- Черновик новой конфигурации: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере.
          Imported with the footer Save once text parses + name is set (#143). -->
-    <Border x:Name="ImportSection" Grid.Row="1" Grid.Column="1" Margin="0,12,0,0" Classes="sect"
-            Classes.compact="{Binding IsCompact}" IsVisible="{Binding IsSectionImport}">
+    <Border x:Name="ImportSection" Grid.Row="1" Margin="0,12,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
+            IsVisible="{Binding IsSectionImport}">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Spacing="6">
           <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" Margin="0,0,0,4" />
@@ -263,7 +241,7 @@
     </Border>
 
     <!-- Export section: read-only QR of the .conf / of the vpn:// link, with copy / save. -->
-    <StackPanel x:Name="ExportSection" Grid.Row="1" Grid.Column="1" Margin="0,12,0,0"
+    <StackPanel x:Name="ExportSection" Grid.Row="1" Margin="0,12,0,0"
                 IsVisible="{Binding IsSectionExport}" Spacing="12">
       <!-- Экран экспорта занимает пану целиком; возвращает с него стрелка «назад» в шапке окна. -->
       <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15"

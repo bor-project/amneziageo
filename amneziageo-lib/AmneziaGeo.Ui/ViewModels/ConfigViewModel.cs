@@ -95,8 +95,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowSaveButton))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
-    [NotifyPropertyChangedFor(nameof(ShowConfigCards))]
-    [NotifyPropertyChangedFor(nameof(ShowConfigPicker))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
     private bool _isCreatingSectionConfig;
@@ -109,8 +107,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
-    [NotifyPropertyChangedFor(nameof(ShowConfigCards))]
-    [NotifyPropertyChangedFor(nameof(ShowConfigPicker))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
     private ConfigSection _manageSection = ConfigSection.Config;
 
@@ -166,26 +162,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public ActionSheetViewModel Sheet => _host.Sheet;
 
     /// <summary>
-    /// Главный экран: карточки каталога берут у него подключение.
-    /// </summary>
-    public ConnectionViewModel Home => _host.Home;
-
-    /// <summary>
-    /// Хватает ли ширины окна, чтобы каталог стоял карточками рядом со свойствами. Читается у оболочки:
-    /// стартовая ширина не меняется, и посланный флаг не пришёл бы вовсе.
-    /// </summary>
-    public bool IsLarge => _host.IsLarge;
-
-    /// <summary>
-    /// Перечитывает класс ширины после того, как оболочка приняла новую ширину окна.
-    /// </summary>
-    public void NotifyLargeChanged()
-    {
-        OnPropertyChanged(nameof(IsLarge));
-        NotifyCatalogueLayoutChanged();
-    }
-
-    /// <summary>
     /// Configuration rows.
     /// </summary>
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
@@ -224,16 +200,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// занимают экран целиком и возвращают сюда сами.
     /// </summary>
     public bool ShowHeaderActions => !IsCreatingSectionConfig && !IsSectionExport && !ShowCatalogueLoader;
-
-    /// <summary>
-    /// Стоит ли каталог карточками слева от свойств: широкое окно и есть что показать.
-    /// </summary>
-    public bool ShowConfigCards => IsLarge && HasConfigs && ShowHeaderActions;
-
-    /// <summary>
-    /// Стоит ли выбор конфигурации списком: карточки его заменяют.
-    /// </summary>
-    public bool ShowConfigPicker => !ShowConfigCards;
 
     /// <summary>
     /// Есть ли что экспортировать.
@@ -417,29 +383,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private void ToggleConfigText() => ShowConfigText = !ShowConfigText;
 
-    /// <summary>
-    /// Открывает свойства конфигурации, выбранной карточкой каталога.
-    /// </summary>
-    [RelayCommand]
-    private void OpenCard(ConfigItemViewModel? item)
-    {
-        if (item is null)
-        {
-            return;
-        }
-
-        OpenConfigFor(item.Name);
-    }
-
-    // Marks the card whose properties stand beside the list.
-    private void MarkOpenCard()
-    {
-        foreach (var item in Configs)
-        {
-            item.IsOpened = string.Equals(item.Name, OpenConfig, StringComparison.Ordinal);
-        }
-    }
-
     // Entering the config settings section: keep an in-progress draft, land on the active / first config, or fall
     // back to Import when there are no configs to show.
     public void EnterSection()
@@ -457,7 +400,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             if (!_catalogueKnown)
             {
                 _enterDeferred = true;
-                NotifyCatalogueGateChanged();
+                OnPropertyChanged(nameof(ShowCatalogueLoader));
+                OnPropertyChanged(nameof(ShowHeaderActions));
+                OnPropertyChanged(nameof(ShowNoConfigsHint));
                 return;
             }
 
@@ -636,7 +581,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         // Re-select the section combo now that the option list is current: an OpenConfig set above (or a
         // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
         SyncCatalogueConfig();
-        MarkOpenCard();
         NotifyHasConfigsChanged();
         MarkCatalogueKnown();
     }
@@ -649,7 +593,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         _catalogueKnown = false;
         _enterDeferred = false;
-        NotifyCatalogueGateChanged();
+        OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(ShowHeaderActions));
+        OnPropertyChanged(nameof(ShowNoConfigsHint));
         Configs.Clear();
         OpenConfig = null;
         _pendingOpenConfig = null;
@@ -698,7 +644,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         _enterDeferred = false;
-        NotifyCatalogueGateChanged();
+        OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(ShowHeaderActions));
+        OnPropertyChanged(nameof(ShowNoConfigsHint));
         if (IsActiveSection)
         {
             EnterSection();
@@ -708,23 +656,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private void NotifyHasConfigsChanged()
     {
         OnPropertyChanged(nameof(HasConfigs));
-        NotifyCatalogueLayoutChanged();
-    }
-
-    // Re-raise what the catalogue's arrival gates: the loader, the header actions and the hint.
-    private void NotifyCatalogueGateChanged()
-    {
-        OnPropertyChanged(nameof(ShowCatalogueLoader));
-        OnPropertyChanged(nameof(ShowHeaderActions));
-        OnPropertyChanged(nameof(ShowNoConfigsHint));
-        NotifyCatalogueLayoutChanged();
-    }
-
-    // Re-raise the two faces of the catalogue: the picker and the card list stand and fall together.
-    private void NotifyCatalogueLayoutChanged()
-    {
-        OnPropertyChanged(nameof(ShowConfigCards));
-        OnPropertyChanged(nameof(ShowConfigPicker));
     }
 
     partial void OnOpenConfigChanged(string? value)
@@ -737,7 +668,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ConfigRename = value ?? string.Empty;
         ConfigRenameStatus = string.Empty;
         SyncCatalogueConfig();
-        MarkOpenCard();
         if (value is null)
         {
             ConfigExport = null;

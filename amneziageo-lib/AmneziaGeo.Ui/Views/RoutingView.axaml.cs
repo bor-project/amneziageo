@@ -74,7 +74,7 @@ internal sealed partial class RoutingView : UserControl
             sender as Control,
             vm.Sheet,
             Loc.Instance.Get("Main_AddListTitle"),
-            Loc.Instance.Get("Main_AddConfigSubtitle"),
+            string.Empty,
             options);
     }
 

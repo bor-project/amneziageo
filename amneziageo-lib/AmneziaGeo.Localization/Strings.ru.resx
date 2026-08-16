@@ -470,7 +470,7 @@
     <value>Создать вручную</value>
   </data>
   <data name="Main_ConfigCatalogueEmpty" xml:space="preserve">
-    <value>Конфигураций пока нет. Добавьте первую.</value>
+    <value>Конфигураций пока нет.</value>
   </data>
   <data name="Main_ShowButton" xml:space="preserve">
     <value>Показать</value>
@@ -543,9 +543,6 @@
   </data>
   <data name="Main_AddConfigTitle" xml:space="preserve">
     <value>Добавить конфигурацию</value>
-  </data>
-  <data name="Main_AddConfigSubtitle" xml:space="preserve">
-    <value>Выбор способа добавления</value>
   </data>
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Есть несохранённые изменения</value>
@@ -649,9 +646,6 @@
   <data name="Main_NewConfigButton" xml:space="preserve">
     <value>Новый конфиг</value>
   </data>
-  <data name="Main_NewConfigLabel" xml:space="preserve">
-    <value>НОВАЯ КОНФИГУРАЦИЯ</value>
-  </data>
   <data name="Main_NewListButton" xml:space="preserve">
     <value>Новый список</value>
   </data>
@@ -659,7 +653,7 @@
     <value>Добавить конфигурацию</value>
   </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
-    <value>Списков пока нет. Нажмите «+ Новый список», чтобы задать правила (гео-категории, домены, CIDR, приложения).</value>
+    <value>Списков пока нет.</value>
   </data>
   <data name="Main_NoSourcesHint" xml:space="preserve">
     <value>Пока нет баз. Добавьте geosite/geoip выше.</value>
@@ -1655,9 +1649,6 @@
   <data name="Main_AddListTitle" xml:space="preserve">
     <value>Добавить список</value>
   </data>
-  <data name="Main_NewListLabel" xml:space="preserve">
-    <value>Новый список</value>
-  </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Конфиг</value>
   </data>
@@ -1783,9 +1774,6 @@
   </data>
   <data name="Agent_NoConfigSelected" xml:space="preserve">
     <value>Конфигурация не выбрана.</value>
-  </data>
-  <data name="Main_NoConfigsHint" xml:space="preserve">
-    <value>Добавьте конфигурацию в настройках.</value>
   </data>
   <data name="Main_ServersTitle" xml:space="preserve">
     <value>Серверы</value>

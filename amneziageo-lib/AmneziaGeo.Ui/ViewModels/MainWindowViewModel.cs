@@ -464,25 +464,16 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         AppExitHost.Exit();
     }
 
-    // Home «Добавить конфигурацию»: переход в настройки на секцию конфигураций.
-    [RelayCommand]
-    private void AddConfig()
+    /// <summary>
+    /// Открывает настройки на секции конфигураций под добавление, начатое с главного экрана. Способ выбран там же,
+    /// поэтому черновик уже несёт источник. Начатое из списка серверов вернёт к нему после сохранения.
+    /// </summary>
+    public void OpenConfigImport(bool returnToServers)
     {
         Nav = "settings";
         SettingsSection = "config";
         SettingsDetailOpen = true;
-        Config.EnterSection();
-        RefreshLogsActive();
-    }
-
-    // «+» над списком серверов: импорт конфигурации, который вернёт к списку после сохранения.
-    [RelayCommand]
-    private void AddServer()
-    {
-        Nav = "settings";
-        SettingsSection = "config";
-        SettingsDetailOpen = true;
-        Config.EnterImportSection(returnToServers: true);
+        Config.EnterImportSection(returnToServers);
         RefreshLogsActive();
     }
 
@@ -559,7 +550,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         await DeleteServer(item);
     }
 
-    // Кнопка «Удалить» строки сервера: сначала снимаем туннель с этой конфигурации, потом удаляем её.
+    // Кнопка «Удалить» строки сервера: снимаем с конфигурации выбор и туннель, потом удаляем её.
     [RelayCommand]
     private async Task DeleteServer(ConfigItemViewModel? item)
     {
@@ -569,12 +560,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         item.SwipeOpen = false;
-        if (!await Home.EnsureDisconnectedAsync(item.Name))
-        {
-            return;
-        }
-
-        var ack = await Config.RemoveConfigAsync(item.Name);
+        var ack = await Config.DeleteConfigAsync(item.Name);
         if (!ack.Ok)
         {
             Home.ShowNotice(Describe(ack));

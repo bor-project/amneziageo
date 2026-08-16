@@ -22,9 +22,11 @@
     <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
                 IsVisible="{Binding ShowHeaderActions}">
       <StackPanel Spacing="4">
-        <TextBlock Text="{l:Tr Main_RoutingPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+        <!-- Пустой каталог выбирать не из чего: остаются «Добавить» и подсказка под ним. -->
+        <TextBlock Text="{l:Tr Main_RoutingPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"
+                   IsVisible="{Binding HasRoutingLists}" />
         <!-- Тумблер применения стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. -->
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasRoutingLists}">
           <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
                     ItemsSource="{Binding RoutingCatalogueOptions}"
                     SelectedItem="{Binding SelectedCatalogueRouting, Mode=TwoWay}">
@@ -52,10 +54,11 @@
         </WrapPanel>
       </StackPanel>
 
-      <!-- Обе кнопки делят строку поровну; на широком экране строка стоит слева своей шириной. -->
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="8"
+      <!-- Обе кнопки делят строку поровну; на широком экране строка стоит слева своей шириной. Пустому каталогу
+           экспортировать нечего - «Добавить» остаётся одна и занимает строку целиком. -->
+      <UniformGrid Rows="1"
             HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-        <Button x:Name="AddButton" Grid.Column="0" Classes="accent" MinHeight="40"
+        <Button x:Name="AddButton" Classes="accent" MinHeight="40" Margin="0,0,4,0"
                 HorizontalAlignment="Stretch" Click="OnAddOptions"
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
@@ -64,9 +67,9 @@
             <TextBlock Text="{l:Tr Main_AddButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
-        <Button Grid.Column="1" Classes="methodpick" MinHeight="40"
+        <Button Classes="methodpick" MinHeight="40" Margin="4,0,0,0"
                 HorizontalAlignment="Stretch" Click="OnExportOptions"
-                IsEnabled="{Binding CanExportOpenList}"
+                IsVisible="{Binding CanExportOpenList}"
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
                       HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -74,7 +77,7 @@
             <TextBlock Text="{l:Tr Main_ExportTab}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
-      </Grid>
+      </UniformGrid>
 
       <TextBlock IsVisible="{Binding ShowNoListsHint}" Classes="muted" FontSize="12" TextWrapping="Wrap"
                  Margin="0,4,0,0" Text="{l:Tr Main_NoRoutingListsHint}" />
@@ -216,9 +219,9 @@
         </Border>
       </StackPanel>
 
-      <!-- Черновик нового списка: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере. -->
+      <!-- Черновик нового списка: способ уже выбран в шторке, имя списка называет сам редактор, отсюда ведут
+           «Сохранить» и «Отмена» в футере. -->
       <StackPanel x:Name="ImportEditor" IsVisible="{Binding ShowImportEditor}" Spacing="14">
-        <TextBlock Classes="label" Text="{l:Tr Main_NewListLabel}" />
         <views:RoutingEditorView />
       </StackPanel>
 

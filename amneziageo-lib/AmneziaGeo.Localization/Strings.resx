@@ -385,6 +385,9 @@
   <data name="Main_CancelButton" xml:space="preserve">
     <value>Cancel</value>
   </data>
+  <data name="Main_CancelDownloadButton" xml:space="preserve">
+    <value>Cancel download</value>
+  </data>
   <data name="Main_CancelRenameTooltip" xml:space="preserve">
     <value>Cancel rename</value>
   </data>

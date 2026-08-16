@@ -9,12 +9,50 @@ if [ ! -f "$SETTINGS" ]; then
   echo "Creating default $SETTINGS"
   cat > "$SETTINGS" <<'EOF'
 {
-  // Build configuration.
-  // Available: Debug | Release   ("Debug Linux" always debugs the Debug binaries)
-  "configuration": "Debug",
+  // Debug targets. Takes the first entry with isCurrent = true.
+  "targets": [
+    {
+      "isCurrent": true,
+      "name": "Agent",
 
-  // Tunnel interface the agent creates.
-  "interface": "awg0"
+      // Component to run.
+      // Available: agent | ui | console
+      "component": "agent",
+
+      // Command line of the component.   Empty = none.
+      // agent: --iface <name> --engine <path> --data <dir>.   console: status, tui, --json config list.
+      "args": "--iface awg0",
+
+      // Run elevated. The agent needs root: it creates the tunnel device and rewrites routes.
+      // Available: true | false
+      "sudo": true
+    },
+    {
+      "isCurrent": false,
+      "name": "UI",
+      "component": "ui",
+      "args": "",
+      "sudo": false
+    },
+    {
+      "isCurrent": false,
+      "name": "Console",
+      "component": "console",
+      "args": "status",
+      "sudo": false
+    },
+    {
+      "isCurrent": false,
+      "name": "Console TUI",
+      "component": "console",
+      "args": "tui",
+      "sudo": false
+    }
+  ],
+
+  // Build configuration.
+  // Available: Debug | Release
+  "configuration": "Debug"
 }
 EOF
 fi
@@ -41,5 +79,4 @@ echo
 echo "Agent : $ROOT/amneziageo-linux/AmneziaGeo.Linux.App/bin/$CONFIGURATION/net10.0/AmneziaGeo.Linux.App.dll"
 echo "UI    : $ROOT/amneziageo-linux/AmneziaGeo.Linux.Ui/bin/$CONFIGURATION/net10.0/AmneziaGeo.Linux.Ui.dll"
 echo "Client: $ROOT/amneziageo-linux/AmneziaGeo.Linux.Cli/bin/$CONFIGURATION/net10.0/amneziageo"
-echo "Bringing a tunnel up needs root - \"Debug Linux (agent)\" and the \"Run Linux agent (sudo)\" task both elevate."
-echo "The console client runs unelevated - \"Debug Linux (console)\" asks for the command line, \"Run Linux console (attachable)\" waits for \"Attach Linux (console)\"."
+echo "\"Debug Linux\" runs the current target of $SETTINGS, \"Attach Linux\" hooks a component already running."

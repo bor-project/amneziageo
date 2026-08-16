@@ -34,6 +34,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isCompact;
 
+    // Каталог стоит списком слева, а его настройки справа: выбор и «Добавить» из шапки секции уходят туда.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCataloguePicker))]
+    [NotifyPropertyChangedFor(nameof(ShowAddAction))]
+    private bool _isWide;
+
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
@@ -304,6 +310,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     partial void OnHasRoutingListsChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowNoListsHint));
+        OnPropertyChanged(nameof(ShowCataloguePicker));
     }
 
     // Keeps the list that routes: the section lands on it next time, and turning routing off leaves it behind
@@ -347,6 +354,16 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// Whether the header says there are no saved lists; silent until the catalogue is known.
     /// </summary>
     public bool ShowNoListsHint => _catalogueKnown && !HasRoutingLists;
+
+    /// <summary>
+    /// Whether the section header carries the catalogue picker: the wide layout has the list beside it.
+    /// </summary>
+    public bool ShowCataloguePicker => HasRoutingLists && !IsWide;
+
+    /// <summary>
+    /// Whether the section header carries «Добавить»: the wide layout stands it over the list.
+    /// </summary>
+    public bool ShowAddAction => !IsWide;
 
     // The first snapshot settles the catalogue: an empty one now means there are no lists, and a section held
     // on its loader can finally land somewhere.

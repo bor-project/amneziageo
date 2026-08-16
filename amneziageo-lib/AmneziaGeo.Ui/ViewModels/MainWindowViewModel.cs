@@ -24,6 +24,10 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // master-detail drilldown. Above it the columns keep their MinWidth without overflow.
     private const double CompactBreakpoint = 760;
 
+    // От этой ширины каталог стоит списком слева, а его настройки справа. Телефон и планшет в портрете до неё не
+    // дотягиваются и остаются на одноколоночной раскладке; телевизор берёт широкую при любой ширине.
+    private const double WideBreakpoint = 1000;
+
     /// <summary>
     /// Whether the app is showing a window ("settings") or running a windowless background update ("none"),
     /// carried into the installer as UPDATEORIGIN.
@@ -43,6 +47,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHome))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
+    [NotifyPropertyChangedFor(nameof(IsHomeNarrow))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
     [NotifyPropertyChangedFor(nameof(ShowSplitter))]
@@ -56,6 +62,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCompact))]
+    [NotifyPropertyChangedFor(nameof(IsWide))]
+    [NotifyPropertyChangedFor(nameof(IsHomeNarrow))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
@@ -187,6 +196,21 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Whether the phone screen is narrow enough for the compact single-column drilldown.
     /// </summary>
     public bool IsCompact => UiPlatform.UsesCompactLayout && WindowWidth < CompactBreakpoint;
+
+    /// <summary>
+    /// Whether the shell stands the catalogue beside its settings: a wide window, or a television at any width.
+    /// </summary>
+    public bool IsWide => UiPlatform.IsTelevision || WindowWidth >= WideBreakpoint;
+
+    /// <summary>
+    /// Whether the single-column shell shows its home screen; the wide layout carries no home screen at all.
+    /// </summary>
+    public bool IsHomeNarrow => IsHome && !IsWide;
+
+    /// <summary>
+    /// Whether the single-column shell shows its settings screen.
+    /// </summary>
+    public bool IsSettingsNarrow => IsSettings && !IsWide;
 
     /// <summary>
     /// Whether a section detail is open in compact mode; the header then shows the section name.
@@ -336,6 +360,8 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public void Start()
     {
+        // Телевизор берёт широкую раскладку без единого изменения ширины, поэтому раздел открывается здесь.
+        EnterWideShell();
         _connection.Start();
     }
 
@@ -528,6 +554,18 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Пункт меню «Удалить» на широкой карточке: выносит вопрос на экран.
+    // Список маршрутизации из колонки слева: его правила и настройки открываются справа.
+    [RelayCommand]
+    private void OpenRoutingList(RoutingListSummaryViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        Routing.OpenSelected(item.Id);
+    }
+
     [RelayCommand]
     private void AskDeleteServer(ConfigItemViewModel? item)
     {
@@ -760,6 +798,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SelectSectionDefault(value);
     }
 
+    // Широкая раскладка живёт на разделах: экрана «дом» в ней нет, поэтому вход в неё сам открывает раздел.
+    private void EnterWideShell()
+    {
+        if (!IsWide || Nav == "settings")
+        {
+            return;
+        }
+
+        Nav = "settings";
+        SettingsDetailOpen = true;
+        SelectSectionDefault(SettingsSection);
+        RefreshLogsActive();
+    }
+
     // Push the active-section flag to the config / routing screens so their footer Save bar shows only for
     // the section on screen.
     private void UpdateActiveSection()
@@ -795,6 +847,11 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Sources.IsCompact = compact;
         Diagnostics.IsCompact = compact;
         General.IsCompact = compact;
+
+        // Широкая раскладка держит каталог слева, поэтому выбор и «Добавить» из шапки секции уходят.
+        Config.IsWide = IsWide;
+        Routing.IsWide = IsWide;
+        EnterWideShell();
 
         // A width flip can reveal or hide the logs content (compact rail vs wide content), so re-evaluate.
         RefreshLogsActive();

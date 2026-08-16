@@ -34,9 +34,14 @@
 
   <Grid>
 
+    <!-- WIDE screen and television: разделы вкладками, каталог слева, его настройки справа. Экрана «дом» в этой
+         раскладке нет - состояние туннеля стоит в шапке. -->
+    <views:WideShell IsVisible="{Binding IsWide}" />
+
     <!-- HOME screen: gear left, centered title, the connect control and the servers. A pair of tabs shows one
          of the two at a time, at every width. -->
-    <Border x:Name="HomeCard" Classes="card" Padding="0" IsVisible="{Binding IsHome}" KeyDown="OnPaneKeyDown"
+    <Border x:Name="HomeCard" Classes="card" Padding="0" KeyDown="OnPaneKeyDown"
+            IsVisible="{Binding IsHomeNarrow}"
             Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHome}">
       <DockPanel LastChildFill="True">
 
@@ -333,7 +338,7 @@
          and content pane. -->
       <Border Classes="card" Height="48" Padding="12,0"
               Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHead}"
-              VerticalAlignment="Top" IsVisible="{Binding IsSettings}">
+              VerticalAlignment="Top" IsVisible="{Binding IsSettingsNarrow}">
         <Grid ColumnDefinitions="Auto,*,Auto">
           <!-- Back: compact section detail steps back to the rail, otherwise home. Every screen autosaves, so
                navigation is never locked; deletion is confirmed inline. -->
@@ -375,7 +380,7 @@
         </Grid>
       </Border>
 
-    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettings}" RowDefinitions="48,*"
+    <Grid x:Name="SettingsBody" IsVisible="{Binding IsSettingsNarrow}" RowDefinitions="48,*"
           Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellBody}">
       <Grid.ColumnDefinitions>
         <!-- Section rail column, drag-resizable via the GridSplitter.

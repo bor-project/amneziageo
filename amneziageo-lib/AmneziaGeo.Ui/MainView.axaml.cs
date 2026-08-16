@@ -377,6 +377,28 @@ public sealed partial class MainView : UserControl
             options);
     }
 
+    // «Добавить конфигурацию» на главном: способ выбирается здесь же, настройки открываются уже под него.
+    private void OnAddConfigOptions(object? sender, RoutedEventArgs e)
+    {
+        PresentAddConfig(sender as Control, returnToServers: false);
+    }
+
+    // Добавление из списка серверов: тот же выбор, с возвратом к списку после сохранения.
+    private void OnAddServerOptions(object? sender, RoutedEventArgs e)
+    {
+        PresentAddConfig(sender as Control, returnToServers: true);
+    }
+
+    private void PresentAddConfig(Control? anchor, bool returnToServers)
+    {
+        if (_vm is null)
+        {
+            return;
+        }
+
+        Controls.ConfigAddOptions.Present(anchor, this, _vm.Config, _ => _vm.OpenConfigImport(returnToServers));
+    }
+
     // Up / down inside a pane walk the tab order instead of the geometry: a narrow control standing beside a
     // wide one (a link over a field, a button in a row) never lies under the moving edge, so directional focus
     // steps over it and the remote can never reach it.

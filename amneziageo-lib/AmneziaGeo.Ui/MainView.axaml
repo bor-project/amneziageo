@@ -80,7 +80,7 @@
                           Foreground="{DynamicResource AgMutedBrush}" />
               </Button>
               <Button Grid.Column="3" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                      Command="{Binding AddServerCommand}" ToolTip.Tip="{l:Tr Main_AddConfigButton}">
+                      Click="OnAddServerOptions" ToolTip.Tip="{l:Tr Main_AddConfigButton}">
                 <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="18" Height="18"
                           Foreground="{DynamicResource AgMutedBrush}" />
               </Button>
@@ -221,17 +221,14 @@
                         </DataTemplate>
                       </controls:AdaptiveComboBox.ItemTemplate>
                     </controls:AdaptiveComboBox>
-                    <!-- No configs: add-config button (opens the config settings section) and its hint. -->
+                    <!-- No configs: the add-config button offers the way in right here and says it itself. -->
                     <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
-                            IsVisible="{Binding !HasConfigs}" Command="{Binding AddConfigCommand}">
+                            IsVisible="{Binding !HasConfigs}" Click="OnAddConfigOptions">
                       <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock Text="+" />
                         <TextBlock Text="{l:Tr Main_AddConfigButton}" />
                       </StackPanel>
                     </Button>
-                    <TextBlock IsVisible="{Binding !HasConfigs}" Classes="muted" FontSize="12"
-                               HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
-                               Text="{l:Tr Main_NoConfigsHint}" />
                   </StackPanel>
                 </StackPanel>
               </ScrollViewer>
@@ -301,18 +298,15 @@
                     </ItemsControl>
                   </ScrollViewer>
 
-                  <!-- No configs: the add-config button (opens the config settings section) and its hint. -->
+                  <!-- No configs: the add-config button offers the way in right here and says it itself. -->
                   <StackPanel VerticalAlignment="Center" Spacing="8" IsVisible="{Binding !HasConfigs}">
                     <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
-                            Command="{Binding AddConfigCommand}">
+                            Click="OnAddServerOptions">
                       <StackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock Text="+" />
                         <TextBlock Text="{l:Tr Main_AddConfigButton}" />
                       </StackPanel>
                     </Button>
-                    <TextBlock Classes="muted" FontSize="12"
-                               HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="300"
-                               Text="{l:Tr Main_NoConfigsHint}" />
                   </StackPanel>
                 </Panel>
 
@@ -759,7 +753,8 @@
             </Button>
           </Grid>
           <TextBlock Text="{Binding Subtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap"
-                     Margin="0,-6,0,2" />
+                     Margin="0,-6,0,2"
+                     IsVisible="{Binding Subtitle, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           <ItemsControl x:Name="SheetOptions" ItemsSource="{Binding Options}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:ActionOption">

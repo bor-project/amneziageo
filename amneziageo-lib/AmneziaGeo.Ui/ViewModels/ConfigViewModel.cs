@@ -383,8 +383,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private void ToggleConfigText() => ShowConfigText = !ShowConfigText;
 
-    // Entering the config settings section: keep an in-progress draft, land on the active / first config, or fall
-    // back to Import when there are no configs to show.
+    // Entering the config settings section: keep an in-progress draft, land on the active / first config, or stand
+    // on the empty catalogue, where «Добавить» offers the way in.
     public void EnterSection()
     {
         ShowConfigText = false;
@@ -403,10 +403,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
                 OnPropertyChanged(nameof(ShowCatalogueLoader));
                 OnPropertyChanged(nameof(ShowHeaderActions));
                 OnPropertyChanged(nameof(ShowNoConfigsHint));
-                return;
             }
 
-            BeginSectionConfig();
             return;
         }
 
@@ -420,11 +418,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         if (target == "import")
         {
-            if (!IsCreatingSectionConfig)
-            {
-                BeginSectionConfig();
-            }
-
+            BeginManualImport();
             return;
         }
 
@@ -866,6 +860,21 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         return await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRemoveConfig, [name]));
     }
 
+    /// <summary>
+    /// Removes a configuration the user may be sitting on: the selection moves to the first one left and a
+    /// tunnel bound to it goes down, so the active one deletes like any other. A refused disconnect still runs
+    /// the removal, to answer with the agent's own reason.
+    /// </summary>
+    internal async Task<IpcAck> DeleteConfigAsync(string name)
+    {
+        if (await _host.Home.EnsureDisconnectedAsync(name))
+        {
+            await _host.Home.MoveSelectionOffAsync(name);
+        }
+
+        return await RemoveConfigAsync(name);
+    }
+
     // The config Delete trigger (#147): the agent refuses while the config is the running target; the refusal
     // reason surfaces on confirm. Arm the inline confirm/cancel pair.
     [RelayCommand]
@@ -888,8 +897,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ConfigDeleteStatus = string.Empty;
     }
 
-    // Inline Confirm: perform the delete. The agent refuses while the config is the running target, surfacing the
-    // reason. On success the next remaining config opens so the section is never left empty.
+    // Inline Confirm: perform the delete. The selection and a tunnel bound to the config are taken off it first,
+    // and a refusal surfaces its reason. On success the next remaining config opens so the section is never left empty.
     [RelayCommand]
     private async Task ConfirmDeleteOpenConfig()
     {
@@ -900,28 +909,15 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         var config = OpenConfig;
-
-        // The tunnel running on it is taken down first: the agent refuses to remove the config it runs, and
-        // stopping it by hand is a step the user should not have to take (#248).
-        if (IsOpenConfigActive && _host.Home.IsTunnelActive)
-        {
-            await _host.Home.StopTunnelAsync();
-        }
-
-        var ack = await RemoveConfigAsync(config);
+        var ack = await DeleteConfigAsync(config);
         if (!ack.Ok)
         {
             ConfigDeleteStatus = ack.Message;
             return;
         }
 
-        // Последний конфиг удалён - переводим секцию на импорт, иначе открываем следующий.
-        var next = NextConfigAfter(config);
-        OpenConfig = next;
-        if (next is null)
-        {
-            EnterImportSection();
-        }
+        // Последний конфиг удалён - секция остаётся на пустом каталоге с кнопкой «Добавить».
+        OpenConfig = NextConfigAfter(config);
     }
 
     // Commit the open config's rename through the agent. Keyed by the current name; on OK it
@@ -1148,13 +1144,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ImportMethod = ConfigImportMethod.Manual;
     }
 
-    // Stops the live scanner when the create form leaves view (section change / home / hide).
+    // Stops the live scanner when the create form leaves view (section change / home / hide). The draft falls back
+    // to manual entry: a method-less draft shows a name box over nothing.
     public void StopScan()
     {
         if (ImportMethod == ConfigImportMethod.Camera)
         {
             SectionScan = null;
-            ImportMethod = ConfigImportMethod.Picker;
+            ImportMethod = ConfigImportMethod.Manual;
         }
     }
 
@@ -1194,6 +1191,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return false;
         }
 
+        var firstOfAll = _configNames.Count == 0;
         _sectionConfigSaving = true;
         try
         {
@@ -1202,6 +1200,12 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             {
                 SectionConfigStatus = ack.Message;
                 return false;
+            }
+
+            // Первая конфигурация каталога сразу становится выбранной - выбирать больше не из чего.
+            if (firstOfAll)
+            {
+                await _host.Home.AdoptFirstConfigAsync(name);
             }
 
             // The drafted proxy / MTU / IPv6 now have a configuration to sit on.

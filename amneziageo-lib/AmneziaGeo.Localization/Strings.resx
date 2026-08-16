@@ -470,7 +470,7 @@
     <value>Create manually</value>
   </data>
   <data name="Main_ConfigCatalogueEmpty" xml:space="preserve">
-    <value>No configurations yet. Add the first one.</value>
+    <value>No configurations yet.</value>
   </data>
   <data name="Main_ShowButton" xml:space="preserve">
     <value>Show</value>
@@ -543,9 +543,6 @@
   </data>
   <data name="Main_AddConfigTitle" xml:space="preserve">
     <value>Add a configuration</value>
-  </data>
-  <data name="Main_AddConfigSubtitle" xml:space="preserve">
-    <value>Choose how to add it</value>
   </data>
   <data name="Main_UnsavedChanges" xml:space="preserve">
     <value>Unsaved changes</value>
@@ -649,9 +646,6 @@
   <data name="Main_NewConfigButton" xml:space="preserve">
     <value>New config</value>
   </data>
-  <data name="Main_NewConfigLabel" xml:space="preserve">
-    <value>NEW CONFIGURATION</value>
-  </data>
   <data name="Main_NewListButton" xml:space="preserve">
     <value>New list</value>
   </data>
@@ -659,7 +653,7 @@
     <value>Add configuration</value>
   </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
-    <value>No lists yet. Click «+ New list» to set rules (geo categories, domains, CIDR, apps).</value>
+    <value>No lists yet.</value>
   </data>
   <data name="Main_NoSourcesHint" xml:space="preserve">
     <value>No databases yet. Add geosite/geoip above.</value>
@@ -1655,9 +1649,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_AddListTitle" xml:space="preserve">
     <value>Add a list</value>
   </data>
-  <data name="Main_NewListLabel" xml:space="preserve">
-    <value>New list</value>
-  </data>
   <data name="Main_ConfigTab" xml:space="preserve">
     <value>Config</value>
   </data>
@@ -1783,9 +1774,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Agent_NoConfigSelected" xml:space="preserve">
     <value>No configuration selected.</value>
-  </data>
-  <data name="Main_NoConfigsHint" xml:space="preserve">
-    <value>Add a configuration in settings.</value>
   </data>
   <data name="Main_ServersTitle" xml:space="preserve">
     <value>Servers</value>

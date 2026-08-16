@@ -24,9 +24,11 @@
     <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
                 IsVisible="{Binding ShowHeaderActions}">
       <StackPanel Spacing="4">
-        <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+        <!-- Пустой каталог выбирать не из чего: остаются «Добавить» и подсказка под ним. -->
+        <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"
+                   IsVisible="{Binding HasConfigs}" />
         <!-- Тумблер активности стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. -->
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasConfigs}">
           <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
                     ItemsSource="{Binding ConfigCatalogueOptions}"
                     SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
@@ -59,10 +61,11 @@
         </WrapPanel>
       </StackPanel>
 
-      <!-- Обе кнопки делят строку поровну; на широком экране строка стоит слева своей шириной. -->
-      <Grid ColumnDefinitions="*,*" ColumnSpacing="8"
-            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
-        <Button x:Name="AddButton" Grid.Column="0" Classes="accent" MinHeight="40"
+      <!-- Обе кнопки делят строку поровну; на широком экране строка стоит слева своей шириной. Пустому каталогу
+           экспортировать нечего - «Добавить» остаётся одна и занимает строку целиком. -->
+      <UniformGrid Rows="1"
+                   HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
+        <Button x:Name="AddButton" Classes="accent" MinHeight="40" Margin="0,0,4,0"
                 HorizontalAlignment="Stretch" Click="OnAddOptions"
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
@@ -71,9 +74,9 @@
             <TextBlock Text="{l:Tr Main_AddButton}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
-        <Button Grid.Column="1" Classes="methodpick" MinHeight="40"
+        <Button Classes="methodpick" MinHeight="40" Margin="4,0,0,0"
                 HorizontalAlignment="Stretch" Click="OnExportOptions"
-                IsEnabled="{Binding CanExportOpenConfig}"
+                IsVisible="{Binding CanExportOpenConfig}"
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
                       HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -81,7 +84,7 @@
             <TextBlock Text="{l:Tr Main_ExportTab}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
-      </Grid>
+      </UniformGrid>
 
       <!-- Каталог пуст: настроек ещё нет, добавление - единственный шаг. -->
       <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
@@ -197,7 +200,7 @@
             IsVisible="{Binding IsSectionImport}">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Spacing="6">
-          <TextBlock Classes="label" Text="{l:Tr Main_NewConfigLabel}" Margin="0,0,0,4" />
+          <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
           <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
                    Text="{Binding SectionConfigName, Mode=TwoWay}"
                    Watermark="{l:Tr Main_ConfigNameWatermark}" />

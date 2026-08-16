@@ -725,6 +725,43 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         return true;
     }
 
+    /// <summary>
+    /// Moves the selection off a configuration about to be removed: it lands on the first one left, and on none
+    /// when that was the last. The agent is told first, so a snapshot still carrying the old target cannot put
+    /// it back.
+    /// </summary>
+    internal async Task MoveSelectionOffAsync(string name)
+    {
+        if (!string.Equals(ActiveConfig?.Name, name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var next = _host.Config.Configs.FirstOrDefault(c => !string.Equals(c.Name, name, StringComparison.Ordinal));
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [next?.Name ?? string.Empty]));
+        _suppressActivePush = true;
+        ActiveConfig = next;
+        _suppressActivePush = false;
+        _prefs.LastConfig = next?.Name ?? string.Empty;
+        _prefs.Save();
+    }
+
+    /// <summary>
+    /// Hands the selection to a configuration added into an empty catalogue: there is nothing else to pick, and
+    /// its row only arrives with the next snapshot, so the agent is told by name.
+    /// </summary>
+    internal async Task AdoptFirstConfigAsync(string name)
+    {
+        if (ActiveConfig is not null)
+        {
+            return;
+        }
+
+        await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [name]));
+        _prefs.LastConfig = name;
+        _prefs.Save();
+    }
+
     // Takes the tunnel down and reports whether it went. Optimistic state mirrors ToggleConnection so the
     // header power control does not flicker while the command is in flight.
     private async Task<bool> DisconnectAsync()

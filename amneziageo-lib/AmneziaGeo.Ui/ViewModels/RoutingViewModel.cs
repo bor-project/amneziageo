@@ -429,8 +429,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         SyncCatalogueRouting();
     }
 
-    // Entering the routing section: keep an in-progress draft, land on the first list, or fall back to Import
-    // when there are no lists to show (mirrors the Config section).
+    // Entering the routing section: keep an in-progress draft, land on the first list, or stand on the empty
+    // catalogue, where «Добавить» offers the way in (mirrors the Config section).
     public void EnterSection()
     {
         if (IsCreatingSectionRouting)
@@ -447,10 +447,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
                 _enterDeferred = true;
                 OnPropertyChanged(nameof(ShowCatalogueLoader));
                 OnPropertyChanged(nameof(ShowHeaderActions));
-                return;
             }
 
-            BeginSectionRouting();
             return;
         }
 
@@ -502,11 +500,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         if (target == "import")
         {
-            if (!IsCreatingSectionRouting)
-            {
-                BeginSectionRouting();
-            }
-
+            BeginManualImport();
             return;
         }
 
@@ -1199,8 +1193,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         RoutingDeleteStatus = string.Empty;
     }
 
-    // Inline Confirm: delete the shared list. The usage guard is re-checked, then on success the next remaining
-    // list is selected (or the editor cleared when it was the last one) so the section is never left empty.
+    // Inline Confirm: delete the shared list. The applied one is released first, then on success the next
+    // remaining list is opened (or the editor cleared when it was the last one) so the section is never left empty.
     [RelayCommand]
     private async Task ConfirmDeleteSectionRoutingList()
     {
@@ -1211,6 +1205,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         var deletedId = RoutingEditor.Id;
+
+        // Применённый список удаляется как любой другой: правила переходят на первый оставшийся, а без него снимаются.
+        if (SelectedRoutingListId == deletedId)
+        {
+            await AssignRoutingAsync(RoutingLists.FirstOrDefault(r => r.Id != deletedId)?.Id);
+        }
 
         if (!await RoutingEditor.DeleteAsync())
         {

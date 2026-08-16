@@ -26,10 +26,12 @@
       <StackPanel Spacing="4">
         <!-- Пустой каталог выбирать не из чего: остаются «Добавить» и подсказка под ним. -->
         <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"
-                   IsVisible="{Binding HasConfigs}" />
-        <!-- Тумблер активности стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. -->
+                   IsVisible="{Binding ShowCataloguePicker}" />
+        <!-- Тумблер активности стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. Широкая
+             раскладка выбирает конфигурацию списком слева, поэтому здесь остаётся один тумблер. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasConfigs}">
           <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
+                    IsVisible="{Binding ShowCataloguePicker}"
                     ItemsSource="{Binding ConfigCatalogueOptions}"
                     SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
             <controls:AdaptiveComboBox.ItemTemplate>
@@ -67,6 +69,7 @@
                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}">
         <Button x:Name="AddButton" Classes="accent" MinHeight="40" Margin="0,0,4,0"
                 HorizontalAlignment="Stretch" Click="OnAddOptions"
+                IsVisible="{Binding ShowAddAction}"
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
                       HorizontalAlignment="Center" VerticalAlignment="Center">

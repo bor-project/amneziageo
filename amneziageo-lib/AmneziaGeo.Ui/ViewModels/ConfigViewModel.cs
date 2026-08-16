@@ -141,6 +141,16 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     private ConfigTransportViewModel? _sectionTransport;
 
+    // Каталог стоит списком слева, а его настройки справа: выбор и «Добавить» из шапки секции уходят туда.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCataloguePicker))]
+    [NotifyPropertyChangedFor(nameof(ShowAddAction))]
+    private bool _isWide;
+
+    // Строка поиска списка слева: сужает каталог по имени и адресу.
+    [ObservableProperty]
+    private string _searchText = string.Empty;
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -148,7 +158,29 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         _host = host;
         _connection = connection;
+        Configs.CollectionChanged += (_, _) => RebuildVisibleConfigs();
         Loc.Instance.CultureChanged += OnCultureChanged;
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        RebuildVisibleConfigs();
+    }
+
+    // Пересобирает список под поиском.
+    private void RebuildVisibleConfigs()
+    {
+        var query = SearchText.Trim();
+        VisibleConfigs.Clear();
+        foreach (var item in Configs)
+        {
+            if (query.Length == 0
+                || item.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || item.Endpoint.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                VisibleConfigs.Add(item);
+            }
+        }
     }
 
     private void OnCultureChanged()
@@ -166,6 +198,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
 
+    /// <summary>
+    /// Каталог под строкой поиска: список широкой раскладки берёт его, узкая - весь каталог.
+    /// </summary>
+    public ObservableCollection<ConfigItemViewModel> VisibleConfigs { get; } = [];
+
     public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [];
 
     /// <summary>
@@ -180,6 +217,16 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public IReadOnlyList<string> ConfigNames => _configNames;
 
     public bool HasConfigs => Configs.Count > 0;
+
+    /// <summary>
+    /// Whether the section header carries the catalogue picker: the wide layout has the list beside it.
+    /// </summary>
+    public bool ShowCataloguePicker => HasConfigs && !IsWide;
+
+    /// <summary>
+    /// Whether the section header carries «Добавить»: the wide layout stands it over the list.
+    /// </summary>
+    public bool ShowAddAction => !IsWide;
 
     public bool IsConfigManage => OpenConfig is not null;
 
@@ -650,6 +697,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private void NotifyHasConfigsChanged()
     {
         OnPropertyChanged(nameof(HasConfigs));
+        OnPropertyChanged(nameof(ShowCataloguePicker));
     }
 
     partial void OnOpenConfigChanged(string? value)

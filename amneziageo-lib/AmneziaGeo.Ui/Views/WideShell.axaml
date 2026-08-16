@@ -1,0 +1,278 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:views="clr-namespace:AmneziaGeo.Ui.Views"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Views.WideShell"
+             x:CompileBindings="True"
+             x:DataType="vm:MainWindowViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgWidePlusGeometry">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <!-- Разделы стоят вкладками в шапке: список каталога занимает левую колонку, второй вертикальной навигации
+         рядом с ним быть не должно. -->
+    <Style Selector="Button.wtab">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="14,7" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+    </Style>
+    <Style Selector="Button.wtab:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+    </Style>
+    <Style Selector="Button.wtab.active">
+      <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
+    </Style>
+    <Style Selector="Button.wtab.active /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*" Margin="12,3,12,3">
+
+    <!-- Шапка: имя, разделы вкладками и состояние туннеля справа. -->
+    <Border Grid.Row="0" Classes="card" Height="52" Padding="12,0">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+          <Ellipse Width="9" Height="9" Fill="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center" />
+          <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <StackPanel x:Name="Tabs" Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="20,0"
+                    VerticalAlignment="Center">
+          <Button Classes="wtab" Classes.active="{Binding IsSettingsConfig}"
+                  Content="{l:Tr Main_HomeTabServers}"
+                  Command="{Binding SelectSettingsCommand}" CommandParameter="config" />
+          <Button Classes="wtab" Classes.active="{Binding IsSettingsRouting}"
+                  Content="{l:Tr Main_RoutingSection}"
+                  Command="{Binding SelectSettingsCommand}" CommandParameter="routing" />
+          <Button Classes="wtab" Classes.active="{Binding IsSettingsLogs}"
+                  Content="{l:Tr Main_DiagnosticsSection}"
+                  Command="{Binding SelectSettingsCommand}" CommandParameter="logs" />
+          <Button Classes="wtab" Classes.active="{Binding IsSettingsGeneral}"
+                  Content="{l:Tr General_Section}"
+                  Command="{Binding SelectSettingsCommand}" CommandParameter="general" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Home.LinkSpeedText}" Classes="muted" FontSize="12" VerticalAlignment="Center"
+                     IsVisible="{Binding Home.ShowLink}" />
+          <controls:ConnectPill DataContext="{Binding Home}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Panel Grid.Row="1" Margin="0,6,0,0">
+
+      <!-- СЕРВЕРЫ: каталог карточками слева, настройки открытой конфигурации справа. -->
+      <Grid IsVisible="{Binding IsSettingsConfig}" ColumnDefinitions="340,10,*">
+        <Border Grid.Column="0" Classes="card" Padding="0">
+          <DockPanel LastChildFill="True">
+            <StackPanel DockPanel.Dock="Top" Margin="12,12,12,8" Spacing="8">
+              <TextBox Classes="field" Text="{Binding Config.SearchText, Mode=TwoWay}"
+                       Watermark="{l:Tr Main_ServerSearchWatermark}" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <Button Grid.Column="0" Classes="methodpick" MinHeight="36" HorizontalAlignment="Stretch"
+                        Content="{l:Tr Main_ProbeAllButton}" IsVisible="{Binding HasConfigs}"
+                        Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}" />
+                <Button Grid.Column="1" Classes="accent" MinHeight="36" Padding="14,0" Click="OnAddServer">
+                  <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <PathIcon Data="{StaticResource AgWidePlusGeometry}" Width="13" Height="13"
+                              VerticalAlignment="Center" />
+                    <TextBlock Text="{l:Tr Main_AddButton}" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+            </StackPanel>
+
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding Config.VisibleConfigs}" Margin="12,0,12,12">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ConfigItemViewModel">
+                    <!-- Карточка та же, что на телефоне: выбор открывает её настройки справа, кнопка на лице
+                         поднимает туннель, меню несёт «Изменить» и «Удалить». -->
+                    <controls:ServerCard Margin="0,0,0,8" HorizontalAlignment="Stretch"
+                            IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
+                            SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
+                            ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
+                            EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
+                            DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}"
+                            AskDeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).AskDeleteServerCommand}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        <Border Grid.Column="2" Classes="card" Padding="0"
+                controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
+          <Grid RowDefinitions="*,Auto">
+            <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
+              <ContentControl Margin="18,4" Content="{Binding Config}"
+                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                <ContentControl.ContentTemplate>
+                  <DataTemplate x:DataType="vm:ConfigViewModel">
+                    <views:ConfigView />
+                  </DataTemplate>
+                </ContentControl.ContentTemplate>
+              </ContentControl>
+            </ScrollViewer>
+
+            <!-- Правки держатся до «Сохранить»: футер той же панели, в которой их сделали. -->
+            <Border Grid.Row="1" IsVisible="{Binding Config.ShowSaveBar}"
+                    Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
+                    BorderThickness="0,1,0,0" CornerRadius="0,0,13,13" MinHeight="52" Padding="18,7">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
+                  <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <Button Classes="methodpick" Content="{l:Tr Main_CancelButton}" Width="120"
+                          Command="{Binding Config.CancelSectionCommand}" />
+                  <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Width="120" Padding="6"
+                          Command="{Binding Config.SaveSectionCommand}"
+                          IsVisible="{Binding Config.ShowSaveButton}"
+                          IsEnabled="{Binding Config.CanSave}" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- МАРШРУТИЗАЦИЯ: списки слева, правила и настройки открытого списка справа. -->
+      <Grid IsVisible="{Binding IsSettingsRouting}" ColumnDefinitions="340,10,*">
+        <Border Grid.Column="0" Classes="card" Padding="0">
+          <DockPanel LastChildFill="True">
+            <Grid DockPanel.Dock="Top" Margin="12,12,12,8" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_RoutingPickerLabel}" FontWeight="SemiBold" FontSize="13"
+                         VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="accent" MinHeight="36" Padding="14,0" Click="OnAddRoutingList">
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <PathIcon Data="{StaticResource AgWidePlusGeometry}" Width="13" Height="13"
+                            VerticalAlignment="Center" />
+                  <TextBlock Text="{l:Tr Main_AddButton}" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </Grid>
+
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding Routing.RoutingLists}" Margin="12,0,12,12">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
+                    <!-- Применённый список несёт точку; выбор открывает его правила справа. -->
+                    <Button Classes="rowselect" Margin="0,0,0,6" HorizontalAlignment="Stretch"
+                            Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).OpenRoutingListCommand}"
+                            CommandParameter="{Binding}">
+                      <Grid ColumnDefinitions="Auto,*" Margin="12,9" ColumnSpacing="9">
+                        <Ellipse Grid.Column="0" Width="8" Height="8" VerticalAlignment="Center"
+                                 Fill="{DynamicResource AgUpBrush}" IsVisible="{Binding IsSelected}" />
+                        <StackPanel Grid.Column="1" Spacing="2">
+                          <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding Detail}" FontSize="11" Classes="muted"
+                                     TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        <Border Grid.Column="2" Classes="card" Padding="0"
+                controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
+          <Grid RowDefinitions="*,Auto">
+            <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
+              <ContentControl Margin="18,4" Content="{Binding Routing}"
+                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+                <ContentControl.ContentTemplate>
+                  <DataTemplate x:DataType="vm:RoutingViewModel">
+                    <views:RoutingView />
+                  </DataTemplate>
+                </ContentControl.ContentTemplate>
+              </ContentControl>
+            </ScrollViewer>
+
+            <Border Grid.Row="1" IsVisible="{Binding Routing.ShowSaveBar}"
+                    Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorderBrush}"
+                    BorderThickness="0,1,0,0" CornerRadius="0,0,13,13" MinHeight="52" Padding="18,7">
+              <StackPanel Spacing="8">
+                <TextBlock Text="{Binding Routing.RouteBudgetWarning}"
+                           IsVisible="{Binding Routing.ShowRouteBudgetWarning}"
+                           Foreground="{DynamicResource AgWarnBrush}" FontSize="12" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AgWarnBrush}" VerticalAlignment="Center" />
+                    <TextBlock Text="{l:Tr Main_UnsavedChanges}" Classes="muted" FontSize="12"
+                               VerticalAlignment="Center" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Classes="methodpick" Content="{l:Tr Main_CancelButton}" Width="120"
+                            Command="{Binding Routing.CancelSectionCommand}" />
+                    <Button Classes="accent" Content="{l:Tr Main_SaveButton}" Width="120" Padding="6"
+                            Command="{Binding Routing.SaveSectionCommand}"
+                            IsVisible="{Binding Routing.ShowSaveButton}"
+                            IsEnabled="{Binding Routing.CanSave}" />
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- ИСТОЧНИКИ ГЕО: своей вкладки нет, открываются ссылкой из маршрутизации. -->
+      <Border Classes="card" Padding="0" IsVisible="{Binding IsSettingsSources}">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <ContentControl Margin="18,4" Content="{Binding Sources}"
+                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+            <ContentControl.ContentTemplate>
+              <DataTemplate x:DataType="vm:SourcesViewModel">
+                <views:SourcesView />
+              </DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+        </ScrollViewer>
+      </Border>
+
+      <!-- ДИАГНОСТИКА: как была, во всю ширину. Журнал сам занимает высоту панели. -->
+      <Border x:Name="DiagnosticsPane" Classes="card" Padding="0" IsVisible="{Binding IsSettingsLogs}">
+        <ContentControl Margin="18,10" Content="{Binding Diagnostics}"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+          <ContentControl.ContentTemplate>
+            <DataTemplate x:DataType="vm:DiagnosticsViewModel">
+              <views:DiagnosticsView />
+            </DataTemplate>
+          </ContentControl.ContentTemplate>
+        </ContentControl>
+      </Border>
+
+      <!-- ОБЩИЕ: как были, во всю ширину. -->
+      <Border Classes="card" Padding="0" IsVisible="{Binding IsSettingsGeneral}">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <ContentControl Margin="18,4" Content="{Binding General}"
+                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+            <ContentControl.ContentTemplate>
+              <DataTemplate x:DataType="vm:GeneralViewModel">
+                <views:GeneralView />
+              </DataTemplate>
+            </ContentControl.ContentTemplate>
+          </ContentControl>
+        </ScrollViewer>
+      </Border>
+
+    </Panel>
+  </Grid>
+</UserControl>

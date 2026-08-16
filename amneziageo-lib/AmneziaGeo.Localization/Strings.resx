@@ -1805,8 +1805,14 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_ServerRowSelect" xml:space="preserve">
     <value>Select this configuration</value>
   </data>
+  <data name="Main_ProbeAllButton" xml:space="preserve">
+    <value>Check all</value>
+  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Check the servers</value>
+  </data>
+  <data name="Main_ServerSearchWatermark" xml:space="preserve">
+    <value>Search by name or address</value>
   </data>
   <data name="Main_ProbeMilliseconds" xml:space="preserve">
     <value>{0} ms</value>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using Avalonia;
@@ -6,6 +7,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using AmneziaGeo.Localization;
 using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
@@ -19,6 +22,9 @@ public sealed partial class MainView : UserControl
 {
     private MainWindowViewModel? _vm;
     private TopLevel? _topLevel;
+
+    // Кто открыл шторку: ему возвращается фокус, когда она уходит.
+    private Control? _sheetOrigin;
 
     /// <summary>
     /// ctor
@@ -50,16 +56,42 @@ public sealed partial class MainView : UserControl
         }
     }
 
-    // Пульту и клавиатуре нужна точка входа в шторку: иначе стрелки ходят по экрану за ней.
+    // Пульту и клавиатуре нужна точка входа в шторку: иначе стрелки ходят по экрану за ней. Закрываясь, шторка
+    // уносит с собой строку, на которой стоял фокус, - вернуть его тому, кто её открыл.
     private void OnSheetPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is not nameof(ActionSheetViewModel.IsOpen) || _vm?.Sheet.IsOpen != true)
+        if (e.PropertyName is not nameof(ActionSheetViewModel.IsOpen))
         {
             return;
         }
 
+        if (_vm?.Sheet.IsOpen == true)
+        {
+            _sheetOrigin = _topLevel?.FocusManager?.GetFocusedElement() as Control;
+            Dispatcher.UIThread.Post(
+                () => Controls.PaneFocus.FocusFirst(SheetOptions),
+                DispatcherPriority.Loaded);
+            return;
+        }
+
+        var origin = _sheetOrigin;
+        _sheetOrigin = null;
         Dispatcher.UIThread.Post(
-            () => Controls.PaneFocus.FocusFirst(SheetOptions),
+            () =>
+            {
+                // Способ мог увести на другой экран - там свой фокус.
+                if (origin is null || !origin.IsEffectivelyVisible)
+                {
+                    return;
+                }
+
+                if (_topLevel?.FocusManager?.GetFocusedElement() is Visual live && live.GetVisualRoot() is not null)
+                {
+                    return;
+                }
+
+                origin.Focus(NavigationMethod.Directional);
+            },
             DispatcherPriority.Loaded);
     }
 
@@ -186,6 +218,17 @@ public sealed partial class MainView : UserControl
             return true;
         }
 
+        // Out of the content pane the step back lands in the section menu, not on home; a sub-view of the
+        // section closes first, as it always did.
+        if (!_vm.SettingsStepsBack
+            && RailPane.IsEffectivelyVisible
+            && _topLevel?.FocusManager?.GetFocusedElement() is Visual inPane
+            && ContentPane.IsVisualAncestorOf(inPane)
+            && FocusRail(NavigationMethod.Directional))
+        {
+            return true;
+        }
+
         _vm.NavBackCommand.Execute(null);
         return true;
     }
@@ -265,9 +308,146 @@ public sealed partial class MainView : UserControl
         e.Handled = Controls.PaneFocus.FocusFirst(ContentPane);
     }
 
+    // A footer action takes its own bar off the screen; without this the focus falls out of the pane onto the
+    // header's back arrow instead of the section the edit belonged to.
+    private void OnFooterAction(object? sender, RoutedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (_topLevel?.FocusManager?.GetFocusedElement() is Visual focused
+                    && ContentPane.IsVisualAncestorOf(focused))
+                {
+                    return;
+                }
+
+                Controls.PaneFocus.FocusFirst(ContentPane);
+            },
+            DispatcherPriority.Loaded);
+    }
+
+    // The update row on home opens the sheet that carries the step itself: download, install or cancel the
+    // download, next to dropping the offer and to leaving it as it stands.
+    private void OnHomeUpdate(object? sender, RoutedEventArgs e)
+    {
+        if (_vm is null)
+        {
+            return;
+        }
+
+        var general = _vm.General;
+        var options = new List<ActionOption>();
+        if (general.DownloadActive)
+        {
+            options.Add(new ActionOption(
+                Loc.Instance.Get("Main_CancelDownloadButton"),
+                Glyphs.Close,
+                () => general.CancelDownloadCommand.Execute(null)));
+        }
+        else if (general.UpdateDownloaded)
+        {
+            options.Add(new ActionOption(
+                Loc.Instance.Get("Main_InstallButton"),
+                Glyphs.Install,
+                () => general.ApplyUpdateCommand.Execute(null)));
+        }
+        else
+        {
+            options.Add(new ActionOption(
+                Loc.Instance.Get("Main_DownloadButton"),
+                Glyphs.Download,
+                () => general.DownloadUpdateCommand.Execute(null)));
+        }
+
+        if (!general.DownloadActive)
+        {
+            options.Add(new ActionOption(
+                Loc.Instance.Get("Main_HideButton"),
+                Glyphs.Close,
+                () => general.DismissUpdateBannerCommand.Execute(null)));
+        }
+
+        options.Add(new ActionOption(Loc.Instance.Get("Main_CancelButton"), Glyphs.Close, () => { }));
+
+        Controls.ActionOptions.Present(
+            sender as Control,
+            _vm.Sheet,
+            Loc.Instance.Get("Main_UpdateSection"),
+            general.UpdateBannerText,
+            options);
+    }
+
+    // Up / down inside a pane walk the tab order instead of the geometry: a narrow control standing beside a
+    // wide one (a link over a field, a button in a row) never lies under the moving edge, so directional focus
+    // steps over it and the remote can never reach it.
+    private void OnPaneKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.Key is not (Key.Down or Key.Up) || sender is not Visual pane)
+        {
+            return;
+        }
+
+        e.Handled = MoveInTabOrder(pane, e.Key is Key.Down);
+    }
+
+    // The sheet stands over a screen whose own controls lie right behind its rows, so its keys wrap inside the
+    // card instead of handing the focus to what the sheet covers.
+    private void OnSheetKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.Key is not (Key.Down or Key.Up) || sender is not Visual card)
+        {
+            return;
+        }
+
+        e.Handled = MoveInTabOrder(card, e.Key is Key.Down, wrap: true);
+    }
+
+    private bool MoveInTabOrder(Visual pane, bool forward, bool wrap = false)
+    {
+        // A multiline box spends the key on its own caret.
+        if (_topLevel?.FocusManager?.GetFocusedElement() is not Visual focused
+            || focused is TextBox { AcceptsReturn: true }
+            || !pane.IsVisualAncestorOf(focused))
+        {
+            return false;
+        }
+
+        var direction = forward ? NavigationDirection.Next : NavigationDirection.Previous;
+        var step = (IInputElement)focused;
+        for (var i = 0; i < 200; i++)
+        {
+            if (KeyboardNavigationHandler.GetNext(step, direction) is not Control next)
+            {
+                return false;
+            }
+
+            if (pane.IsVisualAncestorOf(next))
+            {
+                next.BringIntoView();
+                return next.Focus(NavigationMethod.Directional);
+            }
+
+            // Off the pane: a trapped pane walks the rest of the cycle back to its own first stop.
+            if (!wrap)
+            {
+                return false;
+            }
+
+            step = next;
+        }
+
+        return false;
+    }
+
     // Content -> rail. A control on the pane's left edge hands the focus back to the section menu.
     private void OnContentKeyDown(object? sender, KeyEventArgs e)
     {
+        if (!e.Handled && e.Key is Key.Down or Key.Up)
+        {
+            e.Handled = MoveInTabOrder(ContentPane, e.Key is Key.Down);
+            return;
+        }
+
         if (e.Handled || e.Key is not Key.Left || !RailPane.IsEffectivelyVisible)
         {
             return;

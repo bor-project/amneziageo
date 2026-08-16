@@ -258,9 +258,32 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Whether the floating app-update banner shows. Hidden only on the settings General page, which already
-    /// carries the update section (#186); shown on home and every other settings section.
+    /// carries the update section (#186); shown on home and every other settings section. A television carries
+    /// the offer in the home column instead: a floating strip has nothing a remote can reach.
     /// </summary>
-    public bool AppUpdateBannerVisible => General.UpdateBannerVisible && !(IsSettings && IsSettingsGeneral);
+    public bool AppUpdateBannerVisible => General.UpdateBannerVisible
+        && !UiPlatform.IsTelevision
+        && !(IsSettings && IsSettingsGeneral);
+
+    /// <summary>
+    /// Whether the home column carries the update offer itself. Television only; its row opens the sheet that
+    /// confirms or drops the update.
+    /// </summary>
+    public bool ShowHomeUpdate => General.UpdateBannerVisible && UiPlatform.IsTelevision;
+
+    /// <summary>
+    /// Whether a step back still has something to close inside the settings screen: an export / import sub-view,
+    /// the geo sources page or a compact detail. With nothing left the step leaves settings for home.
+    /// </summary>
+    public bool SettingsStepsBack => IsSettings
+        && (SettingsSection switch
+            {
+                "config" => Config.IsSectionExport || Config.IsSectionImport,
+                "routing" => Routing.IsSectionExport || Routing.IsSectionImport,
+                _ => false,
+            }
+            || IsSettingsSources
+            || (IsCompact && SettingsDetailOpen));
 
     /// <summary>
     /// Whether the reconnect offer belongs in the section footer: the editable sections carry it there instead
@@ -764,6 +787,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         if (e.PropertyName == nameof(GeneralViewModel.UpdateBannerVisible))
         {
             OnPropertyChanged(nameof(AppUpdateBannerVisible));
+            OnPropertyChanged(nameof(ShowHomeUpdate));
         }
     }
 

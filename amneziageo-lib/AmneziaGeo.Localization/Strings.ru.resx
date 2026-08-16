@@ -385,6 +385,9 @@
   <data name="Main_CancelButton" xml:space="preserve">
     <value>Отмена</value>
   </data>
+  <data name="Main_CancelDownloadButton" xml:space="preserve">
+    <value>Отменить загрузку</value>
+  </data>
   <data name="Main_CancelRenameTooltip" xml:space="preserve">
     <value>Отменить переименование</value>
   </data>

@@ -7,6 +7,10 @@
              x:Class="AmneziaGeo.Ui.Views.SourcesView"
              x:CompileBindings="True"
              x:DataType="vm:SourcesViewModel">
+  <UserControl.Resources>
+    <!-- Kebab glyph. -->
+    <StreamGeometry x:Key="AgKebabGeometry">M12,16A2,2 0 0,1 14,18A2,2 0 0,1 12,20A2,2 0 0,1 10,18A2,2 0 0,1 12,16M12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12A2,2 0 0,1 12,10M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4Z</StreamGeometry>
+  </UserControl.Resources>
   <StackPanel Spacing="14">
     <!-- Header: section title + count pill. -->
     <Grid ColumnDefinitions="Auto,Auto,*">
@@ -114,7 +118,8 @@
                         </Button>
                         <Button Classes="icon" VerticalAlignment="Center"
                                 Click="OnSourceKebab" ToolTip.Tip="{l:Tr Main_ActionsTooltip}">
-                          <TextBlock Text="⋮" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                          <PathIcon Data="{StaticResource AgKebabGeometry}" Width="14" Height="14"
+                                    VerticalAlignment="Center" />
                         </Button>
                       </StackPanel>
                     </Grid>

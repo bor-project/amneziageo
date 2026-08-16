@@ -734,6 +734,62 @@ public sealed class GeoVpnService : VpnService
         return found;
     }
 
+    /// <summary>
+    /// Addresses of this device a client on the same network points at the local proxy. The connectivity service
+    /// answers for every link, where the interface list an application reads itself may hold none of them; a
+    /// tunnel of ours is left out, its address answers to nobody on this network.
+    /// </summary>
+    public static IReadOnlyList<string> ReachableAddresses()
+    {
+        var links = new List<LocalProxyServer.AdapterView>();
+        try
+        {
+            if (Application.Context.GetSystemService(Context.ConnectivityService) is ConnectivityManager manager)
+            {
+                foreach (var network in manager.GetAllNetworks())
+                {
+                    var link = Link(manager, network);
+                    if (link is not null)
+                    {
+                        links.Add(link);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            global::Android.Util.Log.Warn("GeoVpnService", "reading reachable addresses failed: " + ex);
+        }
+
+        var offered = LocalProxyServer.Usable(links);
+        return offered.Count > 0 ? offered : LocalProxyServer.UsableAddresses();
+    }
+
+    // One network as the address pick reads it; null for a tunnel and for a network that carries no address.
+    private static LocalProxyServer.AdapterView? Link(ConnectivityManager manager, Network network)
+    {
+        if (manager.GetNetworkCapabilities(network) is not { } capabilities
+            || capabilities.HasTransport(TransportType.Vpn)
+            || manager.GetLinkProperties(network) is not { } properties)
+        {
+            return null;
+        }
+
+        var addresses = new List<System.Net.IPAddress>();
+        foreach (var entry in properties.LinkAddresses)
+        {
+            if (System.Net.IPAddress.TryParse(entry.Address?.HostAddress ?? string.Empty, out var address))
+            {
+                addresses.Add(address);
+            }
+        }
+
+        return addresses.Count > 0
+            ? new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet,
+                properties.Routes.Any(route => route.IsDefaultRoute), addresses)
+            : null;
+    }
+
     private static string? Subnet(UnicastIPAddressInformation unicast)
     {
         if (unicast.Address.AddressFamily != AddressFamily.InterNetwork)

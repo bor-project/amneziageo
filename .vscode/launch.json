@@ -36,145 +36,34 @@
       "port": 10000
     },
     {
-      "name": "Debug Linux (agent)",
+      // Component, its command line and elevation come from .vscode/debug.linux.jsonc.
+      // The task builds the tree and holds the component until this attaches.
+      "name": "Debug Linux",
       "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "Build Linux",
-      "program": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.App/bin/Debug/net10.0/AmneziaGeo.Linux.App.dll",
-      "cwd": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.App/bin/Debug/net10.0",
-      "args": [
-        "--iface",
-        "awg0"
-      ],
-      "console": "internalConsole",
-      "stopAtEntry": false,
-      "env": {
-        "DOTNET_ENVIRONMENT": "Development"
-      },
+      "request": "attach",
+      "preLaunchTask": "Run Linux",
+      "processName": "amneziageo-dbg",
       "pipeTransport": {
         "pipeCwd": "${workspaceFolder}",
-        "pipeProgram": "${workspaceFolder}/.vscode/vsdbg-sudo.sh",
+        "pipeProgram": "${workspaceFolder}/.vscode/vsdbg-pipe.sh",
         "pipeArgs": [],
         "debuggerPath": "vsdbg",
         "quoteArgs": false
       }
     },
     {
-      "name": "Debug Linux (UI)",
-      "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "Build Linux",
-      "program": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.Ui/bin/Debug/net10.0/AmneziaGeo.Linux.Ui.dll",
-      "cwd": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.Ui/bin/Debug/net10.0",
-      "console": "internalConsole",
-      "stopAtEntry": false,
-      "env": {
-        "DOTNET_ENVIRONMENT": "Development"
-      }
-    },
-    {
-      // Asks for the command line, e.g. "status", "--json profile list", "settings set log-level info".
-      "name": "Debug Linux (console)",
-      "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "Build Linux",
-      "program": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.Cli/bin/Debug/net10.0/amneziageo.dll",
-      "cwd": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.Cli/bin/Debug/net10.0",
-      "args": "${input:consoleArgs}",
-      "console": "integratedTerminal",
-      "stopAtEntry": false,
-      "env": {
-        "DOTNET_ENVIRONMENT": "Development",
-        // The compound starts the agent at the same moment; the default five seconds expire while it boots.
-        "AMNEZIAGEO_CONNECT_WAIT": "30"
-      }
-    },
-    {
-      "name": "Debug Linux (console TUI)",
-      "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "Build Linux",
-      "program": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.Cli/bin/Debug/net10.0/amneziageo.dll",
-      "cwd": "${workspaceFolder}/amneziageo-linux/AmneziaGeo.Linux.Cli/bin/Debug/net10.0",
-      "args": [
-        "tui"
-      ],
-      "console": "integratedTerminal",
-      "stopAtEntry": false,
-      "env": {
-        "DOTNET_ENVIRONMENT": "Development",
-        "AMNEZIAGEO_CONNECT_WAIT": "30"
-      }
-    },
-    {
-      "name": "Attach Linux (agent under sudo)",
+      // Any component already running: the agent, the UI or the console client.
+      "name": "Attach Linux",
       "type": "coreclr",
       "request": "attach",
       "processId": "${command:pickRemoteProcess}",
       "pipeTransport": {
         "pipeCwd": "${workspaceFolder}",
-        "pipeProgram": "${workspaceFolder}/.vscode/vsdbg-sudo.sh",
+        "pipeProgram": "${workspaceFolder}/.vscode/vsdbg-pipe.sh",
         "pipeArgs": [],
         "debuggerPath": "vsdbg",
         "quoteArgs": false
       }
-    },
-    {
-      // Target: the "Run Linux console (attachable)" task, which holds the client until this attaches.
-      "name": "Attach Linux (console)",
-      "type": "coreclr",
-      "request": "attach",
-      "processName": "amneziageo"
-    },
-    {
-      "name": "Attach Linux (console under sudo)",
-      "type": "coreclr",
-      "request": "attach",
-      "processName": "amneziageo",
-      "pipeTransport": {
-        "pipeCwd": "${workspaceFolder}",
-        "pipeProgram": "${workspaceFolder}/.vscode/vsdbg-sudo.sh",
-        "pipeArgs": [],
-        "debuggerPath": "vsdbg",
-        "quoteArgs": false
-      }
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Debug Linux (agent + UI)",
-      "configurations": [
-        "Debug Linux (agent)",
-        "Debug Linux (UI)"
-      ],
-      "preLaunchTask": "Build Linux",
-      "stopAll": true
-    },
-    {
-      "name": "Debug Linux (agent + console)",
-      "configurations": [
-        "Debug Linux (agent)",
-        "Debug Linux (console)"
-      ],
-      "preLaunchTask": "Build Linux",
-      "stopAll": true
-    },
-    {
-      "name": "Debug Linux (agent + console TUI)",
-      "configurations": [
-        "Debug Linux (agent)",
-        "Debug Linux (console TUI)"
-      ],
-      "preLaunchTask": "Build Linux",
-      "stopAll": true
-    }
-  ],
-  "inputs": [
-    {
-      "id": "consoleArgs",
-      "type": "promptString",
-      "description": "Arguments for amneziageo (empty prints the help).",
-      "default": "status"
     }
   ]
 }

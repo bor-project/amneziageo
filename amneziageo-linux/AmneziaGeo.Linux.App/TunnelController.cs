@@ -445,7 +445,7 @@ internal sealed class TunnelController : IDisposable
 
         if (geteuid() != 0)
         {
-            return "creating the tunnel interface needs root; start the agent from \"Debug Linux (agent)\", the \"Run Linux agent (sudo)\" task, or with: sudo dotnet AmneziaGeo.Linux.App.dll";
+            return "creating the tunnel interface needs root; start the agent from \"Debug Linux\" with \"sudo\": true in .vscode/debug.linux.jsonc, or with: sudo dotnet AmneziaGeo.Linux.App.dll";
         }
 
         if (!File.Exists(TunDevice))

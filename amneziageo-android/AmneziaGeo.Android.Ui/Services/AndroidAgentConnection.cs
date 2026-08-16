@@ -721,7 +721,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         var configs = OrderedNames().Select(name => Entry(name, _configs[name])).ToList();
         var proxy = VpnBridge.ReadProxyState();
-        var proxyAddresses = ProxyAddresses(proxy.Running);
+        var proxyAddresses = ProxyAddresses(_proxyOptions.Enabled);
         LogProxyOffer(proxy.Running, proxyAddresses);
 
         Latest = new StatusSnapshot(
@@ -772,10 +772,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         SnapshotReceived?.Invoke(Latest);
     }
 
-    // Addresses the proxy answers on while it listens.
-    private static IReadOnlyList<string> ProxyAddresses(bool running)
+    // Addresses the proxy answers on. Named from the moment it is switched on: the screen that offers it is where
+    // the user reads what to point a client at, and here it only listens while the tunnel stands.
+    private static IReadOnlyList<string> ProxyAddresses(bool enabled)
     {
-        return running ? LocalProxyServer.UsableAddresses() : [];
+        return enabled ? GeoVpnService.ReachableAddresses() : [];
     }
 
     // Writes where the proxy is offered, and the links behind the answer when it is offered nowhere.

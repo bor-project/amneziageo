@@ -1637,15 +1637,17 @@ internal sealed class LinuxAgent : IDisposable
     }
 
     // What the running tunnel holds for an address right now.
-    private string? Held(System.Net.IPAddress address)
+    private HeldRoute? Held(System.Net.IPAddress address)
     {
         var value = address.ToString();
         if (_tunnel.Tunneled.Contains(value))
         {
-            return "routed into the tunnel right now";
+            return new HeldRoute(RoleToken.Proxy, "routed into the tunnel right now");
         }
 
-        return _tunnel.Bypassed.Contains(value) ? "routed past the tunnel right now" : null;
+        return _tunnel.Bypassed.Contains(value)
+            ? new HeldRoute(RoleToken.Direct, "routed past the tunnel right now")
+            : null;
     }
 
     // Stores a finished run where no capture floor reaches it, and puts its closing line in the agent log.

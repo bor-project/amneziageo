@@ -183,9 +183,9 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
     }
 
     // What the running tunnel holds per address, read from this process or from the service that owns it.
-    private Dictionary<string, string> Held(string config)
+    private Dictionary<string, HeldRoute> Held(string config)
     {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        var map = new Dictionary<string, HeldRoute>(StringComparer.Ordinal);
         foreach (var entry in inspector.Held(config).Entries)
         {
             if (entry.Kind is "state" or "domain")
@@ -193,9 +193,21 @@ internal sealed class CheckService(AgentControl control, RuntimeInspector inspec
                 continue;
             }
 
-            map[entry.Key] = $"held as {entry.Kind}, {entry.Value}";
+            map[entry.Key] = new HeldRoute(Role(entry), $"held as {entry.Kind}, {entry.Value}");
         }
 
         return map;
+    }
+
+    // The role the installed path amounts to; the verdict answers for an entry that installed nothing.
+    private static RoleToken Role(RuntimeInspector.CacheEntry entry)
+    {
+        return (entry.Path.Length > 0 ? entry.Path : entry.Kind) switch
+        {
+            AmneziaGeo.Ipc.LiveSession.PathTunnel or "proxy" => RoleToken.Proxy,
+            AmneziaGeo.Ipc.LiveSession.PathDirect => RoleToken.Direct,
+            AmneziaGeo.Ipc.LiveSession.PathBlock => RoleToken.Block,
+            _ => RoleToken.None,
+        };
     }
 }

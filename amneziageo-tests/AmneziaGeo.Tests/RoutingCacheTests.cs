@@ -642,7 +642,7 @@ public sealed class RoutingCacheTests
     }
 
     [Fact]
-    public void RebuiltRules_DropWhatTheOldOnesInstalledAndRedecide()
+    public void RebuiltRules_MoveAHeldAddressToTheSideTheNewOnesAskFor()
     {
         var applier = new FakeApplier { Generation = 1 };
         var cache = Cache(applier, split: false, direct: [YandexRange]);
@@ -651,8 +651,34 @@ public sealed class RoutingCacheTests
         cache.Rebuild([], [], [YandexRange]);
 
         Assert.Equal(new[] { YandexAddress }, applier.Removed);
-        Assert.Equal(0, cache.Size);
+        Assert.Equal(1, cache.Size);
         Assert.Equal(RouteVerdict.Block, cache.Classify(IPAddress.Parse(YandexAddress)));
+    }
+
+    [Fact]
+    public void RebuiltRules_LeaveAnAddressTheNewOnesStillAgreeAbout()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: false, direct: [YandexRange]);
+        cache.Note(IPAddress.Parse(YandexAddress));
+
+        cache.Rebuild([], [YandexRange], []);
+
+        Assert.Empty(applier.Removed);
+        Assert.Equal(1, cache.Active);
+        Assert.Equal(RouteVerdict.Direct, cache.Classify(IPAddress.Parse(YandexAddress)));
+    }
+
+    [Fact]
+    public void AnAddressSettledByAName_IsNotTakenBackByARange()
+    {
+        var applier = new FakeApplier { Generation = 1 };
+        var cache = Cache(applier, split: true, proxy: [YandexRange]);
+        cache.Note(IPAddress.Parse(YandexAddress), RouteVerdict.Direct);
+
+        cache.Note(Numeric(YandexAddress));
+
+        Assert.Equal(RouteVerdict.Direct, cache.Classify(IPAddress.Parse(YandexAddress)));
     }
 
     [Fact]

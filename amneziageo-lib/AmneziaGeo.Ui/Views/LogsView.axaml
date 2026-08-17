@@ -16,6 +16,8 @@
     <StreamGeometry x:Key="AgSearchGeometry">M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z</StreamGeometry>
     <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
+    <StreamGeometry x:Key="AgSortUpGeometry">M12,8L18,16H6Z</StreamGeometry>
+    <StreamGeometry x:Key="AgSortDownGeometry">M12,16L6,8H18Z</StreamGeometry>
   </UserControl.Resources>
   <UserControl.Styles>
     <!-- Inset frame the log body sits in. Set by style, not on the element: a local value outranks the
@@ -34,6 +36,27 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="0" />
       <Setter Property="Margin" Value="0,10,0,0" />
+    </Style>
+
+    <!-- Column header: a caption that orders the table, not a button that looks like one. -->
+    <Style Selector="Button.sortcol">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="2,1" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
+    </Style>
+    <Style Selector="Button.sortcol:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="PathIcon.sortmark">
+      <Setter Property="Width" Value="9" />
+      <Setter Property="Height" Value="9" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
     </Style>
   </UserControl.Styles>
   <!-- Source and what it records over one viewer; only the log body scrolls. -->
@@ -67,7 +90,7 @@
 
         <!-- Search fills the row; the log actions take its end. The live source has nothing stored to search,
              to clear or to page through, so it carries the export alone. -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
           <TextBox Grid.Column="0" Classes="field" Text="{Binding SearchQuery, Mode=TwoWay}"
                    IsVisible="{Binding IsStoredLog}"
                    Watermark="{l:Tr Main_LogSearchWatermark}">
@@ -85,11 +108,16 @@
                   IsVisible="{Binding IsStoredLog}" ToolTip.Tip="{l:Tr Main_ClearLogButton}">
             <PathIcon Data="{StaticResource AgTrashGeometry}" Width="14" Height="14" />
           </Button>
-          <Button Grid.Column="2" Classes="methodpick" Padding="12,7" Click="OnExportLog"
+          <!-- What is on screen goes to the clipboard whole; a selection inside it is made with Ctrl held. -->
+          <Button Grid.Column="2" Classes="methodpick" Padding="12,7" Click="OnCopyBody"
+                  ToolTip.Tip="{l:Tr Main_CopyShownButton}">
+            <PathIcon Data="{StaticResource AgCopyGeometry}" Width="14" Height="14" />
+          </Button>
+          <Button Grid.Column="3" Classes="methodpick" Padding="12,7" Click="OnExportLog"
                   ToolTip.Tip="{l:Tr Main_ExportLogButton}">
             <PathIcon Data="{StaticResource AgDownloadGeometry}" Width="14" Height="14" />
           </Button>
-          <Button Grid.Column="3" Classes="methodpick" Padding="12,7" Click="OnSendLog"
+          <Button Grid.Column="4" Classes="methodpick" Padding="12,7" Click="OnSendLog"
                   IsVisible="{Binding CanSendExport}" ToolTip.Tip="{l:Tr Main_SendToAppButton}">
             <PathIcon Data="{StaticResource AgShareGeometry}" Width="14" Height="14" />
           </Button>
@@ -109,6 +137,10 @@
                   IsVisible="{Binding IsStoredLog}" ToolTip.Tip="{l:Tr Main_LogNewerTooltip}">
             <PathIcon Data="{StaticResource AgChevronRightGeometry}" Width="14" Height="14" />
           </Button>
+          <!-- Says why the rows stopped moving while Ctrl is held. -->
+          <TextBlock Grid.Column="2" Text="{l:Tr Main_LogPausedHint}" FontSize="11.5" Margin="8,0"
+                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                     IsVisible="{Binding IsFrozen}" Foreground="{DynamicResource AgWarnBrush}" />
           <TextBlock Grid.Column="3" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5"
                      VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
           <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
@@ -131,15 +163,66 @@
                                    TextWrapping="Wrap" Margin="16,13" />
             </ScrollViewer>
 
-            <!-- The destinations as a padded table: the columns only line up without wrapping. -->
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                          IsVisible="{Binding ShowLiveText}">
-              <SelectableTextBlock Text="{Binding LogText}"
-                                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                   FontSize="11.5" LineHeight="18"
-                                   Foreground="{DynamicResource AgMutedBrush}"
-                                   TextWrapping="NoWrap" Margin="16,13" />
-            </ScrollViewer>
+            <!-- The destinations as a table: the header orders it, the address and the name are selectable. -->
+            <Grid IsVisible="{Binding ShowLiveTable}" RowDefinitions="Auto,Auto,*" Margin="10,8,10,10">
+              <Grid Grid.Row="0" ColumnDefinitions="190,2*,120,3*" ColumnSpacing="8">
+                <Button Grid.Column="0" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="host">
+                  <StackPanel Orientation="Horizontal" Spacing="3">
+                    <TextBlock Text="{l:Tr Check_ColumnHost}" />
+                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding HostUp}" />
+                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding HostDown}" />
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="1" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="name">
+                  <StackPanel Orientation="Horizontal" Spacing="3">
+                    <TextBlock Text="{l:Tr Check_ColumnName}" />
+                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding NameUp}" />
+                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding NameDown}" />
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="2" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="path">
+                  <StackPanel Orientation="Horizontal" Spacing="3">
+                    <TextBlock Text="{l:Tr Check_ColumnPath}" />
+                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding PathUp}" />
+                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding PathDown}" />
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="3" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="state">
+                  <StackPanel Orientation="Horizontal" Spacing="3">
+                    <TextBlock Text="{l:Tr Check_ColumnState}" />
+                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding StateUp}" />
+                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding StateDown}" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+              <Border Grid.Row="1" Height="1" Margin="0,4,0,2" Background="{DynamicResource AgBorderBrush}" />
+              <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding LiveRows}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LiveRowItem">
+                      <Grid ColumnDefinitions="190,2*,120,3*" ColumnSpacing="8" Margin="0,2">
+                        <SelectableTextBlock Grid.Column="0" Text="{Binding Host}" FontSize="11.5"
+                                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                             Foreground="{DynamicResource AgFgBrush}" />
+                        <SelectableTextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11.5"
+                                             Foreground="{DynamicResource AgFgBrush}" />
+                        <TextBlock Grid.Column="2" Text="{Binding Route}" FontSize="11.5"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource AgAccentBrush}" />
+                        <TextBlock Grid.Column="3" Text="{Binding Detail}" FontSize="11.5"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource AgMutedBrush}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Grid>
 
             <!-- Narrow: a card per row, so nothing has to be scrolled sideways to be read. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
@@ -203,14 +286,23 @@
                         <Border Grid.Column="0" Width="3" CornerRadius="2" Margin="0,0,10,0"
                                 Background="{DynamicResource AgWarnBrush}" IsVisible="{Binding Stalled}" />
                         <StackPanel Grid.Column="1" Spacing="4">
-                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <TextBlock Grid.Column="0" Text="{Binding Host}" FontSize="13" FontWeight="SemiBold"
                                        TextTrimming="CharacterEllipsis"
                                        Foreground="{DynamicResource AgFgBrush}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Verdict}" FontSize="11.5"
+                            <TextBlock Grid.Column="1" Text="{Binding Route}" FontSize="11.5"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource AgAccentBrush}" />
+                            <!-- A finger scrolls the card rather than selecting inside it, so the whole row goes
+                                 to the clipboard by button. -->
+                            <Button Grid.Column="2" Classes="icon" Click="OnCopyRow"
+                                    VerticalAlignment="Center" ToolTip.Tip="{l:Tr Main_CopyButton}">
+                              <PathIcon Data="{StaticResource AgCopyGeometry}" Width="13" Height="13" />
+                            </Button>
                           </Grid>
+                          <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                     IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                     Foreground="{DynamicResource AgFgBrush}" />
                           <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="11.5"
                                      Foreground="{DynamicResource AgMutedBrush}" />
                         </StackPanel>

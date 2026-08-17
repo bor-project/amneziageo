@@ -156,9 +156,15 @@ public sealed class RoutingCache
     public int Size => Volatile.Read(ref _size);
 
     /// <summary>
-    /// A held destination: its verdict, whether it holds a host route, and the idle time left before reclaim.
+    /// Whether the tunnel carries only what the list names; everything else follows the physical path.
     /// </summary>
-    public sealed record Held(IPAddress Address, RouteVerdict Verdict, bool Routed, bool Adopted, int IdleSeconds, int TtlSeconds);
+    public bool Split => _split;
+
+    /// <summary>
+    /// A held destination: its verdict, what that verdict installed, whether a name settled it, and the idle time
+    /// left before reclaim.
+    /// </summary>
+    public sealed record Held(IPAddress Address, RouteVerdict Verdict, RoutePlan Plan, bool Routed, bool Adopted, bool ByName, int IdleSeconds, int TtlSeconds);
 
     /// <summary>
     /// Destinations held right now, each with the time left on it.
@@ -172,8 +178,8 @@ public sealed class RoutingCache
         {
             var entry = pair.Value;
             var idle = (int)Math.Clamp((now - Volatile.Read(ref entry.LastTouch)) / 1000, 0, ttl);
-            result.Add(new Held(entry.Address, entry.Verdict, entry.Routed || entry.Tunneled,
-                entry.Plan == RoutePlan.External, idle, ttl));
+            result.Add(new Held(entry.Address, entry.Verdict, entry.Plan, entry.Routed || entry.Tunneled,
+                entry.Plan == RoutePlan.External, entry.ByName, idle, ttl));
         }
 
         return result;

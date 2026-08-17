@@ -331,8 +331,10 @@ internal static class DiagCommands
         }
 
         var report = SessionReport.Parse(ack.Message);
-        var rows = report.Sessions.Select(row => (IReadOnlyList<string>)[row.Host, row.Describe()]).ToList();
-        Output.Table(["DESTINATION", "HOLDS"], rows, "the tunnel carries nothing right now");
+        var rows = report.Sessions
+            .Select(row => (IReadOnlyList<string>)[row.Host, Column(row.Name), Column(row.Route), row.Describe()])
+            .ToList();
+        Output.Table(["DESTINATION", "NAME", "PATH", "HOLDS"], rows, "the tunnel carries nothing right now");
         if (report.Held > 0)
         {
             Output.Line($"{report.Held} held, {report.Undecided} undecided, {report.Stalled} stalled, "
@@ -340,6 +342,12 @@ internal static class DiagCommands
         }
 
         return Exit.Ok;
+    }
+
+    // A column an empty value still fills.
+    private static string Column(string value)
+    {
+        return value.Length == 0 ? "-" : value;
     }
 
     private static int Doctor(IAgentLink agent, ICliHost host)

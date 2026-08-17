@@ -9,11 +9,16 @@ using AmneziaGeo.Routing;
 namespace AmneziaGeo.Geo;
 
 /// <summary>
+/// What the running tunnel holds for one address: the role its path amounts to right now, and how it is held.
+/// </summary>
+public sealed record HeldRoute(RoleToken Role, string Detail);
+
+/// <summary>
 /// What the platform lends the inspector: what its live tunnel holds for an address, and which addresses an
 /// application is talking to right now. Both are optional - without them the answer comes from the rules alone.
 /// </summary>
 public sealed record TargetProbes(
-    Func<IPAddress, string?>? Held = null,
+    Func<IPAddress, HeldRoute?>? Held = null,
     Func<string, IReadOnlyList<string>>? AppAddresses = null);
 
 /// <summary>
@@ -242,13 +247,15 @@ public sealed class TargetInspector(RoutingList? list, bool split, AppScope apps
         return findings with { Role = role, MatchedRule = rule, Addresses = addresses.Count, Unlisted = unlisted };
     }
 
-    // One address row: its bucket, plus what the running tunnel holds for it when the platform can tell.
+    // One address row. What the running tunnel holds for it is the state, because a name can settle an address
+    // the ranges would claim; the range it falls into is then the reason, not the answer.
     private static CheckFact Address(IPAddress address, Claim claim, TargetProbes probes)
     {
         var held = probes.Held?.Invoke(address);
-        var detail = claim.Rule.Length > 0 ? $"in {claim.Rule}" : "no range covers it";
-        return new CheckFact("address", address.ToString(), claim.Role.ToString().ToLowerInvariant(),
-            held is { Length: > 0 } ? $"{detail}; {held}" : detail);
+        var reason = claim.Rule.Length > 0 ? $"in {claim.Rule}" : "no range covers it";
+        var state = (held?.Role ?? claim.Role).ToString().ToLowerInvariant();
+        return new CheckFact("address", address.ToString(), state,
+            held is null ? reason : $"{held.Detail}; {reason}");
     }
 
     // Whether anything answers on the target's port; only asked where a rule already puts it in the tunnel.

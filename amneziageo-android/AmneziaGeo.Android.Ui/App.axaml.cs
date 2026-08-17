@@ -52,7 +52,6 @@ public sealed partial class App : Avalonia.Application
                 .HasSystemFeature(global::Android.Content.PM.PackageManager.FeatureLeanback) == true;
             UiPlatform.SupportsGeoPreview = false;
             UiPlatform.UsesActionSheets = true;
-            UiPlatform.UsesCompactLayout = !UiPlatform.IsTelevision;
             UiPlatform.HandScale = HandScale();
             if (!UiPlatform.IsTelevision)
             {

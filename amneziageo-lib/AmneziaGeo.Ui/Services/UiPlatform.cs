@@ -11,12 +11,6 @@ internal static class UiPlatform
     public static bool IsTelevision { get; set; }
 
     /// <summary>
-    /// Whether a narrow screen drops the card frames for the single-column drilldown. On for a phone only:
-    /// everywhere else the UI keeps its containers at any width.
-    /// </summary>
-    public static bool UsesCompactLayout { get; set; }
-
-    /// <summary>
     /// Whether the add / export choices open as a bottom sheet. Off on desktop, where the same choices drop out
     /// of the button as a menu.
     /// </summary>

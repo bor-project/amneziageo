@@ -78,8 +78,16 @@ internal static class DesignData
         vm.HasConfigs = true;
 
         // --- Routing-list catalogue ---
-        var rknList = new RoutingListSummaryViewModel { Id = 1, Name = "Обход РКН", RuleCount = 42, RouteCount = 131, DomainCount = 517 };
-        var mediaList = new RoutingListSummaryViewModel { Id = 2, Name = "YouTube + Discord", RuleCount = 6, RouteCount = 74, DomainCount = 39 };
+        var rknList = new RoutingListSummaryViewModel
+        {
+            Id = 1, Name = "Обход РКН", RuleCount = 42, RouteCount = 131, DomainCount = 517,
+            ProxyRuleCount = 26, DirectRuleCount = 12, BlockRuleCount = 4, AllUdp = true, UseGlobalProxy = true,
+        };
+        var mediaList = new RoutingListSummaryViewModel
+        {
+            Id = 2, Name = "YouTube + Discord", RuleCount = 6, RouteCount = 74, DomainCount = 39,
+            ProxyRuleCount = 6,
+        };
         vm.Routing.RoutingLists.Add(rknList);
         vm.Routing.RoutingLists.Add(mediaList);
         vm.Routing.RoutingCatalogueOptions.Add(new RoutingListChoice(rknList.Id, rknList.Name));

@@ -2383,9 +2383,11 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         var routingLists = new List<RoutingListEntry>();
-        foreach (var (id, name, ruleCount, routeCount, domainCount) in await store.ListRoutingListSummariesAsync(ct))
+        foreach (var summary in await store.ListRoutingListSummariesAsync(ct))
         {
-            routingLists.Add(new RoutingListEntry(id, name, ruleCount, routeCount, domainCount));
+            routingLists.Add(new RoutingListEntry(summary.Id, summary.Name, summary.RuleCount, summary.RouteCount,
+                summary.DomainCount, summary.ProxyRuleCount, summary.DirectRuleCount, summary.BlockRuleCount,
+                summary.AllUdp, summary.UseGlobalProxy));
         }
 
         var settings = await settingsStore.LoadAsync(ct);

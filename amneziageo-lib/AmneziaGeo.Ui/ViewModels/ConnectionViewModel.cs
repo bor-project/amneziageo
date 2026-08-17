@@ -817,6 +817,19 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             ActiveConfig = item;
         }
 
+        ProbeRow(item);
+    }
+
+    /// <summary>
+    /// Мерит сервер конфигурации, не трогая выбор.
+    /// </summary>
+    public void ProbeRow(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
         item.Probing = true;
         _ = ProbeRowAsync(item, CancellationToken.None);
     }

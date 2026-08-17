@@ -49,21 +49,23 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
-    [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
+    [NotifyPropertyChangedFor(nameof(ShowOpenFrame))]
     [NotifyPropertyChangedFor(nameof(RowActionText))]
     private string _status = ConnectionStatus.Idle;
 
     /// <summary>
-    /// Whether the row wears its frame in the connection colour: the configuration the tunnel is bound to.
+    /// Носит ли карточка рамку в цвете состояния: выбранная конфигурация - та, на которую встанет подключение, -
+    /// и та, на которой туннель уже стоит.
     /// </summary>
-    public bool ShowStatusFrame => Status is ConnectionStatus.Connected
+    public bool ShowStatusFrame => IsSelected || Status is ConnectionStatus.Connected
         or ConnectionStatus.Connecting
         or ConnectionStatus.Disconnecting;
 
     /// <summary>
-    /// Whether the row wears the grey frame: the configuration the user picked, with no tunnel on it.
+    /// Носит ли карточка серую рамку: открытая справа конфигурация, пока она не выбрана - у выбранной рамка
+    /// в цвете состояния.
     /// </summary>
-    public bool ShowSelectedFrame => IsSelected && !ShowStatusFrame;
+    public bool ShowOpenFrame => IsOpen && !ShowStatusFrame;
 
     /// <summary>
     /// What clicking the row does: the running configuration goes down, every other one is dialled.
@@ -83,10 +85,16 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public IBrush StatusBrush => StatusLabels.Brush(LinkSilent ? ConnectionStatus.Connecting : Status);
 
-    // Whether the user picked this row.
+    // Выбрана ли эта конфигурация: на неё встанет подключение.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
+    [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
+    [NotifyPropertyChangedFor(nameof(ShowOpenFrame))]
     private bool _isSelected;
+
+    // Открыта ли эта конфигурация в настройках справа.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowOpenFrame))]
+    private bool _isOpen;
 
     // Whether the swipe uncovered the row's edit and delete buttons.
     [ObservableProperty]

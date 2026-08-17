@@ -32,6 +32,19 @@
     <Style Selector="Button.wtab.active /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
     </Style>
+
+    <!-- Метка политики в шапке карточки списка. -->
+    <Style Selector="Border.listbadge">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.listbadge > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="FontSize" Value="10.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*" Margin="12,3,12,3">
@@ -40,7 +53,12 @@
     <Border Grid.Row="0" Classes="card" Height="52" Padding="12,0">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-          <Ellipse Width="9" Height="9" Fill="{Binding Home.ConnectStatusBrush}" VerticalAlignment="Center" />
+          <!-- Главный экран с большой кнопкой остаётся одноколоночным: сюда за ним и возвращаются. -->
+          <Button x:Name="HomeBack" Classes="icon" Padding="6,4" VerticalAlignment="Center"
+                  Command="{Binding NavHomeCommand}" ToolTip.Tip="{l:Tr Main_BackTooltip}">
+            <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
+                      Foreground="{DynamicResource AgMutedBrush}" />
+          </Button>
           <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
         </StackPanel>
 
@@ -71,39 +89,54 @@
     <Panel Grid.Row="1" Margin="0,6,0,0">
 
       <!-- СЕРВЕРЫ: каталог карточками слева, настройки открытой конфигурации справа. -->
-      <Grid IsVisible="{Binding IsSettingsConfig}" ColumnDefinitions="340,10,*">
+      <Grid IsVisible="{Binding IsSettingsConfig}">
+        <Grid.ColumnDefinitions>
+          <!-- Ширину каталога тянет сепаратор между колонками: ниже 260 карточка режется, выше 560 настройкам
+               не остаётся места в узком окне. -->
+          <ColumnDefinition Width="340" MinWidth="260" MaxWidth="560" />
+          <ColumnDefinition Width="10" />
+          <ColumnDefinition Width="*" MinWidth="380" />
+        </Grid.ColumnDefinitions>
+
         <Border Grid.Column="0" Classes="card" Padding="0">
           <DockPanel LastChildFill="True">
-            <StackPanel DockPanel.Dock="Top" Margin="12,12,12,8" Spacing="8">
-              <TextBox Classes="field" Text="{Binding Config.SearchText, Mode=TwoWay}"
-                       Watermark="{l:Tr Main_ServerSearchWatermark}" />
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <Button Grid.Column="0" Classes="methodpick" MinHeight="36" HorizontalAlignment="Stretch"
-                        Content="{l:Tr Main_ProbeAllButton}" IsVisible="{Binding HasConfigs}"
-                        Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}" />
-                <Button Grid.Column="1" Classes="accent" MinHeight="36" Padding="14,0" Click="OnAddServer">
-                  <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <PathIcon Data="{StaticResource AgWidePlusGeometry}" Width="13" Height="13"
-                              VerticalAlignment="Center" />
-                    <TextBlock Text="{l:Tr Main_AddButton}" VerticalAlignment="Center" />
-                  </StackPanel>
-                </Button>
-              </Grid>
-            </StackPanel>
+            <!-- Шапка колонки: сколько конфигураций в каталоге, замер всех разом и добавление новой. -->
+            <Grid DockPanel.Dock="Top" Margin="12,12,12,8" ColumnDefinitions="Auto,Auto,*,Auto,Auto"
+                  ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_HomeTabServers}" FontWeight="SemiBold" FontSize="14"
+                         VerticalAlignment="Center" />
+              <Border Grid.Column="1" Background="{DynamicResource AgPanel2Brush}" CornerRadius="8"
+                      Padding="7,1" VerticalAlignment="Center" IsVisible="{Binding HasConfigs}">
+                <TextBlock Text="{Binding Config.Configs.Count}" Classes="muted" FontSize="11.5" />
+              </Border>
+              <Button Grid.Column="3" Classes="methodpick" MinWidth="38" MinHeight="34" Padding="0"
+                      IsVisible="{Binding HasConfigs}" ToolTip.Tip="{l:Tr Main_ProbeTooltip}"
+                      Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}">
+                <PathIcon Classes.spin="{Binding Home.ProbeRunning}" Data="{DynamicResource AgRefreshGeometry}"
+                          Width="16" Height="16" Foreground="{DynamicResource AgMutedBrush}" />
+              </Button>
+              <Button Grid.Column="4" Classes="accent" MinWidth="38" MinHeight="34" Padding="0"
+                      Click="OnAddServer" ToolTip.Tip="{l:Tr Main_AddConfigButton}">
+                <PathIcon Data="{StaticResource AgWidePlusGeometry}" Width="14" Height="14" />
+              </Button>
+            </Grid>
+
+            <!-- Что делает замер, сказано под списком: кнопка над ним несёт один значок. -->
+            <TextBlock DockPanel.Dock="Bottom" Margin="12,4,12,12" Classes="muted" FontSize="11"
+                       TextWrapping="Wrap" Text="{l:Tr Main_ProbeAllHint}" IsVisible="{Binding HasConfigs}" />
 
             <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-              <ItemsControl ItemsSource="{Binding Config.VisibleConfigs}" Margin="12,0,12,12">
+              <ItemsControl ItemsSource="{Binding Config.Configs}" Margin="12,0,12,12">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:ConfigItemViewModel">
-                    <!-- Карточка та же, что на телефоне: выбор открывает её настройки справа, кнопка на лице
-                         поднимает туннель, меню несёт «Изменить» и «Удалить». -->
-                    <controls:ServerCard Margin="0,0,0,8" HorizontalAlignment="Stretch"
+                    <!-- Карточка та же, что на телефоне: нажатие открывает её настройки справа, кнопка на лице
+                         поднимает туннель. Меню карточка здесь не несёт - и правка, и удаление стоят
+                         открытыми справа. -->
+                    <controls:ServerCard Margin="0,0,0,8" HorizontalAlignment="Stretch" HasMenu="False"
+                            SelectHint="{l:Tr Main_ServerRowOpen}"
                             IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
-                            SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
-                            ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
-                            EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
-                            DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}"
-                            AskDeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).AskDeleteServerCommand}" />
+                            SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).OpenServerCardCommand}"
+                            ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}" />
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
@@ -111,19 +144,24 @@
           </DockPanel>
         </Border>
 
+        <!-- Границу колонок двигают мышью. Фокус сепаратор не берёт: пульт застревал бы на полоске в 10 px. -->
+        <GridSplitter Grid.Column="1" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                      HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"
+                      Focusable="False" IsTabStop="False" />
+
         <Border Grid.Column="2" Classes="card" Padding="0"
                 controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
           <Grid RowDefinitions="*,Auto">
-            <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
-              <ContentControl Margin="18,4" Content="{Binding Config}"
-                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <ContentControl.ContentTemplate>
-                  <DataTemplate x:DataType="vm:ConfigViewModel">
-                    <views:ConfigView />
-                  </DataTemplate>
-                </ContentControl.ContentTemplate>
-              </ContentControl>
-            </ScrollViewer>
+            <!-- Прокрутку держит сам раздел: его шапка с именем и тумблером стоит над ней и при листании
+                 остаётся на месте. -->
+            <ContentControl Grid.Row="0" Margin="18,4" Content="{Binding Config}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:ConfigViewModel">
+                  <views:ConfigView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
             <!-- Правки держатся до «Сохранить»: футер той же панели, в которой их сделали. -->
             <Border Grid.Row="1" IsVisible="{Binding Config.ShowSaveBar}"
@@ -150,18 +188,27 @@
       </Grid>
 
       <!-- МАРШРУТИЗАЦИЯ: списки слева, правила и настройки открытого списка справа. -->
-      <Grid IsVisible="{Binding IsSettingsRouting}" ColumnDefinitions="340,10,*">
+      <Grid IsVisible="{Binding IsSettingsRouting}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="340" MinWidth="260" MaxWidth="560" />
+          <ColumnDefinition Width="10" />
+          <ColumnDefinition Width="*" MinWidth="380" />
+        </Grid.ColumnDefinitions>
+
         <Border Grid.Column="0" Classes="card" Padding="0">
           <DockPanel LastChildFill="True">
-            <Grid DockPanel.Dock="Top" Margin="12,12,12,8" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <TextBlock Grid.Column="0" Text="{l:Tr Main_RoutingPickerLabel}" FontWeight="SemiBold" FontSize="13"
+            <!-- Шапка колонки та же, что у конфигураций: сколько списков в каталоге и добавление нового. -->
+            <Grid DockPanel.Dock="Top" Margin="12,12,12,8" ColumnDefinitions="Auto,Auto,*,Auto"
+                  ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_RoutingPickerLabel}" FontWeight="SemiBold" FontSize="14"
                          VerticalAlignment="Center" />
-              <Button Grid.Column="1" Classes="accent" MinHeight="36" Padding="14,0" Click="OnAddRoutingList">
-                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                  <PathIcon Data="{StaticResource AgWidePlusGeometry}" Width="13" Height="13"
-                            VerticalAlignment="Center" />
-                  <TextBlock Text="{l:Tr Main_AddButton}" VerticalAlignment="Center" />
-                </StackPanel>
+              <Border Grid.Column="1" Background="{DynamicResource AgPanel2Brush}" CornerRadius="8"
+                      Padding="7,1" VerticalAlignment="Center" IsVisible="{Binding Routing.HasRoutingLists}">
+                <TextBlock Text="{Binding Routing.RoutingLists.Count}" Classes="muted" FontSize="11.5" />
+              </Border>
+              <Button Grid.Column="3" Classes="accent" MinWidth="38" MinHeight="34" Padding="0"
+                      Click="OnAddRoutingList" ToolTip.Tip="{l:Tr Main_AddListTitle}">
+                <PathIcon Data="{StaticResource AgWidePlusGeometry}" Width="14" Height="14" />
               </Button>
             </Grid>
 
@@ -169,20 +216,59 @@
               <ItemsControl ItemsSource="{Binding Routing.RoutingLists}" Margin="12,0,12,12">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
-                    <!-- Применённый список несёт точку; выбор открывает его правила справа. -->
+                    <!-- Рамка как у карточки сервера: применённый список носит синюю, просто открытый - серую.
+                         Имя и метки политики стоят в верхней строке, счёт по корзинам - под ними. -->
                     <Button Classes="rowselect" Margin="0,0,0,6" HorizontalAlignment="Stretch"
                             Command="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).OpenRoutingListCommand}"
                             CommandParameter="{Binding}">
-                      <Grid ColumnDefinitions="Auto,*" Margin="12,9" ColumnSpacing="9">
-                        <Ellipse Grid.Column="0" Width="8" Height="8" VerticalAlignment="Center"
-                                 Fill="{DynamicResource AgUpBrush}" IsVisible="{Binding IsSelected}" />
-                        <StackPanel Grid.Column="1" Spacing="2">
-                          <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
-                                     TextTrimming="CharacterEllipsis" />
-                          <TextBlock Text="{Binding Detail}" FontSize="11" Classes="muted"
-                                     TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                      </Grid>
+                      <Panel>
+                        <!-- Заливка под списком, который держит приложение: рамку глаз теряет среди соседних. -->
+                        <Border CornerRadius="12" IsHitTestVisible="False"
+                                Background="{DynamicResource AgAccentSoftBrush}" IsVisible="{Binding IsApplied}" />
+
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="8,9"
+                              ColumnSpacing="7" RowSpacing="5">
+                          <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="13"
+                                     FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                     VerticalAlignment="Center" />
+
+                          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                                      VerticalAlignment="Center">
+                            <Border Classes="listbadge" IsVisible="{Binding UseGlobalProxy}">
+                              <TextBlock Text="{l:Tr RoutingSummary_GlobalBadge}" />
+                            </Border>
+                            <Border Classes="listbadge" IsVisible="{Binding AllUdp}">
+                              <TextBlock Text="{l:Tr RoutingSummary_UdpBadge}" />
+                            </Border>
+                          </StackPanel>
+
+                          <!-- Правила по корзинам: пустая корзина в строке не стоит. -->
+                          <WrapPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+                            <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
+                                        IsVisible="{Binding ShowProxy}">
+                              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                       Fill="{DynamicResource AgAccentBrush}" />
+                              <TextBlock Text="{Binding ProxyText}" FontSize="11" Classes="muted" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
+                                        IsVisible="{Binding ShowDirect}">
+                              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                       Fill="{DynamicResource AgMutedBrush}" />
+                              <TextBlock Text="{Binding DirectText}" FontSize="11" Classes="muted" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="5"
+                                        IsVisible="{Binding ShowBlock}">
+                              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                       Fill="{DynamicResource AgDownBrush}" />
+                              <TextBlock Text="{Binding BlockText}" FontSize="11" Classes="muted" />
+                            </StackPanel>
+                          </WrapPanel>
+                        </Grid>
+                        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                                BorderBrush="{DynamicResource AgAccentBrush}" IsVisible="{Binding IsApplied}" />
+                        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowOpenFrame}" />
+                      </Panel>
                     </Button>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -191,19 +277,21 @@
           </DockPanel>
         </Border>
 
+        <GridSplitter Grid.Column="1" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                      HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="Transparent"
+                      Focusable="False" IsTabStop="False" />
+
         <Border Grid.Column="2" Classes="card" Padding="0"
                 controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
           <Grid RowDefinitions="*,Auto">
-            <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
-              <ContentControl Margin="18,4" Content="{Binding Routing}"
-                              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-                <ContentControl.ContentTemplate>
-                  <DataTemplate x:DataType="vm:RoutingViewModel">
-                    <views:RoutingView />
-                  </DataTemplate>
-                </ContentControl.ContentTemplate>
-              </ContentControl>
-            </ScrollViewer>
+            <ContentControl Grid.Row="0" Margin="18,4" Content="{Binding Routing}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:RoutingViewModel">
+                  <views:RoutingView />
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
             <Border Grid.Row="1" IsVisible="{Binding Routing.ShowSaveBar}"
                     Background="{DynamicResource AgPanelBrush}" BorderBrush="{DynamicResource AgBorderBrush}"

@@ -95,7 +95,7 @@
         <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
         <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
-                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowSelectedFrame}" />
+                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowOpenFrame}" />
       </Panel>
     </Button>
   </Panel>

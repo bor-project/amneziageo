@@ -1057,7 +1057,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         var summaries = await _store.ListRoutingListSummariesAsync().ConfigureAwait(false);
         _routingSummaries = summaries
-            .Select(s => new RoutingListEntry(s.Id, s.Name, s.RuleCount, s.RouteCount, s.DomainCount))
+            .Select(s => new RoutingListEntry(s.Id, s.Name, s.RuleCount, s.RouteCount, s.DomainCount,
+                s.ProxyRuleCount, s.DirectRuleCount, s.BlockRuleCount, s.AllUdp, s.UseGlobalProxy))
             .ToList();
     }
 

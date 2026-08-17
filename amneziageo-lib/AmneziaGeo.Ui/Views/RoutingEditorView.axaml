@@ -29,8 +29,11 @@
 
         <StackPanel Spacing="2">
           <TextBlock Text="{l:Tr Main_ListNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+          <!-- Имя стоит той же шириной, что и остальные поля настроек. -->
           <TextBox Classes="field" Classes.invalid="{Binding IsNameMissing}"
-                   Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}" />
+                   Text="{Binding Name, Mode=TwoWay}" Watermark="{l:Tr Main_ListNameWatermark}"
+                   Width="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w300}"
+                   HorizontalAlignment="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}" />
           <TextBlock Classes="fieldwarn" IsVisible="{Binding IsNameMissing}"
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
@@ -323,9 +326,8 @@
             <TextBlock Text="{l:Tr Main_RouteTtlHint}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
           </StackPanel>
           <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-            <TextBox Classes="field" Classes.invalid="{Binding RouteTtlInvalid}" Width="90"
-                     controls:NumericInput.Minimum="0" controls:NumericInput.Maximum="86400"
-                     VerticalAlignment="Center" Text="{Binding RouteTtl, Mode=TwoWay}" />
+            <controls:NumberField IsInvalid="{Binding RouteTtlInvalid}" Minimum="0" Maximum="86400"
+                                  VerticalAlignment="Center" Text="{Binding RouteTtl, Mode=TwoWay}" />
             <TextBlock Text="{l:Tr General_Seconds}" Classes="muted" VerticalAlignment="Center" />
           </StackPanel>
         </Grid>

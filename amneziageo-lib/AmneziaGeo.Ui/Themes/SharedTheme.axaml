@@ -521,12 +521,16 @@
       <Setter Property="Opacity" Value="1" />
     </Style>
 
+    <!-- Одна высота у всех полей настроек: строка настройки держит 40, поле в ней - 34, и рядом с тумблером
+         соседней строки они читаются одним набором. -->
     <Style Selector="TextBox.field">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,7" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontSize" Value="13" />
       <!-- Fill the pane width like ComboBox.field, so form fields line up with the combos above/below
            them. An authored Width still wins (Stretch is ignored when a Width is set). -->
@@ -570,6 +574,8 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
@@ -620,6 +626,8 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,7" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontSize" Value="13" />
     </Style>
 
@@ -630,11 +638,15 @@
       <Setter Property="OffContent" Value="" />
       <Setter Property="MinWidth" Value="0" />
     </Style>
+    <!-- Пустая подпись не должна оставлять отступ справа: тумблер встаёт по правому краю строки, где стоят
+         поля ввода соседних настроек. -->
     <Style Selector="ToggleSwitch /template/ ContentPresenter#PART_OnContentPresenter">
       <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Margin" Value="0" />
     </Style>
     <Style Selector="ToggleSwitch /template/ ContentPresenter#PART_OffContentPresenter">
       <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Margin" Value="0" />
     </Style>
 
     <!-- Keep enabled switches vivid in normal and pointer-over states. The checked track uses the accent

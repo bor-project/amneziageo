@@ -25,8 +25,12 @@
     <!-- The card itself: it picks the configuration and measures it, and carries its buttons on the face. -->
     <Button x:Name="FacePart" Classes="serverrow"
             Command="{Binding $parent[controls:ServerCard].SelectCommand}" CommandParameter="{Binding}"
-            ToolTip.Tip="{l:Tr Main_ServerRowSelect}">
+            ToolTip.Tip="{Binding $parent[controls:ServerCard].SelectHint}">
       <Panel>
+        <!-- Заливка под конфигурацией, которую держит приложение: рамку глаз теряет среди соседних карточек. -->
+        <Border CornerRadius="12" IsHitTestVisible="False"
+                Background="{DynamicResource AgAccentSoftBrush}" IsVisible="{Binding IsSelected}" />
+
         <!-- Card the remote has stepped into wears a wash under its lines: a frame alone reads as one more
              border among the frames the card already carries. -->
         <Border CornerRadius="12" IsHitTestVisible="False" Opacity="0.14"
@@ -35,7 +39,8 @@
 
         <!-- Four lines and the buttons beside them: the name, the address under it, the measurement under that,
              and what the running tunnel carries and drops on a line of its own. -->
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="12,9">
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10"
+              Margin="12,9">
           <TextBlock x:Name="NamePart" Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="13"
                      FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
           <TextBlock x:Name="EndpointPart" Grid.Row="1" Grid.Column="0" Text="{Binding Endpoint}"
@@ -80,7 +85,6 @@
             <!-- The button that opens the pair the wide card keeps folded away. -->
             <Button x:Name="MorePart" DockPanel.Dock="Bottom" Classes="rowact" Width="44" Height="30"
                     HorizontalAlignment="Right" Foreground="{DynamicResource AgMutedBrush}"
-                    IsVisible="{Binding !$parent[controls:ServerCard].Compact}"
                     Focusable="{Binding $parent[controls:ServerCard].Entered}">
               <PathIcon Data="{StaticResource AgCardMoreGeometry}" Width="19" Height="19"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -89,12 +93,12 @@
           </DockPanel>
         </Grid>
 
-        <!-- Frame in the connection colour on the configuration the tunnel is bound to, grey on the one the
-             user picked, accent on the card a remote has stepped into. -->
+        <!-- Рамка в цвете состояния на выбранной конфигурации, серая - на открытой справа, акцентная - на той,
+             в которую шагнул пульт. -->
         <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
         <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
-                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowSelectedFrame}" />
+                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowOpenFrame}" />
         <Border BorderThickness="2" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{DynamicResource AgAccentBrush}"
                 IsVisible="{Binding $parent[controls:ServerCard].Entered}" />

@@ -2135,16 +2135,4 @@
   <data name="Check_SessionNoRule" xml:space="preserve">
     <value>нет правила</value>
   </data>
-  <data name="Check_ColumnHost" xml:space="preserve">
-    <value>Адрес</value>
-  </data>
-  <data name="Check_ColumnName" xml:space="preserve">
-    <value>Домен</value>
-  </data>
-  <data name="Check_ColumnPath" xml:space="preserve">
-    <value>Путь</value>
-  </data>
-  <data name="Check_ColumnState" xml:space="preserve">
-    <value>Состояние</value>
-  </data>
 </root>

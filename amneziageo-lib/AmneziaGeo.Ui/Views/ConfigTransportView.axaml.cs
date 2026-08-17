@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using AmneziaGeo.Ui.Services;
 using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Views;
@@ -9,9 +10,6 @@ namespace AmneziaGeo.Ui.Views;
 /// </summary>
 internal sealed partial class ConfigTransportView : UserControl
 {
-    // Width the proxy fields need side by side; below it they stack.
-    private const double FieldRowWidth = 920;
-
     /// <summary>
     /// ctor
     /// </summary>
@@ -27,7 +25,7 @@ internal sealed partial class ConfigTransportView : UserControl
     {
         if (DataContext is ConfigTransportViewModel vm)
         {
-            vm.IsCompact = width < FieldRowWidth;
+            vm.IsCompact = width < UiLayout.FieldRowWidth;
         }
     }
 

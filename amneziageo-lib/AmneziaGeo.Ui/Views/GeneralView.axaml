@@ -26,7 +26,7 @@
       <StackPanel Spacing="14">
 
         <!-- Appearance card: theme + language (live switch). -->
-        <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+        <Border Classes="sect">
           <StackPanel Spacing="12">
             <TextBlock Text="{l:Tr Main_AppearanceTitle}" FontWeight="SemiBold" FontSize="15" />
 
@@ -44,10 +44,10 @@
         </Border>
 
         <!-- About card: versions + app self-update. -->
-        <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+        <Border Classes="sect">
           <StackPanel Spacing="12">
             <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
-            <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+            <Border Classes="hairline" />
             <TextBlock Text="{l:Tr About_Section}" FontWeight="SemiBold" FontSize="15" />
 
             <!-- Each value stands under its label, left-aligned. -->
@@ -110,10 +110,10 @@
       </StackPanel>
 
       <!-- Narrow screen: a hairline carries the boundary the card frame used to. -->
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Classes="hairline" />
 
       <!-- Local proxy card: the port other applications and devices point at (#238). -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+      <Border Classes="sect">
         <StackPanel Spacing="12">
           <TextBlock Text="{l:Tr General_ProxySection}" FontWeight="SemiBold" FontSize="15" />
 
@@ -254,7 +254,7 @@
 
       <!-- Connection resilience card: survive reboot + periodic auto-reconnect (#196, #199). Windows only:
            the Android agent does not apply these settings. -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}"
+      <Border Classes="sect"
               IsVisible="{Binding CanConfigureConnection}">
         <StackPanel Spacing="12">
           <TextBlock Text="{l:Tr General_ConnectionSection}" FontWeight="SemiBold" FontSize="15" />
@@ -288,7 +288,7 @@
 
       <!-- Network repair card: elevated one-shot that clears a leftover DNS redirect so the internet works
            again after a failed connect or a removal stranded the resolver. Windows only. -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}"
+      <Border Classes="sect"
               IsVisible="{Binding CanRepairNetwork}">
         <!-- The button stands under the hint. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
@@ -306,10 +306,10 @@
         </Grid>
       </Border>
 
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Classes="hairline" />
 
       <!-- Import / export card (full width): hint left, actions right. Opens the bundle sub-views inline. -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+      <Border Classes="sect">
         <!-- The export / import buttons stand under the hint. -->
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="10">
           <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="6" VerticalAlignment="Center">

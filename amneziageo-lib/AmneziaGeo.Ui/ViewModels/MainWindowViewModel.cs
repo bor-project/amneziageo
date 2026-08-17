@@ -20,10 +20,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // The footer reconnect prompt was put off; a new restart requirement or the next section save brings it back.
     private bool _reconnectDeferred;
 
-    // Below this window width the settings screen drops the side-by-side rail + content for a single-column
-    // master-detail drilldown. Above it the columns keep their MinWidth without overflow.
-    private const double CompactBreakpoint = 760;
-
     /// <summary>
     /// Whether the app is showing a window ("settings") or running a windowless background update ("none"),
     /// carried into the installer as UPDATEORIGIN.
@@ -186,7 +182,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// <summary>
     /// Whether the window is narrow enough for the compact single-column drilldown.
     /// </summary>
-    public bool IsCompact => WindowWidth < CompactBreakpoint;
+    public bool IsCompact => WindowWidth < UiLayout.CompactWidth;
 
     /// <summary>
     /// Whether a section detail is open in compact mode; the header then shows the section name.
@@ -786,10 +782,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Push the compact-layout flag to every section screen so their rows restack for the narrow window.
+    // Push the compact-layout flag to every section screen so their rows restack for the narrow window, and
+    // re-gate the card frames the shared styles draw.
     partial void OnWindowWidthChanged(double value)
     {
-        var compact = value < CompactBreakpoint;
+        UiLayout.Instance.Apply(value);
+
+        var compact = value < UiLayout.CompactWidth;
         Config.IsCompact = compact;
         Routing.IsCompact = compact;
         Sources.IsCompact = compact;

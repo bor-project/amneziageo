@@ -24,7 +24,7 @@
     </Border>
 
     <!-- Pane card: cache filters over the body. Body fills the rest. -->
-    <Border Grid.Row="1" Classes="sect" Classes.compact="{Binding IsCompact}">
+    <Border Grid.Row="1" Classes="sect">
       <Grid RowDefinitions="Auto,*">
 
         <!-- Cache filters: free text plus the record type. -->

@@ -74,7 +74,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     partial void OnIsCompactChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowStoredText));
-        OnPropertyChanged(nameof(ShowLiveTable));
+        OnPropertyChanged(nameof(ShowLiveText));
         OnPropertyChanged(nameof(ShowStoredCards));
         OnPropertyChanged(nameof(ShowLiveCards));
         Render();
@@ -123,7 +123,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsStoredLog));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowStoredText));
-        OnPropertyChanged(nameof(ShowLiveTable));
+        OnPropertyChanged(nameof(ShowLiveText));
         OnPropertyChanged(nameof(ShowStoredCards));
         OnPropertyChanged(nameof(ShowLiveCards));
         ClearView();
@@ -207,103 +207,6 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [ObservableProperty]
     private string _liveSummary = string.Empty;
 
-    // Column the destinations are ordered by, and which way round.
-    [ObservableProperty]
-    private string _liveSort = SessionRows.ByState;
-
-    [ObservableProperty]
-    private bool _liveDescending;
-
-    partial void OnLiveSortChanged(string value)
-    {
-        NotifyOrder();
-    }
-
-    partial void OnLiveDescendingChanged(bool value)
-    {
-        NotifyOrder();
-    }
-
-    /// <summary>
-    /// Whether the destinations are ordered by address, smallest first.
-    /// </summary>
-    public bool HostUp => Ordered(SessionRows.ByHost, false);
-
-    /// <summary>
-    /// Whether the destinations are ordered by address, largest first.
-    /// </summary>
-    public bool HostDown => Ordered(SessionRows.ByHost, true);
-
-    /// <summary>
-    /// Whether the destinations are ordered by name, A first.
-    /// </summary>
-    public bool NameUp => Ordered(SessionRows.ByName, false);
-
-    /// <summary>
-    /// Whether the destinations are ordered by name, Z first.
-    /// </summary>
-    public bool NameDown => Ordered(SessionRows.ByName, true);
-
-    /// <summary>
-    /// Whether the destinations are ordered by path, A first.
-    /// </summary>
-    public bool PathUp => Ordered(SessionRows.ByPath, false);
-
-    /// <summary>
-    /// Whether the destinations are ordered by path, Z first.
-    /// </summary>
-    public bool PathDown => Ordered(SessionRows.ByPath, true);
-
-    /// <summary>
-    /// Whether the destinations are ordered by the state column, freshest first.
-    /// </summary>
-    public bool StateUp => Ordered(SessionRows.ByState, false);
-
-    /// <summary>
-    /// Whether the destinations are ordered by the state column, longest idle first.
-    /// </summary>
-    public bool StateDown => Ordered(SessionRows.ByState, true);
-
-    private bool Ordered(string column, bool descending)
-    {
-        return LiveSort == column && LiveDescending == descending;
-    }
-
-    private void NotifyOrder()
-    {
-        foreach (var mark in new[]
-        {
-            nameof(HostUp), nameof(HostDown), nameof(NameUp), nameof(NameDown),
-            nameof(PathUp), nameof(PathDown), nameof(StateUp), nameof(StateDown),
-        })
-        {
-            OnPropertyChanged(mark);
-        }
-
-        Render();
-    }
-
-    /// <summary>
-    /// Orders the destinations by a column; asking for the column already sorted turns it round.
-    /// </summary>
-    [RelayCommand]
-    private void SortLive(string? column)
-    {
-        if (string.IsNullOrEmpty(column))
-        {
-            return;
-        }
-
-        if (LiveSort == column)
-        {
-            LiveDescending = !LiveDescending;
-            return;
-        }
-
-        LiveDescending = false;
-        LiveSort = column;
-    }
-
     // Held Ctrl: the viewer stops taking new rows, so a selection survives long enough to be copied.
     [ObservableProperty]
     private bool _isFrozen;
@@ -320,7 +223,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowBody))]
     [NotifyPropertyChangedFor(nameof(ShowEmpty))]
     [NotifyPropertyChangedFor(nameof(ShowStoredText))]
-    [NotifyPropertyChangedFor(nameof(ShowLiveTable))]
+    [NotifyPropertyChangedFor(nameof(ShowLiveText))]
     [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
     [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _hasLogs;
@@ -330,7 +233,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowBody))]
     [NotifyPropertyChangedFor(nameof(ShowEmpty))]
     [NotifyPropertyChangedFor(nameof(ShowStoredText))]
-    [NotifyPropertyChangedFor(nameof(ShowLiveTable))]
+    [NotifyPropertyChangedFor(nameof(ShowLiveText))]
     [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
     [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _isLoading;
@@ -346,9 +249,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool ShowStoredText => ShowBody && !IsCompact && IsStoredLog;
 
     /// <summary>
-    /// Whether the destinations are shown as the sortable table a wide window carries.
+    /// Whether the destinations are shown as text, which is what a wide window carries.
     /// </summary>
-    public bool ShowLiveTable => ShowBody && !IsCompact && IsLiveLog;
+    public bool ShowLiveText => ShowBody && !IsCompact && IsLiveLog;
 
     /// <summary>
     /// Whether the stored rows are shown as cards, which is what a narrow window carries.
@@ -571,7 +474,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     {
         if (IsLiveLog)
         {
-            return LiveSummary + "\n\n" + SessionRows.Text(_carried, LiveSort, LiveDescending);
+            return LiveSummary + "\n\n" + SessionRows.Text(_carried);
         }
 
         return LogText.Length > 0 ? LogText : string.Join('\n', _lines);
@@ -798,9 +701,16 @@ internal sealed partial class LogsViewModel : ViewModelBase
     private void RenderCarried()
     {
         Entries.Clear();
-        LogText = string.Empty;
         LiveSummary = SessionRows.Summary(_carried);
-        Fill(LiveRows, SessionRows.Cards(_carried, LiveSort, LiveDescending));
+        if (!IsCompact)
+        {
+            LiveRows.Clear();
+            LogText = SessionRows.Text(_carried);
+            return;
+        }
+
+        LogText = string.Empty;
+        Fill(LiveRows, SessionRows.Cards(_carried));
     }
 
     // Replaces a card list row by row: a list rebuilt whole loses the place the reader is at in it.

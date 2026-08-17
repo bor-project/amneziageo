@@ -49,6 +49,7 @@ public sealed partial class MainView : UserControl
         if (_vm is not null)
         {
             _vm.WindowWidth = Bounds.Width > 0 ? Bounds.Width : 987;
+            _vm.WindowHeight = Bounds.Height > 0 ? Bounds.Height : 610;
             _vm.PropertyChanged += OnViewModelPropertyChanged;
             _vm.Home.PropertyChanged += OnHomePropertyChanged;
             _vm.Sheet.PropertyChanged += OnSheetPropertyChanged;
@@ -119,6 +120,7 @@ public sealed partial class MainView : UserControl
         if (_vm is not null)
         {
             _vm.WindowWidth = e.NewSize.Width;
+            _vm.WindowHeight = e.NewSize.Height;
         }
     }
 

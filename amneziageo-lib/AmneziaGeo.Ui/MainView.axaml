@@ -34,14 +34,14 @@
 
   <Grid>
 
-    <!-- WIDE screen and television: разделы вкладками, каталог слева, его настройки справа. Экрана «дом» в этой
-         раскладке нет - состояние туннеля стоит в шапке. -->
-    <views:WideShell IsVisible="{Binding IsWide}" />
+    <!-- WIDE screen and television: разделы вкладками, каталог слева, его настройки справа. Домой из неё ведёт
+         стрелка в шапке. -->
+    <views:WideShell IsVisible="{Binding IsWideShell}" />
 
     <!-- HOME screen: gear left, centered title, the connect control and the servers. A pair of tabs shows one
          of the two at a time, at every width. -->
     <Border x:Name="HomeCard" Classes="card" Padding="0" KeyDown="OnPaneKeyDown"
-            IsVisible="{Binding IsHomeNarrow}"
+            IsVisible="{Binding IsHome}"
             Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHome}">
       <DockPanel LastChildFill="True">
 
@@ -266,6 +266,7 @@
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConfigItemViewModel">
                           <controls:ServerCard Margin="0,0,0,8" Compact="True"
+                                  SelectHint="{l:Tr Main_ServerRowSelect}"
                                   IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
                                   SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.SelectRowCommand}"
                                   ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
@@ -291,6 +292,7 @@
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ConfigItemViewModel">
                           <controls:ServerCard Width="252" Margin="0,0,10,10"
+                                  SelectHint="{l:Tr Main_ServerRowSelect}"
                                   IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
                                   SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.SelectRowCommand}"
                                   ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"

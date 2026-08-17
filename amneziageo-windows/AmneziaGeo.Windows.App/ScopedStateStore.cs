@@ -203,7 +203,7 @@ internal sealed class ScopedStateStore(IStateStore machine, IStateStore user) : 
     public Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default) => user.ListRoutingListsAsync(ct);
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<(long Id, string Name, int RuleCount, int RouteCount, int DomainCount)>> ListRoutingListSummariesAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<RoutingListSummary>> ListRoutingListSummariesAsync(CancellationToken ct = default)
         => user.ListRoutingListSummariesAsync(ct);
 
     /// <inheritdoc/>

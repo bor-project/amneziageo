@@ -24,9 +24,9 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     // master-detail drilldown. Above it the columns keep their MinWidth without overflow.
     private const double CompactBreakpoint = 760;
 
-    // От этой ширины каталог стоит списком слева, а его настройки справа. Телефон и планшет в портрете до неё не
-    // дотягиваются и остаются на одноколоночной раскладке; телевизор берёт широкую при любой ширине.
-    private const double WideBreakpoint = 1000;
+    // Короткая сторона окна, отличающая планшет в альбоме от телефона в альбоме: телефон до неё не дотягивается
+    // и остаётся на одноколоночной раскладке.
+    private const double TabletShortSide = 500;
 
     /// <summary>
     /// Whether the app is showing a window ("settings") or running a windowless background update ("none"),
@@ -47,7 +47,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsHome))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
-    [NotifyPropertyChangedFor(nameof(IsHomeNarrow))]
+    [NotifyPropertyChangedFor(nameof(IsWideShell))]
     [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
@@ -63,7 +63,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsCompact))]
     [NotifyPropertyChangedFor(nameof(IsWide))]
-    [NotifyPropertyChangedFor(nameof(IsHomeNarrow))]
+    [NotifyPropertyChangedFor(nameof(IsWideShell))]
     [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
@@ -74,6 +74,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowServerStack))]
     [NotifyPropertyChangedFor(nameof(ShowServerGrid))]
     private double _windowWidth = 987;
+
+    /// <summary>
+    /// Current window height, fed from the view; it tells a tablet in landscape from a phone in landscape.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsWide))]
+    [NotifyPropertyChangedFor(nameof(IsWideShell))]
+    [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
+    private double _windowHeight = 610;
 
     /// <summary>
     /// In compact mode, whether a section detail is open (true) or the section rail is shown (false).
@@ -198,14 +207,17 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool IsCompact => UiPlatform.UsesCompactLayout && WindowWidth < CompactBreakpoint;
 
     /// <summary>
-    /// Whether the shell stands the catalogue beside its settings: a wide window, or a television at any width.
+    /// Стоит ли каталог рядом со своими настройками. Десктоп и телевизор держат такую раскладку при любом окне,
+    /// планшет - в альбоме; телефон и планшет в портрете остаются одноколоночными.
     /// </summary>
-    public bool IsWide => UiPlatform.IsTelevision || WindowWidth >= WideBreakpoint;
+    public bool IsWide => !UiPlatform.UsesCompactLayout
+        || (WindowWidth > WindowHeight && WindowHeight >= TabletShortSide);
 
     /// <summary>
-    /// Whether the single-column shell shows its home screen; the wide layout carries no home screen at all.
+    /// Whether the catalogue stands beside its settings: the wide layout outside the home screen, which stays
+    /// one column and is reached by the back arrow in its header.
     /// </summary>
-    public bool IsHomeNarrow => IsHome && !IsWide;
+    public bool IsWideShell => IsWide && IsSettings;
 
     /// <summary>
     /// Whether the single-column shell shows its settings screen.
@@ -360,8 +372,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     public void Start()
     {
-        // Телевизор берёт широкую раскладку без единого изменения ширины, поэтому раздел открывается здесь.
-        EnterWideShell();
         _connection.Start();
     }
 
@@ -520,6 +530,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         RefreshLogsActive();
     }
 
+    // Карточка каталога слева открывает свои настройки справа и мерит свой сервер. Выбор конфигурации сюда не
+    // входит: его держит флаг у названия открытой.
+    [RelayCommand]
+    private void OpenServerCard(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        Home.ProbeRow(item);
+        EditServer(item);
+    }
+
     // Конфигурация, о которой спрошено «удалить?»; без неё вопроса на экране нет.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowDeleteAsk))]
@@ -629,6 +653,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         // selection here too.
         SelectSectionDefault(SettingsSection);
         RefreshLogsActive();
+        EnterWideShell();
     }
 
     // Fill an empty Routing / Config section with the first available item so it never opens on a blank editor.
@@ -798,15 +823,14 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         SelectSectionDefault(value);
     }
 
-    // Широкая раскладка живёт на разделах: экрана «дом» в ней нет, поэтому вход в неё сам открывает раздел.
+    // Широкая раскладка ставит каталог слева вместо меню разделов: вход в настройки открывает сам раздел.
     private void EnterWideShell()
     {
-        if (!IsWide || Nav == "settings")
+        if (!IsWide || !IsSettings)
         {
             return;
         }
 
-        Nav = "settings";
         SettingsDetailOpen = true;
         SelectSectionDefault(SettingsSection);
         RefreshLogsActive();
@@ -838,10 +862,21 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    // Push the compact-layout flag to every section screen so their rows restack for the narrow window.
     partial void OnWindowWidthChanged(double value)
     {
-        var compact = UiPlatform.UsesCompactLayout && value < CompactBreakpoint;
+        ApplyLayout();
+    }
+
+    // Поворот планшета меняет раскладку так же, как смена ширины окна.
+    partial void OnWindowHeightChanged(double value)
+    {
+        ApplyLayout();
+    }
+
+    // Push the compact-layout flag to every section screen so their rows restack for the narrow window.
+    private void ApplyLayout()
+    {
+        var compact = IsCompact;
         Config.IsCompact = compact;
         Routing.IsCompact = compact;
         Sources.IsCompact = compact;

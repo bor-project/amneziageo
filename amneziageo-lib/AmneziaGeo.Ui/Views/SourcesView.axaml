@@ -32,16 +32,10 @@
                      TextWrapping="Wrap" MaxWidth="430" HorizontalAlignment="Left" VerticalAlignment="Center" />
           <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="8"
                       VerticalAlignment="Center" HorizontalAlignment="Left">
-            <controls:AdaptiveComboBox Classes="field" Width="92" VerticalAlignment="Center"
-                      IsEnabled="{Binding GeoAutoCheck}"
-                      ItemsSource="{Binding GeoCheckIntervals}"
-                      SelectedItem="{Binding GeoCheckIntervalHours, Mode=TwoWay}">
-              <controls:AdaptiveComboBox.ItemTemplate>
-                <DataTemplate x:DataType="x:Int32">
-                  <TextBlock Text="{Binding Converter={x:Static l:HoursConverter.Instance}}" />
-                </DataTemplate>
-              </controls:AdaptiveComboBox.ItemTemplate>
-            </controls:AdaptiveComboBox>
+            <controls:NumberField VerticalAlignment="Center" Minimum="1" Maximum="8760"
+                      IsEnabled="{Binding GeoAutoCheck}" IsInvalid="{Binding GeoCheckIntervalInvalid}"
+                      Text="{Binding GeoCheckInterval, Mode=TwoWay}" />
+            <TextBlock Text="{l:Tr Unit_Hours}" Classes="muted" VerticalAlignment="Center" />
             <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding GeoAutoCheck, Mode=TwoWay}" />
           </StackPanel>
         </Grid>

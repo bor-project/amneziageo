@@ -23,15 +23,32 @@
          списком у кнопки, а на телефоне приходят шторкой снизу. -->
     <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
                 IsVisible="{Binding ShowHeaderActions}">
+      <!-- Широкая раскладка: конфигурацию открывает список слева, поэтому шапка называет открытую, показывает её
+           адрес и держит флаг выбора перед названием. Подпись флага стоит строкой ниже, вровень с адресом.
+           Подключение стоит в шапке окна - второй такой кнопке здесь делать нечего. -->
+      <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="2"
+            IsVisible="{Binding ShowWideHeader}">
+        <ToggleSwitch Grid.Row="0" Grid.Column="0" MinWidth="0" VerticalAlignment="Center"
+                      HorizontalAlignment="Center" IsChecked="{Binding UseOpenConfig, Mode=TwoWay}" />
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Tr Main_InUseBadge}" Classes="muted" FontSize="12"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding OpenConfig}" FontSize="18" FontWeight="SemiBold"
+                   HorizontalAlignment="Left" MaxWidth="420" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OpenConfigItem.Endpoint}" Classes="muted mono"
+                   FontSize="12" HorizontalAlignment="Left" MaxWidth="420" TextTrimming="CharacterEllipsis" />
+        <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="2" Classes="methodpick" Height="36" MinWidth="110"
+                Padding="16,0" VerticalAlignment="Center" VerticalContentAlignment="Center"
+                HorizontalContentAlignment="Center" Content="{l:Tr Main_ExportTab}" Click="OnExportOptions"
+                IsVisible="{Binding CanExportOpenConfig}" />
+      </Grid>
+
       <StackPanel Spacing="4">
         <!-- Пустой каталог выбирать не из чего: остаются «Добавить» и подсказка под ним. -->
         <TextBlock Text="{l:Tr Main_ConfigPickerLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4"
                    IsVisible="{Binding ShowCataloguePicker}" />
-        <!-- Тумблер активности стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. Широкая
-             раскладка выбирает конфигурацию списком слева, поэтому здесь остаётся один тумблер. -->
-        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasConfigs}">
+        <!-- Тумблер активности стоит у самого выбора: на телефоне карточка под ним стоила пол-экрана. -->
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding ShowCataloguePicker}">
           <controls:AdaptiveComboBox x:Name="Picker" Classes="field" HorizontalAlignment="Stretch"
-                    IsVisible="{Binding ShowCataloguePicker}"
                     ItemsSource="{Binding ConfigCatalogueOptions}"
                     SelectedItem="{Binding SelectedCatalogueConfig, Mode=TwoWay}">
             <controls:AdaptiveComboBox.ItemTemplate>
@@ -79,7 +96,7 @@
         </Button>
         <Button Classes="methodpick" MinHeight="40" Margin="4,0,0,0"
                 HorizontalAlignment="Stretch" Click="OnExportOptions"
-                IsVisible="{Binding CanExportOpenConfig}"
+                IsVisible="{Binding ShowExportAction}"
                 MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW130}">
           <StackPanel Orientation="Horizontal" Spacing="6"
                       HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -110,8 +127,12 @@
       <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
       <StackPanel Spacing="2">
         <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+        <!-- Имя стоит той же шириной, что и поля прокси под ним: на широкой пане поле во всю ширину тянет
+             строку на полметра. -->
         <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
-                 Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
+                 Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center"
+                 Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w300}"
+                 HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}" />
         <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
                    Text="{l:Tr Main_RequiredEmptyWarning}" />
         <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
@@ -157,7 +178,7 @@
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
       <!-- Proxy (WebSocket) card. -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+      <Border Classes="sect" Classes.compact="{Binding ShowFlatCards}">
         <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
       </Border>
 
@@ -197,16 +218,23 @@
       </Border>
     </StackPanel>
 
+    <!-- Прокручивается только тело раздела: шапка с именем и тумблером стоит над ней. В узкой раскладке высота
+         не ограничена, скроллер тянется по содержимому и прокрутку отдаёт панели экрана. -->
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+    <Panel>
+
     <!-- Черновик новой конфигурации: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере.
          Imported with the footer Save once text parses + name is set (#143). -->
-    <Border x:Name="ImportSection" Grid.Row="1" Margin="0,12,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
+    <Border x:Name="ImportSection" Margin="0,12,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
             IsVisible="{Binding IsSectionImport}">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Spacing="6">
           <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
           <TextBox x:Name="SectionConfigNameBox" Classes="field" Classes.invalid="{Binding SectionConfigNameMissing}"
                    Text="{Binding SectionConfigName, Mode=TwoWay}"
-                   Watermark="{l:Tr Main_ConfigNameWatermark}" />
+                   Watermark="{l:Tr Main_ConfigNameWatermark}"
+                   Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w300}"
+                   HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}" />
           <TextBlock Classes="fieldwarn" IsVisible="{Binding SectionConfigNameMissing}"
                      Text="{l:Tr Main_RequiredEmptyWarning}" />
         </StackPanel>
@@ -247,7 +275,7 @@
     </Border>
 
     <!-- Export section: read-only QR of the .conf / of the vpn:// link, with copy / save. -->
-    <StackPanel x:Name="ExportSection" Grid.Row="1" Margin="0,12,0,0"
+    <StackPanel x:Name="ExportSection" Margin="0,12,0,0"
                 IsVisible="{Binding IsSectionExport}" Spacing="12">
       <!-- Экран экспорта занимает пану целиком; возвращает с него стрелка «назад» в шапке окна. -->
       <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15"
@@ -317,5 +345,8 @@
         </StackPanel>
       </Border>
     </StackPanel>
+
+    </Panel>
+    </ScrollViewer>
   </Grid>
 </UserControl>

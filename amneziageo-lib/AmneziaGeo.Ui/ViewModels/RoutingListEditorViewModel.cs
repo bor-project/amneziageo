@@ -108,15 +108,16 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
     // Any role bucket changed: refresh suggestions/transfer, mark dirty, autosave (suppressed mid-sort or while seeding).
     private void OnRulesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        // The shown bucket's projection follows even while seeding; a sort rebuilds it once, after the moves.
-        if (!_reordering && ReferenceEquals(sender, Rules))
-        {
-            RebuildRuleItems();
-        }
-
+        // Массовая заливка и сортировка перестраивают проекцию один раз, после себя: иначе каждая запись
+        // пересобирает весь список, и вставка сотни правил встаёт в квадрат.
         if (_reordering || _seeding)
         {
             return;
+        }
+
+        if (ReferenceEquals(sender, Rules))
+        {
+            RebuildRuleItems();
         }
 
         _ = ApplySuggestionFilterAsync();
@@ -632,6 +633,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
 
             // Seeding done: snapshot the loaded state as the clean baseline; edits from here mark the item dirty.
             _seeding = false;
+            RebuildRuleItems();
             CaptureBaseline();
 
             // Prime the default "running" source so the app picker works without first re-choosing it from the menu.
@@ -846,6 +848,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             _seeding = false;
         }
 
+        RebuildRuleItems();
         _ = ApplySuggestionFilterAsync();
         MarkDirty();
     }
@@ -1463,6 +1466,7 @@ internal sealed partial class RoutingListEditorViewModel : ViewModelBase, IEditS
             _seeding = false;
         }
 
+        RebuildRuleItems();
         _ = ApplySuggestionFilterAsync();
         MarkDirty();
         FireAutoSave();

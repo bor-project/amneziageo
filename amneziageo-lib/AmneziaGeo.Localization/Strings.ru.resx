@@ -506,10 +506,10 @@
     <value>Удалить</value>
   </data>
   <data name="Main_DeleteServerTitle" xml:space="preserve">
-    <value>Удалить сервер?</value>
+    <value>Удалить конфигурацию?</value>
   </data>
   <data name="Main_DeleteServerPrompt" xml:space="preserve">
-    <value>Сервер {0} будет удалён из списка. Это действие нельзя отменить.</value>
+    <value>Конфигурация {0} будет удалена из списка. Это действие нельзя отменить.</value>
   </data>
   <data name="Main_ConfirmButton" xml:space="preserve">
     <value>Подтвердить</value>
@@ -652,8 +652,14 @@
   <data name="Main_AddConfigButton" xml:space="preserve">
     <value>Добавить конфигурацию</value>
   </data>
+  <data name="Main_ServerRowOpen" xml:space="preserve">
+    <value>Открыть настройки этой конфигурации</value>
+  </data>
+  <data name="Main_InUseBadge" xml:space="preserve">
+    <value>Используется</value>
+  </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
-    <value>Списков пока нет.</value>
+    <value>Нет данных</value>
   </data>
   <data name="Main_NoSourcesHint" xml:space="preserve">
     <value>Пока нет баз. Добавьте geosite/geoip выше.</value>
@@ -716,7 +722,7 @@
     <value>Конфигурация не помещается в QR-код. Используйте вкладку «Конфиг» или ссылку vpn://.</value>
   </data>
   <data name="Main_RailConfigSubtitle" xml:space="preserve">
-    <value>Каталог серверов</value>
+    <value>Каталог конфигураций</value>
   </data>
   <data name="Main_RailConfigTitle" xml:space="preserve">
     <value>Конфигурации</value>
@@ -1177,8 +1183,23 @@
   <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
     <value>Активные локальные сети не обнаружены.</value>
   </data>
+  <data name="RoutingSummary_BlockCount" xml:space="preserve">
+    <value>{0} блок</value>
+  </data>
   <data name="RoutingSummary_Detail" xml:space="preserve">
     <value>{0} правил · {1} маршрутов · {2} доменов</value>
+  </data>
+  <data name="RoutingSummary_DirectCount" xml:space="preserve">
+    <value>{0} директ</value>
+  </data>
+  <data name="RoutingSummary_GlobalBadge" xml:space="preserve">
+    <value>Глобально</value>
+  </data>
+  <data name="RoutingSummary_ProxyCount" xml:space="preserve">
+    <value>{0} прокси</value>
+  </data>
+  <data name="RoutingSummary_UdpBadge" xml:space="preserve">
+    <value>UDP</value>
   </data>
   <data name="ScanCode_QrNotConfig" xml:space="preserve">
     <value>QR распознан, но это не конфигурация - продолжаю…</value>
@@ -1782,19 +1803,19 @@
     <value>Главная</value>
   </data>
   <data name="Main_HomeTabServers" xml:space="preserve">
-    <value>Серверы</value>
+    <value>Конфигурации</value>
   </data>
   <data name="Main_AlwaysOnMode" xml:space="preserve">
     <value>Постоянная VPN: кнопка открывает системный экран</value>
   </data>
   <data name="Main_HomeServerLabel" xml:space="preserve">
-    <value>Сервер</value>
+    <value>Конфигурация</value>
   </data>
   <data name="Main_HomeManageServers" xml:space="preserve">
     <value>Дополнительно</value>
   </data>
   <data name="Main_ServersCount" xml:space="preserve">
-    <value>Серверов: {0}</value>
+    <value>Конфигураций: {0}</value>
   </data>
   <data name="Main_ServerRowTooltip" xml:space="preserve">
     <value>Подключить эту конфигурацию</value>
@@ -1805,14 +1826,11 @@
   <data name="Main_ServerRowSelect" xml:space="preserve">
     <value>Выбрать эту конфигурацию</value>
   </data>
-  <data name="Main_ProbeAllButton" xml:space="preserve">
-    <value>Проверить все</value>
-  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Проверить серверы</value>
   </data>
-  <data name="Main_ServerSearchWatermark" xml:space="preserve">
-    <value>Поиск по имени или адресу</value>
+  <data name="Main_ProbeAllHint" xml:space="preserve">
+    <value>Проверка обновляет задержку и потери во всех карточках</value>
   </data>
   <data name="Main_ProbeMilliseconds" xml:space="preserve">
     <value>{0} мс</value>

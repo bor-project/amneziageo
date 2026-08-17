@@ -194,10 +194,10 @@ public interface IStateStore
     Task<IReadOnlyList<RoutingList>> ListRoutingListsAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Returns id, name, and rule/route/domain counts for every routing list, without deserializing the rule
-    /// rows or the materialized JSON. Backs the status snapshot, which needs only the counts.
+    /// Returns the catalogue line of every routing list - counts and policy flags - without deserializing the
+    /// rule rows or the materialized JSON. Backs the status snapshot, which needs only the summary.
     /// </summary>
-    Task<IReadOnlyList<(long Id, string Name, int RuleCount, int RouteCount, int DomainCount)>> ListRoutingListSummariesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<RoutingListSummary>> ListRoutingListSummariesAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Removes a routing list by id. The global selection is cleared when it named this list.

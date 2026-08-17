@@ -1925,9 +1925,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<(long Id, string Name, int RuleCount, int RouteCount, int DomainCount)>> ListRoutingListSummariesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<RoutingListSummary>> ListRoutingListSummariesAsync(CancellationToken ct = default)
     {
-        var result = new List<(long, string, int, int, int)>();
+        var result = new List<RoutingListSummary>();
 
         var connection = new SqliteConnection(_connectionString);
         await using (connection.ConfigureAwait(false))
@@ -1937,6 +1937,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             var command = connection.CreateCommand();
             await using (command.ConfigureAwait(false))
             {
+                // Правила считаются по корзинам, политика берётся из настроек списка: каталог показывает и то,
+                // и другое, а сами правила для этого читать не нужно.
                 command.CommandText =
                     """
                     SELECT rl.id, rl.name,
@@ -1946,8 +1948,15 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                              + COALESCE(json_array_length(NULLIF(rl.block_routes_json, '')), 0),
                            COALESCE(json_array_length(NULLIF(rl.domains_json, '')), 0)
                              + COALESCE(json_array_length(NULLIF(rl.direct_domains_json, '')), 0)
-                             + COALESCE(json_array_length(NULLIF(rl.block_domains_json, '')), 0)
-                    FROM routing_lists rl ORDER BY rl.name;
+                             + COALESCE(json_array_length(NULLIF(rl.block_domains_json, '')), 0),
+                           (SELECT COUNT(*) FROM routing_list_rules r WHERE r.list_id = rl.id AND r.role = 'Proxy'),
+                           (SELECT COUNT(*) FROM routing_list_rules r WHERE r.list_id = rl.id AND r.role = 'Direct'),
+                           (SELECT COUNT(*) FROM routing_list_rules r WHERE r.list_id = rl.id AND r.role = 'Block'),
+                           COALESCE(rs.all_udp, 0),
+                           COALESCE(rs.use_global_proxy, 0)
+                    FROM routing_lists rl
+                    LEFT JOIN routing_settings rs ON rs.list_id = rl.id
+                    ORDER BY rl.name;
                     """;
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1955,12 +1964,17 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                 {
                     while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        result.Add((
+                        result.Add(new RoutingListSummary(
                             reader.GetInt64(0),
                             reader.GetString(1),
                             reader.GetInt32(2),
                             reader.IsDBNull(3) ? 0 : reader.GetInt32(3),
-                            reader.IsDBNull(4) ? 0 : reader.GetInt32(4)));
+                            reader.IsDBNull(4) ? 0 : reader.GetInt32(4),
+                            reader.GetInt32(5),
+                            reader.GetInt32(6),
+                            reader.GetInt32(7),
+                            reader.GetInt32(8) != 0,
+                            reader.GetInt32(9) != 0));
                     }
                 }
             }

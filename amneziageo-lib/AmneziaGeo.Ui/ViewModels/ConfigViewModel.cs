@@ -40,6 +40,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowFlatCards))]
     private bool _isCompact;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar so a
@@ -62,6 +63,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CanExportOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
+    [NotifyPropertyChangedFor(nameof(ShowWideHeader))]
+    [NotifyPropertyChangedFor(nameof(ShowExportAction))]
+    [NotifyPropertyChangedFor(nameof(OpenConfigItem))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -141,15 +145,15 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     private ConfigTransportViewModel? _sectionTransport;
 
-    // Каталог стоит списком слева, а его настройки справа: выбор и «Добавить» из шапки секции уходят туда.
+    // Каталог стоит списком слева, а его настройки справа: выбор, «Добавить» и «Экспорт» из шапки секции уходят туда.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCataloguePicker))]
     [NotifyPropertyChangedFor(nameof(ShowAddAction))]
+    [NotifyPropertyChangedFor(nameof(ShowExportAction))]
+    [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
+    [NotifyPropertyChangedFor(nameof(ShowWideHeader))]
+    [NotifyPropertyChangedFor(nameof(ShowFlatCards))]
     private bool _isWide;
-
-    // Строка поиска списка слева: сужает каталог по имени и адресу.
-    [ObservableProperty]
-    private string _searchText = string.Empty;
 
     /// <summary>
     /// ctor
@@ -158,29 +162,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         _host = host;
         _connection = connection;
-        Configs.CollectionChanged += (_, _) => RebuildVisibleConfigs();
         Loc.Instance.CultureChanged += OnCultureChanged;
-    }
-
-    partial void OnSearchTextChanged(string value)
-    {
-        RebuildVisibleConfigs();
-    }
-
-    // Пересобирает список под поиском.
-    private void RebuildVisibleConfigs()
-    {
-        var query = SearchText.Trim();
-        VisibleConfigs.Clear();
-        foreach (var item in Configs)
-        {
-            if (query.Length == 0
-                || item.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || item.Endpoint.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                VisibleConfigs.Add(item);
-            }
-        }
     }
 
     private void OnCultureChanged()
@@ -197,11 +179,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// Configuration rows.
     /// </summary>
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
-
-    /// <summary>
-    /// Каталог под строкой поиска: список широкой раскладки берёт его, узкая - весь каталог.
-    /// </summary>
-    public ObservableCollection<ConfigItemViewModel> VisibleConfigs { get; } = [];
 
     public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [];
 
@@ -228,6 +205,28 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool ShowAddAction => !IsWide;
 
+    /// <summary>
+    /// Стоит ли «Экспорт» строкой под выбором: широкая раскладка держит его в шапке открытой конфигурации.
+    /// </summary>
+    public bool ShowExportAction => CanExportOpenConfig && !IsWide;
+
+    /// <summary>
+    /// Стоит ли над настройками шапка открытой конфигурации: имя, адрес, состояние и её действия.
+    /// </summary>
+    public bool ShowWideHeader => IsWide && IsSectionConfig;
+
+    /// <summary>
+    /// Карточки настроек без рамки: узкий экран и широкая раскладка держат их плоскими.
+    /// </summary>
+    public bool ShowFlatCards => IsCompact || IsWide;
+
+    /// <summary>
+    /// Карточка открытой конфигурации: шапка широкой раскладки берёт из неё адрес и подключение.
+    /// </summary>
+    public ConfigItemViewModel? OpenConfigItem => OpenConfig is { Length: > 0 } name
+        ? Configs.FirstOrDefault(item => string.Equals(item.Name, name, StringComparison.Ordinal))
+        : null;
+
     public bool IsConfigManage => OpenConfig is not null;
 
     public bool IsSectionImport => IsCreatingSectionConfig;
@@ -238,9 +237,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     /// <summary>
     /// Стоит ли тумблер активности в шапке: отдельная карточка под выбором стоила пол-экрана, и её содержимое
-    /// ужато в строку у самого выбора.
+    /// ужато в строку у самого выбора. Широкая раскладка держит состояние в шапке открытой конфигурации.
     /// </summary>
-    public bool ShowHeaderActive => IsSectionConfig;
+    public bool ShowHeaderActive => IsSectionConfig && !IsWide;
 
     /// <summary>
     /// Стоит ли на экране выбор конфигурации с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт
@@ -622,8 +621,24 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         // Re-select the section combo now that the option list is current: an OpenConfig set above (or a
         // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
         SyncCatalogueConfig();
+        RefreshCardMarks();
         NotifyHasConfigsChanged();
         MarkCatalogueKnown();
+    }
+
+    // Отмечает открытую справа конфигурацию: по этой метке её карточка слева носит серую рамку. Одноколоночная
+    // раскладка каталога рядом с настройками не держит, и метка там ни на чём не стоит.
+    private void RefreshCardMarks()
+    {
+        foreach (var item in Configs)
+        {
+            item.IsOpen = IsWide && string.Equals(item.Name, OpenConfig, StringComparison.Ordinal);
+        }
+    }
+
+    partial void OnIsWideChanged(bool value)
+    {
+        RefreshCardMarks();
     }
 
     /// <summary>
@@ -710,6 +725,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ConfigRename = value ?? string.Empty;
         ConfigRenameStatus = string.Empty;
         SyncCatalogueConfig();
+        RefreshCardMarks();
         if (value is null)
         {
             ConfigExport = null;

@@ -506,10 +506,10 @@
     <value>Delete</value>
   </data>
   <data name="Main_DeleteServerTitle" xml:space="preserve">
-    <value>Delete server?</value>
+    <value>Delete configuration?</value>
   </data>
   <data name="Main_DeleteServerPrompt" xml:space="preserve">
-    <value>Server {0} will be removed from the list. This action cannot be undone.</value>
+    <value>Configuration {0} will be removed from the list. This action cannot be undone.</value>
   </data>
   <data name="Main_ConfirmButton" xml:space="preserve">
     <value>Confirm</value>
@@ -652,8 +652,14 @@
   <data name="Main_AddConfigButton" xml:space="preserve">
     <value>Add configuration</value>
   </data>
+  <data name="Main_ServerRowOpen" xml:space="preserve">
+    <value>Open this configuration's settings</value>
+  </data>
+  <data name="Main_InUseBadge" xml:space="preserve">
+    <value>In use</value>
+  </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
-    <value>No lists yet.</value>
+    <value>No data</value>
   </data>
   <data name="Main_NoSourcesHint" xml:space="preserve">
     <value>No databases yet. Add geosite/geoip above.</value>
@@ -716,7 +722,7 @@
     <value>The configuration does not fit in a QR code. Use the «Config» tab or the vpn:// link.</value>
   </data>
   <data name="Main_RailConfigSubtitle" xml:space="preserve">
-    <value>Server catalogue</value>
+    <value>Configuration catalogue</value>
   </data>
   <data name="Main_RailConfigTitle" xml:space="preserve">
     <value>Configurations</value>
@@ -1177,8 +1183,23 @@
   <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
     <value>No active local subnets found.</value>
   </data>
+  <data name="RoutingSummary_BlockCount" xml:space="preserve">
+    <value>{0} block</value>
+  </data>
   <data name="RoutingSummary_Detail" xml:space="preserve">
     <value>{0} rules · {1} routes · {2} domains</value>
+  </data>
+  <data name="RoutingSummary_DirectCount" xml:space="preserve">
+    <value>{0} direct</value>
+  </data>
+  <data name="RoutingSummary_GlobalBadge" xml:space="preserve">
+    <value>Global</value>
+  </data>
+  <data name="RoutingSummary_ProxyCount" xml:space="preserve">
+    <value>{0} proxy</value>
+  </data>
+  <data name="RoutingSummary_UdpBadge" xml:space="preserve">
+    <value>UDP</value>
   </data>
   <data name="ScanCode_QrNotConfig" xml:space="preserve">
     <value>QR recognized, but it is not a configuration - continuing…</value>
@@ -1782,19 +1803,19 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Home</value>
   </data>
   <data name="Main_HomeTabServers" xml:space="preserve">
-    <value>Servers</value>
+    <value>Configurations</value>
   </data>
   <data name="Main_AlwaysOnMode" xml:space="preserve">
     <value>Always-on VPN: the button opens the system screen</value>
   </data>
   <data name="Main_HomeServerLabel" xml:space="preserve">
-    <value>Server</value>
+    <value>Configuration</value>
   </data>
   <data name="Main_HomeManageServers" xml:space="preserve">
     <value>More</value>
   </data>
   <data name="Main_ServersCount" xml:space="preserve">
-    <value>Servers: {0}</value>
+    <value>Configurations: {0}</value>
   </data>
   <data name="Main_ServerRowTooltip" xml:space="preserve">
     <value>Connect this configuration</value>
@@ -1805,14 +1826,11 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_ServerRowSelect" xml:space="preserve">
     <value>Select this configuration</value>
   </data>
-  <data name="Main_ProbeAllButton" xml:space="preserve">
-    <value>Check all</value>
-  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Check the servers</value>
   </data>
-  <data name="Main_ServerSearchWatermark" xml:space="preserve">
-    <value>Search by name or address</value>
+  <data name="Main_ProbeAllHint" xml:space="preserve">
+    <value>The check refreshes latency and loss on every card</value>
   </data>
   <data name="Main_ProbeMilliseconds" xml:space="preserve">
     <value>{0} ms</value>

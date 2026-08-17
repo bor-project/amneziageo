@@ -649,10 +649,12 @@
       <Setter Property="Margin" Value="0" />
     </Style>
 
-    <!-- Подпись тумблера стоит с ним в одной строке и на том же фоне, что и кнопка рядом. -->
+    <!-- Подпись тумблера стоит с ним в одной строке, на фоне и в рамке кнопки подключения. -->
     <Style Selector="Border.usepill">
       <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
       <Setter Property="Height" Value="36" />
       <Setter Property="Padding" Value="12,0" />
       <Setter Property="VerticalAlignment" Value="Center" />

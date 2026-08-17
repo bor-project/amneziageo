@@ -221,10 +221,16 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public IBrush LinkLossBrush => LinkLossy ? _slow : _idle;
 
     /// <summary>
-    /// Whether the card carries the link line at all. A television keeps none: it shows one application at a
+    /// Whether the card keeps the throughput line in place while the tunnel is down, so the cards in the
+    /// catalogue stand the same height.
+    /// </summary>
+    public bool ShowLinkSpeedRow => SpeedShown;
+
+    /// <summary>
+    /// Whether the card keeps the loss line in place. A television keeps neither: it shows one application at a
     /// time, so nobody is there to read these numbers while the traffic they describe is being made.
     /// </summary>
-    public bool ShowLinkLine => LinkShown && (ShowLinkSpeed || ShowLinkLoss);
+    public bool ShowLinkLossRow => LinkShown;
 
     /// <summary>
     /// Whether this device shows what the tunnel carries and loses at all.
@@ -244,7 +250,6 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
     [NotifyPropertyChangedFor(nameof(ShowLinkSpeed))]
     [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
-    [NotifyPropertyChangedFor(nameof(ShowLinkLine))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     private int _handshakeAgeSeconds = -1;
 

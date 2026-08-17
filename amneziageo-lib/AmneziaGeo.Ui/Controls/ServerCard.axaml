@@ -41,11 +41,21 @@
              and what the running tunnel carries and drops on a line of its own. -->
         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10"
               Margin="12,9">
-          <TextBlock x:Name="NamePart" Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="13"
-                     FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <Grid x:Name="NameRow" Grid.Row="0" Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="7">
+            <TextBlock x:Name="NamePart" Grid.Column="0" Text="{Binding Name}" FontSize="13"
+                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <!-- Тонкая карточка носит состояние меткой: кнопки питания, которая красилась бы им, на ней нет. -->
+            <Panel Grid.Column="1" VerticalAlignment="Center"
+                   IsVisible="{Binding $parent[controls:ServerCard].Slim}">
+              <Border Classes="livebadge" IsVisible="{Binding IsLive}">
+                <TextBlock Text="{l:Tr Main_IsActiveBadge}" />
+              </Border>
+            </Panel>
+          </Grid>
           <TextBlock x:Name="EndpointPart" Grid.Row="1" Grid.Column="0" Text="{Binding Endpoint}"
                      FontSize="11" Classes="muted mono" TextTrimming="CharacterEllipsis" />
-          <StackPanel x:Name="ProbePart" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="8">
+          <StackPanel x:Name="ProbePart" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                      IsVisible="{Binding !$parent[controls:ServerCard].Slim}">
             <TextBlock Text="{Binding ProbeText}"
                        Foreground="{Binding ProbeBrush}" FontSize="11.5" FontWeight="SemiBold" />
             <!-- The sweep's pick: fewest losses, then the shortest round trip. -->
@@ -55,7 +65,8 @@
 
           <!-- What the running tunnel carries and what it drops, a line each. The lines keep their place while
                the tunnel is down, so the cards in the catalogue stand the same height. -->
-          <StackPanel x:Name="LinkPart" Grid.Row="3" Grid.Column="0">
+          <StackPanel x:Name="LinkPart" Grid.Row="3" Grid.Column="0"
+                      IsVisible="{Binding !$parent[controls:ServerCard].Slim}">
             <Panel MinHeight="16" IsVisible="{Binding ShowLinkSpeedRow}">
               <TextBlock Text="{Binding LinkSpeedText}" FontSize="11.5" Classes="muted"
                          TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowLinkSpeed}" />
@@ -66,6 +77,18 @@
             </Panel>
           </StackPanel>
 
+          <!-- Тонкая карточка держит справа один чип задержки: цветом он говорит то же, что строка под адресом
+               на полной. -->
+          <Panel Grid.Row="0" Grid.RowSpan="4" Grid.Column="1" VerticalAlignment="Center"
+                 IsVisible="{Binding $parent[controls:ServerCard].Slim}">
+            <!-- Мерить нечем - чипа нет: пустая заливка сказала бы, что замер был. -->
+            <Border Classes="probechip" Background="{Binding ProbeChipBrush}"
+                    IsVisible="{Binding ProbeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="11.5"
+                         FontWeight="SemiBold" />
+            </Border>
+          </Panel>
+
           <!-- The wide card stands the power button in its top corner and the menu in the bottom one; the
                narrow one carries the power button alone, centred, and keeps its pair under the swipe. -->
           <DockPanel Grid.Row="0" Grid.RowSpan="4" Grid.Column="1" LastChildFill="False"
@@ -75,6 +98,7 @@
                  button wears. -->
             <Button x:Name="ConnectPart" DockPanel.Dock="Top" Classes="rowact cardact"
                     Classes.big="{Binding $parent[controls:ServerCard].Compact}"
+                    IsVisible="{Binding $parent[controls:ServerCard].HasPower}"
                     Foreground="{Binding StatusBrush}" HorizontalAlignment="Right"
                     Focusable="{Binding $parent[controls:ServerCard].Entered}"
                     ToolTip.Tip="{Binding RowActionText}"

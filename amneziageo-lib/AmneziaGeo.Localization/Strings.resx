@@ -2171,4 +2171,67 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_ColumnState" xml:space="preserve">
     <value>State</value>
   </data>
+  <data name="Main_TunnelIdleSub" xml:space="preserve">
+    <value>tunnel is down</value>
+  </data>
+  <data name="Main_UnitMbit" xml:space="preserve">
+    <value>Mbit/s</value>
+  </data>
+  <data name="Main_UnitKbit" xml:space="preserve">
+    <value>kbit/s</value>
+  </data>
+  <data name="Main_UnitMs" xml:space="preserve">
+    <value>ms</value>
+  </data>
+  <data name="Main_UnitPercent" xml:space="preserve">
+    <value>%</value>
+  </data>
+  <data name="Main_MetricRx" xml:space="preserve">
+    <value>down</value>
+  </data>
+  <data name="Main_MetricTx" xml:space="preserve">
+    <value>up</value>
+  </data>
+  <data name="Main_MetricPing" xml:space="preserve">
+    <value>latency</value>
+  </data>
+  <data name="Main_MetricLoss" xml:space="preserve">
+    <value>loss</value>
+  </data>
+  <data name="Main_LinkStateTitle" xml:space="preserve">
+    <value>Tunnel state</value>
+  </data>
+  <data name="Main_ProbedAgo" xml:space="preserve">
+    <value>checked {0} ago</value>
+  </data>
+  <data name="Main_ProbedNever" xml:space="preserve">
+    <value>no measurements yet</value>
+  </data>
+  <data name="Main_AgeSeconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
+  <data name="Main_AgeMinutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="Main_AgeHours" xml:space="preserve">
+    <value>{0} h</value>
+  </data>
+  <data name="Main_CatalogueFootBest" xml:space="preserve">
+    <value>{0} - best free one is {1} ({2} ms)</value>
+  </data>
+  <data name="Main_CatalogueSearchWatermark" xml:space="preserve">
+    <value>Search by name or address</value>
+  </data>
+  <data name="Main_GroupBasic" xml:space="preserve">
+    <value>Basics</value>
+  </data>
+  <data name="Main_GroupNetwork" xml:space="preserve">
+    <value>Network</value>
+  </data>
+  <data name="Main_SecretKeyWarning" xml:space="preserve">
+    <value>Holds the private key - do not publish it or send it over chats.</value>
+  </data>
+  <data name="Main_DeleteConfigIrreversible" xml:space="preserve">
+    <value>Deleting a configuration cannot be undone.</value>
+  </data>
 </root>

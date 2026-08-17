@@ -2171,4 +2171,67 @@
   <data name="Check_ColumnState" xml:space="preserve">
     <value>Состояние</value>
   </data>
+  <data name="Main_TunnelIdleSub" xml:space="preserve">
+    <value>туннель не поднят</value>
+  </data>
+  <data name="Main_UnitMbit" xml:space="preserve">
+    <value>Мбит/с</value>
+  </data>
+  <data name="Main_UnitKbit" xml:space="preserve">
+    <value>кбит/с</value>
+  </data>
+  <data name="Main_UnitMs" xml:space="preserve">
+    <value>мс</value>
+  </data>
+  <data name="Main_UnitPercent" xml:space="preserve">
+    <value>%</value>
+  </data>
+  <data name="Main_MetricRx" xml:space="preserve">
+    <value>приём</value>
+  </data>
+  <data name="Main_MetricTx" xml:space="preserve">
+    <value>отдача</value>
+  </data>
+  <data name="Main_MetricPing" xml:space="preserve">
+    <value>задержка</value>
+  </data>
+  <data name="Main_MetricLoss" xml:space="preserve">
+    <value>потери</value>
+  </data>
+  <data name="Main_LinkStateTitle" xml:space="preserve">
+    <value>Состояние туннеля</value>
+  </data>
+  <data name="Main_ProbedAgo" xml:space="preserve">
+    <value>проверено {0} назад</value>
+  </data>
+  <data name="Main_ProbedNever" xml:space="preserve">
+    <value>замеров ещё не было</value>
+  </data>
+  <data name="Main_AgeSeconds" xml:space="preserve">
+    <value>{0} с</value>
+  </data>
+  <data name="Main_AgeMinutes" xml:space="preserve">
+    <value>{0} мин</value>
+  </data>
+  <data name="Main_AgeHours" xml:space="preserve">
+    <value>{0} ч</value>
+  </data>
+  <data name="Main_CatalogueFootBest" xml:space="preserve">
+    <value>{0} - лучшая свободная {1} ({2} мс)</value>
+  </data>
+  <data name="Main_CatalogueSearchWatermark" xml:space="preserve">
+    <value>Поиск по имени или адресу</value>
+  </data>
+  <data name="Main_GroupBasic" xml:space="preserve">
+    <value>Основное</value>
+  </data>
+  <data name="Main_GroupNetwork" xml:space="preserve">
+    <value>Сеть</value>
+  </data>
+  <data name="Main_SecretKeyWarning" xml:space="preserve">
+    <value>Содержит приватный ключ - не публикуйте его и не пересылайте в чатах.</value>
+  </data>
+  <data name="Main_DeleteConfigIrreversible" xml:space="preserve">
+    <value>Удаление конфигурации нельзя отменить.</value>
+  </data>
 </root>

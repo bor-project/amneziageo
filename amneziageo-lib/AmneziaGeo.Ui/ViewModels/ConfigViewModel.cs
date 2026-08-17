@@ -64,6 +64,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
     [NotifyPropertyChangedFor(nameof(ShowWideHeader))]
+    [NotifyPropertyChangedFor(nameof(ShowDesktopDetail))]
+    [NotifyPropertyChangedFor(nameof(ShowDeleteCard))]
     [NotifyPropertyChangedFor(nameof(ShowExportAction))]
     [NotifyPropertyChangedFor(nameof(OpenConfigItem))]
     private string? _openConfig;
@@ -76,6 +78,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     // Whether the .conf text is on screen. Off until asked for: the text carries the private key.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDesktopSecretMask))]
     private bool _showConfigText;
 
     [ObservableProperty]
@@ -152,6 +155,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowExportAction))]
     [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
     [NotifyPropertyChangedFor(nameof(ShowWideHeader))]
+    [NotifyPropertyChangedFor(nameof(ShowDesktopDetail))]
+    [NotifyPropertyChangedFor(nameof(ShowDeleteCard))]
     [NotifyPropertyChangedFor(nameof(ShowFlatCards))]
     private bool _isWide;
 
@@ -214,6 +219,57 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// Стоит ли над настройками шапка открытой конфигурации: имя, адрес, состояние и её действия.
     /// </summary>
     public bool ShowWideHeader => IsWide && IsSectionConfig;
+
+    /// <summary>
+    /// Идут ли настройки десктопным видом: плитки метрик, группы и удаление строкой в подвале.
+    /// </summary>
+    public bool ShowDesktopDetail => IsSectionConfig && IsWide && UiPlatform.IsDesktop;
+
+    /// <summary>
+    /// Стоит ли удаление отдельной карточкой.
+    /// </summary>
+    public bool ShowDeleteCard => IsSectionConfig && !ShowDesktopDetail;
+
+    /// <summary>
+    /// Стоит ли вместо спрятанного текста конфигурации строка-маска с копированием.
+    /// </summary>
+    public bool ShowDesktopSecretMask => ShowDesktopDetail && !ShowConfigText;
+
+    /// <summary>
+    /// Носят ли карточки каталога кнопку питания.
+    /// </summary>
+    public bool ShowCardPower => !UiPlatform.IsDesktop;
+
+    /// <summary>
+    /// Идут ли карточки каталога тонкими: имя, адрес и один чип задержки.
+    /// </summary>
+    public bool SlimCards => UiPlatform.IsDesktop;
+
+    /// <summary>
+    /// Стоит ли над каталогом поиск.
+    /// </summary>
+    public bool ShowCatalogueSearch => HasConfigs && UiPlatform.IsDesktop;
+
+    // Поиск по каталогу: имя или адрес, без учёта регистра.
+    [ObservableProperty]
+    private string _catalogueFilter = string.Empty;
+
+    partial void OnCatalogueFilterChanged(string value)
+    {
+        ApplyCatalogueFilter();
+    }
+
+    // Убирает из каталога карточки, мимо которых прошёл поиск.
+    private void ApplyCatalogueFilter()
+    {
+        var needle = CatalogueFilter.Trim();
+        foreach (var item in Configs)
+        {
+            item.MatchesFilter = needle.Length == 0
+                || item.Name.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                || item.Endpoint.Contains(needle, StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     /// <summary>
     /// Карточки настроек без рамки: узкий экран и широкая раскладка держат их плоскими.
@@ -606,6 +662,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         _configNames = [.. entries.Select(e => e.Name)];
         ReconcileConfigCatalogueOptions();
+        ApplyCatalogueFilter();
 
         // A config just imported in the Config section: open it once its row arrives so OnOpenConfigChanged
         // seeds the transport editor from the real snapshot row instead of all-defaults.
@@ -713,6 +770,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HasConfigs));
         OnPropertyChanged(nameof(ShowCataloguePicker));
+        OnPropertyChanged(nameof(ShowCatalogueSearch));
     }
 
     partial void OnOpenConfigChanged(string? value)

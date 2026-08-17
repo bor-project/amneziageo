@@ -62,6 +62,12 @@ internal sealed partial class ServerCard : UserControl
     public static readonly StyledProperty<string?> SelectHintProperty =
         AvaloniaProperty.Register<ServerCard, string?>(nameof(SelectHint));
 
+    public static readonly StyledProperty<bool> HasPowerProperty =
+        AvaloniaProperty.Register<ServerCard, bool>(nameof(HasPower), defaultValue: true);
+
+    public static readonly StyledProperty<bool> SlimProperty =
+        AvaloniaProperty.Register<ServerCard, bool>(nameof(Slim));
+
     private readonly TranslateTransform _shift = new();
     private readonly TranslateTransform _nameShift = new();
     private readonly ListReorder _reorder;
@@ -87,7 +93,7 @@ internal sealed partial class ServerCard : UserControl
         DeleteItem.Click += OnDeletePicked;
 
         FacePart.RenderTransform = _shift;
-        NamePart.RenderTransform = _nameShift;
+        NameRow.RenderTransform = _nameShift;
         EndpointPart.RenderTransform = _nameShift;
         ProbePart.RenderTransform = _nameShift;
         LinkPart.RenderTransform = _nameShift;
@@ -211,6 +217,25 @@ internal sealed partial class ServerCard : UserControl
     {
         get => GetValue(HasMenuProperty);
         set => SetValue(HasMenuProperty, value);
+    }
+
+    /// <summary>
+    /// Носит ли карточка кнопку питания. Полоса состояния переключает туннель сама, и на карточках десктопного
+    /// каталога такой кнопке делать нечего.
+    /// </summary>
+    public bool HasPower
+    {
+        get => GetValue(HasPowerProperty);
+        set => SetValue(HasPowerProperty, value);
+    }
+
+    /// <summary>
+    /// Идёт ли карточка тонкой: имя и адрес строками, задержка чипом справа, без цифр туннеля.
+    /// </summary>
+    public bool Slim
+    {
+        get => GetValue(SlimProperty);
+        set => SetValue(SlimProperty, value);
     }
 
     /// <summary>

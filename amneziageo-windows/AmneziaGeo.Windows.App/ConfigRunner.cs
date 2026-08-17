@@ -808,12 +808,13 @@ internal sealed class ConfigRunner(
         return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
     }
 
-    // Starts this session's loss probe: the peer's own address on the tunnel is echoed once a second, and what
-    // fails to come back is the loss the screen shows.
+    // Starts this session's loss probe: a target inside the tunnel is echoed once a second, and what fails to come
+    // back is the loss the screen shows. The resolvers follow the peer, which a configuration carving out the
+    // local networks routes out of the tunnel: nothing answers there, and the session then measures nothing at all.
     private async Task StartLossProbeAsync(string config, CancellationToken ct)
     {
         var text = await store.GetConfigTextAsync(config, ct).ConfigureAwait(false) ?? string.Empty;
-        var probe = new LinkLossProbe(LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(text)));
+        var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(text), WgConfigEditor.GetDns(text)));
         _loss = probe;
         _ = Task.Run(() => probe.RunAsync(ct), ct);
     }

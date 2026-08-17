@@ -1213,7 +1213,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     }
 
     // The tunnel runs in its own process and polls for nothing: a rule change is announced to it here, and it
-    // drops every verdict taken under the old rules.
+    // decides every destination in use against the new rules.
     private void AnnounceRules() => Announce(RuntimeSnapshotPipe.OpRules);
 
     private void Announce(string op)

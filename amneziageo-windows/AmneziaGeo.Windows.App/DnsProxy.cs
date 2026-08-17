@@ -89,6 +89,11 @@ internal sealed class DnsProxy
     private volatile IReadOnlyList<GeoDomain> _blockDomains;
     private volatile DomainMatcher _blockMatcher;
     private volatile bool _hasBlockDomains;
+    // Direct bucket on its own, next to the local suffixes it is merged into for resolution: only these names
+    // settle a Direct verdict for their addresses, a suffix of your own network settles nothing.
+    private volatile IReadOnlyList<GeoDomain> _directDomains;
+    private volatile DomainMatcher _directMatcher;
+    private volatile bool _hasDirectDomains;
     private readonly IPAddress _tunnelUpstream;
     private readonly IPAddress? _tunnelUpstreamSecondary;
     private readonly IPAddress _localUpstream;
@@ -124,6 +129,9 @@ internal sealed class DnsProxy
         _blockDomains = blockDomains;
         _blockMatcher = new DomainMatcher(blockDomains);
         _hasBlockDomains = blockDomains.Count > 0;
+        _directDomains = directDomains;
+        _directMatcher = new DomainMatcher(directDomains);
+        _hasDirectDomains = directDomains.Count > 0;
         _tunnelUpstream = tunnelUpstream;
         _tunnelUpstreamSecondary = tunnelSecondary;
         _localUpstream = localUpstream;
@@ -264,6 +272,9 @@ internal sealed class DnsProxy
         _blockDomains = blockDomains;
         _blockMatcher = new DomainMatcher(blockDomains);
         _hasBlockDomains = blockDomains.Count > 0;
+        _directDomains = directDomains;
+        _directMatcher = new DomainMatcher(directDomains);
+        _hasDirectDomains = directDomains.Count > 0;
         _localDomains = locals;
 
         // Drop cached answers and the negative cache: a name refused or kept local now may hold a verdict from
@@ -273,6 +284,25 @@ internal sealed class DnsProxy
 
         _logger.LogInformation("direct and blocked names reloaded without reconnecting: {Local} local suffix(es), {Block} blocked rule(s) now in effect", locals.Count, blockDomains.Count);
         return true;
+    }
+
+    /// <summary>
+    /// What the name rules settle for a name. Block wins over Direct, Direct over the tunnel - the same order the
+    /// ranges are read in, so a name and an address covering each other never give two answers.
+    /// </summary>
+    public RouteVerdict NameVerdict(string name)
+    {
+        if (_hasBlockDomains && _blockMatcher.IsTunneled(name))
+        {
+            return RouteVerdict.Block;
+        }
+
+        if (_hasDirectDomains && _directMatcher.IsTunneled(name))
+        {
+            return RouteVerdict.Direct;
+        }
+
+        return _matcher.IsTunneled(name) ? RouteVerdict.Proxy : RouteVerdict.None;
     }
 
     // Suffixes as the local check wants them: trimmed, dotless at the ends, lower case.
@@ -703,9 +733,19 @@ internal sealed class DnsProxy
             {
                 try
                 {
+                    // A name in the Direct or Block bucket decides for the addresses it answers with, so a range
+                    // covering one of them cannot pull it back into the tunnel.
+                    var byName = name is null ? RouteVerdict.None : NameVerdict(name);
                     foreach (var address in DnsMessage.Addresses(response))
                     {
-                        _routing.Note(address);
+                        if (byName is RouteVerdict.Direct or RouteVerdict.Block)
+                        {
+                            _routing.Note(address, byName);
+                        }
+                        else
+                        {
+                            _routing.Note(address);
+                        }
                     }
                 }
                 catch (Exception ex)

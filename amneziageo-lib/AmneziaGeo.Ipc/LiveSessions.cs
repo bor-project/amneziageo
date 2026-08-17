@@ -15,7 +15,9 @@ public sealed record LiveSession(
     int Live = 0,
     int AgeSeconds = -1,
     int IdleSeconds = -1,
-    string App = "")
+    string App = "",
+    string Name = "",
+    string Path = "")
 {
     /// <summary>
     /// Seconds a held connection may carry nothing before it counts as stalled.
@@ -28,9 +30,38 @@ public sealed record LiveSession(
     public const string Undecided = "undecided";
 
     /// <summary>
+    /// Path a destination takes through the tunnel.
+    /// </summary>
+    public const string PathTunnel = "tunnel";
+
+    /// <summary>
+    /// Path a destination takes past the tunnel.
+    /// </summary>
+    public const string PathDirect = "direct";
+
+    /// <summary>
+    /// Path a dropped destination takes.
+    /// </summary>
+    public const string PathBlock = "block";
+
+    /// <summary>
     /// Whether something is connected there and nothing has moved for the stall window.
     /// </summary>
     public bool Stalled => Live > 0 && IdleSeconds >= StallSeconds;
+
+    /// <summary>
+    /// Where the traffic actually goes: what the tunnel installed for the destination, or what its verdict asks
+    /// for when the agent reports no path of its own. Empty while neither answers.
+    /// </summary>
+    public string Route => Path.Length > 0
+        ? Path
+        : Verdict switch
+        {
+            "proxy" => PathTunnel,
+            "direct" => PathDirect,
+            "block" => PathBlock,
+            _ => string.Empty,
+        };
 
     /// <summary>
     /// Renders the destination as one protocol row.
@@ -46,6 +77,16 @@ public sealed record LiveSession(
         if (App.Length > 0)
         {
             row.Append("\tapp=").Append(App);
+        }
+
+        if (Name.Length > 0)
+        {
+            row.Append("\tname=").Append(Name);
+        }
+
+        if (Path.Length > 0)
+        {
+            row.Append("\tpath=").Append(Path);
         }
 
         return row.ToString();
@@ -80,7 +121,9 @@ public sealed record LiveSession(
             (int)Math.Max(Number(values, "live"), 0),
             (int)Number(values, "age"),
             (int)Number(values, "idle"),
-            values.GetValueOrDefault("app", string.Empty));
+            values.GetValueOrDefault("app", string.Empty),
+            values.GetValueOrDefault("name", string.Empty),
+            values.GetValueOrDefault("path", string.Empty));
     }
 
     /// <summary>
@@ -155,7 +198,7 @@ public sealed record SessionReport(
     /// <summary>
     /// Destinations one report carries; the rest is counted, not listed.
     /// </summary>
-    public const int MaxRows = 20;
+    public const int MaxRows = 200;
 
     /// <summary>
     /// A report holding nothing, which is what a tunnel without a relay has to say.
@@ -238,7 +281,10 @@ public sealed record SessionReport(
             .Append(CheckFormat.Bytes(TotalBytes)).Append(" carried\n");
         foreach (var session in Sessions)
         {
-            text.Append("  ").Append(session.Host.PadRight(32)).Append(session.Describe()).Append('\n');
+            text.Append("  ").Append(session.Host.PadRight(24))
+                .Append(Column(session.Name, 28))
+                .Append(Column(session.Route, 8))
+                .Append(session.Describe()).Append('\n');
         }
 
         return text.ToString();
@@ -247,5 +293,11 @@ public sealed record SessionReport(
     private static long Number(string text)
     {
         return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : 0;
+    }
+
+    // A column an empty value still holds its width in.
+    private static string Column(string value, int width)
+    {
+        return (value.Length == 0 ? "-" : value).PadRight(width);
     }
 }

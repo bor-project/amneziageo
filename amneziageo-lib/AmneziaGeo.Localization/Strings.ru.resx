@@ -2150,4 +2150,25 @@
   <data name="Check_TargetUnlistedFull" xml:space="preserve">
     <value>Правил для «{0}» нет, но туннель - маршрут по умолчанию, поэтому трафик идёт через него.</value>
   </data>
+  <data name="Main_CopyShownButton" xml:space="preserve">
+    <value>Копировать показанное</value>
+  </data>
+  <data name="Main_LogPausedHint" xml:space="preserve">
+    <value>Пауза, пока нажат Ctrl</value>
+  </data>
+  <data name="Check_SessionNoRule" xml:space="preserve">
+    <value>нет правила</value>
+  </data>
+  <data name="Check_ColumnHost" xml:space="preserve">
+    <value>Адрес</value>
+  </data>
+  <data name="Check_ColumnName" xml:space="preserve">
+    <value>Домен</value>
+  </data>
+  <data name="Check_ColumnPath" xml:space="preserve">
+    <value>Путь</value>
+  </data>
+  <data name="Check_ColumnState" xml:space="preserve">
+    <value>Состояние</value>
+  </data>
 </root>

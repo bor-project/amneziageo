@@ -1,6 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ti="using:Avalonia.Input.TextInput">
+        xmlns:ti="using:Avalonia.Input.TextInput"
+        xmlns:svc="using:AmneziaGeo.Ui.Services">
 
   <!-- Shared control styles. No hover effect app-wide; feedback is press opacity only. -->
     <FluentTheme />
@@ -13,20 +14,27 @@
       <Setter Property="BoxShadow" Value="0 1 3 0 #14000000" />
     </Style>
 
-    <!-- Section card inside the settings pane. -->
+    <!-- Section card inside the settings pane. Below the card width the frame only eats width, so it goes and the
+         section reads by its own heading; the width is gated in one place for every settings screen. -->
     <Style Selector="Border.sect">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="12" />
-      <Setter Property="Padding" Value="16" />
+      <Setter Property="BorderThickness"
+              Value="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance},
+                              Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=cardEdge}" />
+      <Setter Property="CornerRadius"
+              Value="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance},
+                              Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=cardRadius}" />
+      <Setter Property="Padding"
+              Value="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance},
+                              Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=cardPad}" />
     </Style>
 
-    <!-- Narrow screen: the frame only eats width, the section still reads by its own heading. -->
-    <Style Selector="Border.sect.compact">
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="0" />
-      <Setter Property="Padding" Value="0" />
+    <!-- Section boundary the dropped frame leaves behind. -->
+    <Style Selector="Border.hairline">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="IsVisible" Value="{Binding IsCardless, Source={x:Static svc:UiLayout.Instance}}" />
     </Style>
 
     <!-- Frame around a list of rows. A narrow screen drops it: the rows carry their own outlines. -->

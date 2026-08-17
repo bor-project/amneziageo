@@ -14,7 +14,7 @@
     <TextBlock Text="{l:Tr BundleExport_Heading}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
 
     <!-- PHASE 1: selection tree. -->
-    <Border Classes="sect" Classes.compact="{Binding IsCompact}" IsVisible="{Binding !IsExported}">
+    <Border Classes="sect" IsVisible="{Binding !IsExported}">
       <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="16">
 

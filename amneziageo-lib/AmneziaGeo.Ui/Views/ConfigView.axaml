@@ -102,7 +102,7 @@
     <StackPanel x:Name="SettingsSection" Grid.Row="1" Margin="0,14,0,0"
                 IsVisible="{Binding IsSectionConfig}" Spacing="14">
       <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Classes="hairline" />
 
       <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
       <StackPanel Spacing="2">
@@ -115,7 +115,7 @@
                    IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
 
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Classes="hairline" />
 
       <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
            until asked for - it carries the private key - and hidden again on every entry into the section. -->
@@ -151,18 +151,18 @@
                    IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
 
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Classes="hairline" />
 
       <!-- Proxy (WebSocket) card. -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+      <Border Classes="sect">
         <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
       </Border>
 
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Classes="hairline" />
 
       <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
            the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+      <Border Classes="sect">
         <StackPanel Spacing="10">
           <!-- The trigger stands under the description. -->
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
@@ -196,7 +196,7 @@
 
     <!-- Черновик новой конфигурации: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере.
          Imported with the footer Save once text parses + name is set (#143). -->
-    <Border x:Name="ImportSection" Grid.Row="1" Margin="0,12,0,0" Classes="sect" Classes.compact="{Binding IsCompact}"
+    <Border x:Name="ImportSection" Grid.Row="1" Margin="0,12,0,0" Classes="sect"
             IsVisible="{Binding IsSectionImport}">
       <DockPanel LastChildFill="True">
         <StackPanel DockPanel.Dock="Top" Spacing="6">
@@ -214,7 +214,7 @@
 
         <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
              configuration. Shown beside the text, where there is something to apply them to. -->
-        <Border DockPanel.Dock="Bottom" Classes="sect" Classes.compact="{Binding IsCompact}" Margin="0,14,0,0"
+        <Border DockPanel.Dock="Bottom" Classes="sect" Margin="0,14,0,0"
                 IsVisible="{Binding IsImportManual}">
           <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
         </Border>
@@ -250,7 +250,7 @@
       <TextBlock Text="{l:Tr Main_ExportConfigTitle}" FontWeight="SemiBold" FontSize="15"
                  TextWrapping="Wrap" VerticalAlignment="Center" />
 
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+      <Border Classes="sect">
         <StackPanel Spacing="12" DataContext="{Binding ConfigExport}" x:DataType="vm:ExportDialogViewModel">
           <TextBlock Text="{l:Tr Main_ExportConfigSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
           <Border Background="{DynamicResource AgInsetBrush}"

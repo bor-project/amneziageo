@@ -2135,16 +2135,4 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_SessionNoRule" xml:space="preserve">
     <value>no rule</value>
   </data>
-  <data name="Check_ColumnHost" xml:space="preserve">
-    <value>Address</value>
-  </data>
-  <data name="Check_ColumnName" xml:space="preserve">
-    <value>Domain</value>
-  </data>
-  <data name="Check_ColumnPath" xml:space="preserve">
-    <value>Path</value>
-  </data>
-  <data name="Check_ColumnState" xml:space="preserve">
-    <value>State</value>
-  </data>
 </root>

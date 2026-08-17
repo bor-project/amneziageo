@@ -10,7 +10,7 @@
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
   </UserControl.Resources>
   <!-- What is run, the verdict it produced, and the rows behind the verdict. Only the rows scroll. -->
-  <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+  <Border Classes="sect">
     <Grid RowDefinitions="Auto,Auto,*" RowSpacing="14">
 
       <!-- The runs to pick from: the one shown wears the accent. The target row is hidden until its search is

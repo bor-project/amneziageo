@@ -16,8 +16,6 @@
     <StreamGeometry x:Key="AgSearchGeometry">M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z</StreamGeometry>
     <StreamGeometry x:Key="AgDocGeometry">M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z</StreamGeometry>
     <StreamGeometry x:Key="AgCopyGeometry">M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z</StreamGeometry>
-    <StreamGeometry x:Key="AgSortUpGeometry">M12,8L18,16H6Z</StreamGeometry>
-    <StreamGeometry x:Key="AgSortDownGeometry">M12,16L6,8H18Z</StreamGeometry>
   </UserControl.Resources>
   <UserControl.Styles>
     <!-- Inset frame the log body sits in. Set by style, not on the element: a local value outranks the
@@ -36,27 +34,6 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="0" />
       <Setter Property="Margin" Value="0,10,0,0" />
-    </Style>
-
-    <!-- Column header: a caption that orders the table, not a button that looks like one. -->
-    <Style Selector="Button.sortcol">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="2,1" />
-      <Setter Property="HorizontalAlignment" Value="Left" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AgMuted2Brush}" />
-    </Style>
-    <Style Selector="Button.sortcol:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="PathIcon.sortmark">
-      <Setter Property="Width" Value="9" />
-      <Setter Property="Height" Value="9" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
     </Style>
   </UserControl.Styles>
   <!-- Source and what it records over one viewer; only the log body scrolls. -->
@@ -81,11 +58,11 @@
           Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
           IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
       <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
-      <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+      <Border Classes="hairline" />
     </StackPanel>
 
     <!-- Viewer: full-width card. Body fills the rest under the control bar. -->
-    <Border Grid.Row="1" Classes="sect" Classes.compact="{Binding IsCompact}">
+    <Border Grid.Row="1" Classes="sect">
       <Grid RowDefinitions="Auto,Auto,Auto,*">
 
         <!-- Search fills the row; the log actions take its end. The live source has nothing stored to search,
@@ -163,66 +140,15 @@
                                    TextWrapping="Wrap" Margin="16,13" />
             </ScrollViewer>
 
-            <!-- The destinations as a table: the header orders it, the address and the name are selectable. -->
-            <Grid IsVisible="{Binding ShowLiveTable}" RowDefinitions="Auto,Auto,*" Margin="10,8,10,10">
-              <Grid Grid.Row="0" ColumnDefinitions="190,2*,120,3*" ColumnSpacing="8">
-                <Button Grid.Column="0" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="host">
-                  <StackPanel Orientation="Horizontal" Spacing="3">
-                    <TextBlock Text="{l:Tr Check_ColumnHost}" />
-                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding HostUp}" />
-                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding HostDown}" />
-                  </StackPanel>
-                </Button>
-                <Button Grid.Column="1" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="name">
-                  <StackPanel Orientation="Horizontal" Spacing="3">
-                    <TextBlock Text="{l:Tr Check_ColumnName}" />
-                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding NameUp}" />
-                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding NameDown}" />
-                  </StackPanel>
-                </Button>
-                <Button Grid.Column="2" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="path">
-                  <StackPanel Orientation="Horizontal" Spacing="3">
-                    <TextBlock Text="{l:Tr Check_ColumnPath}" />
-                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding PathUp}" />
-                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding PathDown}" />
-                  </StackPanel>
-                </Button>
-                <Button Grid.Column="3" Classes="sortcol" Command="{Binding SortLiveCommand}" CommandParameter="state">
-                  <StackPanel Orientation="Horizontal" Spacing="3">
-                    <TextBlock Text="{l:Tr Check_ColumnState}" />
-                    <PathIcon Data="{StaticResource AgSortUpGeometry}" Classes="sortmark" IsVisible="{Binding StateUp}" />
-                    <PathIcon Data="{StaticResource AgSortDownGeometry}" Classes="sortmark" IsVisible="{Binding StateDown}" />
-                  </StackPanel>
-                </Button>
-              </Grid>
-              <Border Grid.Row="1" Height="1" Margin="0,4,0,2" Background="{DynamicResource AgBorderBrush}" />
-              <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding LiveRows}">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <VirtualizingStackPanel />
-                    </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:LiveRowItem">
-                      <Grid ColumnDefinitions="190,2*,120,3*" ColumnSpacing="8" Margin="0,2">
-                        <SelectableTextBlock Grid.Column="0" Text="{Binding Host}" FontSize="11.5"
-                                             FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
-                                             Foreground="{DynamicResource AgFgBrush}" />
-                        <SelectableTextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11.5"
-                                             Foreground="{DynamicResource AgFgBrush}" />
-                        <TextBlock Grid.Column="2" Text="{Binding Route}" FontSize="11.5"
-                                   TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource AgAccentBrush}" />
-                        <TextBlock Grid.Column="3" Text="{Binding Detail}" FontSize="11.5"
-                                   TextTrimming="CharacterEllipsis"
-                                   Foreground="{DynamicResource AgMutedBrush}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
-            </Grid>
+            <!-- The destinations as a padded table: the columns only line up without wrapping. -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                          IsVisible="{Binding ShowLiveText}">
+              <SelectableTextBlock Text="{Binding LogText}"
+                                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace"
+                                   FontSize="{svc:Unscaled 11.5}" LineHeight="{svc:Unscaled 18}"
+                                   Foreground="{DynamicResource AgMutedBrush}"
+                                   TextWrapping="NoWrap" Margin="16,13" />
+            </ScrollViewer>
 
             <!-- Narrow: a card per row, so nothing has to be scrolled sideways to be read. -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"

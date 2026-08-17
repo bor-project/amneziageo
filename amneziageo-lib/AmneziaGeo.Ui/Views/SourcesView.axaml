@@ -22,7 +22,7 @@
     </Grid>
 
     <!-- Update-check card: manual check + periodic auto-check. -->
-    <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+    <Border Classes="sect">
       <StackPanel Spacing="12">
         <TextBlock Text="{l:Tr Main_AutoCheckTitle}" FontWeight="SemiBold" FontSize="15" />
         <!-- The interval and its switch stand under the hint. -->
@@ -49,7 +49,7 @@
     </Border>
 
     <!-- Add-database card. -->
-    <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+    <Border Classes="sect">
       <StackPanel Spacing="10">
         <TextBlock Text="{l:Tr Main_AddDatabaseLabel}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
 
@@ -78,7 +78,7 @@
     </Border>
 
     <!-- Sources list card. -->
-    <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+    <Border Classes="sect">
       <StackPanel Spacing="10">
         <Grid ColumnDefinitions="*,Auto">
           <TextBlock Grid.Column="0" Text="{l:Tr Main_SourcesLabel}" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" />

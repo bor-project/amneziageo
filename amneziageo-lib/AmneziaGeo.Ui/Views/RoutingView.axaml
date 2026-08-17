@@ -101,15 +101,15 @@
       <!-- Settings section: the picked-list switch + the shared editor + delete card. -->
       <StackPanel x:Name="SettingsSection" IsVisible="{Binding ShowSettingsEditor}" Spacing="14">
         <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
-        <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+        <Border Classes="hairline" />
 
         <views:RoutingEditorView />
 
-        <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+        <Border Classes="hairline" />
 
         <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
              the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
-        <Border Classes="sect" Classes.compact="{Binding IsCompact}" IsVisible="{Binding ShowDeleteCard}">
+        <Border Classes="sect" IsVisible="{Binding ShowDeleteCard}">
           <StackPanel Spacing="10">
             <!-- The trigger stands under the description. -->
             <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
@@ -147,7 +147,7 @@
         <TextBlock Text="{l:Tr Main_ExportListTitle}" FontWeight="SemiBold" FontSize="15"
                    TextWrapping="Wrap" VerticalAlignment="Center" />
 
-        <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+        <Border Classes="sect">
           <StackPanel Spacing="12" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
             <TextBlock Text="{l:Tr Main_TransferSubtitle}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
 

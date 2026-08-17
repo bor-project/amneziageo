@@ -51,7 +51,7 @@
 
     <!-- Шапка: имя, разделы вкладками и состояние туннеля справа. -->
     <Border Grid.Row="0" Classes="card" Height="52" Padding="12,0">
-      <Grid ColumnDefinitions="Auto,*,Auto">
+      <Grid x:Name="HeaderBar" ColumnDefinitions="Auto,*,Auto" SizeChanged="OnHeaderSizeChanged">
         <!-- Главный экран с большой кнопкой остаётся одноколоночным: сюда за ним и возвращаются. -->
         <Button x:Name="HomeBack" Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
                 Command="{Binding NavHomeCommand}" ToolTip.Tip="{l:Tr Main_BackTooltip}">
@@ -76,9 +76,13 @@
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-          <TextBlock Text="{Binding Home.LinkSpeedText}" Classes="muted" FontSize="12" VerticalAlignment="Center"
-                     IsVisible="{Binding Home.ShowLink}" />
-          <controls:ConnectPill DataContext="{Binding Home}" />
+          <!-- Счётчик уступает место вкладкам и кнопке: те же числа стоят на карточке конфигурации.
+               Ширину ему разрешает шапка, показ - живой туннель, поэтому условия стоят на разных контролах. -->
+          <Panel x:Name="LinkFit" VerticalAlignment="Center">
+            <TextBlock x:Name="LinkSpeed" Text="{Binding Home.LinkSpeedText}" Classes="muted" FontSize="12"
+                       VerticalAlignment="Center" IsVisible="{Binding Home.ShowLink}" />
+          </Panel>
+          <controls:ConnectPill x:Name="ConnectPart" DataContext="{Binding Home}" />
         </StackPanel>
       </Grid>
     </Border>
@@ -261,9 +265,9 @@
                             </StackPanel>
                           </WrapPanel>
                         </Grid>
-                        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
                                 BorderBrush="{DynamicResource AgAccentBrush}" IsVisible="{Binding IsApplied}" />
-                        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
                                 BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowOpenFrame}" />
                       </Panel>
                     </Button>

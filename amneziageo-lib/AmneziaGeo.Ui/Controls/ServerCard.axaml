@@ -53,14 +53,18 @@
                        Foreground="{DynamicResource AgAccentBrush}" IsVisible="{Binding IsBest}" />
           </StackPanel>
 
-          <!-- What the running tunnel carries and what it drops: a line of its own, which breaks in two rather
-               than trimming when the card is too narrow to hold both. -->
-          <WrapPanel x:Name="LinkPart" Grid.Row="3" Grid.Column="0" IsVisible="{Binding ShowLinkLine}">
-            <TextBlock Text="{Binding LinkSpeedText}" FontSize="11.5" Classes="muted" Margin="0,0,8,0"
-                       IsVisible="{Binding ShowLinkSpeed}" />
-            <TextBlock Text="{Binding LinkLossText}" FontSize="11.5" Foreground="{Binding LinkLossBrush}"
-                       IsVisible="{Binding ShowLinkLoss}" />
-          </WrapPanel>
+          <!-- What the running tunnel carries and what it drops, a line each. The lines keep their place while
+               the tunnel is down, so the cards in the catalogue stand the same height. -->
+          <StackPanel x:Name="LinkPart" Grid.Row="3" Grid.Column="0">
+            <Panel MinHeight="16" IsVisible="{Binding ShowLinkSpeedRow}">
+              <TextBlock Text="{Binding LinkSpeedText}" FontSize="11.5" Classes="muted"
+                         TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowLinkSpeed}" />
+            </Panel>
+            <Panel MinHeight="16" IsVisible="{Binding ShowLinkLossRow}">
+              <TextBlock Text="{Binding LinkLossText}" FontSize="11.5" Foreground="{Binding LinkLossBrush}"
+                         TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowLinkLoss}" />
+            </Panel>
+          </StackPanel>
 
           <!-- The wide card stands the power button in its top corner and the menu in the bottom one; the
                narrow one carries the power button alone, centred, and keeps its pair under the swipe. -->
@@ -95,11 +99,11 @@
 
         <!-- Рамка в цвете состояния на выбранной конфигурации, серая - на открытой справа, акцентная - на той,
              в которую шагнул пульт. -->
-        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
-        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowOpenFrame}" />
-        <Border BorderThickness="2" CornerRadius="12" IsHitTestVisible="False"
+        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{DynamicResource AgAccentBrush}"
                 IsVisible="{Binding $parent[controls:ServerCard].Entered}" />
       </Panel>

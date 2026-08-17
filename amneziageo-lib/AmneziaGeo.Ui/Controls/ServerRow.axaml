@@ -92,9 +92,9 @@
         </Grid>
         <!-- Frame in the connection colour on the configuration the tunnel is bound to, grey on the one the
              user picked. -->
-        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
-        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowOpenFrame}" />
       </Panel>
     </Button>

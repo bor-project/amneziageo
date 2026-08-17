@@ -51,7 +51,17 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
     [NotifyPropertyChangedFor(nameof(ShowOpenFrame))]
     [NotifyPropertyChangedFor(nameof(RowActionText))]
+    [NotifyPropertyChangedFor(nameof(IsLive))]
     private string _status = ConnectionStatus.Idle;
+
+    // Проходит ли карточка через поиск по каталогу.
+    [ObservableProperty]
+    private bool _matchesFilter = true;
+
+    /// <summary>
+    /// Стоит ли туннель на этой конфигурации: карточка каталога носит об этом метку.
+    /// </summary>
+    public bool IsLive => string.Equals(Status, ConnectionStatus.Connected, StringComparison.Ordinal);
 
     /// <summary>
     /// Носит ли карточка рамку в цвете состояния: выбранная конфигурация - та, на которую встанет подключение, -
@@ -132,21 +142,33 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeChipBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkPingValue))]
+    [NotifyPropertyChangedFor(nameof(LinkLossValue))]
     private ProbeOutcome _probeState = ProbeOutcome.Unknown;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeChipBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkPingValue))]
+    [NotifyPropertyChangedFor(nameof(LinkLossValue))]
     private int _probeMilliseconds;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeChipBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkPingValue))]
+    [NotifyPropertyChangedFor(nameof(LinkLossValue))]
     private bool _probing;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeChipBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkPingValue))]
+    [NotifyPropertyChangedFor(nameof(LinkLossValue))]
     private int _probeLossPercent;
 
     // Whether this server won the last sweep of them all.
@@ -155,10 +177,16 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
+    [NotifyPropertyChangedFor(nameof(LinkRxValue))]
+    [NotifyPropertyChangedFor(nameof(LinkTxValue))]
+    [NotifyPropertyChangedFor(nameof(LinkSpeedUnit))]
     private long _rxBitsPerSecond;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
+    [NotifyPropertyChangedFor(nameof(LinkRxValue))]
+    [NotifyPropertyChangedFor(nameof(LinkTxValue))]
+    [NotifyPropertyChangedFor(nameof(LinkSpeedUnit))]
     private long _txBitsPerSecond;
 
     [ObservableProperty]
@@ -188,12 +216,18 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(LinkLossy))]
     [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeChipBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkPingValue))]
+    [NotifyPropertyChangedFor(nameof(LinkLossValue))]
     private int _linkLossPercent = LinkHealth.LossUnknown;
 
     // Round trip the running tunnel timed to its far end; -1 on every config that is not running.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeChipBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkPingValue))]
+    [NotifyPropertyChangedFor(nameof(LinkLossValue))]
     private int _linkRttMs = -1;
 
     /// <summary>
@@ -247,10 +281,15 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(ProbeChipBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkPingValue))]
+    [NotifyPropertyChangedFor(nameof(LinkLossValue))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
     [NotifyPropertyChangedFor(nameof(ShowLinkSpeed))]
     [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkRxValue))]
+    [NotifyPropertyChangedFor(nameof(LinkTxValue))]
     private int _handshakeAgeSeconds = -1;
 
     /// <summary>
@@ -275,6 +314,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private static readonly IBrush _slow = new SolidColorBrush(Color.FromRgb(0xC8, 0x7A, 0x00));
     private static readonly IBrush _dead = new SolidColorBrush(Color.FromRgb(0xC0, 0x39, 0x2B));
     private static readonly IBrush _idle = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
+    private static readonly IBrush _fastSoft = new SolidColorBrush(Color.FromArgb(0x24, 0x1F, 0x9D, 0x57));
+    private static readonly IBrush _slowSoft = new SolidColorBrush(Color.FromArgb(0x24, 0xC8, 0x7A, 0x00));
+    private static readonly IBrush _deadSoft = new SolidColorBrush(Color.FromArgb(0x24, 0xC0, 0x39, 0x2B));
+    private static readonly IBrush _idleSoft = new SolidColorBrush(Color.FromArgb(0x1A, 0x80, 0x80, 0x80));
 
     /// <summary>
     /// The response cell: the round trip, a dash before the first measurement, or why nothing came back. The
@@ -300,27 +343,101 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// <summary>
     /// The response colour: green for a quick clean answer, amber for a slow or lossy one, red for none.
     /// </summary>
-    public IBrush ProbeBrush => Probing
-        ? _idle
-        : LinkSilent
-        ? _dead
-        : LinkTimed
-        ? LinkBrush
-        : ProbeState switch
-        {
-            ProbeOutcome.Alive => AliveBrush,
-            ProbeOutcome.Unknown => _idle,
-            _ => LinkKnown ? _idle : _dead,
-        };
+    public IBrush ProbeBrush => Tone switch
+    {
+        ProbeTone.Fast => _fast,
+        ProbeTone.Slow => _slow,
+        ProbeTone.Dead => _dead,
+        _ => _idle,
+    };
+
+    /// <summary>
+    /// Заливка чипа задержки в каталоге: тот же вердикт, что и у текста, приглушённый под фон.
+    /// </summary>
+    public IBrush ProbeChipBrush => Tone switch
+    {
+        ProbeTone.Fast => _fastSoft,
+        ProbeTone.Slow => _slowSoft,
+        ProbeTone.Dead => _deadSoft,
+        _ => _idleSoft,
+    };
 
     // Loss at which a server that still answers is no better than one that does not.
     private const int LossyPercent = 40;
 
-    // The running tunnel's own time: green while it is quick and drops nothing worth feeling.
-    private IBrush LinkBrush => LinkRttMs <= 200 && !LinkLossy ? _fast : _slow;
+    // How the last answer reads. The running tunnel's own time stands ahead of the echo to the endpoint, and a
+    // server that answers is green only when it is both quick and lossless.
+    private ProbeTone Tone => Probing
+        ? ProbeTone.Idle
+        : LinkSilent
+        ? ProbeTone.Dead
+        : LinkTimed
+        ? (LinkRttMs <= 200 && !LinkLossy ? ProbeTone.Fast : ProbeTone.Slow)
+        : ProbeState switch
+        {
+            ProbeOutcome.Alive => ProbeLossPercent >= LossyPercent
+                ? ProbeTone.Dead
+                : ProbeMilliseconds <= 200 && ProbeLossPercent == 0 ? ProbeTone.Fast : ProbeTone.Slow,
+            ProbeOutcome.Unknown => ProbeTone.Idle,
+            _ => LinkKnown ? ProbeTone.Idle : ProbeTone.Dead,
+        };
 
-    // A server that answers: green only when it is both quick and lossless.
-    private IBrush AliveBrush => ProbeLossPercent >= LossyPercent
-        ? _dead
-        : ProbeMilliseconds <= 200 && ProbeLossPercent == 0 ? _fast : _slow;
+    // Стоит вместо числа, которого нет.
+    private const string Absent = "—";
+
+    /// <summary>
+    /// What the tunnel receives, as a bare number for a tile; the tile beside it carries the unit.
+    /// </summary>
+    public string LinkRxValue => LinkKnown ? SpeedFormat.Value(RxBitsPerSecond, TxBitsPerSecond) : Absent;
+
+    /// <summary>
+    /// What the tunnel sends, as a bare number for a tile.
+    /// </summary>
+    public string LinkTxValue => LinkKnown ? SpeedFormat.Value(TxBitsPerSecond, RxBitsPerSecond) : Absent;
+
+    /// <summary>
+    /// The unit both directions are written in.
+    /// </summary>
+    public string LinkSpeedUnit => SpeedFormat.Unit(RxBitsPerSecond, TxBitsPerSecond);
+
+    /// <summary>
+    /// Round trip in milliseconds: the running tunnel's own time, and the echo to the endpoint on every
+    /// configuration that is not running.
+    /// </summary>
+    public string LinkPingValue => LinkTimed
+        ? LinkRttMs.ToString()
+        : ProbeState == ProbeOutcome.Alive ? ProbeMilliseconds.ToString() : Absent;
+
+    /// <summary>
+    /// The share of probes lost, from the same source as the time beside it.
+    /// </summary>
+    public string LinkLossValue => LinkHealth.LossKnown(LinkLossPercent)
+        ? LinkLossPercent.ToString()
+        : ProbeState == ProbeOutcome.Alive ? ProbeLossPercent.ToString() : Absent;
+}
+
+/// <summary>
+/// How the last measurement reads.
+/// </summary>
+internal enum ProbeTone
+{
+    /// <summary>
+    /// Nothing to read yet.
+    /// </summary>
+    Idle,
+
+    /// <summary>
+    /// Quick and lossless.
+    /// </summary>
+    Fast,
+
+    /// <summary>
+    /// Slow or lossy.
+    /// </summary>
+    Slow,
+
+    /// <summary>
+    /// No use at all.
+    /// </summary>
+    Dead,
 }

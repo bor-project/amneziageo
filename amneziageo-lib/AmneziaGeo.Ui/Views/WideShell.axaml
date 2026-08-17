@@ -47,7 +47,7 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid RowDefinitions="Auto,*" Margin="12,3,12,3">
+  <Grid RowDefinitions="Auto,Auto,*" Margin="12,3,12,3">
 
     <!-- Шапка: имя, разделы вкладками и состояние туннеля справа. -->
     <Border Grid.Row="0" Classes="card" Height="52" Padding="12,0">
@@ -75,7 +75,9 @@
                   Command="{Binding SelectSettingsCommand}" CommandParameter="general" />
         </StackPanel>
 
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+        <!-- Состояние туннеля десктоп держит полосой под шапкой, и второй кнопки подключения здесь не ставит. -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center"
+                    IsVisible="{Binding !IsDesktopShell}">
           <!-- Счётчик уступает место вкладкам и кнопке: те же числа стоят на карточке конфигурации.
                Ширину ему разрешает шапка, показ - живой туннель, поэтому условия стоят на разных контролах. -->
           <Panel x:Name="LinkFit" VerticalAlignment="Center">
@@ -87,7 +89,24 @@
       </Grid>
     </Border>
 
-    <Panel Grid.Row="1" Margin="0,6,0,0">
+    <!-- Полоса состояния: на каком сервере стоит туннель и единственная кнопка над ним. -->
+    <Border Grid.Row="1" Classes="statestrip" Margin="0,6,0,0" IsVisible="{Binding IsDesktopShell}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="18">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="11" VerticalAlignment="Center">
+          <Ellipse Width="10" Height="10" VerticalAlignment="Center"
+                   Fill="{Binding Home.ConnectStatusBrush}" />
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="{Binding Home.AgentStatusText}" FontSize="14" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding Home.LinkTargetText}" Classes="muted mono" FontSize="11.5"
+                       Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+        </StackPanel>
+
+        <controls:ConnectPill Grid.Column="2" DataContext="{Binding Home}" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <Panel Grid.Row="2" Margin="0,6,0,0">
 
       <!-- СЕРВЕРЫ: каталог карточками слева, настройки открытой конфигурации справа. -->
       <Grid IsVisible="{Binding IsSettingsConfig}">
@@ -122,9 +141,21 @@
               </Button>
             </Grid>
 
+            <!-- Поиск по каталогу: имя или адрес. -->
+            <TextBox DockPanel.Dock="Top" Classes="field" Margin="12,0,12,10" MinHeight="30" FontSize="12.5"
+                     Watermark="{l:Tr Main_CatalogueSearchWatermark}"
+                     Text="{Binding Config.CatalogueFilter, Mode=TwoWay}"
+                     IsVisible="{Binding Config.ShowCatalogueSearch}" />
+
             <!-- Что делает замер, сказано под списком: кнопка над ним несёт один значок. -->
             <TextBlock DockPanel.Dock="Bottom" Margin="12,4,12,12" Classes="muted" FontSize="11"
-                       TextWrapping="Wrap" Text="{l:Tr Main_ProbeAllHint}" IsVisible="{Binding HasConfigs}" />
+                       TextWrapping="Wrap" Text="{l:Tr Main_ProbeAllHint}"
+                       IsVisible="{Binding !IsDesktopShell}" />
+
+            <!-- Десктоп ставит под каталог то, что из него следует: когда мерили и на что стоит перейти. -->
+            <TextBlock DockPanel.Dock="Bottom" Margin="12,4,12,12" Classes="muted" FontSize="11"
+                       TextWrapping="Wrap" Text="{Binding Home.CatalogueFootNote}"
+                       IsVisible="{Binding IsDesktopShell}" />
 
             <ScrollViewer HorizontalScrollBarVisibility="Disabled">
               <ItemsControl ItemsSource="{Binding Config.Configs}" Margin="12,0,12,12">
@@ -135,6 +166,9 @@
                          открытыми справа. -->
                     <controls:ServerCard Margin="0,0,0,8" HorizontalAlignment="Stretch" HasMenu="False"
                             SelectHint="{l:Tr Main_ServerRowOpen}"
+                            IsVisible="{Binding MatchesFilter}"
+                            Slim="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.SlimCards}"
+                            HasPower="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.ShowCardPower}"
                             IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
                             SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).OpenServerCardCommand}"
                             ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}" />

@@ -24,8 +24,8 @@
     <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
                 IsVisible="{Binding ShowHeaderActions}">
       <!-- Широкая раскладка: конфигурацию открывает список слева, поэтому шапка называет открытую, показывает её
-           адрес и держит флаг выбора с подписью перед названием. Подключение стоит в шапке окна - второй такой
-           кнопке здесь делать нечего. -->
+           адрес и держит флаг выбора с подписью перед названием. Туннелем правят снаружи - полоса состояния на
+           десктопе, кнопка шапки окна в остальных раскладках. -->
       <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="2"
             IsVisible="{Binding ShowWideHeader}">
         <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Classes="usepill">
@@ -120,11 +120,58 @@
       <TextBlock Text="{l:Tr Main_RoutingLoading}" Classes="muted" FontSize="13" HorizontalAlignment="Center" />
     </StackPanel>
 
+    <!-- Прокручивается только тело раздела: шапка с именем и тумблером стоит над ней. В узкой раскладке высота
+         не ограничена, скроллер тянется по содержимому и прокрутку отдаёт панели экрана. Разделы лежат в одном
+         скроллере: второй, пустой, накрывал бы тело собой и забирал клики по его полям. -->
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+    <Panel>
+
     <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
-    <StackPanel x:Name="SettingsSection" Grid.Row="1" Margin="0,14,0,0"
-                IsVisible="{Binding IsSectionConfig}" Spacing="14">
+    <StackPanel x:Name="SettingsSection" Margin="0,7,0,0" Spacing="14"
+                IsVisible="{Binding IsSectionConfig}">
       <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
+
+      <!-- Что несёт и что теряет открытая конфигурация - четырьмя числами в одном месте. Живой туннель
+           заполняет их сам, у остальных стоят замеры каталога и прочерки. -->
+      <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="1" CornerRadius="10"
+              Padding="15,13" IsVisible="{Binding ShowDesktopDetail}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{l:Tr Main_LinkStateTitle}" Classes="grouphead" />
+          <UniformGrid Columns="4">
+            <StackPanel>
+              <TextBlock Text="{l:Tr Main_MetricRx}" Classes="tilelabel" />
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding OpenConfigItem.LinkRxValue}" Classes="tilevalue" />
+                <TextBlock Text="{Binding OpenConfigItem.LinkSpeedUnit}" Classes="tileunit" />
+              </StackPanel>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Text="{l:Tr Main_MetricTx}" Classes="tilelabel" />
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding OpenConfigItem.LinkTxValue}" Classes="tilevalue" />
+                <TextBlock Text="{Binding OpenConfigItem.LinkSpeedUnit}" Classes="tileunit" />
+              </StackPanel>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Text="{l:Tr Main_MetricPing}" Classes="tilelabel" />
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding OpenConfigItem.LinkPingValue}" Classes="tilevalue" />
+                <TextBlock Text="{l:Tr Main_UnitMs}" Classes="tileunit" />
+              </StackPanel>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Text="{l:Tr Main_MetricLoss}" Classes="tilelabel" />
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding OpenConfigItem.LinkLossValue}" Classes="tilevalue" />
+                <TextBlock Text="{l:Tr Main_UnitPercent}" Classes="tileunit" />
+              </StackPanel>
+            </StackPanel>
+          </UniformGrid>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="{l:Tr Main_GroupBasic}" Classes="grouphead" IsVisible="{Binding ShowDesktopDetail}" />
 
       <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
       <StackPanel Spacing="2">
@@ -161,21 +208,43 @@
             </StackPanel>
           </Button>
         </Grid>
-        <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
-                IsVisible="{Binding ShowConfigText}"
-                IsEnabled="{Binding ConfigExport.IsReady}">
-          <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
-                   AcceptsReturn="True" TextWrapping="NoWrap"
-                   VerticalContentAlignment="Top" Height="240"
-                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                   ScrollViewer.VerticalScrollBarVisibility="Auto"
-                   BorderThickness="0" Background="Transparent"
-                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
-        </Border>
+        <!-- Свёрнутый секрет виден полем: строка-маска шириной с текст, который она прячет, и копирование
+             рядом - за ним не обязательно раскрывать ключи на экране. -->
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"
+              IsVisible="{Binding ShowDesktopSecretMask}">
+          <Border Grid.Column="0" Classes="secretmask">
+            <TextBlock Text="••••••••••••••••••••••••••••••••••••••••••" Classes="muted mono" FontSize="12"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          </Border>
+          <Button Grid.Column="1" Classes="methodpick" Height="36" Padding="14,0"
+                  VerticalContentAlignment="Center" Content="{l:Tr Main_CopyButton}"
+                  Click="OnCopyConfText" IsEnabled="{Binding ConfigExport.IsReady}" />
+        </Grid>
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding ShowConfigText}">
+          <Border Grid.Column="0" BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                  CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+                  IsEnabled="{Binding ConfigExport.IsReady}">
+            <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
+                     AcceptsReturn="True" TextWrapping="NoWrap"
+                     VerticalContentAlignment="Top" Height="240"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     BorderThickness="0" Background="Transparent"
+                     FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+          </Border>
+          <Button Grid.Column="1" Classes="methodpick" Height="36" Padding="14,0" VerticalAlignment="Top"
+                  VerticalContentAlignment="Center" Content="{l:Tr Main_CopyButton}"
+                  Click="OnCopyConfText" IsVisible="{Binding ShowDesktopDetail}"
+                  IsEnabled="{Binding ConfigExport.IsReady}" />
+        </Grid>
+        <TextBlock Text="{l:Tr Main_SecretKeyWarning}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                   IsVisible="{Binding ShowDesktopDetail}" />
         <TextBlock Text="{Binding ConfigExport.StatusMessage}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
                    IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </StackPanel>
+
+      <TextBlock Text="{l:Tr Main_GroupNetwork}" Classes="grouphead" IsVisible="{Binding ShowDesktopDetail}" />
 
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
@@ -186,9 +255,34 @@
 
       <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 
+      <!-- Опасное стоит тихо: строка в подвале панели вместо карточки в рамке. Подтверждение занимает место
+           самой кнопки, как и на карточке. -->
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding ShowDesktopDetail}">
+        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+          <TextBlock Text="{l:Tr Main_DeleteConfigIrreversible}" Classes="muted" FontSize="11.5"
+                     TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                     IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+        <Grid Grid.Column="1" ColumnDefinitions="*,*" ColumnSpacing="8" Width="180" VerticalAlignment="Center">
+          <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
+                  Content="{l:Tr Main_DeleteConfigButton}"
+                  IsVisible="{Binding !ConfigDeletePending}"
+                  Command="{Binding RequestDeleteOpenConfigCommand}" />
+          <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                  Content="{l:Tr Main_ConfirmDeleteButton}"
+                  IsVisible="{Binding ConfigDeletePending}"
+                  Command="{Binding ConfirmDeleteOpenConfigCommand}" />
+          <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                  Content="{l:Tr Main_CancelButton}"
+                  IsVisible="{Binding ConfigDeletePending}"
+                  Command="{Binding CancelDeleteConfigCommand}" />
+        </Grid>
+      </Grid>
+
       <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
            the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
-      <Border Classes="sect" Classes.compact="{Binding IsCompact}">
+      <Border Classes="sect" Classes.compact="{Binding IsCompact}" IsVisible="{Binding ShowDeleteCard}">
         <StackPanel Spacing="10">
           <!-- The trigger stands under the description. -->
           <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
@@ -219,11 +313,6 @@
         </StackPanel>
       </Border>
     </StackPanel>
-
-    <!-- Прокручивается только тело раздела: шапка с именем и тумблером стоит над ней. В узкой раскладке высота
-         не ограничена, скроллер тянется по содержимому и прокрутку отдаёт панели экрана. -->
-    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
-    <Panel>
 
     <!-- Черновик новой конфигурации: способ уже выбран в шторке, отсюда ведут «Сохранить» и «Отмена» в футере.
          Imported with the footer Save once text parses + name is set (#143). -->

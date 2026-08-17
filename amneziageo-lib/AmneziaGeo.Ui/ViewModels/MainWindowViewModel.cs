@@ -48,6 +48,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsHome))]
     [NotifyPropertyChangedFor(nameof(IsSettings))]
     [NotifyPropertyChangedFor(nameof(IsWideShell))]
+    [NotifyPropertyChangedFor(nameof(IsDesktopShell))]
     [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
     [NotifyPropertyChangedFor(nameof(ShowContent))]
@@ -64,6 +65,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsCompact))]
     [NotifyPropertyChangedFor(nameof(IsWide))]
     [NotifyPropertyChangedFor(nameof(IsWideShell))]
+    [NotifyPropertyChangedFor(nameof(IsDesktopShell))]
     [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
     [NotifyPropertyChangedFor(nameof(IsSectionDetail))]
     [NotifyPropertyChangedFor(nameof(ShowRail))]
@@ -81,6 +83,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsWide))]
     [NotifyPropertyChangedFor(nameof(IsWideShell))]
+    [NotifyPropertyChangedFor(nameof(IsDesktopShell))]
     [NotifyPropertyChangedFor(nameof(IsSettingsNarrow))]
     private double _windowHeight = 610;
 
@@ -218,6 +221,12 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// one column and is reached by the back arrow in its header.
     /// </summary>
     public bool IsWideShell => IsWide && IsSettings;
+
+    /// <summary>
+    /// Стоит ли на экране десктопная раскладка: полоса состояния, поиск по каталогу и плитки метрик - её.
+    /// Телевизор ходит по тем же разделам пультом, телефон складывает их в колонку.
+    /// </summary>
+    public bool IsDesktopShell => IsWideShell && UiPlatform.IsDesktop;
 
     /// <summary>
     /// Whether the single-column shell shows its settings screen.

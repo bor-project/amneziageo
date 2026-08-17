@@ -104,6 +104,20 @@ internal sealed partial class ConfigView : UserControl
         }
     }
 
+    // Кладёт текст открытой конфигурации в буфер, не раскрывая его на экране.
+    private async void OnCopyConfText(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ConfigViewModel { ConfigExport: { } export })
+        {
+            return;
+        }
+
+        if (await ExportActions.CopyToClipboardAsync(this, export.ConfText))
+        {
+            export.StatusMessage = Loc.Instance.Get("QrCode_CopiedToClipboard");
+        }
+    }
+
     // Copy the export payload (vpn link or .conf text) to the clipboard.
     private async void OnCopyExport(object? sender, RoutedEventArgs e)
     {

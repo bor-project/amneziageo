@@ -666,6 +666,68 @@
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <!-- Метка живой конфигурации в каталоге. -->
+    <Style Selector="Border.livebadge">
+      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.livebadge > TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+      <Setter Property="FontSize" Value="10.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <!-- Чип задержки: заливку и цвет текста ему даёт строка, здесь стоит только форма. -->
+    <Style Selector="Border.probechip">
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="7,3" />
+    </Style>
+
+    <!-- Полоса состояния десктопа: что за сервер, сколько он несёт и единственное действие над ним. -->
+    <Style Selector="Border.statestrip">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="13" />
+      <Setter Property="Padding" Value="16,9" />
+    </Style>
+
+    <!-- Плитка метрики: подпись сверху, крупное табличное число под ней. -->
+    <Style Selector="TextBlock.tilelabel">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+    <Style Selector="TextBlock.tilevalue">
+      <Setter Property="FontSize" Value="21" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+    <Style Selector="TextBlock.tileunit">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="11.5" />
+      <Setter Property="VerticalAlignment" Value="Bottom" />
+      <Setter Property="Margin" Value="4,0,0,4" />
+    </Style>
+
+    <!-- Заголовок группы настроек. -->
+    <Style Selector="TextBlock.grouphead">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <!-- Свёрнутый секрет: строка-маска шириной с поле, из которого он раскрывается. -->
+    <Style Selector="Border.secretmask">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="Padding" Value="12,0" />
+    </Style>
+
     <!-- Keep enabled switches vivid in normal and pointer-over states. The checked track uses the accent
          with a white knob; the unchecked track keeps its meaning through an accent outline and knob. A press
          changes only opacity, mirroring accent buttons instead of swapping in Fluent's pressed palette. -->

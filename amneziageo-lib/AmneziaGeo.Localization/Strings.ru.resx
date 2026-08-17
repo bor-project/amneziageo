@@ -1805,14 +1805,8 @@
   <data name="Main_ServerRowSelect" xml:space="preserve">
     <value>Выбрать эту конфигурацию</value>
   </data>
-  <data name="Main_ProbeAllButton" xml:space="preserve">
-    <value>Проверить все</value>
-  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Проверить серверы</value>
-  </data>
-  <data name="Main_ServerSearchWatermark" xml:space="preserve">
-    <value>Поиск по имени или адресу</value>
   </data>
   <data name="Main_ProbeMilliseconds" xml:space="preserve">
     <value>{0} мс</value>

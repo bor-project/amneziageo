@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using AmneziaGeo.Ui.Controls;
 using AmneziaGeo.Localization;
@@ -49,7 +52,30 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
-        RoutingAddOptions.Present(sender as Control, this, vm);
+        var options = new List<ActionOption>
+        {
+            new(Loc.Instance.Get("Main_FileButton"), Glyphs.File, ImportFromFile),
+            new(Loc.Instance.Get("Main_PasteButton"), Glyphs.Paste, ImportFromClipboard),
+        };
+        if (vm.CameraScanAvailable)
+        {
+            options.Add(new ActionOption(
+                Loc.Instance.Get("Main_CameraButton"),
+                Glyphs.Qr,
+                () => vm.BeginCameraImportCommand.Execute(null)));
+        }
+
+        options.Add(new ActionOption(
+            Loc.Instance.Get("Main_CreateManuallyButton"),
+            Glyphs.Pencil,
+            () => vm.BeginManualImportCommand.Execute(null)));
+
+        ActionOptions.Present(
+            sender as Control,
+            vm.Sheet,
+            Loc.Instance.Get("Main_AddListTitle"),
+            string.Empty,
+            options);
     }
 
     // Способы экспорта: экран QR, текст списка в буфер и файл.
@@ -185,4 +211,83 @@ internal sealed partial class RoutingView : UserControl
     // Picture name of the list.
     private static string QrName(RoutingListEditorViewModel vm) => Path.ChangeExtension(vm.SuggestedFileName, "png");
 
+    // Routing-list import: paste from the clipboard into a fresh draft.
+    private async void ImportFromClipboard()
+    {
+        if (DataContext is not RoutingViewModel vm)
+        {
+            return;
+        }
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null)
+        {
+            return;
+        }
+
+        var text = await clipboard.TryGetTextAsync();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            vm.BeginImportDraft();
+            if (vm.RoutingEditor is { } editor)
+            {
+                editor.StatusMessage = Loc.Instance.Get("MainCode_ClipboardNoText");
+            }
+
+            return;
+        }
+
+        vm.BeginImportDraft();
+        vm.ApplyImportText(text);
+    }
+
+    // Routing-list import: load from a file into a fresh draft. Отменённый выбор черновик не открывает.
+    private async void ImportFromFile()
+    {
+        if (DataContext is not RoutingViewModel vm)
+        {
+            return;
+        }
+
+        // The list exports as a QR picture by default, so the same picture is taken back here (#38).
+        var file = await FilePickers.OpenAsync(this, Loc.Instance.Get("MainCode_RoutingListTitle"),
+            "txt", "conf", "png", "jpg", "jpeg", "bmp", "gif");
+        if (file is null)
+        {
+            return;
+        }
+
+        vm.BeginImportDraft();
+        try
+        {
+            // Read through the storage stream, not a local path: an Android picker returns a content:// URI whose
+            // TryGetLocalPath is null.
+            var raw = await file.ReadAllBytesAsync();
+            if (!FileContent.LooksLikeImage(raw))
+            {
+                vm.ApplyImportText(new UTF8Encoding(false, false).GetString(raw).TrimStart('﻿'));
+                return;
+            }
+
+            using var picture = new MemoryStream(raw);
+            if (QrCodec.Decode(picture) is not { } scanned)
+            {
+                if (vm.RoutingEditor is { } withoutCode)
+                {
+                    withoutCode.StatusMessage = Loc.Instance.Get("MainCode_QrNotFound");
+                }
+
+                return;
+            }
+
+            vm.ApplyImportText(scanned);
+        }
+        catch (Exception ex)
+        {
+            if (vm.RoutingEditor is { } editor)
+            {
+                editor.StatusMessage = ex.Message;
+            }
+        }
+    }
 }

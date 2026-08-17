@@ -68,14 +68,19 @@ public sealed class RoutingCache
         public bool Routed;
         public bool Tunneled;
         public bool ByApp;
+        // Settled by a name, not by the ranges: a range covering the address must not take it back.
+        public bool ByName;
         public uint InterfaceIndex;
         public ulong FilterOut;
         public ulong FilterIn;
         public int Generation;
+        // Rule set the verdict was taken under.
+        public int Rules;
     }
 
-    // Swapped as one immutable set, so a live rule edit never leaves a half-applied mix.
-    private sealed record RuleSet(GeoIpRanges Proxy, GeoIpRanges Direct, GeoIpRanges Block);
+    // Swapped as one immutable set, so a live rule edit never leaves a half-applied mix. The generation tells an
+    // entry decided under an older set from one already decided under this one.
+    private sealed record RuleSet(GeoIpRanges Proxy, GeoIpRanges Direct, GeoIpRanges Block, int Generation);
 
     // A dropped destination and the image it belonged to, as reported by the firewall.
     private readonly record struct Reported(uint Address, string? App);
@@ -117,7 +122,7 @@ public sealed class RoutingCache
         _split = split;
         SetTtl(ttlSeconds);
         _logger = logger;
-        _rules = Build(proxy, direct, block);
+        _rules = Build(proxy, direct, block, 0);
         _pinned = BuildPinned(pinned);
         if (_pinned.Count > 0)
         {
@@ -256,7 +261,7 @@ public sealed class RoutingCache
                 return;
             }
 
-            if (Installed(existing))
+            if (Redecided(existing, now) || Installed(existing))
             {
                 return;
             }
@@ -287,7 +292,11 @@ public sealed class RoutingCache
         }
 
         Volatile.Write(ref existing.LastTouch, now);
-        if (existing.Verdict == verdict)
+        existing.ByName = true;
+        existing.Rules = Volatile.Read(ref _rules).Generation;
+
+        // An adopted address belongs to the domain tracker; the two must not install competing routes for it.
+        if (existing.Verdict == verdict || existing.Plan == RoutePlan.External)
         {
             if (!Installed(existing))
             {
@@ -308,6 +317,17 @@ public sealed class RoutingCache
         if (GeoIpRanges.TryToNumeric(address, out var value))
         {
             Note(value);
+        }
+    }
+
+    /// <summary>
+    /// Records contact with an address whose name settled its verdict; non-IPv4 is ignored.
+    /// </summary>
+    public void Note(IPAddress address, RouteVerdict verdict)
+    {
+        if (GeoIpRanges.TryToNumeric(address, out var value))
+        {
+            Note(value, verdict);
         }
     }
 
@@ -444,16 +464,17 @@ public sealed class RoutingCache
     }
 
     /// <summary>
-    /// Swaps the rule sets after a live list edit and drops everything applied under the old rules, so the next
-    /// contact re-decides. Without this a rule change would never reach an address already classified.
+    /// Swaps the rule sets after a live list edit and decides every destination already held against them, moving
+    /// the ones that changed side there and then. Without this a rule change would reach an address in use only
+    /// once its traffic stopped for the whole idle window - which under load never happens.
     /// </summary>
     public void Rebuild(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block)
     {
-        var rules = Build(proxy, direct, block);
+        var rules = Build(proxy, direct, block, Volatile.Read(ref _rules).Generation + 1);
         Volatile.Write(ref _rules, rules);
-        Drop();
-        _logger.LogInformation("routing rules reloaded: {Proxy} tunnel, {Direct} direct, {Block} blocked range(s); every destination is decided again from now on",
-            rules.Proxy.Count, rules.Direct.Count, rules.Block.Count);
+        var moved = Redecide(rules);
+        _logger.LogInformation("routing rules reloaded: {Proxy} tunnel, {Direct} direct, {Block} blocked range(s); {Moved} destination(s) in use changed side at once, the rest keep the path they had",
+            rules.Proxy.Count, rules.Direct.Count, rules.Block.Count, moved);
     }
 
     /// <summary>
@@ -533,6 +554,62 @@ public sealed class RoutingCache
         Install(entry, now);
     }
 
+    // Decides every held destination against the rules just installed and moves the ones that changed side.
+    // A verdict a name settled goes with the old rules: the name decides again on its next answer, and until
+    // then the ranges own the address.
+    private int Redecide(RuleSet rules)
+    {
+        var moved = 0;
+        var now = Environment.TickCount64;
+        foreach (var pair in _entries)
+        {
+            var entry = pair.Value;
+            entry.Rules = rules.Generation;
+            if (entry.Plan == RoutePlan.External || entry.ByApp)
+            {
+                continue;
+            }
+
+            entry.ByName = false;
+            var verdict = Evaluate(rules, entry.Numeric);
+            if (verdict == entry.Verdict)
+            {
+                continue;
+            }
+
+            Reclassify(entry, verdict, now);
+            moved++;
+        }
+
+        return moved;
+    }
+
+    // Decides a destination admitted under an older rule set again on its next contact; true when it changed side.
+    // Covers what the rebuild's own pass could not see: an address admitted while it was running.
+    private bool Redecided(Entry entry, long now)
+    {
+        var rules = Volatile.Read(ref _rules);
+        if (entry.Rules == rules.Generation)
+        {
+            return false;
+        }
+
+        entry.Rules = rules.Generation;
+        if (entry.ByName || entry.ByApp || entry.Plan == RoutePlan.External)
+        {
+            return false;
+        }
+
+        var verdict = Evaluate(rules, entry.Numeric);
+        if (verdict == entry.Verdict)
+        {
+            return false;
+        }
+
+        Reclassify(entry, verdict, now);
+        return true;
+    }
+
     // Creates the entry for an address seen for the first time and applies what its verdict asks for.
     private void Admit(uint address, long now, bool app = false, RouteVerdict? forced = null)
     {
@@ -545,6 +622,8 @@ public sealed class RoutingCache
             Verdict = verdict,
             Plan = Decide(verdict, app),
             ByApp = app,
+            ByName = forced is not null,
+            Rules = rules.Generation,
             LastTouch = now,
         };
 
@@ -590,12 +669,14 @@ public sealed class RoutingCache
                 continue;
             }
 
+            var rules = Volatile.Read(ref _rules);
             var entry = new Entry
             {
                 Address = address,
                 Numeric = value,
-                Verdict = Evaluate(Volatile.Read(ref _rules), value),
+                Verdict = Evaluate(rules, value),
                 Plan = RoutePlan.External,
+                Rules = rules.Generation,
                 LastTouch = now,
             };
 
@@ -939,9 +1020,9 @@ public sealed class RoutingCache
         return verdict == RouteVerdict.Proxy || app ? RoutePlan.Tunnel : RoutePlan.Permit;
     }
 
-    private static RuleSet Build(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block)
+    private static RuleSet Build(IReadOnlyList<string> proxy, IReadOnlyList<string> direct, IReadOnlyList<string> block, int generation)
     {
-        return new RuleSet(GeoIpRanges.Build(proxy), GeoIpRanges.Build(direct), GeoIpRanges.Build(block));
+        return new RuleSet(GeoIpRanges.Build(proxy), GeoIpRanges.Build(direct), GeoIpRanges.Build(block), generation);
     }
 
     // Reads the addresses to be held outside the cache; a prefix length is accepted so a caller can pass the

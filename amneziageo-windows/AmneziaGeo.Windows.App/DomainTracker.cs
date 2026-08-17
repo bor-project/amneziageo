@@ -935,6 +935,18 @@ internal sealed class DomainTracker(
     }
 
     /// <summary>
+    /// Names a resolution answered with this address, newest run's knowledge only. Lets a rule by name reach an
+    /// address that is already held, without the name being asked again.
+    /// </summary>
+    public IReadOnlyList<string> NamesOf(string ip)
+    {
+        lock (_lock)
+        {
+            return _ipToNames.TryGetValue(ip, out var names) ? [.. names] : [];
+        }
+    }
+
+    /// <summary>
     /// Raised when an app's traffic promotes a domain, so its later queries resolve through the tunnel resolver
     /// instead of the local one.
     /// </summary>

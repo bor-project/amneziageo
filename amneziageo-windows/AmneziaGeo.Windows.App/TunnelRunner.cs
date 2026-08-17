@@ -399,6 +399,15 @@ internal sealed class TunnelRunner(
         var liveDestinations = new TcpTableProbe();
         // The resolver addresses are handed over as pinned: a list range that covers one would otherwise make the
         // cache own its route and reclaim it as idle, because the agent's own queries are attributed to no process.
+        // Nothing an earlier session held survives into this one: its verdicts were taken under the list of its own
+        // time, and its routes would outlive the interface they were installed on.
+        if (session.Cache is { Size: > 0 } previous)
+        {
+            logger.LogInformation("{Name}: {Count} address(es) held by the previous session are released; this one decides every destination again by the list in force now", name, previous.Size);
+            previous.RemoveAll();
+        }
+
+        session.Clear();
         var routing = new RoutingCache(applier, liveDestinations, geoSplit, geo?.Routes ?? [], listDirect, blockRoutes, appSettings.RouteTtlSeconds, loggerFactory.CreateLogger<RoutingCache>(), tunnelResolver);
         session.SetCache(routing);
         // The agent answers the UI from its own process, where these caches do not exist, and a rule change is
@@ -1074,7 +1083,7 @@ internal sealed class TunnelRunner(
         }
     }
 
-    // Re-reads the active list and drops every verdict taken under the old rules; the next contact decides again.
+    // Re-reads the active list and decides every destination in use against it; one that changed side moves at once.
     private async Task ApplyRulesAsync(RoutingCache routing, string tunnelName, CancellationToken ct)
     {
         try
@@ -1088,6 +1097,8 @@ internal sealed class TunnelRunner(
             var list = await store.GetRoutingListAsync(current.ListId, ct);
             if (list is not null)
             {
+                // Read before the rebuild: these are the destinations a rule by name has to be applied to.
+                var held = routing.Snapshot();
                 routing.Rebuild(current.Routes, list.DirectRoutes, list.BlockRoutes);
 
                 // The Direct and Block names live in the proxy, outside the tracker: it only runs in split mode,
@@ -1096,6 +1107,8 @@ internal sealed class TunnelRunner(
                 {
                     dns.FlushCache();
                 }
+
+                ApplyNameRules(routing, held);
             }
 
             session.Tracker?.ApplyList(current, ct);
@@ -1103,6 +1116,57 @@ internal sealed class TunnelRunner(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "{Tunnel}: the edited rules could not be applied to the running tunnel; it keeps working by the previous ones until reconnect", tunnelName);
+        }
+    }
+
+    // Applies the buckets by name to the destinations already in use. A rule by name reaches an address only
+    // through a lookup, and an address that is already carrying traffic is never looked up again: its client holds
+    // the answer. So the names each held address was resolved from are read here and their verdict is applied
+    // straight to it, which is what makes an edit take effect on a running download.
+    private void ApplyNameRules(RoutingCache routing, IReadOnlyList<RoutingCache.Held> held)
+    {
+        if (session.Proxy is not { } proxy || session.Tracker is not { } tracker)
+        {
+            return;
+        }
+
+        var applied = 0;
+        foreach (var entry in held)
+        {
+            // An adopted address belongs to a tracked name, and the tracker applies the list to it itself.
+            if (entry.Adopted)
+            {
+                continue;
+            }
+
+            var verdict = RouteVerdict.None;
+            foreach (var domain in tracker.NamesOf(entry.Address.ToString()))
+            {
+                var byName = proxy.NameVerdict(domain);
+                if (byName == RouteVerdict.Block)
+                {
+                    verdict = byName;
+                    break;
+                }
+
+                if (byName == RouteVerdict.Direct)
+                {
+                    verdict = byName;
+                }
+            }
+
+            if (verdict is not (RouteVerdict.Direct or RouteVerdict.Block))
+            {
+                continue;
+            }
+
+            routing.Note(entry.Address, verdict);
+            applied++;
+        }
+
+        if (applied > 0)
+        {
+            logger.LogInformation("{Count} address(es) in use are decided by a rule by name and were moved onto the path it asks for, without waiting for their traffic to stop", applied);
         }
     }
 

@@ -25,12 +25,8 @@
     <!-- The card itself: it picks the configuration and measures it, and carries its buttons on the face. -->
     <Button x:Name="FacePart" Classes="serverrow"
             Command="{Binding $parent[controls:ServerCard].SelectCommand}" CommandParameter="{Binding}"
-            ToolTip.Tip="{Binding $parent[controls:ServerCard].SelectHint}">
+            ToolTip.Tip="{l:Tr Main_ServerRowSelect}">
       <Panel>
-        <!-- Заливка под конфигурацией, которую держит приложение: рамку глаз теряет среди соседних карточек. -->
-        <Border CornerRadius="12" IsHitTestVisible="False"
-                Background="{DynamicResource AgAccentSoftBrush}" IsVisible="{Binding IsSelected}" />
-
         <!-- Card the remote has stepped into wears a wash under its lines: a frame alone reads as one more
              border among the frames the card already carries. -->
         <Border CornerRadius="12" IsHitTestVisible="False" Opacity="0.14"
@@ -39,23 +35,12 @@
 
         <!-- Four lines and the buttons beside them: the name, the address under it, the measurement under that,
              and what the running tunnel carries and drops on a line of its own. -->
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10"
-              Margin="12,9">
-          <Grid x:Name="NameRow" Grid.Row="0" Grid.Column="0" ColumnDefinitions="*,Auto" ColumnSpacing="7">
-            <TextBlock x:Name="NamePart" Grid.Column="0" Text="{Binding Name}" FontSize="13"
-                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-            <!-- Тонкая карточка носит состояние меткой: кнопки питания, которая красилась бы им, на ней нет. -->
-            <Panel Grid.Column="1" VerticalAlignment="Center"
-                   IsVisible="{Binding $parent[controls:ServerCard].Slim}">
-              <Border Classes="livebadge" IsVisible="{Binding IsLive}">
-                <TextBlock Text="{l:Tr Main_IsActiveBadge}" />
-              </Border>
-            </Panel>
-          </Grid>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="12,9">
+          <TextBlock x:Name="NamePart" Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="13"
+                     FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
           <TextBlock x:Name="EndpointPart" Grid.Row="1" Grid.Column="0" Text="{Binding Endpoint}"
                      FontSize="11" Classes="muted mono" TextTrimming="CharacterEllipsis" />
-          <StackPanel x:Name="ProbePart" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="8"
-                      IsVisible="{Binding !$parent[controls:ServerCard].Slim}">
+          <StackPanel x:Name="ProbePart" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="8">
             <TextBlock Text="{Binding ProbeText}"
                        Foreground="{Binding ProbeBrush}" FontSize="11.5" FontWeight="SemiBold" />
             <!-- The sweep's pick: fewest losses, then the shortest round trip. -->
@@ -63,31 +48,14 @@
                        Foreground="{DynamicResource AgAccentBrush}" IsVisible="{Binding IsBest}" />
           </StackPanel>
 
-          <!-- What the running tunnel carries and what it drops, a line each. The lines keep their place while
-               the tunnel is down, so the cards in the catalogue stand the same height. -->
-          <StackPanel x:Name="LinkPart" Grid.Row="3" Grid.Column="0"
-                      IsVisible="{Binding !$parent[controls:ServerCard].Slim}">
-            <Panel MinHeight="16" IsVisible="{Binding ShowLinkSpeedRow}">
-              <TextBlock Text="{Binding LinkSpeedText}" FontSize="11.5" Classes="muted"
-                         TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowLinkSpeed}" />
-            </Panel>
-            <Panel MinHeight="16" IsVisible="{Binding ShowLinkLossRow}">
-              <TextBlock Text="{Binding LinkLossText}" FontSize="11.5" Foreground="{Binding LinkLossBrush}"
-                         TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowLinkLoss}" />
-            </Panel>
-          </StackPanel>
-
-          <!-- Тонкая карточка держит справа один чип задержки: цветом он говорит то же, что строка под адресом
-               на полной. -->
-          <Panel Grid.Row="0" Grid.RowSpan="4" Grid.Column="1" VerticalAlignment="Center"
-                 IsVisible="{Binding $parent[controls:ServerCard].Slim}">
-            <!-- Мерить нечем - чипа нет: пустая заливка сказала бы, что замер был. -->
-            <Border Classes="probechip" Background="{Binding ProbeChipBrush}"
-                    IsVisible="{Binding ProbeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-              <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="11.5"
-                         FontWeight="SemiBold" />
-            </Border>
-          </Panel>
+          <!-- What the running tunnel carries and what it drops: a line of its own, which breaks in two rather
+               than trimming when the card is too narrow to hold both. -->
+          <WrapPanel x:Name="LinkPart" Grid.Row="3" Grid.Column="0" IsVisible="{Binding ShowLinkLine}">
+            <TextBlock Text="{Binding LinkSpeedText}" FontSize="11.5" Classes="muted" Margin="0,0,8,0"
+                       IsVisible="{Binding ShowLinkSpeed}" />
+            <TextBlock Text="{Binding LinkLossText}" FontSize="11.5" Foreground="{Binding LinkLossBrush}"
+                       IsVisible="{Binding ShowLinkLoss}" />
+          </WrapPanel>
 
           <!-- The wide card stands the power button in its top corner and the menu in the bottom one; the
                narrow one carries the power button alone, centred, and keeps its pair under the swipe. -->
@@ -98,7 +66,6 @@
                  button wears. -->
             <Button x:Name="ConnectPart" DockPanel.Dock="Top" Classes="rowact cardact"
                     Classes.big="{Binding $parent[controls:ServerCard].Compact}"
-                    IsVisible="{Binding $parent[controls:ServerCard].HasPower}"
                     Foreground="{Binding StatusBrush}" HorizontalAlignment="Right"
                     Focusable="{Binding $parent[controls:ServerCard].Entered}"
                     ToolTip.Tip="{Binding RowActionText}"
@@ -113,6 +80,7 @@
             <!-- The button that opens the pair the wide card keeps folded away. -->
             <Button x:Name="MorePart" DockPanel.Dock="Bottom" Classes="rowact" Width="44" Height="30"
                     HorizontalAlignment="Right" Foreground="{DynamicResource AgMutedBrush}"
+                    IsVisible="{Binding !$parent[controls:ServerCard].Compact}"
                     Focusable="{Binding $parent[controls:ServerCard].Entered}">
               <PathIcon Data="{StaticResource AgCardMoreGeometry}" Width="19" Height="19"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -121,13 +89,13 @@
           </DockPanel>
         </Grid>
 
-        <!-- Рамка в цвете состояния на выбранной конфигурации, серая - на открытой справа, акцентная - на той,
-             в которую шагнул пульт. -->
-        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
-                BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
-        <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
-                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowOpenFrame}" />
+        <!-- Frame in the connection colour on the configuration the tunnel is bound to, grey on the one the
+             user picked, accent on the card a remote has stepped into. -->
         <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                BorderBrush="{Binding StatusBrush}" IsVisible="{Binding ShowStatusFrame}" />
+        <Border BorderThickness="1.5" CornerRadius="12" IsHitTestVisible="False"
+                BorderBrush="{DynamicResource AgMutedBrush}" IsVisible="{Binding ShowSelectedFrame}" />
+        <Border BorderThickness="2" CornerRadius="12" IsHitTestVisible="False"
                 BorderBrush="{DynamicResource AgAccentBrush}"
                 IsVisible="{Binding $parent[controls:ServerCard].Entered}" />
       </Panel>

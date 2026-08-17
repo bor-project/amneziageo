@@ -521,16 +521,12 @@
       <Setter Property="Opacity" Value="1" />
     </Style>
 
-    <!-- Одна высота у всех полей настроек: строка настройки держит 40, поле в ней - 34, и рядом с тумблером
-         соседней строки они читаются одним набором. -->
     <Style Selector="TextBox.field">
       <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,7" />
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontSize" Value="13" />
       <!-- Fill the pane width like ComboBox.field, so form fields line up with the combos above/below
            them. An authored Width still wins (Stretch is ignored when a Width is set). -->
@@ -574,8 +570,6 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,6" />
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="Foreground" Value="{DynamicResource AgFgBrush}" />
@@ -626,8 +620,6 @@
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Padding" Value="10,7" />
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontSize" Value="13" />
     </Style>
 
@@ -638,94 +630,11 @@
       <Setter Property="OffContent" Value="" />
       <Setter Property="MinWidth" Value="0" />
     </Style>
-    <!-- Пустая подпись не должна оставлять отступ справа: тумблер встаёт по правому краю строки, где стоят
-         поля ввода соседних настроек. -->
     <Style Selector="ToggleSwitch /template/ ContentPresenter#PART_OnContentPresenter">
       <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Margin" Value="0" />
     </Style>
     <Style Selector="ToggleSwitch /template/ ContentPresenter#PART_OffContentPresenter">
       <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Margin" Value="0" />
-    </Style>
-
-    <!-- Подпись тумблера стоит с ним в одной строке, на фоне и в рамке кнопки подключения. -->
-    <Style Selector="Border.usepill">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="10" />
-      <Setter Property="Height" Value="36" />
-      <Setter Property="Padding" Value="12,0" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Border.usepill TextBlock">
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <!-- Метка живой конфигурации в каталоге. -->
-    <Style Selector="Border.livebadge">
-      <Setter Property="Background" Value="{DynamicResource AgAccentSoftBrush}" />
-      <Setter Property="CornerRadius" Value="5" />
-      <Setter Property="Padding" Value="6,1" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Border.livebadge > TextBlock">
-      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
-      <Setter Property="FontSize" Value="10.5" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <!-- Чип задержки: заливку и цвет текста ему даёт строка, здесь стоит только форма. -->
-    <Style Selector="Border.probechip">
-      <Setter Property="CornerRadius" Value="6" />
-      <Setter Property="Padding" Value="7,3" />
-    </Style>
-
-    <!-- Полоса состояния десктопа: что за сервер, сколько он несёт и единственное действие над ним. -->
-    <Style Selector="Border.statestrip">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="13" />
-      <Setter Property="Padding" Value="16,9" />
-    </Style>
-
-    <!-- Плитка метрики: подпись сверху, крупное табличное число под ней. -->
-    <Style Selector="TextBlock.tilelabel">
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="11.5" />
-    </Style>
-    <Style Selector="TextBlock.tilevalue">
-      <Setter Property="FontSize" Value="21" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Margin" Value="0,2,0,0" />
-    </Style>
-    <Style Selector="TextBlock.tileunit">
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="11.5" />
-      <Setter Property="VerticalAlignment" Value="Bottom" />
-      <Setter Property="Margin" Value="4,0,0,4" />
-    </Style>
-
-    <!-- Заголовок группы настроек. -->
-    <Style Selector="TextBlock.grouphead">
-      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
-      <Setter Property="FontSize" Value="12.5" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-
-    <!-- Свёрнутый секрет: строка-маска шириной с поле, из которого он раскрывается. -->
-    <Style Selector="Border.secretmask">
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorder2Brush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Height" Value="36" />
-      <Setter Property="Padding" Value="12,0" />
     </Style>
 
     <!-- Keep enabled switches vivid in normal and pointer-over states. The checked track uses the accent

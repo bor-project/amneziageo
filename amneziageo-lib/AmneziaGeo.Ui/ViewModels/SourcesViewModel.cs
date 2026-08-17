@@ -18,9 +18,6 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     private string _geoCategorySignature = string.Empty;
     private bool _suppressSettingPush;
 
-    // Интервал, о котором известно агенту: снимок переписывает поле, только когда значение сменили не здесь.
-    private int _agentCheckIntervalHours = 24;
-
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
     private bool _isCompact;
@@ -29,8 +26,7 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     private bool _geoAutoCheck = true;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(GeoCheckIntervalInvalid))]
-    private string _geoCheckInterval = "24";
+    private int _geoCheckIntervalHours = 24;
 
     [ObservableProperty]
     private string _newSourceKind = "geosite";
@@ -45,9 +41,9 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     private bool _hasSources;
 
     /// <summary>
-    /// Не задан ли интервал целым числом часов больше нуля.
+    /// Preset interval options (hours) for the geo auto-check combo.
     /// </summary>
-    public bool GeoCheckIntervalInvalid => !TryParseInterval(GeoCheckInterval, out _);
+    public ObservableCollection<int> GeoCheckIntervals { get; } = [6, 12, 24, 48, 168];
 
     /// <summary>
     /// Geo data sources.
@@ -84,7 +80,8 @@ internal sealed partial class SourcesViewModel : ViewModelBase
     {
         _suppressSettingPush = true;
         GeoAutoCheck = snapshot.GeoAutoCheck;
-        ApplyCheckInterval(snapshot.GeoCheckIntervalHours);
+        EnsureGeoInterval(snapshot.GeoCheckIntervalHours);
+        GeoCheckIntervalHours = snapshot.GeoCheckIntervalHours;
         _suppressSettingPush = false;
 
         SyncSources(snapshot.Sources ?? []);
@@ -161,35 +158,32 @@ internal sealed partial class SourcesViewModel : ViewModelBase
         }
     }
 
-    partial void OnGeoCheckIntervalChanged(string value)
+    partial void OnGeoCheckIntervalHoursChanged(int value)
     {
-        if (_suppressSettingPush || !TryParseInterval(value, out var hours))
+        if (!_suppressSettingPush && value > 0)
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
+                ["geo-check-interval-hours", value.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
+        }
+    }
+
+    // Keeps the interval combo able to display whatever the agent reports: an out-of-band value (e.g. set
+    // via CLI) that isn't a preset is inserted in order, so the ComboBox SelectedItem never goes null -
+    // which, two-way-bound to an int, would otherwise write 0 back into the property.
+    private void EnsureGeoInterval(int hours)
+    {
+        if (hours <= 0 || GeoCheckIntervals.Contains(hours))
         {
             return;
         }
 
-        _agentCheckIntervalHours = hours;
-        _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetSetting,
-            ["geo-check-interval-hours", hours.ToString(System.Globalization.CultureInfo.InvariantCulture)]));
-    }
-
-    private static bool TryParseInterval(string text, out int hours)
-    {
-        return int.TryParse(text, System.Globalization.NumberStyles.None,
-            System.Globalization.CultureInfo.InvariantCulture, out hours) && hours > 0;
-    }
-
-    // Своё же значение снимок возвращает эхом: поле переписывается только под интервал, заданный снаружи -
-    // иначе набранные цифры затирались бы на первом же тике.
-    private void ApplyCheckInterval(int hours)
-    {
-        if (hours <= 0 || hours == _agentCheckIntervalHours)
+        var index = 0;
+        while (index < GeoCheckIntervals.Count && GeoCheckIntervals[index] < hours)
         {
-            return;
+            index++;
         }
 
-        _agentCheckIntervalHours = hours;
-        GeoCheckInterval = hours.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        GeoCheckIntervals.Insert(index, hours);
     }
 
     private async Task SetSettingAsync(string key, bool value)

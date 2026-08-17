@@ -52,15 +52,12 @@
     <!-- Шапка: имя, разделы вкладками и состояние туннеля справа. -->
     <Border Grid.Row="0" Classes="card" Height="52" Padding="12,0">
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-          <!-- Главный экран с большой кнопкой остаётся одноколоночным: сюда за ним и возвращаются. -->
-          <Button x:Name="HomeBack" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                  Command="{Binding NavHomeCommand}" ToolTip.Tip="{l:Tr Main_BackTooltip}">
-            <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
-                      Foreground="{DynamicResource AgMutedBrush}" />
-          </Button>
-          <TextBlock Text="AmneziaGeo" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
-        </StackPanel>
+        <!-- Главный экран с большой кнопкой остаётся одноколоночным: сюда за ним и возвращаются. -->
+        <Button x:Name="HomeBack" Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
+                Command="{Binding NavHomeCommand}" ToolTip.Tip="{l:Tr Main_BackTooltip}">
+          <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
+                    Foreground="{DynamicResource AgMutedBrush}" />
+        </Button>
 
         <StackPanel x:Name="Tabs" Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="20,0"
                     VerticalAlignment="Center">

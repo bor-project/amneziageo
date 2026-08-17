@@ -22,17 +22,18 @@
     <StackPanel x:Name="HeaderActions" Grid.Row="0" Margin="0,12,0,0" Spacing="8"
                 IsVisible="{Binding ShowHeaderActions}">
       <!-- Широкая раскладка: список открывает колонка слева, поэтому шапка называет открытый, держит флаг
-           применения перед названием и экспорт. Та же шапка стоит над настройками конфигурации. -->
-      <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="2"
-            IsVisible="{Binding ShowWideHeader}">
-        <ToggleSwitch Grid.Row="0" Grid.Column="0" MinWidth="0" VerticalAlignment="Center"
-                      HorizontalAlignment="Center" IsChecked="{Binding UseOpenList, Mode=TwoWay}" />
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="{l:Tr Main_InUseBadge}" Classes="muted" FontSize="12"
-                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding EditRoutingList.Name}" FontSize="18"
-                   FontWeight="SemiBold" HorizontalAlignment="Left" MaxWidth="420"
+           применения с подписью перед названием и экспорт. Та же шапка стоит над настройками конфигурации. -->
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" IsVisible="{Binding ShowWideHeader}">
+        <Border Grid.Column="0" Classes="usepill">
+          <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <TextBlock Text="{l:Tr Main_InUseBadge}" />
+            <ToggleSwitch VerticalAlignment="Center" IsChecked="{Binding UseOpenList, Mode=TwoWay}" />
+          </StackPanel>
+        </Border>
+        <TextBlock Grid.Column="1" Text="{Binding EditRoutingList.Name}" FontSize="18"
+                   FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" MaxWidth="420"
                    TextTrimming="CharacterEllipsis" />
-        <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="2" Classes="methodpick" Height="36" MinWidth="110"
+        <Button Grid.Column="2" Classes="methodpick" Height="36" MinWidth="110"
                 Padding="16,0" VerticalAlignment="Center" VerticalContentAlignment="Center"
                 HorizontalContentAlignment="Center" Content="{l:Tr Main_ExportTab}" Click="OnExportOptions"
                 IsVisible="{Binding CanExportOpenList}" />

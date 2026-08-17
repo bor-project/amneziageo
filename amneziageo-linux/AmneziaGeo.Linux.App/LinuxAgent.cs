@@ -470,13 +470,14 @@ internal sealed class LinuxAgent : IDisposable
         return LinkHealth.LossKnown(percent) ? $"{percent}%" : "nothing that answers";
     }
 
-    // Starts this connection's loss probe: the peer's own address on the tunnel is echoed once a second, and what
-    // fails to come back is the loss the screen shows.
+    // Starts this connection's loss probe: a target inside the tunnel is echoed once a second, and what fails to
+    // come back is the loss the screen shows. The resolvers follow the peer, which a configuration carving out the
+    // local networks routes out of the tunnel: nothing answers there, and the session then measures nothing at all.
     private void StartLossProbe(string config)
     {
         StopLossProbe();
         var run = new CancellationTokenSource();
-        var probe = new LinkLossProbe(LinkLossProbe.PeerTargets(WgConfigEditor.GetAddresses(config)));
+        var probe = new LinkLossProbe(LinkLossProbe.Targets(WgConfigEditor.GetAddresses(config), WgConfigEditor.GetDns(config)));
         _loss = probe;
         _lossRun = run;
         _ = Task.Run(() => probe.RunAsync(run.Token));

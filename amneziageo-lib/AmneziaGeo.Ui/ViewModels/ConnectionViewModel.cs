@@ -27,8 +27,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     private string? _dialTarget;
     private CancellationTokenSource? _probeCts;
     private bool _probedOnce;
-    // Когда закончился последний замер всех серверов.
-    private DateTime _probedAtUtc;
     private string? _lastNotice;
     private bool _suppressActivePush;
     private bool _suppressActiveChoice;
@@ -271,55 +269,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// Receive and send rates of the running tunnel.
     /// </summary>
     public string LinkSpeedText => BoundRow?.LinkSpeedText ?? string.Empty;
-
-    /// <summary>
-    /// Куда стоит туннель: адрес сервера в полосе состояния, слово - когда туннель опущен.
-    /// </summary>
-    public string LinkTargetText => ConnState == 2 && BoundRow is { Endpoint.Length: > 0 } row
-        ? row.Endpoint
-        : Loc.Instance.Get("Main_TunnelIdleSub");
-
-    /// <summary>
-    /// Подпись под каталогом: когда мерили и какая свободная конфигурация вышла лучшей.
-    /// </summary>
-    public string CatalogueFootNote => BestFree is { } best
-        ? Loc.Instance.Get("Main_CatalogueFootBest", ProbedAgoText, best.Name, best.ProbeMilliseconds)
-        : ProbedAgoText;
-
-    /// <summary>
-    /// Сколько прошло с последнего замера каталога.
-    /// </summary>
-    public string ProbedAgoText => _probedAtUtc == default
-        ? Loc.Instance.Get("Main_ProbedNever")
-        : Loc.Instance.Get("Main_ProbedAgo", AgeText(DateTime.UtcNow - _probedAtUtc));
-
-    // Ближайшая замена: из отвечающих и не занятых туннелем - меньше потерь, затем короче отклик.
-    private ConfigItemViewModel? BestFree => _host.Config.Configs
-        .Where(row => row.ProbeState == ProbeOutcome.Alive && !ReferenceEquals(row, BoundRow))
-        .OrderBy(row => row.ProbeLossPercent)
-        .ThenBy(row => row.ProbeMilliseconds)
-        .FirstOrDefault();
-
-    // Возраст замера словами: секунды, пока их меньше минуты, потом минуты и часы.
-    private static string AgeText(TimeSpan age)
-    {
-        if (age.TotalMinutes < 1)
-        {
-            return Loc.Instance.Get("Main_AgeSeconds", Math.Max(0, (int)age.TotalSeconds));
-        }
-
-        return age.TotalHours < 1
-            ? Loc.Instance.Get("Main_AgeMinutes", (int)age.TotalMinutes)
-            : Loc.Instance.Get("Main_AgeHours", (int)age.TotalHours);
-    }
-
-    // Полоса состояния и подпись каталога считаются из живых строк, а те приходят снимками.
-    private void NotifyStripChanged()
-    {
-        OnPropertyChanged(nameof(LinkTargetText));
-        OnPropertyChanged(nameof(ProbedAgoText));
-        OnPropertyChanged(nameof(CatalogueFootNote));
-    }
 
     /// <summary>
     /// Whether the running tunnel keeps re-establishing its session instead of carrying traffic.
@@ -565,7 +514,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
         // The keepalive age arrived with the rows, so re-colour the connect control from it.
         NotifyServerSilentChanged();
-        NotifyStripChanged();
 
         ConnectFailed = snapshot.ConnectFailed;
         DisconnectFailed = snapshot.DisconnectFailed;
@@ -869,19 +817,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             ActiveConfig = item;
         }
 
-        ProbeRow(item);
-    }
-
-    /// <summary>
-    /// Мерит сервер конфигурации, не трогая выбор.
-    /// </summary>
-    public void ProbeRow(ConfigItemViewModel? item)
-    {
-        if (item is null)
-        {
-            return;
-        }
-
         item.Probing = true;
         _ = ProbeRowAsync(item, CancellationToken.None);
     }
@@ -939,8 +874,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             await Task.WhenAll(rows.Select(row => ProbeRowAsync(row, cts.Token)));
             MarkBest(rows);
-            _probedAtUtc = DateTime.UtcNow;
-            NotifyStripChanged();
         }
         finally
         {

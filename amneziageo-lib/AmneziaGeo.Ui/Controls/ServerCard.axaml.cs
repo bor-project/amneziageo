@@ -56,18 +56,6 @@ internal sealed partial class ServerCard : UserControl
     public static readonly StyledProperty<bool> CompactProperty =
         AvaloniaProperty.Register<ServerCard, bool>(nameof(Compact));
 
-    public static readonly StyledProperty<bool> HasMenuProperty =
-        AvaloniaProperty.Register<ServerCard, bool>(nameof(HasMenu), defaultValue: true);
-
-    public static readonly StyledProperty<string?> SelectHintProperty =
-        AvaloniaProperty.Register<ServerCard, string?>(nameof(SelectHint));
-
-    public static readonly StyledProperty<bool> HasPowerProperty =
-        AvaloniaProperty.Register<ServerCard, bool>(nameof(HasPower), defaultValue: true);
-
-    public static readonly StyledProperty<bool> SlimProperty =
-        AvaloniaProperty.Register<ServerCard, bool>(nameof(Slim));
-
     private readonly TranslateTransform _shift = new();
     private readonly TranslateTransform _nameShift = new();
     private readonly ListReorder _reorder;
@@ -93,7 +81,7 @@ internal sealed partial class ServerCard : UserControl
         DeleteItem.Click += OnDeletePicked;
 
         FacePart.RenderTransform = _shift;
-        NameRow.RenderTransform = _nameShift;
+        NamePart.RenderTransform = _nameShift;
         EndpointPart.RenderTransform = _nameShift;
         ProbePart.RenderTransform = _nameShift;
         LinkPart.RenderTransform = _nameShift;
@@ -210,45 +198,6 @@ internal sealed partial class ServerCard : UserControl
     }
 
     /// <summary>
-    /// Носит ли карточка меню «Изменить» и «Удалить». Рядом с открытыми настройками конфигурации обе строки
-    /// уже стоят на виду.
-    /// </summary>
-    public bool HasMenu
-    {
-        get => GetValue(HasMenuProperty);
-        set => SetValue(HasMenuProperty, value);
-    }
-
-    /// <summary>
-    /// Носит ли карточка кнопку питания. Полоса состояния переключает туннель сама, и на карточках десктопного
-    /// каталога такой кнопке делать нечего.
-    /// </summary>
-    public bool HasPower
-    {
-        get => GetValue(HasPowerProperty);
-        set => SetValue(HasPowerProperty, value);
-    }
-
-    /// <summary>
-    /// Идёт ли карточка тонкой: имя и адрес строками, задержка чипом справа, без цифр туннеля.
-    /// </summary>
-    public bool Slim
-    {
-        get => GetValue(SlimProperty);
-        set => SetValue(SlimProperty, value);
-    }
-
-    /// <summary>
-    /// Подсказка нажатия на карточку: на главном экране она выбирает конфигурацию, в каталоге слева - открывает
-    /// её настройки справа.
-    /// </summary>
-    public string? SelectHint
-    {
-        get => GetValue(SelectHintProperty);
-        set => SetValue(SelectHintProperty, value);
-    }
-
-    /// <summary>
     /// Выводит пульт из карточки, в которой он стоит. Возвращает, была ли такая карточка.
     /// </summary>
     public static bool LeaveEntered(IInputElement? focused)
@@ -305,18 +254,7 @@ internal sealed partial class ServerCard : UserControl
         {
             // Only the narrow card swipes, and only there does the drag have to keep off that axis.
             _reorder.HoldFirst = Compact;
-            ShowMoreButton();
         }
-        else if (change.Property == HasMenuProperty)
-        {
-            ShowMoreButton();
-        }
-    }
-
-    // Кнопку меню несёт только широкая карточка, и только там, где меню за ней есть.
-    private void ShowMoreButton()
-    {
-        MorePart.IsVisible = HasMenu && !Compact;
     }
 
     // The centre key steps into the card and uncovers its buttons, the arrows walk them, and the back key steps

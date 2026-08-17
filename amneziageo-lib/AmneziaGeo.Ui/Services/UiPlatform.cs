@@ -23,12 +23,6 @@ internal static class UiPlatform
     public static bool UsesActionSheets { get; set; }
 
     /// <summary>
-    /// Whether a mouse drives the app on a screen that holds a catalogue beside its settings. Only the desktop
-    /// does: a television walks the same layout with a remote, and a phone folds it into one column.
-    /// </summary>
-    public static bool IsDesktop => !IsTelevision && !UsesCompactLayout;
-
-    /// <summary>
     /// Whether a geo rule can be unfolded into the entries it covers. Off on Android, where a country's tens of
     /// thousands of rows cost more memory than the device has to spare.
     /// </summary>

@@ -506,10 +506,10 @@
     <value>Delete</value>
   </data>
   <data name="Main_DeleteServerTitle" xml:space="preserve">
-    <value>Delete configuration?</value>
+    <value>Delete server?</value>
   </data>
   <data name="Main_DeleteServerPrompt" xml:space="preserve">
-    <value>Configuration {0} will be removed from the list. This action cannot be undone.</value>
+    <value>Server {0} will be removed from the list. This action cannot be undone.</value>
   </data>
   <data name="Main_ConfirmButton" xml:space="preserve">
     <value>Confirm</value>
@@ -652,14 +652,8 @@
   <data name="Main_AddConfigButton" xml:space="preserve">
     <value>Add configuration</value>
   </data>
-  <data name="Main_ServerRowOpen" xml:space="preserve">
-    <value>Open this configuration's settings</value>
-  </data>
-  <data name="Main_InUseBadge" xml:space="preserve">
-    <value>In use</value>
-  </data>
   <data name="Main_NoRoutingListsHint" xml:space="preserve">
-    <value>No data</value>
+    <value>No lists yet.</value>
   </data>
   <data name="Main_NoSourcesHint" xml:space="preserve">
     <value>No databases yet. Add geosite/geoip above.</value>
@@ -722,7 +716,7 @@
     <value>The configuration does not fit in a QR code. Use the «Config» tab or the vpn:// link.</value>
   </data>
   <data name="Main_RailConfigSubtitle" xml:space="preserve">
-    <value>Configuration catalogue</value>
+    <value>Server catalogue</value>
   </data>
   <data name="Main_RailConfigTitle" xml:space="preserve">
     <value>Configurations</value>
@@ -1183,23 +1177,8 @@
   <data name="RoutingSettings_NoActiveLocalSubnets" xml:space="preserve">
     <value>No active local subnets found.</value>
   </data>
-  <data name="RoutingSummary_BlockCount" xml:space="preserve">
-    <value>{0} block</value>
-  </data>
   <data name="RoutingSummary_Detail" xml:space="preserve">
     <value>{0} rules · {1} routes · {2} domains</value>
-  </data>
-  <data name="RoutingSummary_DirectCount" xml:space="preserve">
-    <value>{0} direct</value>
-  </data>
-  <data name="RoutingSummary_GlobalBadge" xml:space="preserve">
-    <value>Global</value>
-  </data>
-  <data name="RoutingSummary_ProxyCount" xml:space="preserve">
-    <value>{0} proxy</value>
-  </data>
-  <data name="RoutingSummary_UdpBadge" xml:space="preserve">
-    <value>UDP</value>
   </data>
   <data name="ScanCode_QrNotConfig" xml:space="preserve">
     <value>QR recognized, but it is not a configuration - continuing…</value>
@@ -1803,19 +1782,19 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Home</value>
   </data>
   <data name="Main_HomeTabServers" xml:space="preserve">
-    <value>Configurations</value>
+    <value>Servers</value>
   </data>
   <data name="Main_AlwaysOnMode" xml:space="preserve">
     <value>Always-on VPN: the button opens the system screen</value>
   </data>
   <data name="Main_HomeServerLabel" xml:space="preserve">
-    <value>Configuration</value>
+    <value>Server</value>
   </data>
   <data name="Main_HomeManageServers" xml:space="preserve">
     <value>More</value>
   </data>
   <data name="Main_ServersCount" xml:space="preserve">
-    <value>Configurations: {0}</value>
+    <value>Servers: {0}</value>
   </data>
   <data name="Main_ServerRowTooltip" xml:space="preserve">
     <value>Connect this configuration</value>
@@ -1826,11 +1805,14 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_ServerRowSelect" xml:space="preserve">
     <value>Select this configuration</value>
   </data>
+  <data name="Main_ProbeAllButton" xml:space="preserve">
+    <value>Check all</value>
+  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Check the servers</value>
   </data>
-  <data name="Main_ProbeAllHint" xml:space="preserve">
-    <value>The check refreshes latency and loss on every card</value>
+  <data name="Main_ServerSearchWatermark" xml:space="preserve">
+    <value>Search by name or address</value>
   </data>
   <data name="Main_ProbeMilliseconds" xml:space="preserve">
     <value>{0} ms</value>
@@ -2170,68 +2152,5 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   </data>
   <data name="Check_ColumnState" xml:space="preserve">
     <value>State</value>
-  </data>
-  <data name="Main_TunnelIdleSub" xml:space="preserve">
-    <value>tunnel is down</value>
-  </data>
-  <data name="Main_UnitMbit" xml:space="preserve">
-    <value>Mbit/s</value>
-  </data>
-  <data name="Main_UnitKbit" xml:space="preserve">
-    <value>kbit/s</value>
-  </data>
-  <data name="Main_UnitMs" xml:space="preserve">
-    <value>ms</value>
-  </data>
-  <data name="Main_UnitPercent" xml:space="preserve">
-    <value>%</value>
-  </data>
-  <data name="Main_MetricRx" xml:space="preserve">
-    <value>down</value>
-  </data>
-  <data name="Main_MetricTx" xml:space="preserve">
-    <value>up</value>
-  </data>
-  <data name="Main_MetricPing" xml:space="preserve">
-    <value>latency</value>
-  </data>
-  <data name="Main_MetricLoss" xml:space="preserve">
-    <value>loss</value>
-  </data>
-  <data name="Main_LinkStateTitle" xml:space="preserve">
-    <value>Tunnel state</value>
-  </data>
-  <data name="Main_ProbedAgo" xml:space="preserve">
-    <value>checked {0} ago</value>
-  </data>
-  <data name="Main_ProbedNever" xml:space="preserve">
-    <value>no measurements yet</value>
-  </data>
-  <data name="Main_AgeSeconds" xml:space="preserve">
-    <value>{0} s</value>
-  </data>
-  <data name="Main_AgeMinutes" xml:space="preserve">
-    <value>{0} min</value>
-  </data>
-  <data name="Main_AgeHours" xml:space="preserve">
-    <value>{0} h</value>
-  </data>
-  <data name="Main_CatalogueFootBest" xml:space="preserve">
-    <value>{0} - best free one is {1} ({2} ms)</value>
-  </data>
-  <data name="Main_CatalogueSearchWatermark" xml:space="preserve">
-    <value>Search by name or address</value>
-  </data>
-  <data name="Main_GroupBasic" xml:space="preserve">
-    <value>Basics</value>
-  </data>
-  <data name="Main_GroupNetwork" xml:space="preserve">
-    <value>Network</value>
-  </data>
-  <data name="Main_SecretKeyWarning" xml:space="preserve">
-    <value>Holds the private key - do not publish it or send it over chats.</value>
-  </data>
-  <data name="Main_DeleteConfigIrreversible" xml:space="preserve">
-    <value>Deleting a configuration cannot be undone.</value>
   </data>
 </root>

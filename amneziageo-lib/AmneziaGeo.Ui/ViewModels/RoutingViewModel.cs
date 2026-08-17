@@ -34,14 +34,10 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     [ObservableProperty]
     private bool _isCompact;
 
-    // Каталог стоит списком слева, а его настройки справа: выбор, «Добавить» и «Экспорт» из шапки секции
-    // уходят туда.
+    // Каталог стоит списком слева, а его настройки справа: выбор и «Добавить» из шапки секции уходят туда.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCataloguePicker))]
     [NotifyPropertyChangedFor(nameof(ShowAddAction))]
-    [NotifyPropertyChangedFor(nameof(ShowExportAction))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
-    [NotifyPropertyChangedFor(nameof(ShowWideHeader))]
     private bool _isWide;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
@@ -174,19 +170,9 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     /// <summary>
     /// Стоит ли тумблер применения в шапке: отдельная карточка под выбором стоила пол-экрана, и её содержимое
-    /// ужато в строку у самого выбора. Широкая раскладка держит флаг у названия открытого списка.
+    /// ужато в строку у самого выбора.
     /// </summary>
-    public bool ShowHeaderActive => IsSectionSettings && !IsWide;
-
-    /// <summary>
-    /// Стоит ли над настройками шапка открытого списка: имя, флаг применения и экспорт.
-    /// </summary>
-    public bool ShowWideHeader => IsWide && IsSectionSettings;
-
-    /// <summary>
-    /// Стоит ли «Экспорт» строкой под выбором: широкая раскладка держит его в шапке открытого списка.
-    /// </summary>
-    public bool ShowExportAction => CanExportOpenList && !IsWide;
+    public bool ShowHeaderActive => IsSectionSettings;
 
     /// <summary>
     /// Стоит ли на экране выбор списка с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт занимают
@@ -307,9 +293,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportCamera));
         OnPropertyChanged(nameof(ShowHeaderActions));
         OnPropertyChanged(nameof(ShowHeaderActive));
-        OnPropertyChanged(nameof(ShowWideHeader));
         OnPropertyChanged(nameof(CanExportOpenList));
-        OnPropertyChanged(nameof(ShowExportAction));
         RefreshEditBar();
     }
 
@@ -334,7 +318,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     partial void OnSelectedRoutingListIdChanged(long? value)
     {
         SyncHomeRouting();
-        RefreshListMarks();
         if (value is not { } id || _prefs.LastRoutingList == id)
         {
             return;
@@ -583,7 +566,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         // Switching (or clearing) the selected list disarms any pending delete confirmation (#143).
         RoutingDeletePending = false;
         RoutingDeleteStatus = string.Empty;
-        RefreshListMarks();
 
         if (value is null)
         {
@@ -856,11 +838,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             existing.RuleCount = entry.RuleCount;
             existing.RouteCount = entry.RouteCount;
             existing.DomainCount = entry.DomainCount;
-            existing.ProxyRuleCount = entry.ProxyRuleCount;
-            existing.DirectRuleCount = entry.DirectRuleCount;
-            existing.BlockRuleCount = entry.BlockRuleCount;
-            existing.AllUdp = entry.AllUdp;
-            existing.UseGlobalProxy = entry.UseGlobalProxy;
         }
 
         ReconcileRoutingCatalogueOptions();
@@ -897,17 +874,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         SyncCatalogueRouting();
-        RefreshListMarks();
-    }
-
-    // Отмечает в каталоге применённый и открытый списки: по этим меткам строка слева носит свою рамку.
-    private void RefreshListMarks()
-    {
-        foreach (var row in RoutingLists)
-        {
-            row.IsApplied = row.Id == SelectedRoutingListId;
-            row.IsOpen = EditRoutingList is { } open && row.Id == open.Id;
-        }
     }
 
     // ---- Import create-form: "+ Импорт" opens a new-list draft with a method picker (blank / file / paste / QR). ----

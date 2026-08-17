@@ -12,7 +12,7 @@
                Foreground="{Binding ConnectStatusBrush}" VerticalAlignment="Center"
                IsVisible="{Binding ShowRetry}" />
     <Button x:Name="TogglePart" Classes="powerctl" VerticalAlignment="Center"
-            MinWidth="130" HorizontalContentAlignment="Left"
+            Width="130" HorizontalContentAlignment="Left"
             Command="{Binding ToggleConnectionCommand}"
             IsEnabled="{Binding CanToggleConnection}"
             ToolTip.Tip="{Binding ConnectHint}">

@@ -36,10 +36,9 @@
       <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" ColumnDefinitions="Auto,*"
             HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
             Margin="0,0,0,10">
-        <StackPanel Grid.Column="0" Spacing="2" Margin="0,0,12,0">
+        <StackPanel Grid.Column="0" Width="100" Spacing="2" Margin="0,0,12,0">
           <TextBlock Classes="label" Text="{l:Tr Main_ServerPortLabel}" />
-          <controls:NumberField HorizontalAlignment="Left" Minimum="1" Maximum="65535"
-                                Text="{Binding WebSocketPort}" />
+          <TextBox Classes="field" Text="{Binding WebSocketPort}" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="2"
                     Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
@@ -84,8 +83,8 @@
         <TextBlock Text="{l:Tr Main_TunnelMtuLabel}" FontWeight="SemiBold" FontSize="15" />
         <TextBlock Classes="muted" FontSize="11.5" TextWrapping="Wrap" Text="{l:Tr Main_MtuHint}" />
       </StackPanel>
-      <controls:NumberField Grid.Column="1" VerticalAlignment="Center" Minimum="576" Maximum="1500"
-                            Text="{Binding Mtu}" />
+      <TextBox Grid.Column="1" Classes="field" Width="90" VerticalAlignment="Center"
+               controls:NumericInput.Minimum="576" controls:NumericInput.Maximum="1500" Text="{Binding Mtu}" />
     </Grid>
 
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />

@@ -18,8 +18,8 @@
        Import sections. -->
   <StackPanel Spacing="14">
 
-    <!-- Rules card: name + per-app tunneling + geo/domain/cidr entries. -->
-    <Border Classes="sect">
+    <!-- Rules block: name + per-app tunneling + geo/domain/cidr entries; the pane frame around this editor carries the card look. -->
+    <Border>
       <StackPanel Spacing="14" DataContext="{Binding RoutingEditor}" x:DataType="vm:RoutingListEditorViewModel">
         <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLoading}">
           <PathIcon Classes.spin="{Binding IsLoading}" Data="{DynamicResource AgRefreshGeometry}"
@@ -295,9 +295,8 @@
       </StackPanel>
     </Border>
 
-    <!-- Per-routing traffic card: all-UDP + IPv6. -->
-    <Border Classes="sect"
-            IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
+    <!-- Per-routing traffic block: all-UDP + IPv6; the pane frame around this editor carries the card look. -->
+    <Border IsVisible="{Binding RoutingSettings, Converter={x:Static ObjectConverters.IsNotNull}}">
       <StackPanel Spacing="14" DataContext="{Binding RoutingSettings}" x:DataType="vm:RoutingSettingsViewModel">
         <Border Height="1" Background="{DynamicResource AgBorderBrush}"
                 IsVisible="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).IsCompact}" />

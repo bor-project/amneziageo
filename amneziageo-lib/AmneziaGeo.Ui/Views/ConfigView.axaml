@@ -100,96 +100,97 @@
 
     <!-- Config section: active trigger + name + editable .conf text + proxy + delete. Edits held for the footer Save. -->
     <StackPanel x:Name="SettingsSection" Grid.Row="1" Margin="0,14,0,0"
-                IsVisible="{Binding IsSectionConfig}" Spacing="14">
-      <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
-      <Border Classes="hairline" />
-
-      <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
-      <StackPanel Spacing="2">
-        <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
-        <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
-                 Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
-        <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
-                   Text="{l:Tr Main_RequiredEmptyWarning}" />
-        <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
-                   IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-      </StackPanel>
-
-      <Border Classes="hairline" />
-
-      <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
-           until asked for - it carries the private key - and hidden again on every entry into the section. -->
-      <StackPanel Spacing="2">
-        <Grid ColumnDefinitions="*,Auto">
-          <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigTextLabel}" FontWeight="SemiBold" FontSize="15"
-                     VerticalAlignment="Center" />
-          <Button Grid.Column="1" Classes="linkbtn" Command="{Binding ToggleConfigTextCommand}"
-                  VerticalAlignment="Center" HorizontalAlignment="Right">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14" />
-              <!-- Both captions share one cell so the link keeps its width across the toggle. -->
-              <Panel>
-                <TextBlock Text="{l:Tr Main_ShowButton}" IsVisible="{Binding !ShowConfigText}" />
-                <TextBlock Text="{l:Tr Main_HideButton}" IsVisible="{Binding ShowConfigText}" />
-              </Panel>
-            </StackPanel>
-          </Button>
-        </Grid>
-        <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
-                CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
-                IsVisible="{Binding ShowConfigText}"
-                IsEnabled="{Binding ConfigExport.IsReady}">
-          <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
-                   AcceptsReturn="True" TextWrapping="NoWrap"
-                   VerticalContentAlignment="Top" Height="240"
-                   ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                   ScrollViewer.VerticalScrollBarVisibility="Auto"
-                   BorderThickness="0" Background="Transparent"
-                   FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
-        </Border>
-        <TextBlock Text="{Binding ConfigExport.StatusMessage}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
-                   IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-      </StackPanel>
-
-      <Border Classes="hairline" />
-
-      <!-- Proxy (WebSocket) card. -->
+                IsVisible="{Binding IsSectionConfig}">
+      <!-- One frame around the whole settings block; below the card width it goes and the hairlines carry the boundaries. -->
       <Border Classes="sect">
-        <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
-      </Border>
+        <StackPanel Spacing="14">
+          <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
+          <Border Classes="hairline" />
 
-      <Border Classes="hairline" />
+          <!-- Config name: per-keystroke so the required-field border reacts at once; committed on the footer Save (#143). -->
+          <StackPanel Spacing="2">
+            <TextBlock Text="{l:Tr Main_ConfigNameLabel}" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+            <TextBox Classes="field" Classes.invalid="{Binding ConfigNameMissing}"
+                     Text="{Binding ConfigRename, Mode=TwoWay}" VerticalAlignment="Center" />
+            <TextBlock Classes="fieldwarn" IsVisible="{Binding ConfigNameMissing}"
+                       Text="{l:Tr Main_RequiredEmptyWarning}" />
+            <TextBlock Text="{Binding ConfigRenameStatus}" Classes="fieldwarn" FontSize="11" TextWrapping="Wrap"
+                       IsVisible="{Binding ConfigRenameStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
 
-      <!-- Delete card: description left, delete trigger right. When armed, the trigger is replaced in place by
-           the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
-      <Border Classes="sect">
-        <StackPanel Spacing="10">
-          <!-- The trigger stands under the description. -->
-          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
-            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="4" VerticalAlignment="Center">
-              <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
-              <TextBlock Text="{Binding DeleteConfigPrompt}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
-            </StackPanel>
-            <Grid Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
-                  Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
-                  HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
-                  ColumnDefinitions="*,*" ColumnSpacing="8">
-              <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_DeleteConfigButton}"
-                      IsVisible="{Binding !ConfigDeletePending}"
-                      Command="{Binding RequestDeleteOpenConfigCommand}" />
-              <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_ConfirmDeleteButton}"
-                      IsVisible="{Binding ConfigDeletePending}"
-                      Command="{Binding ConfirmDeleteOpenConfigCommand}" />
-              <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
-                      Content="{l:Tr Main_CancelButton}"
-                      IsVisible="{Binding ConfigDeletePending}"
-                      Command="{Binding CancelDeleteConfigCommand}" />
+          <Border Classes="hairline" />
+
+          <!-- Editable .conf text: committed on the footer Save through the shared config view model. Kept away
+               until asked for - it carries the private key - and hidden again on every entry into the section. -->
+          <StackPanel Spacing="2">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_ConfigTextLabel}" FontWeight="SemiBold" FontSize="15"
+                         VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="linkbtn" Command="{Binding ToggleConfigTextCommand}"
+                      VerticalAlignment="Center" HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <PathIcon Data="{StaticResource AgEyeGeometry}" Width="14" Height="14" />
+                  <!-- Both captions share one cell so the link keeps its width across the toggle. -->
+                  <Panel>
+                    <TextBlock Text="{l:Tr Main_ShowButton}" IsVisible="{Binding !ShowConfigText}" />
+                    <TextBlock Text="{l:Tr Main_HideButton}" IsVisible="{Binding ShowConfigText}" />
+                  </Panel>
+                </StackPanel>
+              </Button>
             </Grid>
-          </Grid>
-          <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
-                     IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Border BorderBrush="{DynamicResource AgBorder2Brush}" BorderThickness="1"
+                    CornerRadius="8" Background="{DynamicResource AgPanelBrush}"
+                    IsVisible="{Binding ShowConfigText}"
+                    IsEnabled="{Binding ConfigExport.IsReady}">
+              <TextBox Text="{Binding ConfigExport.ConfText, Mode=TwoWay}"
+                       AcceptsReturn="True" TextWrapping="NoWrap"
+                       VerticalContentAlignment="Top" Height="240"
+                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                       ScrollViewer.VerticalScrollBarVisibility="Auto"
+                       BorderThickness="0" Background="Transparent"
+                       FontFamily="IBM Plex Mono, Cascadia Mono, Consolas, monospace" FontSize="12" />
+            </Border>
+            <TextBlock Text="{Binding ConfigExport.StatusMessage}" Classes="muted" FontSize="11.5" TextWrapping="Wrap"
+                       IsVisible="{Binding ConfigExport.StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+
+          <Border Classes="hairline" />
+
+          <!-- Proxy (WebSocket). -->
+          <views:ConfigTransportView DataContext="{Binding ConfigTransport}" />
+
+          <Border Classes="hairline" />
+
+          <!-- Delete: description left, delete trigger right. When armed, the trigger is replaced in place by
+               the Confirm/Cancel pair sharing its footprint - one per column, each stretched (#4). -->
+          <StackPanel Spacing="10">
+            <!-- The trigger stands under the description. -->
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="10">
+              <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="{l:Tr Main_DeleteConfigTitle}" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding DeleteConfigPrompt}" Classes="muted" FontSize="11.5" TextWrapping="Wrap" />
+              </StackPanel>
+              <Grid Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
+                    Width="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=w180}"
+                    HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
+                    ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button Grid.ColumnSpan="2" Classes="danger" HorizontalAlignment="Stretch"
+                        Content="{l:Tr Main_DeleteConfigButton}"
+                        IsVisible="{Binding !ConfigDeletePending}"
+                        Command="{Binding RequestDeleteOpenConfigCommand}" />
+                <Button Grid.Column="0" Classes="danger" HorizontalAlignment="Stretch"
+                        Content="{l:Tr Main_ConfirmDeleteButton}"
+                        IsVisible="{Binding ConfigDeletePending}"
+                        Command="{Binding ConfirmDeleteOpenConfigCommand}" />
+                <Button Grid.Column="1" Classes="softbtn" HorizontalAlignment="Stretch"
+                        Content="{l:Tr Main_CancelButton}"
+                        IsVisible="{Binding ConfigDeletePending}"
+                        Command="{Binding CancelDeleteConfigCommand}" />
+              </Grid>
+            </Grid>
+            <TextBlock Text="{Binding ConfigDeleteStatus}" Classes="fieldwarn" FontSize="12" TextWrapping="Wrap"
+                       IsVisible="{Binding ConfigDeleteStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
         </StackPanel>
       </Border>
     </StackPanel>
@@ -213,8 +214,8 @@
                    IsVisible="{Binding SectionConfigStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
         <!-- Same proxy / MTU / IPv6 an open config carries; the footer Save applies them to the imported
-             configuration. Shown beside the text, where there is something to apply them to. -->
-        <Border DockPanel.Dock="Bottom" Classes="sect" Margin="0,14,0,0"
+              configuration. Shown beside the text, where there is something to apply them to. -->
+        <Border DockPanel.Dock="Bottom" Margin="0,14,0,0"
                 IsVisible="{Binding IsImportManual}">
           <views:ConfigTransportView DataContext="{Binding SectionTransport}" />
         </Border>

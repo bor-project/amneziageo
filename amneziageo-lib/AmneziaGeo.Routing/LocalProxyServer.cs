@@ -134,7 +134,7 @@ public sealed class LocalProxyServer : IDisposable
     /// </summary>
     /// <param name="Type">What the link is.</param>
     /// <param name="HasGateway">Whether the link has a gateway.</param>
-    /// <param name="Addresses">The IPv4 addresses it carries.</param>
+    /// <param name="Addresses">The addresses it carries.</param>
     public sealed record AdapterView(NetworkInterfaceType Type, bool HasGateway, IReadOnlyList<IPAddress> Addresses);
 
     /// <summary>
@@ -172,6 +172,7 @@ public sealed class LocalProxyServer : IDisposable
     /// Picks the reachable addresses out of the adapters given: those on a routed link, and the rest only where
     /// no link is routed. A gateway is what tells the network this machine shares with its neighbours from the
     /// virtual switches a host keeps to itself, which carry an address nobody outside this machine dials.
+    /// IPv4 alone goes out - the listener binds nothing else, so an address of another family answers nobody.
     /// </summary>
     public static IReadOnlyList<string> Usable(IEnumerable<AdapterView> adapters)
     {
@@ -186,7 +187,7 @@ public sealed class LocalProxyServer : IDisposable
 
             foreach (var address in adapter.Addresses)
             {
-                if (!IsPrivate(address))
+                if (address.AddressFamily != AddressFamily.InterNetwork || !IsPrivate(address))
                 {
                     continue;
                 }

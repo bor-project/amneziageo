@@ -67,6 +67,16 @@
                           HorizontalAlignment="Left" TextWrapping="Wrap" />
              </StackPanel>
 
+             <StackPanel Spacing="2">
+               <TextBlock Text="{l:Tr About_Source}" FontSize="13.5" />
+               <!-- The link keeps the padding that carries the focus ring, and a margin of the same size puts
+                    its text under the label. -->
+               <Button Classes="linkbtn" FontSize="12.5" HorizontalAlignment="Left" Margin="-7,0,0,0"
+                       Click="OnOpenProjectPage">
+                 <TextBlock Text="{Binding ProjectUrl}" TextWrapping="Wrap" />
+               </Button>
+             </StackPanel>
+
              <!-- Update sub-block: found -> downloading -> downloaded; installing is an explicit second click (#154). -->
              <StackPanel Spacing="9" IsVisible="{Binding HasUpdateUrl}">
                <Border BorderBrush="{DynamicResource AgBorderBrush}" BorderThickness="0,1,0,0" Margin="0,2,0,0" />

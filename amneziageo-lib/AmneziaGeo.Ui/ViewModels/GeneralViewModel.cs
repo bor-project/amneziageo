@@ -328,6 +328,11 @@ internal sealed partial class GeneralViewModel : ViewModelBase
     public bool HasBuildType => !string.IsNullOrEmpty(BuildTarget);
 
     /// <summary>
+    /// Project home page, shown in About and opened by its link.
+    /// </summary>
+    public string ProjectUrl => "https://github.com/bor-project/amneziageo";
+
+    /// <summary>
     /// Human-readable build type from the baked target: architecture plus payload (e.g. "x64 · SCD").
     /// </summary>
     public string BuildType => FormatBuildType(BuildTarget);

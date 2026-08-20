@@ -58,8 +58,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowSplitter))]
     [NotifyPropertyChangedFor(nameof(ReconnectPromptInSection))]
     [NotifyPropertyChangedFor(nameof(ShowReconnectBar))]
-    [NotifyPropertyChangedFor(nameof(ShowServerStack))]
-    [NotifyPropertyChangedFor(nameof(ShowServerGrid))]
     private double _windowWidth = 987;
 
     /// <summary>
@@ -74,20 +72,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     private bool _settingsDetailOpen;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowServerStack))]
-    [NotifyPropertyChangedFor(nameof(ShowServerGrid))]
     private bool _hasConfigs;
-
-    /// <summary>
-    /// Which home pane is shown: "main" (the connect control) or "servers" (the server table). Every width
-    /// shows one of the two, picked by the tabs above them.
-    /// </summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsHomeMain))]
-    [NotifyPropertyChangedFor(nameof(IsHomeServers))]
-    [NotifyPropertyChangedFor(nameof(ShowHomeConnect))]
-    [NotifyPropertyChangedFor(nameof(ShowHomeServers))]
-    private string _homeTab = "main";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSettingsConfig))]
@@ -188,42 +173,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     /// Whether a section detail is open in compact mode; the header then shows the section name.
     /// </summary>
     public bool IsSectionDetail => IsCompact && SettingsDetailOpen;
-
-    /// <summary>
-    /// Whether the home screen shows the connect pane.
-    /// </summary>
-    public bool IsHomeMain => HomeTab == "main";
-
-    /// <summary>
-    /// Whether the home screen shows the server pane.
-    /// </summary>
-    public bool IsHomeServers => HomeTab == "servers";
-
-    /// <summary>
-    /// Whether the connect control is on screen: on its tab, at every width.
-    /// </summary>
-    public bool ShowHomeConnect => IsHomeMain;
-
-    /// <summary>
-    /// Whether the server table is on screen: on its tab, at every width.
-    /// </summary>
-    public bool ShowHomeServers => IsHomeServers;
-
-    /// <summary>
-    /// Whether the server cards stand in one column: the compact layout, where each stretches to the width.
-    /// </summary>
-    public bool ShowServerStack => HasConfigs && IsCompact;
-
-    /// <summary>
-    /// Whether the server cards tile across the pane: every wider layout, where a remote walks them with the
-    /// arrows and steps into one to reach its buttons.
-    /// </summary>
-    public bool ShowServerGrid => HasConfigs && !IsCompact;
-
-    /// <summary>
-    /// How many servers stand under the picker.
-    /// </summary>
-    public string ServersCountText => Loc.Instance.Get("Main_ServersCount", Config.Configs.Count);
 
     /// <summary>
     /// Whether the settings section rail is shown: always in wide mode, and in compact mode only when no section
@@ -343,13 +292,6 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         return Config.ConfigNames;
     }
 
-    // Compact home tab pick.
-    [RelayCommand]
-    private void SelectHomeTab(string tab)
-    {
-        HomeTab = tab;
-    }
-
     [RelayCommand]
     private void NavHome()
     {
@@ -462,119 +404,20 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>
     /// Открывает настройки на секции конфигураций под добавление, начатое с главного экрана. Способ выбран там же,
-    /// поэтому черновик уже несёт источник. Начатое из списка серверов вернёт к нему после сохранения.
+    /// поэтому черновик уже несёт источник.
     /// </summary>
-    public void OpenConfigImport(bool returnToServers)
+    public void OpenConfigImport()
     {
         Nav = "settings";
         SettingsSection = "config";
         SettingsDetailOpen = true;
-        Config.EnterImportSection(returnToServers);
+        Config.EnterImportSection();
         RefreshLogsActive();
-    }
-
-    // Кнопка «Изменить» строки сервера: настройки этой конфигурации.
-    [RelayCommand]
-    private void EditServer(ConfigItemViewModel? item)
-    {
-        if (item is null)
-        {
-            return;
-        }
-
-        item.SwipeOpen = false;
-        Nav = "settings";
-        SettingsSection = "config";
-        SettingsDetailOpen = true;
-        Config.OpenConfigFor(item.Name);
-        RefreshLogsActive();
-    }
-
-    // Конфигурация, о которой спрошено «удалить?»; без неё вопроса на экране нет.
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowDeleteAsk))]
-    [NotifyPropertyChangedFor(nameof(DeleteAskName))]
-    private ConfigItemViewModel? _deleteAsk;
-
-    /// <summary>
-    /// Стоит ли на экране вопрос об удалении.
-    /// </summary>
-    public bool ShowDeleteAsk => DeleteAsk is not null;
-
-    /// <summary>
-    /// Имя конфигурации в вопросе.
-    /// </summary>
-    public string DeleteAskName => DeleteAsk?.Name ?? string.Empty;
-
-    /// <summary>
-    /// Часть фразы до имени.
-    /// </summary>
-    public string DeleteAskPrefix => PromptPart(0);
-
-    /// <summary>
-    /// Часть фразы после имени.
-    /// </summary>
-    public string DeleteAskSuffix => PromptPart(1);
-
-    // Делит фразу по месту имени: оно набрано полужирным.
-    private static string PromptPart(int index)
-    {
-        var parts = Loc.Instance.Get("Main_DeleteServerPrompt").Split("{0}");
-        return index < parts.Length ? parts[index] : string.Empty;
-    }
-
-    // Пункт меню «Удалить» на широкой карточке: выносит вопрос на экран.
-    [RelayCommand]
-    private void AskDeleteServer(ConfigItemViewModel? item)
-    {
-        DeleteAsk = item;
-    }
-
-    // «Отмена» в вопросе.
-    [RelayCommand]
-    private void CancelDeleteAsk()
-    {
-        DeleteAsk = null;
-    }
-
-    // «Удалить» в вопросе.
-    [RelayCommand]
-    private async Task ConfirmDeleteAsk()
-    {
-        var item = DeleteAsk;
-        DeleteAsk = null;
-        await DeleteServer(item);
-    }
-
-    // Кнопка «Удалить» строки сервера: снимаем с конфигурации выбор и туннель, потом удаляем её.
-    [RelayCommand]
-    private async Task DeleteServer(ConfigItemViewModel? item)
-    {
-        if (item is null)
-        {
-            return;
-        }
-
-        item.SwipeOpen = false;
-        var ack = await Config.DeleteConfigAsync(item.Name);
-        if (!ack.Ok)
-        {
-            Home.ShowNotice(Describe(ack));
-        }
     }
 
     // Резолвит отказ агента в текст: агент шлёт ключи локализации, а не фразы.
     private static string Describe(IpcAck ack) =>
         IpcMessage.TryParse(ack.Message, out var key, out var args) ? Loc.Instance.Get(key, args) : ack.Message;
-
-    /// <summary>
-    /// Возвращает к списку серверов конфигурацию, добавленную из него.
-    /// </summary>
-    public void ReturnToServerList()
-    {
-        HomeTab = "servers";
-        NavHome();
-    }
 
     [RelayCommand]
     private void NavSettings()
@@ -833,9 +676,7 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Routing.Apply(snapshot);
         Sources.Apply(snapshot);
         HasConfigs = Config.Configs.Count > 0;
-        OnPropertyChanged(nameof(ServersCountText));
         Config.NotifyHostFlagsChanged();
-        Home.NotifyHostFlagsChanged();
         // The connection card matches the agent's target against the freshly-reconciled config rows, so it
         // runs after Config.Apply.
         Home.Apply(snapshot);

@@ -41,7 +41,7 @@ internal sealed partial class RoutingView : UserControl
             return;
         }
 
-        e.Handled = PaneFocus.FocusFirst(HeaderActions);
+        e.Handled = PaneFocus.FocusFirst(CatalogueHeader);
     }
 
     // Способы добавления: файл, буфер обмена, живой сканер QR и пустой список.

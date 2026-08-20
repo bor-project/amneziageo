@@ -31,6 +31,12 @@ public sealed class LinkLossProbe
     private readonly Queue<int> _window = new();
     private readonly object _lock = new();
     private IPAddress? _chosen;
+
+    // Whether this session has been answered. Its window starts there: the seconds a fresh tunnel spends
+    // putting its routes in place drop echoes that belong to the setup and not to the channel, and a target
+    // kept from an earlier session would fold them in.
+    private bool _answered;
+
     private int _attempts;
     private int _percent = LinkHealth.LossUnknown;
     private int _rttMs = -1;
@@ -107,9 +113,10 @@ public sealed class LinkLossProbe
             if (trip >= 0)
             {
                 _chosen ??= target;
+                _answered = true;
             }
 
-            if (_chosen is not null)
+            if (_chosen is not null && _answered)
             {
                 Record(trip);
             }
@@ -117,12 +124,14 @@ public sealed class LinkLossProbe
     }
 
     /// <summary>
-    /// Drops the history a stopped tunnel left behind; the target already found is kept.
+    /// Drops the history a stopped tunnel left behind; the target already found is kept, while the window
+    /// waits for the next session to answer before it counts anything again.
     /// </summary>
     public void Reset()
     {
         lock (_lock)
         {
+            _answered = false;
             _window.Clear();
             Volatile.Write(ref _percent, LinkHealth.LossUnknown);
             Volatile.Write(ref _rttMs, -1);

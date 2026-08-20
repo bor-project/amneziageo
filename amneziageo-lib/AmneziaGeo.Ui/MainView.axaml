@@ -22,10 +22,6 @@
     <StreamGeometry x:Key="AgGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
     <!-- Back glyph. -->
     <StreamGeometry x:Key="AgBackGeometry">M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z</StreamGeometry>
-    <!-- Plus glyph. -->
-    <StreamGeometry x:Key="AgPlusGeometry">M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z</StreamGeometry>
-    <!-- Trash glyph, drawn as an outline. -->
-    <StreamGeometry x:Key="AgTrashGeometry">M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6</StreamGeometry>
     <!-- Close glyph. -->
     <StreamGeometry x:Key="AgCloseGeometry">M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z</StreamGeometry>
     <!-- Chevron glyph. -->
@@ -34,17 +30,15 @@
 
   <Grid>
 
-    <!-- HOME screen: gear left, centered title, the connect control and the servers. A pair of tabs shows one
-         of the two at a time, at every width. -->
+    <!-- HOME screen: gear left, centered title and the connect control. -->
     <Border x:Name="HomeCard" Classes="card" Padding="0" IsVisible="{Binding IsHome}" KeyDown="OnPaneKeyDown"
             Margin="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=shellHome}">
       <DockPanel LastChildFill="True">
 
-        <!-- Top row, one per pane: the connect pane carries the gear and the app name, the server pane carries
-             the way back and its own actions. -->
+        <!-- Top row: the gear, the app name and the way out. -->
         <Border DockPanel.Dock="Top" Height="48" Padding="12,0">
           <Panel>
-            <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding IsHomeMain}">
+            <Grid ColumnDefinitions="Auto,*,Auto">
               <Button Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
                       Command="{Binding NavSettingsCommand}" ToolTip.Tip="{l:Tr Main_SettingsTooltip}">
                 <PathIcon Data="{DynamicResource AgGearGeometry}" Width="18" Height="18"
@@ -61,42 +55,17 @@
                           Foreground="{DynamicResource AgMutedBrush}" />
               </Button>
             </Grid>
-
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding IsHomeServers}">
-              <Button x:Name="HomeServersBack" Grid.Column="0" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                      Command="{Binding SelectHomeTabCommand}" CommandParameter="main"
-                      ToolTip.Tip="{l:Tr Main_BackTooltip}">
-                <PathIcon Data="{DynamicResource AgBackGeometry}" Width="18" Height="18"
-                          Foreground="{DynamicResource AgMutedBrush}" />
-              </Button>
-              <TextBlock Grid.Column="1" Text="{l:Tr Main_HomeTabServers}" FontSize="15" FontWeight="SemiBold"
-                         Margin="8,0" VerticalAlignment="Center" HorizontalAlignment="Center"
-                         Foreground="{DynamicResource AgMutedBrush}" />
-              <Button Grid.Column="2" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                      IsVisible="{Binding HasConfigs}"
-                      Command="{Binding Home.ProbeAllCommand}" IsEnabled="{Binding !Home.ProbeRunning}"
-                      ToolTip.Tip="{l:Tr Main_ProbeTooltip}">
-                <PathIcon Data="{DynamicResource AgRefreshGeometry}" Width="18" Height="18"
-                          Foreground="{DynamicResource AgMutedBrush}" />
-              </Button>
-              <Button Grid.Column="3" Classes="icon" Padding="6,4" VerticalAlignment="Center"
-                      Click="OnAddServerOptions" ToolTip.Tip="{l:Tr Main_AddConfigButton}">
-                <PathIcon Data="{DynamicResource AgPlusGeometry}" Width="18" Height="18"
-                          Foreground="{DynamicResource AgMutedBrush}" />
-              </Button>
-            </Grid>
           </Panel>
         </Border>
 
         <Panel>
-          <!-- Body: the connect control on one screen, the servers on the other. A loader stands in until the
-               first agent snapshot, so the indeterminate power button never flashes on open. -->
+          <!-- Body: the connect control. A loader stands in until the first agent snapshot, so the
+               indeterminate power button never flashes on open. -->
           <Grid Margin="12,1,12,3" IsVisible="{Binding Home.IsReady}">
 
               <!-- Connect pane: the round control, the status and the config picker. It scrolls once the status
                    lines and the picker outgrow a short screen; while it fits, it stands centred. -->
-              <ScrollViewer IsVisible="{Binding ShowHomeConnect}"
-                            VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <!-- Narrow screen gives the column the width it has: the fixed one is wider than a phone screen
                      and put the picker and its label past both edges. -->
                 <StackPanel Spacing="14" VerticalAlignment="Center"
@@ -202,15 +171,10 @@
                                   IsChecked="{Binding Home.AlwaysOnMode, Mode=TwoWay}" />
                   </Grid>
 
-                  <!-- Config picker: the same pick the server screen carries, with the way to that screen over it. -->
+                  <!-- Config picker: the same pick the config catalogue carries. -->
                   <StackPanel Spacing="6">
-                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasConfigs}">
-                      <TextBlock Grid.Column="0" Text="{l:Tr Main_HomeServerLabel}" Classes="muted"
-                                 FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                      <Button Grid.Column="1" Classes="linkbtn" Padding="4,0" FontSize="12"
-                              Command="{Binding SelectHomeTabCommand}" CommandParameter="servers"
-                              Content="{l:Tr Main_HomeManageServers}" />
-                    </Grid>
+                    <TextBlock Text="{l:Tr Main_HomeServerLabel}" Classes="muted" IsVisible="{Binding HasConfigs}"
+                               FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                               IsVisible="{Binding HasConfigs}"
                               ItemsSource="{Binding Config.HomeConfigOptions}"
@@ -232,89 +196,6 @@
                   </StackPanel>
                 </StackPanel>
               </ScrollViewer>
-
-              <Grid RowDefinitions="Auto,*,Auto" IsVisible="{Binding ShowHomeServers}">
-                <!-- Over the table: the list every config routes by, picked here and applied at once, then how
-                     many servers stand under it. -->
-                <StackPanel Grid.Row="0" Spacing="6" Margin="2,0,0,10" IsVisible="{Binding HasConfigs}">
-                  <TextBlock Text="{l:Tr Main_RoutingSection}" Classes="muted"
-                             FontSize="11.5" FontWeight="SemiBold" />
-                  <controls:AdaptiveComboBox Classes="field"
-                            MinWidth="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=minW220}"
-                            HorizontalAlignment="{Binding IsCompact, Converter={x:Static svc:CompactConverter.Instance}, ConverterParameter=stretchL}"
-                            ItemsSource="{Binding Routing.HomeRoutingOptions}"
-                            SelectedItem="{Binding Routing.HomeRoutingChoice, Mode=TwoWay}">
-                    <controls:AdaptiveComboBox.ItemTemplate>
-                      <DataTemplate x:DataType="vm:RoutingListChoice">
-                        <TextBlock Text="{Binding Name}" />
-                      </DataTemplate>
-                    </controls:AdaptiveComboBox.ItemTemplate>
-                  </controls:AdaptiveComboBox>
-                  <TextBlock Text="{Binding ServersCountText}" Classes="muted" FontSize="11.5" Margin="0,4,0,0" />
-                </StackPanel>
-
-                <Panel Grid.Row="1">
-                  <!-- Narrow: the cards stand in one column, each stretched to the width. -->
-                  <ScrollViewer IsVisible="{Binding ShowServerStack}"
-                                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Config.Configs}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ConfigItemViewModel">
-                          <controls:ServerCard Margin="0,0,0,8" Compact="True"
-                                  IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
-                                  SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.SelectRowCommand}"
-                                  ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
-                                  EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
-                                  DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}"
-                                  DropCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.ApplyOrderCommand}" />
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </ScrollViewer>
-
-                  <!-- Wide: the same cards tiled across the pane. A remote walks them with the arrows, steps
-                       into one with the centre key to reach its buttons, and steps back out with the back key.
-                       A drag carries a card to another place. -->
-                  <ScrollViewer IsVisible="{Binding ShowServerGrid}"
-                                VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Config.Configs}">
-                      <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                          <WrapPanel />
-                        </ItemsPanelTemplate>
-                      </ItemsControl.ItemsPanel>
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ConfigItemViewModel">
-                          <controls:ServerCard Width="252" Margin="0,0,10,10"
-                                  IsOpen="{Binding SwipeOpen, Mode=TwoWay}"
-                                  SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.SelectRowCommand}"
-                                  ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
-                                  EditCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).EditServerCommand}"
-                                  DeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).DeleteServerCommand}"
-                                  AskDeleteCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).AskDeleteServerCommand}"
-                                  DropCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.ApplyOrderCommand}" />
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </ScrollViewer>
-
-                  <!-- No configs: the add-config button offers the way in right here and says it itself. -->
-                  <StackPanel VerticalAlignment="Center" Spacing="8" IsVisible="{Binding !HasConfigs}">
-                    <Button Classes="accent" HorizontalAlignment="Center" Padding="20,7"
-                            Click="OnAddServerOptions">
-                      <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="+" />
-                        <TextBlock Text="{l:Tr Main_AddConfigButton}" />
-                      </StackPanel>
-                    </Button>
-                  </StackPanel>
-                </Panel>
-
-                <!-- Configs exist but none picked: hint to pick one. -->
-                <TextBlock Grid.Row="2" IsVisible="{Binding Home.ShowSelectConfigHint}" Classes="muted" FontSize="12"
-                           HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,6,0,0"
-                           Text="{l:Tr Main_HomeSelectConfigHint}" />
-              </Grid>
           </Grid>
 
           <!-- Loader until the first snapshot. -->
@@ -704,34 +585,6 @@
       </Border>
 
     </StackPanel>
-
-    <!-- Delete asked over the whole screen: the wide card's menu opens it, the narrow card keeps its own pair
-         under the swipe. -->
-    <Panel ZIndex="60" Background="#66000000" IsVisible="{Binding ShowDeleteAsk}">
-      <Border Classes="dialogcard" Width="430" Padding="22,20"
-              HorizontalAlignment="Center" VerticalAlignment="Center">
-        <StackPanel Spacing="13">
-          <Panel Width="46" Height="46" HorizontalAlignment="Left">
-            <Ellipse Fill="{DynamicResource AgDownBrush}" Opacity="0.15" />
-            <Path Data="{DynamicResource AgTrashGeometry}" Width="21" Height="21" Stretch="Uniform"
-                  Stroke="{DynamicResource AgDownBrush}" StrokeThickness="1.7"
-                  StrokeLineCap="Round" StrokeJoin="Round"
-                  HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Panel>
-          <TextBlock Text="{l:Tr Main_DeleteServerTitle}" FontSize="18" FontWeight="SemiBold"
-                     TextWrapping="Wrap" />
-          <!-- The runs stand tight against each other: a line break between them prints as a space. -->
-          <TextBlock FontSize="13" TextWrapping="Wrap"
-                     Foreground="{DynamicResource AgMutedBrush}"><Run Text="{Binding DeleteAskPrefix}" /><Run Text="{Binding DeleteAskName}" FontWeight="SemiBold" /><Run Text="{Binding DeleteAskSuffix}" /></TextBlock>
-          <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right" Margin="0,5,0,0">
-            <Button x:Name="DeleteAskCancel" Classes="outline" Content="{l:Tr Main_CancelButton}"
-                    Width="124" Padding="6,9" Command="{Binding CancelDeleteAskCommand}" />
-            <Button Classes="dropfill" Content="{l:Tr Main_ConfirmDeleteButton}"
-                    Width="124" Padding="6,9" Command="{Binding ConfirmDeleteAskCommand}" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
-    </Panel>
 
     <!-- Способы «Добавить» / «Экспорт» на телефоне: шторка снизу поверх всего экрана. На десктопе тот же набор
          выпадает из кнопки списком, и эта шторка не открывается. -->

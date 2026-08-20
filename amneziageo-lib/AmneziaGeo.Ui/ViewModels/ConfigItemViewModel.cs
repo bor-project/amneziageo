@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Media;
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
@@ -50,7 +51,16 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
     [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
-    [NotifyPropertyChangedFor(nameof(RowActionText))]
+    [NotifyPropertyChangedFor(nameof(CardActionText))]
+    [NotifyPropertyChangedFor(nameof(CardStateText))]
+    [NotifyPropertyChangedFor(nameof(CardStateBrush))]
+    [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
+    [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
+    [NotifyPropertyChangedFor(nameof(LinkSilent))]
+    [NotifyPropertyChangedFor(nameof(ProbeText))]
+    [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(CardLossText))]
+    [NotifyPropertyChangedFor(nameof(CardLossBrush))]
     private string _status = ConnectionStatus.Idle;
 
     /// <summary>
@@ -66,11 +76,36 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public bool ShowSelectedFrame => IsSelected && !ShowStatusFrame;
 
     /// <summary>
-    /// What clicking the row does: the running configuration goes down, every other one is dialled.
+    /// Действие кнопки карточки словом: со своей конфигурации карточка туннель снимает, на всякой другой -
+    /// поднимает.
     /// </summary>
-    public string RowActionText => string.Equals(Status, ConnectionStatus.Connected, StringComparison.Ordinal)
-        ? Loc.Instance.Get("Main_ServerRowDisconnect")
-        : Loc.Instance.Get("Main_ServerRowTooltip");
+    public string CardActionText =>
+        Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
+
+    /// <summary>
+    /// Носит ли карточка свою рамку поверх общей: выбранная в каталоге, отмеченная конфигурация и та, на
+    /// которой стоит туннель.
+    /// </summary>
+    public bool ShowCardFrame => IsPicked || IsSelected || ShowStatusFrame;
+
+    /// <summary>
+    /// Цвет рамки: цвет перехода, пока туннель поднимается или падает, цвет подключения у работающего и
+    /// серый у просто выбранной конфигурации.
+    /// </summary>
+    public IBrush CardFrameBrush => CardStateBrush;
+
+    /// <summary>
+    /// Состояние карточки словом: своё у работающего туннеля, «готов» у выбранной конфигурации и
+    /// «выключен» у остальных.
+    /// </summary>
+    public string CardStateText => ShowStatusFrame
+        ? StatusText
+        : Loc.Instance.Get(IsSelected ? "Main_CardStateReady" : "Main_CardStateOff");
+
+    /// <summary>
+    /// Цвет плашки состояния: цвет подключения у работающей конфигурации, серый у остальных.
+    /// </summary>
+    public IBrush CardStateBrush => ShowStatusFrame ? StatusBrush : _idle;
 
     /// <summary>
     /// The localized status label.
@@ -86,44 +121,22 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     // Whether the user picked this row.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
+    [NotifyPropertyChangedFor(nameof(CardStateText))]
+    [NotifyPropertyChangedFor(nameof(CardStateBrush))]
+    [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
+    [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
     private bool _isSelected;
 
-    // Whether the swipe uncovered the row's edit and delete buttons.
+    // Whether the card is the one picked in the catalogue.
     [ObservableProperty]
-    private bool _swipeOpen;
-
-    // Whether the swipe uncovered the row's connect button.
-    [ObservableProperty]
-    private bool _connectOpen;
-
-    // Whether the row's delete is armed and waiting for the confirm.
-    [ObservableProperty]
-    private bool _deletePending;
-
-    // Covering the buttons disarms the delete.
-    partial void OnSwipeOpenChanged(bool value)
-    {
-        if (!value)
-        {
-            DeletePending = false;
-        }
-    }
-
-    /// <summary>
-    /// Заряжает удаление строки: пара «Подтвердить / Отмена» занимает место кнопок.
-    /// </summary>
-    [RelayCommand]
-    private void RequestDelete() => DeletePending = true;
-
-    /// <summary>
-    /// Снимает подтверждение удаления.
-    /// </summary>
-    [RelayCommand]
-    private void CancelDelete() => DeletePending = false;
+    [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
+    private bool _isPicked;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(CardLossText))]
+    [NotifyPropertyChangedFor(nameof(CardLossBrush))]
     private ProbeOutcome _probeState = ProbeOutcome.Unknown;
 
     [ObservableProperty]
@@ -139,18 +152,18 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(CardLossText))]
+    [NotifyPropertyChangedFor(nameof(CardLossBrush))]
     private int _probeLossPercent;
-
-    // Whether this server won the last sweep of them all.
-    [ObservableProperty]
-    private bool _isBest;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
+    [NotifyPropertyChangedFor(nameof(CardSpeedText))]
     private long _rxBitsPerSecond;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
+    [NotifyPropertyChangedFor(nameof(CardSpeedText))]
     private long _txBitsPerSecond;
 
     [ObservableProperty]
@@ -171,15 +184,19 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         : string.Empty;
 
     /// <summary>
-    /// What the running tunnel carries in both directions.
+    /// What the running tunnel carries in both directions; names the absence while nothing runs.
     /// </summary>
-    public string LinkSpeedText => SpeedFormat.Pair(RxBitsPerSecond, TxBitsPerSecond);
+    public string LinkSpeedText => LinkKnown
+        ? SpeedFormat.Pair(RxBitsPerSecond, TxBitsPerSecond)
+        : Loc.Instance.Get("Main_LinkSpeedUnknown");
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LinkLossText))]
     [NotifyPropertyChangedFor(nameof(LinkLossy))]
     [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
+    [NotifyPropertyChangedFor(nameof(CardLossText))]
+    [NotifyPropertyChangedFor(nameof(CardLossBrush))]
     private int _linkLossPercent = LinkHealth.LossUnknown;
 
     // Round trip the running tunnel timed to its far end; -1 on every config that is not running.
@@ -189,20 +206,20 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private int _linkRttMs = -1;
 
     /// <summary>
-    /// Whether the row carries a loss line: the running tunnel carries one from the moment it is up, so the line
-    /// no longer appears out of nowhere once the probe window fills.
+    /// Whether the row carries a loss line: it stands on every card and names the absence of a reading until a
+    /// tunnel gives one.
     /// </summary>
-    public bool ShowLinkLoss => LinkKnown;
+    public bool ShowLinkLoss => LinkShown;
 
     /// <summary>
     /// Whether the running tunnel drops enough for it to be felt.
     /// </summary>
-    public bool LinkLossy => LinkHealth.Lossy(LinkLossPercent);
+    public bool LinkLossy => LinkSteady && LinkHealth.Lossy(LinkLossPercent);
 
     /// <summary>
     /// The share of the tunnel's own probes that never came back; names the absence while nothing has answered.
     /// </summary>
-    public string LinkLossText => LinkHealth.LossKnown(LinkLossPercent)
+    public string LinkLossText => LinkSteady && LinkHealth.LossKnown(LinkLossPercent)
         ? Loc.Instance.Get("Main_LinkLoss", LinkLossPercent)
         : Loc.Instance.Get("Main_LinkLossUnknown");
 
@@ -213,10 +230,33 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     public IBrush LinkLossBrush => LinkLossy ? _slow : _idle;
 
     /// <summary>
-    /// Whether the card carries the link line at all. A television keeps none: it shows one application at a
-    /// time, so nobody is there to read these numbers while the traffic they describe is being made.
+    /// Что несёт туннель на карточке: обе скорости коротко, «N/A» - пока туннеля нет.
     /// </summary>
-    public bool ShowLinkLine => LinkShown && (ShowLinkSpeed || ShowLinkLoss);
+    public string CardSpeedText => LinkKnown
+        ? SpeedFormat.Compact(RxBitsPerSecond, TxBitsPerSecond)
+        : Loc.Instance.Get("Main_ProbeUnknown");
+
+    /// <summary>
+    /// Потери на карточке: свои у работающего туннеля, замеренные эхом у остальных, «N/A» - пока мерить было
+    /// нечего.
+    /// </summary>
+    public string CardLossText => CardLossKnown
+        ? Loc.Instance.Get("Main_CardLoss", CardLossPercent)
+        : Loc.Instance.Get("Main_ProbeUnknown");
+
+    /// <summary>
+    /// Цвет потерь на карточке: серый у чистого канала, предупреждающий - у ощутимых потерь.
+    /// </summary>
+    public IBrush CardLossBrush => CardLossKnown && LinkHealth.Lossy(CardLossPercent) ? _slow : _idle;
+
+    // Потери, за которые отвечает работающий туннель.
+    private bool TunnelLossKnown => LinkSteady && LinkHealth.LossKnown(LinkLossPercent);
+
+    // Есть ли что показать в потерях: туннельное показание либо ответивший замер.
+    private bool CardLossKnown => TunnelLossKnown || ProbeState == ProbeOutcome.Alive;
+
+    // Показание потерь: туннельное впереди замеренного эхом.
+    private int CardLossPercent => TunnelLossKnown ? LinkLossPercent : ProbeLossPercent;
 
     /// <summary>
     /// Whether this device shows what the tunnel carries and loses at all.
@@ -234,16 +274,22 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
-    [NotifyPropertyChangedFor(nameof(ShowLinkSpeed))]
-    [NotifyPropertyChangedFor(nameof(ShowLinkLoss))]
-    [NotifyPropertyChangedFor(nameof(ShowLinkLine))]
+    [NotifyPropertyChangedFor(nameof(LinkSpeedText))]
+    [NotifyPropertyChangedFor(nameof(LinkLossText))]
+    [NotifyPropertyChangedFor(nameof(LinkLossy))]
+    [NotifyPropertyChangedFor(nameof(LinkLossBrush))]
+    [NotifyPropertyChangedFor(nameof(CardSpeedText))]
+    [NotifyPropertyChangedFor(nameof(CardLossText))]
+    [NotifyPropertyChangedFor(nameof(CardLossBrush))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
+    [NotifyPropertyChangedFor(nameof(CardStateBrush))]
+    [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
     private int _handshakeAgeSeconds = -1;
 
     /// <summary>
-    /// Whether the row carries a live throughput reading, which only the running tunnel does.
+    /// Whether the row carries a throughput reading at all; the numbers themselves wait for a running tunnel.
     /// </summary>
-    public bool ShowLinkSpeed => LinkKnown && SpeedShown;
+    public bool ShowLinkSpeed => SpeedShown;
 
     // Whether the running tunnel has timed its own echo. It stands ahead of the echo to the endpoint: that one
     // travels the tunnel it is measuring once the session takes the default route, and the answer it never gets
@@ -253,10 +299,17 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     // Whether the tunnel reports its own liveness, which beats an echo the server may be refusing to send.
     private bool LinkKnown => HandshakeAgeSeconds >= 0;
 
+    // Показания, за которые отвечает канал: туннель на подъёме и на сносе теряет свои же пробы на перестройке
+    // маршрутов, и потери тех секунд к серверу отношения не имеют.
+    private bool LinkSteady => LinkKnown && !Transitioning;
+
     /// <summary>
     /// Whether the running tunnel has heard nothing from this server for longer than a rekey window.
     /// </summary>
-    public bool LinkSilent => HandshakeAgeSeconds >= HandshakeAge.SilentSeconds;
+    public bool LinkSilent => !Transitioning && HandshakeAgeSeconds >= HandshakeAge.SilentSeconds;
+
+    // Туннель поднимается или падает: его показания к серверу отношения не имеют.
+    private bool Transitioning => Status is ConnectionStatus.Connecting or ConnectionStatus.Disconnecting;
 
     private static readonly IBrush _fast = new SolidColorBrush(Color.FromRgb(0x1F, 0x9D, 0x57));
     private static readonly IBrush _slow = new SolidColorBrush(Color.FromRgb(0xC8, 0x7A, 0x00));
@@ -264,50 +317,54 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private static readonly IBrush _idle = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
 
     /// <summary>
-    /// The response cell: the round trip, a dash before the first measurement, or why nothing came back. The
-    /// running tunnel overrides it: its own silence is the answer, and an echo it swallows leaves the cell empty
-    /// instead of calling a live server dead.
+    /// Отклик сервера: время последнего замера, «нет ответа» у потерянной связи и «N/A», пока мерить было
+    /// нечего. Замер живёт отдельно от туннеля и подключением не сбрасывается.
     /// </summary>
     public string ProbeText => Probing
         ? "..."
-        : LinkSilent
-        ? Loc.Instance.Get("Main_ProbeNoAnswer")
-        : LinkTimed
-        ? Loc.Instance.Get("Main_ProbeMilliseconds", LinkRttMs)
-        : ProbeState switch
-        {
-            ProbeOutcome.Alive => ProbeLossPercent > 0
-                ? Loc.Instance.Get("Main_ProbeMillisecondsLoss", ProbeMilliseconds, ProbeLossPercent)
-                : Loc.Instance.Get("Main_ProbeMilliseconds", ProbeMilliseconds),
-            ProbeOutcome.NoAnswer => LinkKnown ? string.Empty : Loc.Instance.Get("Main_ProbeNoAnswer"),
-            ProbeOutcome.NoAddress => Loc.Instance.Get("Main_ProbeNoAddress"),
-            _ => LinkKnown ? string.Empty : "-",
-        };
+        : HasProbeTime
+        ? RoundTripText
+        : ProbeUnreachable
+        ? Loc.Instance.Get(ProbeState == ProbeOutcome.NoAddress ? "Main_ProbeNoAddress" : "Main_ProbeNoAnswer")
+        : Loc.Instance.Get("Main_ProbeUnknown");
 
     /// <summary>
-    /// The response colour: green for a quick clean answer, amber for a slow or lossy one, red for none.
+    /// Цвет отклика, он же у оценки рядом: красный только у потерянной связи, серый - пока данных нет.
     /// </summary>
     public IBrush ProbeBrush => Probing
         ? _idle
-        : LinkSilent
+        : HasProbeTime
+        ? VerdictBrush
+        : ProbeUnreachable
         ? _dead
-        : LinkTimed
-        ? LinkBrush
-        : ProbeState switch
-        {
-            ProbeOutcome.Alive => AliveBrush,
-            ProbeOutcome.Unknown => _idle,
-            _ => LinkKnown ? _idle : _dead,
-        };
+        : _idle;
+
+    // Время замера: потери стоят своим полем рядом.
+    private string RoundTripText => Loc.Instance.Get("Main_ProbeMilliseconds", ProbeRoundTrip);
+
+    // Время, которое стоит на карточке: своё у работающего туннеля, иначе последний замер эндпоинта.
+    private int ProbeRoundTrip => LinkTimed ? LinkRttMs : ProbeMilliseconds;
+
+    // Есть ли что показать: идущий замер и молчащий туннель времени не дают.
+    private bool HasProbeTime => !Probing && !LinkSilent && (LinkTimed || ProbeState == ProbeOutcome.Alive);
+
+    // Связь потеряна на самом деле: туннель замолчал либо эхо к серверу осталось без ответа. Отсутствие
+    // замера - другое состояние и красным не показывается.
+    private bool ProbeUnreachable => !Transitioning
+        && (LinkSilent || (!LinkKnown && ProbeState is ProbeOutcome.NoAnswer or ProbeOutcome.NoAddress));
+
+    // Отклик, который уже чувствуется: потери или время сверх границы.
+    private bool ProbeSlow => ProbeLossy || ProbeRoundTrip > SteadyMs;
+
+    // Потери, из-за которых ответ перестаёт считаться хорошим.
+    private bool ProbeLossy => LinkTimed ? LinkLossy : ProbeLossPercent >= LossyPercent;
+
+    // Один цвет на число отклика и его оценку.
+    private IBrush VerdictBrush => ProbeSlow ? _slow : _fast;
+
+    // Граница оценки отклика.
+    private const int SteadyMs = 200;
 
     // Loss at which a server that still answers is no better than one that does not.
     private const int LossyPercent = 40;
-
-    // The running tunnel's own time: green while it is quick and drops nothing worth feeling.
-    private IBrush LinkBrush => LinkRttMs <= 200 && !LinkLossy ? _fast : _slow;
-
-    // A server that answers: green only when it is both quick and lossless.
-    private IBrush AliveBrush => ProbeLossPercent >= LossyPercent
-        ? _dead
-        : ProbeMilliseconds <= 200 && ProbeLossPercent == 0 ? _fast : _slow;
 }

@@ -37,6 +37,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
     private bool _isConnected;
 
     [ObservableProperty]
@@ -45,7 +46,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
-    [NotifyPropertyChangedFor(nameof(ShowSelectConfigHint))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
@@ -54,10 +54,12 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ConnectPillContent))]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
     private bool _isTunnelActive;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AgentStatusText))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
     private string? _boundTarget;
 
     [ObservableProperty]
@@ -66,12 +68,12 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsConnectingOut))]
     [NotifyPropertyChangedFor(nameof(IsConnectingIn))]
     [NotifyPropertyChangedFor(nameof(ConnectHint))]
-    [NotifyPropertyChangedFor(nameof(ShowSelectConfigHint))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleBorderBrush))]
     [NotifyPropertyChangedFor(nameof(ConnectCircleForeground))]
     [NotifyPropertyChangedFor(nameof(ConnectStatusBrush))]
     [NotifyPropertyChangedFor(nameof(TrayStatusColor))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
     private string _boundStatus = ConnectionStatus.Disconnected;
 
     [ObservableProperty]
@@ -81,11 +83,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     [ObservableProperty]
     private ConfigChoice? _ActiveConfigChoice = ConfigChoice.None;
-
-    // The row the user picked in the server table: it wears the frame, and while nothing runs it is also the
-    // configuration the connect control dials.
-    [ObservableProperty]
-    private ConfigItemViewModel? _selectedRow;
 
     // False until the first snapshot lands, so the card shows a loader instead of the indeterminate button.
     [ObservableProperty]
@@ -120,12 +117,19 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyPropertyChangedFor(nameof(CanDismissNotice))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
     private bool _disconnectFailed;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanToggleConnection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleConnectionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
     private bool _reconnecting;
+
+    // Перенос туннеля с одной конфигурации на другую: пока он идёт, каталог кнопок не отдаёт.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ConnectConfigCommand))]
+    private bool _switchingConfig;
 
     // A connect request was refused because another account owns the tunnel; the banner offers a takeover.
     [ObservableProperty]
@@ -338,8 +342,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     // "Attempt N" label; N counts the attempt now in flight (retries past the first).
     public string RetryText => ShowRetry ? Loc.Instance.Get("MainVm_ConnectAttempt", RetryAttempt + 1) : string.Empty;
-
-    public bool ShowSelectConfigHint => ConnState == 0 && _host.HasConfigs && ActiveConfig is null;
 
     public string ConnectPillContent => IsTunnelActive ? Loc.Instance.Get("MainVm_Disconnect") : Loc.Instance.Get("MainVm_Connect");
 
@@ -593,12 +595,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         OnPropertyChanged(nameof(TrayStatusColor));
     }
 
-    // Re-raise the host-derived hint after the shell recomputes HasConfigs on a snapshot.
-    public void NotifyHostFlagsChanged()
-    {
-        OnPropertyChanged(nameof(ShowSelectConfigHint));
-    }
-
     partial void OnRestartPendingChanged(bool value)
     {
         _host.NotifyRestartPendingChanged(value);
@@ -615,7 +611,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _host.Config.NotifyActiveConfigChanged();
     }
 
-    partial void OnSelectedRowChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
+    partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
     {
         if (oldValue is not null)
         {
@@ -626,11 +622,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             newValue.IsSelected = true;
         }
-    }
 
-    partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
-    {
-        SelectedRow = newValue;
         SyncActiveConfigChoice();
         NotifyCanToggleConnection();
         _host.Config.NotifyActiveConfigChanged();
@@ -649,7 +641,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(CanToggleConnection));
         OnPropertyChanged(nameof(ConnectHint));
-        OnPropertyChanged(nameof(ShowSelectConfigHint));
         ToggleConnectionCommand.NotifyCanExecuteChanged();
     }
 
@@ -797,47 +788,55 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Picks the row the user tapped and measures its server. A live tunnel keeps its target and its status:
-    /// the tap moves the frame alone, and the row's own connect button is what switches the tunnel over.
+    /// Ведёт кнопку карточки: со своей конфигурации туннель снимается, на чужой поднимается. Занятый туннель
+    /// уходит целиком перед сменой цели: агент поднимать новую поверх живой не умеет.
     /// </summary>
-    [RelayCommand]
-    private void SelectRow(ConfigItemViewModel? item)
-    {
-        if (item is null)
-        {
-            return;
-        }
-
-        if (IsTunnelActive)
-        {
-            SelectedRow = item;
-        }
-        else
-        {
-            ActiveConfig = item;
-        }
-
-        item.Probing = true;
-        _ = ProbeRowAsync(item, CancellationToken.None);
-    }
-
-    /// <summary>
-    /// Connects the configuration a home server row stands for, or takes the tunnel down when the row is the
-    /// one already running.
-    /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanDialConfig))]
     private async Task ConnectConfig(ConfigItemViewModel? item)
     {
-        if (item is null)
+        if (item is null || SwitchingConfig)
         {
             return;
         }
 
-        var live = IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
-        item.ConnectOpen = false;
-        ActiveConfig = item;
-        await ToggleConfigConnectionAsync(item.Name, !live);
+        SwitchingConfig = true;
+        try
+        {
+            if (IsLiveConfig(item))
+            {
+                ActiveConfig = item;
+                await ToggleConfigConnectionAsync(item.Name, false);
+                return;
+            }
+
+            // Снос не удался: цель остаётся прежней, иначе выбор уехал бы на конфигурацию, которую поднять
+            // всё равно не вышло.
+            if (ConnState != 0 && !await StopTunnelAsync())
+            {
+                return;
+            }
+
+            ActiveConfig = item;
+            await ToggleConfigConnectionAsync(item.Name, true);
+        }
+        finally
+        {
+            SwitchingConfig = false;
+        }
     }
+
+    // Стоит ли туннель на этой конфигурации.
+    private bool IsLiveConfig(ConfigItemViewModel item) =>
+        IsTunnelActive && string.Equals(BoundTarget, item.Name, StringComparison.Ordinal);
+
+    // Кнопка карточки: её запирают отсутствие агента, зависший снос и идущий перенос. Свой туннель карточка
+    // снимает и посреди подъёма, чужой берёт только с закончившегося перехода.
+    private bool CanDialConfig(ConfigItemViewModel? item) => item is not null
+        && IsConnected
+        && !Reconnecting
+        && !DisconnectFailed
+        && !SwitchingConfig
+        && (IsLiveConfig(item) || ConnState != 1);
 
     /// <summary>
     /// Re-measures every server when the home screen is shown again; a run already in flight is left alone.
@@ -873,7 +872,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         try
         {
             await Task.WhenAll(rows.Select(row => ProbeRowAsync(row, cts.Token)));
-            MarkBest(rows);
         }
         finally
         {
@@ -882,20 +880,6 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             {
                 ProbeRunning = false;
             }
-        }
-    }
-
-    // Names the server the sweep favours: fewest losses first, then the shortest round trip.
-    private static void MarkBest(IReadOnlyList<ConfigItemViewModel> rows)
-    {
-        var best = rows
-            .Where(row => row.ProbeState == ProbeOutcome.Alive)
-            .OrderBy(row => row.ProbeLossPercent)
-            .ThenBy(row => row.ProbeMilliseconds)
-            .FirstOrDefault();
-        foreach (var row in rows)
-        {
-            row.IsBest = ReferenceEquals(row, best);
         }
     }
 
@@ -912,10 +896,18 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
         Dispatcher.UIThread.Post(() =>
         {
+            row.Probing = false;
+
+            // Эхо уходит в туннель, который стоит на этом сервере, а на переключении сервер и вовсе ни при
+            // чём: молчание в ответ прошлый замер не отменяет.
+            if (result.Outcome != ProbeOutcome.Alive && (row.ShowStatusFrame || row.HandshakeAgeSeconds >= 0))
+            {
+                return;
+            }
+
             row.ProbeState = result.Outcome;
             row.ProbeMilliseconds = result.Milliseconds;
             row.ProbeLossPercent = result.LossPercent;
-            row.Probing = false;
         });
     }
 

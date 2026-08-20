@@ -1,0 +1,108 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
+             x:Class="AmneziaGeo.Ui.Controls.CatalogCard"
+             x:CompileBindings="True"
+             x:DataType="vm:ConfigItemViewModel">
+  <UserControl.Resources>
+    <StreamGeometry x:Key="AgCardGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
+    <StreamGeometry x:Key="AgCardTimerGeometry">M15,1H9V3H15M11,14H13V8H11M19.03,7.39L20.45,5.97C20,5.46 19.55,5 19.04,4.56L17.62,6C16.07,4.74 14.12,4 12,4A9,9 0 0,0 3,13A9,9 0 0,0 12,22C17,22 21,17.97 21,13C21,10.88 20.26,8.93 19.03,7.39M12,20A7,7 0 0,1 5,13A7,7 0 0,1 12,6A7,7 0 0,1 19,13A7,7 0 0,1 12,20Z</StreamGeometry>
+    <StreamGeometry x:Key="AgCardTrafficGeometry">M9,3L5,7H8V14H10V7H13M16,17V10H14V17H11L15,21L19,17H16Z</StreamGeometry>
+    <StreamGeometry x:Key="AgCardLossGeometry">M3,13H5.79L10.1,4.79L11.28,11.5L14.5,8.75L17.29,13H21V15H16.21L14.5,12.4L10.72,15.5L9.55,8.9L7,13.85V15H3V13Z</StreamGeometry>
+  </UserControl.Resources>
+
+  <!-- Тело карточки ничего не делает: активность берёт тумблер, действия стоят в подвале. На телевизоре тело
+       служит входом, дальше пульт ходит по этим же контролам. -->
+  <Button x:Name="FacePart" Classes="serverrow noclick">
+    <Panel>
+      <Grid RowDefinitions="Auto,Auto">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" Margin="12,10">
+          <!-- Имя и флаг активности: имя жмётся первым, чтобы флаг с тумблером стояли целиком. -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Text="{l:Tr Main_CardActiveFlag}" Classes="muted" FontSize="11.5"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <!-- Тумблер активности: та же связка, что и в настройках конфигурации. -->
+            <ToggleSwitch x:Name="ActivePart" Grid.Column="2" Classes="cardflag" VerticalAlignment="Center"
+                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                          Command="{Binding $parent[controls:CatalogCard].SelectCommand}"
+                          CommandParameter="{Binding}" />
+          </Grid>
+
+          <!-- Состояние карточки и адрес сервера стоят одной строкой; адрес отдаёт место первым. -->
+          <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,8,0,0">
+            <Border Grid.Column="0" Classes="cardpill">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <Ellipse Width="6" Height="6" VerticalAlignment="Center" Fill="{Binding CardStateBrush}" />
+                <TextBlock Text="{Binding CardStateText}" FontSize="10.5" FontWeight="SemiBold"
+                           Foreground="{Binding CardStateBrush}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Classes="cardchip" HorizontalAlignment="Left">
+              <TextBlock Text="{Binding Endpoint}" FontSize="11" Classes="muted mono"
+                         TextTrimming="CharacterEllipsis" />
+            </Border>
+          </Grid>
+
+          <!-- Отклик, скорость и потери: иконка и значение, всё одной строкой, «N/A» вместо пустого места. -->
+          <Border Grid.Row="2" Classes="inset" Margin="0,8,0,0" Padding="8,5">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="12" Height="12"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="11.5"
+                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowLinkSpeed}">
+                <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="12" Height="12"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding CardSpeedText}" FontSize="11.5" Classes="muted"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowLinkLoss}">
+                <PathIcon Data="{StaticResource AgCardLossGeometry}" Width="12" Height="12"
+                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding CardLossText}" FontSize="11.5" Foreground="{Binding CardLossBrush}"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <!-- Подвал карточки: одна кнопка ведёт туннель на эту конфигурацию и снимает его с неё. -->
+        <Border Grid.Row="1" Classes="cardfoot">
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <Button x:Name="ConnectPart" Grid.Column="1" Classes="linkbtn"
+                    Classes.down="{Binding ShowStatusFrame}"
+                    Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="13" Height="13"
+                          VerticalAlignment="Center" />
+                <TextBlock Text="{Binding CardActionText}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="SettingsPart" Grid.Column="2" Classes="methodpick" Padding="10,5"
+                    Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
+              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="13" Height="13"
+                          VerticalAlignment="Center" />
+                <TextBlock Text="{l:Tr Main_CardSettingsLink}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- Светлая рамка у всякой карточки; поверх серая у отмеченной, цвет подключения у работающей и цвет
+           перехода, пока туннель поднимается или падает. Рисуется она поверх содержимого и
+           компоновки не меняет. -->
+      <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
+              BorderBrush="{DynamicResource AgBorderBrush}" />
+      <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
+              BorderBrush="{Binding CardFrameBrush}" IsVisible="{Binding ShowCardFrame}" />
+    </Panel>
+  </Button>
+</UserControl>

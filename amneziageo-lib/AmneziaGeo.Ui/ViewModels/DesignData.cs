@@ -73,17 +73,21 @@ internal static class DesignData
             Mtu = 1420,
             Status = ConnectionStatus.Idle,
         });
-        vm.Config.ConfigCatalogueOptions.Add(new ConfigChoice("de-frankfurt"));
-        vm.Config.ConfigCatalogueOptions.Add(new ConfigChoice("nl-amsterdam"));
         vm.HasConfigs = true;
 
         // --- Routing-list catalogue ---
-        var rknList = new RoutingListSummaryViewModel { Id = 1, Name = "Обход РКН", RuleCount = 42, RouteCount = 131, DomainCount = 517 };
-        var mediaList = new RoutingListSummaryViewModel { Id = 2, Name = "YouTube + Discord", RuleCount = 6, RouteCount = 74, DomainCount = 39 };
+        var rknList = new RoutingListSummaryViewModel
+        {
+            Id = 1, Name = "Обход РКН", RuleCount = 42, RouteCount = 131, DomainCount = 517,
+            ProxyRuleCount = 30, DirectRuleCount = 9, BlockRuleCount = 3, UseGlobalProxy = true,
+        };
+        var mediaList = new RoutingListSummaryViewModel
+        {
+            Id = 2, Name = "YouTube + Discord", RuleCount = 6, RouteCount = 74, DomainCount = 39,
+            ProxyRuleCount = 6, DirectRuleCount = 0, BlockRuleCount = 0, AllUdp = true,
+        };
         vm.Routing.RoutingLists.Add(rknList);
         vm.Routing.RoutingLists.Add(mediaList);
-        vm.Routing.RoutingCatalogueOptions.Add(new RoutingListChoice(rknList.Id, rknList.Name));
-        vm.Routing.RoutingCatalogueOptions.Add(new RoutingListChoice(mediaList.Id, mediaList.Name));
         vm.Routing.HasRoutingLists = true;
 
         // --- Geo sources ---

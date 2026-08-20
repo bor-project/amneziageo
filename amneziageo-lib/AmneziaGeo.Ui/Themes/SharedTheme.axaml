@@ -242,6 +242,34 @@
       <Setter Property="Opacity" Value="0.72" />
     </Style>
 
+    <!-- Кнопка на карточке: светлая рамка и заливка панели, чтобы не спорить с текстом рядом. -->
+    <!-- Плашка состояния и адрес на карточке каталога. -->
+    <Style Selector="Border.cardpill, Border.cardchip">
+      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="7,2" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- Метка режима на карточке списка: включённый режим носит цвет действия, выключенный уходит в серое. -->
+    <Style Selector="Border.cardtag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AgAccentBrush}" />
+    </Style>
+    <Style Selector="Border.cardtag.off">
+      <Setter Property="Opacity" Value="0.7" />
+    </Style>
+    <Style Selector="Border.cardtag.off TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
+    </Style>
+
+    <!-- Подвал карточки: действия отделены полосой, фон остаётся карточкин - на нём видны мягкие кнопки. -->
+    <Style Selector="Border.cardfoot">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="CornerRadius" Value="0,0,12,12" />
+      <Setter Property="Padding" Value="10,8" />
+    </Style>
+
     <!-- Button icons follow the button's text colour. -->
     <Style Selector="Button PathIcon">
       <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
@@ -286,6 +314,11 @@
       <Setter Property="Padding" Value="7,4" />
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <!-- Снятие туннеля на карточке: место кнопки подключения, тон спокойнее. -->
+    <Style Selector="Button.linkbtn.down">
+      <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
     <!-- Header back button. -->
@@ -475,6 +508,11 @@
     <Style Selector="Button.serverrow:pressed">
       <Setter Property="Opacity" Value="1" />
       <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
+    </Style>
+
+    <!-- Карточка каталога нажатие не красит: тело не кликается, отклик даёт рамка. -->
+    <Style Selector="Button.serverrow.noclick:pressed">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
     </Style>
     <Style Selector="Button:disabled">
       <Setter Property="Opacity" Value="0.5" />
@@ -667,6 +705,18 @@
     </Style>
     <Style Selector="ToggleSwitch:disabled">
       <Setter Property="Opacity" Value="0.5" />
+    </Style>
+
+    <!-- Тумблер на карточке каталога: выключенный носит рамку кнопок, стоящих рядом, а не акцентную, а
+         отрицательный отступ снимает пустую колонку под подпись и ставит правый край по кнопке настроек. -->
+    <Style Selector="ToggleSwitch.cardflag">
+      <Setter Property="Margin" Value="0,0,-4,0" />
+    </Style>
+    <Style Selector="ToggleSwitch.cardflag /template/ Border#OuterBorder, ToggleSwitch.cardflag:pointerover /template/ Border#OuterBorder, ToggleSwitch.cardflag:pressed /template/ Border#OuterBorder">
+      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
+    </Style>
+    <Style Selector="ToggleSwitch.cardflag /template/ Ellipse#SwitchKnobOff, ToggleSwitch.cardflag:pointerover /template/ Ellipse#SwitchKnobOff, ToggleSwitch.cardflag:pressed /template/ Ellipse#SwitchKnobOff">
+      <Setter Property="Fill" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
     <!-- Drop the WinUI-inherited 120px MinWidth: the focus ring is drawn on the control bounds, and a short

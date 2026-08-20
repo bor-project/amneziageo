@@ -26,20 +26,18 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private string? _configBeforeCreate;
     private string _sectionConfigDefaultName = string.Empty;
     private bool _sectionConfigSaving;
-    private bool _suppressCatalogueConfig;
 
     // Whether the agent has reported its config catalogue, and whether entering the section waits for it.
     private bool _catalogueKnown;
     private bool _enterDeferred;
-
-    // The import was started from the home server list, which the saved configuration returns to.
-    private bool _returnToServers;
 
     // Rename baseline: the open config's persisted name; a differing ConfigRename saves on the section Save.
     private string _baseConfigRename = string.Empty;
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCardStack))]
+    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private bool _isCompact;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar so a
@@ -47,9 +45,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     private bool _isActiveSection;
-
-    [ObservableProperty]
-    private ConfigChoice? _selectedCatalogueConfig = ConfigChoice.None;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConfigManage))]
@@ -61,7 +56,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowConnectOpenConfig))]
     [NotifyPropertyChangedFor(nameof(CanExportOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
+    [NotifyPropertyChangedFor(nameof(IsSectionCatalogue))]
+    [NotifyPropertyChangedFor(nameof(ShowCardStack))]
+    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private string? _openConfig;
 
     [ObservableProperty]
@@ -94,9 +91,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     [NotifyPropertyChangedFor(nameof(ShowSaveButton))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
+    [NotifyPropertyChangedFor(nameof(IsSectionCatalogue))]
+    [NotifyPropertyChangedFor(nameof(ShowCardStack))]
+    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private bool _isCreatingSectionConfig;
 
     // Manage sub-section shown by the top menu (Config vs Export). Import is IsCreatingSectionConfig.
@@ -106,8 +104,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsEditDirty))]
     [NotifyPropertyChangedFor(nameof(ShowSaveBar))]
     [NotifyPropertyChangedFor(nameof(CanSave))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderActions))]
-    [NotifyPropertyChangedFor(nameof(ShowHeaderActive))]
     private ConfigSection _manageSection = ConfigSection.Config;
 
     [ObservableProperty]
@@ -162,11 +158,14 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public ActionSheetViewModel Sheet => _host.Sheet;
 
     /// <summary>
+    /// Карточка подключения оболочки: каталог берёт с неё замер серверов и подключение.
+    /// </summary>
+    public ConnectionViewModel Home => _host.Home;
+
+    /// <summary>
     /// Configuration rows.
     /// </summary>
     public ObservableCollection<ConfigItemViewModel> Configs { get; } = [];
-
-    public ObservableCollection<ConfigChoice> ConfigCatalogueOptions { get; } = [];
 
     /// <summary>
     /// The same catalogue for the home picker, «не выбрано» first: the connection card takes no configuration
@@ -190,16 +189,20 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public bool IsSectionExport => !IsCreatingSectionConfig && OpenConfig is not null && ManageSection == ConfigSection.Export;
 
     /// <summary>
-    /// Стоит ли тумблер активности в шапке: отдельная карточка под выбором стоила пол-экрана, и её содержимое
-    /// ужато в строку у самого выбора.
+    /// Стоит ли на экране каталог карточек: нажатие по карточке открывает настройки конфигурации, «назад»
+    /// возвращает сюда.
     /// </summary>
-    public bool ShowHeaderActive => IsSectionConfig;
+    public bool IsSectionCatalogue => !IsCreatingSectionConfig && OpenConfig is null && !ShowCatalogueLoader;
 
     /// <summary>
-    /// Стоит ли на экране выбор конфигурации с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт
-    /// занимают экран целиком и возвращают сюда сами.
+    /// Стоят ли карточки одной колонкой во всю ширину.
     /// </summary>
-    public bool ShowHeaderActions => !IsCreatingSectionConfig && !IsSectionExport && !ShowCatalogueLoader;
+    public bool ShowCardStack => IsSectionCatalogue && HasConfigs && IsCompact;
+
+    /// <summary>
+    /// Замощают ли карточки пану.
+    /// </summary>
+    public bool ShowCardGrid => IsSectionCatalogue && HasConfigs && !IsCompact;
 
     /// <summary>
     /// Есть ли что экспортировать.
@@ -207,9 +210,9 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public bool CanExportOpenConfig => OpenConfig is not null;
 
     /// <summary>
-    /// Пуст ли каталог: подсказка вместо настроек, пока конфигурации не добавлены.
+    /// Пуст ли каталог: подсказка вместо карточек, пока конфигурации не добавлены.
     /// </summary>
-    public bool ShowNoConfigsHint => !ShowCatalogueLoader && !IsCreatingSectionConfig && OpenConfig is null;
+    public bool ShowNoConfigsHint => IsSectionCatalogue && !HasConfigs;
 
     /// <summary>
     /// Delete-card prompt naming the open config.
@@ -352,7 +355,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
     }
 
-    // Makes the open config the active one (the agent's target), without connecting.
+    // Makes the open config the active one (the agent's target).
     private void SetActiveConfig()
     {
         if (OpenConfig is not { Length: > 0 } name)
@@ -360,7 +363,18 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return;
         }
 
+        SetActiveConfig(name);
+    }
+
+    // Makes the named config the active one (the agent's target). A live tunnel stands on the configuration
+    // being replaced, so it is switched over to this one; an idle one is left down.
+    private void SetActiveConfig(string name)
+    {
         _host.Home.ActiveConfig = Configs.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal));
+        if (_host.Home.IsTunnelActive)
+        {
+            _ = _host.Home.ToggleConfigConnectionAsync(name, true);
+        }
     }
 
     /// <summary>
@@ -383,8 +397,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [RelayCommand]
     private void ToggleConfigText() => ShowConfigText = !ShowConfigText;
 
-    // Entering the config settings section: keep an in-progress draft, land on the active / first config, or stand
-    // on the empty catalogue, where «Добавить» offers the way in.
+    // Entering the config settings section: keep an in-progress draft, otherwise stand on the catalogue, where a
+    // card opens the settings of its own configuration.
     public void EnterSection()
     {
         ShowConfigText = false;
@@ -393,22 +407,16 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return;
         }
 
-        if (Configs.Count == 0)
+        // The agent has not reported its configs yet: hold the section on a loader. Opening the import draft
+        // here would stick, since a later catalogue never pulls the section back out of it (#137).
+        if (Configs.Count == 0 && !_catalogueKnown)
         {
-            // The agent has not reported its configs yet: hold the section on a loader. Opening the import draft
-            // here would stick, since a later catalogue never pulls the section back out of it (#137).
-            if (!_catalogueKnown)
-            {
-                _enterDeferred = true;
-                OnPropertyChanged(nameof(ShowCatalogueLoader));
-                OnPropertyChanged(nameof(ShowHeaderActions));
-                OnPropertyChanged(nameof(ShowNoConfigsHint));
-            }
-
+            _enterDeferred = true;
+            NotifyCatalogueChanged();
             return;
         }
 
-        SelectFirstIfNone();
+        OpenConfig = null;
     }
 
     // Top menu: Config / Import / Export. Import begins a fresh create draft; Config / Export land on the open
@@ -445,30 +453,74 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         if (!IsCreatingSectionConfig)
         {
-            return false;
+            // Настройки конфигурации возвращают в каталог, из которого их открыли.
+            if (OpenConfig is null)
+            {
+                return false;
+            }
+
+            OpenConfig = null;
+            return true;
         }
 
-        // Черновик снимает возврат к списку серверов, так что цель запоминается до отмены.
-        var toServers = _returnToServers;
         AbandonCreate();
-        if (toServers)
-        {
-            _host.ReturnToServerList();
-        }
-
         return true;
     }
 
     /// <summary>
-    /// Переводит секцию конфигураций в импорт. Начатый из списка серверов импорт возвращает к нему после
-    /// сохранения.
+    /// Переводит секцию конфигураций в импорт.
     /// </summary>
-    public void EnterImportSection(bool returnToServers = false)
+    public void EnterImportSection()
     {
-        _returnToServers = returnToServers;
         if (!IsCreatingSectionConfig)
         {
             BeginSectionConfig();
+        }
+    }
+
+    /// <summary>
+    /// Открывает настройки конфигурации, карточку которой нажали.
+    /// </summary>
+    [RelayCommand]
+    private void OpenCard(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        OpenConfigFor(item.Name);
+    }
+
+    /// <summary>
+    /// Включает конфигурацию карточки или снимает выбор, не открывая её настройки.
+    /// </summary>
+    [RelayCommand]
+    private void SelectCard(ConfigItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        if (item.IsSelected)
+        {
+            _ = _host.Home.ClearActiveConfigAsync();
+            return;
+        }
+
+        SetActiveConfig(item.Name);
+    }
+
+    /// <summary>
+    /// Отмечает в каталоге карточку, по которой кликнули или в которую вошли пультом.
+    /// </summary>
+    [RelayCommand]
+    private void PickCard(ConfigItemViewModel? item)
+    {
+        foreach (var row in Configs)
+        {
+            row.IsPicked = ReferenceEquals(row, item);
         }
     }
 
@@ -559,22 +611,19 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         _configNames = [.. entries.Select(e => e.Name)];
-        ReconcileConfigCatalogueOptions();
+        ReconcileConfigOptions();
 
         // A config just imported in the Config section: open it once its row arrives so OnOpenConfigChanged
         // seeds the transport editor from the real snapshot row instead of all-defaults.
         ResolvePendingOpenConfig();
 
-        // The open config is gone (deleted from the server list or elsewhere): move to what is left, so the
+        // The open config is gone (deleted from the server list or elsewhere): fall back to the catalogue, so the
         // editors never key by a name the agent no longer has.
         if (OpenConfig is { } open && _pendingOpenConfig is null && !_configNames.Contains(open, StringComparer.Ordinal))
         {
-            OpenConfig = Configs.FirstOrDefault()?.Name;
+            OpenConfig = null;
         }
 
-        // Re-select the section combo now that the option list is current: an OpenConfig set above (or a
-        // pending one just resolved) whose real choice only now exists needs the selection re-pointed at it.
-        SyncCatalogueConfig();
         NotifyHasConfigsChanged();
         MarkCatalogueKnown();
     }
@@ -587,9 +636,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     {
         _catalogueKnown = false;
         _enterDeferred = false;
-        OnPropertyChanged(nameof(ShowCatalogueLoader));
-        OnPropertyChanged(nameof(ShowHeaderActions));
-        OnPropertyChanged(nameof(ShowNoConfigsHint));
+        NotifyCatalogueChanged();
         Configs.Clear();
         OpenConfig = null;
         _pendingOpenConfig = null;
@@ -598,8 +645,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
         ManageSection = ConfigSection.Config;
-        ReconcileConfigCatalogueOptions();
-        SyncCatalogueConfig();
+        ReconcileConfigOptions();
         NotifyHasConfigsChanged();
     }
 
@@ -638,9 +684,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
 
         _enterDeferred = false;
-        OnPropertyChanged(nameof(ShowCatalogueLoader));
-        OnPropertyChanged(nameof(ShowHeaderActions));
-        OnPropertyChanged(nameof(ShowNoConfigsHint));
+        NotifyCatalogueChanged();
         if (IsActiveSection)
         {
             EnterSection();
@@ -650,6 +694,17 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     private void NotifyHasConfigsChanged()
     {
         OnPropertyChanged(nameof(HasConfigs));
+        NotifyCatalogueChanged();
+    }
+
+    // Каталог сменил вид: загрузчик, карточки и подсказка пустого каталога ходят вместе.
+    private void NotifyCatalogueChanged()
+    {
+        OnPropertyChanged(nameof(ShowCatalogueLoader));
+        OnPropertyChanged(nameof(IsSectionCatalogue));
+        OnPropertyChanged(nameof(ShowCardStack));
+        OnPropertyChanged(nameof(ShowCardGrid));
+        OnPropertyChanged(nameof(ShowNoConfigsHint));
     }
 
     partial void OnOpenConfigChanged(string? value)
@@ -661,7 +716,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         _baseConfigRename = value ?? string.Empty;
         ConfigRename = value ?? string.Empty;
         ConfigRenameStatus = string.Empty;
-        SyncCatalogueConfig();
         if (value is null)
         {
             ConfigExport = null;
@@ -710,24 +764,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         RefreshEditBar();
     }
 
-    partial void OnSelectedCatalogueConfigChanged(ConfigChoice? value)
-    {
-        if (_suppressCatalogueConfig || value is null)
-        {
-            return;
-        }
-
-        if (IsCreatingSectionConfig)
-        {
-            CancelSectionConfig();
-        }
-
-        OpenConfig = value.IsReal ? value.Name : null;
-    }
-
     partial void OnIsCreatingSectionConfigChanged(bool value)
     {
-        SyncCatalogueConfig();
         RefreshEditBar();
     }
 
@@ -751,20 +789,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
     }
 
-    // Reflect the open config into the section combo without echoing the pick back: a selected real config
-    // shows its row, otherwise «— не выбрано —».
-    private void SyncCatalogueConfig()
+    private void ReconcileConfigOptions()
     {
-        _suppressCatalogueConfig = true;
-        SelectedCatalogueConfig = OpenConfig is null
-            ? ConfigChoice.None
-            : ConfigCatalogueOptions.FirstOrDefault(o => o.IsReal && string.Equals(o.Name, OpenConfig, StringComparison.Ordinal)) ?? ConfigChoice.None;
-        _suppressCatalogueConfig = false;
-    }
-
-    private void ReconcileConfigCatalogueOptions()
-    {
-        ReconcileOptions(ConfigCatalogueOptions, 0);
         ReconcileOptions(HomeConfigOptions, 1);
     }
 
@@ -798,11 +824,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             }
         }
     }
-
-    // The first config that is not the one just deleted (still present in the collection until the next
-    // snapshot drops it), or null when it was the last one.
-    private string? NextConfigAfter(string deleted) =>
-        Configs.FirstOrDefault(c => !string.Equals(c.Name, deleted, StringComparison.Ordinal))?.Name;
 
     internal async Task<IpcAck> ImportConfigAsync(string name, string confText)
     {
@@ -898,7 +919,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     }
 
     // Inline Confirm: perform the delete. The selection and a tunnel bound to the config are taken off it first,
-    // and a refusal surfaces its reason. On success the next remaining config opens so the section is never left empty.
+    // and a refusal surfaces its reason. On success the section returns to the catalogue.
     [RelayCommand]
     private async Task ConfirmDeleteOpenConfig()
     {
@@ -916,8 +937,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             return;
         }
 
-        // Последний конфиг удалён - секция остаётся на пустом каталоге с кнопкой «Добавить».
-        OpenConfig = NextConfigAfter(config);
+        OpenConfig = null;
     }
 
     // Commit the open config's rename through the agent. Keyed by the current name; on OK it
@@ -993,7 +1013,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         ImportMethod = ConfigImportMethod.Picker;
         SectionScan = null;
         SectionTransport = null;
-        _returnToServers = false;
     }
 
     // Открывает черновик, если он ещё не начат: способ выбирается в шторке «Добавить», а не вкладкой.
@@ -1224,13 +1243,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
             // seeds from the real config row rather than all-defaults (the row is not in Configs yet here).
             _pendingOpenConfig = name;
             ResolvePendingOpenConfig();
-
-            // Started from the home server list: hand the screen back to it.
-            if (_returnToServers)
-            {
-                _returnToServers = false;
-                _host.ReturnToServerList();
-            }
 
             return true;
         }

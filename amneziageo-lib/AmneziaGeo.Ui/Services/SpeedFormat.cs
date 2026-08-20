@@ -20,6 +20,16 @@ internal static class SpeedFormat
             : Loc.Instance.Get("Main_LinkSpeedKbit", rxBitsPerSecond / 1000, txBitsPerSecond / 1000);
     }
 
+    /// <summary>
+    /// Both directions in one short reading, for a card that has an icon in place of the words.
+    /// </summary>
+    public static string Compact(long rxBitsPerSecond, long txBitsPerSecond)
+    {
+        return Math.Max(rxBitsPerSecond, txBitsPerSecond) >= Megabit
+            ? Loc.Instance.Get("Main_CardSpeedMbit", Megabits(rxBitsPerSecond), Megabits(txBitsPerSecond))
+            : Loc.Instance.Get("Main_CardSpeedKbit", rxBitsPerSecond / 1000, txBitsPerSecond / 1000);
+    }
+
     private static string Megabits(long bitsPerSecond)
     {
         return (bitsPerSecond / (double)Megabit).ToString("0.0", CultureInfo.CurrentCulture);

@@ -20,10 +20,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private readonly UiPreferences _prefs;
 
     private long? _pendingEditRoutingListId;
-    private bool _suppressCatalogueRouting;
 
     // Set once the agent has reported its catalogue; until then an empty one only means "not loaded".
     private bool _catalogueKnown;
+
+    // Состояние туннеля из снимка: по нему видно, идёт ли маршрутизация по выбранному списку прямо сейчас.
+    private string _boundStatus = ConnectionStatus.Disconnected;
 
     // Set while the section waits for that first report.
     private bool _enterDeferred;
@@ -32,6 +34,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     // Narrow-window layout flag, pushed by the shell.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCardStack))]
+    [NotifyPropertyChangedFor(nameof(ShowCardGrid))]
     private bool _isCompact;
 
     // Whether this section is the one currently shown, pushed by the shell; gates the footer Save bar.
@@ -62,25 +66,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private long? _selectedRoutingListId;
 
     [ObservableProperty]
-    private RoutingListChoice? _selectedCatalogueRouting = RoutingListChoice.None;
-
-    // The list every config routes by, as the server screen picks it; a pick is applied at once.
-    [ObservableProperty]
-    private RoutingListChoice? _homeRoutingChoice = RoutingListChoice.None;
-
-    private bool _suppressHomeRouting;
-
-    partial void OnHomeRoutingChoiceChanged(RoutingListChoice? value)
-    {
-        if (_suppressHomeRouting || value is null || value.Id == SelectedRoutingListId)
-        {
-            return;
-        }
-
-        _ = AssignRoutingAsync(value.Id);
-    }
-
-    [ObservableProperty]
     private bool _routingDeletePending;
 
     [ObservableProperty]
@@ -109,13 +94,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// Routing-list catalogue.
     /// </summary>
     public ObservableCollection<RoutingListSummaryViewModel> RoutingLists { get; } = [];
-
-    public ObservableCollection<RoutingListChoice> RoutingCatalogueOptions { get; } = [];
-
-    /// <summary>
-    /// The same catalogue behind the none choice: what the server screen offers as the list to route by.
-    /// </summary>
-    public ObservableCollection<RoutingListChoice> HomeRoutingOptions { get; } = [RoutingListChoice.None];
 
     /// <summary>
     /// Имена сохранённых списков маршрутизации.
@@ -158,21 +136,27 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     public bool IsSectionImport => IsCreatingSectionRouting;
 
-    public bool IsSectionSettings => !IsCreatingSectionRouting && RoutingEditor is not null && ManageSection == RoutingSection.Settings;
+    public bool IsSectionSettings => !IsCreatingSectionRouting && EditRoutingList is not null
+        && RoutingEditor is not null && ManageSection == RoutingSection.Settings;
 
-    public bool IsSectionExport => !IsCreatingSectionRouting && RoutingEditor is not null && ManageSection == RoutingSection.Export;
-
-    /// <summary>
-    /// Стоит ли тумблер применения в шапке: отдельная карточка под выбором стоила пол-экрана, и её содержимое
-    /// ужато в строку у самого выбора.
-    /// </summary>
-    public bool ShowHeaderActive => IsSectionSettings;
+    public bool IsSectionExport => !IsCreatingSectionRouting && EditRoutingList is not null
+        && RoutingEditor is not null && ManageSection == RoutingSection.Export;
 
     /// <summary>
-    /// Стоит ли на экране выбор списка с кнопками «Добавить» и «Экспорт»: черновик, сканер и экспорт занимают
-    /// экран целиком и возвращают сюда сами.
+    /// Стоит ли на экране каталог карточек: кнопка на карточке открывает настройки списка, «назад» возвращает
+    /// сюда.
     /// </summary>
-    public bool ShowHeaderActions => !IsCreatingSectionRouting && !IsSectionExport && !ShowCatalogueLoader;
+    public bool IsSectionCatalogue => !IsCreatingSectionRouting && EditRoutingList is null && !ShowCatalogueLoader;
+
+    /// <summary>
+    /// Стоят ли карточки одной колонкой во всю ширину.
+    /// </summary>
+    public bool ShowCardStack => IsSectionCatalogue && HasRoutingLists && IsCompact;
+
+    /// <summary>
+    /// Замощают ли карточки пану.
+    /// </summary>
+    public bool ShowCardGrid => IsSectionCatalogue && HasRoutingLists && !IsCompact;
 
     /// <summary>
     /// Delete-card prompt naming the open list.
@@ -285,10 +269,18 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsImportPicker));
         OnPropertyChanged(nameof(IsImportManual));
         OnPropertyChanged(nameof(IsImportCamera));
-        OnPropertyChanged(nameof(ShowHeaderActions));
-        OnPropertyChanged(nameof(ShowHeaderActive));
         OnPropertyChanged(nameof(CanExportOpenList));
+        NotifyCatalogueChanged();
         RefreshEditBar();
+    }
+
+    // Re-raise the catalogue flags after a driver changes.
+    private void NotifyCatalogueChanged()
+    {
+        OnPropertyChanged(nameof(IsSectionCatalogue));
+        OnPropertyChanged(nameof(ShowCardStack));
+        OnPropertyChanged(nameof(ShowCardGrid));
+        OnPropertyChanged(nameof(ShowNoListsHint));
     }
 
     private void OnEditScopeDirty(object? sender, EventArgs e) => RefreshEditBar();
@@ -303,14 +295,14 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     partial void OnHasRoutingListsChanged(bool value)
     {
-        OnPropertyChanged(nameof(ShowNoListsHint));
+        NotifyCatalogueChanged();
     }
 
     // Keeps the list that routes: the section lands on it next time, and turning routing off leaves it behind
     // instead of sending the section back to the top of the catalogue.
     partial void OnSelectedRoutingListIdChanged(long? value)
     {
-        SyncHomeRouting();
+        MarkSelectedList();
         if (value is not { } id || _prefs.LastRoutingList == id)
         {
             return;
@@ -325,6 +317,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// </summary>
     public void Apply(StatusSnapshot snapshot)
     {
+        _boundStatus = snapshot.BoundStatus;
+
         // No catalogue in the snapshot means the agent has not read its store yet - keep what is on screen and
         // stay "not loaded", rather than reading it as an account with no lists.
         if (snapshot.RoutingLists is { } entries)
@@ -335,6 +329,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         SelectedRoutingListId = snapshot.SelectedRoutingList;
+        MarkSelectedList();
         RoutingSettings?.ApplyRouteTtl(snapshot.RouteTtlSeconds);
     }
 
@@ -346,7 +341,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     /// <summary>
     /// Whether the header says there are no saved lists; silent until the catalogue is known.
     /// </summary>
-    public bool ShowNoListsHint => _catalogueKnown && !HasRoutingLists;
+    public bool ShowNoListsHint => IsSectionCatalogue && _catalogueKnown && !HasRoutingLists;
 
     // The first snapshot settles the catalogue: an empty one now means there are no lists, and a section held
     // on its loader can finally land somewhere.
@@ -358,7 +353,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         _catalogueKnown = true;
-        OnPropertyChanged(nameof(ShowNoListsHint));
+        NotifyCatalogueChanged();
         if (!_enterDeferred)
         {
             return;
@@ -366,7 +361,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
         _enterDeferred = false;
         OnPropertyChanged(nameof(ShowCatalogueLoader));
-        OnPropertyChanged(nameof(ShowHeaderActions));
+        NotifyCatalogueChanged();
         if (IsActiveSection)
         {
             EnterSection();
@@ -411,8 +406,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         _catalogueKnown = false;
         _enterDeferred = false;
         OnPropertyChanged(nameof(ShowCatalogueLoader));
-        OnPropertyChanged(nameof(ShowHeaderActions));
-        OnPropertyChanged(nameof(ShowNoListsHint));
+        NotifyCatalogueChanged();
         RoutingLists.Clear();
         HasRoutingLists = false;
         SelectedRoutingListId = null;
@@ -425,8 +419,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         ImportMethod = RoutingImportMethod.Picker;
         SectionScan = null;
         ManageSection = RoutingSection.Settings;
-        ReconcileRoutingCatalogueOptions();
-        SyncCatalogueRouting();
     }
 
     // Entering the routing section: keep an in-progress draft, land on the first list, or stand on the empty
@@ -446,13 +438,75 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             {
                 _enterDeferred = true;
                 OnPropertyChanged(nameof(ShowCatalogueLoader));
-                OnPropertyChanged(nameof(ShowHeaderActions));
+                        NotifyCatalogueChanged();
             }
 
             return;
         }
 
-        SelectFirstIfNone();
+        CloseOpenList();
+    }
+
+    // Возврат в каталог: открытый список закрывается вместе со своими редакторами.
+    private void CloseOpenList()
+    {
+        ManageSection = RoutingSection.Settings;
+        EditRoutingList = null;
+        RoutingEditor = null;
+        RoutingSettings = null;
+        RefreshSections();
+    }
+
+    /// <summary>
+    /// Открывает настройки списка, карточку которого нажали.
+    /// </summary>
+    [RelayCommand]
+    private void OpenCard(RoutingListSummaryViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        ManageSection = RoutingSection.Settings;
+        EditRoutingList = item;
+    }
+
+    /// <summary>
+    /// Применяет список карточки или снимает применение, не открывая его настройки.
+    /// </summary>
+    [RelayCommand]
+    private void SelectCard(RoutingListSummaryViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        _ = AssignRoutingAsync(item.IsSelected ? null : item.Id);
+    }
+
+    /// <summary>
+    /// Отмечает в каталоге карточку, по которой кликнули или в которую вошли пультом.
+    /// </summary>
+    [RelayCommand]
+    private void PickCard(RoutingListSummaryViewModel? item)
+    {
+        foreach (var row in RoutingLists)
+        {
+            row.IsPicked = ReferenceEquals(row, item);
+        }
+    }
+
+    // Отмечает в каталоге выбранный список и тот, по которому маршрутизация идёт на самом деле.
+    private void MarkSelectedList()
+    {
+        var live = string.Equals(_boundStatus, ConnectionStatus.Connected, StringComparison.Ordinal);
+        foreach (var row in RoutingLists)
+        {
+            row.IsSelected = SelectedRoutingListId is { } id && row.Id == id;
+            row.IsLive = row.IsSelected && live;
+        }
     }
 
     // Landing on the Routing section with nothing open: open the list that routes so it never opens empty, and
@@ -475,22 +529,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     private RoutingListSummaryViewModel? CatalogueRow(long? id)
     {
         return id is > 0 ? RoutingLists.FirstOrDefault(r => r.Id == id) : null;
-    }
-
-    // Reflect the globally selected routing list into this section: a real list opens there (its rule /
-    // per-routing settings editors build via OnEditRoutingListChanged), while none clears the section.
-    public void OpenSelected(long? listId)
-    {
-        if (listId is { } id && RoutingLists.FirstOrDefault(r => r.Id == id) is { } row)
-        {
-            EditRoutingList = row;
-            return;
-        }
-
-        EditRoutingList = null;
-        RoutingEditor = null;
-        RoutingSettings = null;
-        SyncCatalogueRouting();
     }
 
     // Top menu: Settings / Import / Export. Import begins a fresh create draft; Settings / Export land on the
@@ -526,7 +564,14 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
         if (!IsCreatingSectionRouting)
         {
-            return false;
+            // Настройки списка возвращают в каталог, из которого их открыли.
+            if (EditRoutingList is null)
+            {
+                return false;
+            }
+
+            CloseOpenList();
+            return true;
         }
 
         AbandonCreate();
@@ -549,6 +594,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         // Switching (or clearing) the selected list disarms any pending delete confirmation (#143).
         RoutingDeletePending = false;
         RoutingDeleteStatus = string.Empty;
+        RefreshSections();
 
         if (value is null)
         {
@@ -556,33 +602,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
 
         BuildSectionRoutingEditor(value.Id, value.Name);
-        // Selecting the just-saved list (or re-selecting the open one) short-circuits BuildSectionRoutingEditor,
-        // so RoutingEditor does not change and OnRoutingEditorChanged will not fire - mirror the combo here.
-        SyncCatalogueRouting();
-    }
-
-    // The Routing section combo pick: «— не выбрано —» closes the editor; a real list opens it for editing. A
-    // new-list draft is opened by the «Импорт» tab (#111), not from this combo.
-    partial void OnSelectedCatalogueRoutingChanged(RoutingListChoice? value)
-    {
-        if (_suppressCatalogueRouting || value is null)
-        {
-            return;
-        }
-
-        if (value.IsNone)
-        {
-            EditRoutingList = null;
-            RoutingEditor = null;
-            RoutingSettings = null;
-            return;
-        }
-
-        var row = RoutingLists.FirstOrDefault(r => r.Id == value.Id);
-        if (row is not null)
-        {
-            EditRoutingList = row;
-        }
     }
 
     // The section rule-editor instance changed (new draft created, real list opened, or closed): re-mirror the
@@ -603,7 +622,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             newValue.DirtyChanged += OnEditScopeDirty;
         }
 
-        SyncCatalogueRouting();
         SyncTrafficFlags();
         RefreshSections();
     }
@@ -650,74 +668,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         RoutingDeleteStatus = string.Empty;
         RefreshEditBar();
-    }
-
-    // Mirror the Routing section's state into its combo without echoing the pick back: a selected real list
-    // shows its row, otherwise «— не выбрано —» (including while a new-list draft is being created).
-    private void SyncCatalogueRouting()
-    {
-        _suppressCatalogueRouting = true;
-        SelectedCatalogueRouting = EditRoutingList is null
-            ? RoutingListChoice.None
-            : RoutingCatalogueOptions.FirstOrDefault(o => o.IsReal && o.Id == EditRoutingList.Id) ?? RoutingListChoice.None;
-        _suppressCatalogueRouting = false;
-    }
-
-    // Reconcile RoutingCatalogueOptions in place from RoutingLists: reconcile the real (id) choices - replacing a
-    // renamed row so its label updates. A following SyncCatalogueRouting re-selects by id, so a replace never
-    // strands the selection.
-    private void ReconcileRoutingCatalogueOptions()
-    {
-        ReconcileOptions(RoutingCatalogueOptions, head: 0);
-        ReconcileOptions(HomeRoutingOptions, head: 1);
-        SyncHomeRouting();
-    }
-
-    // The same reconcile over one option list; head is what stands ahead of the catalogue and is left alone.
-    private void ReconcileOptions(ObservableCollection<RoutingListChoice> options, int head)
-    {
-        var present = RoutingLists.Select(r => r.Id).ToHashSet();
-        for (var i = options.Count - 1; i >= head; i--)
-        {
-            if (options[i].Id is not long id || !present.Contains(id))
-            {
-                options.RemoveAt(i);
-            }
-        }
-
-        for (var i = 0; i < RoutingLists.Count; i++)
-        {
-            var row = RoutingLists[i];
-            var slot = head + i;
-            var existing = options.Skip(head).FirstOrDefault(o => o.Id == row.Id);
-            if (existing is null)
-            {
-                options.Insert(Math.Min(slot, options.Count), new RoutingListChoice(row.Id, row.Name));
-                continue;
-            }
-
-            if (!string.Equals(existing.Name, row.Name, StringComparison.Ordinal))
-            {
-                options[options.IndexOf(existing)] = new RoutingListChoice(row.Id, row.Name);
-                existing = options.Skip(head).First(o => o.Id == row.Id);
-            }
-
-            var index = options.IndexOf(existing);
-            if (index != slot)
-            {
-                options.Move(index, slot);
-            }
-        }
-    }
-
-    // Mirrors the list that routes into the server screen's picker without echoing the pick back.
-    private void SyncHomeRouting()
-    {
-        _suppressHomeRouting = true;
-        HomeRoutingChoice = SelectedRoutingListId is { } id
-            ? HomeRoutingOptions.FirstOrDefault(o => o.IsReal && o.Id == id) ?? RoutingListChoice.None
-            : RoutingListChoice.None;
-        _suppressHomeRouting = false;
     }
 
     // Builds the Routing section's rule editor + per-routing settings for a real (saved) list. Independent of
@@ -821,9 +771,12 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             existing.RuleCount = entry.RuleCount;
             existing.RouteCount = entry.RouteCount;
             existing.DomainCount = entry.DomainCount;
+            existing.ProxyRuleCount = entry.ProxyRuleCount;
+            existing.DirectRuleCount = entry.DirectRuleCount;
+            existing.BlockRuleCount = entry.BlockRuleCount;
+            existing.UseGlobalProxy = entry.UseGlobalProxy;
+            existing.AllUdp = entry.AllUdp;
         }
-
-        ReconcileRoutingCatalogueOptions();
 
         // Reconcile the selected list: if removed elsewhere drop the editor; if its instance was replaced by a
         // fresh row of the same id, re-point at the surviving instance so the combo stays selected. A pending
@@ -856,7 +809,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             }
         }
 
-        SyncCatalogueRouting();
+        MarkSelectedList();
     }
 
     // ---- Import create-form: "+ Импорт" opens a new-list draft with a method picker (blank / file / paste / QR). ----
@@ -872,9 +825,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         // A new draft has no server data to load: show its empty form at once, never the section loader (#193).
         SectionLoading = false;
 
-        // Clear the selected list first: setting RoutingEditor below fires OnRoutingEditorChanged ->
-        // SyncCatalogueRouting, which mirrors EditRoutingList into the combo, so it must already be null for
-        // the combo to read «— не выбрано —» while the new draft is being created.
+        // The draft stands on a clear slate: the open list is dropped before its editor is built.
         RoutingSettings = null;
         EditRoutingList = null;
         var editor = new RoutingListEditorViewModel(_connection, OnSectionRoutingEditorSaved);
@@ -1148,10 +1099,6 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         ManageSection = RoutingSection.Settings;
         EditRoutingList = _listBeforeCreate;
         _listBeforeCreate = null;
-        if (EditRoutingList is null)
-        {
-            SyncCatalogueRouting();
-        }
     }
 
     /// <summary>

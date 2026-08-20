@@ -508,12 +508,6 @@
   <data name="Main_ConfirmDeleteButton" xml:space="preserve">
     <value>Удалить</value>
   </data>
-  <data name="Main_DeleteServerTitle" xml:space="preserve">
-    <value>Удалить сервер?</value>
-  </data>
-  <data name="Main_DeleteServerPrompt" xml:space="preserve">
-    <value>Сервер {0} будет удалён из списка. Это действие нельзя отменить.</value>
-  </data>
   <data name="Main_ConfirmButton" xml:space="preserve">
     <value>Подтвердить</value>
   </data>
@@ -1108,9 +1102,6 @@
   <data name="QrScanner_CameraPermissionDenied" xml:space="preserve">
     <value>Доступ к камере запрещён</value>
   </data>
-  <data name="RoutingChoice_None" xml:space="preserve">
-    <value>- не задан -</value>
-  </data>
   <data name="RoutingEditor_AddAtLeastOneEntry" xml:space="preserve">
     <value>Добавьте хотя бы одну запись, чтобы сохранить список.</value>
   </data>
@@ -1520,9 +1511,6 @@
   <data name="InstallerVm_Updating" xml:space="preserve">
     <value>Обновление…</value>
   </data>
-  <data name="Main_HomeSelectConfigHint" xml:space="preserve">
-    <value>Выберите конфигурацию для подключения.</value>
-  </data>
   <data name="InstallerVm_ResetSettings" xml:space="preserve">
     <value>Сбросить настройки</value>
   </data>
@@ -1778,38 +1766,17 @@
   <data name="Agent_NoConfigSelected" xml:space="preserve">
     <value>Конфигурация не выбрана.</value>
   </data>
-  <data name="Main_ServersTitle" xml:space="preserve">
-    <value>Серверы</value>
-  </data>
-  <data name="Main_HomeTabMain" xml:space="preserve">
-    <value>Главная</value>
-  </data>
-  <data name="Main_HomeTabServers" xml:space="preserve">
-    <value>Серверы</value>
-  </data>
   <data name="Main_AlwaysOnMode" xml:space="preserve">
     <value>Постоянная VPN: кнопка открывает системный экран</value>
   </data>
   <data name="Main_HomeServerLabel" xml:space="preserve">
     <value>Сервер</value>
   </data>
-  <data name="Main_HomeManageServers" xml:space="preserve">
-    <value>Дополнительно</value>
-  </data>
-  <data name="Main_ServersCount" xml:space="preserve">
-    <value>Серверов: {0}</value>
-  </data>
-  <data name="Main_ServerRowTooltip" xml:space="preserve">
-    <value>Подключить эту конфигурацию</value>
-  </data>
-  <data name="Main_ServerRowDisconnect" xml:space="preserve">
-    <value>Отключить эту конфигурацию</value>
-  </data>
-  <data name="Main_ServerRowSelect" xml:space="preserve">
-    <value>Выбрать эту конфигурацию</value>
-  </data>
   <data name="Main_ProbeTooltip" xml:space="preserve">
     <value>Проверить серверы</value>
+  </data>
+  <data name="Main_ProbeButton" xml:space="preserve">
+    <value>Проверить</value>
   </data>
   <data name="Main_ProbeMilliseconds" xml:space="preserve">
     <value>{0} мс</value>
@@ -1820,20 +1787,26 @@
   <data name="Main_ProbeNoAddress" xml:space="preserve">
     <value>недоступен</value>
   </data>
-  <data name="Main_ProbeMillisecondsLoss" xml:space="preserve">
-    <value>{0} мс, потери {1}%</value>
-  </data>
-  <data name="Main_ProbeBest" xml:space="preserve">
-    <value>лучший</value>
-  </data>
   <data name="Main_LinkSpeedMbit" xml:space="preserve">
     <value>приём {0} отдача {1} Мбит/с</value>
   </data>
   <data name="Main_LinkSpeedKbit" xml:space="preserve">
     <value>приём {0} отдача {1} кбит/с</value>
   </data>
+  <data name="Main_CardSpeedMbit" xml:space="preserve">
+    <value>{0}/{1} Мбит/с</value>
+  </data>
+  <data name="Main_CardSpeedKbit" xml:space="preserve">
+    <value>{0}/{1} кбит/с</value>
+  </data>
+  <data name="Main_CardLoss" xml:space="preserve">
+    <value>{0}%</value>
+  </data>
   <data name="Main_LinkChurn" xml:space="preserve">
     <value>сессия переустанавливается {0} раз в минуту</value>
+  </data>
+  <data name="Main_LinkSpeedUnknown" xml:space="preserve">
+    <value>приём и отдача: пока нет данных</value>
   </data>
   <data name="Main_LinkLoss" xml:space="preserve">
     <value>потери в туннеле {0}%</value>
@@ -1850,8 +1823,41 @@
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Активна</value>
   </data>
+  <data name="Main_CardActiveFlag" xml:space="preserve">
+    <value>Профиль включён</value>
+  </data>
+  <data name="Main_CardStateReady" xml:space="preserve">
+    <value>Готов</value>
+  </data>
+  <data name="Main_CardStateOff" xml:space="preserve">
+    <value>Выключен</value>
+  </data>
+  <data name="Main_ProbeUnknown" xml:space="preserve">
+    <value>N/A</value>
+  </data>
+  <data name="Main_CardRulesProxy" xml:space="preserve">
+    <value>{0} прокси</value>
+  </data>
+  <data name="Main_CardRulesDirect" xml:space="preserve">
+    <value>{0} директ</value>
+  </data>
+  <data name="Main_CardRulesBlock" xml:space="preserve">
+    <value>{0} блок</value>
+  </data>
+  <data name="Main_CardTagGlobal" xml:space="preserve">
+    <value>Глобально</value>
+  </data>
+  <data name="Main_CardTagUdp" xml:space="preserve">
+    <value>UDP</value>
+  </data>
+  <data name="Main_CardSettingsLink" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
   <data name="Main_ConnectNowLink" xml:space="preserve">
     <value>Подключиться</value>
+  </data>
+  <data name="Main_DisconnectNowLink" xml:space="preserve">
+    <value>Отключиться</value>
   </data>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Использовать этот список</value>

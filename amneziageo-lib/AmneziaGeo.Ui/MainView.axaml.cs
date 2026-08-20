@@ -190,32 +190,15 @@ public sealed partial class MainView : UserControl
             return true;
         }
 
-        if (_vm?.ShowDeleteAsk == true)
-        {
-            _vm.CancelDeleteAskCommand.Execute(null);
-            return true;
-        }
-
-        if (Controls.ServerCard.LeaveEntered(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
-        {
-            return true;
-        }
-
         if (_vm is null)
         {
             return false;
         }
 
-        // The server screen steps back to the connect one; home itself hands the key to the system.
+        // Home itself hands the key to the system.
         if (!_vm.IsSettings)
         {
-            if (!_vm.IsHomeServers)
-            {
-                return false;
-            }
-
-            _vm.SelectHomeTabCommand.Execute("main");
-            return true;
+            return false;
         }
 
         // Out of the content pane the step back lands in the section menu, not on home; a sub-view of the
@@ -247,14 +230,6 @@ public sealed partial class MainView : UserControl
         {
             FocusCurrentScreen();
         }
-
-        // Пульту нужна точка входа в вопрос: иначе стрелки ходят по карточкам за плашкой.
-        if (e.PropertyName is nameof(MainWindowViewModel.ShowDeleteAsk) && _vm?.ShowDeleteAsk == true)
-        {
-            Dispatcher.UIThread.Post(
-                () => DeleteAskCancel.Focus(NavigationMethod.Directional),
-                DispatcherPriority.Loaded);
-        }
     }
 
     // Seats initial D-pad focus on each screen so an Android TV remote always has a starting point:
@@ -277,9 +252,7 @@ public sealed partial class MainView : UserControl
 
             if (vm.IsHome)
             {
-                // The server screen hides the round button, so the way back off it takes the ring instead.
-                var connect = vm.ShowHomeConnect ? (Control)HomePowerButton : HomeServersBack;
-                connect.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
+                HomePowerButton.Focus(UiPlatform.IsTelevision ? NavigationMethod.Directional : NavigationMethod.Unspecified);
             }
             else if (vm.IsSettings)
             {
@@ -380,23 +353,12 @@ public sealed partial class MainView : UserControl
     // «Добавить конфигурацию» на главном: способ выбирается здесь же, настройки открываются уже под него.
     private void OnAddConfigOptions(object? sender, RoutedEventArgs e)
     {
-        PresentAddConfig(sender as Control, returnToServers: false);
-    }
-
-    // Добавление из списка серверов: тот же выбор, с возвратом к списку после сохранения.
-    private void OnAddServerOptions(object? sender, RoutedEventArgs e)
-    {
-        PresentAddConfig(sender as Control, returnToServers: true);
-    }
-
-    private void PresentAddConfig(Control? anchor, bool returnToServers)
-    {
         if (_vm is null)
         {
             return;
         }
 
-        Controls.ConfigAddOptions.Present(anchor, this, _vm.Config, _ => _vm.OpenConfigImport(returnToServers));
+        Controls.ConfigAddOptions.Present(sender as Control, this, _vm.Config, _ => _vm.OpenConfigImport());
     }
 
     // Up / down inside a pane walk the tab order instead of the geometry: a narrow control standing beside a

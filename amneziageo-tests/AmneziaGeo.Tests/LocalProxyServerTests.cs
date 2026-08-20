@@ -246,6 +246,16 @@ public sealed class LocalProxyServerTests : IDisposable
     }
 
     [Fact]
+    public void AnIPv6Address_IsNeverOffered()
+    {
+        // A link carries both families where the router hands out a unique-local prefix; the listener binds IPv4.
+        var lan = new LocalProxyServer.AdapterView(NetworkInterfaceType.Ethernet, true,
+            [IPAddress.Parse("fd00::1"), IPAddress.Parse("192.168.1.47")]);
+
+        Assert.Equal(["192.168.1.47"], LocalProxyServer.Usable([lan]));
+    }
+
+    [Fact]
     public void AccountsSurviveTheTextTheyAreStoredIn()
     {
         var accounts = new[] { new ProxyAccount("bor", "se:cret"), new ProxyAccount(" guest ", "letmein") };

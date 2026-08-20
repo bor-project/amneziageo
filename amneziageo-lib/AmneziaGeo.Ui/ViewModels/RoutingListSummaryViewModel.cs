@@ -47,12 +47,10 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     private bool _allUdp;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
     private bool _isSelected;
 
     // Whether the tunnel runs on this list, so its rules are the ones in force.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
     [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
     private bool _isLive;
 
@@ -77,13 +75,12 @@ internal sealed partial class RoutingListSummaryViewModel : ViewModelBase
     public string BlockRulesText => Loc.Instance.Get("Main_CardRulesBlock", BlockRuleCount);
 
     /// <summary>
-    /// Носит ли карточка свою рамку поверх общей: выбранный в каталоге, применённый список и тот, по
-    /// которому идёт маршрутизация.
+    /// Носит ли карточка свою рамку поверх общей: та, которую выбрали в каталоге.
     /// </summary>
-    public bool ShowCardFrame => IsPicked || IsSelected || IsLive;
+    public bool ShowCardFrame => IsPicked;
 
     /// <summary>
-    /// Цвет рамки: цвет подключения, пока маршрутизация идёт по этому списку, серый у просто выбранного.
+    /// Цвет рамки: цвет подключения, пока маршрутизация идёт по этому списку, серый у остальных.
     /// </summary>
     public IBrush CardFrameBrush =>
         StatusLabels.Brush(IsLive ? ConnectionStatus.Connected : ConnectionStatus.Idle);

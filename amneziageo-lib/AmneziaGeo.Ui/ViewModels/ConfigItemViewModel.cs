@@ -50,11 +50,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(StatusBrush))]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
-    [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
     [NotifyPropertyChangedFor(nameof(CardActionText))]
     [NotifyPropertyChangedFor(nameof(CardStateText))]
     [NotifyPropertyChangedFor(nameof(CardStateBrush))]
-    [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
     [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
@@ -71,11 +69,6 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         or ConnectionStatus.Disconnecting;
 
     /// <summary>
-    /// Whether the row wears the grey frame: the configuration the user picked, with no tunnel on it.
-    /// </summary>
-    public bool ShowSelectedFrame => IsSelected && !ShowStatusFrame;
-
-    /// <summary>
     /// Действие кнопки карточки словом: со своей конфигурации карточка туннель снимает, на всякой другой -
     /// поднимает.
     /// </summary>
@@ -83,14 +76,13 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
 
     /// <summary>
-    /// Носит ли карточка свою рамку поверх общей: выбранная в каталоге, отмеченная конфигурация и та, на
-    /// которой стоит туннель.
+    /// Носит ли карточка свою рамку поверх общей: та, которую выбрали в каталоге.
     /// </summary>
-    public bool ShowCardFrame => IsPicked || IsSelected || ShowStatusFrame;
+    public bool ShowCardFrame => IsPicked;
 
     /// <summary>
     /// Цвет рамки: цвет перехода, пока туннель поднимается или падает, цвет подключения у работающего и
-    /// серый у просто выбранной конфигурации.
+    /// серый у остальных.
     /// </summary>
     public IBrush CardFrameBrush => CardStateBrush;
 
@@ -118,13 +110,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public IBrush StatusBrush => StatusLabels.Brush(LinkSilent ? ConnectionStatus.Connecting : Status);
 
-    // Whether the user picked this row.
+    // Whether the tunnel is set to use this configuration.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowSelectedFrame))]
     [NotifyPropertyChangedFor(nameof(CardStateText))]
-    [NotifyPropertyChangedFor(nameof(CardStateBrush))]
-    [NotifyPropertyChangedFor(nameof(ShowCardFrame))]
-    [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
     private bool _isSelected;
 
     // Whether the card is the one picked in the catalogue.

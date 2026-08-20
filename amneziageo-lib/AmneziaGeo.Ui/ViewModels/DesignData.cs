@@ -31,6 +31,25 @@ internal static class DesignData
     /// </summary>
     public static MainWindowViewModel MainWindow { get; } = CreateMainWindow();
 
+    /// <summary>
+    /// Card catalogues for the previewer: configuration and routing cards in every state a card renders.
+    /// The commands behind them are the real ones, so an interactive preview moves the frame between cards
+    /// the way the app does.
+    /// </summary>
+    public static MainWindowViewModel Cards { get; } = CreateCards();
+
+    /// <summary>
+    /// The configuration card a preview of the control itself renders: the tunnel runs on it and the
+    /// catalogue is on it, so it wears the frame in the connected colour.
+    /// </summary>
+    public static ConfigItemViewModel ConfigCard => Cards.Config.Configs[0];
+
+    /// <summary>
+    /// The routing card a preview of the control itself renders: traffic goes by this list and the catalogue
+    /// is on it, so it wears the frame in the connected colour.
+    /// </summary>
+    public static RoutingListSummaryViewModel RoutingCard => Cards.Routing.RoutingLists[0];
+
     // No-op agent delegates: the sub-view-models never talk to a live agent at design time.
     private static Task NoSourceOp(SourceItemViewModel _) => Task.CompletedTask;
 
@@ -139,6 +158,83 @@ internal static class DesignData
         vm.Routing.RoutingEditor = routingEditor;
         vm.Routing.RoutingSettings = new RoutingSettingsViewModel(connection, rknList.Id);
         vm.Routing.EditRoutingList = rknList;
+
+        return vm;
+    }
+
+    // Both catalogues seeded for the gallery: a running tunnel, a ready configuration, one coming up, a
+    // server that stopped answering, and a name longer than the card. No real screen carries all of them at
+    // once - the gallery does, so a change to the card is judged against every state side by side.
+    private static MainWindowViewModel CreateCards()
+    {
+        var vm = new MainWindowViewModel(new NullAgentConnection(), new UiPreferences());
+        vm.Home.IsConnected = true;
+        vm.Home.IsTunnelActive = true;
+        vm.Home.BoundStatus = ConnectionStatus.Connected;
+        vm.Home.BoundTarget = "de-frankfurt";
+
+        vm.Config.Configs.Add(new ConfigItemViewModel
+        {
+            Name = "de-frankfurt",
+            Endpoint = "vpn.example.com:9080",
+            Status = ConnectionStatus.Connected,
+            IsSelected = true,
+            IsPicked = true,
+            HandshakeAgeSeconds = 11,
+            LinkRttMs = 38,
+            LinkLossPercent = 0,
+            RxBitsPerSecond = 18_400_000,
+            TxBitsPerSecond = 2_300_000,
+        });
+        vm.Config.Configs.Add(new ConfigItemViewModel
+        {
+            Name = "nl-amsterdam",
+            Endpoint = "vpn2.example.com:51820",
+            IsSelected = false,
+            ProbeState = ProbeOutcome.Alive,
+            ProbeMilliseconds = 64,
+        });
+        vm.Config.Configs.Add(new ConfigItemViewModel
+        {
+            Name = "fi-helsinki",
+            Endpoint = "vpn3.example.com:443",
+            Status = ConnectionStatus.Connecting,
+        });
+        vm.Config.Configs.Add(new ConfigItemViewModel
+        {
+            Name = "us-newyork",
+            Endpoint = "vpn4.example.com:51820",
+            ProbeState = ProbeOutcome.NoAnswer,
+            ProbeLossPercent = 100,
+        });
+        vm.Config.Configs.Add(new ConfigItemViewModel
+        {
+            Name = "Домашний сервер с именем во всю карточку",
+            Endpoint = "very-long-host-name.example.com:51820",
+            ProbeState = ProbeOutcome.Alive,
+            ProbeMilliseconds = 268,
+            ProbeLossPercent = 12,
+        });
+        vm.HasConfigs = true;
+
+        vm.Routing.RoutingLists.Add(new RoutingListSummaryViewModel
+        {
+            Id = 1, Name = "Обход РКН", RuleCount = 42, RouteCount = 131, DomainCount = 517,
+            ProxyRuleCount = 30, DirectRuleCount = 9, BlockRuleCount = 3,
+            UseGlobalProxy = true, AllUdp = true, IsSelected = true, IsLive = true, IsPicked = true,
+        });
+        vm.Routing.RoutingLists.Add(new RoutingListSummaryViewModel
+        {
+            Id = 2, Name = "YouTube + Discord", RuleCount = 6, RouteCount = 74, DomainCount = 39,
+            ProxyRuleCount = 6,
+        });
+        vm.Routing.RoutingLists.Add(new RoutingListSummaryViewModel
+        {
+            Id = 3, Name = "Список с именем, которое в карточку не влезает",
+            RuleCount = 118, RouteCount = 940, DomainCount = 2140,
+            ProxyRuleCount = 96, DirectRuleCount = 14, BlockRuleCount = 8, AllUdp = true,
+        });
+        vm.Routing.HasRoutingLists = true;
 
         return vm;
     }

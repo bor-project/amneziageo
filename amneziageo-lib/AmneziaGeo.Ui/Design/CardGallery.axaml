@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             x:Class="AmneziaGeo.Ui.Design.CardGallery"
+             x:CompileBindings="True"
+             x:DataType="vm:MainWindowViewModel"
+             Design.DataContext="{x:Static vm:DesignData.Cards}"
+             Design.Width="1120" Design.Height="620"
+             Background="{DynamicResource AgBgBrush}"
+             FontFamily="IBM Plex Sans, Segoe UI, sans-serif"
+             Foreground="{DynamicResource AgFgBrush}">
+  <!-- Превьюер поднимает приложение проекта-хоста, поэтому темой правит RequestedThemeVariant в его
+       App.axaml (для Windows - amneziageo-windows/AmneziaGeo.Windows.Ui/App.axaml). -->
+  <ScrollViewer>
+    <StackPanel Margin="16" Spacing="8">
+      <TextBlock Text="Конфигурации" FontSize="12" FontWeight="SemiBold" Classes="muted" />
+      <ItemsControl ItemsSource="{Binding Config.Configs}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ConfigItemViewModel">
+            <controls:CatalogCard Width="340" Margin="0,0,10,10"
+                    OpenCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.OpenCardCommand}"
+                    SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.SelectCardCommand}"
+                    ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
+                    PickCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.PickCardCommand}" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <TextBlock Text="Маршрутизация" FontSize="12" FontWeight="SemiBold" Classes="muted" Margin="0,6,0,0" />
+      <ItemsControl ItemsSource="{Binding Routing.RoutingLists}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
+            <controls:RoutingCard Width="340" Margin="0,0,10,10"
+                    OpenCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Routing.OpenCardCommand}"
+                    SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Routing.SelectCardCommand}"
+                    PickCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Routing.PickCardCommand}" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

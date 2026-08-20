@@ -101,8 +101,10 @@
           </Button>
         </Grid>
 
-        <!-- Arrows keep the nav at icon width; the caption and the switch take the free end of the row. -->
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8" Margin="0,10,0,0">
+        <!-- Arrows keep the nav at icon width; the caption and the switch take the free end of the row. The live
+             source has nothing to page and follows always, so it shows the row only while the viewer is frozen. -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8" Margin="0,10,0,0"
+              IsVisible="{Binding ShowControlBar}">
           <Grid.Resources>
             <GridLength x:Key="ToggleSwitchPreContentMargin">0</GridLength>
             <GridLength x:Key="ToggleSwitchPostContentMargin">0</GridLength>
@@ -120,8 +122,10 @@
                      VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                      IsVisible="{Binding IsFrozen}" Foreground="{DynamicResource AgWarnBrush}" />
           <TextBlock Grid.Column="3" Text="{l:Tr Main_LogFollowLabel}" Classes="muted" FontSize="11.5"
-                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center" />
+                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                     IsVisible="{Binding IsStoredLog}" />
+          <ToggleSwitch Grid.Column="4" IsChecked="{Binding LogFollow, Mode=TwoWay}" VerticalAlignment="Center"
+                        IsVisible="{Binding IsStoredLog}" />
         </Grid>
 
         <!-- What the tunnel carries in one line, over the destinations it counts. -->

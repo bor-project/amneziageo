@@ -121,6 +121,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsRouteLog));
         OnPropertyChanged(nameof(IsLiveLog));
         OnPropertyChanged(nameof(IsStoredLog));
+        OnPropertyChanged(nameof(ShowControlBar));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowStoredText));
         OnPropertyChanged(nameof(ShowLiveText));
@@ -209,6 +210,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     // Held Ctrl: the viewer stops taking new rows, so a selection survives long enough to be copied.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowControlBar))]
     private bool _isFrozen;
 
     partial void OnIsFrozenChanged(bool value)
@@ -268,6 +270,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// in its summary line, so it does not carry the hint as well.
     /// </summary>
     public bool ShowEmpty => !HasLogs && !IsLoading && !IsLiveLog;
+
+    /// <summary>
+    /// Whether the control bar is shown: the live source has nothing to page and follows always, so it carries
+    /// the bar only while the viewer is frozen.
+    /// </summary>
+    public bool ShowControlBar => IsStoredLog || IsFrozen;
 
     // Whether the view snaps to the live tail on each poll.
     [ObservableProperty]

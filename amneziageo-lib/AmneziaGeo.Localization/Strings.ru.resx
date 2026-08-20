@@ -196,6 +196,9 @@
   <data name="About_Version" xml:space="preserve">
     <value>Версия приложения</value>
   </data>
+  <data name="About_Source" xml:space="preserve">
+    <value>Исходный код</value>
+  </data>
   <data name="About_BuildType" xml:space="preserve">
     <value>Тип сборки</value>
   </data>

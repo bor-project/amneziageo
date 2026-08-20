@@ -498,6 +498,20 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
     }
 
+    // Ставит рамку на применённый список, пока в каталоге ничего не выбрано.
+    private void EnsurePickedCard()
+    {
+        if (RoutingLists.Any(row => row.IsPicked))
+        {
+            return;
+        }
+
+        if (RoutingLists.FirstOrDefault(row => row.IsSelected) is { } used)
+        {
+            PickCard(used);
+        }
+    }
+
     // Отмечает в каталоге выбранный список и тот, по которому маршрутизация идёт на самом деле.
     private void MarkSelectedList()
     {
@@ -507,6 +521,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             row.IsSelected = SelectedRoutingListId is { } id && row.Id == id;
             row.IsLive = row.IsSelected && live;
         }
+
+        EnsurePickedCard();
     }
 
     // Landing on the Routing section with nothing open: open the list that routes so it never opens empty, and

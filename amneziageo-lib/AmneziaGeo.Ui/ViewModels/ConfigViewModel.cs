@@ -524,6 +524,20 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         }
     }
 
+    // Ставит рамку на используемую конфигурацию, пока в каталоге ничего не выбрано.
+    private void EnsurePickedCard()
+    {
+        if (Configs.Any(row => row.IsPicked))
+        {
+            return;
+        }
+
+        if (Configs.FirstOrDefault(row => row.IsSelected) is { } active)
+        {
+            PickCard(active);
+        }
+    }
+
     /// <summary>
     /// Открывает настройки названной конфигурации, минуя выбор в каталоге.
     /// </summary>
@@ -612,6 +626,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
         _configNames = [.. entries.Select(e => e.Name)];
         ReconcileConfigOptions();
+        EnsurePickedCard();
 
         // A config just imported in the Config section: open it once its row arrives so OnOpenConfigChanged
         // seeds the transport editor from the real snapshot row instead of all-defaults.

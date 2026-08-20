@@ -5,7 +5,9 @@
              xmlns:l="clr-namespace:AmneziaGeo.Ui.Localization"
              x:Class="AmneziaGeo.Ui.Controls.CatalogCard"
              x:CompileBindings="True"
-             x:DataType="vm:ConfigItemViewModel">
+             x:DataType="vm:ConfigItemViewModel"
+             Design.DataContext="{x:Static vm:DesignData.ConfigCard}"
+             Design.Width="340">
   <UserControl.Resources>
     <StreamGeometry x:Key="AgCardGearGeometry">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z</StreamGeometry>
     <StreamGeometry x:Key="AgCardTimerGeometry">M15,1H9V3H15M11,14H13V8H11M19.03,7.39L20.45,5.97C20,5.46 19.55,5 19.04,4.56L17.62,6C16.07,4.74 14.12,4 12,4A9,9 0 0,0 3,13A9,9 0 0,0 12,22C17,22 21,17.97 21,13C21,10.88 20.26,8.93 19.03,7.39M12,20A7,7 0 0,1 5,13A7,7 0 0,1 12,6A7,7 0 0,1 19,13A7,7 0 0,1 12,20Z</StreamGeometry>
@@ -96,9 +98,8 @@
         </Border>
       </Grid>
 
-      <!-- Светлая рамка у всякой карточки; поверх серая у отмеченной, цвет подключения у работающей и цвет
-           перехода, пока туннель поднимается или падает. Рисуется она поверх содержимого и
-           компоновки не меняет. -->
+      <!-- Светлая рамка у всякой карточки; поверх неё рамка выбранной в каталоге - цветом её подключения.
+           Рисуется поверх содержимого и компоновки не меняет. -->
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
               BorderBrush="{DynamicResource AgBorderBrush}" />
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"

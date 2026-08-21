@@ -217,14 +217,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     public bool ShowHomeUpdate => General.UpdateBannerVisible && UiPlatform.IsTelevision;
 
     /// <summary>
-    /// Whether a step back still has something to close inside the settings screen: an export / import sub-view,
-    /// the geo sources page or a compact detail. With nothing left the step leaves settings for home.
+    /// Whether a step back still has something to close inside the settings screen: an open card, an export /
+    /// import sub-view, the geo sources page or a compact detail. With nothing left the step leaves settings
+    /// for home.
     /// </summary>
     public bool SettingsStepsBack => IsSettings
         && (SettingsSection switch
             {
-                "config" => Config.IsSectionExport || Config.IsSectionImport,
-                "routing" => Routing.IsSectionExport || Routing.IsSectionImport,
+                "config" => Config.IsSectionImport || Config.IsConfigManage,
+                "routing" => Routing.IsSectionImport || Routing.EditRoutingList is not null,
                 _ => false,
             }
             || IsSettingsSources

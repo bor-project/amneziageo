@@ -74,18 +74,18 @@
         </ItemsControl>
       </ScrollViewer>
 
-      <!-- Широкий экран: те же карточки замощают пану, драг переставляет их. -->
+      <!-- Широкий экран: карточки стоят в две равные колонки во всю их ширину, драг переставляет их. -->
       <ScrollViewer IsVisible="{Binding ShowCardGrid}"
                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl ItemsSource="{Binding Configs}">
+        <ItemsControl ItemsSource="{Binding Configs}" VerticalAlignment="Top">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <WrapPanel />
+              <UniformGrid Columns="2" />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ConfigItemViewModel">
-              <controls:CatalogCard Width="340" Margin="0,0,10,10"
+              <controls:CatalogCard Margin="0,0,10,10" VerticalAlignment="Top"
                       OpenCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).OpenCardCommand}"
                       SelectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).SelectCardCommand}"
                       ConnectCommand="{Binding $parent[UserControl].((vm:ConfigViewModel)DataContext).Home.ConnectConfigCommand}"

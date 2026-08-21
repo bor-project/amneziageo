@@ -559,10 +559,10 @@ internal sealed partial class ConfigViewModel : ViewModelBase
                 }
             }
 
+            // Состояние подключения ставит ConnectionViewModel: круг карточки идёт за кнопкой в шапке.
             existing.Endpoint = entry.Endpoint;
             existing.GeoSplit = entry.GeoSplit;
             existing.Rules = entry.Rules;
-            existing.Status = entry.Status;
             existing.UseWebSocket = entry.WebSocket;
             existing.WebSocketHost = entry.WebSocketHost;
             existing.WebSocketPort = entry.WebSocketPort;

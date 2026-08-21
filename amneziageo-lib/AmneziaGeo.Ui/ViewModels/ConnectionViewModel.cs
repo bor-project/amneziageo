@@ -427,7 +427,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         NoticeText = null;
         ReconnectAvailable = false;
         RestartPending = false;
-        _dialTarget = null;
+        SetDialTarget(null);
         ConnectFailed = false;
         DisconnectFailed = false;
         TakeoverPending = false;
@@ -477,7 +477,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             && (!snapshot.Active || snapshot.ConnectFailed
                 || string.Equals(snapshot.BoundTarget, _dialTarget, StringComparison.Ordinal)))
         {
-            _dialTarget = null;
+            SetDialTarget(null);
         }
 
         // Top-center notice (auto-hides after 5s, dismissable): a different config is selected while a
@@ -525,6 +525,9 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         // A failed dial (or a stalled disconnect) keeps its banner up until the next command, like the reconnect
         // banner, so a boot auto-connect failure with no window is not lost once the tray balloon fades.
         ShowNotice(notice, snapshot.ConnectFailed || snapshot.DisconnectFailed);
+
+        // Снимок принёс новые строки каталога: круги на них встают по состоянию кнопки.
+        PushCardPower();
     }
 
     // Matches the agent's selected target against the config rows. Skipped while an unpick is in flight: that
@@ -607,6 +610,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     partial void OnIsTunnelActiveChanged(bool value)
     {
         _host.Config.NotifyActiveConfigChanged();
+        PushCardPower();
         if (!value)
         {
             _host.Config.FollowActiveCard(ActiveConfig?.Name);
@@ -616,6 +620,43 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     partial void OnIsConnectedChanged(bool value)
     {
         _host.Config.NotifyActiveConfigChanged();
+    }
+
+    partial void OnBoundStatusChanged(string value)
+    {
+        PushCardPower();
+    }
+
+    partial void OnBoundTargetChanged(string? value)
+    {
+        PushCardPower();
+    }
+
+    // Ставит состояние подключения на карточки: цель носит состояние кнопки в шапке, остальные выключены.
+    private void PushCardPower()
+    {
+        var target = _dialTarget ?? BoundTarget;
+        foreach (var row in _host.Config.Configs)
+        {
+            row.Status = string.Equals(row.Name, target, StringComparison.Ordinal)
+                ? CardStatus
+                : ConnectionStatus.Disconnected;
+        }
+    }
+
+    // Состояние цели словами: то же, что показывает кнопка в шапке.
+    private string CardStatus => ConnState switch
+    {
+        2 => ConnectionStatus.Connected,
+        1 => IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting,
+        _ => ConnectionStatus.Disconnected,
+    };
+
+    // Отмечает набираемую конфигурацию: состояние носит она, пока туннель не встал на неё.
+    private void SetDialTarget(string? name)
+    {
+        _dialTarget = name;
+        PushCardPower();
     }
 
     partial void OnActiveConfigChanged(ConfigItemViewModel? oldValue, ConfigItemViewModel? newValue)
@@ -971,7 +1012,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             // a deleted one). Idempotent if already selected. Mirrors ToggleConfigConnectionAsync.
             if (connect && ActiveConfig is not null)
             {
-                _dialTarget = ActiveConfig.Name;
+                SetDialTarget(ActiveConfig.Name);
                 await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [ActiveConfig.Name]));
             }
 
@@ -979,7 +1020,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
                 new IpcCommand(IpcContract.OpSetConnection, [connect ? "connect" : "disconnect"]));
             if (!ack.Ok)
             {
-                _dialTarget = null;
+                SetDialTarget(null);
                 IsTunnelActive = !connect;
                 if (connect && OwnedByOtherAck(ack))
                 {
@@ -1011,13 +1052,13 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         {
             if (connect)
             {
-                _dialTarget = config;
+                SetDialTarget(config);
                 await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [config]));
                 var ack = await _connection.SendCommandAsync(
                     new IpcCommand(IpcContract.OpSetConnection, ["connect"]));
                 if (!ack.Ok)
                 {
-                    _dialTarget = null;
+                    SetDialTarget(null);
                     IsTunnelActive = false;
                     if (OwnedByOtherAck(ack))
                     {
@@ -1199,8 +1240,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             return true;
         }
 
-        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSetConnection, ["disconnect"]));
-        if (!ack.Ok)
+        if (!await DisconnectAsync())
         {
             return false;
         }

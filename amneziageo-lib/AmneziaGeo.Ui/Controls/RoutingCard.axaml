@@ -18,7 +18,7 @@
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
-          <!-- Имя и флаг применения: имя занимает строку целиком, метки режимов ушли к составу списка. -->
+          <!-- Имя и флаг применения: имя занимает строку целиком, метки режимов ушли в подвал. -->
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
@@ -30,41 +30,40 @@
                       CommandParameter="{Binding}" />
           </Grid>
 
-          <!-- Состав списка и его режимы: сколько правил уводит в туннель, сколько пускает мимо и сколько
-               глушит; метки режимов стоят справа, счётчики отдают место первыми. -->
-          <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,8,0,0">
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgAccentBrush}" />
-                <TextBlock Text="{Binding ProxyRulesText}" FontSize="12" Classes="muted"
-                           VerticalAlignment="Center" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgMutedBrush}" />
-                <TextBlock Text="{Binding DirectRulesText}" FontSize="12" Classes="muted"
-                           VerticalAlignment="Center" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgDownBrush}" />
-                <TextBlock Text="{Binding BlockRulesText}" FontSize="12" Classes="muted"
-                           VerticalAlignment="Center" />
-              </StackPanel>
+          <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит. -->
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource AgAccentBrush}" />
+              <TextBlock Text="{Binding ProxyRulesText}" FontSize="12" Classes="muted"
+                         VerticalAlignment="Center" />
             </StackPanel>
-            <Border Grid.Column="1" Classes="cardchip cardtag" Classes.off="{Binding !UseGlobalProxy}">
-              <TextBlock Text="{l:Tr Main_CardTagGlobal}" FontSize="11.5" FontWeight="SemiBold" />
-            </Border>
-            <Border Grid.Column="2" Classes="cardchip cardtag" Classes.off="{Binding !AllUdp}">
-              <TextBlock Text="{l:Tr Main_CardTagUdp}" FontSize="11.5" FontWeight="SemiBold" />
-            </Border>
-          </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource AgMutedBrush}" />
+              <TextBlock Text="{Binding DirectRulesText}" FontSize="12" Classes="muted"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{DynamicResource AgDownBrush}" />
+              <TextBlock Text="{Binding BlockRulesText}" FontSize="12" Classes="muted"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
         </Grid>
 
-        <!-- Подвал карточки: настройки списка. -->
+        <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->
         <Border Grid.Row="1" Classes="cardfoot">
-          <Grid ColumnDefinitions="*,Auto">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+              <Border Classes="cardchip cardtag" Classes.off="{Binding !UseGlobalProxy}">
+                <TextBlock Text="{l:Tr Main_CardTagGlobal}" FontSize="11.5" FontWeight="SemiBold" />
+              </Border>
+              <Border Classes="cardchip cardtag" Classes.off="{Binding !AllUdp}">
+                <TextBlock Text="{l:Tr Main_CardTagUdp}" FontSize="11.5" FontWeight="SemiBold" />
+              </Border>
+            </StackPanel>
             <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="7"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">

@@ -102,25 +102,13 @@
             <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
             <Border Classes="hairline" />
 
-            <!-- Действует ли список: тумблер и строка состояния под ним. -->
-            <StackPanel Spacing="6">
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                <TextBlock Grid.Column="0" Text="{l:Tr Main_UseRoutingToggle}" FontWeight="SemiBold" FontSize="15"
-                           TextWrapping="Wrap" VerticalAlignment="Center" />
-                <ToggleSwitch Grid.Column="1" MinWidth="0" VerticalAlignment="Center"
-                              IsChecked="{Binding UseOpenList, Mode=TwoWay}" />
-              </Grid>
-              <WrapPanel>
-                <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgUpBrush}" IsVisible="{Binding UseOpenList}" />
-                <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
-                         Fill="{DynamicResource AgWarnBrush}" IsVisible="{Binding !UseOpenList}" />
-                <TextBlock Text="{l:Tr Main_RoutingActiveNotice}" FontSize="12" VerticalAlignment="Center"
-                           Foreground="{DynamicResource AgUpBrush}" IsVisible="{Binding UseOpenList}" />
-                <TextBlock Text="{l:Tr Main_RoutingIdleNotice}" FontSize="12" VerticalAlignment="Center"
-                           Foreground="{DynamicResource AgWarnBrush}" IsVisible="{Binding !UseOpenList}" />
-              </WrapPanel>
-            </StackPanel>
+            <!-- Действует ли список: тумблер. -->
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+              <TextBlock Grid.Column="0" Text="{l:Tr Main_UseRoutingToggle}" FontWeight="SemiBold" FontSize="15"
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="1" MinWidth="0" VerticalAlignment="Center"
+                            IsChecked="{Binding UseOpenList, Mode=TwoWay}" />
+            </Grid>
 
             <Border Classes="hairline" />
 

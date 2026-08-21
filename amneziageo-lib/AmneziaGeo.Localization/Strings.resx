@@ -1856,12 +1856,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Use this list</value>
   </data>
-  <data name="Main_RoutingActiveNotice" xml:space="preserve">
-    <value>In effect</value>
-  </data>
-  <data name="Main_RoutingIdleNotice" xml:space="preserve">
-    <value>Not in effect yet</value>
-  </data>
   <data name="Main_ConfigIdleNotice" xml:space="preserve">
     <value>Not active yet</value>
   </data>

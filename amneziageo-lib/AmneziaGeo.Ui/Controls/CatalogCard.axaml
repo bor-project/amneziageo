@@ -15,8 +15,8 @@
     <StreamGeometry x:Key="AgCardLossGeometry">M3,13H5.79L10.1,4.79L11.28,11.5L14.5,8.75L17.29,13H21V15H16.21L14.5,12.4L10.72,15.5L9.55,8.9L7,13.85V15H3V13Z</StreamGeometry>
   </UserControl.Resources>
 
-  <!-- Тело карточки ничего не делает: действия стоят на кнопках. На телевизоре тело служит входом,
-       дальше пульт ходит по этим же контролам. -->
+  <!-- Тело карточки открывает настройки двойным щелчком, остальные действия стоят на кнопках.
+       На телевизоре тело служит входом, дальше пульт ходит по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">

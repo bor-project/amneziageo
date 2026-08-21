@@ -262,6 +262,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // The place a config holds in the list; existing rows share 0 and stay ordered by name.
             await TryAlterAsync(connection, "ALTER TABLE configs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
 
+            // The place a routing list holds in the catalogue; existing rows share 0 and stay ordered by name.
+            await TryAlterAsync(connection, "ALTER TABLE routing_lists ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
+
             await DropProfilesAsync(connection, ct).ConfigureAwait(false);
 
             await SetUserVersionAsync(connection, ct).ConfigureAwait(false);
@@ -1740,10 +1743,12 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     await using (insert.ConfigureAwait(false))
                     {
                         insert.Transaction = transaction;
+
+                        // A new list lands after the ones already listed.
                         insert.CommandText =
                             """
-                            INSERT INTO routing_lists (name, routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, exclude_routes_json, exclude_domains_json, generation, updated_at)
-                            VALUES ($name, $routes, $domains, $directRoutes, $directDomains, $blockRoutes, $blockDomains, $excludeRoutes, $excludeDomains, 1, $updated)
+                            INSERT INTO routing_lists (name, routes_json, domains_json, direct_routes_json, direct_domains_json, block_routes_json, block_domains_json, exclude_routes_json, exclude_domains_json, generation, sort_order, updated_at)
+                            VALUES ($name, $routes, $domains, $directRoutes, $directDomains, $blockRoutes, $blockDomains, $excludeRoutes, $excludeDomains, 1, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM routing_lists), $updated)
                             RETURNING id;
                             """;
                         insert.Parameters.AddWithValue("$name", list.Name);
@@ -1896,7 +1901,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                     SELECT id, name, routes_json, domains_json,
                            direct_routes_json, direct_domains_json, block_routes_json, block_domains_json,
                            exclude_routes_json, exclude_domains_json
-                    FROM routing_lists ORDER BY name;
+                    FROM routing_lists ORDER BY sort_order, name;
                     """;
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 await using (reader.ConfigureAwait(false))
@@ -1956,7 +1961,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                            COALESCE(rs.use_global_proxy, 0)
                     FROM routing_lists rl
                     LEFT JOIN routing_settings rs ON rs.list_id = rl.id
-                    ORDER BY rl.name;
+                    ORDER BY rl.sort_order, rl.name;
                     """;
 
                 var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -1981,6 +1986,35 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
 
         return result;
+    }
+
+    /// <inheritdoc/>
+    public async Task SetRoutingListOrderAsync(IReadOnlyList<string> names, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+            await using (transaction.ConfigureAwait(false))
+            {
+                for (var i = 0; i < names.Count; i++)
+                {
+                    var update = connection.CreateCommand();
+                    await using (update.ConfigureAwait(false))
+                    {
+                        update.Transaction = transaction;
+                        update.CommandText = "UPDATE routing_lists SET sort_order = $order WHERE name = $name;";
+                        update.Parameters.AddWithValue("$order", i + 1);
+                        update.Parameters.AddWithValue("$name", names[i]);
+                        await update.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <inheritdoc/>

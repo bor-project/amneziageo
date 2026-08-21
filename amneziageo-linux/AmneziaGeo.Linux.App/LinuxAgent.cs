@@ -568,6 +568,9 @@ internal sealed class LinuxAgent : IDisposable
             case IpcContract.OpRemoveRoutingList:
                 return await RemoveRoutingListAsync(args, ct).ConfigureAwait(false);
 
+            case IpcContract.OpReorderRoutingLists:
+                return await ReorderRoutingListsAsync(args, ct).ConfigureAwait(false);
+
             case IpcContract.OpGetRoutingSettings:
                 return await GetRoutingSettingsAsync(args, ct).ConfigureAwait(false);
 
@@ -1109,6 +1112,27 @@ internal sealed class LinuxAgent : IDisposable
         return list is null
             ? Fail()
             : new IpcAck(true, string.Join('\n', list.Rules.Select(GeoConfigurator.FormatWithRole)));
+    }
+
+    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return Fail();
+        }
+
+        var stored = (await _store.ListRoutingListSummariesAsync(ct).ConfigureAwait(false))
+            .Select(summary => summary.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (args.Any(name => !stored.Contains(name)))
+        {
+            return Fail();
+        }
+
+        await _store.SetRoutingListOrderAsync(args, ct).ConfigureAwait(false);
+        await PushAsync(ct).ConfigureAwait(false);
+        return Ok();
     }
 
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)

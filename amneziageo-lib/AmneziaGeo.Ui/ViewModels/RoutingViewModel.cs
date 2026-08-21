@@ -21,6 +21,8 @@ internal sealed partial class RoutingViewModel : ViewModelBase
 
     private long? _pendingEditRoutingListId;
 
+    private IReadOnlyList<string>? _pendingOrder;
+
     // Set once the agent has reported its catalogue; until then an empty one only means "not loaded".
     private bool _catalogueKnown;
 
@@ -498,6 +500,24 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Хранит порядок, в котором драг оставил каталог списков.
+    /// </summary>
+    [RelayCommand]
+    private async Task ApplyOrder()
+    {
+        var names = RoutingLists.Select(list => list.Name).ToList();
+        _pendingOrder = names;
+        var ack = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpReorderRoutingLists, names));
+        if (!ack.Ok)
+        {
+            _pendingOrder = null;
+            _host.Home.ShowNotice(IpcMessage.TryParse(ack.Message, out var key, out var args)
+                ? Loc.Instance.Get(key, args)
+                : ack.Message);
+        }
+    }
+
     // Ставит рамку на применённый список, пока в каталоге ничего не выбрано.
     private void EnsurePickedCard()
     {
@@ -756,6 +776,15 @@ internal sealed partial class RoutingViewModel : ViewModelBase
     {
         // Reconcile in place (match by id) so the selected-list highlight is not dropped and re-set on every
         // snapshot.
+        // A drag just sent its order: leave the rows where the user put them until the agent's snapshot carries
+        // that order back, so a snapshot already on its way does not throw them about meanwhile.
+        var holdOrder = _pendingOrder is { } pending
+            && !pending.SequenceEqual(entries.Select(e => e.Name), StringComparer.Ordinal);
+        if (!holdOrder)
+        {
+            _pendingOrder = null;
+        }
+
         var present = entries.Select(e => e.Id).ToHashSet();
         for (var i = RoutingLists.Count - 1; i >= 0; i--)
         {
@@ -777,7 +806,7 @@ internal sealed partial class RoutingViewModel : ViewModelBase
             else
             {
                 var from = RoutingLists.IndexOf(existing);
-                if (from != i)
+                if (from != i && !holdOrder)
                 {
                     RoutingLists.Move(from, i);
                 }

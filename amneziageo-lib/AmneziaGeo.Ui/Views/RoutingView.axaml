@@ -41,7 +41,8 @@
     <!-- Content: one section shown at a time. Up from its top row returns to the header, not to the window one. -->
     <Panel x:Name="Body" Grid.Row="1" Margin="0,14,0,0" KeyDown="OnBodyKeyDown">
 
-      <!-- Каталог карточек: кнопка на карточке открывает настройки своего списка. -->
+      <!-- Каталог карточек: кнопка на карточке и двойной щелчок по ней открывают настройки своего списка,
+           драг переставляет карточки. -->
       <Panel IsVisible="{Binding IsSectionCatalogue}">
         <!-- Узкий экран: карточки стоят одной колонкой во всю ширину. -->
         <ScrollViewer IsVisible="{Binding ShowCardStack}"
@@ -52,6 +53,7 @@
                 <controls:RoutingCard Margin="0,0,0,8"
                         OpenCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenCardCommand}"
                         SelectCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).SelectCardCommand}"
+                        DropCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).ApplyOrderCommand}"
                         PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
@@ -72,6 +74,7 @@
                 <controls:RoutingCard Margin="0,0,10,10" VerticalAlignment="Top"
                         OpenCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenCardCommand}"
                         SelectCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).SelectCardCommand}"
+                        DropCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).ApplyOrderCommand}"
                         PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>

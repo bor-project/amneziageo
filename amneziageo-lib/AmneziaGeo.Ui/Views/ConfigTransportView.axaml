@@ -74,6 +74,12 @@
       </Panel>
     </Grid>
 
+    <!-- The front's answer to the address just typed. It holds nothing back: it says what will not work. -->
+    <TextBlock Text="{Binding ProbeMessage}" FontSize="12" TextWrapping="Wrap" MaxWidth="980" Margin="0,-6,0,0"
+               HorizontalAlignment="Left"
+               Classes.muted="{Binding IsProbing}" Classes.fieldwarn="{Binding ProbeFailed}"
+               IsVisible="{Binding ProbeMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
     <!-- Narrow screen: a hairline carries the section boundary the frame used to. -->
     <Border Height="1" Background="{DynamicResource AgBorderBrush}" IsVisible="{Binding IsCompact}" />
 

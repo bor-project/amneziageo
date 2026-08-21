@@ -1216,6 +1216,21 @@
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Enter a valid WebSocket port (1-65535).</value>
   </data>
+  <data name="Transport_ProbeRunning" xml:space="preserve">
+    <value>Checking the WebSocket front...</value>
+  </data>
+  <data name="Transport_ProbeNoAddress" xml:space="preserve">
+    <value>The WebSocket host does not resolve.</value>
+  </data>
+  <data name="Transport_ProbeNoAnswer" xml:space="preserve">
+    <value>The WebSocket front did not answer.</value>
+  </data>
+  <data name="Transport_ProbeTls" xml:space="preserve">
+    <value>TLS did not come up on the WebSocket front.</value>
+  </data>
+  <data name="Transport_ProbeRefused" xml:space="preserve">
+    <value>The WebSocket front refused the connection: {0}</value>
+  </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Version {0} available</value>
   </data>

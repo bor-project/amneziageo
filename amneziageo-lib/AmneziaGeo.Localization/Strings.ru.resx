@@ -1216,6 +1216,21 @@
   <data name="Transport_InvalidPort" xml:space="preserve">
     <value>Укажите корректный порт WebSocket (1-65535).</value>
   </data>
+  <data name="Transport_ProbeRunning" xml:space="preserve">
+    <value>Проверяю фронт WebSocket…</value>
+  </data>
+  <data name="Transport_ProbeNoAddress" xml:space="preserve">
+    <value>Имя фронта WebSocket не разрешается.</value>
+  </data>
+  <data name="Transport_ProbeNoAnswer" xml:space="preserve">
+    <value>Фронт WebSocket не ответил.</value>
+  </data>
+  <data name="Transport_ProbeTls" xml:space="preserve">
+    <value>TLS на фронте WebSocket не установился.</value>
+  </data>
+  <data name="Transport_ProbeRefused" xml:space="preserve">
+    <value>Фронт WebSocket отказал: {0}</value>
+  </data>
   <data name="Main_UpdateAvailableVersion" xml:space="preserve">
     <value>Доступна версия {0}</value>
   </data>

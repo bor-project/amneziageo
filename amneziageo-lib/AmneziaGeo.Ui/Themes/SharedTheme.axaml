@@ -191,6 +191,10 @@
       <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />
       <Setter Property="Foreground" Value="White" />
     </Style>
+    <!-- Save over a setting that did not answer: it still saves, dimmed to say so. -->
+    <Style Selector="Button.accent.unverified">
+      <Setter Property="Opacity" Value="0.55" />
+    </Style>
     <!-- Picked member of a row of soft buttons: it keeps the row's border box, so picking moves nothing. -->
     <Style Selector="Button.softbtn.accent">
       <Setter Property="BorderBrush" Value="{DynamicResource AgAccentBrush}" />

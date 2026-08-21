@@ -466,6 +466,7 @@
                           Width="120" Padding="6" Click="OnFooterAction"
                           Command="{Binding Config.SaveSectionCommand}"
                           IsVisible="{Binding Config.ShowSaveButton}"
+                          Classes.unverified="{Binding Config.SaveUnverified}"
                           IsEnabled="{Binding Config.CanSave}" />
                 </StackPanel>
               </Grid>

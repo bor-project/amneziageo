@@ -10,6 +10,37 @@ using AmneziaGeo.Decl;
 namespace AmneziaGeo.Ipc;
 
 /// <summary>
+/// How a websocket front answered an attempt to open a tunnel through it.
+/// </summary>
+public enum WsFrontOutcome
+{
+    /// <summary>
+    /// The front accepted the upgrade.
+    /// </summary>
+    Ok,
+
+    /// <summary>
+    /// The front's name carries no address, or it does not resolve.
+    /// </summary>
+    NoAddress,
+
+    /// <summary>
+    /// Nothing answered before the timeout, or the connection was refused.
+    /// </summary>
+    NoAnswer,
+
+    /// <summary>
+    /// TLS did not come up under the front's own name.
+    /// </summary>
+    Tls,
+
+    /// <summary>
+    /// The front answered and refused the upgrade.
+    /// </summary>
+    Refused,
+}
+
+/// <summary>
 /// Carries a tunnel's UDP inside a websocket to a wstunnel front, so a network that passes nothing but web
 /// traffic still carries the tunnel. The engine dials the loopback port this binds, and every datagram travels
 /// as one websocket message. The carrier opens on the first datagram and reopens itself after a drop, which
@@ -210,42 +241,84 @@ public sealed class WsCarrier : IDisposable
         return opened;
     }
 
-    // One websocket to the front: a connect to the resolved address, TLS under the front's own name, the upgrade.
-    private async Task<Stream?> OpenAsync(CancellationToken ct)
+    /// <summary>
+    /// Asks a front the same question the carrier asks on its first datagram and drops the answer. Nothing is
+    /// carried, so an address can be checked before a tunnel is built on it.
+    /// </summary>
+    public static async Task<(WsFrontOutcome Outcome, string Detail)> ProbeAsync(
+        WsEndpoint front, IPAddress address, int targetPort, Func<Socket, bool>? bypass, CancellationToken ct)
     {
-        var socket = new Socket(_address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        var dial = await DialAsync(front, address, targetPort, bypass, ct).ConfigureAwait(false);
+        if (dial.Stream is { } stream)
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+
+        return (dial.Outcome, dial.Detail);
+    }
+
+    // One websocket to the front: a connect to the resolved address, TLS under the front's own name, the upgrade.
+    private static async Task<(Stream? Stream, WsFrontOutcome Outcome, string Detail, Exception? Error)> DialAsync(
+        WsEndpoint front, IPAddress address, int targetPort, Func<Socket, bool>? bypass, CancellationToken ct)
+    {
+        var socket = new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
         try
         {
-            _bypass?.Invoke(socket);
+            bypass?.Invoke(socket);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(ConnectTimeoutMs);
-            await socket.ConnectAsync(new IPEndPoint(_address, _front.Port), deadline.Token).ConfigureAwait(false);
+            await socket.ConnectAsync(new IPEndPoint(address, front.Port), deadline.Token).ConfigureAwait(false);
             var tls = new SslStream(new NetworkStream(socket, ownsSocket: true));
-            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = _front.Host }, deadline.Token).ConfigureAwait(false);
+            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = front.Host }, deadline.Token).ConfigureAwait(false);
             var key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
-            await tls.WriteAsync(Encoding.ASCII.GetBytes(Handshake(_front, _targetPort, key)), deadline.Token).ConfigureAwait(false);
+            await tls.WriteAsync(Encoding.ASCII.GetBytes(Handshake(front, targetPort, key)), deadline.Token).ConfigureAwait(false);
             var answer = await HeaderAsync(tls, deadline.Token).ConfigureAwait(false);
             if (!Accepted(answer, key))
             {
-                _note?.Invoke($"the websocket front at {_front.Host}:{_front.Port} refused to carry the tunnel: {FirstLine(answer)}", null);
                 await tls.DisposeAsync().ConfigureAwait(false);
-                return null;
+                return (null, WsFrontOutcome.Refused, FirstLine(answer), null);
             }
 
-            _note?.Invoke($"the tunnel is carried inside a websocket to {_front.Host}:{_front.Port} and handed to port {_targetPort} on the server", null);
-            return tls;
+            return (tls, WsFrontOutcome.Ok, string.Empty, null);
         }
         catch (OperationCanceledException)
         {
             socket.Dispose();
-            _note?.Invoke($"the websocket front at {_front.Host}:{_front.Port} did not answer in time", null);
-            return null;
+            return (null, WsFrontOutcome.NoAnswer, string.Empty, null);
         }
-        catch (Exception ex) when (ex is SocketException or IOException or AuthenticationException or ObjectDisposedException)
+        catch (AuthenticationException ex)
         {
             socket.Dispose();
-            _note?.Invoke($"the websocket front at {_front.Host}:{_front.Port} could not be opened", ex);
-            return null;
+            return (null, WsFrontOutcome.Tls, ex.Message, ex);
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
+        {
+            socket.Dispose();
+            return (null, WsFrontOutcome.NoAnswer, string.Empty, ex);
+        }
+    }
+
+    // The carrier's own dial, with the outcome written to the log the way the tunnel reads it.
+    private async Task<Stream?> OpenAsync(CancellationToken ct)
+    {
+        var dial = await DialAsync(_front, _address, _targetPort, _bypass, ct).ConfigureAwait(false);
+        var front = $"{_front.Host}:{_front.Port}";
+        switch (dial.Outcome)
+        {
+            case WsFrontOutcome.Ok:
+                _note?.Invoke($"the tunnel is carried inside a websocket to {front} and handed to port {_targetPort} on the server", null);
+                return dial.Stream;
+            case WsFrontOutcome.Refused:
+                _note?.Invoke($"the websocket front at {front} refused to carry the tunnel: {dial.Detail}", null);
+                return null;
+            case WsFrontOutcome.Tls:
+                _note?.Invoke($"the websocket front at {front} did not come up under TLS", dial.Error);
+                return null;
+            default:
+                _note?.Invoke(dial.Error is null
+                    ? $"the websocket front at {front} did not answer in time"
+                    : $"the websocket front at {front} could not be opened", dial.Error);
+                return null;
         }
     }
 

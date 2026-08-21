@@ -362,12 +362,16 @@
     </Style>
     <!-- Home server row: a flat card whose frame, not its fill, carries the connection state. -->
     <Style Selector="Button.serverrow">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
+      <Setter Property="Background" Value="{DynamicResource AgPanelBrush}" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="12" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <!-- Idle card: a dimmer fill than the applied one. -->
+    <Style Selector="Button.serverrow.off">
+      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
     </Style>
     <Style Selector="Button.serverrow:focus-visible">
       <Setter Property="FocusAdorner">
@@ -503,16 +507,10 @@
       <Setter Property="RenderTransform" Value="none" />
       <Setter Property="Opacity" Value="0.85" />
     </Style>
-    <!-- Press shades the server row instead of thinning it: the dip in opacity above lets the buttons lying
-         under the row show through. Stands after that rule, so it wins. -->
+    <!-- Press leaves the card alone: the body is not clickable, the frame answers. Stands after the
+         opacity rule above, so it wins. -->
     <Style Selector="Button.serverrow:pressed">
       <Setter Property="Opacity" Value="1" />
-      <Setter Property="Background" Value="{DynamicResource AgInsetBrush}" />
-    </Style>
-
-    <!-- Карточка каталога нажатие не красит: тело не кликается, отклик даёт рамка. -->
-    <Style Selector="Button.serverrow.noclick:pressed">
-      <Setter Property="Background" Value="{DynamicResource AgPanel2Brush}" />
     </Style>
     <Style Selector="Button:disabled">
       <Setter Property="Opacity" Value="0.5" />
@@ -705,18 +703,6 @@
     </Style>
     <Style Selector="ToggleSwitch:disabled">
       <Setter Property="Opacity" Value="0.5" />
-    </Style>
-
-    <!-- Тумблер на карточке каталога: выключенный носит рамку кнопок, стоящих рядом, а не акцентную, а
-         отрицательный отступ снимает пустую колонку под подпись и ставит правый край по кнопке настроек. -->
-    <Style Selector="ToggleSwitch.cardflag">
-      <Setter Property="Margin" Value="0,0,-4,0" />
-    </Style>
-    <Style Selector="ToggleSwitch.cardflag /template/ Border#OuterBorder, ToggleSwitch.cardflag:pointerover /template/ Border#OuterBorder, ToggleSwitch.cardflag:pressed /template/ Border#OuterBorder">
-      <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />
-    </Style>
-    <Style Selector="ToggleSwitch.cardflag /template/ Ellipse#SwitchKnobOff, ToggleSwitch.cardflag:pointerover /template/ Ellipse#SwitchKnobOff, ToggleSwitch.cardflag:pressed /template/ Ellipse#SwitchKnobOff">
-      <Setter Property="Fill" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
     <!-- Drop the WinUI-inherited 120px MinWidth: the focus ring is drawn on the control bounds, and a short

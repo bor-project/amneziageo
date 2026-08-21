@@ -1,7 +1,9 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using AmneziaGeo.Decl;
+using AmneziaGeo.Localization;
 
 namespace AmneziaGeo.Ui.Services;
 
@@ -61,6 +63,45 @@ internal static class ImportDispatcher
         return config is not null
             ? new DroppedItem(DroppedKind.VpnConfig, config, null)
             : new DroppedItem(DroppedKind.Unrecognized, null, null);
+    }
+
+    /// <summary>
+    /// Читает файл и распознаёт его содержимое.
+    /// </summary>
+    public static async Task<DroppedItem> ClassifyFileAsync(string path)
+    {
+        try
+        {
+            return Classify(await File.ReadAllBytesAsync(path));
+        }
+        catch (Exception)
+        {
+            return new DroppedItem(DroppedKind.Unrecognized, null, null);
+        }
+    }
+
+    /// <summary>
+    /// Собирает сообщение об итоге импорта.
+    /// </summary>
+    public static string? Notice(int imported, string importedKey, int bundle, int rejected)
+    {
+        var parts = new List<string>();
+        if (imported > 0)
+        {
+            parts.Add(Loc.Instance.Get(importedKey, imported));
+        }
+
+        if (bundle > 0)
+        {
+            parts.Add(Loc.Instance.Get("Drop_BundleHint"));
+        }
+
+        if (rejected > 0)
+        {
+            parts.Add(Loc.Instance.Get("Drop_Skipped", rejected));
+        }
+
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 
     private static bool LooksLikeImage(byte[] raw)

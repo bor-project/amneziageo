@@ -9,7 +9,7 @@ using AmneziaGeo.Ui.Services;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Карточка каталога маршрутизации: имя, состав списка, тумблер применения и кнопка настроек. На телевизоре
+/// Карточка каталога маршрутизации: имя, состав списка, флаг применения и кнопка настроек. На телевизоре
 /// пульт входит в карточку, ходит по её контролам сверху вниз и выходит «назад».
 /// </summary>
 internal sealed partial class RoutingCard : UserControl
@@ -60,7 +60,7 @@ internal sealed partial class RoutingCard : UserControl
     }
 
     /// <summary>
-    /// Команда тумблера применения.
+    /// Команда флага применения.
     /// </summary>
     public ICommand? SelectCommand
     {

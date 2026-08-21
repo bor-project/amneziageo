@@ -194,12 +194,6 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private int _linkRttMs = -1;
 
     /// <summary>
-    /// Whether the row carries a loss line: it stands on every card and names the absence of a reading until a
-    /// tunnel gives one.
-    /// </summary>
-    public bool ShowLinkLoss => LinkShown;
-
-    /// <summary>
     /// Whether the running tunnel drops enough for it to be felt.
     /// </summary>
     public bool LinkLossy => LinkSteady && LinkHealth.Lossy(LinkLossPercent);
@@ -247,15 +241,10 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private int CardLossPercent => TunnelLossKnown ? LinkLossPercent : ProbeLossPercent;
 
     /// <summary>
-    /// Whether this device shows what the tunnel carries and loses at all.
-    /// </summary>
-    public static bool LinkShown => !UiPlatform.IsTelevision;
-
-    /// <summary>
     /// Whether the throughput reading is shown. Android keeps none: the tunnel there counts what its own relay
     /// carries, which is a share of the traffic and no measure of the link.
     /// </summary>
-    public static bool SpeedShown => LinkShown && !OperatingSystem.IsAndroid();
+    public static bool SpeedShown => !OperatingSystem.IsAndroid();
 
     // Seconds since the running tunnel's peer last answered; -1 on every config that is not running.
     [ObservableProperty]

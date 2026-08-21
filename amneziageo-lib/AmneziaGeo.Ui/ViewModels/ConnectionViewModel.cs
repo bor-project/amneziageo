@@ -86,6 +86,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
 
     // False until the first snapshot lands, so the card shows a loader instead of the indeterminate button.
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AgentStatusText))]
     private bool _isReady;
 
     // A measurement of every server is in flight.
@@ -192,6 +193,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// <summary>
     /// Banner status text in the connection card.
     /// </summary>
+    // Before the first snapshot the agent has not answered yet: the banner loads instead of reporting a break.
     public string AgentStatusText => IsConnected
         ? ConnState switch
         {
@@ -199,7 +201,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             1 => StatusLabels.Text(IsTunnelActive ? ConnectionStatus.Connecting : ConnectionStatus.Disconnecting),
             _ => StatusLabels.Text(ConnectFailed ? ConnectionStatus.Failed : ConnectionStatus.Disconnected),
         }
-        : Loc.Instance.Get("MainVm_NoAgentConnection");
+        : Loc.Instance.Get(IsReady ? "MainVm_NoAgentConnection" : "Main_RoutingLoading");
 
     // Disabled in the stalled-disconnect half-state (tunnel still up but Active=false): the header power toggle
     // would otherwise send connect and reverse the disconnect - the retry is offered on the banner instead (#14).
@@ -314,7 +316,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     /// <summary>
     /// Whether the home screen shows what the running tunnel loses.
     /// </summary>
-    public bool ShowLinkLoss => ConfigItemViewModel.LinkShown && ConnState == 2 && BoundRow is { ShowLinkLoss: true };
+    public bool ShowLinkLoss => ConnState == 2 && BoundRow is not null;
 
     /// <summary>
     /// The share of the running tunnel's own probes that never came back.

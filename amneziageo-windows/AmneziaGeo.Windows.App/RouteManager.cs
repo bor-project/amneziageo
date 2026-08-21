@@ -17,20 +17,6 @@ internal sealed partial class RouteManager
     private const uint ErrorObjectAlreadyExists = 5010;
     private const uint MibIpProtoNetMgmt = 3; // RouteProtocolNetMgmt
 
-    // Private IPv4 ranges kept off the tunnel in full-tunnel mode.
-    private static readonly (string Network, byte Prefix)[] LanExclusions =
-    [
-        ("10.0.0.0", 8),
-        ("172.16.0.0", 12),
-        ("192.168.0.0", 16),
-    ];
-
-    // IPv6 ULA range kept off the tunnel on a dual-stack tunnel.
-    private static readonly (string Network, byte Prefix)[] LanExclusionsV6 =
-    [
-        ("fc00::", 7),
-    ];
-
     // Connected subnets change only with the host's network configuration, while the enumeration behind them costs
     // hundreds of milliseconds on an adapter- and route-heavy host - and the status snapshot asks every 2 seconds.
     // The TTL is a backstop for a missed change event, not the refresh path.
@@ -180,12 +166,12 @@ internal sealed partial class RouteManager
             }
         }
 
-        // v6 LAN exclusion on a dual-stack tunnel.
+        // v6 LAN exclusion on a dual-stack tunnel: the unique-local subnets this host sits on, not the range
+        // they come from - a range-wide pin also takes the addresses another VPN carries.
         if (dualStack)
         {
-            foreach (var (network, prefix) in LanExclusionsV6)
+            foreach (var (dest, prefix) in ScanLocalV6Subnets())
             {
-                var dest = IPAddress.Parse(network);
                 if (FindBestV6Route(dest) is not { } best)
                 {
                     continue;
@@ -194,10 +180,10 @@ internal sealed partial class RouteManager
                 var row = NewRowV6(dest, prefix, best.InterfaceIndex, best.NextHop);
                 var result = CreateIpForwardEntry2(ref row);
                 var ok = result is NoError or ErrorObjectAlreadyExists;
-                RouteLog.Write("lan-excl6", $"{network}/{prefix}", $"if{best.InterfaceIndex}", ok);
+                RouteLog.Write("lan-excl6", $"{dest}/{prefix}", $"if{best.InterfaceIndex}", ok);
                 if (ok)
                 {
-                    added.Add($"{network}/{prefix}");
+                    added.Add($"{dest}/{prefix}");
                     any = true;
                 }
             }
@@ -392,33 +378,59 @@ internal sealed partial class RouteManager
         return result;
     }
 
-    /// <summary>
-    /// Default bypass set: RFC1918 ranges plus connected subnets outside them.
-    /// </summary>
-    public IReadOnlyList<string> DefaultExclusionEntries()
+    // Connected unique-local IPv6 subnets: the v6 counterpart of the connected IPv4 subnets, and the only v6
+    // addresses a LAN bypass has any business pinning to the physical link.
+    private static IReadOnlyList<(IPAddress Network, byte Prefix)> ScanLocalV6Subnets()
     {
-        var list = LanExclusions.Select(r => $"{r.Network}/{r.Prefix}").ToList();
-        foreach (var subnet in LocalSubnets())
+        var result = new List<(IPAddress Network, byte Prefix)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (!IsWithinDefaultRanges(subnet) && !list.Contains(subnet))
+            if (ni.OperationalStatus != OperationalStatus.Up
+                || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel
+                || IsTunnelAdapter(ni))
             {
-                list.Add(subnet);
+                continue;
+            }
+
+            foreach (var ua in UnicastAddresses(ni))
+            {
+                if (ua.Address.AddressFamily != AddressFamily.InterNetworkV6 || !IsUniqueLocal(ua.Address))
+                {
+                    continue;
+                }
+
+                var prefix = ua.PrefixLength;
+                if (prefix is <= 0 or >= 127)
+                {
+                    continue; // /127-/128 is host, /0 is default - neither is a LAN
+                }
+
+                var network = NetworkAddress(ua.Address, prefix);
+                if (seen.Add($"{network}/{prefix}"))
+                {
+                    result.Add((network, (byte)prefix));
+                }
             }
         }
 
-        return list;
+        return result;
     }
 
-    // Whether a CIDR falls inside an RFC1918 default range.
-    private static bool IsWithinDefaultRanges(string cidr)
+    // fc00::/7, the IPv6 range that answers to RFC1918.
+    private static bool IsUniqueLocal(IPAddress address)
     {
-        var slash = cidr.IndexOf('/');
-        if (slash < 0 || !IPAddress.TryParse(cidr[..slash], out var addr))
-        {
-            return false;
-        }
+        return (address.GetAddressBytes()[0] & 0xFE) == 0xFC;
+    }
 
-        return LanExclusions.Any(r => InRange(addr, IPAddress.Parse(r.Network), r.Prefix));
+    /// <summary>
+    /// Default bypass set: the subnets this host is connected to. A whole private range is never pinned - it
+    /// would outrank the default route of another VPN and take its traffic off it, and it would send every
+    /// address inside it past the tunnel in the clear.
+    /// </summary>
+    public IReadOnlyList<string> DefaultExclusionEntries()
+    {
+        return LocalSubnets();
     }
 
     // APIPA link-local 169.254/16 has no real LAN.
@@ -428,7 +440,7 @@ internal sealed partial class RouteManager
     private static IPAddress NetworkAddress(IPAddress ip, int prefix)
     {
         var bytes = ip.GetAddressBytes();
-        var mask = PrefixToMask(prefix);
+        var mask = PrefixToMask(prefix, bytes.Length);
         for (var i = 0; i < bytes.Length; i++)
         {
             bytes[i] &= mask[i];
@@ -455,8 +467,13 @@ internal sealed partial class RouteManager
 
     private static byte[] PrefixToMask(int prefix)
     {
-        var mask = new byte[4];
-        for (var i = 0; i < prefix && i < 32; i++)
+        return PrefixToMask(prefix, 4);
+    }
+
+    private static byte[] PrefixToMask(int prefix, int length)
+    {
+        var mask = new byte[length];
+        for (var i = 0; i < prefix && i < length * 8; i++)
         {
             mask[i / 8] |= (byte)(0x80 >> (i % 8));
         }

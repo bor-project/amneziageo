@@ -55,6 +55,15 @@ public sealed class SqliteLogStore : IDisposable
 
     private readonly string _databasePath;
 
+    // Set while the store cannot be written to, cleared when it can again.
+    private volatile string? _failure;
+
+    // Severity id of WRN in the log_levels dictionary seeded below.
+    private const int WarningLevelId = 4;
+
+    // Suffix of the note left next to the database while it cannot be opened at all.
+    private const string FailureSuffix = ".failure.txt";
+
     /// <summary>
     /// ctor
     /// </summary>
@@ -71,31 +80,65 @@ public sealed class SqliteLogStore : IDisposable
     /// Creates the tables (WAL), seeds the level dictionary, and starts the writer loop. Corruption
     /// self-heals, escalating: first quarantine only the -wal/-shm sidecars (a stale pair fails recovery of
     /// an intact file - its rows survive), then quarantine the database and recreate it empty - losing old
-    /// log rows must never keep the agent from starting.
+    /// log rows must never keep the agent from starting. The writer loop starts even when none of that
+    /// worked: it opens the database again on its next batch, so a log that could not be opened once does
+    /// not stay dead for the life of the process.
     /// </summary>
     public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        await OpenOrRecreateAsync(ct).ConfigureAwait(false);
+        _writerLoop = Task.Run(() => WriteLoopAsync(_shutdown.Token));
+    }
+
+    /// <summary>
+    /// Why the store is not writing, or null while it is.
+    /// </summary>
+    public string? LastFailure => _failure;
+
+    /// <summary>
+    /// Drops the pooled connections to the database file, so a caller can move it aside.
+    /// </summary>
+    public void ClearPool()
+    {
+        SqliteConnection.ClearAllPools();
+    }
+
+    // Opens the store, quarantining a corrupt file in two steps. Never throws: a failure is recorded and the
+    // next batch tries again.
+    private async Task<bool> OpenOrRecreateAsync(CancellationToken ct)
     {
         try
         {
             await InitializeCoreAsync(ct).ConfigureAwait(false);
+            return true;
         }
         catch (SqliteException)
         {
             SqliteConnection.ClearAllPools();
             CorruptQuarantine.MoveAsideSidecars(_databasePath);
-            try
-            {
-                await InitializeCoreAsync(ct).ConfigureAwait(false);
-            }
-            catch (SqliteException)
-            {
-                SqliteConnection.ClearAllPools();
-                CorruptQuarantine.MoveAside(_databasePath);
-                await InitializeCoreAsync(ct).ConfigureAwait(false);
-            }
         }
 
-        _writerLoop = Task.Run(() => WriteLoopAsync(_shutdown.Token));
+        try
+        {
+            await InitializeCoreAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (SqliteException)
+        {
+            SqliteConnection.ClearAllPools();
+            CorruptQuarantine.MoveAside(_databasePath);
+        }
+
+        try
+        {
+            await InitializeCoreAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            RecordFailure(ex);
+            return false;
+        }
     }
 
     private async Task InitializeCoreAsync(CancellationToken ct)
@@ -485,6 +528,66 @@ public sealed class SqliteLogStore : IDisposable
 
     private async Task WriteBatchAsync(IReadOnlyList<Pending> batch, CancellationToken ct)
     {
+        // The database is gone when another process quarantined it: a connection opened before that still
+        // writes, into the file under its new name, and every row from here on would be lost with it.
+        if (File.Exists(_databasePath) && await TryWriteBatchAsync(batch, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        _failure ??= "the log database was replaced or refused a write";
+        if (!await OpenOrRecreateAsync(ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        if (await TryWriteBatchAsync(batch, ct).ConfigureAwait(false))
+        {
+            ReportRecovery();
+        }
+    }
+
+    // Records that the store cannot be written to, where it is still readable once the log itself is not.
+    private void RecordFailure(Exception ex)
+    {
+        _failure = ex.Message;
+        try
+        {
+            File.WriteAllText(_databasePath + FailureSuffix, $"{DateTimeOffset.Now:O} {ex}");
+        }
+        catch (Exception)
+        {
+            // Nowhere to report to; the flag still marks the gap for a caller that asks.
+        }
+    }
+
+    // Marks the gap in the log itself the moment writing comes back.
+    private void ReportRecovery()
+    {
+        if (_failure is not { } reason)
+        {
+            return;
+        }
+
+        _failure = null;
+        try
+        {
+            File.Delete(_databasePath + FailureSuffix);
+        }
+        catch (Exception)
+        {
+            // The note outliving the failure is harmless.
+        }
+
+        AppendAgent(
+            DateTimeOffset.Now.ToUnixTimeMilliseconds(),
+            WarningLevelId,
+            null,
+            $"the log database was opened again after it stopped taking rows ({reason}); the events from that window are lost");
+    }
+
+    private async Task<bool> TryWriteBatchAsync(IReadOnlyList<Pending> batch, CancellationToken ct)
+    {
         try
         {
             var connection = await OpenAsync(ct).ConfigureAwait(false);
@@ -529,10 +632,13 @@ public sealed class SqliteLogStore : IDisposable
                     await transaction.CommitAsync(ct).ConfigureAwait(false);
                 }
             }
+
+            return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A log must not break the writer loop; a transient DB error drops this batch.
+            // A log must not break the writer loop; the caller reopens the database and tries once more.
+            return false;
         }
     }
 

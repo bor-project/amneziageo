@@ -3,13 +3,15 @@ using System.Management;
 using System.Net;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 
 namespace AmneziaGeo.Windows.App;
 
 /// <summary>
 /// Points network adapters' DNS at the loopback proxy and restores them, via WMI
-/// (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder). State is persisted per tunnel so a
-/// crashed predecessor's redirect can be reverted from another process.
+/// (Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder). State is persisted per tunnel and keyed by the
+/// adapter's GUID, so a crashed predecessor's redirect can be reverted from another process. An adapter that
+/// took its servers from DHCP is handed back to automatic, never pinned to the addresses it happened to have.
 /// </summary>
 internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 {
@@ -84,30 +86,45 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     }
 
     /// <summary>
-    /// Sets every IP-enabled adapter's DNS to the proxy servers, persisting the prior per-adapter
-    /// servers so they can be restored (here or by a reconciler after a crash).
+    /// Sets every IP-enabled adapter's DNS to the proxy servers. The adapters' own settings are recorded
+    /// first, so a crash between the record and the redirect still leaves something to put back.
     /// </summary>
     public void Apply(string name, IReadOnlyList<string> proxyServers)
     {
         _name = name;
-        var saved = new Dictionary<uint, string[]>();
+        var saved = new Dictionary<string, SavedDns>(StringComparer.OrdinalIgnoreCase);
         foreach (var adapter in Adapters())
         {
             using (adapter)
             {
-                var index = Convert.ToUInt32(adapter["InterfaceIndex"]);
-                var current = adapter["DNSServerSearchOrder"] as string[] ?? [];
-                // Exclude our proxy targets and loopback so a dirty predecessor cannot be "restored".
-                saved[index] = current.Where(s => !proxyServers.Contains(s) && !IsLoopback(s)).ToArray();
-                SetDns(adapter, proxyServers);
-                // WMI SetDNSServerSearchOrder is IPv4-only and leaves the adapter's IPv6 DNS in place;
-                // point IPv6 DNS at the proxy's ::1 too so every query reaches us.
-                RedirectV6Dns(index);
+                if (AdapterGuid(adapter) is { } guid)
+                {
+                    saved[guid] = Capture(guid, proxyServers);
+                }
             }
         }
 
-        WriteState(TunnelPaths.DnsStateFile(name), saved, proxyServers);
-        logger.LogDebug("every adapter now sends its name lookups to {Servers}; the servers they used before are saved and put back on disconnect", string.Join(",", proxyServers));
+        DnsStateFile.Write(TunnelPaths.DnsStateFile(name), saved, proxyServers);
+
+        foreach (var adapter in Adapters())
+        {
+            using (adapter)
+            {
+                // An adapter whose settings were not recorded is left alone: a redirect there could not be
+                // put back.
+                if (AdapterGuid(adapter) is not { } guid || !saved.ContainsKey(guid))
+                {
+                    continue;
+                }
+
+                SetDns(adapter, proxyServers);
+                // WMI SetDNSServerSearchOrder is IPv4-only and leaves the adapter's IPv6 DNS in place;
+                // point IPv6 DNS at the proxy's ::1 too so every query reaches us.
+                RedirectV6Dns(Convert.ToUInt32(adapter["InterfaceIndex"]));
+            }
+        }
+
+        logger.LogDebug("every adapter now sends its name lookups to {Servers}; the settings they had before are saved and put back on disconnect", string.Join(",", proxyServers));
     }
 
     /// <summary>
@@ -147,16 +164,14 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     private static extern uint DnsFlushResolverCache();
 
     /// <summary>
-    /// Restores the DNS servers this instance redirected. Keeps the state for a retry if a reset did not take.
+    /// Restores the DNS settings this instance redirected. Keeps the state for a retry if a reset did not take.
     /// </summary>
     public void Restore()
     {
         var file = TunnelPaths.DnsStateFile(_name);
         try
         {
-            var state = ReadState(file);
-            RestoreState(state.Originals);
-            if (Outcome(state) != RestoreOutcome.Done)
+            if (RestoreFile(file) != RestoreOutcome.Done)
             {
                 return;
             }
@@ -165,7 +180,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "the adapters' original DNS servers could not be put back; the record is kept and retried, so lookups are not left pointing at this machine");
+            logger.LogDebug(ex, "the adapters' own DNS settings could not be put back; the record is kept and retried, so lookups are not left pointing at this machine");
         }
     }
 
@@ -188,9 +203,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 
             try
             {
-                var state = ReadState(file);
-                RestoreState(state.Originals);
-                var outcome = Outcome(state);
+                var outcome = RestoreFile(file);
                 if (outcome == RestoreOutcome.Done)
                 {
                     TryDelete(file);
@@ -200,7 +213,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
 
                 if (outcome == RestoreOutcome.Pending)
                 {
-                    logger.LogWarning("the original DNS servers of one adapter could not all be put back yet; the record ({File}) is kept and tried again, so name lookups are not left pointing at this machine", Path.GetFileName(file));
+                    logger.LogWarning("one adapter's own DNS settings could not be put back yet; the record ({File}) is kept and tried again, so name lookups are not left pointing at this machine", Path.GetFileName(file));
                     continue;
                 }
 
@@ -218,21 +231,21 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             }
             catch (Exception ex)
             {
-                logger.LogDebug(ex, "the DNS record {File} could not be read; it is left in place and retried, so the adapter's own servers are not lost", file);
+                logger.LogDebug(ex, "the DNS record {File} could not be read; it is left in place and retried, so the adapter's own settings are not lost", file);
             }
         }
 
         if (restored)
         {
-            logger.LogDebug("the adapters' own DNS servers are back in place");
+            logger.LogDebug("the adapters' own DNS settings are back in place");
         }
     }
 
     /// <summary>
     /// Standalone recovery for the uninstall custom action and the UI repair button: reverts any persisted
-    /// redirect, then forces any adapter still pointing DNS at a loopback proxy back to automatic. Runs without
-    /// the agent, so a dead or hung service can't strand the box without a resolver. Touches DNS only - not
-    /// routes, profiles, or configs.
+    /// redirect, then hands back to automatic every adapter still pointing DNS at a loopback proxy and every
+    /// adapter pinned to servers only another adapter ever learned. Runs without the agent, so a dead or hung
+    /// service can't strand the box without a resolver. Touches DNS only - not routes, profiles, or configs.
     /// </summary>
     public void RestoreAndHeal()
     {
@@ -242,17 +255,30 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         {
             using (adapter)
             {
-                var current = adapter["DNSServerSearchOrder"] as string[] ?? [];
-                if (!current.Any(IsLoopback))
+                if (AdapterGuid(adapter) is not { } guid)
                 {
                     continue;
                 }
 
-                // A persisted original was missing or the redirect outlived its state file: hand this adapter
-                // back to automatic (DHCP) so a dead loopback proxy stops swallowing every query.
                 var index = Convert.ToUInt32(adapter["InterfaceIndex"]);
-                SetDns(adapter, []);
-                ResetV6Dns(index);
+                var current = adapter["DNSServerSearchOrder"] as string[] ?? [];
+                if (current.Any(IsLoopback) || StaticServers(V4InterfacesKey, guid).Any(IsLoopback))
+                {
+                    // A persisted original was missing or the redirect outlived its state file: hand this adapter
+                    // back to automatic (DHCP) so a dead loopback proxy stops swallowing every query.
+                    SetDns(adapter, []);
+                    logger.LogInformation("adapter {Guid} was still sending name lookups to this machine; it is back on automatic DNS", guid);
+                }
+                else if (Misplaced(guid))
+                {
+                    SetDns(adapter, []);
+                    logger.LogInformation("adapter {Guid} was pinned to DNS servers only another adapter ever learned; it is back on automatic DNS", guid);
+                }
+
+                if (StaticServers(V6InterfacesKey, guid).Any(IsLoopback))
+                {
+                    ResetV6Dns(index);
+                }
             }
         }
 
@@ -267,24 +293,81 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         Absent,  // nothing to revert, but an adapter is not enumerable
     }
 
-    private static RestoreOutcome Outcome(DnsState state)
+    // Reverts one state file and reports what is left. Only an adapter that still carries our redirect is
+    // written to: an index or a GUID that now belongs to another adapter must never be handed settings that
+    // were taken from this one.
+    private RestoreOutcome RestoreFile(string path)
     {
+        var state = DnsStateFile.Read(path);
         var absent = false;
-        foreach (var index in state.Originals.Keys)
+        var pending = false;
+        foreach (var entry in state.Entries)
         {
-            var probed = Probe(index, state.RedirectTargets);
-            if (probed == AdapterDns.Ours)
+            switch (RestoreEntry(entry, state.RedirectTargets))
             {
-                return RestoreOutcome.Pending;
-            }
-
-            if (probed == AdapterDns.NotReady)
-            {
-                absent = true;
+                case RestoreOutcome.Pending:
+                    pending = true;
+                    break;
+                case RestoreOutcome.Absent:
+                    absent = true;
+                    break;
             }
         }
 
+        if (pending)
+        {
+            return RestoreOutcome.Pending;
+        }
+
         return absent ? RestoreOutcome.Absent : RestoreOutcome.Done;
+    }
+
+    private RestoreOutcome RestoreEntry(DnsStateEntry entry, string[] targets)
+    {
+        var adapter = FindAdapter(entry);
+        if (adapter is null)
+        {
+            return RestoreOutcome.Absent;
+        }
+
+        using (adapter)
+        {
+            if ((AdapterGuid(adapter) ?? entry.Guid) is not { } guid)
+            {
+                return RestoreOutcome.Absent;
+            }
+
+            var index = Convert.ToUInt32(adapter["InterfaceIndex"]);
+            var saved = Resolve(entry, guid);
+            if (IsOurs(adapter, guid, targets))
+            {
+                SetDns(adapter, saved.V4);
+            }
+
+            if (StaticServers(V6InterfacesKey, guid).Any(IsLoopback))
+            {
+                SetV6Dns(index, saved.V6);
+            }
+
+            return Probe(index, guid, targets);
+        }
+    }
+
+    // The adapter this entry was recorded for: by GUID, which survives a reboot and a renumbering, and by
+    // interface index only for state written before the GUID was recorded.
+    private static ManagementObject? FindAdapter(DnsStateEntry entry)
+    {
+        var where = entry.Guid is { } guid
+            ? $"SettingID = '{guid}'"
+            : $"InterfaceIndex = {entry.Index}";
+        using var searcher = new ManagementObjectSearcher(
+            $"SELECT * FROM Win32_NetworkAdapterConfiguration WHERE {where}");
+        foreach (ManagementObject adapter in searcher.Get())
+        {
+            return adapter;
+        }
+
+        return null;
     }
 
     // Time an adapter has to reappear before its state is treated as leftover. Measured from the write, so a
@@ -303,15 +386,7 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
     }
 
-    // Per-adapter DNS after a restore attempt.
-    private enum AdapterDns
-    {
-        NotReady, // adapter row absent / not enumerable yet - cannot confirm the restore took
-        Ours,     // still on a server we set - the redirect has not been reverted
-        Clean,    // present and no longer on our redirect
-    }
-
-    private static AdapterDns Probe(uint index, string[] targets)
+    private static RestoreOutcome Probe(uint index, string guid, string[] targets)
     {
         using var searcher = new ManagementObjectSearcher(
             $"SELECT DNSServerSearchOrder FROM Win32_NetworkAdapterConfiguration WHERE InterfaceIndex = {index}");
@@ -319,12 +394,19 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         {
             using (adapter)
             {
-                var dns = adapter["DNSServerSearchOrder"] as string[] ?? [];
-                return IsStillOurs(dns, targets) ? AdapterDns.Ours : AdapterDns.Clean;
+                return IsOurs(adapter, guid, targets) ? RestoreOutcome.Pending : RestoreOutcome.Done;
             }
         }
 
-        return AdapterDns.NotReady;
+        return RestoreOutcome.Absent;
+    }
+
+    // Whether the adapter still carries the redirect. The live list answers for an adapter that is up; the
+    // static entry answers for one that is down, and that one has to be put back too.
+    private static bool IsOurs(ManagementObject adapter, string guid, string[] targets)
+    {
+        var dns = adapter["DNSServerSearchOrder"] as string[] ?? [];
+        return IsStillOurs(dns, targets) || IsStillOurs(StaticServers(V4InterfacesKey, guid), targets);
     }
 
     // The adapter still lists a server we set. Legacy state with no recorded target falls back to any loopback,
@@ -336,14 +418,109 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
             : dns.Any(IsLoopback);
     }
 
-    private void RestoreState(Dictionary<uint, string[]> state)
+    // What to put back on an adapter. State written before the servers' origin was recorded says nothing about
+    // where they came from: servers the adapter learned over DHCP are handed back as automatic, because writing
+    // them statically outlives the network they belong to.
+    private static SavedDns Resolve(DnsStateEntry entry, string guid)
     {
-        foreach (var (index, original) in state)
+        if (!entry.Legacy)
         {
-            // Empty originals => the adapter was on automatic (DHCP); resetting to none reverts it.
-            SetAdapter(index, original);
-            // Hand IPv6 DNS back to automatic; it was redirected to ::1.
-            ResetV6Dns(index);
+            return entry.Saved;
+        }
+
+        var learned = DhcpServers(V4InterfacesKey, guid);
+        var fromDhcp = entry.Saved.V4.Any(s => learned.Contains(s, StringComparer.OrdinalIgnoreCase));
+        return fromDhcp ? entry.Saved with { V4 = [] } : entry.Saved;
+    }
+
+    // The adapter's own DNS settings, read where Windows keeps them: an empty static list means the adapter
+    // takes its servers from DHCP. Our own targets and loopback are dropped, so a dirty predecessor's redirect
+    // cannot be recorded as an original and handed back later.
+    private static SavedDns Capture(string guid, IReadOnlyList<string> proxyServers)
+    {
+        return new SavedDns(
+            Own(StaticServers(V4InterfacesKey, guid), proxyServers),
+            Own(StaticServers(V6InterfacesKey, guid), proxyServers));
+    }
+
+    private static string[] Own(string[] servers, IReadOnlyList<string> proxyServers)
+    {
+        return servers.Where(s => !proxyServers.Contains(s) && !IsLoopback(s)).ToArray();
+    }
+
+    // A static list this adapter never learned itself while another adapter did: the signature of an older
+    // build putting saved servers back on the wrong interface. An adapter pinned to its own DHCP servers, or to
+    // anything no adapter here learned, is a user's own choice and is left alone.
+    private static bool Misplaced(string guid)
+    {
+        var pinned = StaticServers(V4InterfacesKey, guid);
+        if (pinned.Length == 0)
+        {
+            return false;
+        }
+
+        var own = DhcpServers(V4InterfacesKey, guid);
+        if (pinned.Any(s => own.Contains(s, StringComparer.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        var elsewhere = LearnedElsewhere(guid);
+        return pinned.All(s => elsewhere.Contains(s, StringComparer.OrdinalIgnoreCase));
+    }
+
+    // Every DNS server some other adapter on this machine learned over DHCP.
+    private static string[] LearnedElsewhere(string guid)
+    {
+        var result = new List<string>();
+        try
+        {
+            using var root = Registry.LocalMachine.OpenSubKey(V4InterfacesKey);
+            foreach (var name in root?.GetSubKeyNames() ?? [])
+            {
+                if (!string.Equals(name, guid, StringComparison.OrdinalIgnoreCase))
+                {
+                    result.AddRange(DhcpServers(V4InterfacesKey, name));
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // No read on the interface list: the heal falls back to the loopback rule alone.
+        }
+
+        return [.. result];
+    }
+
+    private static IEnumerable<ManagementObject> Adapters()
+    {
+        using var searcher = new ManagementObjectSearcher(
+            "SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = true");
+        foreach (ManagementObject adapter in searcher.Get())
+        {
+            yield return adapter;
+        }
+    }
+
+    // The adapter's GUID: it stays with the adapter across reboots, unlike the interface index, so state keyed
+    // by it goes back on the adapter it was taken from.
+    private static string? AdapterGuid(ManagementObject adapter)
+    {
+        var guid = adapter["SettingID"] as string;
+        return DnsStateFile.IsAdapterGuid(guid) ? guid : null;
+    }
+
+    private static void SetDns(ManagementObject adapter, IReadOnlyList<string> servers)
+    {
+        try
+        {
+            using var inParams = adapter.GetMethodParameters("SetDNSServerSearchOrder");
+            inParams["DNSServerSearchOrder"] = servers.Count > 0 ? servers.ToArray() : null;
+            adapter.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
+        }
+        catch (ManagementException)
+        {
+            // A single adapter rejecting the change must not abort the whole apply/restore.
         }
     }
 
@@ -356,6 +533,22 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
     private static void ResetV6Dns(uint index)
     {
         Netsh($"interface ipv6 set dnsservers name={index} source=dhcp");
+    }
+
+    // Puts one adapter's IPv6 servers back; an empty list means it took them from DHCP.
+    private static void SetV6Dns(uint index, IReadOnlyList<string> servers)
+    {
+        if (servers.Count == 0)
+        {
+            ResetV6Dns(index);
+            return;
+        }
+
+        Netsh($"interface ipv6 set dnsservers name={index} static {servers[0]} primary validate=no");
+        for (var i = 1; i < servers.Count; i++)
+        {
+            Netsh($"interface ipv6 add dnsservers name={index} {servers[i]} index={i + 1} validate=no");
+        }
     }
 
     private static void Netsh(string arguments)
@@ -377,85 +570,39 @@ internal sealed class DnsConfigurator(ILogger<DnsConfigurator> logger)
         }
     }
 
-    private static IEnumerable<ManagementObject> Adapters()
-    {
-        using var searcher = new ManagementObjectSearcher(
-            "SELECT * FROM Win32_NetworkAdapterConfiguration WHERE IPEnabled = true");
-        foreach (ManagementObject adapter in searcher.Get())
-        {
-            yield return adapter;
-        }
-    }
-
-    private static void SetDns(ManagementObject adapter, IReadOnlyList<string> servers)
-    {
-        try
-        {
-            using var inParams = adapter.GetMethodParameters("SetDNSServerSearchOrder");
-            inParams["DNSServerSearchOrder"] = servers.Count > 0 ? servers.ToArray() : null;
-            adapter.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
-        }
-        catch (ManagementException)
-        {
-            // A single adapter rejecting the change must not abort the whole apply/restore.
-        }
-    }
-
     private static bool IsLoopback(string server)
     {
         return IPAddress.TryParse(server, out var ip) && IPAddress.IsLoopback(ip);
     }
 
-    private static void WriteState(string path, Dictionary<uint, string[]> originals, IReadOnlyList<string> redirectTargets)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var lines = new List<string> { $"{RedirectKey}={string.Join(",", redirectTargets)}" };
-        foreach (var (index, servers) in originals)
-        {
-            lines.Add($"{index}={string.Join(",", servers)}");
-        }
+    // Where Windows keeps each adapter's own DNS settings: NameServer is what was set statically, empty when
+    // the adapter takes DNS from DHCP; DhcpNameServer is what the lease offered.
+    private const string V4InterfacesKey = @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces";
+    private const string V6InterfacesKey = @"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces";
 
-        File.WriteAllLines(path, lines);
+    private static string[] StaticServers(string root, string guid)
+    {
+        return ReadServers(root, guid, "NameServer");
     }
 
-    private static DnsState ReadState(string path)
+    private static string[] DhcpServers(string root, string guid)
     {
-        var originals = new Dictionary<uint, string[]>();
-        var targets = Array.Empty<string>();
-        if (!File.Exists(path))
-        {
-            return new DnsState(originals, targets);
-        }
-
-        foreach (var line in File.ReadAllLines(path))
-        {
-            var separator = line.IndexOf('=');
-            if (separator < 0)
-            {
-                continue;
-            }
-
-            var key = line[..separator];
-            var value = line[(separator + 1)..];
-            if (key == RedirectKey)
-            {
-                targets = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            }
-            else if (uint.TryParse(key, out var index))
-            {
-                originals[index] = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            }
-        }
-
-        return new DnsState(originals, targets);
+        return ReadServers(root, guid, "DhcpNameServer");
     }
 
-    // Header line recording the servers Apply redirected to, so a restore keeps the file only for our own
-    // un-reverted redirect. Absent in pre-existing (legacy) state files.
-    private const string RedirectKey = "@redirect";
-
-    // Persisted redirect: per-adapter prior servers plus the loopback targets Apply set.
-    private sealed record DnsState(Dictionary<uint, string[]> Originals, string[] RedirectTargets);
+    private static string[] ReadServers(string root, string guid, string value)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey($@"{root}\{guid}");
+            return (key?.GetValue(value) as string)?.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries) ?? [];
+        }
+        catch (Exception)
+        {
+            // An adapter without a settings key has nothing of its own to put back.
+            return [];
+        }
+    }
 
     private static void TryDelete(string path)
     {

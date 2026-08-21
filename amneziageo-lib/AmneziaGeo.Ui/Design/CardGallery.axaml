@@ -25,7 +25,6 @@
           <DataTemplate x:DataType="vm:ConfigItemViewModel">
             <controls:CatalogCard Width="340" Margin="0,0,10,10"
                     OpenCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.OpenCardCommand}"
-                    SelectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.SelectCardCommand}"
                     ConnectCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Home.ConnectConfigCommand}"
                     PickCommand="{Binding $parent[UserControl].((vm:MainWindowViewModel)DataContext).Config.PickCardCommand}" />
           </DataTemplate>

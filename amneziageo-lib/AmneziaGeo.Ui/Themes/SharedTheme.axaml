@@ -325,6 +325,20 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
+    <!-- Кнопка подключения на карточке: круг у имени сервера, цвета носит его содержимое. -->
+    <Style Selector="Button.cardpower">
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="CornerRadius" Value="17" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
     <!-- Header back button. -->
     <Style Selector="Button.backbtn">
       <Setter Property="Background" Value="Transparent" />

@@ -488,7 +488,10 @@
     <value>Удаление конфигурации</value>
   </data>
   <data name="Main_DeleteConfigPrompt" xml:space="preserve">
-    <value>Удалить «{0}» насовсем</value>
+    <value>Удалить «{0}» насовсем. Работающий на ней туннель перейдёт на соседний сервер.</value>
+  </data>
+  <data name="Main_NoticeTunnelMoved" xml:space="preserve">
+    <value>Туннель перешёл на «{0}»: сервера, на котором он работал, больше нет.</value>
   </data>
   <data name="Main_DeleteListButton" xml:space="preserve">
     <value>Удалить список</value>
@@ -1832,20 +1835,11 @@
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>правила по доменам не работают: имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Эти сайты идут мимо туннеля или вовсе не открываются</value>
   </data>
-  <data name="Main_SetActiveTitle" xml:space="preserve">
-    <value>Сделать активной</value>
-  </data>
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Активна</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Выбран</value>
-  </data>
-  <data name="Main_CardStateReady" xml:space="preserve">
-    <value>Готов</value>
-  </data>
-  <data name="Main_CardStateOff" xml:space="preserve">
-    <value>Выключен</value>
   </data>
   <data name="Main_ProbeUnknown" xml:space="preserve">
     <value>N/A</value>

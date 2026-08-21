@@ -52,7 +52,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSectionExport))]
     [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
     [NotifyPropertyChangedFor(nameof(IsOpenConfigActive))]
-    [NotifyPropertyChangedFor(nameof(UseOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowConnectOpenConfig))]
     [NotifyPropertyChangedFor(nameof(CanExportOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
@@ -321,7 +320,6 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public void NotifyActiveConfigChanged()
     {
         OnPropertyChanged(nameof(IsOpenConfigActive));
-        OnPropertyChanged(nameof(UseOpenConfig));
         OnPropertyChanged(nameof(ShowConnectOpenConfig));
     }
 
@@ -332,57 +330,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         OpenConfig is { Length: > 0 } && string.Equals(OpenConfig, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
 
     /// <summary>
-    /// Whether the active card offers to dial the open config: it is the one the next connect binds to, the agent
-    /// is there, and no tunnel runs yet.
+    /// Whether the open config offers to be dialled: the agent is there and no tunnel runs yet. Dialling is how
+    /// a config becomes the target, so the offer stands on every config, not only the one already picked.
     /// </summary>
-    public bool ShowConnectOpenConfig => IsOpenConfigActive && _host.Home.IsConnected && !_host.Home.IsTunnelActive;
-
-    /// <summary>
-    /// Whether the open config is the one the next connect binds to. Turning it on makes the open config active,
-    /// turning it off leaves none selected and takes down a tunnel bound to it.
-    /// </summary>
-    public bool UseOpenConfig
-    {
-        get => IsOpenConfigActive;
-        set
-        {
-            if (value == IsOpenConfigActive)
-            {
-                OnPropertyChanged();
-                return;
-            }
-
-            if (value)
-            {
-                SetActiveConfig();
-                return;
-            }
-
-            _ = _host.Home.ClearActiveConfigAsync();
-        }
-    }
-
-    // Makes the open config the active one (the agent's target).
-    private void SetActiveConfig()
-    {
-        if (OpenConfig is not { Length: > 0 } name)
-        {
-            return;
-        }
-
-        SetActiveConfig(name);
-    }
-
-    // Makes the named config the active one (the agent's target). A live tunnel stands on the configuration
-    // being replaced, so it is switched over to this one; an idle one is left down.
-    private void SetActiveConfig(string name)
-    {
-        _host.Home.ActiveConfig = Configs.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.Ordinal));
-        if (_host.Home.IsTunnelActive)
-        {
-            _ = _host.Home.ToggleConfigConnectionAsync(name, true);
-        }
-    }
+    public bool ShowConnectOpenConfig =>
+        OpenConfig is { Length: > 0 } && _host.Home.IsConnected && !_host.Home.IsTunnelActive;
 
     /// <summary>
     /// Поднимает туннель на открытой конфигурации.
@@ -500,27 +452,8 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Включает конфигурацию карточки или снимает выбор, не открывая её настройки.
-    /// </summary>
-    [RelayCommand]
-    private void SelectCard(ConfigItemViewModel? item)
-    {
-        if (item is null)
-        {
-            return;
-        }
-
-        if (item.IsSelected)
-        {
-            _ = _host.Home.ClearActiveConfigAsync();
-            return;
-        }
-
-        SetActiveConfig(item.Name);
-    }
-
-    /// <summary>
-    /// Отмечает в каталоге карточку, по которой кликнули или в которую вошли пультом.
+    /// Отмечает в каталоге карточку, по которой кликнули или в которую вошли пультом. Пока туннеля нет,
+    /// отмеченная становится целью; при живом туннеле рамка только ходит, а цель меняет переподключение.
     /// </summary>
     [RelayCommand]
     private void PickCard(ConfigItemViewModel? item)
@@ -528,6 +461,27 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         foreach (var row in Configs)
         {
             row.IsPicked = ReferenceEquals(row, item);
+        }
+
+        if (item is not null && !_host.Home.IsTunnelActive)
+        {
+            _host.Home.ActiveConfig = item;
+        }
+    }
+
+    /// <summary>
+    /// Ведёт рамку каталога за целью: подключение, добавление и удаление ставят её сами, и рамка идёт следом.
+    /// </summary>
+    public void FollowActiveCard(string? name)
+    {
+        if (name is not { Length: > 0 })
+        {
+            return;
+        }
+
+        foreach (var row in Configs)
+        {
+            row.IsPicked = string.Equals(row.Name, name, StringComparison.Ordinal);
         }
     }
 
@@ -729,8 +683,23 @@ internal sealed partial class ConfigViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowNoConfigsHint));
     }
 
+    // Раздел открыли: рамка встаёт на используемую конфигурацию, куда бы её ни увели в прошлый раз.
+    partial void OnIsActiveSectionChanged(bool value)
+    {
+        if (value)
+        {
+            FollowActiveCard(_host.Home.ActiveConfig?.Name);
+        }
+    }
+
     partial void OnOpenConfigChanged(string? value)
     {
+        // Возврат из настроек в каталог - то же открытие списка.
+        if (value is null)
+        {
+            FollowActiveCard(_host.Home.ActiveConfig?.Name);
+        }
+
         ShowConfigText = false;
         ConfigDeleteStatus = string.Empty;
         ConfigDeletePending = false;
@@ -959,18 +928,30 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Removes a configuration the user may be sitting on: the selection moves to the first one left and a
-    /// tunnel bound to it goes down, so the active one deletes like any other. A refused disconnect still runs
-    /// the removal, to answer with the agent's own reason.
+    /// Removes a configuration the user may be sitting on: a tunnel bound to it goes down first and the
+    /// selection moves to the neighbour, so the active one deletes like any other. What was running keeps
+    /// running, on the server that is left. A refused disconnect still runs the removal, to answer with the
+    /// agent's own reason.
     /// </summary>
     internal async Task<IpcAck> DeleteConfigAsync(string name)
     {
+        var carried = _host.Home.IsTunnelActive
+            && string.Equals(_host.Home.BoundTarget, name, StringComparison.Ordinal);
+        var next = default(string);
         if (await _host.Home.EnsureDisconnectedAsync(name))
         {
-            await _host.Home.MoveSelectionOffAsync(name);
+            next = await _host.Home.MoveSelectionOffAsync(name);
         }
 
-        return await RemoveConfigAsync(name);
+        var ack = await RemoveConfigAsync(name);
+        if (!ack.Ok || !carried || next is not { Length: > 0 } target)
+        {
+            return ack;
+        }
+
+        await _host.Home.ToggleConfigConnectionAsync(target, true);
+        _host.Home.ShowNotice(Loc.Instance.Get("Main_NoticeTunnelMoved", target));
+        return ack;
     }
 
     // The config Delete trigger (#147): the agent refuses while the config is the running target; the refusal

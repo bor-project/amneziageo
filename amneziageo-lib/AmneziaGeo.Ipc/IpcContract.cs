@@ -98,6 +98,11 @@ public static class IpcContract
     public const string OpRemoveRoutingList = "remove-routing-list";
 
     /// <summary>
+    /// Command to set the order the routing lists are listed in. Args: the names, in the order they are shown.
+    /// </summary>
+    public const string OpReorderRoutingLists = "reorder-routing-lists";
+
+    /// <summary>
     /// Command to fetch a routing list's full rules. Args: id. The ack message holds newline-separated
     /// role-tagged rule tokens ("proxy|geosite:openai", "block|domain:x" etc).
     /// </summary>

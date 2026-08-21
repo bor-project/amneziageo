@@ -5,12 +5,14 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using AmneziaGeo.Ui.Services;
+using AmneziaGeo.Ui.ViewModels;
 
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
 /// Карточка каталога маршрутизации: имя, состав списка, флаг применения и кнопка настроек. На телевизоре
-/// пульт входит в карточку, ходит по её контролам сверху вниз и выходит «назад».
+/// пульт входит в карточку, ходит по её контролам сверху вниз и выходит «назад»; перетаскивание переставляет
+/// карточку, двойной щелчок открывает её настройки.
 /// </summary>
 internal sealed partial class RoutingCard : UserControl
 {
@@ -23,6 +25,11 @@ internal sealed partial class RoutingCard : UserControl
     public static readonly StyledProperty<ICommand?> PickCommandProperty =
         AvaloniaProperty.Register<RoutingCard, ICommand?>(nameof(PickCommand));
 
+    public static readonly StyledProperty<ICommand?> DropCommandProperty =
+        AvaloniaProperty.Register<RoutingCard, ICommand?>(nameof(DropCommand));
+
+    private readonly ListReorder<RoutingListSummaryViewModel> _reorder;
+
     private bool _entered;
 
     private bool _entering;
@@ -33,6 +40,7 @@ internal sealed partial class RoutingCard : UserControl
     public RoutingCard()
     {
         InitializeComponent();
+        _reorder = new ListReorder<RoutingListSummaryViewModel>(this, vertical: false);
 
         // Тело карточки берёт фокус только на телевизоре: там оно - вход в её контролы.
         FacePart.Focusable = UiPlatform.IsTelevision;
@@ -40,6 +48,9 @@ internal sealed partial class RoutingCard : UserControl
 
         // Тоннельно: жест читается раньше, чем его возьмут контролы карточки.
         AddHandler(PointerPressedEvent, OnCardPressed, RoutingStrategies.Tunnel);
+        AddHandler(PointerMovedEvent, OnCardMoved, RoutingStrategies.Tunnel);
+        AddHandler(PointerReleasedEvent, OnCardReleased, RoutingStrategies.Tunnel);
+        AddHandler(PointerCaptureLostEvent, OnCardCaptureLost, RoutingStrategies.Tunnel);
         GotFocus += OnCardGotFocus;
 
         if (UiPlatform.IsTelevision)
@@ -77,9 +88,67 @@ internal sealed partial class RoutingCard : UserControl
         set => SetValue(PickCommandProperty, value);
     }
 
+    /// <summary>
+    /// Команда, принимающая новый порядок карточек.
+    /// </summary>
+    public ICommand? DropCommand
+    {
+        get => GetValue(DropCommandProperty);
+        set => SetValue(DropCommandProperty, value);
+    }
+
+    /// <inheritdoc/>
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == DropCommandProperty)
+        {
+            _reorder.Dropped = DropCommand;
+        }
+    }
+
     private void OnCardPressed(object? sender, PointerPressedEventArgs e)
     {
         Pick();
+        if (CardGesture.OpensSettings(FacePart, e))
+        {
+            _reorder.Cancel();
+            Open();
+            e.Handled = true;
+            return;
+        }
+
+        _reorder.Press(e);
+    }
+
+    private void OnCardMoved(object? sender, PointerEventArgs e)
+    {
+        if (_reorder.Move(e))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void OnCardReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_reorder.Release())
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void OnCardCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        _reorder.Cancel();
+    }
+
+    // Двойной щелчок по телу карточки открывает её настройки - то же, что кнопка в подвале.
+    private void Open()
+    {
+        if (DataContext is { } item && OpenCommand?.CanExecute(item) == true)
+        {
+            OpenCommand.Execute(item);
+        }
     }
 
     private void OnCardGotFocus(object? sender, GotFocusEventArgs e)

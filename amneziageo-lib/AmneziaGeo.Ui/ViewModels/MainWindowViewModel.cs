@@ -449,6 +449,13 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void SelectSettings(string section)
     {
+        // Pressing the section already on screen steps back instead of reopening it.
+        if (ShowContent && SettingsSection == section)
+        {
+            NavBack();
+            return;
+        }
+
         SettingsSection = section;
         // Compact mode drills into the section detail; wide mode ignores this and swaps content in place.
         SettingsDetailOpen = true;

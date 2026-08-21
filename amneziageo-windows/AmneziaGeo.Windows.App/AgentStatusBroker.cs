@@ -232,6 +232,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpListProcesses => ListProcesses(),
                 IpcContract.OpSaveRoutingList => await SaveRoutingListAsync(command.Args, ct),
                 IpcContract.OpRemoveRoutingList => await RemoveRoutingListAsync(command.Args, ct),
+                IpcContract.OpReorderRoutingLists => await ReorderRoutingListsAsync(command.Args, ct),
                 IpcContract.OpGetRoutingList => await GetRoutingListAsync(command.Args, ct),
                 IpcContract.OpCountRoutes => await CountRoutesAsync(command.Args, ct),
                 IpcContract.OpSetRoutingSettings => await SetRoutingSettingsAsync(command.Args, ct),
@@ -1224,6 +1225,26 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
 
         _ = Task.Run(() => RuntimeSnapshotPipe.Send(tunnel, op, logger));
+    }
+
+    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count == 0)
+        {
+            return new IpcAck(false, "reorder-routing-lists requires the ordered names");
+        }
+
+        var stored = (await store.ListRoutingListSummariesAsync(ct))
+            .Select(summary => summary.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (args.Any(name => !stored.Contains(name)))
+        {
+            return new IpcAck(false, "reorder-routing-lists takes the names of stored lists");
+        }
+
+        await store.SetRoutingListOrderAsync(args, ct);
+        return new IpcAck(true, "reordered routing lists");
     }
 
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args, CancellationToken ct)

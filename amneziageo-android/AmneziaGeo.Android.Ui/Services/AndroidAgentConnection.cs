@@ -300,6 +300,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             case IpcContract.OpRemoveRoutingList:
                 return await RemoveRoutingListAsync(args);
 
+            case IpcContract.OpReorderRoutingLists:
+                return await ReorderRoutingListsAsync(args);
+
             case IpcContract.OpGetRoutingSettings:
                 return await GetRoutingSettingsAsync(args);
 
@@ -1219,6 +1222,29 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var routes = SystemRoutes.Tunneled(full, draft.Routes, draft.DirectRoutes, draft.BlockRoutes).Count + (names * 2);
         var limit = RouteBudget.Applies ? RouteBudget.Max : 0;
         return new IpcAck(true, $"{{\"routes\":{routes.ToString(CultureInfo.InvariantCulture)},\"limit\":{limit.ToString(CultureInfo.InvariantCulture)}}}");
+    }
+
+    // Stores the order the routing-list catalogue is shown in; a name the store does not know leaves it alone.
+    private async Task<IpcAck> ReorderRoutingListsAsync(IReadOnlyList<string> args)
+    {
+        if (args.Count == 0)
+        {
+            return Fail();
+        }
+
+        await EnsureInitAsync().ConfigureAwait(false);
+        var stored = (await _store.ListRoutingListSummariesAsync().ConfigureAwait(false))
+            .Select(summary => summary.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (args.Any(name => !stored.Contains(name)))
+        {
+            return Fail();
+        }
+
+        await _store.SetRoutingListOrderAsync(args).ConfigureAwait(false);
+        await RefreshRoutingSummariesAsync().ConfigureAwait(false);
+        PushSnapshot();
+        return Ok();
     }
 
     private async Task<IpcAck> RemoveRoutingListAsync(IReadOnlyList<string> args)

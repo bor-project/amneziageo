@@ -55,7 +55,8 @@
                  Text="{l:Tr Main_ConfigCatalogueEmpty}" IsVisible="{Binding ShowNoConfigsHint}" />
     </StackPanel>
 
-    <!-- Каталог карточек: нажатие открывает настройки своей конфигурации. -->
+    <!-- Каталог карточек: кнопка на карточке и двойной щелчок по ней открывают настройки своей
+         конфигурации, драг переставляет карточки. -->
     <Panel Grid.Row="1" Margin="0,12,0,0" IsVisible="{Binding IsSectionCatalogue}">
       <!-- Узкий экран: карточки стоят одной колонкой во всю ширину. -->
       <ScrollViewer IsVisible="{Binding ShowCardStack}"

@@ -602,10 +602,15 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         _host.NotifyRestartPendingChanged(value);
     }
 
-    // The config section offers its connect link only while nothing runs.
+    // The config section offers its connect link only while nothing runs. Рамка, уведённая при живом
+    // туннеле, возвращается к цели, как только он лёг: она снова показывает, что поднимет подключение.
     partial void OnIsTunnelActiveChanged(bool value)
     {
         _host.Config.NotifyActiveConfigChanged();
+        if (!value)
+        {
+            _host.Config.FollowActiveCard(ActiveConfig?.Name);
+        }
     }
 
     partial void OnIsConnectedChanged(bool value)
@@ -628,6 +633,7 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
         SyncActiveConfigChoice();
         NotifyCanToggleConnection();
         _host.Config.NotifyActiveConfigChanged();
+        _host.Config.FollowActiveCard(newValue?.Name);
 
         if (_suppressActivePush || newValue is null)
         {
@@ -659,7 +665,20 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
             return;
         }
 
-        ActiveConfig = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal));
+        var row = _host.Config.Configs.FirstOrDefault(b => string.Equals(b.Name, value.Name, StringComparison.Ordinal));
+        if (row is null)
+        {
+            return;
+        }
+
+        // Живой туннель едет за выбором: смена сервера на главной переносит его так же, как кнопка карточки.
+        if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
+        {
+            _ = ConnectConfig(row);
+            return;
+        }
+
+        ActiveConfig = row;
     }
 
     /// <summary>
@@ -719,24 +738,42 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Moves the selection off a configuration about to be removed: it lands on the first one left, and on none
-    /// when that was the last. The agent is told first, so a snapshot still carrying the old target cannot put
-    /// it back.
+    /// Moves the selection off a configuration about to be removed: it lands on the neighbour in the list, and
+    /// on none when that was the last one left. The agent is told first, so a snapshot still carrying the old
+    /// target cannot put it back. Names what the selection landed on.
     /// </summary>
-    internal async Task MoveSelectionOffAsync(string name)
+    internal async Task<string?> MoveSelectionOffAsync(string name)
     {
         if (!string.Equals(ActiveConfig?.Name, name, StringComparison.Ordinal))
         {
-            return;
+            return null;
         }
 
-        var next = _host.Config.Configs.FirstOrDefault(c => !string.Equals(c.Name, name, StringComparison.Ordinal));
+        var next = NeighbourOf(name);
         await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpSelectConfig, [next?.Name ?? string.Empty]));
         _suppressActivePush = true;
         ActiveConfig = next;
         _suppressActivePush = false;
         _prefs.LastConfig = next?.Name ?? string.Empty;
         _prefs.Save();
+        return next?.Name;
+    }
+
+    // Сосед по списку: следующая карточка, а у последней - предыдущая.
+    private ConfigItemViewModel? NeighbourOf(string name)
+    {
+        var rows = _host.Config.Configs;
+        for (var at = 0; at < rows.Count; at++)
+        {
+            if (!string.Equals(rows[at].Name, name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return at + 1 < rows.Count ? rows[at + 1] : at > 0 ? rows[at - 1] : null;
+        }
+
+        return rows.FirstOrDefault(c => !string.Equals(c.Name, name, StringComparison.Ordinal));
     }
 
     /// <summary>

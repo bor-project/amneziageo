@@ -15,26 +15,41 @@
     <StreamGeometry x:Key="AgCardLossGeometry">M3,13H5.79L10.1,4.79L11.28,11.5L14.5,8.75L17.29,13H21V15H16.21L14.5,12.4L10.72,15.5L9.55,8.9L7,13.85V15H3V13Z</StreamGeometry>
   </UserControl.Resources>
 
-  <!-- Тело карточки ничего не делает: активность берёт флаг, действия стоят в подвале. На телевизоре тело
-       служит входом, дальше пульт ходит по этим же контролам. -->
+  <!-- Тело карточки ничего не делает: действия стоят на кнопках. На телевизоре тело служит входом,
+       дальше пульт ходит по этим же контролам. -->
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
-        <!-- Имя и флаг активности: имя занимает строку целиком, флаг жмётся последним. -->
+        <!-- Имя и подключение: имя занимает строку целиком, кнопка жмётся последней. -->
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="12,10">
           <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                      VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          <!-- Флаг активности: та же связка, что и в настройках конфигурации. -->
-          <CheckBox x:Name="ActivePart" Grid.Column="1" VerticalAlignment="Center" FontSize="13.5"
-                    Content="{l:Tr Main_CardActiveFlag}"
-                    IsChecked="{Binding IsSelected, Mode=OneWay}"
-                    Command="{Binding $parent[controls:CatalogCard].SelectCommand}"
-                    CommandParameter="{Binding}" />
+          <!-- Подключение: со своей конфигурации туннель снимает, с чужой переносит его сюда. Круг повторяет
+               кнопку в шапке: цвет состояния и дуга на переключении. -->
+          <Button x:Name="ConnectPart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
+                  ToolTip.Tip="{Binding CardActionText}"
+                  Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
+            <Panel Width="28" Height="28">
+              <Ellipse Classes="connspin" Classes.spinning="{Binding CardBusy}"
+                       Width="26" Height="26" Stroke="{Binding CardPowerForeground}"
+                       StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Border Width="22" Height="22" CornerRadius="11"
+                      Background="{Binding CardPowerBrush}"
+                      BorderBrush="{Binding CardPowerBorderBrush}" BorderThickness="1"
+                      HorizontalAlignment="Center" VerticalAlignment="Center">
+                <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
+                          Foreground="{Binding CardPowerForeground}"
+                          IsVisible="{Binding !CardBusy}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+            </Panel>
+          </Button>
         </Grid>
 
-        <!-- Подвал карточки: замер слева, действия справа одними иконками. -->
+        <!-- Подвал карточки: замер слева, настройки справа одной иконкой. -->
         <Border Grid.Row="1" Classes="cardfoot">
-          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места. -->
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
               <StackPanel Orientation="Horizontal" Spacing="5">
@@ -56,12 +71,7 @@
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               </StackPanel>
             </StackPanel>
-            <Button x:Name="ConnectPart" Grid.Column="1" Classes="linkbtn" Padding="7"
-                    Classes.down="{Binding ShowStatusFrame}" ToolTip.Tip="{Binding CardActionText}"
-                    Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
-              <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="15" Height="15" />
-            </Button>
-            <Button x:Name="SettingsPart" Grid.Column="2" Classes="methodpick" Padding="7"
+            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="7"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
               <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="15" Height="15" />
@@ -70,12 +80,12 @@
         </Border>
       </Grid>
 
-      <!-- Светлая рамка у всякой карточки; поверх неё рамка выбранной в каталоге - цветом её подключения.
-           Рисуется поверх содержимого и компоновки не меняет. -->
+      <!-- Светлая рамка у всякой карточки; поверх неё рамка выбранной в каталоге - акцентом, за состоянием
+           подключения не следует. Рисуется поверх содержимого и компоновки не меняет. -->
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
               BorderBrush="{DynamicResource AgBorder2Brush}" />
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
-              BorderBrush="{Binding CardFrameBrush}" IsVisible="{Binding ShowCardFrame}" />
+              BorderBrush="{DynamicResource AgAccentBrush}" IsVisible="{Binding ShowCardFrame}" />
     </Panel>
   </Button>
 </UserControl>

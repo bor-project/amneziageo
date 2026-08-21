@@ -488,7 +488,10 @@
     <value>Delete configuration</value>
   </data>
   <data name="Main_DeleteConfigPrompt" xml:space="preserve">
-    <value>Deletes "{0}" for good</value>
+    <value>Deletes "{0}" for good. A tunnel running on it moves to the next server.</value>
+  </data>
+  <data name="Main_NoticeTunnelMoved" xml:space="preserve">
+    <value>The tunnel moved to "{0}": the server it ran on is gone.</value>
   </data>
   <data name="Main_DeleteListButton" xml:space="preserve">
     <value>Delete list</value>
@@ -1832,20 +1835,11 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
   </data>
-  <data name="Main_SetActiveTitle" xml:space="preserve">
-    <value>Make active</value>
-  </data>
   <data name="Main_IsActiveBadge" xml:space="preserve">
     <value>Active</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Selected</value>
-  </data>
-  <data name="Main_CardStateReady" xml:space="preserve">
-    <value>Ready</value>
-  </data>
-  <data name="Main_CardStateOff" xml:space="preserve">
-    <value>Off</value>
   </data>
   <data name="Main_ProbeUnknown" xml:space="preserve">
     <value>N/A</value>

@@ -47,13 +47,12 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private bool _useIpv6;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText))]
-    [NotifyPropertyChangedFor(nameof(StatusBrush))]
     [NotifyPropertyChangedFor(nameof(ShowStatusFrame))]
     [NotifyPropertyChangedFor(nameof(CardActionText))]
-    [NotifyPropertyChangedFor(nameof(CardStateText))]
-    [NotifyPropertyChangedFor(nameof(CardStateBrush))]
-    [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
+    [NotifyPropertyChangedFor(nameof(CardBusy))]
+    [NotifyPropertyChangedFor(nameof(CardPowerBrush))]
+    [NotifyPropertyChangedFor(nameof(CardPowerBorderBrush))]
+    [NotifyPropertyChangedFor(nameof(CardPowerForeground))]
     [NotifyPropertyChangedFor(nameof(LinkSilent))]
     [NotifyPropertyChangedFor(nameof(ProbeText))]
     [NotifyPropertyChangedFor(nameof(ProbeBrush))]
@@ -76,43 +75,54 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
         Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
 
     /// <summary>
-    /// Носит ли карточка свою рамку поверх общей: та, которую выбрали в каталоге.
+    /// Носит ли карточка свою рамку поверх общей: та, которую выбрали в каталоге. Рамка стоит на цели, пока
+    /// её не увели, и уводит цель за собой, когда туннеля нет.
     /// </summary>
     public bool ShowCardFrame => IsPicked;
 
     /// <summary>
-    /// Цвет рамки: цвет перехода, пока туннель поднимается или падает, цвет подключения у работающего и
-    /// серый у остальных.
+    /// Крутит ли круг дугу вместо значка: туннель на карточке поднимается или падает.
     /// </summary>
-    public IBrush CardFrameBrush => CardStateBrush;
+    public bool CardBusy => PowerState == 1;
 
     /// <summary>
-    /// Состояние карточки словом: своё у работающего туннеля, «готов» у выбранной конфигурации и
-    /// «выключен» у остальных.
+    /// Заливка круга подключения: синяя у работающего туннеля, белая у остальных.
     /// </summary>
-    public string CardStateText => ShowStatusFrame
-        ? StatusText
-        : Loc.Instance.Get(IsSelected ? "Main_CardStateReady" : "Main_CardStateOff");
+    public IBrush CardPowerBrush => PowerState == 2 && !PowerSilent ? _powerBlue : Brushes.White;
 
     /// <summary>
-    /// Цвет плашки состояния: цвет подключения у работающей конфигурации, серый у остальных.
+    /// Обводка круга: цвет переключения на переходе и у замолчавшего сервера, серая у выключенного.
     /// </summary>
-    public IBrush CardStateBrush => ShowStatusFrame ? StatusBrush : _idle;
+    public IBrush CardPowerBorderBrush => PowerSilent ? _powerAmber : PowerState switch
+    {
+        2 => Brushes.Transparent,
+        1 => _powerAmber,
+        _ => _powerRing,
+    };
 
     /// <summary>
-    /// The localized status label.
+    /// Значок и дуга: белые у работающего туннеля, цвета переключения на переходе, серые у выключенного.
     /// </summary>
-    public string StatusText => StatusLabels.Text(Status);
+    public IBrush CardPowerForeground => PowerSilent ? _powerAmber : PowerState switch
+    {
+        2 => Brushes.White,
+        1 => _powerAmber,
+        _ => _powerGlyph,
+    };
 
-    /// <summary>
-    /// The status badge color: a running configuration whose peer has gone quiet wears the switching colour and
-    /// not the connected one, like the connect control it stands under.
-    /// </summary>
-    public IBrush StatusBrush => StatusLabels.Brush(LinkSilent ? ConnectionStatus.Connecting : Status);
+    // 0 - выключен, 1 - переход, 2 - подключено.
+    private int PowerState => Status switch
+    {
+        ConnectionStatus.Connected => 2,
+        ConnectionStatus.Connecting or ConnectionStatus.Disconnecting => 1,
+        _ => 0,
+    };
+
+    // Туннель поднят, а сервер молчит: круг носит цвет переключения.
+    private bool PowerSilent => PowerState == 2 && LinkSilent;
 
     // Whether the tunnel is set to use this configuration.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CardStateText))]
     private bool _isSelected;
 
     // Whether the card is the one picked in the catalogue.
@@ -258,9 +268,9 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(CardSpeedText))]
     [NotifyPropertyChangedFor(nameof(CardLossText))]
     [NotifyPropertyChangedFor(nameof(CardLossBrush))]
-    [NotifyPropertyChangedFor(nameof(StatusBrush))]
-    [NotifyPropertyChangedFor(nameof(CardStateBrush))]
-    [NotifyPropertyChangedFor(nameof(CardFrameBrush))]
+    [NotifyPropertyChangedFor(nameof(CardPowerBrush))]
+    [NotifyPropertyChangedFor(nameof(CardPowerBorderBrush))]
+    [NotifyPropertyChangedFor(nameof(CardPowerForeground))]
     private int _handshakeAgeSeconds = -1;
 
     /// <summary>
@@ -288,7 +298,13 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     // Туннель поднимается или падает: его показания к серверу отношения не имеют.
     private bool Transitioning => Status is ConnectionStatus.Connecting or ConnectionStatus.Disconnecting;
 
-    private static readonly IBrush _fast = new SolidColorBrush(Color.FromRgb(0x1F, 0x9D, 0x57));
+    // Цвета круга подключения: те же, что у кнопки в шапке.
+    private static readonly IBrush _powerBlue = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
+    private static readonly IBrush _powerAmber = new SolidColorBrush(Color.FromRgb(0xE0, 0x90, 0x2F));
+    private static readonly IBrush _powerRing = new SolidColorBrush(Color.FromRgb(0xD9, 0xDD, 0xE6));
+    private static readonly IBrush _powerGlyph = new SolidColorBrush(Color.FromRgb(0x7B, 0x81, 0x8D));
+
+    private static readonly IBrush _fast = new SolidColorBrush(Color.FromRgb(0x2A, 0x6F, 0xDB));
     private static readonly IBrush _slow = new SolidColorBrush(Color.FromRgb(0xC8, 0x7A, 0x00));
     private static readonly IBrush _dead = new SolidColorBrush(Color.FromRgb(0xC0, 0x39, 0x2B));
     private static readonly IBrush _idle = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));

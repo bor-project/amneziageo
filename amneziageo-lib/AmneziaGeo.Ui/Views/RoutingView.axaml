@@ -58,18 +58,18 @@
           </ItemsControl>
         </ScrollViewer>
 
-        <!-- Широкий экран: те же карточки замощают пану. -->
+        <!-- Широкий экран: карточки стоят в две равные колонки во всю их ширину. -->
         <ScrollViewer IsVisible="{Binding ShowCardGrid}"
                       VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <ItemsControl ItemsSource="{Binding RoutingLists}">
+          <ItemsControl ItemsSource="{Binding RoutingLists}" VerticalAlignment="Top">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
-                <WrapPanel />
+                <UniformGrid Columns="2" />
               </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:RoutingListSummaryViewModel">
-                <controls:RoutingCard Width="340" Margin="0,0,10,10"
+                <controls:RoutingCard Margin="0,0,10,10" VerticalAlignment="Top"
                         OpenCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).OpenCardCommand}"
                         SelectCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).SelectCardCommand}"
                         PickCommand="{Binding $parent[UserControl].((vm:RoutingViewModel)DataContext).PickCardCommand}" />

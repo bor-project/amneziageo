@@ -20,22 +20,23 @@
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
-        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
-          <!-- Имя и флаг активности: имя занимает строку целиком, флаг жмётся последним. -->
-          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <!-- Флаг активности: та же связка, что и в настройках конфигурации. -->
-            <CheckBox x:Name="ActivePart" Grid.Column="1" VerticalAlignment="Center" FontSize="13.5"
-                      Content="{l:Tr Main_CardActiveFlag}"
-                      IsChecked="{Binding IsSelected, Mode=OneWay}"
-                      Command="{Binding $parent[controls:CatalogCard].SelectCommand}"
-                      CommandParameter="{Binding}" />
-          </Grid>
+        <!-- Имя и флаг активности: имя занимает строку целиком, флаг жмётся последним. -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="12,10">
+          <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <!-- Флаг активности: та же связка, что и в настройках конфигурации. -->
+          <CheckBox x:Name="ActivePart" Grid.Column="1" VerticalAlignment="Center" FontSize="13.5"
+                    Content="{l:Tr Main_CardActiveFlag}"
+                    IsChecked="{Binding IsSelected, Mode=OneWay}"
+                    Command="{Binding $parent[controls:CatalogCard].SelectCommand}"
+                    CommandParameter="{Binding}" />
+        </Grid>
 
-          <!-- Отклик, скорость и потери: иконка и значение, всё одной строкой, «N/A» вместо пустого места. -->
-          <Border Grid.Row="1" Classes="inset" Margin="0,8,0,0" Padding="8,5">
-            <StackPanel Orientation="Horizontal" Spacing="12">
+        <!-- Подвал карточки: замер слева, действия справа одними иконками. -->
+        <Border Grid.Row="1" Classes="cardfoot">
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места. -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
               <StackPanel Orientation="Horizontal" Spacing="5">
                 <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
@@ -55,28 +56,15 @@
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               </StackPanel>
             </StackPanel>
-          </Border>
-        </Grid>
-
-        <!-- Подвал карточки: одна кнопка ведёт туннель на эту конфигурацию и снимает его с неё. -->
-        <Border Grid.Row="1" Classes="cardfoot">
-          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-            <Button x:Name="ConnectPart" Grid.Column="1" Classes="linkbtn"
-                    Classes.down="{Binding ShowStatusFrame}"
+            <Button x:Name="ConnectPart" Grid.Column="1" Classes="linkbtn" Padding="7"
+                    Classes.down="{Binding ShowStatusFrame}" ToolTip.Tip="{Binding CardActionText}"
                     Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
-              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="13" Height="13"
-                          VerticalAlignment="Center" />
-                <TextBlock Text="{Binding CardActionText}" VerticalAlignment="Center" />
-              </StackPanel>
+              <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="15" Height="15" />
             </Button>
-            <Button x:Name="SettingsPart" Grid.Column="2" Classes="methodpick" Padding="10,5"
+            <Button x:Name="SettingsPart" Grid.Column="2" Classes="methodpick" Padding="7"
+                    ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
-              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="13" Height="13"
-                          VerticalAlignment="Center" />
-                <TextBlock Text="{l:Tr Main_CardSettingsLink}" VerticalAlignment="Center" />
-              </StackPanel>
+              <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="15" Height="15" />
             </Button>
           </Grid>
         </Border>

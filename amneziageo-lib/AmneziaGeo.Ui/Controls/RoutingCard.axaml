@@ -65,13 +65,10 @@
         <!-- Подвал карточки: настройки списка. -->
         <Border Grid.Row="1" Classes="cardfoot">
           <Grid ColumnDefinitions="*,Auto">
-            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="10,5"
+            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="7"
+                    ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">
-              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                <PathIcon Data="{StaticResource AgListGearGeometry}" Width="13" Height="13"
-                          VerticalAlignment="Center" />
-                <TextBlock Text="{l:Tr Main_CardSettingsLink}" VerticalAlignment="Center" />
-              </StackPanel>
+              <PathIcon Data="{StaticResource AgListGearGeometry}" Width="15" Height="15" />
             </Button>
           </Grid>
         </Border>

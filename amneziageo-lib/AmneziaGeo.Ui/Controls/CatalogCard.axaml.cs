@@ -9,8 +9,8 @@ using AmneziaGeo.Ui.Services;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Карточка каталога настроек: имя, адрес, замер, флаг активности и кнопка настроек. На телевизоре пульт
-/// входит в карточку, ходит по её контролам сверху вниз и выходит «назад»; перетаскивание переставляет карточку.
+/// Карточка каталога настроек: имя, замер, флаг активности и кнопки подвала. На телевизоре пульт входит
+/// в карточку, ходит по её строкам и кнопкам и выходит «назад»; перетаскивание переставляет карточку.
 /// </summary>
 internal sealed partial class CatalogCard : UserControl
 {
@@ -182,12 +182,13 @@ internal sealed partial class CatalogCard : UserControl
         }
         else if (e.Key is Key.Up or Key.Down)
         {
-            Step(e.Key is Key.Down ? 1 : -1);
+            Step(e.Key is Key.Down ? 1 : -1, 0);
             e.Handled = true;
         }
         else if (e.Key is Key.Left or Key.Right)
         {
-            // Поперёк контролов пульт из карточки не уходит.
+            // Поперёк пульт ходит по кнопкам строки и из карточки не уходит.
+            Step(0, e.Key is Key.Right ? 1 : -1);
             e.Handled = true;
         }
     }
@@ -221,7 +222,7 @@ internal sealed partial class CatalogCard : UserControl
     {
         _entered = true;
         ApplyStopFocus();
-        Stops()[0].Focus(NavigationMethod.Directional);
+        Rows()[0][0].Focus(NavigationMethod.Directional);
     }
 
     private void Leave()
@@ -232,29 +233,40 @@ internal sealed partial class CatalogCard : UserControl
         FacePart.Focus(NavigationMethod.Directional);
     }
 
-    // Водит по контролам карточки, останавливаясь на краях.
-    private void Step(int delta)
+    // Водит по контролам карточки: вниз-вверх между строками, вправо-влево по кнопкам строки, на краях стоит.
+    private void Step(int rows, int cols)
     {
-        var stops = Stops();
-        var at = stops.FindIndex(stop => stop.IsKeyboardFocusWithin);
-        var next = at < 0 ? 0 : at + delta;
-        if (next >= 0 && next < stops.Count)
+        var grid = Rows();
+        var row = grid.FindIndex(line => line.Exists(stop => stop.IsKeyboardFocusWithin));
+        if (row < 0)
         {
-            stops[next].Focus(NavigationMethod.Directional);
+            grid[0][0].Focus(NavigationMethod.Directional);
+            return;
         }
+
+        var nextRow = row + rows;
+        if (nextRow < 0 || nextRow >= grid.Count)
+        {
+            return;
+        }
+
+        var col = grid[row].FindIndex(stop => stop.IsKeyboardFocusWithin);
+        var nextCol = Math.Clamp(col + cols, 0, grid[nextRow].Count - 1);
+        grid[nextRow][nextCol].Focus(NavigationMethod.Directional);
     }
 
-    // Контролы карточки сверху вниз: запертую кнопку туннеля пульт пропускает.
-    private List<Control> Stops()
+    // Контролы карточки строками: флаг активности сверху, кнопки подвала снизу; запертую кнопку туннеля
+    // пульт пропускает.
+    private List<List<Control>> Rows()
     {
-        var stops = new List<Control> { ActivePart };
+        var foot = new List<Control>();
         if (ConnectPart is { IsVisible: true, IsEnabled: true })
         {
-            stops.Add(ConnectPart);
+            foot.Add(ConnectPart);
         }
 
-        stops.Add(SettingsPart);
-        return stops;
+        foot.Add(SettingsPart);
+        return new List<List<Control>> { new() { ActivePart }, foot };
     }
 
     // Пока пульт не вошёл в карточку, её контролы не берут фокус: стрелка ходит по карточкам, а не по кнопкам.

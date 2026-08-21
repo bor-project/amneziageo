@@ -197,7 +197,7 @@
     <value>Версия приложения</value>
   </data>
   <data name="About_Source" xml:space="preserve">
-    <value>Исходный код</value>
+    <value>Репозиторий проекта</value>
   </data>
   <data name="About_BuildType" xml:space="preserve">
     <value>Тип сборки</value>
@@ -1824,7 +1824,7 @@
     <value>Активна</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
-    <value>Профиль включён</value>
+    <value>Выбран</value>
   </data>
   <data name="Main_CardStateReady" xml:space="preserve">
     <value>Готов</value>

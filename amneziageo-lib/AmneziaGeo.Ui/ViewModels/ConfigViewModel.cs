@@ -874,6 +874,42 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Импорт брошенных драгом файлов: в каталог берутся только конфигурации.
+    /// </summary>
+    [RelayCommand]
+    private async Task DropFiles(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0)
+        {
+            return;
+        }
+
+        var taken = new HashSet<string>(ConfigNames, StringComparer.Ordinal);
+        var imported = 0;
+        var bundle = 0;
+        var rejected = 0;
+
+        foreach (var path in paths)
+        {
+            var item = await ImportDispatcher.ClassifyFileAsync(path);
+            if (item.Kind == DroppedKind.Bundle)
+            {
+                bundle++;
+            }
+            else if (item.Kind == DroppedKind.VpnConfig && await ImportDroppedConfigAsync(item.Config!, taken, Path.GetFileNameWithoutExtension(path)))
+            {
+                imported++;
+            }
+            else
+            {
+                rejected++;
+            }
+        }
+
+        _host.Home.ShowNotice(ImportDispatcher.Notice(imported, "Drop_ImportedConfigs", bundle, rejected));
+    }
+
+    /// <summary>
     /// Stores the order a drag left the server list in.
     /// </summary>
     [RelayCommand]

@@ -991,6 +991,42 @@ internal sealed partial class RoutingViewModel : ViewModelBase
         return true;
     }
 
+    /// <summary>
+    /// Импорт брошенных драгом файлов: в каталог берутся только списки маршрутизации.
+    /// </summary>
+    [RelayCommand]
+    private async Task DropFiles(IReadOnlyList<string>? paths)
+    {
+        if (paths is null || paths.Count == 0)
+        {
+            return;
+        }
+
+        var taken = new HashSet<string>(ListNames, StringComparer.Ordinal);
+        var imported = 0;
+        var bundle = 0;
+        var rejected = 0;
+
+        foreach (var path in paths)
+        {
+            var item = await ImportDispatcher.ClassifyFileAsync(path);
+            if (item.Kind == DroppedKind.Bundle)
+            {
+                bundle++;
+            }
+            else if (item.Kind == DroppedKind.RoutingList && await ImportDroppedListAsync(item.RoutingText!, taken))
+            {
+                imported++;
+            }
+            else
+            {
+                rejected++;
+            }
+        }
+
+        _host.Home.ShowNotice(ImportDispatcher.Notice(imported, "Drop_ImportedRouting", bundle, rejected));
+    }
+
     // The scanner reports a decoded QR's raw text; accept it only when it decodes to a routing list.
     private bool TryAcceptScannedRouting(string text)
     {

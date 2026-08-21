@@ -15,59 +15,43 @@
     <StreamGeometry x:Key="AgCardLossGeometry">M3,13H5.79L10.1,4.79L11.28,11.5L14.5,8.75L17.29,13H21V15H16.21L14.5,12.4L10.72,15.5L9.55,8.9L7,13.85V15H3V13Z</StreamGeometry>
   </UserControl.Resources>
 
-  <!-- Тело карточки ничего не делает: активность берёт тумблер, действия стоят в подвале. На телевизоре тело
+  <!-- Тело карточки ничего не делает: активность берёт флаг, действия стоят в подвале. На телевизоре тело
        служит входом, дальше пульт ходит по этим же контролам. -->
-  <Button x:Name="FacePart" Classes="serverrow noclick">
+  <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
-        <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" Margin="12,10">
-          <!-- Имя и флаг активности: имя жмётся первым, чтобы флаг с тумблером стояли целиком. -->
-          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
+          <!-- Имя и флаг активности: имя занимает строку целиком, флаг жмётся последним. -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="1" Text="{l:Tr Main_CardActiveFlag}" Classes="muted" FontSize="11.5"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <!-- Тумблер активности: та же связка, что и в настройках конфигурации. -->
-            <ToggleSwitch x:Name="ActivePart" Grid.Column="2" Classes="cardflag" VerticalAlignment="Center"
-                          IsChecked="{Binding IsSelected, Mode=OneWay}"
-                          Command="{Binding $parent[controls:CatalogCard].SelectCommand}"
-                          CommandParameter="{Binding}" />
-          </Grid>
-
-          <!-- Состояние карточки и адрес сервера стоят одной строкой; адрес отдаёт место первым. -->
-          <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,8,0,0">
-            <Border Grid.Column="0" Classes="cardpill">
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <Ellipse Width="6" Height="6" VerticalAlignment="Center" Fill="{Binding CardStateBrush}" />
-                <TextBlock Text="{Binding CardStateText}" FontSize="10.5" FontWeight="SemiBold"
-                           Foreground="{Binding CardStateBrush}" VerticalAlignment="Center" />
-              </StackPanel>
-            </Border>
-            <Border Grid.Column="1" Classes="cardchip" HorizontalAlignment="Left">
-              <TextBlock Text="{Binding Endpoint}" FontSize="11" Classes="muted mono"
-                         TextTrimming="CharacterEllipsis" />
-            </Border>
+            <!-- Флаг активности: та же связка, что и в настройках конфигурации. -->
+            <CheckBox x:Name="ActivePart" Grid.Column="1" VerticalAlignment="Center" FontSize="13.5"
+                      Content="{l:Tr Main_CardActiveFlag}"
+                      IsChecked="{Binding IsSelected, Mode=OneWay}"
+                      Command="{Binding $parent[controls:CatalogCard].SelectCommand}"
+                      CommandParameter="{Binding}" />
           </Grid>
 
           <!-- Отклик, скорость и потери: иконка и значение, всё одной строкой, «N/A» вместо пустого места. -->
-          <Border Grid.Row="2" Classes="inset" Margin="0,8,0,0" Padding="8,5">
+          <Border Grid.Row="1" Classes="inset" Margin="0,8,0,0" Padding="8,5">
             <StackPanel Orientation="Horizontal" Spacing="12">
               <StackPanel Orientation="Horizontal" Spacing="5">
-                <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="12" Height="12"
+                <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="11.5"
+                <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
                            FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               </StackPanel>
               <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowLinkSpeed}">
-                <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="12" Height="12"
+                <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="13" Height="13"
                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding CardSpeedText}" FontSize="11.5" Classes="muted"
+                <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowLinkLoss}">
-                <PathIcon Data="{StaticResource AgCardLossGeometry}" Width="12" Height="12"
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <PathIcon Data="{StaticResource AgCardLossGeometry}" Width="13" Height="13"
                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding CardLossText}" FontSize="11.5" Foreground="{Binding CardLossBrush}"
+                <TextBlock Text="{Binding CardLossText}" FontSize="12.5" Foreground="{Binding CardLossBrush}"
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
               </StackPanel>
             </StackPanel>
@@ -101,7 +85,7 @@
       <!-- Светлая рамка у всякой карточки; поверх неё рамка выбранной в каталоге - цветом её подключения.
            Рисуется поверх содержимого и компоновки не меняет. -->
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
-              BorderBrush="{DynamicResource AgBorderBrush}" />
+              BorderBrush="{DynamicResource AgBorder2Brush}" />
       <Border BorderThickness="1" CornerRadius="12" IsHitTestVisible="False"
               BorderBrush="{Binding CardFrameBrush}" IsVisible="{Binding ShowCardFrame}" />
     </Panel>

@@ -9,7 +9,7 @@ using AmneziaGeo.Ui.Services;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Карточка каталога настроек: имя, адрес, замер, тумблер активности и кнопка настроек. На телевизоре пульт
+/// Карточка каталога настроек: имя, адрес, замер, флаг активности и кнопка настроек. На телевизоре пульт
 /// входит в карточку, ходит по её контролам сверху вниз и выходит «назад»; перетаскивание переставляет карточку.
 /// </summary>
 internal sealed partial class CatalogCard : UserControl
@@ -72,7 +72,7 @@ internal sealed partial class CatalogCard : UserControl
     }
 
     /// <summary>
-    /// Команда тумблера активности.
+    /// Команда флага активности.
     /// </summary>
     public ICommand? SelectCommand
     {

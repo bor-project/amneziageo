@@ -30,16 +30,19 @@ internal static class FileDropBehavior
     private static void OnCommandChanged(Control target, AvaloniaPropertyChangedEventArgs e)
     {
         DragDrop.SetAllowDrop(target, e.NewValue is not null);
+        target.RemoveHandler(DragDrop.DragEnterEvent, OnDragOver);
         target.RemoveHandler(DragDrop.DragOverEvent, OnDragOver);
         target.RemoveHandler(DragDrop.DropEvent, OnDrop);
         if (e.NewValue is not null)
         {
+            target.AddHandler(DragDrop.DragEnterEvent, OnDragOver);
             target.AddHandler(DragDrop.DragOverEvent, OnDragOver);
             target.AddHandler(DragDrop.DropEvent, OnDrop);
         }
     }
 
     // Only file drags are claimed; other payloads pass through so text drops still reach inner textboxes.
+    // The entering drag is answered too: an unanswered enter leaves the cursor refusing the drop.
     private static void OnDragOver(object? sender, DragEventArgs e)
     {
         if (!HasFiles(e))

@@ -370,8 +370,7 @@
 
       <!-- Content pane. -->
       <Border x:Name="ContentPane" Grid.Column="2" Grid.Row="1" Classes="card" Margin="0,3,0,0" Padding="0"
-              IsVisible="{Binding ShowContent}" KeyDown="OnContentKeyDown"
-              controls:FileDropBehavior.Command="{Binding ImportDroppedFilesCommand}">
+              IsVisible="{Binding ShowContent}" KeyDown="OnContentKeyDown">
         <!-- Rows rather than a DockPanel: tab order follows the declaration, so the footer comes after
              the content and a remote reaches Save by tabbing on from the last field. -->
         <Grid RowDefinitions="*,Auto">
@@ -391,10 +390,10 @@
                  switching back is free. The viewport-derived sizes stay outside the templates: an element-name
                  binding does not cross a template's name scope. -->
 
-            <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 32px inset. -->
+            <!-- CONFIG SECTION: cap height to the viewport minus the Grid's 16px inset. -->
             <ContentControl IsVisible="{Binding IsSettingsConfig}" Content="{Binding Config}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=8}">
+                            MinHeight="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=16}">
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:ConfigViewModel">
                   <views:ConfigView />
@@ -422,10 +421,10 @@
               </ContentControl.ContentTemplate>
             </ContentControl>
 
-            <!-- DIAGNOSTICS SECTION: fixed to the viewport (minus the Grid's 32px inset) so only the pane body scrolls. -->
+            <!-- DIAGNOSTICS SECTION: fixed to the viewport (minus the Grid's 16px inset) so only the pane body scrolls. -->
             <ContentControl IsVisible="{Binding IsSettingsLogs}" Content="{Binding Diagnostics}"
                             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                            Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=8}">
+                            Height="{Binding #ContentScroll.Viewport.Height, Converter={x:Static svc:SubtractConverter.Instance}, ConverterParameter=16}">
               <ContentControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:DiagnosticsViewModel">
                   <views:DiagnosticsView />

@@ -197,7 +197,7 @@
     <value>App version</value>
   </data>
   <data name="About_Source" xml:space="preserve">
-    <value>Source code</value>
+    <value>Project repository</value>
   </data>
   <data name="About_BuildType" xml:space="preserve">
     <value>Build type</value>
@@ -1824,7 +1824,7 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
     <value>Active</value>
   </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
-    <value>Profile on</value>
+    <value>Selected</value>
   </data>
   <data name="Main_CardStateReady" xml:space="preserve">
     <value>Ready</value>

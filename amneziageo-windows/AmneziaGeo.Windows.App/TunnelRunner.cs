@@ -347,7 +347,7 @@ internal sealed class TunnelRunner(
         // lookup still answers with the physical gateway after the tunnel's default halves are installed.
         var underlayProbe = useWebSocket ? wsServerIp : TunnelEndpoint.Resolve(config);
 
-        // Bypass floor = RFC1918 + connected subnets, always: a full tunnel with the kill-switch must never
+        // Bypass floor = the connected subnets, always: a full tunnel with the kill-switch must never
         // blackhole the local LAN, and a split tunnel honours the same manual list. Stored exclusions add to
         // the floor, they never replace it.
         var exclusionCidrs = new List<string>(routes.DefaultExclusionEntries());

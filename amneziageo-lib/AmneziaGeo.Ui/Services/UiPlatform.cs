@@ -23,8 +23,8 @@ internal static class UiPlatform
     public static bool SupportsGeoPreview { get; set; } = true;
 
     /// <summary>
-    /// Whether the platform carries the tunnel over a WebSocket proxy. Off on Android, whose engine has no
-    /// wstunnel, so the editor states that instead of offering a switch that cannot hold.
+    /// Whether the platform carries the tunnel over a WebSocket proxy. A platform without one states that
+    /// instead of offering a switch that cannot hold.
     /// </summary>
     public static bool SupportsWebSocket { get; set; } = true;
 

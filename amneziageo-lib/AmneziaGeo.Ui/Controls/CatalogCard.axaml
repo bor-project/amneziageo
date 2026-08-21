@@ -47,36 +47,40 @@
           </Button>
         </Grid>
 
-        <!-- Подвал карточки: замер слева, настройки справа одной иконкой. -->
-        <Border Grid.Row="1" Classes="cardfoot">
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места. -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
-                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
-                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding ShowLinkSpeed}">
-                <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="13" Height="13"
-                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="5">
-                <PathIcon Data="{StaticResource AgCardLossGeometry}" Width="13" Height="13"
-                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding CardLossText}" FontSize="12.5" Foreground="{Binding CardLossBrush}"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-              </StackPanel>
-            </StackPanel>
-            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="7"
-                    ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
-                    Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
-              <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="15" Height="15" />
-            </Button>
-          </Grid>
+        <!-- Подвал карточки: замер слева, настройки справа. Жмётся весь подвал: пальцем в иконку не попасть. -->
+        <Border Grid.Row="1" Classes="cardfoot" Padding="0">
+          <Button x:Name="SettingsPart" Classes="cardfootbtn"
+                  ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
+                  Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места.
+                   Отступы стоят на группах: скрытая скорость не оставляет прогала. Потери ужимаются первыми. -->
+              <Grid Grid.Column="0" ColumnDefinitions="Auto,Auto,*" VerticalAlignment="Center">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
+                  <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
+                            Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
+                             FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
+                            IsVisible="{Binding ShowLinkSpeed}">
+                  <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="13" Height="13"
+                            Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </StackPanel>
+                <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="5">
+                  <PathIcon Grid.Column="0" Data="{StaticResource AgCardLossGeometry}" Width="13" Height="13"
+                            Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{Binding CardLossText}" FontSize="12.5"
+                             Foreground="{Binding CardLossBrush}"
+                             TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </Grid>
+              </Grid>
+              <PathIcon Grid.Column="1" Data="{StaticResource AgCardGearGeometry}" Width="16" Height="16"
+                        Foreground="{DynamicResource AgAccentBrush}" VerticalAlignment="Center" />
+            </Grid>
+          </Button>
         </Border>
       </Grid>
 

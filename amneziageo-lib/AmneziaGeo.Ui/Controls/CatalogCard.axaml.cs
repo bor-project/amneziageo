@@ -9,16 +9,13 @@ using AmneziaGeo.Ui.Services;
 namespace AmneziaGeo.Ui.Controls;
 
 /// <summary>
-/// Карточка каталога настроек: имя, замер, флаг активности и кнопки подвала. На телевизоре пульт входит
-/// в карточку, ходит по её строкам и кнопкам и выходит «назад»; перетаскивание переставляет карточку.
+/// Карточка каталога настроек: имя, кнопка подключения, замер и настройки. На телевизоре пульт входит
+/// в карточку, ходит по её кнопкам и выходит «назад»; перетаскивание переставляет карточку.
 /// </summary>
 internal sealed partial class CatalogCard : UserControl
 {
     public static readonly StyledProperty<ICommand?> OpenCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(OpenCommand));
-
-    public static readonly StyledProperty<ICommand?> SelectCommandProperty =
-        AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(SelectCommand));
 
     public static readonly StyledProperty<ICommand?> ConnectCommandProperty =
         AvaloniaProperty.Register<CatalogCard, ICommand?>(nameof(ConnectCommand));
@@ -69,15 +66,6 @@ internal sealed partial class CatalogCard : UserControl
     {
         get => GetValue(OpenCommandProperty);
         set => SetValue(OpenCommandProperty, value);
-    }
-
-    /// <summary>
-    /// Команда флага активности.
-    /// </summary>
-    public ICommand? SelectCommand
-    {
-        get => GetValue(SelectCommandProperty);
-        set => SetValue(SelectCommandProperty, value);
     }
 
     /// <summary>
@@ -255,25 +243,24 @@ internal sealed partial class CatalogCard : UserControl
         grid[nextRow][nextCol].Focus(NavigationMethod.Directional);
     }
 
-    // Контролы карточки строками: флаг активности сверху, кнопки подвала снизу; запертую кнопку туннеля
-    // пульт пропускает.
+    // Контролы карточки строками: подключение сверху, настройки снизу; запертую кнопку туннеля пульт
+    // пропускает.
     private List<List<Control>> Rows()
     {
-        var foot = new List<Control>();
+        var rows = new List<List<Control>>();
         if (ConnectPart is { IsVisible: true, IsEnabled: true })
         {
-            foot.Add(ConnectPart);
+            rows.Add([ConnectPart]);
         }
 
-        foot.Add(SettingsPart);
-        return new List<List<Control>> { new() { ActivePart }, foot };
+        rows.Add([SettingsPart]);
+        return rows;
     }
 
     // Пока пульт не вошёл в карточку, её контролы не берут фокус: стрелка ходит по карточкам, а не по кнопкам.
     private void ApplyStopFocus()
     {
         var stop = _entered || !UiPlatform.IsTelevision;
-        ActivePart.Focusable = stop;
         ConnectPart.Focusable = stop;
         SettingsPart.Focusable = stop;
     }

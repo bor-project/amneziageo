@@ -270,12 +270,13 @@
       <Setter Property="Padding" Value="10,8" />
     </Style>
 
-    <!-- Подвал целиком как кнопка: держит отступы подвала и своей заливки не носит. -->
+    <!-- Подвал целиком как кнопка: держит отступы подвала и своей заливки не носит. Поля по бокам
+         повторяют шапку карточки, чтобы содержимое подвала встало под неё. -->
     <Style Selector="Button.cardfootbtn">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="0,0,12,12" />
-      <Setter Property="Padding" Value="10,8" />
+      <Setter Property="Padding" Value="12,8" />
       <Setter Property="MinWidth" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />

@@ -77,8 +77,12 @@
                              TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                 </Grid>
               </Grid>
-              <PathIcon Grid.Column="1" Data="{StaticResource AgCardGearGeometry}" Width="16" Height="16"
-                        Foreground="{DynamicResource AgAccentBrush}" VerticalAlignment="Center" />
+              <!-- Шестерёнка встаёт под кнопку подключения: коробка повторяет её ширину. -->
+              <Panel Grid.Column="1" Width="34">
+                <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="16" Height="16"
+                          Foreground="{DynamicResource AgAccentBrush}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Panel>
             </Grid>
           </Button>
         </Border>

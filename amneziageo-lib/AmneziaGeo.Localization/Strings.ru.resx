@@ -1856,12 +1856,6 @@
   <data name="Main_UseRoutingToggle" xml:space="preserve">
     <value>Использовать этот список</value>
   </data>
-  <data name="Main_RoutingActiveNotice" xml:space="preserve">
-    <value>Действуют</value>
-  </data>
-  <data name="Main_RoutingIdleNotice" xml:space="preserve">
-    <value>Пока не действуют</value>
-  </data>
   <data name="Main_ConfigIdleNotice" xml:space="preserve">
     <value>Пока не активна</value>
   </data>

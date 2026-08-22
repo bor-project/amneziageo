@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AmneziaGeo.Ui.Controls"
+             xmlns:vm="clr-namespace:AmneziaGeo.Ui.ViewModels"
+             x:Class="AmneziaGeo.Ui.Controls.CardTags"
+             x:CompileBindings="True"
+             ClipToBounds="True">
+  <!-- Плашки режимов карточки: включённый режим носит цвет действия, выключенный уходит в серое. Ряд
+       выкладывается по порядку, хвост за краем отсекается. -->
+  <ItemsControl ItemsSource="{Binding $parent[controls:CardTags].Tags}">
+    <ItemsControl.ItemsPanel>
+      <ItemsPanelTemplate>
+        <controls:TagStrip Spacing="6" />
+      </ItemsPanelTemplate>
+    </ItemsControl.ItemsPanel>
+    <ItemsControl.ItemTemplate>
+      <DataTemplate x:DataType="vm:CardTag">
+        <Border Classes="cardchip cardtag" Classes.off="{Binding !On}">
+          <TextBlock Text="{Binding Text}" FontSize="11.5" FontWeight="SemiBold" />
+        </Border>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

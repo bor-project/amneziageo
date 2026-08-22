@@ -1838,6 +1838,12 @@
   <data name="Main_CardTagUdp" xml:space="preserve">
     <value>UDP</value>
   </data>
+  <data name="Main_CardTagMtu" xml:space="preserve">
+    <value>MTU {0}</value>
+  </data>
+  <data name="Main_CardTagMtuAuto" xml:space="preserve">
+    <value>MTU авто</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Настройки</value>
   </data>

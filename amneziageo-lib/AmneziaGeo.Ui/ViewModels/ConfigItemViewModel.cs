@@ -26,6 +26,7 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private IReadOnlyList<string> _rules = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useWebSocket;
 
     [ObservableProperty]
@@ -41,9 +42,11 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     private string _exclusions = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private int _mtu;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Tags))]
     private bool _useIpv6;
 
     [ObservableProperty]
@@ -73,6 +76,35 @@ internal sealed partial class ConfigItemViewModel : ViewModelBase
     /// </summary>
     public string CardActionText =>
         Loc.Instance.Get(ShowStatusFrame ? "Main_DisconnectNowLink" : "Main_ConnectNowLink");
+
+    /// <summary>
+    /// Метки настроек карточки: прокси, IPv6 и MTU. Идут в этом порядке, MTU уходит за край первым, когда
+    /// ширины не хватает.
+    /// </summary>
+    public IReadOnlyList<CardTag> Tags =>
+    [
+        new(Loc.Instance.Get("Main_ProxyWebSocketLabel"), UseWebSocket),
+        new(Loc.Instance.Get("Main_UseIpv6Title"), UseIpv6),
+        new(MtuSet ? Loc.Instance.Get("Main_CardTagMtu", Mtu) : Loc.Instance.Get("Main_CardTagMtuAuto"), MtuSet),
+    ];
+
+    // Задан ли MTU своим значением: нулём приходит настройка по умолчанию.
+    private bool MtuSet => Mtu > 0;
+
+    /// <summary>
+    /// Re-raises the localized computed labels after a language change.
+    /// </summary>
+    public void RefreshLocalizedLabels()
+    {
+        OnPropertyChanged(nameof(Tags));
+        OnPropertyChanged(nameof(CardActionText));
+        OnPropertyChanged(nameof(ProbeText));
+        OnPropertyChanged(nameof(CardSpeedText));
+        OnPropertyChanged(nameof(CardLossText));
+        OnPropertyChanged(nameof(LinkSpeedText));
+        OnPropertyChanged(nameof(LinkLossText));
+        OnPropertyChanged(nameof(LinkChurnText));
+    }
 
     /// <summary>
     /// Носит ли карточка свою рамку поверх общей: та, которую выбрали в каталоге. Рамка стоит на цели, пока

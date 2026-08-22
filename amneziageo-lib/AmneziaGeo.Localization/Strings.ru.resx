@@ -2006,6 +2006,90 @@
   <data name="Probe_TakenNoRouting" xml:space="preserve">
     <value>мимо, маршрутизация не отвечает</value>
   </data>
+  <data name="Probe_Measured" xml:space="preserve">
+    <value>{0} Мбит/с приём, {1} Мбит/с отдача против {2}</value>
+  </data>
+  <data name="Probe_MeasuredPlain" xml:space="preserve">
+    <value>{0} Мбит/с приём, {1} Мбит/с отдача</value>
+  </data>
+  <data name="Probe_NoRate" xml:space="preserve">
+    <value>{0} отвечает, но отдаёт слишком мало, чтобы замерить скорость</value>
+  </data>
+  <data name="Probe_Unreachable" xml:space="preserve">
+    <value>{0} не ответил</value>
+  </data>
+  <data name="Probe_PathUnavailable" xml:space="preserve">
+    <value>система не может пустить трафик {0}, замер не состоялся</value>
+  </data>
+  <data name="Probe_NotConnected" xml:space="preserve">
+    <value>туннель не поднят, этот путь не замерить</value>
+  </data>
+  <data name="Probe_SideThrough" xml:space="preserve">
+    <value>в туннель</value>
+  </data>
+  <data name="Probe_SidePast" xml:space="preserve">
+    <value>мимо туннеля</value>
+  </data>
+  <data name="Probe_MetricRtt" xml:space="preserve">
+    <value>отклик {0} мс</value>
+  </data>
+  <data name="Probe_MetricJitter" xml:space="preserve">
+    <value>джиттер {0} мс</value>
+  </data>
+  <data name="Probe_MetricLoss" xml:space="preserve">
+    <value>потери {0}%</value>
+  </data>
+  <data name="Probe_MetricPackets" xml:space="preserve">
+    <value>проходят пакеты {0} байт</value>
+  </data>
+  <data name="Probe_MetricAge" xml:space="preserve">
+    <value>возраст {0} с</value>
+  </data>
+  <data name="Probe_MetricRekeys" xml:space="preserve">
+    <value>{0} пересогласований в минуту</value>
+  </data>
+  <data name="Probe_MetricRate" xml:space="preserve">
+    <value>{0} Мбит/с</value>
+  </data>
+  <data name="Probe_MetricTraffic" xml:space="preserve">
+    <value>принято {0}, отдано {1}</value>
+  </data>
+  <data name="Probe_NoteThin" xml:space="preserve">
+    <value>отдал {0}, мало для замера</value>
+  </data>
+  <data name="Probe_NoteNothing" xml:space="preserve">
+    <value>ничего не отдал для замера</value>
+  </data>
+  <data name="Probe_NoteAgainst" xml:space="preserve">
+    <value>против {0}</value>
+  </data>
+  <data name="Probe_NoteNoResolve" xml:space="preserve">
+    <value>имя не разрешается</value>
+  </data>
+  <data name="Probe_NoteAnswersOn" xml:space="preserve">
+    <value>{0} отвечает на порту {1}</value>
+  </data>
+  <data name="Probe_NoteNoConnection" xml:space="preserve">
+    <value>{0} не принял соединение</value>
+  </data>
+  <data name="Probe_NoteNeverAnswered" xml:space="preserve">
+    <value>{0} не ответил</value>
+  </data>
+  <data name="Probe_NoteNotAddress" xml:space="preserve">
+    <value>не адрес</value>
+  </data>
+  <data name="Probe_NoteNoAddress" xml:space="preserve">
+    <value>нет адреса для замера</value>
+  </data>
+  <data name="Probe_NoteNoDownload" xml:space="preserve">
+    <value>загрузка не началась</value>
+  </data>
+  <data name="Probe_NoteNoUpload" xml:space="preserve">
+    <value>отправка не началась</value>
+  </data>
+  <data name="Probe_NoteNoTime" xml:space="preserve">
+    <value>нечего замерять</value>
+  </data>
   <data name="Probe_RunButton" xml:space="preserve">
     <value>Проверить</value>
   </data>

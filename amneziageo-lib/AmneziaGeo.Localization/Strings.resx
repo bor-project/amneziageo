@@ -2006,6 +2006,90 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Probe_TakenNoRouting" xml:space="preserve">
     <value>bypass, no live routing to ask</value>
   </data>
+  <data name="Probe_Measured" xml:space="preserve">
+    <value>{0} Mbit/s in, {1} Mbit/s out against {2}</value>
+  </data>
+  <data name="Probe_MeasuredPlain" xml:space="preserve">
+    <value>{0} Mbit/s in, {1} Mbit/s out</value>
+  </data>
+  <data name="Probe_NoRate" xml:space="preserve">
+    <value>{0} answers but hands over too little to time a rate</value>
+  </data>
+  <data name="Probe_Unreachable" xml:space="preserve">
+    <value>{0} never answered</value>
+  </data>
+  <data name="Probe_PathUnavailable" xml:space="preserve">
+    <value>this system cannot hold traffic {0}, so nothing was measured</value>
+  </data>
+  <data name="Probe_NotConnected" xml:space="preserve">
+    <value>no tunnel runs, so this path could not be measured</value>
+  </data>
+  <data name="Probe_SideThrough" xml:space="preserve">
+    <value>through the tunnel</value>
+  </data>
+  <data name="Probe_SidePast" xml:space="preserve">
+    <value>past the tunnel</value>
+  </data>
+  <data name="Probe_MetricRtt" xml:space="preserve">
+    <value>rtt {0} ms</value>
+  </data>
+  <data name="Probe_MetricJitter" xml:space="preserve">
+    <value>jitter {0} ms</value>
+  </data>
+  <data name="Probe_MetricLoss" xml:space="preserve">
+    <value>loss {0}%</value>
+  </data>
+  <data name="Probe_MetricPackets" xml:space="preserve">
+    <value>{0}-byte packets pass</value>
+  </data>
+  <data name="Probe_MetricAge" xml:space="preserve">
+    <value>age {0} s</value>
+  </data>
+  <data name="Probe_MetricRekeys" xml:space="preserve">
+    <value>{0} rekey(s) per minute</value>
+  </data>
+  <data name="Probe_MetricRate" xml:space="preserve">
+    <value>{0} Mbit/s</value>
+  </data>
+  <data name="Probe_MetricTraffic" xml:space="preserve">
+    <value>rx {0}, tx {1}</value>
+  </data>
+  <data name="Probe_NoteThin" xml:space="preserve">
+    <value>handed over {0}, too little to time</value>
+  </data>
+  <data name="Probe_NoteNothing" xml:space="preserve">
+    <value>handed over nothing to time</value>
+  </data>
+  <data name="Probe_NoteAgainst" xml:space="preserve">
+    <value>against {0}</value>
+  </data>
+  <data name="Probe_NoteNoResolve" xml:space="preserve">
+    <value>the name does not resolve</value>
+  </data>
+  <data name="Probe_NoteAnswersOn" xml:space="preserve">
+    <value>{0} answers on {1}</value>
+  </data>
+  <data name="Probe_NoteNoConnection" xml:space="preserve">
+    <value>{0} accepted no connection</value>
+  </data>
+  <data name="Probe_NoteNeverAnswered" xml:space="preserve">
+    <value>{0} never answered</value>
+  </data>
+  <data name="Probe_NoteNotAddress" xml:space="preserve">
+    <value>not an address</value>
+  </data>
+  <data name="Probe_NoteNoAddress" xml:space="preserve">
+    <value>no address to probe</value>
+  </data>
+  <data name="Probe_NoteNoDownload" xml:space="preserve">
+    <value>the download never started</value>
+  </data>
+  <data name="Probe_NoteNoUpload" xml:space="preserve">
+    <value>the upload never started</value>
+  </data>
+  <data name="Probe_NoteNoTime" xml:space="preserve">
+    <value>took nothing to time</value>
+  </data>
   <data name="Probe_RunButton" xml:space="preserve">
     <value>Measure</value>
   </data>

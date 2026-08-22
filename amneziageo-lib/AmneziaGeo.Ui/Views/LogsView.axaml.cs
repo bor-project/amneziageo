@@ -44,6 +44,10 @@ internal sealed partial class LogsView : UserControl
         if (DataContext is LogsViewModel vm && (sender as Control)?.DataContext is string value)
         {
             vm.PickSuggestion(value);
+
+            // The list the offer came from closes with it, so the run button takes the ring a remote leaves
+            // nowhere else.
+            ProbeRunButton.Focus(NavigationMethod.Directional);
         }
     }
 

@@ -472,6 +472,15 @@ internal sealed partial class MainWindowViewModel : ViewModelBase
         Diagnostics.SetActive(Nav == "settings" && SettingsSection == "logs" && (!IsCompact || SettingsDetailOpen));
     }
 
+    // Opening settings re-reads the source state: the agent keeps it in the store, not on its heap.
+    partial void OnNavChanged(string value)
+    {
+        if (value == "settings")
+        {
+            _ = _connection.SendCommandAsync(new IpcCommand(IpcContract.OpRefreshSources, []));
+        }
+    }
+
     // Persist the selected settings section (#51) whenever it changes.
     partial void OnSettingsSectionChanged(string value)
     {

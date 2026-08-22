@@ -33,6 +33,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
     // Age past which the tunnel's own snapshot of what it carries is no longer an answer about what runs now.
     private const int SessionWindowSeconds = 60;
+
+    // Leaves the start-up rush to the interface before the first geo check goes out.
+    private const int GeoStartDelaySeconds = 5;
+    private const int GeoTickSeconds = 60;
+    private const int MinGeoIntervalHours = 1;
+    private const int MaxGeoIntervalHours = 24 * 7;
     private static readonly string AppVersion = ReadAppVersion();
 
     private readonly SqliteStateStore _store;
@@ -51,7 +57,6 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private IReadOnlyList<GeoFileMetadata> _geoFileMeta = [];
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
     // Per-source download volume while a base is being fetched.
     private readonly ConcurrentDictionary<string, GeoDownload> _sourceProgress = new(StringComparer.Ordinal);
@@ -77,6 +82,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private string _logLevel = "error";
     private bool _routeLog;
     private int _routeTtl = 300;
+    private bool _geoAutoCheck = true;
+    private int _geoCheckIntervalHours = 24;
+    private DateTimeOffset _geoCheckedAt;
+    private readonly CancellationTokenSource _geoChecks = new();
     private bool _alwaysOn;
     private bool _alwaysOnLockdown;
     private LocalProxyOptions _proxyOptions = new();
@@ -144,6 +153,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         PushSnapshot();
         SyncTunnelState();
         _ = EnsureInitAsync().ContinueWith(_ => PushSnapshot(), TaskScheduler.Default);
+        _ = CheckGeoUpdatesAsync(_geoChecks.Token);
     }
 
     public Task<IpcAck> SendCommandAsync(IpcCommand command) => DispatchAsync(command);
@@ -175,6 +185,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         _disposed = true;
+        _geoChecks.Cancel();
         MainActivity.Resumed -= SyncTunnelState;
         if (_events is not null)
         {
@@ -182,6 +193,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             _events = null;
         }
 
+        _geoChecks.Dispose();
         _updater.Dispose();
         _geoHttp.Dispose();
         _httpClient.Dispose();
@@ -284,6 +296,12 @@ internal sealed class AndroidAgentConnection : IAgentConnection
 
             case IpcContract.OpCheckSources:
                 return await CheckSourcesAsync();
+
+            case IpcContract.OpRefreshSources:
+                await EnsureInitAsync().ConfigureAwait(false);
+                await RefreshGeoSourcesAsync().ConfigureAwait(false);
+                PushSnapshot();
+                return Ok();
 
             case IpcContract.OpListLocalSubnets:
                 return new IpcAck(true, string.Join('\n', GeoVpnService.LocalSubnets()));
@@ -751,6 +769,8 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             LogLevel: _logLevel,
             RouteLog: _routeLog,
             RouteTtlSeconds: _routeTtl,
+            GeoAutoCheck: _geoAutoCheck,
+            GeoCheckIntervalHours: _geoCheckIntervalHours,
             UpdateUrl: _updater.Url,
             UpdateAvailable: _updater.Available,
             UpdateVersion: _updater.Version,
@@ -908,7 +928,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             var error = !updating && _sourceErrors.TryGetValue(source.Name, out var e) ? e : null;
             var volume = _sourceProgress.GetValueOrDefault(source.Name);
             list.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating,
-                updating ? volume.Percent : 0, _updateAvailable.GetValueOrDefault(source.Name), error,
+                updating ? volume.Percent : 0, meta?.UpdateAvailable ?? false, error,
                 updating ? volume.Read : 0, updating ? volume.Total : 0));
         }
 
@@ -1095,6 +1115,96 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         await RefreshRoutingSummariesAsync().ConfigureAwait(false);
         await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
+    }
+
+    // Pulls the newest rule databases while the interface is up: the app carries no agent in the background,
+    // so the schedule runs here, and only over a link that costs the user nothing.
+    private async Task CheckGeoUpdatesAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(GeoStartDelaySeconds), ct).ConfigureAwait(false);
+            while (!ct.IsCancellationRequested)
+            {
+                if (_geoAutoCheck
+                    && DateTimeOffset.UtcNow - _geoCheckedAt >= TimeSpan.FromHours(_geoCheckIntervalHours)
+                    && OnFreeLink())
+                {
+                    await RunGeoCheckAsync().ConfigureAwait(false);
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(GeoTickSeconds), ct).ConfigureAwait(false);
+            }
+        }
+        catch (System.OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Error("geo", "the scheduled check of the rule databases stopped", ex);
+        }
+    }
+
+    // Asks every source whether its file changed and downloads the ones that did.
+    private async Task RunGeoCheckAsync()
+    {
+        await EnsureInitAsync().ConfigureAwait(false);
+        var stale = new List<GeoSource>();
+        foreach (var source in _geoSources.ToList())
+        {
+            if (await CheckOneSourceAsync(source).ConfigureAwait(false) == GeoUpdateChecker.Status.Available)
+            {
+                stale.Add(source);
+            }
+        }
+
+        _geoCheckedAt = DateTimeOffset.UtcNow;
+        Save();
+        if (stale.Count == 0)
+        {
+            await RefreshGeoSourcesAsync().ConfigureAwait(false);
+            PushSnapshot();
+            return;
+        }
+
+        _log.Info("geo", $"a newer file stands for {stale.Count} rule database(s), downloading");
+        foreach (var source in stale)
+        {
+            _updatingSources.Add(source.Name);
+        }
+
+        PushSnapshot();
+        foreach (var source in stale)
+        {
+            await UpdateOneSourceAsync(source).ConfigureAwait(false);
+        }
+
+        await AfterSourcesChangedAsync().ConfigureAwait(false);
+    }
+
+    // Whether the device sits on a link that carries no traffic bill: wifi, or the cable a set-top box runs on.
+    private bool OnFreeLink()
+    {
+        try
+        {
+            if (Application.Context.GetSystemService(Context.ConnectivityService) is not ConnectivityManager manager
+                || manager.ActiveNetwork is not { } network
+                || manager.GetNetworkCapabilities(network) is not { } capabilities)
+            {
+                return false;
+            }
+
+            // A tunnel of ours carries the transports of the link under it, so this reads the same either way.
+            return capabilities.HasTransport(TransportType.Wifi) || capabilities.HasTransport(TransportType.Ethernet);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn("geo", "the kind of the network link could not be read: " + ex);
+            return false;
+        }
     }
 
     private async Task RefreshRoutingSummariesAsync()
@@ -1858,6 +1968,11 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         return long.TryParse(idPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? (id, useRouting) : (null, false);
     }
 
+    private static int GeoInterval(string? value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hours)
+            ? Math.Clamp(hours, MinGeoIntervalHours, MaxGeoIntervalHours)
+            : 24;
+
     private static bool IsOn(string value) =>
         string.Equals(value, "on", StringComparison.OrdinalIgnoreCase)
         || string.Equals(value, "1", StringComparison.Ordinal)
@@ -1904,6 +2019,25 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 && SettingKeys.TryParseRouteTtl(ttl.GetRawText(), out var seconds))
             {
                 _routeTtl = seconds;
+            }
+
+            if (document.RootElement.TryGetProperty("GeoAutoCheck", out var geoAuto)
+                && geoAuto.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                _geoAutoCheck = geoAuto.ValueKind == JsonValueKind.True;
+            }
+
+            if (document.RootElement.TryGetProperty("GeoCheckInterval", out var geoInterval)
+                && geoInterval.ValueKind == JsonValueKind.Number)
+            {
+                _geoCheckIntervalHours = GeoInterval(geoInterval.GetRawText());
+            }
+
+            if (document.RootElement.TryGetProperty("GeoCheckedAt", out var geoChecked)
+                && geoChecked.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(geoChecked.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var checkedAt))
+            {
+                _geoCheckedAt = checkedAt;
             }
 
             if (document.RootElement.TryGetProperty("Proxy", out var proxy) && proxy.ValueKind == JsonValueKind.Object)
@@ -1995,6 +2129,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             builder.Append(",\"RouteLog\":").Append(_routeLog ? "true" : "false");
             builder.Append(",\"RouteTtl\":").Append(_routeTtl);
             builder.Append(",\"AllowPrerelease\":").Append(_updater.AllowPrerelease ? "true" : "false");
+            builder.Append(",\"GeoAutoCheck\":").Append(_geoAutoCheck ? "true" : "false");
+            builder.Append(",\"GeoCheckInterval\":").Append(_geoCheckIntervalHours);
+            builder.Append(",\"GeoCheckedAt\":").Append(JsonSerializer.Serialize(_geoCheckedAt.ToString("O", CultureInfo.InvariantCulture)));
             builder.Append(",\"Proxy\":").Append(JsonSerializer.Serialize(_proxyOptions));
             builder.Append(",\"Selected\":").Append(JsonSerializer.Serialize(_selectedTarget));
             builder.Append(",\"SelectedRouting\":").Append(_selectedRoutingList?.ToString(CultureInfo.InvariantCulture) ?? "null");
@@ -2127,6 +2264,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             }
         }
 
+        await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, available == 0
             ? IpcMessage.Key("Agent_CheckedNoUpdates", _geoSources.Count)
@@ -2148,6 +2286,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         }
 
         var status = await CheckOneSourceAsync(source).ConfigureAwait(false);
+        await RefreshGeoSourcesAsync().ConfigureAwait(false);
         PushSnapshot();
         return new IpcAck(true, status switch
         {
@@ -2166,7 +2305,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
             var status = await _geoChecker.CheckAsync(source, budget.Token).ConfigureAwait(false);
             if (status != GeoUpdateChecker.Status.Unknown)
             {
-                _updateAvailable[source.Name] = status == GeoUpdateChecker.Status.Available;
+                await _store.SetGeoUpdateAvailableAsync(source.Name, status == GeoUpdateChecker.Status.Available).ConfigureAwait(false);
             }
 
             return status;
@@ -2693,6 +2832,16 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 return Ok();
             case "allow-prerelease":
                 _updater.AllowPrerelease = IsOn(args[1]);
+                Save();
+                PushSnapshot();
+                return Ok();
+            case "geo-auto-check":
+                _geoAutoCheck = IsOn(args[1]);
+                Save();
+                PushSnapshot();
+                return Ok();
+            case "geo-check-interval-hours":
+                _geoCheckIntervalHours = GeoInterval(args[1]);
                 Save();
                 PushSnapshot();
                 return Ok();

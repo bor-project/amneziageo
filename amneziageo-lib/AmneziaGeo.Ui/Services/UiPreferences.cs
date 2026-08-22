@@ -75,6 +75,11 @@ internal sealed class UiPreferences
     /// </summary>
     public string ShownUpdateVersion { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Speed service the send leg of a probe uploads to; empty measures against the built-in one.
+    /// </summary>
+    public string ProbeUploadUrl { get; set; } = string.Empty;
+
     private static string DbPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "AmneziaGeo",

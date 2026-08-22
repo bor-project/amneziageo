@@ -20,6 +20,7 @@ namespace AmneziaGeo.Ui.ViewModels;
 /// </summary>
 internal sealed partial class LogsViewModel : ViewModelBase
 {
+    private readonly MainWindowViewModel _host;
     private readonly IAgentConnection _connection;
 
     // Verbosity shown for the agent capture level when the agent reports nothing usable.
@@ -49,8 +50,9 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// <summary>
     /// ctor
     /// </summary>
-    public LogsViewModel(IAgentConnection connection)
+    public LogsViewModel(MainWindowViewModel host, IAgentConnection connection)
     {
+        _host = host;
         _connection = connection;
         Loc.Instance.CultureChanged += OnCultureChanged;
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -73,6 +75,30 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnIsCompactChanged(bool value)
     {
+        NotifyShape();
+    }
+
+    // Width of the panel the viewer sits in, pushed by the view. The pane is narrower than the window around
+    // it, and a table that does not fit the pane is unreadable however wide the window is.
+    [ObservableProperty]
+    private double _paneWidth;
+
+    partial void OnPaneWidthChanged(double value)
+    {
+        NotifyShape();
+    }
+
+    // Pane width the rows stop fitting a table at.
+    private const double CardBreakpoint = 560;
+
+    /// <summary>
+    /// Whether the rows are carried as cards: the panel is too narrow for a table, whatever the window is.
+    /// </summary>
+    public bool IsNarrow => PaneWidth > 0 ? PaneWidth < CardBreakpoint : IsCompact;
+
+    private void NotifyShape()
+    {
+        OnPropertyChanged(nameof(IsNarrow));
         OnPropertyChanged(nameof(ShowStoredText));
         OnPropertyChanged(nameof(ShowLiveText));
         OnPropertyChanged(nameof(ShowStoredCards));
@@ -86,6 +112,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// The live source: what the tunnel carries right now, asked of the agent instead of a stored table.
     /// </summary>
     public const string LiveType = "active";
+
+    /// <summary>
+    /// The probe journal: what measuring one destination left behind.
+    /// </summary>
+    public const string ProbeType = "probe";
 
     /// <summary>
     /// The selectable sources. The tokens are the same in every language.
@@ -106,6 +137,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool IsRouteLog => SelectedLogType == "routes";
 
     /// <summary>
+    /// Whether the viewer is on the probe journal, which carries the block that fills it.
+    /// </summary>
+    public bool IsProbeLog => SelectedLogType == ProbeType;
+
+    /// <summary>
     /// Whether the viewer is on what the tunnel carries right now.
     /// </summary>
     public bool IsLiveLog => SelectedLogType == LiveType;
@@ -119,6 +155,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(IsAgentLog));
         OnPropertyChanged(nameof(IsRouteLog));
+        OnPropertyChanged(nameof(IsProbeLog));
         OnPropertyChanged(nameof(IsLiveLog));
         OnPropertyChanged(nameof(IsStoredLog));
         OnPropertyChanged(nameof(ShowControlBar));
@@ -129,6 +166,245 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowLiveCards));
         ClearView();
         ResetAndReload();
+        if (IsProbeLog)
+        {
+            _ = LoadKnownAsync();
+        }
+    }
+
+    // --- Target probe (probe) ---
+
+    /// <summary>
+    /// The shell, for the server the probe is measured through: the picker there is the one the home screen
+    /// carries, so a change here moves a live tunnel exactly as it does there.
+    /// </summary>
+    public MainWindowViewModel Shell => _host;
+
+    /// <summary>
+    /// The destination a probe measures.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private string _probeTarget = string.Empty;
+
+    partial void OnProbeTargetChanged(string value)
+    {
+        RefreshSuggestions();
+    }
+
+    /// <summary>
+    /// Path a probe is measured over: auto, tunnel or bypass.
+    /// </summary>
+    [ObservableProperty]
+    private string _probePath = ProbePaths.Auto;
+
+    partial void OnProbePathChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsProbeAuto));
+        OnPropertyChanged(nameof(IsProbeTunnel));
+        OnPropertyChanged(nameof(IsProbeBypass));
+        OnPropertyChanged(nameof(ServerOpacity));
+    }
+
+    /// <summary>
+    /// Whether the routing in force decides the path.
+    /// </summary>
+    public bool IsProbeAuto => ProbePath == ProbePaths.Auto;
+
+    /// <summary>
+    /// Whether the destination is held in the tunnel for the run.
+    /// </summary>
+    public bool IsProbeTunnel => ProbePath == ProbePaths.Tunnel;
+
+    /// <summary>
+    /// Whether the destination is held past the tunnel for the run.
+    /// </summary>
+    public bool IsProbeBypass => ProbePath == ProbePaths.Bypass;
+
+    [RelayCommand]
+    private void SelectProbePath(string path)
+    {
+        ProbePath = path;
+    }
+
+    // Whether a tunnel is up. Without one only the way past it can be measured, and the run is not allowed to
+    // raise one: a probe measures what is there, it does not change it.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanProbeAuto))]
+    [NotifyPropertyChangedFor(nameof(CanProbeTunnel))]
+    private bool _tunnelUp;
+
+    partial void OnTunnelUpChanged(bool value)
+    {
+        if (!value && !IsProbeBypass)
+        {
+            ProbePath = ProbePaths.Bypass;
+        }
+    }
+
+    // Whether a routing list decides what the tunnel carries.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanProbeTunnel))]
+    private bool _listRouting;
+
+    // Whether a server is picked to measure through.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private bool _serverPicked;
+
+    /// <summary>
+    /// Whether the routing may decide the path: it decides for a tunnel that runs.
+    /// </summary>
+    public bool CanProbeAuto => TunnelUp;
+
+    /// <summary>
+    /// Whether the tunnel path is offered: some systems fix what the tun carries when they raise it, so a
+    /// destination the list leaves out cannot be put in it afterwards.
+    /// </summary>
+    public bool CanProbeTunnel => TunnelUp && (UiPlatform.CanForceTunnelUnderList || !ListRouting);
+
+    /// <summary>
+    /// How strongly the server picker is drawn: a run past the tunnel does not go through the server at all.
+    /// </summary>
+    public double ServerOpacity => IsProbeBypass ? 0.45 : 1;
+
+    /// <summary>
+    /// Destinations offered under the target field: the names the tunnel resolved and the hosts it carries.
+    /// </summary>
+    public ObservableCollection<string> ProbeSuggestions { get; } = [];
+
+    /// <summary>
+    /// Whether anything is offered under the target field.
+    /// </summary>
+    public bool ShowProbeSuggestions => ProbeSuggestions.Count > 0;
+
+    // Everything the agent knows a name for, filtered as the field is typed in.
+    private IReadOnlyList<string> _known = [];
+
+    // Suggestions offered at once; a longer list would push the journal off the pane.
+    private const int MaxSuggestions = 6;
+
+    /// <summary>
+    /// Takes an offered destination into the field.
+    /// </summary>
+    public void PickSuggestion(string value)
+    {
+        ProbeTarget = value;
+        ProbeSuggestions.Clear();
+        OnPropertyChanged(nameof(ShowProbeSuggestions));
+    }
+
+    // Whether a probe is in flight.
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RunProbeCommand))]
+    private bool _probeRunning;
+
+    [RelayCommand(CanExecute = nameof(CanRunProbe))]
+    private async Task RunProbe()
+    {
+        var target = ProbeTarget.Trim();
+        if (target.Length == 0)
+        {
+            return;
+        }
+
+        ProbeSuggestions.Clear();
+        OnPropertyChanged(nameof(ShowProbeSuggestions));
+        ProbeRunning = true;
+        try
+        {
+            await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpProbeTarget,
+                [target, ProbePath, _host.General.ProbeUploadUrl.Trim()]));
+        }
+        catch
+        {
+            return;
+        }
+        finally
+        {
+            ProbeRunning = false;
+        }
+
+        ResetAndReload();
+    }
+
+    private bool CanRunProbe => !ProbeRunning && ServerPicked && ProbeTarget.Trim().Length > 0;
+
+    // The probe journal is offered only where there is a server to measure through.
+    private void SyncProbeSource(bool hasServers)
+    {
+        if (hasServers == LogTypes.Contains(ProbeType))
+        {
+            return;
+        }
+
+        if (hasServers)
+        {
+            LogTypes.Add(ProbeType);
+            return;
+        }
+
+        if (IsProbeLog)
+        {
+            SelectedLogType = "ageo";
+        }
+
+        LogTypes.Remove(ProbeType);
+    }
+
+    // What the agent already has a name for: the names it resolved and the hosts the tunnel carries.
+    private async Task LoadKnownAsync()
+    {
+        var names = new List<string>();
+        try
+        {
+            var cached = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetCacheEntries, []));
+            if (cached.Ok && JsonSerializer.Deserialize<CacheSnapshot>(cached.Message, LogJson) is { Entries: { } entries })
+            {
+                names.AddRange(entries.Select(entry => entry.Key));
+            }
+
+            var carried = await _connection.SendCommandAsync(new IpcCommand(IpcContract.OpGetSessions, []));
+            if (carried.Ok)
+            {
+                names.AddRange(SessionReport.Parse(carried.Message).Sessions.Select(session => session.Host));
+            }
+        }
+        catch
+        {
+            return;
+        }
+
+        _known = [.. names
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)];
+        RefreshSuggestions();
+    }
+
+    // Offers what the typed text stands for; an empty field offers nothing, and neither does an exact hit.
+    private void RefreshSuggestions()
+    {
+        var typed = ProbeTarget.Trim();
+        ProbeSuggestions.Clear();
+        if (typed.Length > 0)
+        {
+            foreach (var name in _known)
+            {
+                if (ProbeSuggestions.Count >= MaxSuggestions)
+                {
+                    break;
+                }
+
+                if (name.Contains(typed, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(name, typed, StringComparison.OrdinalIgnoreCase))
+                {
+                    ProbeSuggestions.Add(name);
+                }
+            }
+        }
+
+        OnPropertyChanged(nameof(ShowProbeSuggestions));
     }
 
     // --- Capture level (ageo): none disables capture entirely ---
@@ -248,22 +524,22 @@ internal sealed partial class LogsViewModel : ViewModelBase
     /// <summary>
     /// Whether the stored rows are shown as text, which is what a wide window carries.
     /// </summary>
-    public bool ShowStoredText => ShowBody && !IsCompact && IsStoredLog;
+    public bool ShowStoredText => ShowBody && !IsNarrow && IsStoredLog;
 
     /// <summary>
     /// Whether the destinations are shown as text, which is what a wide window carries.
     /// </summary>
-    public bool ShowLiveText => ShowBody && !IsCompact && IsLiveLog;
+    public bool ShowLiveText => ShowBody && !IsNarrow && IsLiveLog;
 
     /// <summary>
     /// Whether the stored rows are shown as cards, which is what a narrow window carries.
     /// </summary>
-    public bool ShowStoredCards => ShowBody && IsCompact && IsStoredLog;
+    public bool ShowStoredCards => ShowBody && IsNarrow && IsStoredLog;
 
     /// <summary>
     /// Whether the destinations are shown as cards, which is what a narrow window carries.
     /// </summary>
-    public bool ShowLiveCards => ShowBody && IsCompact && IsLiveLog;
+    public bool ShowLiveCards => ShowBody && IsNarrow && IsLiveLog;
 
     /// <summary>
     /// Whether the empty hint is shown: no content and no load in flight. The live source says the same thing
@@ -306,6 +582,10 @@ internal sealed partial class LogsViewModel : ViewModelBase
         CaptureLevel = KnownCaptureLevel(snapshot.LogLevel);
         RouteLogEnabled = snapshot.RouteLog;
         _suppressSettingPush = false;
+        TunnelUp = snapshot.BoundStatus == ConnectionStatus.Connected;
+        ListRouting = snapshot.SelectedRoutingList is not null;
+        ServerPicked = !string.IsNullOrEmpty(snapshot.SelectedTarget);
+        SyncProbeSource(snapshot.Configs.Count > 0);
     }
 
     /// <summary>
@@ -689,7 +969,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
         LiveRows.Clear();
         LiveSummary = string.Empty;
-        if (!IsCompact)
+        if (!IsNarrow)
         {
             Entries.Clear();
             LogText = _lines.Count > 0 ? string.Join('\n', _lines) : string.Empty;
@@ -710,7 +990,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     {
         Entries.Clear();
         LiveSummary = SessionRows.Summary(_carried);
-        if (!IsCompact)
+        if (!IsNarrow)
         {
             LiveRows.Clear();
             LogText = SessionRows.Text(_carried);
@@ -751,6 +1031,12 @@ internal sealed partial class LogsViewModel : ViewModelBase
             _ => DefaultCaptureLevel,
         };
     }
+
+    // OpGetCacheEntries ack row: which cache holds the value, its key and its content.
+    private sealed record CacheEntry(string Kind, string Key, string Value);
+
+    // OpGetCacheEntries ack payload: the rows with the total held before the agent's cap.
+    private sealed record CacheSnapshot(int Total, bool Capped, IReadOnlyList<CacheEntry> Entries);
 
     // OpReadLog ack payload: a window of rendered lines newest first, with the paging cursor and match total.
     private sealed record LogWindowPayload(

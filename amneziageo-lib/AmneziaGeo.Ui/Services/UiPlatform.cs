@@ -29,6 +29,12 @@ internal static class UiPlatform
     public static bool SupportsWebSocket { get; set; } = true;
 
     /// <summary>
+    /// Whether a destination can be put into the tunnel while a routing list decides what it carries. Off on
+    /// Android, whose tun fixes its routes when it is raised, so what the list leaves out stays outside it.
+    /// </summary>
+    public static bool CanForceTunnelUnderList { get; set; } = true;
+
+    /// <summary>
     /// How much over the laid-out size the head is drawn on this device. A block that has to keep the size it
     /// was laid out at divides by it.
     /// </summary>

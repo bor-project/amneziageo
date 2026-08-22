@@ -25,6 +25,26 @@ internal sealed partial class LogsView : UserControl
     public LogsView()
     {
         InitializeComponent();
+        SizeChanged += (_, e) => PushPaneWidth(e.NewSize.Width);
+        DataContextChanged += (_, _) => PushPaneWidth(Bounds.Width);
+    }
+
+    // The card breakpoint is measured against the panel the viewer sits in, not the window around it.
+    private void PushPaneWidth(double width)
+    {
+        if (DataContext is LogsViewModel vm)
+        {
+            vm.PaneWidth = width;
+        }
+    }
+
+    // An offered destination fills the target field.
+    private void OnPickSuggestion(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is LogsViewModel vm && (sender as Control)?.DataContext is string value)
+        {
+            vm.PickSuggestion(value);
+        }
     }
 
     /// <inheritdoc/>

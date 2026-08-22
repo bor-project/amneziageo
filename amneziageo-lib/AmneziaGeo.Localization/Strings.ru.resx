@@ -2132,4 +2132,28 @@
   <data name="Check_SessionNoRule" xml:space="preserve">
     <value>нет правила</value>
   </data>
+  <data name="Probe_TargetWatermark" xml:space="preserve">
+    <value>домен или адрес</value>
+  </data>
+  <data name="Probe_PathAuto" xml:space="preserve">
+    <value>Авто</value>
+  </data>
+  <data name="Probe_PathTunnel" xml:space="preserve">
+    <value>Туннель</value>
+  </data>
+  <data name="Probe_PathBypass" xml:space="preserve">
+    <value>Мимо</value>
+  </data>
+  <data name="Probe_RunButton" xml:space="preserve">
+    <value>Проверить</value>
+  </data>
+  <data name="Probe_Running" xml:space="preserve">
+    <value>идёт замер…</value>
+  </data>
+  <data name="General_ProbeSection" xml:space="preserve">
+    <value>Сервис замера</value>
+  </data>
+  <data name="General_ProbeUploadHint" xml:space="preserve">
+    <value>На него замеряется отдача: произвольный адрес загрузку не принимает. Пусто - встроенный сервис.</value>
+  </data>
 </root>

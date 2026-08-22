@@ -276,6 +276,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpCheckChannel => await CheckChannelAsync(command.Args, ct),
                 IpcContract.OpCheckServers => await checks.ServersAsync(store, ct),
                 IpcContract.OpCheckTarget => await CheckTargetAsync(command.Args, ct),
+                IpcContract.OpProbeTarget => await ProbeTargetAsync(command.Args, ct),
                 IpcContract.OpLogClient => LogClient(command.Args),
                 _ => new IpcAck(false, $"unknown command: {command.Op}"),
             };
@@ -1068,6 +1069,19 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var (config, _) = await InspectTargetAsync(ct);
         return await checks.TargetAsync(store, config, args[0], ct);
+    }
+
+    private async Task<IpcAck> ProbeTargetAsync(IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (args.Count < 1)
+        {
+            return new IpcAck(false, "probe-target requires a domain or an address");
+        }
+
+        var (config, _) = await InspectTargetAsync(ct);
+        var path = args.Count > 1 && args[1].Length > 0 ? args[1] : ProbePaths.Auto;
+        var upload = args.Count > 2 ? args[2] : string.Empty;
+        return await checks.ProbeAsync(store, config, args[0], path, upload, ct);
     }
 
     private async Task<IpcAck> GetCacheEntriesAsync(CancellationToken ct)
@@ -2135,7 +2149,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
     private static bool IsKnownTable(string name)
     {
-        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable;
+        return name is SqliteLogStore.AgentTable or SqliteLogStore.RoutesTable or SqliteLogStore.ChecksTable
+            or SqliteLogStore.ProbeTable;
     }
 
     private async Task<IpcAck> CheckUpdateAsync(IReadOnlyList<string> args, CancellationToken ct)

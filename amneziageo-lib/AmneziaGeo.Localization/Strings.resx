@@ -2132,4 +2132,28 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Check_SessionNoRule" xml:space="preserve">
     <value>no rule</value>
   </data>
+  <data name="Probe_TargetWatermark" xml:space="preserve">
+    <value>domain or address</value>
+  </data>
+  <data name="Probe_PathAuto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="Probe_PathTunnel" xml:space="preserve">
+    <value>Tunnel</value>
+  </data>
+  <data name="Probe_PathBypass" xml:space="preserve">
+    <value>Past</value>
+  </data>
+  <data name="Probe_RunButton" xml:space="preserve">
+    <value>Measure</value>
+  </data>
+  <data name="Probe_Running" xml:space="preserve">
+    <value>measuring…</value>
+  </data>
+  <data name="General_ProbeSection" xml:space="preserve">
+    <value>Speed service</value>
+  </data>
+  <data name="General_ProbeUploadHint" xml:space="preserve">
+    <value>The send leg of a probe uploads here, because an arbitrary destination accepts no upload. Left empty it measures against the built-in service.</value>
+  </data>
 </root>

@@ -323,6 +323,15 @@ public static class IpcContract
     public const string OpCheckTarget = "check-target";
 
     /// <summary>
+    /// Command to measure one destination: args are [0] the target - a domain or an address; [1] the path to
+    /// measure it over - "auto" (leave the routing alone), "tunnel" (force the target through the tunnel) or
+    /// "bypass" (force it past the tunnel); [2] optional URL of the service the send leg uploads to (empty =
+    /// the built-in one). The ack message holds tab-separated "leg" rows and a closing "verdict" row. The run
+    /// is stored in the probe journal, which travels in the diagnostics archive on its own.
+    /// </summary>
+    public const string OpProbeTarget = "probe-target";
+
+    /// <summary>
     /// Command to read a window of one log table for the in-app viewer. Args: [0] table ("ageo"/"routes"/"checks");
     /// [1] optional limit (rows, default 400, clamped 1..2000); [2] optional beforeId cursor (read rows with
     /// id below it to page older, omitted/0 = live tail); [3] optional level token (ageo: hide rows less

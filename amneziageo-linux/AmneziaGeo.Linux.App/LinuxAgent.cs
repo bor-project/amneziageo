@@ -42,6 +42,9 @@ internal sealed class LinuxAgent : IDisposable
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
+
+    // Per-source download volume while a base is being fetched.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> _sourceProgress = new(StringComparer.Ordinal);
     private readonly LocalProxyServer _proxy;
 
     private LocalProxyOptions _proxyOptions = new();
@@ -1254,11 +1257,13 @@ internal sealed class LinuxAgent : IDisposable
         }
 
         await PushAsync(ct).ConfigureAwait(false);
+        var pump = new CancellationTokenSource();
+        var ticker = ProgressPumpAsync(pump.Token);
         foreach (var source in targets)
         {
             try
             {
-                var meta = await _geoUpdater.UpdateAsync(source, null, ct).ConfigureAwait(false);
+                var meta = await _geoUpdater.UpdateAsync(source, new SourceProgress(_sourceProgress, source.Name), ct).ConfigureAwait(false);
                 _sourceErrors[source.Name] = null;
                 _log.Info("geo", $"{source.Name}: {meta.CategoryCount} categories");
             }
@@ -1271,9 +1276,13 @@ internal sealed class LinuxAgent : IDisposable
             finally
             {
                 _updatingSources.Remove(source.Name);
+                _sourceProgress.TryRemove(source.Name, out _);
             }
         }
 
+        pump.Cancel();
+        await ticker.ConfigureAwait(false);
+        pump.Dispose();
         await _geo.RematerializeAllRoutingListsAsync(ct).ConfigureAwait(false);
         await PushAsync(ct).ConfigureAwait(false);
         return failures.Count == 0
@@ -1826,6 +1835,7 @@ internal sealed class LinuxAgent : IDisposable
         {
             var meta = metaByName.GetValueOrDefault(source.Name);
             var updating = _updatingSources.Contains(source.Name);
+            var volume = _sourceProgress.GetValueOrDefault(source.Name);
             entries.Add(new SourceEntry(
                 source.Name,
                 source.Kind,
@@ -1833,9 +1843,11 @@ internal sealed class LinuxAgent : IDisposable
                 meta?.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
                 meta?.CategoryCount ?? 0,
                 updating,
-                0,
+                updating ? volume.Percent : 0,
                 _updateAvailable.GetValueOrDefault(source.Name),
-                updating ? null : _sourceErrors.GetValueOrDefault(source.Name)));
+                updating ? null : _sourceErrors.GetValueOrDefault(source.Name),
+                updating ? volume.Read : 0,
+                updating ? volume.Total : 0));
         }
 
         return entries;
@@ -1850,6 +1862,30 @@ internal sealed class LinuxAgent : IDisposable
     private string StatusFor(string name)
     {
         return string.Equals(name, _boundTarget, StringComparison.Ordinal) ? _boundStatus : ConnectionStatus.Idle;
+    }
+
+    // Пушит снимок, пока идут загрузки: иначе объём в списке источников стоит на месте.
+    private async Task ProgressPumpAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(700), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            await PushAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    // Складывает ход загрузки одного источника.
+    private sealed class SourceProgress(System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> map, string name) : IProgress<GeoDownload>
+    {
+        public void Report(GeoDownload value) => map[name] = value;
     }
 
     private async Task PushAsync(CancellationToken ct)

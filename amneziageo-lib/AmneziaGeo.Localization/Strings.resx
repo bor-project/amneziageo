@@ -1189,6 +1189,12 @@
   <data name="Source_DetailLoaded" xml:space="preserve">
     <value>{0} · {1} categories · {2}</value>
   </data>
+  <data name="Source_DownloadProgress" xml:space="preserve">
+    <value>{0} of {1} MB</value>
+  </data>
+  <data name="Source_DownloadProgressUnknown" xml:space="preserve">
+    <value>{0} MB</value>
+  </data>
   <data name="Source_DetailNotLoaded" xml:space="preserve">
     <value>{0} · not loaded</value>
   </data>
@@ -1820,9 +1826,6 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>rules by domain are not working: names on this machine are resolved by another program (a corporate VPN client, for example), not by the app. Those sites go outside the tunnel or do not open at all</value>
   </data>
-  <data name="Main_IsActiveBadge" xml:space="preserve">
-    <value>Active</value>
-  </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Selected</value>
   </data>
@@ -1853,11 +1856,8 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_DisconnectNowLink" xml:space="preserve">
     <value>Disconnect</value>
   </data>
-  <data name="Main_UseRoutingToggle" xml:space="preserve">
-    <value>Use this list</value>
-  </data>
-  <data name="Main_ConfigIdleNotice" xml:space="preserve">
-    <value>Not active yet</value>
+  <data name="Main_InUseToggle" xml:space="preserve">
+    <value>In use</value>
   </data>
   <data name="Main_SwitchOn" xml:space="preserve">
     <value>On</value>

@@ -8,6 +8,11 @@ using AmneziaGeo.Decl;
 namespace AmneziaGeo.Geo;
 
 /// <summary>
+/// Ход загрузки базы: процент (-1 при неизвестном размере), принятые байты и объявленный размер.
+/// </summary>
+public readonly record struct GeoDownload(int Percent, long Read, long Total);
+
+/// <summary>
 /// Downloads geo source files and records their update metadata.
 /// </summary>
 public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStore files)
@@ -15,7 +20,7 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
     /// <summary>
     /// Downloads a source file and records its metadata.
     /// </summary>
-    public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, IProgress<int>? progress = null, CancellationToken ct = default)
+    public async Task<GeoFileMetadata> UpdateAsync(GeoSource source, IProgress<GeoDownload>? progress = null, CancellationToken ct = default)
     {
         var existing = await store.GetGeoFileAsync(source.Name, ct);
         var fresh = await DownloadAsync(source.Url, existing, progress, ct);
@@ -65,7 +70,7 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
     // Body-stall bound: aborts when no byte arrives for this long.
     private static readonly TimeSpan _stallTimeout = TimeSpan.FromSeconds(30);
 
-    private async Task<(byte[] Data, string ETag, string LastModified)?> DownloadAsync(string url, GeoFileMetadata? existing, IProgress<int>? progress, CancellationToken ct)
+    private async Task<(byte[] Data, string ETag, string LastModified)?> DownloadAsync(string url, GeoFileMetadata? existing, IProgress<GeoDownload>? progress, CancellationToken ct)
     {
         using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
         stall.CancelAfter(_connectTimeout);
@@ -119,12 +124,12 @@ public sealed class GeoFileUpdater(IStateStore store, GeoHttp http, IGeoFileStor
                 if (percent != lastPercent)
                 {
                     lastPercent = percent;
-                    progress?.Report(percent);
+                    progress?.Report(new GeoDownload(percent, read, total.Value));
                 }
             }
             else
             {
-                progress?.Report(-1);
+                progress?.Report(new GeoDownload(-1, read, 0));
             }
         }
 

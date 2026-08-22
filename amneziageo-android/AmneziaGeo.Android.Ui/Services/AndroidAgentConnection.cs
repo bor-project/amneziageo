@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
@@ -37,6 +38,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly SqliteStateStore _store;
     private readonly GeoConfigurator _geo;
     private readonly GeoFileUpdater _geoUpdater;
+    private readonly AndroidGeoFileStore _geoFiles;
     private readonly GeoUpdateChecker _geoChecker;
     private readonly AndroidAgentLog _log;
     private readonly GeoHttp _geoHttp;
@@ -50,6 +52,9 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private readonly HashSet<string> _updatingSources = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _sourceErrors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
+
+    // Per-source download volume while a base is being fetched.
+    private readonly ConcurrentDictionary<string, GeoDownload> _sourceProgress = new(StringComparer.Ordinal);
     private Task? _initTask;
     private Task? _geoFilesTask;
     private VpnBridge.Listener? _events;
@@ -110,6 +115,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         var dir = Application.Context.FilesDir?.AbsolutePath ?? ".";
         _storePath = System.IO.Path.Combine(dir, "agent.json");
         var geoFiles = new AndroidGeoFileStore(System.IO.Path.Combine(dir, "geo"));
+        _geoFiles = geoFiles;
         _store = new SqliteStateStore(System.IO.Path.Combine(dir, "state.db"));
         _geoHttp = new GeoHttp(_httpClient, NullLogger<GeoHttp>.Instance);
         _geoUpdater = new GeoFileUpdater(_store, _geoHttp, geoFiles);
@@ -900,7 +906,10 @@ internal sealed class AndroidAgentConnection : IAgentConnection
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             var updating = _updatingSources.Contains(source.Name);
             var error = !updating && _sourceErrors.TryGetValue(source.Name, out var e) ? e : null;
-            list.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, 0, _updateAvailable.GetValueOrDefault(source.Name), error));
+            var volume = _sourceProgress.GetValueOrDefault(source.Name);
+            list.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating,
+                updating ? volume.Percent : 0, _updateAvailable.GetValueOrDefault(source.Name), error,
+                updating ? volume.Read : 0, updating ? volume.Total : 0));
         }
 
         return list;
@@ -1027,7 +1036,7 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     {
         try
         {
-            await _geoUpdater.UpdateAsync(source).ConfigureAwait(false);
+            await _geoUpdater.UpdateAsync(source, new SourceProgress(_sourceProgress, source.Name)).ConfigureAwait(false);
             _sourceErrors.Remove(source.Name);
         }
         catch (Exception ex)
@@ -1037,7 +1046,39 @@ internal sealed class AndroidAgentConnection : IAgentConnection
         finally
         {
             _updatingSources.Remove(source.Name);
+            _sourceProgress.TryRemove(source.Name, out _);
         }
+    }
+
+    // Пушит снимок, пока идут загрузки: иначе объём в списке источников стоит на месте.
+    private async Task ProgressPumpAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(700), ct).ConfigureAwait(false);
+            }
+            catch (System.OperationCanceledException)
+            {
+                return;
+            }
+
+            PushSnapshot();
+        }
+    }
+
+    // Складывает ход загрузки одного источника.
+    private sealed class SourceProgress(ConcurrentDictionary<string, GeoDownload> map, string name) : IProgress<GeoDownload>
+    {
+        public void Report(GeoDownload value) => map[name] = value;
+    }
+
+    // Есть ли база на диске.
+    private bool HasGeoFile(string name)
+    {
+        using var stream = _geoFiles.OpenRead(name);
+        return stream is not null;
     }
 
     // Re-materializes routing lists against the changed bases, refreshes caches, and pushes a fresh snapshot.
@@ -1085,21 +1126,39 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     private async Task DownloadGeoFilesAsync()
     {
         await EnsureInitAsync().ConfigureAwait(false);
-        var sources = await _store.ListGeoSourcesAsync().ConfigureAwait(false);
-        var any = false;
-        foreach (var source in sources)
+        // Только отсутствующие базы: лежащую на диске обновляет экран источников, а не открытие списка.
+        var missing = (await _store.ListGeoSourcesAsync().ConfigureAwait(false))
+            .Where(source => !HasGeoFile(source.Name))
+            .ToList();
+        if (missing.Count == 0)
         {
-            try
-            {
-                await _geoUpdater.UpdateAsync(source).ConfigureAwait(false);
-                any = true;
-            }
-            catch (Exception)
-            {
-            }
+            return;
         }
 
-        if (!any)
+        foreach (var source in missing)
+        {
+            _updatingSources.Add(source.Name);
+        }
+
+        PushSnapshot();
+        var pump = new CancellationTokenSource();
+        var ticker = ProgressPumpAsync(pump.Token);
+        try
+        {
+            foreach (var source in missing)
+            {
+                await UpdateOneSourceAsync(source).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            pump.Cancel();
+            await ticker.ConfigureAwait(false);
+            pump.Dispose();
+        }
+
+        await AfterSourcesChangedAsync().ConfigureAwait(false);
+        if (missing.All(source => _sourceErrors.GetValueOrDefault(source.Name) is not null))
         {
             throw new InvalidOperationException("geo download failed");
         }

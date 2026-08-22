@@ -1189,6 +1189,12 @@
   <data name="Source_DetailLoaded" xml:space="preserve">
     <value>{0} · {1} категорий · {2}</value>
   </data>
+  <data name="Source_DownloadProgress" xml:space="preserve">
+    <value>{0} из {1} МБ</value>
+  </data>
+  <data name="Source_DownloadProgressUnknown" xml:space="preserve">
+    <value>{0} МБ</value>
+  </data>
   <data name="Source_DetailNotLoaded" xml:space="preserve">
     <value>{0} · не загружен</value>
   </data>
@@ -1820,9 +1826,6 @@
   <data name="Main_NamesUnrouted" xml:space="preserve">
     <value>правила по доменам не работают: имена на этой машине разрешает другая программа (например, корпоративный VPN-клиент), а не приложение. Эти сайты идут мимо туннеля или вовсе не открываются</value>
   </data>
-  <data name="Main_IsActiveBadge" xml:space="preserve">
-    <value>Активна</value>
-  </data>
   <data name="Main_CardActiveFlag" xml:space="preserve">
     <value>Выбран</value>
   </data>
@@ -1853,11 +1856,8 @@
   <data name="Main_DisconnectNowLink" xml:space="preserve">
     <value>Отключиться</value>
   </data>
-  <data name="Main_UseRoutingToggle" xml:space="preserve">
-    <value>Использовать этот список</value>
-  </data>
-  <data name="Main_ConfigIdleNotice" xml:space="preserve">
-    <value>Пока не активна</value>
+  <data name="Main_InUseToggle" xml:space="preserve">
+    <value>Используется</value>
   </data>
   <data name="Main_SwitchOn" xml:space="preserve">
     <value>Вкл</value>

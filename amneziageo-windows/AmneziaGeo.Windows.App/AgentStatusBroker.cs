@@ -62,6 +62,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     // Per-source progress: 0-100 while downloading, -1 while re-materializing. Presence means "updating".
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _updating = new(StringComparer.Ordinal);
 
+    // Per-source download volume: bytes taken and the announced size, while a download is in flight.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> _updatingBytes = new(StringComparer.Ordinal);
+
     // Per-source "update available" flag; surfaced on SourceEntry.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
@@ -1853,7 +1856,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                     {
                         var srcSw = System.Diagnostics.Stopwatch.StartNew();
                         var before = await store.GetGeoFileAsync(source.Name);
-                        var after = await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name));
+                        var after = await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, _updatingBytes, source.Name));
                         // Compare by content hash, not timestamp; 304 leaves the hash equal.
                         var srcChanged = before is null || !string.Equals(before.Sha256, after.Sha256, StringComparison.Ordinal);
                         if (srcChanged)
@@ -1875,6 +1878,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                         logger.LogWarning(ex, "the rule database {Name} could not be downloaded; the copy already on disk stays in use, rules do not change", source.Name);
                         _lastError[source.Name] = ShortError(ex);
                         _updating.TryRemove(source.Name, out _);
+                        _updatingBytes.TryRemove(source.Name, out _);
                     }
                 }));
 
@@ -1900,6 +1904,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 foreach (var source in pending)
                 {
                     _updating.TryRemove(source.Name, out _);
+                    _updatingBytes.TryRemove(source.Name, out _);
                 }
 
                 pump.Cancel();
@@ -1995,11 +2000,15 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         }
     }
 
-    private sealed class SourceProgress(System.Collections.Concurrent.ConcurrentDictionary<string, int> map, string name) : IProgress<int>
+    private sealed class SourceProgress(
+        System.Collections.Concurrent.ConcurrentDictionary<string, int> map,
+        System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> bytes,
+        string name) : IProgress<GeoDownload>
     {
-        public void Report(int value)
+        public void Report(GeoDownload value)
         {
-            map[name] = value;
+            map[name] = value.Percent;
+            bytes[name] = value;
         }
     }
 
@@ -2309,7 +2318,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             {
                 try
                 {
-                    await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, source.Name), ct);
+                    await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, _updatingBytes, source.Name), ct);
                     _updateAvailable[source.Name] = false;
                     _lastError.TryRemove(source.Name, out _);
                 }
@@ -2342,6 +2351,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             foreach (var source in sources)
             {
                 _updating.TryRemove(source.Name, out _);
+                _updatingBytes.TryRemove(source.Name, out _);
             }
 
             pump.Cancel();
@@ -2425,7 +2435,8 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             var updateAvailable = _updateAvailable.TryGetValue(source.Name, out var avail) && avail;
             // Hide stale errors while a retry is in flight.
             var error = !updating && _lastError.TryGetValue(source.Name, out var err) ? err : null;
-            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable, error));
+            var volume = _updatingBytes.GetValueOrDefault(source.Name);
+            sources.Add(new SourceEntry(source.Name, source.Kind, source.Url, updated, meta?.CategoryCount ?? 0, updating, updating ? percent : 0, updateAvailable, error, updating ? volume.Read : 0, updating ? volume.Total : 0));
         }
 
         var update = updateState.Latest;

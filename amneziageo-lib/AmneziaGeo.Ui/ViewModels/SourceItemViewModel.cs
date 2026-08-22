@@ -1,3 +1,4 @@
+using System.Globalization;
 using AmneziaGeo.Localization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -51,6 +52,7 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowProgress))]
+    [NotifyPropertyChangedFor(nameof(ShowDownload))]
     [NotifyPropertyChangedFor(nameof(ShowUpdateBadge))]
     private bool _updating;
 
@@ -65,6 +67,22 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowProgress))]
     [NotifyPropertyChangedFor(nameof(ProgressText))]
     private int _progress;
+
+    /// <summary>
+    /// Принятые байты текущей загрузки.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDownload))]
+    [NotifyPropertyChangedFor(nameof(DownloadText))]
+    private long _downloaded;
+
+    /// <summary>
+    /// Объявленный размер файла, 0 при неизвестном.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDownload))]
+    [NotifyPropertyChangedFor(nameof(DownloadText))]
+    private long _totalBytes;
 
     /// <summary>
     /// True when a newer remote file was found.
@@ -99,6 +117,20 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     public string ProgressText => $"{Progress}%";
 
     /// <summary>
+    /// Заменяет ли адрес во второй строке объём загрузки.
+    /// </summary>
+    public bool ShowDownload => Updating && Downloaded > 0;
+
+    /// <summary>
+    /// Принятые мегабайты и размер файла.
+    /// </summary>
+    public string DownloadText => TotalBytes > 0
+        ? Loc.Instance.Get("Source_DownloadProgress", Megabytes(Downloaded), Megabytes(TotalBytes))
+        : Loc.Instance.Get("Source_DownloadProgressUnknown", Megabytes(Downloaded));
+
+    private static string Megabytes(long bytes) => (bytes / 1048576d).ToString("0.0", CultureInfo.CurrentCulture);
+
+    /// <summary>
     /// True while the row shows its inline kind/url editor.
     /// </summary>
     [ObservableProperty]
@@ -122,6 +154,7 @@ internal sealed partial class SourceItemViewModel : ViewModelBase
     public void RefreshLocalizedLabels()
     {
         OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(DownloadText));
     }
 
     [RelayCommand]

@@ -1111,26 +1111,27 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             : SessionReport.Empty.ToPayload());
     }
 
-    // Every destination the agent can put a name to: what it resolved for this config before, which outlives a
-    // disconnect, and what the tunnel carries right now.
+    // Every destination the agent can put a name to: what was measured before, what it resolved for this config,
+    // which outlives a disconnect, and what the tunnel carries right now. Only a rule-backed name is ever
+    // resolved, so under a routing list of addresses the journal is the only source that carries names at all.
     private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
     {
         var (config, _) = await InspectTargetAsync(ct);
-        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var hosts = new List<string>(await logStore.ListProbeTargetsAsync(KnownHostList.HistoryRows, ct));
         if (config.Length > 0)
         {
             foreach (var resolution in await store.ListDomainResolutionsAsync(config, ct))
             {
-                names.Add(resolution.Domain);
+                hosts.Add(resolution.Domain);
             }
 
             foreach (var held in inspector.HeldSessions(config).Sessions)
             {
-                names.Add(held.Name.Length > 0 ? held.Name : held.Host);
+                hosts.Add(held.Name.Length > 0 ? held.Name : held.Host);
             }
         }
 
-        return new IpcAck(true, string.Join('\n', names.Where(name => name.Length > 0)));
+        return new IpcAck(true, KnownHostList.Payload(hosts));
     }
 
     // The tunnel the config screen reports on: the running one while this user owns it, otherwise the config

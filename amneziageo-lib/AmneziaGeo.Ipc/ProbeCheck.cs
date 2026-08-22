@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 
 namespace AmneziaGeo.Ipc;
@@ -61,7 +62,7 @@ public static class ProbeVerdicts
     public const string NoRate = "Probe_NoRate";
 
     /// <summary>
-    /// Both rates measured. Args: receive Mbit/s, send Mbit/s.
+    /// Both rates measured. Args: receive Mbit/s, send Mbit/s, the service the send leg was measured against.
     /// </summary>
     public const string Measured = "Probe_Measured";
 
@@ -186,7 +187,9 @@ public static class ProbePhrase
     {
         return key switch
         {
-            ProbeVerdicts.Measured => $"{Arg(args, 0)} Mbit/s in, {Arg(args, 1)} Mbit/s out",
+            ProbeVerdicts.Measured => args.Count > 2
+                ? $"{Arg(args, 0)} Mbit/s in, {Arg(args, 1)} Mbit/s out against {Arg(args, 2)}"
+                : $"{Arg(args, 0)} Mbit/s in, {Arg(args, 1)} Mbit/s out",
             ProbeVerdicts.NoRate => $"{Arg(args, 0)} answers but hands over too little to time a rate",
             ProbeVerdicts.PathUnavailable => $"this system cannot hold traffic {Arg(args, 0)} the tunnel, so nothing was measured",
             ProbeVerdicts.NotConnected => "no tunnel runs, so this path could not be measured",
@@ -197,5 +200,43 @@ public static class ProbePhrase
     private static string Arg(IReadOnlyList<string> args, int index)
     {
         return index < args.Count ? args[index] : "?";
+    }
+}
+
+/// <summary>
+/// What the probe field offers under it: everything the agent can put a name to, names before bare addresses.
+/// </summary>
+public static class KnownHostList
+{
+    /// <summary>
+    /// Rows of the probe journal the destinations measured before are read from.
+    /// </summary>
+    public const int HistoryRows = 200;
+
+    /// <summary>
+    /// Renders the list as the ack payload: names first, then addresses, each sorted and offered once.
+    /// </summary>
+    public static string Payload(IEnumerable<string> hosts)
+    {
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var addresses = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var host in hosts)
+        {
+            var trimmed = host.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            if (IPAddress.TryParse(trimmed, out _))
+            {
+                addresses.Add(trimmed);
+                continue;
+            }
+
+            names.Add(trimmed);
+        }
+
+        return string.Join('\n', names.Concat(addresses));
     }
 }

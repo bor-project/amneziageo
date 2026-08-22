@@ -300,6 +300,49 @@ public sealed class SqliteLogStore : IDisposable
     }
 
     /// <summary>
+    /// Destinations the probe journal already carries, newest first: what was measured once is what the field
+    /// offers next time, whatever the routing puts a name to.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListProbeTargetsAsync(int limit, CancellationToken ct = default)
+    {
+        await FlushAsync(ct).ConfigureAwait(false);
+        var found = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var connection = await OpenAsync(ct).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = $"SELECT msg FROM {ProbeTable} ORDER BY id DESC LIMIT $limit;";
+                command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 2000));
+                var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
+                {
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        var target = TargetOf(reader.IsDBNull(0) ? string.Empty : reader.GetString(0));
+                        if (target.Length > 0 && seen.Add(target))
+                        {
+                            found.Add(target);
+                        }
+                    }
+                }
+            }
+        }
+
+        return found;
+    }
+
+    // The destination a rendered probe opens with: "probe <target> over <path> at <time>".
+    private static string TargetOf(string message)
+    {
+        var end = message.IndexOf('\n');
+        var head = (end >= 0 ? message[..end] : message).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return head.Length > 2 && head[0] == "probe" ? head[1] : string.Empty;
+    }
+
+    /// <summary>
     /// Empties one table; the growing key keeps advancing (ids are never reused).
     /// </summary>
     public async Task ClearAsync(string table, CancellationToken ct = default)

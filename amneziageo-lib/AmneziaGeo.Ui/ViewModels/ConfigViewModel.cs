@@ -52,6 +52,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(IsSectionExport))]
     [NotifyPropertyChangedFor(nameof(DeleteConfigPrompt))]
     [NotifyPropertyChangedFor(nameof(IsOpenConfigActive))]
+    [NotifyPropertyChangedFor(nameof(UseOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowConnectOpenConfig))]
     [NotifyPropertyChangedFor(nameof(CanExportOpenConfig))]
     [NotifyPropertyChangedFor(nameof(ShowNoConfigsHint))]
@@ -313,6 +314,7 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     public void NotifyActiveConfigChanged()
     {
         OnPropertyChanged(nameof(IsOpenConfigActive));
+        OnPropertyChanged(nameof(UseOpenConfig));
         OnPropertyChanged(nameof(ShowConnectOpenConfig));
     }
 
@@ -321,6 +323,38 @@ internal sealed partial class ConfigViewModel : ViewModelBase
     /// </summary>
     public bool IsOpenConfigActive =>
         OpenConfig is { Length: > 0 } && string.Equals(OpenConfig, _host.Home.ActiveConfig?.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Используется ли открытая конфигурация. Тумблер ставит её целью или снимает выбор.
+    /// </summary>
+    public bool UseOpenConfig
+    {
+        get => IsOpenConfigActive;
+        set
+        {
+            if (value == IsOpenConfigActive)
+            {
+                return;
+            }
+
+            _ = UseOpenConfigAsync(value);
+        }
+    }
+
+    // Отправляет выбор и перечитывает тумблер из состояния, которое вышло.
+    private async Task UseOpenConfigAsync(bool used)
+    {
+        if (!used)
+        {
+            await _host.Home.ClearActiveConfigAsync();
+        }
+        else if (Configs.FirstOrDefault(row => string.Equals(row.Name, OpenConfig, StringComparison.Ordinal)) is { } target)
+        {
+            await _host.Home.UseConfigAsync(target);
+        }
+
+        OnPropertyChanged(nameof(UseOpenConfig));
+    }
 
     /// <summary>
     /// Whether the open config offers to be dialled: the agent is there and no tunnel runs yet. Dialling is how

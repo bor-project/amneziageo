@@ -131,6 +131,8 @@ internal sealed partial class SourcesViewModel : ViewModelBase
             existing.CategoryCount = entry.CategoryCount;
             existing.Updating = entry.Updating;
             existing.Progress = entry.Progress;
+            existing.Downloaded = entry.Downloaded;
+            existing.TotalBytes = entry.TotalBytes;
             existing.UpdateAvailable = entry.UpdateAvailable;
             existing.Error = entry.Error;
         }

@@ -5,6 +5,7 @@ namespace AmneziaGeo.Ipc;
 /// null when the source has never been downloaded. Updating is true while a download is in flight.
 /// Progress is the download percent (0-100), or -1 while re-materializing. UpdateAvailable is true when
 /// the last update-check found a newer remote file. Error is the last download/parse failure, or null.
+/// Downloaded and TotalBytes are the bytes taken so far and the size the server announced, 0 when unknown.
 /// </summary>
 public sealed record SourceEntry(
     string Name,
@@ -15,4 +16,6 @@ public sealed record SourceEntry(
     bool Updating = false,
     int Progress = 0,
     bool UpdateAvailable = false,
-    string? Error = null);
+    string? Error = null,
+    long Downloaded = 0,
+    long TotalBytes = 0);

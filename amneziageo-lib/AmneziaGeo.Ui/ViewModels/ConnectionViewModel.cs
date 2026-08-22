@@ -723,6 +723,20 @@ internal sealed partial class ConnectionViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Делает конфигурацию используемой: живой туннель переезжает на неё, иначе меняется только цель.
+    /// </summary>
+    internal Task UseConfigAsync(ConfigItemViewModel row)
+    {
+        if (IsTunnelActive && !string.Equals(BoundTarget, row.Name, StringComparison.Ordinal))
+        {
+            return ConnectConfig(row);
+        }
+
+        ActiveConfig = row;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Leaves no configuration selected. A live tunnel is bound to the one being unpicked, so it goes down
     /// first; a refused disconnect keeps the selection. The agent is told before the card, so a snapshot still
     /// carrying the old target cannot put it back.

@@ -1063,6 +1063,19 @@ internal sealed class TunnelRunner(
             return inspector.Sessions().ToPayload();
         }
 
+        if (op.StartsWith(RuntimeSnapshotPipe.OpProbe, StringComparison.Ordinal))
+        {
+            var asked = op.Split('\t');
+            var report = await ProbeRoute.RunAsync(
+                routing,
+                asked.Length > 1 ? asked[1] : string.Empty,
+                asked.Length > 2 && asked[2].Length > 0 ? asked[2] : ProbePaths.Auto,
+                asked.Length > 3 ? asked[3] : string.Empty,
+                ct);
+            logger.LogInformation("probe: {Header}", report.Render().Split('\n')[0].Trim());
+            return report.ToPayload();
+        }
+
         return System.Text.Json.JsonSerializer.Serialize(inspector.Collect());
     }
 

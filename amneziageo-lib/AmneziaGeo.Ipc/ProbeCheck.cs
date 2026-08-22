@@ -197,10 +197,82 @@ public static class ProbePhrase
         };
     }
 
+    /// <summary>
+    /// Reads a rendered verdict back into the key and arguments it was made from; a phrase this does not know
+    /// comes back with an empty key.
+    /// </summary>
+    public static (string Key, IReadOnlyList<string> Args) Read(string sentence)
+    {
+        if (sentence == NotConnected)
+        {
+            return (ProbeVerdicts.NotConnected, []);
+        }
+
+        if (Between(sentence, RefusedHead, RefusedTail) is { } side)
+        {
+            return (ProbeVerdicts.PathUnavailable, [side]);
+        }
+
+        if (Before(sentence, ThinTail) is { } thin)
+        {
+            return (ProbeVerdicts.NoRate, [thin]);
+        }
+
+        if (Before(sentence, SilentTail) is { } silent)
+        {
+            return (ProbeVerdicts.Unreachable, [silent]);
+        }
+
+        return Rates(sentence);
+    }
+
+    // The two rates and the service the send leg was measured against.
+    private static (string Key, IReadOnlyList<string> Args) Rates(string sentence)
+    {
+        var into = sentence.IndexOf(RateIn, StringComparison.Ordinal);
+        var outOf = sentence.IndexOf(RateOut, StringComparison.Ordinal);
+        if (into <= 0 || outOf <= into)
+        {
+            return (string.Empty, []);
+        }
+
+        var down = sentence[..into];
+        var up = sentence[(into + RateIn.Length)..outOf];
+        var tail = sentence[(outOf + RateOut.Length)..];
+        return tail.StartsWith(Against, StringComparison.Ordinal)
+            ? (ProbeVerdicts.Measured, [down, up, tail[Against.Length..]])
+            : (ProbeVerdicts.Measured, [down, up]);
+    }
+
+    private static string? Before(string text, string tail)
+    {
+        return text.EndsWith(tail, StringComparison.Ordinal) && text.Length > tail.Length
+            ? text[..^tail.Length]
+            : null;
+    }
+
+    private static string? Between(string text, string head, string tail)
+    {
+        return text.StartsWith(head, StringComparison.Ordinal)
+            && text.EndsWith(tail, StringComparison.Ordinal)
+            && text.Length > head.Length + tail.Length
+                ? text[head.Length..^tail.Length]
+                : null;
+    }
+
     private static string Arg(IReadOnlyList<string> args, int index)
     {
         return index < args.Count ? args[index] : "?";
     }
+
+    private const string RateIn = " Mbit/s in, ";
+    private const string RateOut = " Mbit/s out";
+    private const string Against = " against ";
+    private const string ThinTail = " answers but hands over too little to time a rate";
+    private const string SilentTail = " never answered";
+    private const string RefusedHead = "this system cannot hold traffic ";
+    private const string RefusedTail = " the tunnel, so nothing was measured";
+    private const string NotConnected = "no tunnel runs, so this path could not be measured";
 }
 
 /// <summary>

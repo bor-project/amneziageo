@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 using AmneziaGeo.Ipc;
 using AmneziaGeo.Localization;
@@ -59,6 +60,111 @@ internal static class ProbeWords
     }
 
     /// <summary>
+    /// The verdict over the legs.
+    /// </summary>
+    public static string Verdict(string sentence)
+    {
+        var (key, args) = ProbePhrase.Read(sentence);
+        if (key.Length == 0)
+        {
+            return sentence;
+        }
+
+        if (key == ProbeVerdicts.PathUnavailable)
+        {
+            return Loc.Instance.Get(key, Side(args.Count > 0 ? args[0] : string.Empty));
+        }
+
+        return key == ProbeVerdicts.Measured && args.Count < 3
+            ? Loc.Instance.Get("Probe_MeasuredPlain", [.. args])
+            : Loc.Instance.Get(key, [.. args]);
+    }
+
+    /// <summary>
+    /// What a leg measured; a phrase with no name of its own goes on as it stands.
+    /// </summary>
+    public static string Detail(string text)
+    {
+        var parts = new List<string>();
+        var rest = text;
+        while (rest.Length > 0)
+        {
+            if (Said(rest) is { } said)
+            {
+                parts.Add(said.Text);
+                rest = rest[said.Length..].TrimStart(' ', ',');
+                continue;
+            }
+
+            var stop = rest.IndexOf(", ", StringComparison.Ordinal);
+            if (stop < 0)
+            {
+                parts.Add(rest);
+                break;
+            }
+
+            parts.Add(rest[..stop]);
+            rest = rest[(stop + 2)..];
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    // Which side of the tunnel a refused run asked for.
+    private static string Side(string word)
+    {
+        return word switch
+        {
+            "through" => Loc.Instance.Get("Probe_SideThrough"),
+            "past" => Loc.Instance.Get("Probe_SidePast"),
+            _ => word,
+        };
+    }
+
+    // The phrase the text opens with, named in the reader's language.
+    private static (string Text, int Length)? Said(string text)
+    {
+        foreach (var (pattern, key) in _phrases)
+        {
+            var match = pattern.Match(text);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var args = match.Groups.Values.Skip(1).Select(group => (object?)group.Value).ToArray();
+            return (Loc.Instance.Get(key, args), match.Length);
+        }
+
+        return null;
+    }
+
+    // What a leg says, tried in this order: a phrase carrying a comma comes before the parts around it.
+    private static readonly (Regex Pattern, string Key)[] _phrases =
+    [
+        (new Regex(@"^handed over ([^,]+), too little to time"), "Probe_NoteThin"),
+        (new Regex(@"^handed over nothing to time"), "Probe_NoteNothing"),
+        (new Regex(@"^rx ([^,]+), tx (\S+)"), "Probe_MetricTraffic"),
+        (new Regex(@"^rtt (\S+) ms"), "Probe_MetricRtt"),
+        (new Regex(@"^jitter (\S+) ms"), "Probe_MetricJitter"),
+        (new Regex(@"^loss (\S+)%"), "Probe_MetricLoss"),
+        (new Regex(@"^(\S+)-byte packets pass"), "Probe_MetricPackets"),
+        (new Regex(@"^age (\S+) s"), "Probe_MetricAge"),
+        (new Regex(@"^(\S+) rekey\(s\) per minute"), "Probe_MetricRekeys"),
+        (new Regex(@"^(\S+) Mbit/s"), "Probe_MetricRate"),
+        (new Regex(@"^against (\S+)"), "Probe_NoteAgainst"),
+        (new Regex(@"^the name does not resolve"), "Probe_NoteNoResolve"),
+        (new Regex(@"^(\S+) answers on (\S+)"), "Probe_NoteAnswersOn"),
+        (new Regex(@"^(\S+) accepted no connection"), "Probe_NoteNoConnection"),
+        (new Regex(@"^(\S+) never answered"), "Probe_NoteNeverAnswered"),
+        (new Regex(@"^not an address"), "Probe_NoteNotAddress"),
+        (new Regex(@"^no address to probe"), "Probe_NoteNoAddress"),
+        (new Regex(@"^the download never started"), "Probe_NoteNoDownload"),
+        (new Regex(@"^the upload never started"), "Probe_NoteNoUpload"),
+        (new Regex(@"^took nothing to time"), "Probe_NoteNoTime"),
+    ];
+
+    /// <summary>
     /// How a leg came out.
     /// </summary>
     public static string State(string state)
@@ -106,6 +212,11 @@ internal sealed record ProbeLegItem(string Name, string State, string Detail)
     public bool IsBad => State == LegState.Bad;
 
     /// <summary>
+    /// What the leg measured, in the reader's language.
+    /// </summary>
+    public string DetailText => ProbeWords.Detail(Detail);
+
+    /// <summary>
     /// Whether the leg found anything to say.
     /// </summary>
     public bool HasDetail => Detail.Length > 0;
@@ -131,6 +242,11 @@ internal sealed record ProbeEntryItem(
     public string PathText => Taken.Length > 0
         ? ProbeWords.Path(Path) + " → " + ProbeWords.Taken(Taken)
         : ProbeWords.Path(Path);
+
+    /// <summary>
+    /// The verdict over the legs, in the reader's language.
+    /// </summary>
+    public string VerdictText => ProbeWords.Verdict(Verdict);
 
     /// <summary>
     /// Whether a leg died or the destination never answered.

@@ -356,7 +356,7 @@
                                              FontSize="{svc:Unscaled 11.5}" FontWeight="SemiBold"
                                              Classes="legstate" Classes.good="{Binding IsGood}"
                                              Classes.weak="{Binding IsWeak}" Classes.bad="{Binding IsBad}" />
-                                  <TextBlock Grid.Column="2" Text="{Binding Detail}" TextWrapping="Wrap"
+                                  <TextBlock Grid.Column="2" Text="{Binding DetailText}" TextWrapping="Wrap"
                                              FontSize="{svc:Unscaled 11.5}" IsVisible="{Binding HasDetail}"
                                              Foreground="{DynamicResource AgFgBrush}" />
                                 </Grid>
@@ -364,7 +364,7 @@
                             </ItemsControl.ItemTemplate>
                           </ItemsControl>
                           <Border Classes="hairline" IsVisible="{Binding HasVerdict}" />
-                          <TextBlock Text="{Binding Verdict}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
+                          <TextBlock Text="{Binding VerdictText}" TextWrapping="Wrap" FontSize="{svc:Unscaled 12.5}"
                                      IsVisible="{Binding HasVerdict}"
                                      Foreground="{DynamicResource AgFgBrush}" />
                         </StackPanel>

@@ -1838,6 +1838,12 @@ Run AmneziaGeoSetup.exe - that is the installer.</value>
   <data name="Main_CardTagUdp" xml:space="preserve">
     <value>UDP</value>
   </data>
+  <data name="Main_CardTagMtu" xml:space="preserve">
+    <value>MTU {0}</value>
+  </data>
+  <data name="Main_CardTagMtuAuto" xml:space="preserve">
+    <value>MTU auto</value>
+  </data>
   <data name="Main_CardSettingsLink" xml:space="preserve">
     <value>Settings</value>
   </data>

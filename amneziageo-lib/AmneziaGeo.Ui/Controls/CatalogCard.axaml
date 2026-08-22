@@ -20,73 +20,78 @@
   <Button x:Name="FacePart" Classes="serverrow noclick" Classes.off="{Binding !IsSelected}">
     <Panel>
       <Grid RowDefinitions="Auto,Auto">
-        <!-- Имя и подключение: имя занимает строку целиком, кнопка жмётся последней. -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="12,10">
-          <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
-                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-          <!-- Подключение: со своей конфигурации туннель снимает, с чужой переносит его сюда. Круг повторяет
-               кнопку в шапке: цвет состояния и дуга на переключении. -->
-          <Button x:Name="ConnectPart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
-                  ToolTip.Tip="{Binding CardActionText}"
-                  Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
-            <Panel Width="28" Height="28">
-              <Ellipse Classes="connspin" Classes.spinning="{Binding CardBusy}"
-                       Width="26" Height="26" Stroke="{Binding CardPowerForeground}"
-                       StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-              <Border Width="22" Height="22" CornerRadius="11"
-                      Background="{Binding CardPowerBrush}"
-                      BorderBrush="{Binding CardPowerBorderBrush}" BorderThickness="1"
-                      HorizontalAlignment="Center" VerticalAlignment="Center">
-                <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
-                          Foreground="{Binding CardPowerForeground}"
-                          IsVisible="{Binding !CardBusy}"
-                          HorizontalAlignment="Center" VerticalAlignment="Center" />
-              </Border>
-            </Panel>
-          </Button>
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
+          <!-- Имя и подключение: имя занимает строку целиком, кнопка жмётся последней. -->
+          <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <!-- Подключение: со своей конфигурации туннель снимает, с чужой переносит его сюда. Круг повторяет
+                 кнопку в шапке: цвет состояния и дуга на переключении. -->
+            <Button x:Name="ConnectPart" Grid.Column="1" Classes="cardpower" VerticalAlignment="Center"
+                    ToolTip.Tip="{Binding CardActionText}"
+                    Command="{Binding $parent[controls:CatalogCard].ConnectCommand}" CommandParameter="{Binding}">
+              <Panel Width="28" Height="28">
+                <Ellipse Classes="connspin" Classes.spinning="{Binding CardBusy}"
+                         Width="26" Height="26" Stroke="{Binding CardPowerForeground}"
+                         StrokeThickness="2" StrokeDashArray="12,29" StrokeLineCap="Round"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border Width="22" Height="22" CornerRadius="11"
+                        Background="{Binding CardPowerBrush}"
+                        BorderBrush="{Binding CardPowerBorderBrush}" BorderThickness="1"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <PathIcon Data="{DynamicResource AgPowerGeometry}" Width="11" Height="11"
+                            Foreground="{Binding CardPowerForeground}"
+                            IsVisible="{Binding !CardBusy}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+              </Panel>
+            </Button>
+          </Grid>
+
+          <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места.
+               Отступы стоят на группах: скрытая скорость не оставляет прогала. Потери ужимаются первыми. -->
+          <Grid Grid.Row="1" Classes="cardinfo" ColumnDefinitions="Auto,Auto,*" Margin="0,8,0,0"
+                VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
+              <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
+                        Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
+                         FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                         IsVisible="{Binding !Probing}" />
+              <!-- Идёт замер: точки приподнимаются по очереди на месте отклика. -->
+              <StackPanel Orientation="Horizontal" Spacing="3" Height="13" VerticalAlignment="Center"
+                          IsVisible="{Binding Probing}">
+                <Ellipse Classes="dot d1" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <Ellipse Classes="dot d2" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                <Ellipse Classes="dot d3" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+              </StackPanel>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
+                        IsVisible="{Binding ShowLinkSpeed}">
+              <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="13" Height="13"
+                        Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </StackPanel>
+            <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="5">
+              <PathIcon Grid.Column="0" Data="{StaticResource AgCardLossGeometry}" Width="13" Height="13"
+                        Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding CardLossText}" FontSize="12.5"
+                         Foreground="{Binding CardLossBrush}"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </Grid>
+          </Grid>
         </Grid>
 
-        <!-- Подвал карточки: замер слева, настройки справа своей кнопкой. -->
-        <Border Grid.Row="1" Classes="cardfoot" Padding="12,8">
+        <!-- Подвал карточки: метки настроек слева, настройки конфигурации справа. -->
+        <Border Grid.Row="1" Classes="cardfoot">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <!-- Отклик, скорость и потери: иконка и значение, «N/A» вместо пустого места.
-                 Отступы стоят на группах: скрытая скорость не оставляет прогала. Потери ужимаются первыми. -->
-            <Grid Grid.Column="0" ColumnDefinitions="Auto,Auto,*" VerticalAlignment="Center">
-              <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0">
-                <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
-                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
-                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                           IsVisible="{Binding !Probing}" />
-                <!-- Идёт замер: точки приподнимаются по очереди на месте отклика. -->
-                <StackPanel Orientation="Horizontal" Spacing="3" Height="13" VerticalAlignment="Center"
-                            IsVisible="{Binding Probing}">
-                  <Ellipse Classes="dot d1" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                  <Ellipse Classes="dot d2" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                  <Ellipse Classes="dot d3" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                </StackPanel>
-              </StackPanel>
-              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
-                          IsVisible="{Binding ShowLinkSpeed}">
-                <PathIcon Data="{StaticResource AgCardTrafficGeometry}" Width="13" Height="13"
-                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding CardSpeedText}" FontSize="12.5" Classes="muted"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-              </StackPanel>
-              <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="5">
-                <PathIcon Grid.Column="0" Data="{StaticResource AgCardLossGeometry}" Width="13" Height="13"
-                          Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="{Binding CardLossText}" FontSize="12.5"
-                           Foreground="{Binding CardLossBrush}"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-              </Grid>
-            </Grid>
+            <controls:CardTags Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
             <!-- Шестерёнка встаёт под кнопку подключения: ширина кнопки повторяет её. -->
-            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="7" Width="34"
+            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick cardgear"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:CatalogCard].OpenCommand}" CommandParameter="{Binding}">
-              <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="16" Height="16" />
+              <PathIcon Data="{StaticResource AgCardGearGeometry}" Width="15" Height="15" />
             </Button>
           </Grid>
         </Border>

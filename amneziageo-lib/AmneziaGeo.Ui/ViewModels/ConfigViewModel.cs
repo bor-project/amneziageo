@@ -149,6 +149,11 @@ internal sealed partial class ConfigViewModel : ViewModelBase
 
     private void OnCultureChanged()
     {
+        foreach (var config in Configs)
+        {
+            config.RefreshLocalizedLabels();
+        }
+
         OnPropertyChanged(nameof(DeleteConfigPrompt));
     }
 

@@ -19,7 +19,7 @@
       <Grid RowDefinitions="Auto,Auto">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" Margin="12,10">
           <!-- Имя и флаг применения: имя занимает строку целиком, метки режимов ушли в подвал. -->
-          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <Grid Grid.Row="0" Classes="cardhead" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="15" FontWeight="SemiBold"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             <!-- Флаг применения: та же связка, что и в настройках списка. -->
@@ -31,7 +31,8 @@
           </Grid>
 
           <!-- Состав списка: сколько правил уводит в туннель, сколько пускает мимо и сколько глушит. -->
-          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
+          <StackPanel Grid.Row="1" Classes="cardinfo" Orientation="Horizontal" Spacing="10"
+                      Margin="0,8,0,0">
             <StackPanel Orientation="Horizontal" Spacing="5">
               <Ellipse Width="6" Height="6" VerticalAlignment="Center"
                        Fill="{DynamicResource AgAccentBrush}" />
@@ -56,15 +57,8 @@
         <!-- Подвал карточки: метки режимов слева, настройки списка справа. -->
         <Border Grid.Row="1" Classes="cardfoot">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-              <Border Classes="cardchip cardtag" Classes.off="{Binding !UseGlobalProxy}">
-                <TextBlock Text="{l:Tr Main_CardTagGlobal}" FontSize="11.5" FontWeight="SemiBold" />
-              </Border>
-              <Border Classes="cardchip cardtag" Classes.off="{Binding !AllUdp}">
-                <TextBlock Text="{l:Tr Main_CardTagUdp}" FontSize="11.5" FontWeight="SemiBold" />
-              </Border>
-            </StackPanel>
-            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick" Padding="7"
+            <controls:CardTags Grid.Column="0" Tags="{Binding Tags}" VerticalAlignment="Center" />
+            <Button x:Name="SettingsPart" Grid.Column="1" Classes="methodpick cardgear"
                     ToolTip.Tip="{l:Tr Main_CardSettingsLink}"
                     Command="{Binding $parent[controls:RoutingCard].OpenCommand}" CommandParameter="{Binding}">
               <PathIcon Data="{StaticResource AgListGearGeometry}" Width="15" Height="15" />

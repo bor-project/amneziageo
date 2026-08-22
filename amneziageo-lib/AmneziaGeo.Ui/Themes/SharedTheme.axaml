@@ -262,6 +262,20 @@
       <Setter Property="Foreground" Value="{DynamicResource AgMutedBrush}" />
     </Style>
 
+    <!-- Шапка карточки и строка сведений под ней: высоты держатся одни во всяком каталоге. -->
+    <Style Selector=".cardhead" x:SetterTargetType="Control">
+      <Setter Property="MinHeight" Value="34" />
+    </Style>
+    <Style Selector=".cardinfo" x:SetterTargetType="Control">
+      <Setter Property="MinHeight" Value="20" />
+    </Style>
+
+    <!-- Шестерёнка карточки: один размер во всяком каталоге. -->
+    <Style Selector="Button.cardgear">
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Padding" Value="7" />
+    </Style>
+
     <!-- Подвал карточки: действия отделены полосой, фон остаётся карточкин - на нём видны мягкие кнопки. -->
     <Style Selector="Border.cardfoot">
       <Setter Property="BorderBrush" Value="{DynamicResource AgBorderBrush}" />

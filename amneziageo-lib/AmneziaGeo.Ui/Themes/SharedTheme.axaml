@@ -796,6 +796,43 @@
       </Style.Animations>
     </Style>
 
+    <!-- Bouncing dots: a measurement in flight. -->
+    <Style Selector="Ellipse.dot">
+      <Setter Property="Width" Value="4" />
+      <Setter Property="Height" Value="4" />
+      <Setter Property="RenderTransform" Value="translateY(0px)" />
+    </Style>
+    <Style Selector="Ellipse.dot.d1">
+      <Style.Animations>
+        <Animation Duration="0:0:1.05" Delay="0:0:0" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="18%"><Setter Property="TranslateTransform.Y" Value="-4" /></KeyFrame>
+          <KeyFrame Cue="36%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.dot.d2">
+      <Style.Animations>
+        <Animation Duration="0:0:1.05" Delay="0:0:0.15" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="18%"><Setter Property="TranslateTransform.Y" Value="-4" /></KeyFrame>
+          <KeyFrame Cue="36%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <Style Selector="Ellipse.dot.d3">
+      <Style.Animations>
+        <Animation Duration="0:0:1.05" Delay="0:0:0.3" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="18%"><Setter Property="TranslateTransform.Y" Value="-4" /></KeyFrame>
+          <KeyFrame Cue="36%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="TranslateTransform.Y" Value="0" /></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+
     <!-- Power-button ring wave during connect / disconnect. -->
     <Style Selector="Ellipse.ring">
       <Setter Property="Opacity" Value="0" />

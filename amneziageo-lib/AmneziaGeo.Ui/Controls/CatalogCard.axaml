@@ -57,7 +57,15 @@
                 <PathIcon Data="{StaticResource AgCardTimerGeometry}" Width="13" Height="13"
                           Foreground="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
                 <TextBlock Text="{Binding ProbeText}" Foreground="{Binding ProbeBrush}" FontSize="12.5"
-                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           IsVisible="{Binding !Probing}" />
+                <!-- Идёт замер: точки приподнимаются по очереди на месте отклика. -->
+                <StackPanel Orientation="Horizontal" Spacing="3" Height="13" VerticalAlignment="Center"
+                            IsVisible="{Binding Probing}">
+                  <Ellipse Classes="dot d1" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                  <Ellipse Classes="dot d2" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                  <Ellipse Classes="dot d3" Fill="{DynamicResource AgMutedBrush}" VerticalAlignment="Center" />
+                </StackPanel>
               </StackPanel>
               <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="0,0,10,0"
                           IsVisible="{Binding ShowLinkSpeed}">

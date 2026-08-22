@@ -82,6 +82,14 @@ internal sealed partial class LogsViewModel : ViewModelBase
             RenderCache();
         }
 
+        // The probe cards name their tokens in the reader's language: the rows are dropped so they are built
+        // again, since the block behind them did not change.
+        if (IsProbeLog)
+        {
+            ProbeEntries.Clear();
+            Render();
+        }
+
         OnPropertyChanged(nameof(SearchSummary));
     }
 
@@ -124,6 +132,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowStoredText));
         OnPropertyChanged(nameof(ShowTableText));
         OnPropertyChanged(nameof(ShowStoredCards));
+        OnPropertyChanged(nameof(ShowProbeCards));
         OnPropertyChanged(nameof(ShowLiveCards));
         Render();
     }
@@ -222,6 +231,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowStoredText));
         OnPropertyChanged(nameof(ShowTableText));
         OnPropertyChanged(nameof(ShowStoredCards));
+        OnPropertyChanged(nameof(ShowProbeCards));
         OnPropertyChanged(nameof(ShowLiveCards));
         ClearView();
         ResetAndReload();
@@ -579,6 +589,11 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public ObservableCollection<LogEntryItem> Entries { get; } = [];
 
     /// <summary>
+    /// Probes as cards, which is what a narrow window shows instead of the block they are rendered as.
+    /// </summary>
+    public ObservableCollection<ProbeEntryItem> ProbeEntries { get; } = [];
+
+    /// <summary>
     /// Destinations as cards, which is what a narrow window shows instead of the text.
     /// </summary>
     public ObservableCollection<LiveRowItem> LiveRows { get; } = [];
@@ -606,6 +621,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowStoredText))]
     [NotifyPropertyChangedFor(nameof(ShowTableText))]
     [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
+    [NotifyPropertyChangedFor(nameof(ShowProbeCards))]
     [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _hasLogs;
 
@@ -616,6 +632,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowStoredText))]
     [NotifyPropertyChangedFor(nameof(ShowTableText))]
     [NotifyPropertyChangedFor(nameof(ShowStoredCards))]
+    [NotifyPropertyChangedFor(nameof(ShowProbeCards))]
     [NotifyPropertyChangedFor(nameof(ShowLiveCards))]
     private bool _isLoading;
 
@@ -642,9 +659,15 @@ internal sealed partial class LogsViewModel : ViewModelBase
     public bool ShowTableText => ShowBody && (IsConfigLog || IsCacheLog || (IsLiveLog && !IsNarrow));
 
     /// <summary>
-    /// Whether the stored rows are shown as cards, which is what a narrow window carries.
+    /// Whether the stored rows are shown as cards, which is what a narrow window carries. The probes are cards
+    /// of their own, laid out from what their block holds.
     /// </summary>
-    public bool ShowStoredCards => ShowBody && IsNarrow && IsStoredLog;
+    public bool ShowStoredCards => ShowBody && IsNarrow && IsStoredLog && !IsProbeLog;
+
+    /// <summary>
+    /// Whether the probes are shown as cards, which is what a narrow window carries.
+    /// </summary>
+    public bool ShowProbeCards => ShowBody && IsNarrow && IsProbeLog;
 
     /// <summary>
     /// Whether the destinations are shown as cards, which is what a narrow window carries.
@@ -752,7 +775,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         _cacheSummary = string.Empty;
         LogText = string.Empty;
         LiveSummary = string.Empty;
-        Entries.Clear();
+        ClearCards();
         LiveRows.Clear();
         HasLogs = false;
         IsLoading = false;
@@ -1236,26 +1259,34 @@ internal sealed partial class LogsViewModel : ViewModelBase
         LiveSummary = string.Empty;
         if (IsConfigLog)
         {
-            Entries.Clear();
+            ClearCards();
             LogText = _report;
             return;
         }
 
         if (IsCacheLog)
         {
-            Entries.Clear();
+            ClearCards();
             RenderCache();
             return;
         }
 
         if (!IsNarrow)
         {
-            Entries.Clear();
+            ClearCards();
             LogText = _lines.Count > 0 ? string.Join('\n', _lines) : string.Empty;
             return;
         }
 
         LogText = string.Empty;
+        if (IsProbeLog)
+        {
+            Entries.Clear();
+            Fill(ProbeEntries, Probes());
+            return;
+        }
+
+        ProbeEntries.Clear();
         var rows = new List<LogEntryItem>(_lines.Count);
         foreach (var line in _lines)
         {
@@ -1265,9 +1296,28 @@ internal sealed partial class LogsViewModel : ViewModelBase
         Fill(Entries, rows);
     }
 
-    private void RenderCarried()
+    // The window as probe cards: one card per rendered probe.
+    private IReadOnlyList<ProbeEntryItem> Probes()
+    {
+        var rows = new List<ProbeEntryItem>(_lines.Count);
+        foreach (var line in _lines)
+        {
+            rows.Add(ProbeEntryItem.Parse(line));
+        }
+
+        return rows;
+    }
+
+    // Drops both card lists: a source fills one of them.
+    private void ClearCards()
     {
         Entries.Clear();
+        ProbeEntries.Clear();
+    }
+
+    private void RenderCarried()
+    {
+        ClearCards();
         LiveSummary = SessionRows.Summary(_carried);
         if (!IsNarrow)
         {

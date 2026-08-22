@@ -1964,6 +1964,48 @@
   <data name="Probe_PathBypass" xml:space="preserve">
     <value>Мимо</value>
   </data>
+  <data name="Probe_LegReach" xml:space="preserve">
+    <value>отклик</value>
+  </data>
+  <data name="Probe_LegReceive" xml:space="preserve">
+    <value>приём</value>
+  </data>
+  <data name="Probe_LegSend" xml:space="preserve">
+    <value>отдача</value>
+  </data>
+  <data name="Probe_StateOk" xml:space="preserve">
+    <value>норма</value>
+  </data>
+  <data name="Probe_StateWeak" xml:space="preserve">
+    <value>слабо</value>
+  </data>
+  <data name="Probe_StateBad" xml:space="preserve">
+    <value>обрыв</value>
+  </data>
+  <data name="Probe_StateUnknown" xml:space="preserve">
+    <value>молчит</value>
+  </data>
+  <data name="Probe_StateSkipped" xml:space="preserve">
+    <value>пропуск</value>
+  </data>
+  <data name="Probe_TakenTunnelRule" xml:space="preserve">
+    <value>туннель по правилу</value>
+  </data>
+  <data name="Probe_TakenTunnelDefault" xml:space="preserve">
+    <value>туннель по умолчанию</value>
+  </data>
+  <data name="Probe_TakenBypassRule" xml:space="preserve">
+    <value>мимо по правилу</value>
+  </data>
+  <data name="Probe_TakenBypassDefault" xml:space="preserve">
+    <value>мимо по умолчанию</value>
+  </data>
+  <data name="Probe_TakenBlocked" xml:space="preserve">
+    <value>блок по правилу</value>
+  </data>
+  <data name="Probe_TakenNoRouting" xml:space="preserve">
+    <value>мимо, маршрутизация не отвечает</value>
+  </data>
   <data name="Probe_RunButton" xml:space="preserve">
     <value>Проверить</value>
   </data>

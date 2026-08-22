@@ -105,7 +105,8 @@
                        Item2Active="{Binding IsProbeTunnel}" Item2Enabled="{Binding CanProbeTunnel}"
                        Item3Text="{l:Tr Probe_PathBypass}" Item3Param="bypass"
                        Item3Active="{Binding IsProbeBypass}" />
-             <Button Grid.Column="1" Classes="accent" Padding="16,7" VerticalAlignment="Center"
+             <Button Grid.Column="1" x:Name="ProbeRunButton" Classes="accent" Padding="16,7"
+                     VerticalAlignment="Center"
                      Command="{Binding RunProbeCommand}" Content="{l:Tr Probe_RunButton}" />
            </Grid>
 

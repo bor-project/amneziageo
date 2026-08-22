@@ -237,7 +237,14 @@ internal sealed partial class LogsViewModel : ViewModelBase
 
     partial void OnTunnelUpChanged(bool value)
     {
-        if (!value && !IsProbeBypass)
+        DropPathWithoutTunnel();
+    }
+
+    // Leaves the path no tunnel can carry: the journal opens on auto, and a run over it is turned down while
+    // nothing is up.
+    private void DropPathWithoutTunnel()
+    {
+        if (!TunnelUp && !IsProbeBypass)
         {
             ProbePath = ProbePaths.Bypass;
         }
@@ -585,6 +592,7 @@ internal sealed partial class LogsViewModel : ViewModelBase
         TunnelUp = snapshot.BoundStatus == ConnectionStatus.Connected;
         ListRouting = snapshot.SelectedRoutingList is not null;
         ServerPicked = !string.IsNullOrEmpty(snapshot.SelectedTarget);
+        DropPathWithoutTunnel();
         SyncProbeSource(snapshot.Configs.Count > 0);
         var picked = snapshot.SelectedTarget ?? string.Empty;
         if (IsProbeLog && _knownFor != (TunnelUp, picked))

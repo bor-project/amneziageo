@@ -66,7 +66,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeoDownload> _updatingBytes = new(StringComparer.Ordinal);
 
     // Per-source "update available" flag; surfaced on SourceEntry.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _updateAvailable = new(StringComparer.Ordinal);
 
     // Per-source last failure message; surfaced on SourceEntry.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _lastError = new(StringComparer.Ordinal);
@@ -250,6 +249,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 IpcContract.OpUpdateSources => await UpdateSourcesAsync(ct),
                 IpcContract.OpUpdateSource => await UpdateSourceAsync(command.Args, ct),
                 IpcContract.OpCheckSources => await CheckSourcesAsync(ct),
+                IpcContract.OpRefreshSources => await RefreshSourcesAsync(ct),
                 IpcContract.OpCheckSource => await CheckSourceAsync(command.Args, ct),
                 IpcContract.OpGetConfig => await GetConfigAsync(command.Args, ct),
                 IpcContract.OpImportConfig => await ImportConfigAsync(command.Args, ct),
@@ -1544,7 +1544,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
 
         var name = args[0];
         await store.RemoveGeoSourceAsync(name, ct);
-        _updateAvailable.TryRemove(name, out _);
         _lastError.TryRemove(name, out _);
         try
         {
@@ -1681,6 +1680,13 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
         return sources.Count;
     }
 
+    // Republishes what the store holds about the sources; the snapshot is built from it on every push.
+    private async Task<IpcAck> RefreshSourcesAsync(CancellationToken ct)
+    {
+        await BroadcastIfChangedAsync(ct);
+        return new IpcAck(true, string.Empty);
+    }
+
     private async Task<IpcAck> CheckSourcesAsync(CancellationToken ct)
     {
         var (available, total) = await CheckAllSourcesAsync(ct);
@@ -1738,13 +1744,9 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
             return GeoUpdateChecker.Status.Unknown;
         }
 
-        if (status == GeoUpdateChecker.Status.Available)
+        if (status != GeoUpdateChecker.Status.Unknown)
         {
-            _updateAvailable[source.Name] = true;
-        }
-        else if (status == GeoUpdateChecker.Status.UpToDate)
-        {
-            _updateAvailable[source.Name] = false;
+            await store.SetGeoUpdateAvailableAsync(source.Name, status == GeoUpdateChecker.Status.Available, ct);
         }
 
         return status;
@@ -1867,8 +1869,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                         logger.LogDebug("geo source {Name}: {State} in {Ms} ms",
                             source.Name, srcChanged ? "changed" : "unchanged (304/same hash)", srcSw.ElapsedMilliseconds);
 
-                        // Downloaded: clear the update flag and prior failure.
-                        _updateAvailable[source.Name] = false;
+                        // Downloaded: the store drops the update flag, the prior failure goes here.
                         _lastError.TryRemove(source.Name, out _);
                         // Indeterminate while re-materializing.
                         _updating[source.Name] = -1;
@@ -2319,7 +2320,6 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 try
                 {
                     await geoFileUpdater.UpdateAsync(source, new SourceProgress(_updating, _updatingBytes, source.Name), ct);
-                    _updateAvailable[source.Name] = false;
                     _lastError.TryRemove(source.Name, out _);
                 }
                 catch (Exception ex)
@@ -2432,7 +2432,7 @@ internal sealed class AgentStatusBroker(GeoFileUpdater geoFileUpdater, GeoUpdate
                 ? null
                 : meta.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
             var updating = _updating.TryGetValue(source.Name, out var percent);
-            var updateAvailable = _updateAvailable.TryGetValue(source.Name, out var avail) && avail;
+            var updateAvailable = meta?.UpdateAvailable ?? false;
             // Hide stale errors while a retry is in flight.
             var error = !updating && _lastError.TryGetValue(source.Name, out var err) ? err : null;
             var volume = _updatingBytes.GetValueOrDefault(source.Name);

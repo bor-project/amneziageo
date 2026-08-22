@@ -261,6 +261,11 @@ public interface IStateStore
     Task<IReadOnlyList<GeoFileMetadata>> ListGeoFilesAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Records what the last update check found for a geo file. Does nothing for a file never downloaded.
+    /// </summary>
+    Task SetGeoUpdateAvailableAsync(string name, bool available, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns a stored application setting value, or null if absent.
     /// </summary>
     Task<string?> GetSettingAsync(string key, CancellationToken ct = default);

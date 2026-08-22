@@ -185,6 +185,12 @@ public static class IpcContract
     public const string OpCheckSources = "check-sources";
 
     /// <summary>
+    /// Re-reads the geo sources and their file state from the store and pushes a snapshot. No args. Sent when
+    /// the settings screen opens: the state lives in the store, not on the agent's heap.
+    /// </summary>
+    public const string OpRefreshSources = "refresh-sources";
+
+    /// <summary>
     /// Command to check a single geo data source for a newer remote file without downloading it. Args: name.
     /// The result rides the next snapshot; the ack message holds a human-readable status.
     /// </summary>

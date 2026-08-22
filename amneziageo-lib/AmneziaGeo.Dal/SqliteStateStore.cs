@@ -88,7 +88,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         sha256         TEXT NOT NULL,
                         category_count INTEGER NOT NULL,
                         etag           TEXT NOT NULL DEFAULT '',
-                        last_modified  TEXT NOT NULL DEFAULT ''
+                        last_modified  TEXT NOT NULL DEFAULT '',
+                        update_available INTEGER NOT NULL DEFAULT 0
                     );
 
                     CREATE TABLE IF NOT EXISTS tunnel_geo (
@@ -223,6 +224,9 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             // HTTP validators for conditional update-checks.
             await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN etag TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
             await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN last_modified TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
+
+            // Verdict of the last update check, kept off the agent's heap.
+            await TryAlterAsync(connection, "ALTER TABLE geo_files ADD COLUMN update_available INTEGER NOT NULL DEFAULT 0;", ct).ConfigureAwait(false);
 
             // WebSocket transport host.
             await TryAlterAsync(connection, "ALTER TABLE config_transport ADD COLUMN ws_host TEXT NOT NULL DEFAULT '';", ct).ConfigureAwait(false);
@@ -1250,7 +1254,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
                         sha256         = excluded.sha256,
                         category_count = excluded.category_count,
                         etag           = excluded.etag,
-                        last_modified  = excluded.last_modified;
+                        last_modified  = excluded.last_modified,
+                        update_available = 0;
                     """;
                 command.Parameters.AddWithValue("$name", metadata.Name);
                 command.Parameters.AddWithValue("$url", metadata.SourceUrl);
@@ -1277,7 +1282,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT source_url, updated_at, sha256, category_count, etag, last_modified
+                    SELECT source_url, updated_at, sha256, category_count, etag, last_modified, update_available
                     FROM geo_files
                     WHERE name = $name;
                     """;
@@ -1312,7 +1317,7 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             {
                 command.CommandText =
                     """
-                    SELECT name, source_url, updated_at, sha256, category_count, etag, last_modified
+                    SELECT name, source_url, updated_at, sha256, category_count, etag, last_modified, update_available
                     FROM geo_files
                     ORDER BY name;
                     """;
@@ -1329,6 +1334,25 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
         }
 
         return files;
+    }
+
+    /// <inheritdoc/>
+    public async Task SetGeoUpdateAvailableAsync(string name, bool available, CancellationToken ct = default)
+    {
+        var connection = new SqliteConnection(_connectionString);
+        await using (connection.ConfigureAwait(false))
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            var command = connection.CreateCommand();
+            await using (command.ConfigureAwait(false))
+            {
+                command.CommandText = "UPDATE geo_files SET update_available = $available WHERE name = $name;";
+                command.Parameters.AddWithValue("$available", available ? 1 : 0);
+                command.Parameters.AddWithValue("$name", name);
+                await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -2373,7 +2397,8 @@ public sealed class SqliteStateStore(string databasePath) : IStateStore
             reader.GetString(offset + 2),
             reader.GetInt32(offset + 3),
             reader.GetString(offset + 4),
-            reader.GetString(offset + 5));
+            reader.GetString(offset + 5),
+            reader.GetInt32(offset + 6) != 0);
     }
 
     private static TunnelState ReadTunnelState(string name, SqliteDataReader reader, int offset = 0)

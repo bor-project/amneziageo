@@ -108,7 +108,7 @@
                      <Button Classes="softbtn" Content="{l:Tr Main_CancelButton}" Command="{Binding CancelDownloadCommand}"
                              IsVisible="{Binding DownloadActive}" />
                      <Button Classes="accent" Content="{l:Tr Main_InstallButton}" Command="{Binding ApplyUpdateCommand}"
-                             IsVisible="{Binding UpdateDownloaded}" />
+                             IsVisible="{Binding UpdateDownloaded}" IsEnabled="{Binding !UpdateInstalling}" />
                    </StackPanel>
                  </StackPanel>
                </Grid>

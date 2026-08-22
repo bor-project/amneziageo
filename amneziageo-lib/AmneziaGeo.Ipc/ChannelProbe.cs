@@ -68,6 +68,10 @@ public static class ChannelProbe
     // Seconds each throughput leg pulls for.
     private const int DownloadMs = 4_000;
 
+    // Requests one throughput leg may spend its budget on: a source that ends after a page is asked again
+    // instead of being timed by its own latency.
+    private const int DownloadPasses = 12;
+
     // Bytes a destination has to hand over before what it took counts as a rate; a page that ends in a moment
     // times its own latency and nothing else.
     public const int SourceFloorBytes = 256 * 1024;
@@ -390,8 +394,8 @@ public static class ChannelProbe
     }
 
     // Bits per second pulled over the budget, with what arrived; a bypass sends the same request beside the
-    // tunnel. The byte count decides whether the rate is one at all: a destination that ends after a page timed
-    // its own latency.
+    // tunnel. A source that ends before the budget is asked again, so what a small page delivers is timed over
+    // the same span as a long one and two runs of the same destination compare.
     private static async Task<(CheckLeg Leg, long Bytes)> ThroughputAsync(string name, string url, Func<Socket, bool>? bypass, CancellationToken ct)
     {
         var handler = new SocketsHttpHandler
@@ -412,30 +416,32 @@ public static class ChannelProbe
             budget.CancelAfter(DownloadMs + 5_000);
 
             var clock = Stopwatch.StartNew();
-            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, budget.Token).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-
-            var stream = await response.Content.ReadAsStreamAsync(budget.Token).ConfigureAwait(false);
-            await using (stream.ConfigureAwait(false))
+            var started = clock.ElapsedMilliseconds;
+            var total = 0L;
+            for (var pass = 0; pass < DownloadPasses && clock.ElapsedMilliseconds - started < DownloadMs; pass++)
             {
-                var buffer = new byte[64 * 1024];
-                var total = 0L;
-                var started = clock.ElapsedMilliseconds;
-                while (clock.ElapsedMilliseconds - started < DownloadMs)
+                long pulled;
+                try
                 {
-                    var read = await stream.ReadAsync(buffer, budget.Token).ConfigureAwait(false);
-                    if (read <= 0)
-                    {
-                        break;
-                    }
-
-                    total += read;
+                    pulled = await PullAsync(client, PassUrl(url, pass), clock, started, budget.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (pass > 0 && ex is HttpRequestException or IOException or SocketException
+                    or OperationCanceledException or InvalidOperationException)
+                {
+                    break;
                 }
 
-                var span = Math.Max(clock.ElapsedMilliseconds - started, 1);
-                var bits = total * 8000 / span;
-                return (new CheckLeg(name, ChannelVerdict.StateFor(bits), BitsPerSecond: bits), total);
+                if (pulled <= 0)
+                {
+                    break;
+                }
+
+                total += pulled;
             }
+
+            var span = Math.Max(clock.ElapsedMilliseconds - started, 1);
+            var bits = total * 8000 / span;
+            return (new CheckLeg(name, ChannelVerdict.StateFor(bits), BitsPerSecond: bits), total);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or SocketException or OperationCanceledException or InvalidOperationException)
         {
@@ -445,6 +451,45 @@ public static class ChannelProbe
         {
             handler.Dispose();
         }
+    }
+
+    // One request of the budget: what it hands over until it ends or the time is up.
+    private static async Task<long> PullAsync(HttpClient client, string url, Stopwatch clock, long started, CancellationToken ct)
+    {
+        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        await using (stream.ConfigureAwait(false))
+        {
+            var buffer = new byte[64 * 1024];
+            var total = 0L;
+            while (clock.ElapsedMilliseconds - started < DownloadMs)
+            {
+                var read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false);
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                total += read;
+            }
+
+            return total;
+        }
+    }
+
+    // The same source asked again. The first pass is sent exactly as it stands; a repeat carries a marker, so
+    // what comes back is fetched rather than served out of a store on the way.
+    private static string PassUrl(string url, int pass)
+    {
+        if (pass == 0)
+        {
+            return url;
+        }
+
+        var separator = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{url}{separator}ag-probe={pass.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
     }
 
     /// <summary>

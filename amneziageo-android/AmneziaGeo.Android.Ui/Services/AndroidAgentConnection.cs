@@ -2407,21 +2407,22 @@ internal sealed class AndroidAgentConnection : IAgentConnection
     // disconnect, and what the tunnel carries right now.
     private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
     {
-        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        await EnsureInitAsync().ConfigureAwait(false);
+        var hosts = new List<string>(await _log.Store.ListProbeTargetsAsync(KnownHostList.HistoryRows, ct).ConfigureAwait(false));
         if (_selectedTarget is { Length: > 0 } config)
         {
             foreach (var resolution in await _store.ListDomainResolutionsAsync(config, ct).ConfigureAwait(false))
             {
-                names.Add(resolution.Domain);
+                hosts.Add(resolution.Domain);
             }
         }
 
         foreach (var held in VpnBridge.ReadSessions(SessionWindowSeconds).Sessions)
         {
-            names.Add(held.Name.Length > 0 ? held.Name : held.Host);
+            hosts.Add(held.Name.Length > 0 ? held.Name : held.Host);
         }
 
-        return new IpcAck(true, string.Join('\n', names.Where(name => name.Length > 0)));
+        return new IpcAck(true, KnownHostList.Payload(hosts));
     }
 
     private static IpcAck GetSessions()

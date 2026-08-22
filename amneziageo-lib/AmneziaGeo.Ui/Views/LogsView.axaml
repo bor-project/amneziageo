@@ -45,27 +45,30 @@
        <!-- Header: source and level share a row under their headings, the routing switch takes the next one.
             ageo records up to a level; routes is on or off; the live source is read from the tunnel, not recorded. -->
        <StackPanel Grid.Row="0" Spacing="10">
-         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+         <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !IsProbeLog}">
            <StackPanel Grid.Column="0" Spacing="4">
              <TextBlock Text="{l:Tr Main_LogTypeLabel}" FontWeight="SemiBold" FontSize="15" />
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                        ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
            </StackPanel>
-           <StackPanel Grid.Column="1" Spacing="4" Width="132" IsVisible="{Binding IsAgentLog}">
+           <!-- The level takes width off the source only while it is shown, so the source fills the row alone
+                on every other journal. -->
+           <StackPanel Grid.Column="1" Spacing="4" Width="132" Margin="10,0,0,0" IsVisible="{Binding IsAgentLog}">
              <TextBlock Text="{l:Tr Main_LogVerbosityTitle}" FontWeight="SemiBold" FontSize="15" />
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                        ItemsSource="{Binding CaptureLevels}" SelectedItem="{Binding CaptureLevel, Mode=TwoWay}" />
            </StackPanel>
          </Grid>
-         <controls:SettingSwitchRow IsVisible="{Binding IsRouteLog}"
-             Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
-             IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
-         <!-- What fills the probe journal: the server to measure through, the destination, and how to take it
-              there. The field takes the whole row of its own, because at the narrowest pane a shared row leaves
-              it too small to read what is typed in it. -->
-         <StackPanel Spacing="10" IsVisible="{Binding IsProbeLog}">
-           <StackPanel Spacing="4" Opacity="{Binding ServerOpacity}">
+         <!-- The probe journal names the server it is measured through, so source and server share the row in
+              equal halves: stacked they would take a second row off the journal under them. -->
+         <Grid ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="{Binding IsProbeLog}">
+           <StackPanel Grid.Column="0" Spacing="4">
+             <TextBlock Text="{l:Tr Main_LogTypeLabel}" FontWeight="SemiBold" FontSize="15" />
+             <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
+                       ItemsSource="{Binding LogTypes}" SelectedItem="{Binding SelectedLogType, Mode=TwoWay}" />
+           </StackPanel>
+           <StackPanel Grid.Column="1" Spacing="4" Opacity="{Binding ServerOpacity}">
              <TextBlock Text="{l:Tr Main_HomeServerLabel}" FontWeight="SemiBold" FontSize="15" />
              <controls:AdaptiveComboBox Classes="field" HorizontalAlignment="Stretch"
                        ItemsSource="{Binding Shell.Config.ProbeConfigOptions}"
@@ -77,7 +80,15 @@
                </controls:AdaptiveComboBox.ItemTemplate>
              </controls:AdaptiveComboBox>
            </StackPanel>
+         </Grid>
+         <controls:SettingSwitchRow IsVisible="{Binding IsRouteLog}"
+             Label="{l:Tr Main_RouteLogTitle}" Description="{l:Tr Main_RouteLogHint}"
+             IsChecked="{Binding RouteLogEnabled, Mode=TwoWay}" HorizontalAlignment="Stretch" />
 
+         <!-- What fills the probe journal: the destination and how to take it there. The field takes a whole row
+              of its own, because at the narrowest pane a shared row leaves it too small to read what is typed
+              in it. -->
+         <StackPanel Spacing="10" IsVisible="{Binding IsProbeLog}">
            <StackPanel Spacing="6">
              <TextBox Classes="field" Text="{Binding ProbeTarget, Mode=TwoWay}"
                       Watermark="{l:Tr Probe_TargetWatermark}" />

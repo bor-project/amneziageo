@@ -1537,26 +1537,26 @@ internal sealed class LinuxAgent : IDisposable
     // disconnect, and what the tunnel carries right now.
     private async Task<IpcAck> KnownHostsAsync(CancellationToken ct)
     {
-        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var hosts = new List<string>(await _log.Store.ListProbeTargetsAsync(KnownHostList.HistoryRows, ct).ConfigureAwait(false));
         if (_selectedTarget is { Length: > 0 } config)
         {
             foreach (var resolution in await _store.ListDomainResolutionsAsync(config, ct).ConfigureAwait(false))
             {
-                names.Add(resolution.Domain);
+                hosts.Add(resolution.Domain);
             }
         }
 
         foreach (var host in _tunnel.Tunneled)
         {
-            names.Add(host);
+            hosts.Add(host);
         }
 
         foreach (var host in _tunnel.Bypassed)
         {
-            names.Add(host);
+            hosts.Add(host);
         }
 
-        return new IpcAck(true, string.Join('\n', names.Where(name => name.Length > 0)));
+        return new IpcAck(true, KnownHostList.Payload(hosts));
     }
 
     private IpcAck GetSessions()

@@ -51,18 +51,20 @@ public static class TargetProbe
 
         var (receive, bytes) = await ChannelProbe.DownloadAsync(ProbeLegs.Receive, PageUrl(options.Target), bypass, ct)
             .ConfigureAwait(false);
-        legs.Add(bytes < ChannelProbe.SourceFloorBytes
-            ? receive with { State = LegState.Unknown, BitsPerSecond = -1, Note = "handed over nothing to time" }
+        var thin = bytes < ChannelProbe.SourceFloorBytes;
+        legs.Add(thin
+            ? receive with { State = LegState.Unknown, BitsPerSecond = -1, Note = ThinNote(bytes) }
             : receive);
 
         var upload = options.UploadUrl.Length > 0 ? options.UploadUrl : ChannelProbe.DefaultUploadUrl;
+        var against = UploadHost(upload);
         var send = await ChannelProbe.UploadAsync(ProbeLegs.Send, upload, bypass, ct).ConfigureAwait(false);
-        legs.Add(send);
+        legs.Add(send with { Note = send.Note.Length > 0 ? $"{send.Note}, against {against}" : $"against {against}" });
 
-        return bytes < ChannelProbe.SourceFloorBytes
+        return thin
             ? new ProbeReport(stamp, options.Target, options.Path, options.Taken, legs, ProbeVerdicts.NoRate, [options.Target])
             : new ProbeReport(stamp, options.Target, options.Path, options.Taken, legs, ProbeVerdicts.Measured,
-                [Mbits(receive.BitsPerSecond), Mbits(send.BitsPerSecond)]);
+                [Mbits(receive.BitsPerSecond), Mbits(send.BitsPerSecond), against]);
     }
 
     /// <summary>
@@ -114,6 +116,22 @@ public static class TargetProbe
         }
 
         return echo;
+    }
+
+    // What the target handed over when it was too little to time: the amount, so a page that ends early does
+    // not read as a destination that gave nothing.
+    private static string ThinNote(long bytes)
+    {
+        return bytes > 0
+            ? $"handed over {CheckFormat.Bytes(bytes)}, too little to time"
+            : "handed over nothing to time";
+    }
+
+    // The service the send leg is measured against; an arbitrary destination accepts no upload, so the rate out
+    // is never the target's own.
+    private static string UploadHost(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var parsed) && parsed.Host.Length > 0 ? parsed.Host : url;
     }
 
     // What a bare target is pulled from: a name or an address becomes the page at its root.
